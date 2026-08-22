@@ -1,22 +1,9 @@
-export type NodeRole = 'primary-host' | 'desktop-client';
-
 export type RuntimeConfig = {
-  buildFlavor: NodeRole;
-  primaryHostCapable: boolean;
-  nodeRole: NodeRole;
+  buildFlavor: 'unified-desktop';
   desktopIdentityMode: 'full';
   deviceId: string;
-  primaryHostEpochId: string;
-  primaryHostGeneration: number | null;
-  hostBaseUrl: string;
   cloudBaseUrl: string;
-  mainDbPath: string;
-  questionBankPath: string;
-  questionAssetPath: string;
-  questionBankCandidatePaths: string[];
-  questionBankStoreId: string;
-  localCachePath: string;
-  nasBackupPath: string;
+  cloudBusinessIdentityBaseUrl?: string;
 };
 
 function requireApi() {
@@ -27,12 +14,4 @@ function requireApi() {
 
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   return requireApi().invoke('runtime-config:get');
-}
-
-export async function saveRuntimeConfig(config: Partial<RuntimeConfig>): Promise<RuntimeConfig> {
-  return requireApi().invoke('runtime-config:set', config);
-}
-
-export async function selectFolder(): Promise<string> {
-  return requireApi().invoke('dialog:select-folder');
 }

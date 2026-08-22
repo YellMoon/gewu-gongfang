@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Button, Popover } from 'antd';
 import { CloudSyncOutlined } from '@ant-design/icons';
 import SyncSettings from '../../pages/SyncSettings';
-import { getRuntimeConfig } from '../../services/runtimeConfigClient';
 import { getSyncPresentation } from '../../services/syncPresentation.mjs';
 import type { NavigationInput } from '../../navigation/navigationContext';
 import './SyncQuickPanel.css';
@@ -13,12 +12,10 @@ type Props = {
 
 const SyncQuickPanel: React.FC<Props> = ({ onNavigate }) => {
   const [open, setOpen] = useState(false);
-  const [nodeRole, setNodeRole] = useState('desktop-client');
   const [status, setStatus] = useState({ online: true, pendingCount: 0, conflictCount: 0 });
 
   useEffect(() => {
     let stopped = false;
-    getRuntimeConfig().then(config => setNodeRole(config.nodeRole || 'desktop-client')).catch(() => undefined);
     const refresh = async () => {
       try {
         if (!window.desktopAuthority) throw new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE');
@@ -40,7 +37,7 @@ const SyncQuickPanel: React.FC<Props> = ({ onNavigate }) => {
     };
   }, []);
 
-  const presentation = getSyncPresentation(nodeRole, status);
+  const presentation = getSyncPresentation(status);
   const navigateToSettings = (mode?: 'issues' | 'pending') => {
     setOpen(false);
     onNavigate({

@@ -1,4 +1,4 @@
-export function resolvePairingApiBase(config={},location=globalThis.location){const raw=config.cloudBaseUrl||config.hostBaseUrl||((location?.protocol==='http:'||location?.protocol==='https:')?location.origin:'');if(!raw){const e=new Error('PAIRING_API_BASE_REQUIRED');e.code='PAIRING_API_BASE_REQUIRED';throw e;}return String(raw).replace(/\/+$/,'').replace(/\/api$/,'');}
+export function resolvePairingApiBase(config={},location=globalThis.location){const raw=config.cloudBaseUrl||((location?.protocol==='http:'||location?.protocol==='https:')?location.origin:'');if(!raw){const e=new Error('PAIRING_API_BASE_REQUIRED');e.code='PAIRING_API_BASE_REQUIRED';throw e;}return String(raw).replace(/\/+$/,'').replace(/\/api$/,'');}
 
 function onlineSessionError() {
   const error = new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
