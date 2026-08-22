@@ -9,12 +9,10 @@ import {
   ShoppingCartOutlined,
 } from '@ant-design/icons';
 import type { Question } from '../types';
-import { getApiBase } from '../utils/apiBase';
 import { normalizeQuestionType } from '../constants/questionTypes';
 import { downloadPaperDocx } from '../services/docxExporter';
 import './QuestionBasket.css';
 
-const API_BASE = getApiBase('/api/question-bank');
 export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
 export const QUESTION_BASKET_SELECTED_STORAGE_KEY = 'question_basket_selected';
 export const QUESTION_BASKET_EVENT = 'question-basket-changed';
@@ -97,19 +95,9 @@ function normalizeQuestion(row: any): Question {
 
 async function loadQuestionsByIds(ids: string[]): Promise<Question[]> {
   const db = (window as any).dbService;
+  await db?.refreshAuthorityProjection?.();
   const localRows = (db?.getAllQuestions?.() || []).map(normalizeQuestion);
   const localMap = new Map(localRows.map((q: Question) => [q.id, q]));
-
-  try {
-    const res = await fetch(`${API_BASE}/questions?limit=1000`);
-    const data = await res.json();
-    if (data.success && Array.isArray(data.data)) {
-      for (const item of data.data.map(normalizeQuestion)) {
-        localMap.set(item.id, item);
-      }
-    }
-  } catch (_err) {}
-
   return ids.map(id => localMap.get(id)).filter((q): q is Question => !!q);
 }
 
