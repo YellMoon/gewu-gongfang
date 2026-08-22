@@ -46,8 +46,30 @@ function outputRow(row, leaseToken = null) {
 function createStorageTaskRepository({ query, randomToken = () => crypto.randomBytes(32).toString('base64url'), randomId = () => crypto.randomUUID(), now = () => new Date(), leaseSeconds = 300 } = {}) {
   if (typeof query !== 'function' || typeof randomToken !== 'function' || typeof randomId !== 'function' || typeof now !== 'function'
     || !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 30 || leaseSeconds > 3600) throw failure('STORAGE_TASK_INPUT_INVALID');
+  async function cleanupExpired() {
+    const result = await query(
+      `WITH deleted_expired AS (
+         DELETE FROM business.encrypted_storage_relays
+          WHERE expires_at <= transaction_timestamp()
+          RETURNING task_id
+       ), quarantined AS (
+         UPDATE business.storage_object_tasks task
+            SET state='quarantined',last_error_code='ENCRYPTED_RELAY_EXPIRED',updated_at=transaction_timestamp()
+           FROM deleted_expired expired
+          WHERE task.task_id=expired.task_id AND task.state<>'verified'
+          RETURNING task.task_id
+       ) SELECT count(*)::integer AS count FROM deleted_expired`,
+      [],
+    );
+    if (!result || !Array.isArray(result.rows) || result.rows.length !== 1 || !Number.isSafeInteger(Number(result.rows[0].count)) || Number(result.rows[0].count) < 0) {
+      throw failure('STORAGE_TASK_REPOSITORY_INVALID');
+    }
+    return Number(result.rows[0].count);
+  }
   return Object.freeze({
+    cleanupExpired,
     async leaseNext(input) {
+      await cleanupExpired();
       const request = exact(input, ['agentId']);
       const currentAgentId = agentId(request.agentId);
       const leaseToken = String(randomToken());
