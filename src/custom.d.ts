@@ -81,6 +81,17 @@ interface Window {
     refreshOfflineLease(input: Record<string, any>): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
   };
+  desktopIdentitySessionProvider?: {
+    listCloudBusinessProjection(): Promise<{
+      students: any[];
+      teachers: any[];
+      courses: any[];
+      schedules: any[];
+      institutions: any[];
+      schools: any[];
+      rooms: any[];
+    }>;
+  };
   desktopAuthority?: {
     appendDraft(input: {
       type: string;

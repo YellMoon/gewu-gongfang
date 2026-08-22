@@ -7,8 +7,7 @@ const yaml = require('js-yaml');
 
 const packageJson = require('../package.json');
 const {
-  DESKTOP_CLIENT_FLAVOR,
-  PRIMARY_HOST_FLAVOR,
+  UNIFIED_DESKTOP_FLAVOR,
   updateFeedForFlavor,
 } = require('../public/desktopBuildFlavor');
 const publishScript = fs.readFileSync(path.join(__dirname, 'publish-oss-feed.js'), 'utf8');
@@ -37,13 +36,8 @@ assert.ok(
 );
 assert.ok(
   electronMain.includes('updateFeedForFlavor(DESKTOP_BUILD_FLAVOR, process.env)') &&
-  updateFeedForFlavor(DESKTOP_CLIENT_FLAVOR, {}) === `${beijingUpdateBaseUrl}/`,
-  'ordinary desktop auto-updater should default to the Beijing OSS desktop feed'
-);
-assert.strictEqual(
-  updateFeedForFlavor(PRIMARY_HOST_FLAVOR, {}),
-  `${beijingUpdateBaseUrl}/host/`,
-  'primary-host desktop auto-updater should use the isolated authorized OSS host sub-feed'
+  updateFeedForFlavor(UNIFIED_DESKTOP_FLAVOR, {}) === `${beijingUpdateBaseUrl}/`,
+  'the unified desktop auto-updater should default to the Beijing OSS desktop feed'
 );
 assert.ok(
   publishScript.includes(beijingUpdateBaseUrl),

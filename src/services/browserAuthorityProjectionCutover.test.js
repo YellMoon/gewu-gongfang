@@ -21,6 +21,15 @@ assert.ok(
   'renderer data refresh must use only the preload authority facade',
 );
 assert.ok(
+  browserDatabase.includes('window.desktopIdentitySessionProvider?.listCloudBusinessProjection'),
+  'an online unified desktop must hydrate business data from the cloud authority instead of an embedded backend',
+);
+assert.strictEqual(
+  browserDatabase.includes('window.primaryHostRuntime'),
+  false,
+  'unified desktop edits must become encrypted drafts and must never execute in an embedded host runtime',
+);
+assert.ok(
   browserDatabase.includes('window.desktopAuthority.list()'),
   'verified projection refresh must overlay the encrypted typed outbox',
 );

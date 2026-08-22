@@ -26,8 +26,8 @@ for (const pageSource of [syncSettings, cloudSync]) {
 }
 
 assert.ok(outboxPanel.includes('requireBridge().list()'));
-assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id)'));
-assert.ok(outboxPanel.includes('requireBridge().submit(item.id)'));
+assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudQuestionSubmissionInput(item))'));
+assert.ok(outboxPanel.includes('requireBridge().submit(item.id, cloudQuestionSubmissionInput(item))'));
 assert.ok(outboxPanel.includes('Modal.confirm'));
 assert.ok(outboxPanel.includes('item.preview'));
 assert.ok(!outboxPanel.includes('fetch('), 'renderer authority UI must never bypass the preload facade');
@@ -50,7 +50,8 @@ assert.strictEqual(fs.existsSync('src/components/PairingReviewPanel.tsx'), false
   'legacy V1 pairing review panel must be removed');
 assert.ok(!permissionManager.includes('PairingReviewPanel'));
 assert.ok(appNavigation.includes("'identity-devices'") && appNavigation.includes('identityDeviceNavItem'));
-assert.ok(identityDeviceCenterPolicy.includes('/api/desktop-identity/authorizations/pending'));
+assert.ok(identityDeviceCenterPolicy.includes('/api/desktop-identity/devices'));
+assert.ok(!identityDeviceCenterPolicy.includes('/api/desktop-identity/authorizations/pending'));
 assert.ok(!identityDeviceCenter.includes('selectedUsers') && !identityDeviceCenter.includes('{ userId }'));
 assert.ok(!miniappUsers.includes('getPendingPairings') && !miniappUsers.includes('reviewPairingCode')
   && !miniappUsers.includes('pairingUsers') && !miniappUsers.includes('选择绑定账号'),

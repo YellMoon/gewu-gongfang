@@ -68,6 +68,7 @@ function createReleaseRoot() {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-miniapp-upload-test-'));
   for (const relativePath of [
     'package.json',
+    path.join('cloud-business-api', 'package.json'),
     path.join('backend', 'package.json'),
     path.join('gateway', 'package.json'),
     path.join('miniapp', 'package.json'),

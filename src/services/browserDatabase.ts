@@ -152,6 +152,40 @@ class BrowserDatabaseService {
   public async refreshAuthorityProjection({
     minSourceVersion = 0,
   }: { minSourceVersion?: number } = {}): Promise<void> {
+    if (typeof window.desktopIdentitySessionProvider?.listCloudBusinessProjection === 'function') {
+      const payload = await window.desktopIdentitySessionProvider.listCloudBusinessProjection();
+      const outbox = window.desktopAuthority?.list ? await window.desktopAuthority.list() : [];
+      const next = buildAuthorityBackedBrowserCache({
+        projection: {
+          protocol: 'gewu.authority-projection.v1',
+          authorityId: 'cloud-business',
+          hostEpochId: 'cloud-business',
+          userId: readCurrentDesktopIdentityContext()?.userId || '',
+          role: readCurrentDesktopIdentityContext()?.activeRole || '',
+          sourceVersion: Math.max(0, Number(minSourceVersion) || 0),
+          payload,
+        },
+        outbox,
+        localOnly: {
+          questionBasketIds: this.data.questionBasketIds,
+          questionVersions: this.data.questionVersions,
+          importTasks: this.data.importTasks,
+          importTaskItems: this.data.importTaskItems,
+        },
+      });
+      this.data = { ...emptyDatabase(), ...next } as Database;
+      this.hydrateTaxonomiesFromSyncRows();
+      this.migrateLegacyQuestionData();
+      this.migrateLegacyTagData();
+      this.migrateQuestionVersionData();
+      this.migrateImportTaskData();
+      this.rebuildQuestionIndexes();
+      this.saveData();
+      window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
+        detail: { sourceVersion: Math.max(0, Number(minSourceVersion) || 0) },
+      }));
+      return;
+    }
     if (!window.desktopAuthority?.readProjection || !window.desktopAuthority?.list) {
       throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
         code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
@@ -413,10 +447,6 @@ class BrowserDatabaseService {
       value,
       baseVersion,
     });
-    if (window.primaryHostRuntime?.executeLocalDraft) {
-      this.executePrimaryHostDraft(draft);
-      return;
-    }
     if (!window.desktopAuthority?.appendDraftSync) {
       throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
         code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
@@ -440,52 +470,12 @@ class BrowserDatabaseService {
       value: change.value || {},
       baseVersion: change.baseVersion || null,
     }));
-    if (window.primaryHostRuntime?.executeLocalDraft) {
-      this.executePrimaryHostDraftBatch(drafts);
-      return;
-    }
     if (!window.desktopAuthority?.appendDraftBatchSync) {
       throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
         code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
       });
     }
     window.desktopAuthority.appendDraftBatchSync(drafts);
-  }
-
-  private executePrimaryHostDraft(draft: { type: string; payload: Record<string, any> }): void {
-    this.executePrimaryHostDraftBatch([draft]);
-  }
-
-  private executePrimaryHostDraftBatch(drafts: Array<{ type: string; payload: Record<string, any> }>): void {
-    void (async () => {
-      let projectionVersion = 0;
-      const commandIds: string[] = [];
-      for (const draft of drafts) {
-        const result = await window.primaryHostRuntime?.executeLocalDraft?.(draft);
-        const receipt = result?.receipt;
-        if (receipt?.status !== 'committed') {
-          throw Object.assign(new Error(receipt?.error?.code || 'AUTHORITY_COMMAND_REJECTED'), {
-            code: receipt?.error?.code || 'AUTHORITY_COMMAND_REJECTED',
-          });
-        }
-        projectionVersion = Math.max(projectionVersion, Number(receipt.projectionVersion || 0));
-        if (receipt.commandId) commandIds.push(String(receipt.commandId));
-      }
-      await this.refreshAuthorityProjection({ minSourceVersion: projectionVersion });
-      window.dispatchEvent(new CustomEvent(drafts.length === 1 ? 'authority-local-draft-executed' : 'authority-local-drafts-executed', {
-        detail: { commandIds, projectionVersion },
-      }));
-    })().catch(error => {
-      console.error('PRIMARY_HOST_LOCAL_DRAFT_EXECUTION_FAILED', error);
-      window.dispatchEvent(new CustomEvent('authority-local-draft-execution-failed', {
-        detail: { code: error?.code || error?.message || 'PRIMARY_HOST_LOCAL_DRAFT_EXECUTION_FAILED' },
-      }));
-      void this.refreshAuthorityProjection().catch(refreshError => {
-        window.dispatchEvent(new CustomEvent('authority-projection-refresh-failed', {
-          detail: { code: refreshError?.code || refreshError?.message || 'AUTHORITY_PROJECTION_REFRESH_FAILED' },
-        }));
-      });
-    });
   }
 
   private compactLargeQuestionPayloads(): void {

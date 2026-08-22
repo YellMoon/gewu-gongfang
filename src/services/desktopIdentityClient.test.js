@@ -134,6 +134,10 @@ async function main() {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         return { ok: true, json: async () => ({ ok: true, schedules: [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }] }) };
       }
+      if (url === 'https://cloud.test/api/business/desktop-projection') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true, projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }) };
+      }
       if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1') {
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -249,6 +253,11 @@ async function main() {
   });
   assert.deepStrictEqual(cloudSchedules, [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }]);
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules');
+  const cloudProjection = await unifiedCloudClient.listCloudBusinessProjection({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
+  });
+  assert.deepStrictEqual(cloudProjection, { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/desktop-projection');
   const updatedCloudSchedule = await unifiedCloudClient.updateCloudSchedule({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1',
     expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',

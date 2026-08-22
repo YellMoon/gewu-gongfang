@@ -413,8 +413,8 @@ function checkDesktopReleaseBoundary() {
     'public/primaryHostRuntimeManager.js',
   ];
 
-  if (packageJson.desktopBuildFlavor !== 'desktop-client') {
-    issues.push('default desktop package flavor must be desktop-client');
+  if (packageJson.desktopBuildFlavor !== 'unified-desktop') {
+    issues.push('default desktop package flavor must be unified-desktop');
   }
   if (!ordinaryFiles.includes('public/electronShellPolicy.js')) {
     issues.push('ordinary package is missing electronShellPolicy.js');

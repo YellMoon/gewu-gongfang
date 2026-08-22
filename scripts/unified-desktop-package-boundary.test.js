@@ -8,6 +8,10 @@ const root = path.resolve(__dirname, '..');
 const packageJson = require(path.join(root, 'package.json'));
 
 assert.strictEqual(packageJson.desktopBuildFlavor, 'unified-desktop');
+assert.doesNotMatch(packageJson.scripts?.['test:desktop-build-flavor'] || '', /realTwoDesktopE2e/,
+  'the unified desktop release gate must not require the retired primary-host acceptance matrix');
+assert.doesNotMatch(packageJson.scripts?.['test:authority-architecture'] || '', /primaryHost|realTwoDesktopE2e|authorityRoleMatrixE2e/,
+  'the default authority suite must validate cloud authority rather than retired primary-host workflows');
 assert.ok(!fs.existsSync(path.join(root, 'electron-builder.host.config.cjs')),
   'a unified desktop release must not retain a second host-only installer configuration');
 const electronSource = fs.readFileSync(path.join(root, 'public', 'electron.js'), 'utf8');

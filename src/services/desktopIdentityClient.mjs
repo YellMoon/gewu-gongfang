@@ -860,6 +860,21 @@ export function createDesktopIdentityClient({
     return data.schedules;
   }
 
+  async function listCloudBusinessProjection({ baseUrl, currentSession } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const data = await request(fetchImpl, baseUrl, '/api/business/desktop-projection', {
+      token: currentSession.token,
+    });
+    const projection = data?.projection;
+    if (!projection || typeof projection !== 'object' || Array.isArray(projection)
+      || !['students', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms'].every(key => Array.isArray(projection[key]))) {
+      throw identityError('DESKTOP_CLOUD_PROJECTION_RESPONSE_INVALID');
+    }
+    return projection;
+  }
+
   async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -921,6 +936,7 @@ export function createDesktopIdentityClient({
     completeRegistration,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
+    listCloudBusinessProjection,
     listCloudSchedules,
     lock,
     pollRegistration,
