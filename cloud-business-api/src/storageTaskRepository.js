@@ -48,10 +48,17 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
     || !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 30 || leaseSeconds > 3600) throw failure('STORAGE_TASK_INPUT_INVALID');
   async function cleanupExpired() {
     const result = await query(
-      `WITH deleted_expired AS (
+      `WITH deleted_question_relays AS (
          DELETE FROM business.encrypted_storage_relays
           WHERE expires_at <= transaction_timestamp()
           RETURNING task_id
+       ), deleted_artifact_relays AS (
+         DELETE FROM business.encrypted_paper_export_artifact_relays
+          WHERE expires_at <= transaction_timestamp()
+          RETURNING storage_task_id AS task_id
+       ), deleted_expired AS (
+         SELECT task_id FROM deleted_question_relays
+         UNION ALL SELECT task_id FROM deleted_artifact_relays
        ), quarantined AS (
          UPDATE business.storage_object_tasks task
             SET state='quarantined',last_error_code='ENCRYPTED_RELAY_EXPIRED',updated_at=transaction_timestamp()
@@ -81,9 +88,10 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
         `WITH candidate AS (
            SELECT task.task_id
              FROM business.storage_object_tasks task
-             JOIN business.encrypted_storage_relays relay ON relay.task_id=task.task_id
+             LEFT JOIN business.encrypted_storage_relays question_relay ON question_relay.task_id=task.task_id
+             LEFT JOIN business.encrypted_paper_export_artifact_relays artifact_relay ON artifact_relay.storage_task_id=task.task_id
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
-              AND relay.expires_at > transaction_timestamp()
+              AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()))
             ORDER BY task.created_at ASC,task.task_id ASC
             FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
@@ -106,9 +114,12 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
       const currentTaskId = taskId(request.taskId);
       if (typeof request.leaseToken !== 'string' || request.leaseToken.length < 16) throw failure('STORAGE_TASK_INPUT_INVALID');
       const result = await query(
-        `SELECT relay.envelope_json AS envelope,relay.ciphertext AS ciphertext
-           FROM business.storage_object_tasks task
-           JOIN business.encrypted_storage_relays relay ON relay.task_id=task.task_id
+        `WITH relay AS (
+           SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_storage_relays WHERE task_id=$1
+           UNION ALL
+           SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_paper_export_artifact_relays WHERE storage_task_id=$1
+         ) SELECT relay.envelope_json AS envelope,relay.ciphertext AS ciphertext
+           FROM business.storage_object_tasks task JOIN relay ON true
           WHERE task.task_id=$1 AND task.state='leased' AND task.lease_agent_id=$2 AND task.lease_token_sha256=$3
             AND task.lease_expires_at > transaction_timestamp() AND relay.expires_at > transaction_timestamp()`,
         [currentTaskId, currentAgentId, hash(request.leaseToken)],
@@ -140,10 +151,18 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)
            SELECT $6,task_id,$2,$4,$5 FROM completed
            RETURNING task_id AS "taskId",verified_at AS "verifiedAt"
-         ), deleted_relay AS (
+         ), verified_artifact AS (
+           UPDATE business.paper_export_artifacts artifact
+              SET storage_state='verified',verified_at=transaction_timestamp()
+             FROM completed WHERE artifact.storage_task_id=completed.task_id AND artifact.storage_state='queued'
+         ), deleted_question_relay AS (
            DELETE FROM business.encrypted_storage_relays relay
             USING completed
             WHERE relay.task_id=completed.task_id
+         ), deleted_artifact_relay AS (
+           DELETE FROM business.encrypted_paper_export_artifact_relays relay
+            USING completed
+            WHERE relay.storage_task_id=completed.task_id
          ) SELECT "taskId",'verified'::text AS state,"verifiedAt" FROM receipt`,
         [currentTaskId, currentAgentId, hash(request.leaseToken), request.observedSha256, request.observedBytes, receiptId],
       );
