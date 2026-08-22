@@ -105,7 +105,7 @@ def read_root_version():
 
 RELEASE_MATRIX_PATH = Path(os.getenv("GEWU_RELEASE_MANIFEST_PATH", PROJECT_ROOT / "output" / "release-matrix" / "active.json"))
 RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
-RELEASE_MATRIX_TARGETS = ("desktop", "backend", "gateway", "miniapp")
+RELEASE_MATRIX_TARGETS = ("desktop", "cloud_business", "storage_proxy", "miniapp")
 
 
 def require_release_manifest(target):
@@ -122,8 +122,9 @@ def require_release_manifest(target):
     if manifest.get("schema") != RELEASE_MATRIX_SCHEMA or manifest.get("version") != expected_version:
         raise SystemExit("Unified release manifest does not match the checked-out source version")
     package_paths = {
-        "backend": PROJECT_ROOT / "backend" / "package.json",
-        "gateway": PROJECT_ROOT / "gateway" / "package.json",
+        "desktop": PROJECT_ROOT / "package.json",
+        "cloud_business": PROJECT_ROOT / "cloud-business-api" / "package.json",
+        "miniapp": PROJECT_ROOT / "miniapp" / "package.json",
     }
     stale = []
     for name, package_path in package_paths.items():

@@ -93,8 +93,7 @@ def prepare_node_release_fixture(root):
     shutil.copy2(source_scripts / "release-matrix.js", scripts_dir / "release-matrix.js")
     for relative_path in (
         Path("package.json"),
-        Path("backend/package.json"),
-        Path("gateway/package.json"),
+        Path("cloud-business-api/package.json"),
         Path("miniapp/package.json"),
     ):
         write_json(root / relative_path, {"version": "7.2.10"})
@@ -125,7 +124,7 @@ def prepare_node_release_fixture(root):
         "createdAt": "2026-08-01T00:00:00.000Z",
         "targets": {
             target: {"status": "pending"}
-            for target in ("desktop", "backend", "gateway", "miniapp")
+            for target in ("desktop", "cloud_business", "storage_proxy", "miniapp")
         },
     }
     manifest_path = root / "output/release-matrix/active.json"

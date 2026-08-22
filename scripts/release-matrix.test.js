@@ -6,6 +6,11 @@ const path = require('path');
 const matrix = require('./release-matrix');
 
 const targets = matrix.DEFAULT_TARGETS;
+assert.deepStrictEqual(
+  targets,
+  ['desktop', 'cloud_business', 'storage_proxy', 'miniapp'],
+  'the unified release matrix must model the current cloud-authority architecture, not retired host/gateway services'
+);
 const manifest = matrix.createReleaseManifest({
   version: '7.2.0',
   commit: 'abc123',
@@ -42,10 +47,14 @@ assert.strictEqual(matrix.isReleaseComplete(manifest), true, 'all exact-version 
 
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-'));
 try {
-  for (const relativePath of ['package.json', 'backend/package.json', 'gateway/package.json', 'miniapp/package.json']) {
+  for (const relativePath of ['package.json', 'cloud-business-api/package.json', 'miniapp/package.json']) {
     const absolutePath = path.join(fixtureRoot, relativePath);
     fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-    fs.writeFileSync(absolutePath, JSON.stringify({ version: relativePath === 'gateway/package.json' ? '7.1.9' : '7.2.0' }), 'utf8');
+    fs.writeFileSync(
+      absolutePath,
+      JSON.stringify({ version: relativePath === 'cloud-business-api/package.json' ? '7.1.9' : '7.2.0' }),
+      'utf8'
+    );
   }
   const localMatrix = matrix.readSourceVersionMatrix({ rootDir: fixtureRoot });
   assert.strictEqual(
@@ -55,7 +64,7 @@ try {
   );
   assert.throws(
     () => matrix.assertSourceVersionMatrix(localMatrix, '7.2.0'),
-    /gateway.*7\.1\.9/i,
+    /cloud_business.*7\.1\.9/i,
     'a source version mismatch must name the stale component'
   );
 
@@ -64,21 +73,21 @@ try {
   matrix.writeManifest(manifestPath, matrix.createReleaseManifest({ version: '7.2.0', commit: 'abc123' }));
   assert.throws(
     () => matrix.assertReleaseTarget({ rootDir: fixtureRoot, target: 'desktop' }),
-    /gateway.*7\.1\.9/i,
+    /cloud_business.*7\.1\.9/i,
     'every release entrypoint must reject a stale source component'
   );
 
-  for (const relativePath of ['gateway/package.json']) {
+  for (const relativePath of ['cloud-business-api/package.json']) {
     const absolutePath = path.join(fixtureRoot, relativePath);
     fs.writeFileSync(absolutePath, JSON.stringify({ version: '7.2.0' }), 'utf8');
   }
   const cloudAcceptanceManifest = matrix.createReleaseManifest({ version: '7.2.0', commit: 'abc123' });
   assert.throws(
     () => matrix.assertDesktopReleasePrerequisites({ rootDir: fixtureRoot, manifest: cloudAcceptanceManifest }),
-    /backend.*verified/i,
-    'OSS publication must fail closed until the cloud API and miniapp pairing endpoints are exact-version ready'
+    /cloud_business.*verified/i,
+    'OSS publication must fail closed until cloud business, storage proxy, and miniapp are exact-version ready'
   );
-  for (const target of ['backend', 'gateway', 'miniapp']) {
+  for (const target of ['cloud_business', 'storage_proxy', 'miniapp']) {
     matrix.recordReceipt(cloudAcceptanceManifest, {
       target, version: '7.2.0', evidence: `${target}-ready`,
     });
@@ -88,6 +97,22 @@ try {
     '7.2.0',
     'one unified desktop update may publish only after its cloud prerequisites are verified'
   );
+
+  const completedHistoricalManifest = {
+    schema: matrix.MANIFEST_SCHEMA,
+    version: '7.1.9',
+    commit: 'oldcommit',
+    createdAt: '2026-07-01T00:00:00.000Z',
+    targets: Object.fromEntries(['desktop', 'local_host', 'backend', 'gateway', 'miniapp'].map(target => [target, {
+      status: 'verified',
+      receipt: { version: '7.1.9', verifiedAt: '2026-07-01T01:00:00.000Z', evidence: `${target}-historical` },
+    }])),
+  };
+  fs.writeFileSync(manifestPath, `${JSON.stringify(completedHistoricalManifest, null, 2)}\n`, 'utf8');
+  const prepared = matrix.prepareReleaseManifest({ rootDir: fixtureRoot, commit: 'newcommit' });
+  assert.strictEqual(prepared.manifest.version, '7.2.0', 'a new source version must create a fresh release manifest');
+  assert.ok(fs.existsSync(prepared.archivedManifestPath), 'a completed historical manifest must be preserved before replacement');
+  assert.strictEqual(matrix.readManifest(manifestPath).version, '7.2.0', 'the active path must point only to the new release');
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }

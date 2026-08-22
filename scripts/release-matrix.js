@@ -2,12 +2,18 @@ const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
 
-const DEFAULT_TARGETS = Object.freeze(['desktop', 'backend', 'gateway', 'miniapp']);
-const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['backend', 'gateway', 'miniapp']);
+const DEFAULT_TARGETS = Object.freeze(['desktop', 'cloud_business', 'storage_proxy', 'miniapp']);
+const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['cloud_business', 'storage_proxy', 'miniapp']);
 const MANIFEST_SCHEMA = 'gewu.unified-release.v1';
 
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
   return path.join(rootDir, 'output', 'release-matrix', 'active.json');
+}
+
+function historicalManifestPath(manifestPath, manifest) {
+  const createdAt = String(manifest.createdAt || 'unknown').replace(/[^0-9A-Za-z]/g, '-');
+  const commit = String(manifest.commit || 'unknown').replace(/[^0-9A-Za-z]/g, '').slice(0, 12) || 'unknown';
+  return path.join(path.dirname(manifestPath), 'history', `${manifest.version}-${createdAt}-${commit}.json`);
 }
 
 function isVersion(value) {
@@ -77,11 +83,33 @@ function readManifest(manifestPath) {
   return manifest;
 }
 
+function isCompletedHistoricalManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || !isVersion(manifest.version) || !manifest.commit) return false;
+  const targets = manifest.targets;
+  if (!targets || typeof targets !== 'object' || Object.keys(targets).length === 0) return false;
+  return Object.values(targets).every(state => (
+    state?.status === 'verified'
+    && state.receipt?.version === manifest.version
+    && typeof state.receipt.evidence === 'string'
+    && state.receipt.evidence.length > 0
+  ));
+}
+
+function archiveCompletedHistoricalManifest({ manifestPath, manifest } = {}) {
+  if (!manifestPath || !isCompletedHistoricalManifest(manifest)) {
+    throw new Error('Only a completed historical release manifest may be archived automatically');
+  }
+  const archivePath = historicalManifestPath(manifestPath, manifest);
+  if (fs.existsSync(archivePath)) throw new Error(`Historical release manifest already exists: ${archivePath}`);
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  fs.renameSync(manifestPath, archivePath);
+  return archivePath;
+}
+
 function readSourceVersionMatrix({ rootDir = path.resolve(__dirname, '..') } = {}) {
   const entries = [
     ['desktop', 'package.json'],
-    ['backend', path.join('backend', 'package.json')],
-    ['gateway', path.join('gateway', 'package.json')],
+    ['cloud_business', path.join('cloud-business-api', 'package.json')],
     ['miniapp', path.join('miniapp', 'package.json')],
   ];
   return Object.fromEntries(entries.map(([name, relativePath]) => {
@@ -166,6 +194,30 @@ function gitHead(rootDir) {
   }
 }
 
+function prepareReleaseManifest({
+  rootDir = path.resolve(__dirname, '..'),
+  manifestPath = defaultManifestPath(rootDir),
+  commit = gitHead(rootDir),
+} = {}) {
+  const matrix = readSourceVersionMatrix({ rootDir });
+  const version = matrix.desktop;
+  assertSourceVersionMatrix(matrix, version);
+  if (fs.existsSync(manifestPath)) {
+    const existingRaw = readJson(manifestPath);
+    if (existingRaw.version === version) {
+      const existing = readManifest(manifestPath);
+      return { action: 'reuse', version, manifestPath, manifest: existing, archivedManifestPath: null };
+    }
+    const archivedManifestPath = archiveCompletedHistoricalManifest({ manifestPath, manifest: existingRaw });
+    const manifest = createReleaseManifest({ version, commit });
+    writeManifest(manifestPath, manifest);
+    return { action: 'archived-and-prepared', version, manifestPath, manifest, archivedManifestPath };
+  }
+  const manifest = createReleaseManifest({ version, commit });
+  writeManifest(manifestPath, manifest);
+  return { action: 'prepared', version, manifestPath, manifest, archivedManifestPath: null };
+}
+
 function option(argv, name) {
   const prefix = `--${name}=`;
   const inline = argv.find(arg => arg.startsWith(prefix));
@@ -180,18 +232,14 @@ function cli() {
   const rootDir = path.resolve(__dirname, '..');
   const manifestPath = option(argv, 'manifest') || defaultManifestPath(rootDir);
   if (command === 'prepare') {
-    const matrix = readSourceVersionMatrix({ rootDir });
-    const version = matrix.desktop;
-    assertSourceVersionMatrix(matrix, version);
-    if (fs.existsSync(manifestPath)) {
-      const existing = readManifest(manifestPath);
-      if (existing.version !== version) throw new Error(`Existing manifest is for ${existing.version}; archive or complete it before preparing ${version}`);
-      console.log(JSON.stringify({ action: 'reuse', version, manifestPath, targets: existing.targets }, null, 2));
-      return;
-    }
-    const manifest = createReleaseManifest({ version, commit: gitHead(rootDir) });
-    writeManifest(manifestPath, manifest);
-    console.log(JSON.stringify({ action: 'prepared', version, manifestPath, targets: manifest.targets }, null, 2));
+    const result = prepareReleaseManifest({ rootDir, manifestPath });
+    console.log(JSON.stringify({
+      action: result.action,
+      version: result.version,
+      manifestPath,
+      targets: result.manifest.targets,
+      archivedManifestPath: result.archivedManifestPath,
+    }, null, 2));
     return;
   }
   if (command === 'assert') {
@@ -242,7 +290,10 @@ module.exports = {
   assertSourceVersionMatrix,
   createReleaseManifest,
   defaultManifestPath,
+  historicalManifestPath,
+  isCompletedHistoricalManifest,
   isReleaseComplete,
+  prepareReleaseManifest,
   readManifest,
   readSourceVersionMatrix,
   recordReceipt,
