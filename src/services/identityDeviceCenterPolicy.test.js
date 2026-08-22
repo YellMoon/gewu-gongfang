@@ -1,419 +1,52 @@
 const assert = require('assert');
+const fs = require('fs');
 
 (async () => {
+  const source = fs.readFileSync('src/services/identityDeviceCenterPolicy.mjs', 'utf8');
   const {
-    approveDesktopChallenge,
-    buildApprovalBody,
-    buildRejectionBody,
     buildRevocationBody,
-    identityDeviceCenterErrorMessage,
     identityDeviceCenterAccess,
-    activatePrimaryHostTransfer,
-    beginPrimaryHostTransfer,
-    bootstrapPrimaryHost,
     loadIdentityDeviceCenter,
-    projectIdentityDeviceCenterSnapshot,
-    readPrimaryHostOperationChallenge,
-    recoverPrimaryHost,
-    rejectDesktopChallenge,
     revokeDesktopDevice,
-    startPrimaryHostOperation,
   } = await import('./identityDeviceCenterPolicy.mjs');
-
-  const canonicalSession = {
+  const session = {
     authorization: 'Bearer session-token',
-    authContext: {
-      userId: 'canonical-user',
-      deviceId: 'device-host',
-      activeRole: 'super_admin',
-      eligibleRoles: ['super_admin', 'teacher'],
-      teacherId: 'teacher-self',
-    },
+    authContext: { userId: 'user-1', deviceId: 'device-1', activeRole: 'super_admin', eligibleRoles: ['super_admin'] },
   };
-  assert.ok(
-    identityDeviceCenterErrorMessage('DESKTOP_IDENTITY_LOCAL_PASSWORD_REQUIRED').includes('\u91cd\u65b0\u8f93\u5165\u672c\u673a\u5bc6\u7801'),
-    'a missing in-memory unlock password must explain the recovery action instead of showing a generic service error'
-  );
-  const hostRuntime = { nodeRole: 'primary-host', primaryHostCapable: true, deviceId: 'device-host', hostBaseUrl: 'http://127.0.0.1:3001' };
-
-  assert.deepStrictEqual(identityDeviceCenterAccess({ runtimeConfig: hostRuntime, session: canonicalSession }), {
-    visible: true,
-    canReview: true,
-    canViewAllDevices: true,
-    canRevoke: true,
-    canManageHost: true,
-    activeRole: 'super_admin',
-    eligibleRoles: ['super_admin', 'teacher'],
-    userId: 'canonical-user',
-    deviceId: 'device-host',
-    teacherId: 'teacher-self',
-    isPrimaryHost: true,
-    primaryHostCapable: true,
+  assert.deepStrictEqual(identityDeviceCenterAccess({ session }), {
+    visible: true, canReview: true, canViewAllDevices: true, canRevoke: true,
+    activeRole: 'super_admin', eligibleRoles: ['super_admin'], userId: 'user-1', deviceId: 'device-1', teacherId: null,
   });
-  assert.strictEqual(identityDeviceCenterAccess({
-    runtimeConfig: hostRuntime,
-    session: { ...canonicalSession, authContext: { ...canonicalSession.authContext, activeRole: 'teacher' } },
-  }).canReview, false, 'teacher active role must not review even when the same user also has super_admin');
-  assert.strictEqual(identityDeviceCenterAccess({
-    runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client' }, session: canonicalSession,
-  }).canReview, true, 'another authenticated super-admin desktop must be able to approve a locked primary-host password reset');
-  assert.strictEqual(identityDeviceCenterAccess({
-    runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client', primaryHostCapable: false }, session: canonicalSession,
-  }).canManageHost, false, 'ordinary build must not expose primary-host migration or recovery operations');
-  assert.strictEqual(identityDeviceCenterAccess({
-    runtimeConfig: hostRuntime,
-    session: { ...canonicalSession, authContext: { ...canonicalSession.authContext, activeRole: 'admin', eligibleRoles: ['admin'] } },
-  }).canReview, false, 'ordinary administrator must not review devices');
-
-  const pendingRow = {
-    challenge: {
-      id: 'challenge-pending-1', deviceId: 'device-2', deviceName: '第二台电脑',
-      keyFingerprint: 'a'.repeat(64), purpose: 'password_reset',
-      status: 'identity_verified_pending_approval', rowVersion: 7,
-      createdAt: '2026-07-17T09:00:00.000Z', expiresAt: '2026-07-17T09:10:00.000Z',
-    },
-    claimant: {
-      id: 'canonical-user', name: '本人', maskedPhone: '137****0653',
-      eligibleRoles: ['super_admin', 'teacher'], teacherId: 'teacher-self',
-    },
-  };
-  assert.deepStrictEqual(buildApprovalBody(pendingRow), {
-    challengeId: 'challenge-pending-1', expectedRowVersion: 7,
-  });
-  assert.strictEqual(Object.hasOwn(buildApprovalBody(pendingRow), 'userId'), false);
-  assert.deepStrictEqual(buildRejectionBody(pendingRow, '信息不符'), {
-    challengeId: 'challenge-pending-1', expectedRowVersion: 7, reason: '信息不符',
-  });
-
-  const mine = [
-    { deviceId: 'device-host', deviceName: '当前数据主机', userId: 'canonical-user', status: 'active', rowVersion: 2, createdAt: '2026-01-01T00:00:00.000Z' },
-    { deviceId: 'device-2', deviceName: '第二台电脑', userId: 'canonical-user', status: 'replaced', replacedByDeviceId: 'device-3', rowVersion: 8, createdAt: '2026-02-01T00:00:00.000Z' },
-    { deviceId: 'device-3', deviceName: '新电脑', userId: 'canonical-user', status: 'active', rowVersion: 1, createdAt: '2026-03-01T00:00:00.000Z' },
-  ];
-  const snapshot = projectIdentityDeviceCenterSnapshot({
-    pending: [pendingRow], mine, all: [...mine, { deviceId: 'other-1', deviceName: '其他用户电脑', userId: 'other-user', status: 'active', rowVersion: 1, createdAt: '2026-04-01T00:00:00.000Z' }],
-    runtimeConfig: hostRuntime, session: canonicalSession,
-    hostRuntimeStatus: {
-      credential: {
-        state: 'staged', active: false, stageId: 'bootstrap:host-challenge',
-        deviceId: 'device-host', generation: 1,
-      },
-    },
-    hostControl: {
-      activeEpoch: {
-        id: 'epoch-1', generation: 1, deviceId: 'device-host', userId: 'canonical-user',
-        rowVersion: 3, status: 'active', activatedAt: '2026-07-18T00:00:00.000Z',
-      },
-      transfers: [], history: [],
-    },
-  });
-  assert.strictEqual(snapshot.pending[0].claimant.id, 'canonical-user');
-  assert.strictEqual(snapshot.pending[0].purpose, 'password_reset');
-  assert.strictEqual(snapshot.pending[0].sameClaimantAndReviewer, true);
-  assert.strictEqual(snapshot.mine.find(item => item.deviceId === 'device-host').isHost, true);
-  assert.strictEqual(snapshot.mine.find(item => item.deviceId === 'device-host').canRevoke, false);
-  assert.strictEqual(snapshot.mine.find(item => item.deviceId === 'device-2').replacedByName, '新电脑');
-  assert.deepStrictEqual(snapshot.mine.find(item => item.deviceId === 'device-3').replacesDeviceIds, ['device-2']);
-  assert.strictEqual(snapshot.all.length, 4);
-  assert.strictEqual(snapshot.identity.teacherId, 'teacher-self');
-  assert.strictEqual(snapshot.host.activeEpoch.id, 'epoch-1');
-  assert.strictEqual(snapshot.host.isActiveHostDevice, true);
-  assert.strictEqual(snapshot.host.canStartTransfer, true);
-  assert.strictEqual(snapshot.host.requiresRuntimeAdoption, true);
-  assert.strictEqual(snapshot.host.canResumeRuntimeAdoption, true);
-  assert.strictEqual(snapshot.host.pendingCredentialStage.stageId, 'bootstrap:host-challenge');
-  const approvedPendingSnapshot = projectIdentityDeviceCenterSnapshot({
-    mine: [{
-      deviceId: 'device-approved-pending', deviceName: '已审批的新电脑', userId: 'canonical-user',
-      status: 'pending', approvedAt: '2026-07-29T12:00:00.000Z', rowVersion: 1,
-      createdAt: '2026-07-29T11:00:00.000Z', updatedAt: '2026-07-29T12:00:00.000Z',
-    }],
-    runtimeConfig: hostRuntime,
-    session: canonicalSession,
-  });
-  assert.strictEqual(approvedPendingSnapshot.mine[0].approvedAt, '2026-07-29T12:00:00.000Z',
-    'a host-approved device must retain its approval timestamp through the device-center projection');
-
-  const pendingRecoveryDelivery = {
-    id: 'delivery-1',
-    epochId: 'epoch-1',
-    factorId: 'factor-1',
-    generation: 1,
-    status: 'pending',
-    rowVersion: 1,
-    ackNonce: 'a'.repeat(64),
-    recipientKeyFingerprint: 'b'.repeat(64),
-    envelope: { ciphertext: 'target-device-ciphertext' },
-  };
-  const localRecoveryDelivery = {
-    credential: {
-      state: 'active',
-      recoveryDelivery: { pending: true, deliveryId: 'delivery-1', epochId: 'epoch-1', rowVersion: 1 },
-    },
-  };
-  const bootstrapBlocked = projectIdentityDeviceCenterSnapshot({
-    mine,
-    all: mine,
-    runtimeConfig: hostRuntime,
-    session: canonicalSession,
-    hostRuntimeStatus: localRecoveryDelivery,
-    hostControl: {
-      activeEpoch: null,
-      transfers: [],
-      history: [],
-      recoveryDeliveryPending: true,
-      pendingRecoveryDelivery,
-    },
-  });
-  assert.strictEqual(bootstrapBlocked.host.recoveryDeliveryPending, true);
-  assert.strictEqual(bootstrapBlocked.host.recoveryDelivery.id, 'delivery-1');
-  assert.strictEqual(bootstrapBlocked.host.hasLocalRecoveryDelivery, true);
-  assert.strictEqual(bootstrapBlocked.host.blocksHighRiskOperations, true);
-  assert.strictEqual(bootstrapBlocked.host.canBootstrap, false);
-
-  const transferBlocked = projectIdentityDeviceCenterSnapshot({
-    mine,
-    all: mine,
-    runtimeConfig: hostRuntime,
-    session: canonicalSession,
-    hostRuntimeStatus: localRecoveryDelivery,
-    hostControl: {
-      activeEpoch: snapshot.host.activeEpoch,
-      transfers: [],
-      history: [],
-      recoveryDeliveryPending: true,
-      pendingRecoveryDelivery,
-    },
-  });
-  assert.strictEqual(transferBlocked.host.canStartTransfer, false);
-
-  const remoteHostBlocked = projectIdentityDeviceCenterSnapshot({
-    mine,
-    all: mine,
-    runtimeConfig: { ...hostRuntime, nodeRole: 'desktop-client' },
-    session: canonicalSession,
-    hostRuntimeStatus: localRecoveryDelivery,
-    hostControl: {
-      activeEpoch: {
-        id: 'epoch-remote', generation: 2, deviceId: 'device-3', userId: 'canonical-user',
-        rowVersion: 1, status: 'active', activatedAt: '2026-07-18T01:00:00.000Z',
-      },
-      transfers: [{
-        id: 'transfer-incoming', status: 'pending_validation', targetDeviceId: 'device-host',
-      }],
-      history: [],
-      recoveryDeliveryPending: true,
-    },
-  });
-  assert.strictEqual(remoteHostBlocked.host.recoveryDelivery, null);
-  assert.strictEqual(remoteHostBlocked.host.canActivateTransfer, false);
-  assert.strictEqual(remoteHostBlocked.host.canRecover, false);
-
-  const demotionSnapshot = projectIdentityDeviceCenterSnapshot({
-    mine,
-    all: mine,
-    runtimeConfig: {
-      ...hostRuntime,
-      primaryHostEpochId: 'epoch-1',
-      primaryHostGeneration: 1,
-    },
-    session: canonicalSession,
-    hostControl: {
-      activeEpoch: {
-        id: 'epoch-2', generation: 2, deviceId: 'device-3', userId: 'canonical-user',
-        rowVersion: 1, status: 'active', activatedAt: '2026-07-18T01:00:00.000Z',
-      },
-      transfers: [], history: [],
-    },
-  });
-  assert.strictEqual(demotionSnapshot.host.isActiveHostDevice, false);
-  assert.strictEqual(demotionSnapshot.host.requiresRuntimeDemotion, true,
-    'a retired local host epoch must be demoted after another device becomes active');
-  assert.strictEqual(demotionSnapshot.host.canRecover, false,
-    'a retired local credential must be cleared before staging a recovery generation');
-
-  assert.deepStrictEqual(buildRevocationBody(
-    snapshot.mine.find(item => item.deviceId === 'device-2'),
-    { reason: 'replaced', replacementDeviceId: 'device-3' }
-  ), {
-    deviceId: 'device-2', expectedRowVersion: 8, reason: 'replaced', replacementDeviceId: 'device-3',
-  });
+  assert.ok(!source.includes('primary-host'));
+  assert.ok(!source.includes('/authorizations/pending'));
+  assert.ok(!source.includes('/primary-host/'));
 
   const calls = [];
-  const fetchImpl = async (url, options = {}) => {
-    calls.push({ url: String(url), options });
-    if (String(url).endsWith('/primary-host/status')) {
-      return { ok: true, json: async () => ({ success: true, data: {
-        activeEpoch: { id: 'epoch-1', generation: 1, deviceId: 'device-host', userId: 'canonical-user', rowVersion: 3, status: 'active' },
-        transfers: [], history: [],
-      } }) };
-    }
-    const items = String(url).endsWith('/authorizations/pending') ? [pendingRow] : mine;
-    return { ok: true, json: async () => ({ success: true, data: {
-      items, challenge: { id: 'host-challenge', status: 'pending_phone', rowVersion: 1 },
-      authorization: {}, transfer: { id: 'transfer-1' }, epoch: { id: 'epoch-1' },
-    } }) };
-  };
-  const loaded = await loadIdentityDeviceCenter({
-    baseUrl: 'http://127.0.0.1:3001', runtimeConfig: hostRuntime, session: canonicalSession, fetchImpl,
+  const snapshot = await loadIdentityDeviceCenter({
+    baseUrl: 'https://cloud.example', session,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, json: async () => ({ success: true, data: { items: [{ deviceId: 'device-1', deviceName: 'Current', status: 'active', rowVersion: 1 }] } }) };
+    },
   });
-  assert.strictEqual(loaded.pending.length, 1);
-  assert.strictEqual(calls.length, 4);
-  assert.ok(calls.every(call => call.options.headers.Authorization === 'Bearer session-token'));
+  assert.strictEqual(snapshot.mine.length, 1);
+  assert.strictEqual(snapshot.mine[0].isCurrent, true);
+  assert.strictEqual(snapshot.mine[0].canRevoke, false);
+  assert.strictEqual(calls[0].url, 'https://cloud.example/api/desktop-identity/devices');
 
-  calls.length = 0;
-  await approveDesktopChallenge({
-    baseUrl: 'http://127.0.0.1:3001', session: canonicalSession,
-    request: buildApprovalBody(pendingRow), fetchImpl,
+  assert.deepStrictEqual(buildRevocationBody({ deviceId: 'device-2', rowVersion: 4 }), {
+    deviceId: 'device-2', expectedRowVersion: 4, reason: 'user_request',
   });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/challenges/challenge-pending-1/approve'));
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body), { expectedRowVersion: 7 });
-  assert.strictEqual(Object.hasOwn(JSON.parse(calls[0].options.body), 'userId'), false);
-
-  calls.length = 0;
-  await rejectDesktopChallenge({
-    baseUrl: 'http://127.0.0.1:3001', session: canonicalSession,
-    request: buildRejectionBody(pendingRow, 'mismatch'), fetchImpl,
-  });
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body), { expectedRowVersion: 7, reason: 'mismatch' });
-
   calls.length = 0;
   await revokeDesktopDevice({
-    baseUrl: 'http://127.0.0.1:3001', session: canonicalSession,
-    request: buildRevocationBody(mine[1], { reason: 'replaced', replacementDeviceId: 'device-3' }), fetchImpl,
-  });
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body), {
-    expectedRowVersion: 8, reason: 'replaced', replacementDeviceId: 'device-3',
-  });
-
-  calls.length = 0;
-  await startPrimaryHostOperation({
-    baseUrl: 'http://127.0.0.1:3001', session: canonicalSession,
-    request: { operation: 'bootstrap', targetDeviceId: 'device-host' }, fetchImpl,
-  });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/challenges/start'));
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body), { operation: 'bootstrap', targetDeviceId: 'device-host' });
-  calls.length = 0;
-  await readPrimaryHostOperationChallenge({
-    baseUrl: 'http://127.0.0.1:3001', challengeId: 'host-challenge', fetchImpl,
-  });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/challenges/host-challenge/public'));
-  assert.ok(!calls[0].options.headers.Authorization);
-
-  const operationContext = { baseUrl: 'http://127.0.0.1:3001', session: canonicalSession, fetchImpl };
-  calls.length = 0;
-  await bootstrapPrimaryHost({ ...operationContext, request: {
-    challengeId: 'host-challenge', expectedChallengeRowVersion: 2,
-    localReceipt: { receipt: { version: 2 }, signature: 'signed' },
-    operationManifest: { credentialStage: { id: 'bootstrap:host-challenge' } },
-    recoveryDeliveryKey: { publicKeyPem: 'bootstrap-public-key' },
-  } });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/bootstrap'));
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body).operationManifest, {
-    credentialStage: { id: 'bootstrap:host-challenge' },
-  });
-  assert.deepStrictEqual(JSON.parse(calls[0].options.body).recoveryDeliveryKey, {
-    publicKeyPem: 'bootstrap-public-key',
-  });
-  calls.length = 0;
-  await beginPrimaryHostTransfer({ ...operationContext, request: {
-    challengeId: 'host-challenge', expectedChallengeRowVersion: 2, expectedActiveEpochRowVersion: 3,
-  } });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/transfers'));
-  calls.length = 0;
-  await activatePrimaryHostTransfer({ ...operationContext, transferId: 'transfer-1', request: {
-    expectedTransferRowVersion: 1, localReceipt: { receipt: {}, signature: 'signed' }, validationManifest: {},
-    preflightProof: { id: 'proof-transfer', token: 'proof-token-transfer' },
-  } });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/transfers/transfer-1/activate'));
-  assert.strictEqual(JSON.parse(calls[0].options.body).preflightProof.id, 'proof-transfer');
-  calls.length = 0;
-  await recoverPrimaryHost({ ...operationContext, request: {
-    challengeId: 'host-challenge', expectedChallengeRowVersion: 2, factorId: 'factor-1',
-    recoveryCode: 'recovery-code', localReceipt: { receipt: {}, signature: 'signed' }, evidence: {},
-    preflightProof: { id: 'proof-recovery', token: 'proof-token-recovery' },
-  } });
-  assert.ok(calls[0].url.endsWith('/api/desktop-identity/primary-host/recover'));
-  assert.strictEqual(JSON.parse(calls[0].options.body).preflightProof.id, 'proof-recovery');
-
-  // 云中继回退：局域网直连网络失败时，经 /api/cloud/desktop-identity 中继查询设备清单
-  const clientRuntime = { nodeRole: 'desktop-client', primaryHostCapable: false, deviceId: 'device-2', hostBaseUrl: 'http://192.168.1.8:3001' };
-  const clientSession = {
-    authorization: 'Bearer relay-session-token',
-    authContext: {
-      userId: 'canonical-user', deviceId: 'device-2', activeRole: 'teacher',
-      eligibleRoles: ['teacher'], teacherId: 'teacher-self',
+    baseUrl: 'https://cloud.example', session,
+    request: { deviceId: 'device-2', expectedRowVersion: 4, reason: 'user_request' },
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, json: async () => ({ success: true, data: {} }) };
     },
-  };
-  const relayCalls = [];
-  let relayPolls = 0;
-  const relayFetch = async (url, options = {}) => {
-    const target = String(url);
-    relayCalls.push({ url: target, options });
-    if (target.startsWith('http://192.168.1.8:3001')) {
-      throw new TypeError('fetch failed');
-    }
-    if (target.endsWith('/api/cloud/desktop-identity/requests')) {
-      return { ok: true, json: async () => ({ success: true, request: { id: 'relay-req-1', status: 'pending_host' } }) };
-    }
-    relayPolls += 1;
-    if (relayPolls === 1) {
-      return { ok: true, json: async () => ({ success: true, request: { id: 'relay-req-1', status: 'pending_host', result_payload: null } }) };
-    }
-    return { ok: true, json: async () => ({ success: true, request: {
-      id: 'relay-req-1', status: 'completed', result_payload: { items: [mine[1]] },
-    } }) };
-  };
-  const relayLoaded = await loadIdentityDeviceCenter({
-    baseUrl: 'http://192.168.1.8:3001',
-    relayBaseUrl: 'https://cloud.example/scheduling',
-    runtimeConfig: clientRuntime,
-    session: clientSession,
-    fetchImpl: relayFetch,
-    relaySleep: async () => {},
   });
-  assert.strictEqual(relayLoaded.mine.length, 1);
-  assert.strictEqual(relayLoaded.mine[0].deviceId, 'device-2');
-  assert.strictEqual(relayLoaded.pending.length, 0);
-  const relayStart = relayCalls.find(call => call.url.endsWith('/api/cloud/desktop-identity/requests'));
-  assert.ok(relayStart, 'relay fallback must submit a cloud desktop-identity request');
-  assert.strictEqual(relayStart.url, 'https://cloud.example/scheduling/api/cloud/desktop-identity/requests',
-    'a managed /scheduling URL must retain its reverse-proxy application prefix for relay requests');
-  assert.strictEqual(relayStart.options.headers.Authorization, 'Bearer relay-session-token');
-  assert.strictEqual(relayStart.options.headers['x-device-id'], 'device-2');
-  const relayStartPayload = JSON.parse(relayStart.options.body);
-  assert.strictEqual(relayStartPayload.query, 'devices');
-  assert.ok(relayStartPayload.requestId);
-  assert.strictEqual(relayStart.options.headers['x-idempotency-key'], relayStartPayload.requestId);
-
-  // 没有可用局域网直连地址时直接走云中继
-  relayCalls.length = 0;
-  relayPolls = 1;
-  const relayOnly = await loadIdentityDeviceCenter({
-    baseUrl: '',
-    relayBaseUrl: 'https://cloud.example/scheduling',
-    runtimeConfig: clientRuntime,
-    session: clientSession,
-    fetchImpl: relayFetch,
-    relaySleep: async () => {},
-  });
-  assert.strictEqual(relayOnly.mine.length, 1);
-  assert.ok(relayCalls.every(call => call.url.startsWith('https://cloud.example')),
-    'relay-only load must not touch the LAN base');
-
-  // 直连返回的权威业务错误（如会话失效）不得被中继掩盖
-  await assert.rejects(loadIdentityDeviceCenter({
-    baseUrl: 'http://192.168.1.8:3001',
-    relayBaseUrl: 'https://cloud.example/scheduling',
-    runtimeConfig: clientRuntime,
-    session: clientSession,
-    fetchImpl: async url => {
-      if (String(url).startsWith('http://192.168.1.8:3001')) {
-        return { ok: false, json: async () => ({ success: false, code: 'AUTHORIZATION_CONTEXT_REQUIRED' }) };
-      }
-      throw new Error('relay must not be attempted for authoritative direct errors');
-    },
-  }), error => error.code === 'AUTHORIZATION_CONTEXT_REQUIRED');
-
-  console.log('identity device center policy checks passed');
+  assert.strictEqual(calls[0].url, 'https://cloud.example/api/desktop-identity/devices/device-2/revoke');
+  assert.deepStrictEqual(JSON.parse(calls[0].options.body), { expectedRowVersion: 4, reason: 'user_request' });
+  console.log('unified identity device center policy checks passed');
 })().catch(error => { console.error(error); process.exit(1); });
