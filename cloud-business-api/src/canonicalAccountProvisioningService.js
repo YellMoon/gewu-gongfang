@@ -37,12 +37,11 @@ function canonicalAccount(value) {
 
 function createCanonicalAccountProvisioningService(config = {}) {
   const settings = exact(config, [
-    'phoneHash', 'randomId', 'legacyAccountForPhoneHash', 'resolvePhoneHash', 'provisionPhoneAccount',
+    'phoneHash', 'randomId', 'legacyAccountForPhoneHash', 'provisionPhoneAccount',
   ]);
   if (typeof settings.phoneHash !== 'function' || types.isProxy(settings.phoneHash)
     || typeof settings.randomId !== 'function' || types.isProxy(settings.randomId)
     || typeof settings.legacyAccountForPhoneHash !== 'function' || types.isProxy(settings.legacyAccountForPhoneHash)
-    || typeof settings.resolvePhoneHash !== 'function' || types.isProxy(settings.resolvePhoneHash)
     || typeof settings.provisionPhoneAccount !== 'function' || types.isProxy(settings.provisionPhoneAccount)) throw invalid();
 
   return Object.freeze({
@@ -56,17 +55,6 @@ function createCanonicalAccountProvisioningService(config = {}) {
         throw invalid();
       }
       if (!/^[0-9a-f]{64}$/u.test(phoneHash)) throw invalid();
-      let existing;
-      try {
-        existing = await settings.resolvePhoneHash({ phoneHash });
-      } catch (error) {
-        if (error && error.code === 'CLOUD_CANONICAL_ACCOUNT_CONFLICT') throw error;
-        throw unavailable();
-      }
-      if (existing !== null) {
-        const resolved = canonicalAccount(existing);
-        return Object.freeze({ ...resolved, provisioned: false });
-      }
       let legacy;
       try {
         legacy = settings.legacyAccountForPhoneHash({ phoneHash });

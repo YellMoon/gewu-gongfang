@@ -12,26 +12,31 @@ async function main() {
     phoneHash: phone => hash(`phone:${phone}`),
     randomId: prefix => `${prefix}-generated`,
     legacyAccountForPhoneHash: ({ phoneHash }) => phoneHash === hash('phone:legacy-phone') ? { accountId: 'legacy-account' } : null,
-    resolvePhoneHash: async ({ phoneHash }) => phoneHash === hash('phone:existing-phone')
-      ? { authorityId: 'authority-1', accountId: 'existing-account' }
-      : null,
     provisionPhoneAccount: async input => {
       calls.push(input);
-      return { authorityId: 'authority-1', accountId: input.accountId };
+      return {
+        authorityId: 'authority-1',
+        accountId: input.phoneHash === hash('phone:existing-phone') ? 'existing-account' : input.accountId,
+      };
     },
   });
 
   assert.deepStrictEqual(
     await service.resolveOrProvision({ verifiedPhone: 'existing-phone', verificationEvidenceHash: 'b'.repeat(64) }),
-    { authorityId: 'authority-1', accountId: 'existing-account', provisioned: false },
+    { authorityId: 'authority-1', accountId: 'existing-account', provisioned: true },
   );
-  assert.strictEqual(calls.length, 0);
+  assert.deepStrictEqual(calls[0], {
+    accountId: 'account-generated',
+    contactId: 'verified-contact-generated',
+    phoneHash: hash('phone:existing-phone'),
+    verificationEvidenceHash: 'b'.repeat(64),
+  });
 
   assert.deepStrictEqual(
     await service.resolveOrProvision({ verifiedPhone: 'new-phone', verificationEvidenceHash: 'c'.repeat(64) }),
     { authorityId: 'authority-1', accountId: 'account-generated', provisioned: true },
   );
-  assert.deepStrictEqual(calls[0], {
+  assert.deepStrictEqual(calls[1], {
     accountId: 'account-generated',
     contactId: 'verified-contact-generated',
     phoneHash: hash('phone:new-phone'),
@@ -42,7 +47,7 @@ async function main() {
     await service.resolveOrProvision({ verifiedPhone: 'legacy-phone', verificationEvidenceHash: 'd'.repeat(64) }),
     { authorityId: 'authority-1', accountId: 'legacy-account', provisioned: true },
   );
-  assert.strictEqual(calls[1].accountId, 'legacy-account');
+  assert.strictEqual(calls[2].accountId, 'legacy-account');
 
   await assert.rejects(
     () => service.resolveOrProvision({ verifiedPhone: 'new-phone', verificationEvidenceHash: 'bad' }),

@@ -9,7 +9,6 @@ const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
-const { createCanonicalAccountRepository } = require('./src/canonicalAccountRepository');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
 const { version } = require('./package.json');
 
@@ -42,7 +41,7 @@ function parseOperatorRecords(value) {
   }
 }
 
-function createCanonicalAccountProvisioning({ records, identityPool, writerPool, randomId, phonePepper, evidenceSecret }) {
+function createCanonicalAccountProvisioning({ records, identityPool, randomId, phonePepper, evidenceSecret }) {
   if (!Array.isArray(records) || records.length === 0 || typeof randomId !== 'function'
     || typeof phonePepper !== 'string' || phonePepper.length < 24
     || typeof evidenceSecret !== 'string' || evidenceSecret.length < 24) return null;
@@ -59,15 +58,10 @@ function createCanonicalAccountProvisioning({ records, identityPool, writerPool,
     authorityId = record.authorityId;
     byPhoneHash.set(record.phoneHmac, Object.freeze({ accountId: record.accountId }));
   }
-  const repository = createCanonicalAccountRepository({
-    authorityId,
-    query: (text, values) => writerPool.query(text, values),
-  });
   return createCanonicalAccountProvisioningService({
     phoneHash: phone => hmacPhone(phonePepper, phone),
     randomId,
     legacyAccountForPhoneHash: ({ phoneHash }) => byPhoneHash.get(phoneHash) || null,
-    resolvePhoneHash: ({ phoneHash }) => repository.resolveVerifiedPhoneHash({ phoneHash }),
     provisionPhoneAccount: async input => {
       const result = await identityPool.query(
         'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_provision_canonical_phone_account($1,$2,$3,$4)',
@@ -101,7 +95,7 @@ function createDesktopRegistrationFromEnvironment() {
   const writerPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_writer', password: process.env.COMMAND_WRITER_POSTGRES_PASSWORD });
   const randomId = prefix => `${prefix}-${require('crypto').randomUUID()}`;
   const canonicalAccount = createCanonicalAccountProvisioning({
-    records, identityPool, writerPool, randomId,
+    records, identityPool, randomId,
     phonePepper: process.env.CLOUD_IDENTITY_PHONE_PEPPER,
     evidenceSecret: process.env.CLOUD_IDENTITY_TICKET_SECRET,
   });
