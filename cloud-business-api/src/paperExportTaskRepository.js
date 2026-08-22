@@ -115,7 +115,7 @@ const claimSql = [
 ].join(' ');
 const completeSql = [
   'UPDATE business.paper_export_tasks',
-  "SET status='completed',phase='publishing',progress=100,result_artifact_id=$2,updated_at=transaction_timestamp()",
+  "SET phase='storage_pending',progress=90,result_artifact_id=$2,updated_at=transaction_timestamp()",
   "WHERE task_id=$1 AND status='processing'",
   'RETURNING task_id AS "taskId"',
 ].join(' ');

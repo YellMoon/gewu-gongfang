@@ -7,6 +7,7 @@ const LABELS = {
   rendering: '\u6b63\u5728\u751f\u6210\u6587\u6863',
   validating: '\u6b63\u5728\u6821\u9a8c\u516c\u5f0f\u4e0e\u6392\u7248',
   publishing: '\u6b63\u5728\u53d1\u5e03\u4e0b\u8f7d\u6587\u4ef6',
+  storage_pending: '\u6b63\u5728\u7b49\u5f85\u5b58\u50a8\u9a8c\u8bc1',
   completed: '\u5df2\u5b8c\u6210',
   failed: '\u751f\u6210\u5931\u8d25',
   cancelled: '\u5df2\u53d6\u6d88',
@@ -15,7 +16,7 @@ const LABELS = {
 
 const COLORS = {
   draft: 'default', queued: 'blue', cloud_unavailable: 'orange', claimed: 'cyan', snapshotting: 'geekblue',
-  rendering: 'processing', validating: 'purple', publishing: 'gold', completed: 'green', failed: 'red', cancelled: 'default', timed_out: 'volcano',
+  rendering: 'processing', validating: 'purple', publishing: 'gold', storage_pending: 'gold', completed: 'green', failed: 'red', cancelled: 'default', timed_out: 'volcano',
 };
 
 export function getPaperExportTaskPresentation(task = {}) {
