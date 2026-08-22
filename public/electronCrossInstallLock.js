@@ -161,6 +161,14 @@ function createCrossInstallInstanceLock({
         resolve(true);
       });
       server.once('error', async error => {
+        if (error?.code === 'EACCES') {
+          try {
+            resolve(await attemptPort(index + 1));
+          } catch (nextError) {
+            reject(nextError);
+          }
+          return;
+        }
         if (error?.code !== 'EADDRINUSE') {
           reject(error);
           return;

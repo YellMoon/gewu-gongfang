@@ -57,7 +57,7 @@ async function rawOwnerResponse(port, payload) {
   });
 }
 
-function probeNet(scenario, { allowSecondListen = false } = {}) {
+function probeNet(scenario, { allowSecondListen = false, listenErrorCode = 'EADDRINUSE' } = {}) {
   let listenCalls = 0;
   const netImpl = {
     createServer() {
@@ -72,7 +72,7 @@ function probeNet(scenario, { allowSecondListen = false } = {}) {
             return;
           }
           const error = new Error('occupied');
-          error.code = 'EADDRINUSE';
+          error.code = listenErrorCode;
           server.emit('error', error);
         });
       };
@@ -173,6 +173,19 @@ async function main() {
     'only an explicit profile-mismatch response may advance to the next candidate port');
   assert.strictEqual(mismatch.listenCalls(), 2);
   await collision.close();
+
+  const restrictedPort = probeNet('error', { allowSecondListen: true, listenErrorCode: 'EACCES' });
+  const restrictedLock = createCrossInstallInstanceLock({
+    app: ownerApp,
+    userDataPath: path.join(userDataPath, 'reserved-port'),
+    activateWindow: () => {},
+    netImpl: restrictedPort.netImpl,
+    probeTimeoutMs: 15,
+  });
+  assert.strictEqual(await restrictedLock.ready, true,
+    'a Windows-reserved loopback port must advance to the next deterministic candidate without weakening the owner probe');
+  assert.strictEqual(restrictedPort.listenCalls(), 2);
+  await restrictedLock.close();
 
   const splitTransport = splitClientWritesNet();
   const splitFocusCalls = [];

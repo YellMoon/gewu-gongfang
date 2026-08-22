@@ -69,8 +69,8 @@ assert.ok(
   'ordinary Windows packaging must load native modules from the unpacked artifact before rebuilding them for Node'
 );
 assert.ok(
-  packageJson.scripts['dist:win:host'].includes('verify:packaged-electron-native-abi'),
-  'primary-host packaging must load native modules from the unpacked artifact before rebuilding them for Node'
+  !packageJson.scripts['dist:win:host'],
+  'the unified desktop release must not retain a second primary-host installer command'
 );
 assert.strictEqual(hostBuild.extraMetadata.desktopBuildFlavor, PRIMARY_HOST_FLAVOR);
 assert.strictEqual(hostBuild.directories.output, 'dist-host');
@@ -119,6 +119,7 @@ for (const hostOnlyFile of [
   assert.ok(!packageJson.build.files.includes(hostOnlyFile), `ordinary package must exclude ${hostOnlyFile}`);
   assert.ok(hostBuild.files.includes(hostOnlyFile), `host package must include ${hostOnlyFile}`);
 }
-assert.ok(packageJson.scripts['publish:desktop-host-update']);
+assert.ok(!packageJson.scripts['publish:desktop-host-update'],
+  'the unified desktop release must publish one update feed only');
 
 console.log('desktop build flavor checks passed');
