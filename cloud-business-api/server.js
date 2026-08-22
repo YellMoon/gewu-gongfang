@@ -9,7 +9,9 @@ const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
+const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
+const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
@@ -82,7 +84,7 @@ function verificationEvidenceHash(secret, surface, value) {
 
 function createDesktopRegistrationFromEnvironment() {
   const records = parseOperatorRecords(process.env.CLOUD_OPERATOR_PHONE_HMACS);
-  const secrets = [process.env.CLOUD_IDENTITY_PHONE_PEPPER, process.env.CLOUD_IDENTITY_TICKET_SECRET, process.env.CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64, process.env.WECHAT_APPSECRET, process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD, process.env.COMMAND_WRITER_POSTGRES_PASSWORD];
+  const secrets = [process.env.CLOUD_IDENTITY_PHONE_PEPPER, process.env.CLOUD_IDENTITY_TICKET_SECRET, process.env.CLOUD_MINIAPP_TICKET_SECRET, process.env.CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64, process.env.WECHAT_APPSECRET, process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD, process.env.COMMAND_WRITER_POSTGRES_PASSWORD];
   if (!records || typeof process.env.WECHAT_APPID !== 'string' || !process.env.WECHAT_APPID.trim() || secrets.some(value => typeof value !== 'string' || value.length < 24)) return null;
   let leasePrivateKey;
   try {
@@ -213,6 +215,34 @@ function createDesktopRegistrationFromEnvironment() {
     passwordIdentity: desktopPasswordIdentity,
     issueRegistrationTicket: input => registration.issueVerificationForVerifiedAccount(input),
   });
+  const canonicalWechatIdentity = createCanonicalWechatIdentityService({
+    wechatVerifier: createWechatIdentityVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
+    contactHash: (type, value) => verificationEvidenceHash(process.env.CLOUD_IDENTITY_PHONE_PEPPER, `canonical-${type}`, value),
+    verificationEvidenceHash: loginCode => verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-login-code', loginCode),
+    resolveByContact: async input => {
+      const result = await identityPool.query(
+        'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
+        [input.contactType, input.contactHash],
+      );
+      return result.rows[0] || null;
+    },
+    resolveCanonicalPhone: async phoneCode => {
+      const phone = await createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET })(phoneCode);
+      const canonical = await canonicalAccount.resolveOrProvision({
+        verifiedPhone: phone,
+        verificationEvidenceHash: verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-phone-code', phoneCode),
+      });
+      return { ...canonical, phoneHmac: hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone) };
+    },
+    bind: async input => {
+      const result = await identityPool.query(
+        'SELECT authority_id AS "authorityId", account_id AS "accountId" FROM vnext_control_plane.vnext_bind_canonical_wechat_identity($1,$2,$3,$4,$5,$6,$7)',
+        [input.authorityId, input.accountId, input.openidContactId, input.openidHash, input.unionidContactId, input.unionidHash, input.verificationEvidenceHash],
+      );
+      return result.rows[0] || null;
+    },
+    randomId,
+  });
   const businessScheduleUpdate = createBusinessScheduleUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
@@ -223,6 +253,7 @@ function createDesktopRegistrationFromEnvironment() {
     registration,
     desktopPasswordAuthentication,
     canonicalAccount,
+    canonicalWechatIdentity,
     accountRepository,
     bootstrapAdminAccountId,
     businessScheduleUpdate,
@@ -234,15 +265,12 @@ function createDesktopRegistrationFromEnvironment() {
 function createMiniappCloudAccountFromEnvironment(desktopRuntime) {
   const secrets = [process.env.CLOUD_IDENTITY_PHONE_PEPPER, process.env.CLOUD_MINIAPP_TICKET_SECRET, process.env.WECHAT_APPSECRET];
   if (typeof process.env.WECHAT_APPID !== 'string' || !process.env.WECHAT_APPID.trim()
-    || !desktopRuntime || !desktopRuntime.canonicalAccount || typeof desktopRuntime.bootstrapAdminAccountId !== 'string' || !desktopRuntime.bootstrapAdminAccountId.trim()
+    || !desktopRuntime || !desktopRuntime.canonicalWechatIdentity || typeof desktopRuntime.bootstrapAdminAccountId !== 'string' || !desktopRuntime.bootstrapAdminAccountId.trim()
     || secrets.some(value => typeof value !== 'string' || value.length < 24)) return null;
   return createMiniappCloudAccountService({
     now: () => new Date(),
-    phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
-    phoneHmac: phone => hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone),
-    verificationEvidenceHash: code => verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-phone-code', code),
     bootstrapAdminAccountId: desktopRuntime.bootstrapAdminAccountId,
-    canonicalAccount: desktopRuntime.canonicalAccount,
+    canonicalWechatIdentity: desktopRuntime.canonicalWechatIdentity,
     accountRepository: desktopRuntime.accountRepository,
     ticketSecret: process.env.CLOUD_MINIAPP_TICKET_SECRET,
   });

@@ -83,7 +83,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null });
   const miniappIdentity = {
     login: async input => {
-      assert.deepStrictEqual(input, { phoneCode: 'miniapp-proof' });
+      assert.deepStrictEqual(input, { loginCode: 'miniapp-login-proof', phoneCode: 'miniapp-proof' });
       return { token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } };
     },
     context: async input => {
@@ -99,7 +99,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       return { accountId: input.accountId, status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: input.profileId } };
     },
   };
-  const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { phoneCode: 'miniapp-proof' } });
+  const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { loginCode: 'miniapp-login-proof', phoneCode: 'miniapp-proof' } });
   assert.strictEqual(miniappLogin.status, 200);
   assert.deepStrictEqual(miniappLogin.body, { ok: true, token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } });
   const pendingAccounts = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });

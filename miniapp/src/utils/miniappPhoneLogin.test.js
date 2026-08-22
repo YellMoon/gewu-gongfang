@@ -7,7 +7,8 @@ const { pageInventory } = require('./miniappUiPageInventory');
 const loginInventory = pageInventory.find(entry => entry.route === 'pages/login/index');
 
 assert.strictEqual((loginPage.match(/openType="getPhoneNumber"/g) || []).length, 1, 'login page must use the official one-time phone proof');
-assert.ok(loginPage.includes('miniappCloudAuthApi.login(phoneCode)'), 'login must use the dedicated new cloud account client');
+assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'login must use the dedicated cloud account client with both official identity proofs');
+assert.ok(loginPage.includes('Taro.login()'), 'login must obtain the official WeChat identity code before calling cloud login');
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');
 assert.ok(!loginPage.includes('/api/auth/wechat-login'), 'login must not call the old account endpoint');
 assert.ok(!loginPage.includes('type="number"') && !loginPage.includes('normalizeManualPhone'), 'login must not collect a manually typed phone number');

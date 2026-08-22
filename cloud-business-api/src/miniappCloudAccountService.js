@@ -77,9 +77,8 @@ function role(value) {
 }
 
 function createMiniappCloudAccountService(config) {
-  const settings = exact(config, ['now', 'phoneVerifier', 'phoneHmac', 'verificationEvidenceHash', 'bootstrapAdminAccountId', 'canonicalAccount', 'accountRepository', 'ticketSecret']);
-  if (typeof settings.now !== 'function' || typeof settings.phoneVerifier !== 'function' || typeof settings.phoneHmac !== 'function' || typeof settings.verificationEvidenceHash !== 'function'
-    || !text(settings.bootstrapAdminAccountId) || !settings.canonicalAccount || typeof settings.canonicalAccount.resolveOrProvision !== 'function'
+  const settings = exact(config, ['now', 'bootstrapAdminAccountId', 'canonicalWechatIdentity', 'accountRepository', 'ticketSecret']);
+  if (typeof settings.now !== 'function' || !text(settings.bootstrapAdminAccountId) || !settings.canonicalWechatIdentity || typeof settings.canonicalWechatIdentity.resolveOrBind !== 'function'
     || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.listPending !== 'function' || typeof settings.accountRepository.assignRole !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
   const currentNow = () => {
     const value = settings.now();
@@ -99,33 +98,18 @@ function createMiniappCloudAccountService(config) {
   };
   return Object.freeze({
     async login(input) {
-      const request = exact(input, ['phoneCode']);
-      if (!text(request.phoneCode)) throw rejected();
-      let phone;
-      try {
-        phone = await settings.phoneVerifier(request.phoneCode);
-      } catch (_) {
-        throw rejected();
-      }
-      let phoneHmac;
-      let verificationEvidenceHash;
-      try {
-        phoneHmac = settings.phoneHmac(phone);
-        verificationEvidenceHash = settings.verificationEvidenceHash(request.phoneCode);
-      } catch (_) {
-        throw rejected();
-      }
-      if (!/^[0-9a-f]{64}$/u.test(phoneHmac) || !/^[0-9a-f]{64}$/u.test(verificationEvidenceHash)) throw rejected();
+      const request = exact(input, ['loginCode', 'phoneCode']);
+      if (!text(request.loginCode) || !text(request.phoneCode)) throw rejected();
       let canonical;
       try {
-        canonical = await settings.canonicalAccount.resolveOrProvision({ verifiedPhone: phone, verificationEvidenceHash });
+        canonical = await settings.canonicalWechatIdentity.resolveOrBind(request);
       } catch (_) {
         throw rejected();
       }
-      if (!canonical || !text(canonical.authorityId) || !text(canonical.accountId) || typeof canonical.provisioned !== 'boolean') throw rejected();
+      if (!canonical || !text(canonical.authorityId) || !text(canonical.accountId) || !/^[0-9a-f]{64}$/u.test(canonical.phoneHmac) || typeof canonical.provisioned !== 'boolean' || typeof canonical.bound !== 'boolean') throw rejected();
       let current;
       try {
-        current = identity(await settings.accountRepository.resolveOrCreate({ accountId: canonical.accountId, phoneHmac, bootstrapAdmin: canonical.accountId === settings.bootstrapAdminAccountId }));
+        current = identity(await settings.accountRepository.resolveOrCreate({ accountId: canonical.accountId, phoneHmac: canonical.phoneHmac, bootstrapAdmin: canonical.accountId === settings.bootstrapAdminAccountId }));
       } catch (error) {
         if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED') throw error;
         throw rejected();

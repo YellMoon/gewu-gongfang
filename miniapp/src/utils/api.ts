@@ -241,13 +241,13 @@ class ApiClient {
 export const api = new ApiClient();
 
 export const miniappCloudAuthApi = {
-  async login(phoneCode: string): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
+  async login(loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
     try {
       const response = await Taro.request({
         url: cloudBusinessUrl('/api/miniapp/cloud-login'),
         method: 'POST',
         header: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-        data: { phoneCode },
+        data: { loginCode, phoneCode },
         timeout: REQUEST_TIMEOUT,
         dataType: 'json',
       });

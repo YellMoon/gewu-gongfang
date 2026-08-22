@@ -38,15 +38,12 @@ const repository = {
 
 const service = createMiniappCloudAccountService({
   now: () => now,
-  phoneVerifier: async code => ({ 'admin-proof': 'verified-admin', 'new-proof': 'verified-new' })[code] || null,
-  phoneHmac: phone => ({ 'verified-admin': 'a'.repeat(64), 'verified-new': 'b'.repeat(64) })[phone] || null,
-  verificationEvidenceHash: code => ({ 'admin-proof': 'c'.repeat(64), 'new-proof': 'd'.repeat(64) })[code] || null,
   bootstrapAdminAccountId: 'canonical-admin',
-  canonicalAccount: {
-    async resolveOrProvision({ verifiedPhone, verificationEvidenceHash }) {
-      assert.ok(['verified-admin', 'verified-new'].includes(verifiedPhone));
-      assert.ok(/^[0-9a-f]{64}$/u.test(verificationEvidenceHash));
-      return { authorityId: 'authority-1', accountId: verifiedPhone === 'verified-admin' ? 'canonical-admin' : 'canonical-new', provisioned: true };
+  canonicalWechatIdentity: {
+    async resolveOrBind({ loginCode, phoneCode }) {
+      assert.ok(['admin-login', 'new-login'].includes(loginCode));
+      assert.ok(['admin-proof', 'new-proof'].includes(phoneCode));
+      return { authorityId: 'authority-1', accountId: phoneCode === 'admin-proof' ? 'canonical-admin' : 'canonical-new', phoneHmac: phoneCode === 'admin-proof' ? 'a'.repeat(64) : 'b'.repeat(64), provisioned: true, bound: true };
     },
   },
   accountRepository: repository,
@@ -54,12 +51,12 @@ const service = createMiniappCloudAccountService({
 });
 
 (async () => {
-  const admin = await service.login({ phoneCode: 'admin-proof' });
+  const admin = await service.login({ loginCode: 'admin-login', phoneCode: 'admin-proof' });
   assert.equal(admin.identity.status, 'active');
   assert.deepStrictEqual(admin.identity.roles, ['super_admin']);
   assert.match(admin.token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
 
-  const ordinary = await service.login({ phoneCode: 'new-proof' });
+  const ordinary = await service.login({ loginCode: 'new-login', phoneCode: 'new-proof' });
   assert.equal(ordinary.identity.status, 'pending_authorization');
   assert.deepStrictEqual(ordinary.identity.roles, []);
 
@@ -84,7 +81,8 @@ const service = createMiniappCloudAccountService({
   await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'super_admin', profileId: 'admin-1' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
 
   await assert.rejects(() => service.context({ token: 'legacy.jwt.token' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
-  await assert.rejects(() => service.login({ phoneCode: 'invalid-proof' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
+  await assert.rejects(() => service.login({ loginCode: 'new-login', phoneCode: null }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
+  await assert.rejects(() => service.login({ loginCode: 'new-login', phoneCode: 'invalid-proof' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
 
   console.log('miniapp cloud account service checks passed');
 })().catch(error => {
