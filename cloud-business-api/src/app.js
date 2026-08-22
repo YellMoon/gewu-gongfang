@@ -7,7 +7,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
-  if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
+  if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
@@ -128,6 +128,30 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.json({ ok: true, token: result.token, identity: result.identity });
     } catch (error) {
       if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_INVALID') return businessInputInvalid(response);
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    }
+  });
+  app.get('/api/miniapp/cloud-accounts', async (request, response) => {
+    if (!miniappCloudAccount) return businessUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    try {
+      const accounts = await miniappCloudAccount.pendingAccounts({ token });
+      response.json({ ok: true, accounts });
+    } catch (_) {
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    }
+  });
+  app.put('/api/miniapp/cloud-accounts/:accountId/role', async (request, response) => {
+    if (!miniappCloudAccount) return businessUnavailable(response);
+    const token = sessionToken(request);
+    const accountId = String(request.params.accountId || '').trim();
+    const body = exactBody(request.body, ['role']);
+    if (!token || !accountId || accountId.length > 512 || !body || typeof body.role !== 'string') return response.status(400).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_INVALID' });
+    try {
+      const account = await miniappCloudAccount.assignRole({ token, accountId, role: body.role });
+      response.json({ ok: true, account });
+    } catch (_) {
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });

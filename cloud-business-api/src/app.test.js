@@ -60,10 +60,26 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       if (input.token !== 'miniapp-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
       return { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] };
     },
+    pendingAccounts: async input => {
+      if (input.token !== 'miniapp-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return [{ accountId: 'miniapp-account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }];
+    },
+    assignRole: async input => {
+      if (input.token !== 'miniapp-ticket.signature' || input.accountId !== 'miniapp-account-pending' || input.role !== 'teacher') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return { accountId: input.accountId, status: 'active', roles: ['teacher'] };
+    },
   };
   const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { phoneCode: 'miniapp-proof' } });
   assert.strictEqual(miniappLogin.status, 200);
   assert.deepStrictEqual(miniappLogin.body, { ok: true, token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } });
+  const pendingAccounts = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
+  assert.strictEqual(pendingAccounts.status, 200);
+  assert.deepStrictEqual(pendingAccounts.body, { ok: true, accounts: [{ accountId: 'miniapp-account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }] });
+  const assignedAccount = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
+    method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: { role: 'teacher' },
+  });
+  assert.strictEqual(assignedAccount.status, 200);
+  assert.deepStrictEqual(assignedAccount.body, { ok: true, account: { accountId: 'miniapp-account-pending', status: 'active', roles: ['teacher'] } });
   const miniappBusiness = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
   }), '/api/business/schedules', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });

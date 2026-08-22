@@ -65,13 +65,28 @@ function publicIdentity(context) {
   return Object.freeze({ accountId: context.accountId, status: context.roles.length === 0 ? 'pending_authorization' : 'active', roles: context.roles });
 }
 
+function role(value) {
+  return typeof value === 'string' && ['admin', 'teacher', 'student'].includes(value) ? value : null;
+}
+
 function createMiniappCloudAccountService(config) {
   const settings = exact(config, ['now', 'phoneVerifier', 'phoneHmac', 'bootstrapAdminPhoneHmac', 'accountRepository', 'ticketSecret']);
-  if (typeof settings.now !== 'function' || typeof settings.phoneVerifier !== 'function' || typeof settings.phoneHmac !== 'function' || !/^[0-9a-f]{64}$/u.test(settings.bootstrapAdminPhoneHmac) || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
+  if (typeof settings.now !== 'function' || typeof settings.phoneVerifier !== 'function' || typeof settings.phoneHmac !== 'function' || !/^[0-9a-f]{64}$/u.test(settings.bootstrapAdminPhoneHmac) || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.listPending !== 'function' || typeof settings.accountRepository.assignRole !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
   const currentNow = () => {
     const value = settings.now();
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw invalid();
     return value;
+  };
+  const currentContext = async token => {
+    const ticket = inspect(settings.ticketSecret, token, currentNow());
+    let current;
+    try {
+      current = identity(await settings.accountRepository.readContext({ accountId: ticket.accountId }));
+    } catch (_) {
+      throw rejected();
+    }
+    if (current.accountId !== ticket.accountId) throw rejected();
+    return publicIdentity(current);
   };
   return Object.freeze({
     async login(input) {
@@ -106,15 +121,38 @@ function createMiniappCloudAccountService(config) {
     },
     async context(input) {
       const request = exact(input, ['token']);
-      const ticket = inspect(settings.ticketSecret, request.token, currentNow());
-      let current;
+      return currentContext(request.token);
+    },
+    async pendingAccounts(input) {
+      const request = exact(input, ['token']);
+      const actor = await currentContext(request.token);
+      if (!actor.roles.includes('super_admin')) throw rejected();
+      let rows;
       try {
-        current = identity(await settings.accountRepository.readContext({ accountId: ticket.accountId }));
+        rows = await settings.accountRepository.listPending();
       } catch (_) {
         throw rejected();
       }
-      if (current.accountId !== ticket.accountId) throw rejected();
-      return publicIdentity(current);
+      if (!Array.isArray(rows)) throw rejected();
+      return Object.freeze(rows.map(row => {
+        const copy = exact(row, ['accountId', 'status', 'createdAt']);
+        if (!text(copy.accountId) || copy.status !== 'pending_authorization' || typeof copy.createdAt !== 'string' || new Date(copy.createdAt).toISOString() !== copy.createdAt) throw rejected();
+        return Object.freeze(copy);
+      }));
+    },
+    async assignRole(input) {
+      const request = exact(input, ['token', 'accountId', 'role']);
+      const actor = await currentContext(request.token);
+      const assignedRole = role(request.role);
+      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole) throw rejected();
+      let assigned;
+      try {
+        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole });
+      } catch (_) {
+        throw rejected();
+      }
+      if (!assigned) throw rejected();
+      return publicIdentity(identity(assigned));
     },
   });
 }

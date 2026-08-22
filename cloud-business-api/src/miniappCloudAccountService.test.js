@@ -20,6 +20,19 @@ const repository = {
     }
     return null;
   },
+  async listPending() {
+    return [...records.values()]
+      .filter(account => account.roles.length === 0)
+      .map(account => ({ accountId: account.accountId, status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }));
+  },
+  async assignRole({ accountId, role }) {
+    for (const account of records.values()) {
+      if (account.accountId !== accountId || (account.roles.length > 0 && !account.roles.includes(role))) continue;
+      account.roles = [role];
+      return { ...account, roles: account.roles.slice() };
+    }
+    return null;
+  },
 };
 
 const service = createMiniappCloudAccountService({
@@ -44,6 +57,22 @@ const service = createMiniappCloudAccountService({
   const context = await service.context({ token: admin.token });
   assert.equal(context.accountId, admin.identity.accountId);
   assert.deepStrictEqual(context.roles, ['super_admin']);
+
+  assert.strictEqual(typeof service.pendingAccounts, 'function', 'the bootstrap super administrator must have a service boundary for pending cloud accounts');
+  assert.strictEqual(typeof service.assignRole, 'function', 'the bootstrap super administrator must have a service boundary for authorizing a pending cloud account');
+  assert.deepStrictEqual(
+    await service.pendingAccounts({ token: admin.token }),
+    [{ accountId: ordinary.identity.accountId, status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }],
+    'the bootstrap super administrator can see pending accounts without their phone number',
+  );
+  await assert.rejects(() => service.pendingAccounts({ token: ordinary.token }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
+  assert.deepStrictEqual(
+    await service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'teacher' }),
+    { accountId: ordinary.identity.accountId, status: 'active', roles: ['teacher'] },
+    'the bootstrap super administrator can activate a pending account with one ordinary business role',
+  );
+  assert.deepStrictEqual(await service.pendingAccounts({ token: admin.token }), []);
+  await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'super_admin' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
 
   await assert.rejects(() => service.context({ token: 'legacy.jwt.token' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
   await assert.rejects(() => service.login({ phoneCode: 'invalid-proof' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
