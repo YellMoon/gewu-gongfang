@@ -16,6 +16,7 @@ const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordI
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
+const { createPaperExportTaskRepository } = require('./src/paperExportTaskRepository');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
@@ -288,6 +289,9 @@ const storageAgent = createStorageAgentRuntimeFromEnvironment({
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
 });
+const paperExportTasks = createPaperExportTaskRepository({
+  query: (text, values) => pool.query(text, values),
+});
 function configuredStorageAgentKeyFingerprint(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > 4096) return null;
   const bytes = Buffer.from(value, 'base64url');
@@ -316,6 +320,7 @@ const app = createCloudBusinessApp({
   miniappCloudAccount,
   storageAgent,
   questionAuthority,
+  paperExportTasks,
   encryptedStorageRelay,
   storageAgentKeyFingerprint,
   storageAgentPublicKey: storageAgentKeyFingerprint ? process.env.CLOUD_STORAGE_AGENT_PUBLIC_KEY : null,

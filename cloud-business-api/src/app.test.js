@@ -422,5 +422,24 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['lease', { agentId: 'storage-agent-1', token: 'wrong-token' }],
   ]);
 
+  const paperCalls = [];
+  const paperApp = createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
+    paperExportTasks: {
+      create: async input => {
+        paperCalls.push(input);
+        return { taskId: 'paper_task_1', status: 'queued', phase: 'queued', progress: 0, requestHash: 'a'.repeat(64), createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', replayed: false };
+      },
+    },
+  });
+  const paperTask = await request(paperApp, '/api/desktop/paper-export-tasks', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'paper-request-1' },
+    body: { taskType: 'paper-export-pdf', request: { questionIds: ['q1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native' } },
+  });
+  assert.strictEqual(paperTask.status, 202);
+  assert.strictEqual(paperTask.body.task.taskId, 'paper_task_1');
+  assert.strictEqual(paperCalls.length, 1);
+  assert.strictEqual(paperCalls[0].tenantId, 'default');
+  assert.strictEqual(paperCalls[0].actor.accountId, 'account-1');
   console.log('cloud business API health checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
