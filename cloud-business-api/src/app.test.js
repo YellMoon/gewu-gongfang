@@ -275,5 +275,41 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['read', { pairingId: 'pair-1', pairingSecret: 'secret-1' }],
   ]);
 
+  const storageCalls = [];
+  const storageAgent = {
+    lease: async input => {
+      storageCalls.push(['lease', input]);
+      if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
+      return { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' };
+    },
+    complete: async input => {
+      storageCalls.push(['complete', input]);
+      if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
+      return { taskId: input.taskId, state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' };
+    },
+  };
+  const storageApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), storageAgent });
+  const leasedStorageTask = await request(storageApp, '/api/storage-agent/lease', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' }, body: { agentId: 'storage-agent-1' },
+  });
+  assert.strictEqual(leasedStorageTask.status, 200);
+  assert.deepStrictEqual(leasedStorageTask.body, { ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } });
+  const completedStorageTask = await request(storageApp, '/api/storage-agent/tasks/task_12345678/complete', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
+    body: { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 },
+  });
+  assert.strictEqual(completedStorageTask.status, 200);
+  assert.deepStrictEqual(completedStorageTask.body, { ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } });
+  const rejectedStorageTask = await request(storageApp, '/api/storage-agent/lease', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'wrong-token' }, body: { agentId: 'storage-agent-1' },
+  });
+  assert.strictEqual(rejectedStorageTask.status, 403);
+  assert.deepStrictEqual(rejectedStorageTask.body, { ok: false, code: 'CLOUD_STORAGE_AGENT_REJECTED' });
+  assert.deepStrictEqual(storageCalls, [
+    ['lease', { agentId: 'storage-agent-1', token: 'storage-agent-test-token' }],
+    ['complete', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
+    ['lease', { agentId: 'storage-agent-1', token: 'wrong-token' }],
+  ]);
+
   console.log('cloud business API health checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

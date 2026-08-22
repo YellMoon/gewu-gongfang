@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -10,6 +10,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
+  if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
   app.disable('x-powered-by');
@@ -54,6 +55,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   function businessAccessDenied() {
     return Object.assign(new Error('cloud business access denied'), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
   }
+  function storageAgentFailure(response, error) {
+    if (error && error.code === 'STORAGE_AGENT_REJECTED') return response.status(403).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_REJECTED' });
+    if (error && error.code === 'STORAGE_TASK_INPUT_INVALID') return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    if (error && error.code === 'STORAGE_TASK_RECEIPT_MISMATCH') return response.status(409).json({ ok: false, code: 'CLOUD_STORAGE_TASK_RECEIPT_MISMATCH' });
+    return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+  }
   function exactBody(value, keys) {
     if (!value || typeof value !== 'object' || Array.isArray(value)
       || Object.getPrototypeOf(value) !== Object.prototype
@@ -79,6 +86,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       return null;
     }
     return match[1];
+  }
+  function storageAgentToken(request) {
+    const token = String(request.get('x-gewu-storage-agent-token') || '');
+    return token && token.length <= 512 ? token : null;
   }
   async function businessContext(request) {
     const token = sessionToken(request);
@@ -315,6 +326,30 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (error) {
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
+    }
+  });
+  app.post('/api/storage-agent/lease', async (request, response) => {
+    if (!storageAgent) return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const body = exactBody(request.body, ['agentId']);
+    const token = storageAgentToken(request);
+    if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const task = await storageAgent.lease({ agentId: body.agentId, token });
+      response.json({ ok: true, task });
+    } catch (error) {
+      storageAgentFailure(response, error);
+    }
+  });
+  app.post('/api/storage-agent/tasks/:taskId/complete', async (request, response) => {
+    if (!storageAgent) return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const body = exactBody(request.body, ['agentId', 'leaseToken', 'observedSha256', 'observedBytes']);
+    const token = storageAgentToken(request);
+    if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const receipt = await storageAgent.complete({ ...body, token, taskId: String(request.params.taskId || '') });
+      response.json({ ok: true, receipt });
+    } catch (error) {
+      storageAgentFailure(response, error);
     }
   });
   app.post('/api/desktop/pairing/start', (request, response) => {
