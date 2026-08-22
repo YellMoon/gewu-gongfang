@@ -10,5 +10,9 @@ const packageJson = require(path.join(root, 'package.json'));
 assert.strictEqual(packageJson.desktopBuildFlavor, 'unified-desktop');
 assert.ok(!fs.existsSync(path.join(root, 'electron-builder.host.config.cjs')),
   'a unified desktop release must not retain a second host-only installer configuration');
+const electronSource = fs.readFileSync(path.join(root, 'public', 'electron.js'), 'utf8');
+const preloadSource = fs.readFileSync(path.join(root, 'public', 'preload.js'), 'utf8');
+assert.doesNotMatch(electronSource, /ipcMain\.handle\('primary-host:/);
+assert.doesNotMatch(preloadSource, /primaryHostRuntime/);
 
 console.log('unified desktop package boundary checks passed');

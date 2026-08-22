@@ -1059,59 +1059,6 @@ ipcMain.handle('runtime-config:set', async (_event, config) => {
   });
   return { ...saved, buildFlavor: DESKTOP_BUILD_FLAVOR, primaryHostCapable: PRIMARY_HOST_CAPABLE };
 });
-if (PRIMARY_HOST_CAPABLE) {
-  ipcMain.handle('primary-host:status', async () => getPrimaryHostRuntimeManager().status());
-  ipcMain.handle('primary-host:firewall-status', async () => readWindowsHostFirewallStatus());
-  ipcMain.handle('primary-host:firewall-enable-lan', async () => requestWindowsHostLanFirewall());
-  ipcMain.handle('primary-host:worker-status', async () => (
-    getPrimaryHostRuntimeStatus().status().worker
-  ));
-  ipcMain.handle('primary-host:runtime-status', async () => getPrimaryHostRuntimeStatus().status());
-  ipcMain.handle('primary-host:relaunch-readiness', async () => getPrimaryHostRelaunchReadiness().read());
-  ipcMain.handle('primary-host:adopt', async (_event, input) => {
-    log('[primary-host:adopt] requested');
-    try {
-      const adopted = await getPrimaryHostRuntimeManager().adopt(input);
-      log('[primary-host:adopt] committed');
-      return adopted;
-    } catch (error) {
-      // Keep the renderer's generic security-safe wording, while retaining the
-      // stable error code in the local main-process log for support diagnosis.
-      log(`[primary-host:adopt] ${String(error?.code || 'PRIMARY_HOST_ADOPTION_FAILED')}`);
-      throw error;
-    }
-  });
-  ipcMain.handle('primary-host:demote', async (_event, input) => getPrimaryHostRuntimeManager().demote(input));
-  ipcMain.handle('primary-host:local-receipt', async (_event, input) => issuePrimaryHostLocalReceipt(input));
-  ipcMain.handle('primary-host:execute-local-draft', async (_event, draft) => {
-    if (typeof primaryHostLocalDraftExecutor !== 'function') {
-      throw Object.assign(new Error('PRIMARY_HOST_LOCAL_EXECUTOR_UNAVAILABLE'), { code: 'PRIMARY_HOST_LOCAL_EXECUTOR_UNAVAILABLE' });
-    }
-    return primaryHostLocalDraftExecutor(draft);
-  });
-  ipcMain.handle('primary-host:prepare-operation', async (_event, input) => {
-    try {
-      return await preparePrimaryHostOperation(input);
-    } catch (error) {
-      log(`[primary-host:prepare-operation] ${String(error?.code || 'PRIMARY_HOST_PREPARE_OPERATION_FAILED')}`);
-      throw error;
-    }
-  });
-  ipcMain.handle('primary-host:reveal-recovery-package', async (_event, input) => (
-    getPrimaryHostRuntimeManager().revealRecoveryPackage(input)
-  ));
-  ipcMain.handle('primary-host:acknowledge-recovery-package', async (_event, input) => (
-    getPrimaryHostRuntimeManager().acknowledgeRecoveryPackage(input)
-  ));
-  ipcMain.handle('primary-host:restart', async () => {
-    setTimeout(() => {
-      getPrimaryHostRelaunchReadiness().requestRelaunch();
-      app.relaunch({ args: buildRelaunchArguments(process.argv) });
-      app.exit(0);
-    }, 100);
-    return true;
-  });
-}
 ipcMain.handle('desktop-identity:status', async () => getDesktopIdentityVault().status());
 ipcMain.handle('desktop-identity:begin-registration', async (_event, input) => {
   return getDesktopIdentityVault().beginRegistration(configuredDesktopIdentity(input));

@@ -1,8 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const desktopRuntimeArguments = Array.isArray(process.argv) ? process.argv : [];
-const desktopBuildFlavor = String(
-  desktopRuntimeArguments.find(value => value.startsWith('--gewu-desktop-build-flavor=')) || ''
-).split('=')[1] === 'primary-host' ? 'primary-host' : 'desktop-client';
+const desktopBuildFlavor = 'unified-desktop';
 
 const invokeAllowList = new Set([
   'get-app-version',
@@ -81,27 +78,8 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
 
 contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({
   flavor: desktopBuildFlavor,
-  primaryHostCapable: desktopBuildFlavor === 'primary-host',
+  primaryHostCapable: false,
 }));
-
-if (desktopBuildFlavor === 'primary-host') {
-  contextBridge.exposeInMainWorld('primaryHostRuntime', Object.freeze({
-    status: () => ipcRenderer.invoke('primary-host:status'),
-    firewallStatus: () => ipcRenderer.invoke('primary-host:firewall-status'),
-    enableLanFirewall: () => ipcRenderer.invoke('primary-host:firewall-enable-lan'),
-    workerStatus: () => ipcRenderer.invoke('primary-host:worker-status'),
-    runtimeStatus: () => ipcRenderer.invoke('primary-host:runtime-status'),
-    relaunchReadiness: () => ipcRenderer.invoke('primary-host:relaunch-readiness'),
-    adopt: input => ipcRenderer.invoke('primary-host:adopt', input),
-    demote: input => ipcRenderer.invoke('primary-host:demote', input),
-    issueLocalReceipt: input => ipcRenderer.invoke('primary-host:local-receipt', input),
-    executeLocalDraft: draft => ipcRenderer.invoke('primary-host:execute-local-draft', draft),
-    prepareOperation: input => ipcRenderer.invoke('primary-host:prepare-operation', input),
-    revealRecoveryPackage: input => ipcRenderer.invoke('primary-host:reveal-recovery-package', input),
-    acknowledgeRecoveryPackage: input => ipcRenderer.invoke('primary-host:acknowledge-recovery-package', input),
-    restart: () => ipcRenderer.invoke('primary-host:restart'),
-  }));
-}
 
 contextBridge.exposeInMainWorld('env', {
   isProd: process.env.NODE_ENV === 'production',
