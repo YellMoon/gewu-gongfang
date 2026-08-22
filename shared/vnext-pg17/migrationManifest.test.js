@@ -19,6 +19,7 @@ const {
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
+  DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -58,7 +59,7 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -214,6 +215,16 @@ async function runManifestCases() {
   assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_provision_canonical_phone_account/);
   assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /vnext_verified_contacts/);
   assert.match(CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_provision_canonical_phone_account[\s\S]*vnext_pg17_identity_verifier/);
+  assert.ok(Object.isFrozen(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION));
+  assert.strictEqual(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.migrationId, 'vnext-pg17-desktop-password-credentials-18');
+  assert.strictEqual(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.semanticVersion, 18);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
+  assert.strictEqual(sha256(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql), DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.manifestSha256);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_desktop_password_credentials/);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_set_desktop_password_credential/);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_read_desktop_password_by_phone_hash/);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql, /CREATE FUNCTION vnext_control_plane\.vnext_read_desktop_password_by_login_name/);
+  assert.match(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_set_desktop_password_credential[\s\S]*vnext_pg17_identity_verifier/);
   assert.deepStrictEqual(expectedCatalog.relations, [
     'vnext_control_plane.vnext_account_device_links',
     'vnext_control_plane.vnext_accounts',
@@ -226,6 +237,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
+    'vnext_control_plane.vnext_desktop_password_credentials',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_online_identity_assertion_consumptions',
     'vnext_control_plane.vnext_online_identity_assertions',

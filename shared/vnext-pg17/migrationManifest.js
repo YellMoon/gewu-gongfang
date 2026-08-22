@@ -892,6 +892,120 @@ REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_provision_canonical_phone_a
 GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_provision_canonical_phone_account(text,text,text,text) TO vnext_pg17_identity_verifier;`;
 const CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-canonical-phone-account-provisioning-17', semanticVersion: 17, sql: CANONICAL_PHONE_ACCOUNT_PROVISIONING_SQL, manifestSha256: sha256(CANONICAL_PHONE_ACCOUNT_PROVISIONING_SQL) });
 
+const DESKTOP_PASSWORD_CREDENTIALS_SQL = `CREATE TABLE vnext_control_plane.vnext_desktop_password_credentials (
+  authority_id text COLLATE "C" NOT NULL,
+  account_id text COLLATE "C" NOT NULL,
+  login_name text COLLATE "C",
+  password_algorithm text COLLATE "C" NOT NULL,
+  password_salt_base64 text COLLATE "C" NOT NULL,
+  password_hash_base64 text COLLATE "C" NOT NULL,
+  credential_version bigint NOT NULL,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz NOT NULL,
+  PRIMARY KEY (authority_id, account_id),
+  UNIQUE (authority_id, login_name),
+  FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK (login_name IS NULL OR (btrim(login_name) <> '' AND login_name ~ '^[A-Za-z][A-Za-z0-9._-]{2,63}$')),
+  CHECK (password_algorithm = 'scrypt-v1'),
+  CHECK (password_salt_base64 ~ '^[A-Za-z0-9+/]+={0,2}$'),
+  CHECK (password_hash_base64 ~ '^[A-Za-z0-9+/]+={0,2}$'),
+  CHECK (credential_version > 0),
+  CHECK (created_at <> 'infinity'::timestamptz AND created_at <> '-infinity'::timestamptz),
+  CHECK (updated_at <> 'infinity'::timestamptz AND updated_at <> '-infinity'::timestamptz AND updated_at >= created_at)
+);
+REVOKE ALL ON TABLE vnext_control_plane.vnext_desktop_password_credentials FROM PUBLIC;
+
+CREATE FUNCTION vnext_control_plane.vnext_set_desktop_password_credential(p_authority_id text, p_account_id text, p_login_name text, p_password_algorithm text, p_password_salt_base64 text, p_password_hash_base64 text)
+RETURNS TABLE(authority_id text, account_id text, credential_version bigint)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE current_account record;
+DECLARE existing_account_id text;
+DECLARE next_credential_version bigint;
+DECLARE now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF p_authority_id IS NULL OR p_account_id IS NULL OR btrim(p_authority_id) = '' OR btrim(p_account_id) = ''
+    OR (p_login_name IS NOT NULL AND (btrim(p_login_name) = '' OR p_login_name !~ '^[A-Za-z][A-Za-z0-9._-]{2,63}$'))
+    OR p_password_algorithm <> 'scrypt-v1'
+    OR p_password_salt_base64 IS NULL OR p_password_salt_base64 !~ '^[A-Za-z0-9+/]+={0,2}$'
+    OR p_password_hash_base64 IS NULL OR p_password_hash_base64 !~ '^[A-Za-z0-9+/]+={0,2}$' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_CREDENTIAL_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT a.* INTO current_account
+    FROM vnext_control_plane.vnext_accounts AS a
+    WHERE a.authority_id = p_authority_id AND a.account_id = p_account_id
+    FOR UPDATE;
+  IF NOT FOUND OR current_account.status <> 'active' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_CREDENTIAL_UNAVAILABLE' USING ERRCODE = 'P0001';
+  END IF;
+  IF p_login_name IS NOT NULL THEN
+    SELECT c.account_id INTO existing_account_id
+      FROM vnext_control_plane.vnext_desktop_password_credentials AS c
+      WHERE c.authority_id = p_authority_id AND c.login_name = p_login_name
+      FOR UPDATE;
+    IF FOUND AND existing_account_id <> p_account_id THEN
+      RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_LOGIN_CONFLICT' USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+  INSERT INTO vnext_control_plane.vnext_desktop_password_credentials(authority_id, account_id, login_name, password_algorithm, password_salt_base64, password_hash_base64, credential_version, created_at, updated_at)
+  VALUES (p_authority_id, p_account_id, p_login_name, p_password_algorithm, p_password_salt_base64, p_password_hash_base64, 1, now_at, now_at)
+  ON CONFLICT (authority_id, account_id) DO UPDATE
+    SET login_name = EXCLUDED.login_name,
+        password_algorithm = EXCLUDED.password_algorithm,
+        password_salt_base64 = EXCLUDED.password_salt_base64,
+        password_hash_base64 = EXCLUDED.password_hash_base64,
+        credential_version = vnext_control_plane.vnext_desktop_password_credentials.credential_version + 1,
+        updated_at = now_at
+  RETURNING vnext_desktop_password_credentials.credential_version INTO next_credential_version;
+  UPDATE vnext_control_plane.vnext_accounts
+    SET auth_version = auth_version + 1, row_version = row_version + 1, updated_at = now_at
+    WHERE authority_id = p_authority_id AND account_id = p_account_id;
+  RETURN QUERY SELECT p_authority_id, p_account_id, next_credential_version;
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_read_desktop_password_by_phone_hash(p_phone_hash text)
+RETURNS TABLE(authority_id text, account_id text, login_name text, password_algorithm text, password_salt_base64 text, password_hash_base64 text, credential_version bigint)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT c.authority_id, c.account_id, c.login_name, c.password_algorithm, c.password_salt_base64, c.password_hash_base64, c.credential_version
+    FROM vnext_control_plane.vnext_desktop_password_credentials AS c
+    JOIN vnext_control_plane.vnext_accounts AS a
+      ON a.authority_id = c.authority_id AND a.account_id = c.account_id
+    JOIN vnext_control_plane.vnext_verified_contacts AS v
+      ON v.authority_id = c.authority_id AND v.account_id = c.account_id
+    WHERE p_phone_hash ~ '^[0-9a-f]{64}$'
+      AND a.status = 'active'
+      AND v.contact_type = 'phone' AND v.normalized_value_hash = p_phone_hash
+      AND v.verification_state = 'verified' AND v.revoked_at IS NULL
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_read_desktop_password_by_login_name(p_login_name text)
+RETURNS TABLE(authority_id text, account_id text, login_name text, password_algorithm text, password_salt_base64 text, password_hash_base64 text, credential_version bigint)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT c.authority_id, c.account_id, c.login_name, c.password_algorithm, c.password_salt_base64, c.password_hash_base64, c.credential_version
+    FROM vnext_control_plane.vnext_desktop_password_credentials AS c
+    JOIN vnext_control_plane.vnext_accounts AS a
+      ON a.authority_id = c.authority_id AND a.account_id = c.account_id
+    WHERE p_login_name ~ '^[A-Za-z][A-Za-z0-9._-]{2,63}$'
+      AND c.login_name = p_login_name AND a.status = 'active'
+$$;
+
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_set_desktop_password_credential(text,text,text,text,text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_phone_hash(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_login_name(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_set_desktop_password_credential(text,text,text,text,text,text) TO vnext_pg17_identity_verifier;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_phone_hash(text) TO vnext_pg17_identity_verifier;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_password_by_login_name(text) TO vnext_pg17_identity_verifier;`;
+const DESKTOP_PASSWORD_CREDENTIALS_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-desktop-password-credentials-18', semanticVersion: 18, sql: DESKTOP_PASSWORD_CREDENTIALS_SQL, manifestSha256: sha256(DESKTOP_PASSWORD_CREDENTIALS_SQL) });
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -910,6 +1024,7 @@ const MIGRATIONS = Object.freeze([
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
+  DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1042,6 +1157,9 @@ $function$
   vnext_online_identity_assertions_no_delete: 'f6eaa89e09943fdc457860c2c890aedd9899acb0cb3d71e40a94a0e066f1c32e',
   vnext_online_identity_assertions_no_update: 'e80dd5dd122a11ddab36726e19a9fa468d4fcb4d65d7587f9a0ebb5d841b9693',
   vnext_register_unified_desktop_online: '921f62d7e5b901738525262cfc4610edbfb52d3f1ab8fca4694a2f728dcae65a',
+  vnext_read_desktop_password_by_login_name: 'c76a34d05eb52d292fa802aefc76965dedcc07afa5fcddb385bff1c6e01d53aa',
+  vnext_read_desktop_password_by_phone_hash: '1fdff74380576b833bdf22b7c301986da786743f4b3be6fd930b19bae32a72cd',
+  vnext_set_desktop_password_credential: '13331367db0aa7f179df18e8c751b2814772c2bc1733706146df5c133e8503ab',
 });
 
 const expectedCatalog = Object.freeze({
@@ -1058,6 +1176,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_capability_catalog',
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
+    'vnext_control_plane.vnext_desktop_password_credentials',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_online_identity_assertion_consumptions',
     'vnext_control_plane.vnext_online_identity_assertions',
@@ -1120,6 +1239,7 @@ module.exports = {
   SESSIONS_REAUTHENTICATION_MIGRATION,
   UNIFIED_DESKTOP_ONLINE_REGISTRATION_MIGRATION,
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
+  DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

@@ -19,6 +19,7 @@ const {
   AUTHORIZATION_POLICY_PUBLICATIONS_MIGRATION,
   TRUST_ROOT_EVIDENCE_MIGRATION,
   SESSIONS_REAUTHENTICATION_MIGRATION,
+  MIGRATIONS,
 } = require('./migrationManifest');
 
 const FOUNDATION_INSTANT = '2026-08-15T00:00:00.000Z';
@@ -1283,7 +1284,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(() => catalog.apply(receiptPrefixHandle, migrationInput), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
     await withVNextPg17SyntheticQuery(receiptPrefixHandle, 'fixture-provisioner', async facade => {
-      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version');
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
       assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }]);
       const relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_authorization_audit_events') AS relation, to_regprocedure('vnext_control_plane.vnext_authorization_audit_events_no_update()') AS update_function, to_regprocedure('vnext_control_plane.vnext_authorization_audit_events_no_delete()') AS delete_function");
       assert.strictEqual(relation.rows[0].relation, null);
@@ -1371,6 +1372,60 @@ async function runCatalogAssertionCases(runtime) {
       assert.deepStrictEqual(absent.rows, [{ sessions: null, reauth: null, session_guard: null, reauth_guard: null }]);
     });
     await assert.rejects(() => catalog.assert(sessionsPrefixHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+    const m17PrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(m17PrefixHandle, 'migrator', async facade => {
+      await facade.query('BEGIN');
+      await facade.query('SET LOCAL ROLE vnext_pg17_owner');
+      for (const migration of MIGRATIONS.slice(0, -1)) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+      await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
+      await facade.query('GRANT SELECT ON ALL TABLES IN SCHEMA vnext_control_plane TO vnext_pg17_writer');
+      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions FROM vnext_pg17_writer');
+      await facade.query('COMMIT');
+    });
+    assert.deepStrictEqual(await catalog.apply(m17PrefixHandle, migrationInput), { applied: true });
+    await withVNextPg17SyntheticQuery(m17PrefixHandle, 'verifier', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }]);
+    });
+
+    const forgedM17PrefixHandle = await createHandle();
+    await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'migrator', async facade => {
+      await facade.query('BEGIN');
+      await facade.query('SET LOCAL ROLE vnext_pg17_owner');
+      for (const migration of MIGRATIONS.slice(0, -1)) {
+        await facade.query(migration.sql);
+        if (migration.postApply) await facade.query(migration.postApply.text, migration.postApply.values(migrationInput.appliedAt));
+        await facade.query(
+          'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+          [migration.migrationId, migration.semanticVersion, migration.manifestSha256, migrationInput.appliedAt, migrationInput.appliedBy],
+        );
+      }
+      await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
+      await facade.query('GRANT SELECT ON ALL TABLES IN SCHEMA vnext_control_plane TO vnext_pg17_writer');
+      await facade.query('REVOKE SELECT ON TABLE vnext_control_plane.vnext_online_identity_assertions, vnext_control_plane.vnext_online_identity_assertion_consumptions FROM vnext_pg17_writer');
+      await facade.query('COMMIT');
+    });
+    await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'fixture-provisioner', facade => facade.query(
+      'ALTER TABLE vnext_control_plane.vnext_accounts ADD COLUMN forged_m18_prefix_column text',
+    ));
+    await assert.rejects(
+      () => catalog.apply(forgedM17PrefixHandle, migrationInput),
+      error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT',
+    );
+    await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'fixture-provisioner', async facade => {
+      const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
+      assert.strictEqual(ledgerRows.rows.length, 17);
+      const m18Relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_desktop_password_credentials') AS relation");
+      assert.strictEqual(m18Relation.rows[0].relation, null);
+    });
+
     const handle = await createHandle();
     await assert.rejects(
       () => catalog.assert(handle),
@@ -1381,7 +1436,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }]);
+      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }]);
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );
@@ -1443,7 +1498,7 @@ async function runCatalogAssertionCases(runtime) {
     });
     await assert.rejects(
       () => withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(
-        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 19, repeat('a', 64), now(), 'fixture')",
+        "INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ('future', 20, repeat('a', 64), now(), 'fixture')",
       )),
     );
     await assert.rejects(
@@ -2801,6 +2856,13 @@ async function runCatalogAssertionCases(runtime) {
       'GRANT CREATE ON SCHEMA public TO vnext_pg17_identity_verifier',
     ));
     await assert.rejects(() => catalog.assert(onlineIdentityPublicCreateHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
+
+    const passwordCredentialColumnAclHandle = await createHandle();
+    await catalog.apply(passwordCredentialColumnAclHandle, migrationInput);
+    await withVNextPg17SyntheticQuery(passwordCredentialColumnAclHandle, 'fixture-provisioner', facade => facade.query(
+      'GRANT SELECT (password_hash_base64) ON vnext_control_plane.vnext_desktop_password_credentials TO vnext_pg17_verifier',
+    ));
+    await assert.rejects(() => catalog.assert(passwordCredentialColumnAclHandle), error => error && error.code === 'VNEXT_PG17_SCHEMA_DRIFT');
   } finally {
     if (priorHandle) {
       await runtime.disposeHandle(priorHandle);

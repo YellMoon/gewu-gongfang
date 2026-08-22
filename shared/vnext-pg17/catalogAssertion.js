@@ -38,6 +38,8 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_online_identity_assertions_no_delete',
   'vnext_online_identity_assertions_no_update',
   'vnext_provision_canonical_phone_account',
+  'vnext_read_desktop_password_by_login_name',
+  'vnext_read_desktop_password_by_phone_hash',
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
@@ -49,6 +51,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_sessions_lifecycle_monotonic',
   'vnext_sessions_no_delete',
   'vnext_sessions_parent_state_match',
+  'vnext_set_desktop_password_credential',
   'vnext_trust_root_evidence_insert_guard',
   'vnext_trust_root_evidence_no_delete',
   'vnext_trust_root_evidence_no_update',
@@ -56,7 +59,10 @@ const LEDGER_FUNCTIONS = Object.freeze([
 const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
   vnext_issue_online_identity_assertion: 'p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_identity_proof_sha256 text, p_hardware_evidence_sha256 text, p_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
   vnext_provision_canonical_phone_account: 'p_account_id text, p_contact_id text, p_phone_hash text, p_verification_evidence_hash text',
+  vnext_read_desktop_password_by_login_name: 'p_login_name text',
+  vnext_read_desktop_password_by_phone_hash: 'p_phone_hash text',
   vnext_register_unified_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text',
+  vnext_set_desktop_password_credential: 'p_authority_id text, p_account_id text, p_login_name text, p_password_algorithm text, p_password_salt_base64 text, p_password_hash_base64 text',
 });
 const LEDGER_CONSTRAINTS = Object.freeze([
   Object.freeze({ name: 'vnext_schema_migrations_applied_at_check', type: 'c', definition: "CHECK (applied_at <> 'infinity'::timestamp with time zone AND applied_at <> '-infinity'::timestamp with time zone)" }),
@@ -345,6 +351,30 @@ const ONLINE_IDENTITY_COLUMNS_WITH_VERSIONS = Object.freeze({
   ]),
   vnext_online_identity_assertion_consumptions: ONLINE_IDENTITY_COLUMNS.vnext_online_identity_assertion_consumptions,
 });
+const PASSWORD_CREDENTIAL_COLUMNS = Object.freeze([
+  Object.freeze({ name: 'authority_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+  Object.freeze({ name: 'account_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+  Object.freeze({ name: 'login_name', dataType: 'text', udtName: 'text', nullable: 'YES', collation: 'C' }),
+  Object.freeze({ name: 'password_algorithm', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+  Object.freeze({ name: 'password_salt_base64', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+  Object.freeze({ name: 'password_hash_base64', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
+  Object.freeze({ name: 'credential_version', dataType: 'bigint', udtName: 'int8', nullable: 'NO', collation: null }),
+  Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+  Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
+]);
+const PASSWORD_CREDENTIAL_TABLE_NAMES = Object.freeze(['vnext_desktop_password_credentials']);
+const PASSWORD_CREDENTIAL_CONSTRAINTS = Object.freeze([
+  Object.freeze({ name: 'vnext_desktop_password_credentials_account_id_authority_id_fkey', type: 'f', definition: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT' }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_authority_id_login_name_key', type: 'u', definition: 'UNIQUE (authority_id, login_name)' }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_check', type: 'c', definition: "CHECK (updated_at <> 'infinity'::timestamp with time zone AND updated_at <> '-infinity'::timestamp with time zone AND updated_at >= created_at)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_created_at_check', type: 'c', definition: "CHECK (created_at <> 'infinity'::timestamp with time zone AND created_at <> '-infinity'::timestamp with time zone)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_credential_version_check', type: 'c', definition: 'CHECK (credential_version > 0)' }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_login_name_check', type: 'c', definition: "CHECK (login_name IS NULL OR btrim(login_name) <> ''::text AND login_name ~ '^[A-Za-z][A-Za-z0-9._-]{2,63}$'::text)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_password_algorithm_check', type: 'c', definition: "CHECK (password_algorithm = 'scrypt-v1'::text)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_password_hash_base64_check', type: 'c', definition: "CHECK (password_hash_base64 ~ '^[A-Za-z0-9+/]+={0,2}$'::text)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_password_salt_base64_check', type: 'c', definition: "CHECK (password_salt_base64 ~ '^[A-Za-z0-9+/]+={0,2}$'::text)" }),
+  Object.freeze({ name: 'vnext_desktop_password_credentials_pkey', type: 'p', definition: 'PRIMARY KEY (authority_id, account_id)' }),
+]);
 const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_schema_meta: Object.freeze({ count: 4, required: Object.freeze(['vnext_schema_meta_pkey', 'vnext_schema_meta_schema_key_check', 'vnext_schema_meta_schema_version_check', 'vnext_schema_meta_applied_at_check']) }),
   vnext_authorities: Object.freeze({ count: 6, required: Object.freeze(['vnext_authorities_pkey', 'vnext_authorities_status_check', 'vnext_authorities_check']) }),
@@ -430,9 +460,11 @@ const TARGET_RELATION_NAMES = Object.freeze([
   'vnext_schema_migrations',
   ...FOUNDATION_TABLE_NAMES,
   ...ONLINE_IDENTITY_TABLE_NAMES,
+  ...PASSWORD_CREDENTIAL_TABLE_NAMES,
 ]);
 const TARGET_TABLE_NAMES = Object.freeze([...TARGET_RELATION_NAMES].sort());
-const WRITER_TABLE_NAMES = Object.freeze(TARGET_TABLE_NAMES.filter(name => !ONLINE_IDENTITY_TABLE_NAMES.includes(name)));
+const WRITER_TABLE_NAMES = Object.freeze(TARGET_TABLE_NAMES.filter(name => !ONLINE_IDENTITY_TABLE_NAMES.includes(name) && !PASSWORD_CREDENTIAL_TABLE_NAMES.includes(name)));
+const VERIFIER_TABLE_NAMES = Object.freeze(TARGET_TABLE_NAMES.filter(name => !PASSWORD_CREDENTIAL_TABLE_NAMES.includes(name)));
 const TARGET_TRIGGERS = Object.freeze([
   Object.freeze({ tableName: 'vnext_online_identity_assertion_consumptions', triggerName: 'vnext_online_identity_assertion_consumptions_no_delete', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertion_consumptions_no_delete', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_delete BEFORE DELETE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_delete()' }),
   Object.freeze({ tableName: 'vnext_online_identity_assertion_consumptions', triggerName: 'vnext_online_identity_assertion_consumptions_no_update', functionSchema: 'vnext_control_plane', functionName: 'vnext_online_identity_assertion_consumptions_no_update', enabled: 'O', definition: 'CREATE TRIGGER vnext_online_identity_assertion_consumptions_no_update BEFORE UPDATE ON vnext_control_plane.vnext_online_identity_assertion_consumptions FOR EACH ROW EXECUTE FUNCTION vnext_control_plane.vnext_online_identity_assertion_consumptions_no_update()' }),
@@ -524,13 +556,30 @@ function createVNextPg17CatalogBoundary(runtime) {
           const ledger = await facade.query(
             'SELECT migration_id, semantic_version, manifest_sha256 FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version',
           );
-          if (ledger.rows.length !== MIGRATIONS.length
-            || ledger.rows.some((row, index) => row.migration_id !== MIGRATIONS[index].migrationId
-              || String(row.semantic_version) !== String(MIGRATIONS[index].semanticVersion)
-              || row.manifest_sha256 !== MIGRATIONS[index].manifestSha256)) throw schemaDrift();
+          const hasExactLedger = migrations => ledger.rows.length === migrations.length
+            && ledger.rows.every((row, index) => row.migration_id === migrations[index].migrationId
+              && String(row.semantic_version) === String(migrations[index].semanticVersion)
+              && row.manifest_sha256 === migrations[index].manifestSha256);
+          if (hasExactLedger(MIGRATIONS)) {
+            await facade.query('COMMIT');
+            await assertCatalog(handle);
+            return Object.freeze({ applied: false });
+          }
+          if (!hasExactLedger(MIGRATIONS.slice(0, -1))) throw schemaDrift();
+          for (const migration of MIGRATIONS.slice(-1)) {
+            await facade.query(migration.sql);
+            if (migration.postApply) {
+              await facade.query(migration.postApply.text, migration.postApply.values(snapshot.appliedAt));
+            }
+            await facade.query(
+              'INSERT INTO vnext_control_plane.vnext_schema_migrations (migration_id, semantic_version, manifest_sha256, applied_at, applied_by) VALUES ($1, $2, $3, $4, $5)',
+              [migration.migrationId, migration.semanticVersion, migration.manifestSha256, snapshot.appliedAt, snapshot.appliedBy],
+            );
+          }
+          await assertQueryFacade(createVerifierQueryFacade((text, values) => facade.query(text, values)));
           await facade.query('COMMIT');
           await assertCatalog(handle);
-          return Object.freeze({ applied: false });
+          return Object.freeze({ applied: true });
         }
         for (const migration of MIGRATIONS) {
           await facade.query(migration.sql);
@@ -544,6 +593,7 @@ function createVNextPg17CatalogBoundary(runtime) {
         }
         await facade.query('GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer');
         await facade.query(`GRANT SELECT ON ${WRITER_TABLE_NAMES.map(name => `vnext_control_plane.${name}`).join(', ')} TO vnext_pg17_writer`);
+        await assertQueryFacade(createVerifierQueryFacade((text, values) => facade.query(text, values)));
         await facade.query('COMMIT');
         await assertCatalog(handle);
         return Object.freeze({ applied: true });
@@ -629,6 +679,36 @@ function createVNextPg17CatalogBoundary(runtime) {
               || row.column_default !== null)) throw schemaDrift();
         }
         if (onlineOffset !== onlineColumns.rows.length) throw schemaDrift();
+        const passwordCredentialOwners = await facade.query(
+          "SELECT c.relname AS table_name, r.rolname AS owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_roles r ON r.oid = c.relowner WHERE n.nspname = 'vnext_control_plane' AND c.relname = 'vnext_desktop_password_credentials' AND c.relkind = 'r'",
+        );
+        if (passwordCredentialOwners.rows.length !== 1 || passwordCredentialOwners.rows[0].owner !== 'vnext_pg17_owner') throw schemaDrift();
+        const passwordCredentialColumns = await facade.query(
+          "SELECT a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS data_type, t.typname AS udt_name, CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable, coll.collname AS collation_name, pg_get_expr(d.adbin, d.adrelid) AS column_default FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_type t ON t.oid = a.atttypid LEFT JOIN pg_collation coll ON coll.oid = a.attcollation LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum WHERE n.nspname = 'vnext_control_plane' AND c.relname = 'vnext_desktop_password_credentials' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+        );
+        if (passwordCredentialColumns.rows.length !== PASSWORD_CREDENTIAL_COLUMNS.length
+          || passwordCredentialColumns.rows.some((row, index) => row.column_name !== PASSWORD_CREDENTIAL_COLUMNS[index].name
+            || row.data_type !== PASSWORD_CREDENTIAL_COLUMNS[index].dataType
+            || row.udt_name !== PASSWORD_CREDENTIAL_COLUMNS[index].udtName
+            || row.is_nullable !== PASSWORD_CREDENTIAL_COLUMNS[index].nullable
+            || row.collation_name !== PASSWORD_CREDENTIAL_COLUMNS[index].collation
+            || row.column_default !== null)) throw schemaDrift();
+        const passwordCredentialConstraints = await facade.query(
+          "SELECT con.conname, con.contype, pg_get_constraintdef(con.oid, true) AS definition FROM pg_constraint con WHERE con.conrelid = 'vnext_control_plane.vnext_desktop_password_credentials'::regclass ORDER BY con.conname",
+        );
+        if (passwordCredentialConstraints.rows.length !== PASSWORD_CREDENTIAL_CONSTRAINTS.length
+          || passwordCredentialConstraints.rows.some((row, index) => row.conname !== PASSWORD_CREDENTIAL_CONSTRAINTS[index].name
+            || row.contype !== PASSWORD_CREDENTIAL_CONSTRAINTS[index].type
+            || row.definition !== PASSWORD_CREDENTIAL_CONSTRAINTS[index].definition)) throw schemaDrift();
+        const passwordCredentialColumnPrivileges = await facade.query(
+          "SELECT a.attname AS column_name, has_column_privilege('vnext_pg17_verifier', c.oid, a.attname, 'SELECT') AS verifier_select, has_column_privilege('vnext_pg17_verifier', c.oid, a.attname, 'INSERT') AS verifier_insert, has_column_privilege('vnext_pg17_verifier', c.oid, a.attname, 'UPDATE') AS verifier_update, has_column_privilege('vnext_pg17_verifier', c.oid, a.attname, 'REFERENCES') AS verifier_references, has_column_privilege('vnext_pg17_writer', c.oid, a.attname, 'SELECT') AS writer_select, has_column_privilege('vnext_pg17_writer', c.oid, a.attname, 'INSERT') AS writer_insert, has_column_privilege('vnext_pg17_writer', c.oid, a.attname, 'UPDATE') AS writer_update, has_column_privilege('vnext_pg17_writer', c.oid, a.attname, 'REFERENCES') AS writer_references, has_column_privilege('vnext_pg17_identity_verifier', c.oid, a.attname, 'SELECT') AS identity_select, has_column_privilege('vnext_pg17_identity_verifier', c.oid, a.attname, 'INSERT') AS identity_insert, has_column_privilege('vnext_pg17_identity_verifier', c.oid, a.attname, 'UPDATE') AS identity_update, has_column_privilege('vnext_pg17_identity_verifier', c.oid, a.attname, 'REFERENCES') AS identity_references, has_column_privilege('vnext_pg17_runtime', c.oid, a.attname, 'SELECT') AS runtime_select, has_column_privilege('vnext_pg17_runtime', c.oid, a.attname, 'INSERT') AS runtime_insert, has_column_privilege('vnext_pg17_runtime', c.oid, a.attname, 'UPDATE') AS runtime_update, has_column_privilege('vnext_pg17_runtime', c.oid, a.attname, 'REFERENCES') AS runtime_references FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = 'vnext_desktop_password_credentials' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum",
+        );
+        if (passwordCredentialColumnPrivileges.rows.length !== PASSWORD_CREDENTIAL_COLUMNS.length
+          || passwordCredentialColumnPrivileges.rows.some((row, index) => row.column_name !== PASSWORD_CREDENTIAL_COLUMNS[index].name
+            || row.verifier_select || row.verifier_insert || row.verifier_update || row.verifier_references
+            || row.writer_select || row.writer_insert || row.writer_update || row.writer_references
+            || row.identity_select || row.identity_insert || row.identity_update || row.identity_references
+            || row.runtime_select || row.runtime_insert || row.runtime_update || row.runtime_references)) throw schemaDrift();
         const onlineConstraints = await facade.query(
           "SELECT c.relname AS table_name, con.conname, con.contype, pg_get_constraintdef(con.oid, true) AS definition FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'vnext_control_plane' AND c.relname = ANY($1::text[]) ORDER BY c.relname, con.conname",
           [ONLINE_IDENTITY_TABLE_NAMES],
@@ -747,7 +827,7 @@ function createVNextPg17CatalogBoundary(runtime) {
         );
         if (targetPrivileges.rows.length !== TARGET_TABLE_NAMES.length
           || targetPrivileges.rows.some((row, index) => row.table_name !== TARGET_TABLE_NAMES[index]
-            || !row.verifier_select || row.verifier_insert || row.verifier_update || row.verifier_delete
+            || row.verifier_select !== VERIFIER_TABLE_NAMES.includes(row.table_name) || row.verifier_insert || row.verifier_update || row.verifier_delete
             || row.verifier_truncate || row.verifier_references || row.verifier_trigger
             || row.writer_select !== WRITER_TABLE_NAMES.includes(row.table_name) || row.writer_insert || row.writer_update || row.writer_delete
             || row.writer_truncate || row.writer_references || row.writer_trigger
@@ -764,7 +844,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
             || row.public_execute || row.runtime_execute || row.verifier_execute
             || row.writer_execute !== (row.proname === 'vnext_register_unified_desktop_online')
-            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account')
+            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account' || row.proname === 'vnext_set_desktop_password_credential' || row.proname === 'vnext_read_desktop_password_by_phone_hash' || row.proname === 'vnext_read_desktop_password_by_login_name')
             || row.arguments !== (COMMAND_FUNCTION_ARGUMENTS[row.proname] || '')
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();
         const ledger = await facade.query(
