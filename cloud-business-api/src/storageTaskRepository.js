@@ -79,9 +79,12 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
       const leaseExpiresAt = new Date(currentTime.getTime() + (leaseSeconds * 1000));
       const result = await query(
         `WITH candidate AS (
-           SELECT task_id FROM business.storage_object_tasks
-            WHERE state='queued' OR (state='leased' AND lease_expires_at <= transaction_timestamp())
-            ORDER BY created_at ASC,task_id ASC
+           SELECT task.task_id
+             FROM business.storage_object_tasks task
+             JOIN business.encrypted_storage_relays relay ON relay.task_id=task.task_id
+            WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
+              AND relay.expires_at > transaction_timestamp()
+            ORDER BY task.created_at ASC,task.task_id ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
          ), leased AS (

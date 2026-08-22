@@ -48,6 +48,8 @@ async function main() {
   });
   assert.ok(calls[0].text.includes('deleted_expired') && calls[0].text.includes("state='quarantined'"), 'each lease clears expired relay bytes first');
   assert.ok(calls[1].text.includes('FOR UPDATE SKIP LOCKED'), 'leasing must be concurrency-safe');
+  assert.ok(calls[1].text.includes('JOIN business.encrypted_storage_relays relay'), 'only tasks with an active encrypted relay may be leased');
+  assert.ok(calls[1].text.includes('relay.expires_at > transaction_timestamp()'), 'leasing must exclude expired relay ciphertext');
   assert.ok(calls[1].values.includes(leaseHash), 'only a SHA-256 lease hash may be stored');
   assert.ok(!calls[1].values.includes(LEASE_TOKEN), 'the raw lease token must never be sent to PostgreSQL');
 
