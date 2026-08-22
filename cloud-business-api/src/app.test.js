@@ -82,6 +82,14 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const pendingAccounts = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
   assert.strictEqual(pendingAccounts.status, 200);
   assert.deepStrictEqual(pendingAccounts.body, { ok: true, accounts: [{ accountId: 'miniapp-account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }] });
+  const profileQueries = [];
+  const teacherProfiles = await request(createCloudBusinessApp({
+    query: async (text, values) => { profileQueries.push([text, values]); return { rows: [{ id: 'teacher-1', name: 'Teacher One' }] }; }, miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
+  }), '/api/miniapp/business-profiles?type=teacher', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
+  assert.strictEqual(teacherProfiles.status, 200);
+  assert.deepStrictEqual(teacherProfiles.body, { ok: true, profiles: [{ id: 'teacher-1', name: 'Teacher One' }] });
+  assert.deepStrictEqual(profileQueries[0][1], ['default']);
+  assert.ok(profileQueries[0][0].includes('FROM business.teachers') && profileQueries[0][0].includes('legacy_deleted=false'), 'profile choices must come from active migrated profiles only');
   const assignedAccount = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
     method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: { role: 'teacher', profileId: 'teacher-1' },
   });

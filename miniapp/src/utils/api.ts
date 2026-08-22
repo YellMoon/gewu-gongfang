@@ -293,14 +293,27 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud account request unavailable' };
     }
   },
-  async assignAccountRole(token: string, accountId: string, role: 'admin' | 'teacher' | 'student'): Promise<ApiResponse<{ ok: true; account: { accountId: string; status: 'active'; roles: string[] } }>> {
-    if (typeof token !== 'string' || !token.trim() || typeof accountId !== 'string' || !accountId.trim()) return { success: false, error: 'Cloud session required' };
+  async listAssignableProfiles(token: string, type: 'teacher' | 'student'): Promise<ApiResponse<{ ok: true; profiles: Array<{ id: string; name: string }> }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     try {
       const response = await Taro.request({
-        url: cloudBusinessUrl(`/api/miniapp/cloud-accounts/${encodeURIComponent(accountId)}/role`), method: 'PUT', data: { role },
+        url: cloudBusinessUrl(`/api/miniapp/business-profiles?type=${encodeURIComponent(type)}`), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.profiles)) return { success: true, data: response.data as { ok: true; profiles: Array<{ id: string; name: string }> } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud profile request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud profile request unavailable' };
+    }
+  },
+  async assignAccountRole(token: string, accountId: string, role: 'teacher' | 'student', profileId: string): Promise<ApiResponse<{ ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof accountId !== 'string' || !accountId.trim() || typeof profileId !== 'string' || !profileId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/miniapp/cloud-accounts/${encodeURIComponent(accountId)}/role`), method: 'PUT', data: { role, profileId },
         header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
       });
-      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.account) return { success: true, data: response.data as { ok: true; account: { accountId: string; status: 'active'; roles: string[] } } };
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.account) return { success: true, data: response.data as { ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } } };
       return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud account authorization failed' };
     } catch (error: any) {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud account authorization unavailable' };

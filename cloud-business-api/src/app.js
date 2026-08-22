@@ -162,6 +162,26 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
+  app.get('/api/miniapp/business-profiles', async (request, response) => {
+    if (!miniappCloudAccount || !businessTenantId) return businessUnavailable(response);
+    const token = sessionToken(request);
+    const type = String(request.query.type || '').trim();
+    if (!token || !['teacher', 'student'].includes(type)) return businessInputInvalid(response);
+    try {
+      const context = await miniappCloudAccount.context({ token });
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
+      const relation = type === 'teacher' ? 'business.teachers' : 'business.students';
+      const result = await query(
+        `SELECT id AS "id", name AS "name" FROM ${relation} WHERE tenant_id=$1 AND legacy_deleted=false ORDER BY name ASC,id ASC`,
+        [businessTenantId],
+      );
+      if (!result || !Array.isArray(result.rows) || result.rows.some(row => !row || typeof row.id !== 'string' || !row.id || typeof row.name !== 'string' || !row.name)) return businessUnavailable(response);
+      response.json({ ok: true, profiles: result.rows.map(row => ({ id: row.id, name: row.name })) });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
   app.put('/api/miniapp/cloud-accounts/:accountId/role', async (request, response) => {
     if (!miniappCloudAccount) return businessUnavailable(response);
     const token = sessionToken(request);
