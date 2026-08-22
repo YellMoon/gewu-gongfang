@@ -42,8 +42,18 @@ function parseOperatorRecords(value) {
 
 function createDesktopRegistrationFromEnvironment() {
   const records = parseOperatorRecords(process.env.CLOUD_OPERATOR_PHONE_HMACS);
-  const secrets = [process.env.CLOUD_IDENTITY_PHONE_PEPPER, process.env.CLOUD_IDENTITY_TICKET_SECRET, process.env.WECHAT_APPSECRET, process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD, process.env.COMMAND_WRITER_POSTGRES_PASSWORD];
+  const secrets = [process.env.CLOUD_IDENTITY_PHONE_PEPPER, process.env.CLOUD_IDENTITY_TICKET_SECRET, process.env.CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64, process.env.WECHAT_APPSECRET, process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD, process.env.COMMAND_WRITER_POSTGRES_PASSWORD];
   if (!records || typeof process.env.WECHAT_APPID !== 'string' || !process.env.WECHAT_APPID.trim() || secrets.some(value => typeof value !== 'string' || value.length < 24)) return null;
+  let leasePrivateKey;
+  try {
+    leasePrivateKey = require('crypto').createPrivateKey({
+      key: Buffer.from(process.env.CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64, 'base64'),
+      format: 'der',
+      type: 'pkcs8',
+    });
+  } catch (_) {
+    return null;
+  }
   const identityPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_identity_verifier', password: process.env.IDENTITY_VERIFIER_POSTGRES_PASSWORD });
   const writerPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_writer', password: process.env.COMMAND_WRITER_POSTGRES_PASSWORD });
   const randomId = prefix => `${prefix}-${require('crypto').randomUUID()}`;
@@ -53,6 +63,7 @@ function createDesktopRegistrationFromEnvironment() {
     phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
     lookupAccount: createOperatorPhoneLookup({ pepper: process.env.CLOUD_IDENTITY_PHONE_PEPPER, records }),
     ticketSecret: process.env.CLOUD_IDENTITY_TICKET_SECRET,
+    leasePrivateKey,
     issueAssertion: input => identityPool.query(
       'SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
       [input.assertionId, input.authorityId, input.accountId, input.deviceId, input.installationId, input.installationPublicKey, input.keyFingerprint, input.audience, input.nonceSha256, input.canonicalRequestSha256, input.identityProofSha256, input.hardwareEvidenceSha256, input.issuedAt, input.expiresAt],
@@ -66,7 +77,7 @@ function createDesktopRegistrationFromEnvironment() {
     },
     readSessionContext: async input => {
       const result = await writerPool.query(
-        `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt",
+        `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt", NULL::text AS "teacherId", NULL::text AS "studentId",
           COALESCE(array_agg(DISTINCT g.role ORDER BY g.role) FILTER (WHERE g.status='active' AND g.starts_at <= transaction_timestamp() AND (g.ends_at IS NULL OR g.ends_at > transaction_timestamp())), ARRAY[]::text[]) AS roles
          FROM vnext_control_plane.vnext_sessions s
          JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'

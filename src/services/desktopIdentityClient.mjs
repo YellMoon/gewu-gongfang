@@ -658,7 +658,8 @@ export function createDesktopIdentityClient({
         idempotencyKey: pending.idempotencyKey,
       },
     });
-    if (!registered?.sessionToken || !registered?.sessionId || !registered?.offlineLease) {
+    if (!registered?.sessionToken || !registered?.sessionId || !registered?.offlineLease
+      || typeof registered.offlineLease.signature !== 'string' || !registered.offlineLease.signature) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_INVALID');
     }
     const context = await request(fetchImpl, pending.baseUrl, '/api/desktop/session-context', {
@@ -669,7 +670,9 @@ export function createDesktopIdentityClient({
     if (!context?.authorityId || !context?.accountId || !context?.deviceId || !context?.installationId
       || context.sessionId !== registered.sessionId || context.deviceId !== pending.publicIdentity.deviceId
       || context.installationId !== pending.publicIdentity.deviceId || !context.expiresAt
-      || !activeRole) {
+      || !activeRole
+      || (activeRole === 'teacher' && !context.teacherId)
+      || (activeRole === 'student' && !context.studentId)) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_CONTEXT_INVALID');
     }
     const lastPhoneVerifiedAt = currentDate().toISOString();
@@ -691,8 +694,8 @@ export function createDesktopIdentityClient({
       user: { id: context.accountId, name: 'Cloud account' },
       eligibleRoles,
       activeRole,
-      teacherId: null,
-      studentId: null,
+      teacherId: activeRole === 'teacher' ? context.teacherId : null,
+      studentId: activeRole === 'student' ? context.studentId : null,
     };
     const vaultStatus = await desktopIdentity.completeRegistration({
       password,

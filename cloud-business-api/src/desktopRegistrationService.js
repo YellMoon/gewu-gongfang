@@ -98,13 +98,15 @@ function inspectSessionTicket(secret, token, now) {
 }
 
 function sessionContext(value, ticket) {
-  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'roles']);
+  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'roles', 'teacherId', 'studentId']);
   if (copy.authorityId !== ticket.authorityId || copy.accountId !== ticket.accountId
     || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
     || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
     || !Array.isArray(copy.roles) || copy.roles.length === 0 || copy.roles.length > 3
     || copy.roles.some(role => !['super_admin', 'teacher', 'student'].includes(role))
-    || new Set(copy.roles).size !== copy.roles.length) throw rejected();
+    || new Set(copy.roles).size !== copy.roles.length
+    || (copy.teacherId !== null && !text(copy.teacherId))
+    || (copy.studentId !== null && !text(copy.studentId))) throw rejected();
   return Object.freeze({ ...copy, roles: Object.freeze(copy.roles.slice()) });
 }
 
@@ -114,13 +116,16 @@ function preferredLeaseRole(roles) {
   return roles[0] || null;
 }
 
-function offlineLease(secret, ticket, context, issuedAt) {
+function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
   const activeRole = preferredLeaseRole(context.roles);
   if (!activeRole) throw rejected();
   const scope = { kind: activeRole };
-  if (activeRole === 'teacher') scope.teacherId = null;
-  if (activeRole === 'student') scope.studentId = null;
+  if (activeRole === 'teacher' && !context.teacherId) throw rejected();
+  if (activeRole === 'student' && !context.studentId) throw rejected();
+  if (activeRole === 'teacher') scope.teacherId = context.teacherId;
+  if (activeRole === 'student') scope.studentId = context.studentId;
   const lease = {
+    v: 1,
     id: `offline-lease-${ticket.sessionId}`,
     userId: ticket.accountId,
     deviceId: ticket.deviceId,
@@ -128,15 +133,15 @@ function offlineLease(secret, ticket, context, issuedAt) {
     credentialVersion: 1,
     eligibleRoles: Object.freeze(context.roles.slice()),
     activeRole,
-    teacherId: null,
-    studentId: null,
+    teacherId: activeRole === 'teacher' ? context.teacherId : null,
+    studentId: activeRole === 'student' ? context.studentId : null,
     issuedAt: issuedAt.toISOString(),
     expiresAt: context.expiresAt,
     scope: Object.freeze(scope),
   };
   return Object.freeze({
     ...lease,
-    signature: signPart(secret, base64urlJson(lease)),
+    signature: crypto.sign(null, Buffer.from(JSON.stringify(lease), 'utf8'), leasePrivateKey).toString('base64url'),
   });
 }
 
@@ -164,9 +169,10 @@ function opaqueId(secret, kind, value) {
 }
 
 function createCloudDesktopRegistrationService(config) {
-  const settings = exact(config, ['now', 'randomId', 'phoneVerifier', 'lookupAccount', 'ticketSecret', 'issueAssertion', 'register', 'readSessionContext']);
+  const settings = exact(config, ['now', 'randomId', 'phoneVerifier', 'lookupAccount', 'ticketSecret', 'leasePrivateKey', 'issueAssertion', 'register', 'readSessionContext']);
   if (typeof settings.now !== 'function' || typeof settings.randomId !== 'function' || typeof settings.phoneVerifier !== 'function'
     || typeof settings.lookupAccount !== 'function' || typeof settings.issueAssertion !== 'function' || typeof settings.register !== 'function' || typeof settings.readSessionContext !== 'function'
+    || !settings.leasePrivateKey || settings.leasePrivateKey.type !== 'private' || settings.leasePrivateKey.asymmetricKeyType !== 'ed25519'
     || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw failure();
   const currentNow = () => {
     const value = settings.now();
@@ -268,7 +274,7 @@ function createCloudDesktopRegistrationService(config) {
           sessionId: result.sessionId,
           replayed: result.replayed,
           sessionToken,
-          offlineLease: offlineLease(settings.ticketSecret, inspectSessionToken(sessionToken), current, now),
+          offlineLease: offlineLease(settings.leasePrivateKey, inspectSessionToken(sessionToken), current, now),
         });
       } catch (error) {
         if (error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED') throw error;

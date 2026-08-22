@@ -26,6 +26,35 @@ const {
 const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
 const { verifySignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 const packageJson = require('../package.json');
+const offlineLeaseSigningKeyPair = crypto.generateKeyPairSync('ed25519');
+const offlineLeasePublicKey = offlineLeaseSigningKeyPair.publicKey;
+
+function offlineLeaseSignaturePayload(lease) {
+  return JSON.stringify({
+    v: lease.v,
+    id: lease.id,
+    userId: lease.userId,
+    deviceId: lease.deviceId,
+    authorizationId: lease.authorizationId,
+    credentialVersion: lease.credentialVersion,
+    eligibleRoles: lease.eligibleRoles,
+    activeRole: lease.activeRole,
+    teacherId: lease.teacherId,
+    studentId: lease.studentId,
+    issuedAt: lease.issuedAt,
+    expiresAt: lease.expiresAt,
+    scope: lease.scope,
+  });
+}
+
+function signOfflineLease(lease) {
+  const unsigned = { ...lease };
+  delete unsigned.signature;
+  return {
+    ...unsigned,
+    signature: crypto.sign(null, Buffer.from(offlineLeaseSignaturePayload(unsigned), 'utf8'), offlineLeaseSigningKeyPair.privateKey).toString('base64url'),
+  };
+}
 
 function mockSafeStorage() {
   let decryptCount = 0;
@@ -73,7 +102,8 @@ function approvedProfile() {
 }
 
 function offlineLease() {
-  return {
+  const lease = {
+    v: 1,
     id: 'lease-device-2',
     userId: 'canonical-human',
     deviceId: 'device-2',
@@ -87,6 +117,7 @@ function offlineLease() {
     activeRole: 'teacher',
     scope: { kind: 'teacher', teacherId: 'teacher-self' },
   };
+  return signOfflineLease(lease);
 }
 
 function authorityContext(hostPublicKey) {
@@ -134,6 +165,7 @@ async function main() {
     filePath,
     legacyFilePath,
     safeStorage,
+    offlineLeasePublicKey,
     now: () => new Date(clock),
     delay: async milliseconds => { delays.push(milliseconds); },
   });
@@ -148,6 +180,7 @@ async function main() {
   const unifiedVault = createDesktopIdentityVault({
     filePath: path.join(workspace, 'unified-desktop-identity-v2.bin'),
     safeStorage,
+    offlineLeasePublicKey,
     now: () => new Date(clock),
   });
   const unifiedPublicIdentity = unifiedVault.beginUnifiedOnlineRegistration({
@@ -243,6 +276,30 @@ async function main() {
       offlineLease: offlineLease(),
     }),
     /DESKTOP_IDENTITY_VAULT_FORBIDDEN_SECRET/
+  );
+  const unsignedLease = offlineLease();
+  delete unsignedLease.signature;
+  assert.throws(
+    () => vault.completeRegistration({
+      password: 'local-password-1',
+      authorization,
+      profile: approvedProfile(),
+      offlineLease: unsignedLease,
+    }),
+    /DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID/,
+    'the vault must not accept a locally manufactured lease without the cloud signature',
+  );
+  const forgedLease = offlineLease();
+  forgedLease.signature = 'A'.repeat(86);
+  assert.throws(
+    () => vault.completeRegistration({
+      password: 'local-password-1',
+      authorization,
+      profile: approvedProfile(),
+      offlineLease: forgedLease,
+    }),
+    /DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID/,
+    'the vault must verify, not merely store, the cloud signature over lease bindings',
   );
   const completed = vault.completeRegistration({
     password: 'local-password-1',
@@ -411,11 +468,11 @@ async function main() {
   );
   const refreshed = await vault.refreshOfflineLease({
     password: 'local-password-1',
-    offlineLease: {
+    offlineLease: signOfflineLease({
       ...offlineLease(),
       id: 'lease-device-2-refreshed',
       expiresAt: '2026-07-20T09:00:00.000Z',
-    },
+    }),
   });
   assert.strictEqual(refreshed.offlineLease.id, 'lease-device-2-refreshed');
   await assert.rejects(
@@ -469,6 +526,7 @@ async function main() {
   const resetVault = createDesktopIdentityVault({
     filePath: resetFilePath,
     safeStorage,
+    offlineLeasePublicKey,
     now: () => new Date('2026-07-17T10:10:00.000Z'),
     delay: async () => {},
   });
@@ -522,13 +580,13 @@ async function main() {
     lastPhoneVerifiedAt: '2026-07-17T10:10:00.000Z',
     phoneReverifyDueAt: '2026-08-16T10:10:00.000Z',
   };
-  const resetLease = {
+  const resetLease = signOfflineLease({
     ...offlineLease(),
     id: 'lease-device-2-after-password-reset',
     credentialVersion: 2,
     issuedAt: '2026-07-17T10:10:00.000Z',
     expiresAt: '2026-07-20T10:10:00.000Z',
-  };
+  });
   const resetCompleted = resetVault.completePasswordReset({
     password: 'reset-new-password',
     authorization: resetAuthorization,
@@ -558,6 +616,7 @@ async function main() {
       filePath,
       legacyFilePath,
       safeStorage,
+      offlineLeasePublicKey,
       delay: async () => {},
     });
     await assert.rejects(

@@ -24,6 +24,7 @@ const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
 const ROLE_SET = new Set(['visitor', 'super_admin', 'admin', 'teacher', 'student']);
 const DEVICE_KIND_SET = new Set(['primary-host', 'desktop-client']);
+const CLOUD_OFFLINE_LEASE_PUBLIC_KEY_B64 = 'MCowBQYDK2VwAyEAGY4DlhDvEsOwR7mXM23i+P+lT2n0ZVXKVQXbSZfFR/c=';
 const FORBIDDEN_PERSISTED_KEYS = new Set([
   'password',
   'privatekey',
@@ -225,7 +226,38 @@ function normalizeProfile(value, authorization) {
   });
 }
 
-function normalizeOfflineLease(value, profile, authorization) {
+function offlineLeaseSignaturePayload(lease) {
+  return JSON.stringify({
+    v: lease.v,
+    id: lease.id,
+    userId: lease.userId,
+    deviceId: lease.deviceId,
+    authorizationId: lease.authorizationId,
+    credentialVersion: lease.credentialVersion,
+    eligibleRoles: lease.eligibleRoles,
+    activeRole: lease.activeRole,
+    teacherId: lease.teacherId,
+    studentId: lease.studentId,
+    issuedAt: lease.issuedAt,
+    expiresAt: lease.expiresAt,
+    scope: lease.scope,
+  });
+}
+
+function resolveOfflineLeasePublicKey(value) {
+  try {
+    if (value && value.type === 'public' && value.asymmetricKeyType === 'ed25519') return value;
+    return crypto.createPublicKey(value || {
+      key: Buffer.from(CLOUD_OFFLINE_LEASE_PUBLIC_KEY_B64, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+  } catch (error) {
+    throw vaultError('DESKTOP_IDENTITY_VAULT_CONFIG_REQUIRED', error);
+  }
+}
+
+function normalizeOfflineLease(value, profile, authorization, offlineLeasePublicKey) {
   if (value == null) return null;
   if (!value || typeof value !== 'object') throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   assertNoForbiddenSecrets(value);
@@ -254,6 +286,7 @@ function normalizeOfflineLease(value, profile, authorization) {
     : null;
   const lease = {
     ...parsed,
+    v: parsed.v,
     id: stringField(parsed.id, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 256),
     userId: stringField(parsed.userId, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 128),
     deviceId: stringField(parsed.deviceId, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 128),
@@ -270,6 +303,7 @@ function normalizeOfflineLease(value, profile, authorization) {
     activeRole,
     teacherId: optionalString(parsed.teacherId, 128),
     studentId: optionalString(parsed.studentId, 128),
+    signature: stringField(parsed.signature, 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID', 512),
     issuedAt,
     expiresAt,
     scope,
@@ -287,6 +321,15 @@ function normalizeOfflineLease(value, profile, authorization) {
     || activeRole !== profile.activeRole
     || !scope
     || scope.kind !== activeRole) {
+    throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
+  }
+  if (lease.v !== 1 || !/^[A-Za-z0-9_-]{80,100}$/u.test(lease.signature)
+    || !crypto.verify(
+      null,
+      Buffer.from(offlineLeaseSignaturePayload(lease), 'utf8'),
+      offlineLeasePublicKey,
+      Buffer.from(lease.signature, 'base64url')
+    )) {
     throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   }
   if (activeRole === 'teacher'
@@ -493,6 +536,7 @@ function createDesktopIdentityVault({
   filePath,
   legacyFilePath = null,
   safeStorage,
+  offlineLeasePublicKey = null,
   fsImpl = fs,
   now = () => new Date(),
   delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
@@ -500,6 +544,7 @@ function createDesktopIdentityVault({
   if (!filePath || !safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function') {
     throw vaultError('DESKTOP_IDENTITY_VAULT_CONFIG_REQUIRED');
   }
+  const verifiedOfflineLeasePublicKey = resolveOfflineLeasePublicKey(offlineLeasePublicKey);
 
   let pendingRegistration = null;
   let unlockedSecret = null;
@@ -595,7 +640,7 @@ function createDesktopIdentityVault({
     );
     const authorization = normalizeAuthorization(value.authorization, publicIdentity);
     const profile = normalizeProfile(value.profile, authorization);
-    const offlineLease = normalizeOfflineLease(value.offlineLease, profile, authorization);
+    const offlineLease = normalizeOfflineLease(value.offlineLease, profile, authorization, verifiedOfflineLeasePublicKey);
     const authorityContext = normalizeAuthorityContext(
       value.authorityContext,
       profile,
@@ -806,7 +851,7 @@ function createDesktopIdentityVault({
     const publicIdentity = source.publicIdentity;
     const authorization = normalizeAuthorization(input.authorization, publicIdentity);
     const profile = normalizeProfile(input.profile, authorization);
-    const offlineLease = normalizeOfflineLease(input.offlineLease, profile, authorization);
+    const offlineLease = normalizeOfflineLease(input.offlineLease, profile, authorization, verifiedOfflineLeasePublicKey);
     const authorityContext = normalizeAuthorityContext(
       input.authorityContext === undefined ? source.authorityContext : input.authorityContext,
       profile,
@@ -871,7 +916,8 @@ function createDesktopIdentityVault({
     const offlineLease = normalizeOfflineLease(
       input.offlineLease,
       verified.profile,
-      verified.authorization
+      verified.authorization,
+      verifiedOfflineLeasePublicKey
     );
     const built = buildEnvelope({
       password: input.password,

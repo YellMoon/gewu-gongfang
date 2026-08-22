@@ -11,6 +11,7 @@ const {
 const now = new Date('2026-08-21T08:00:00.000Z');
 const pepper = 'test-phone-lookup-pepper';
 const ticketSecret = 'test-ticket-secret-material-32-bytes';
+const leaseKeyPair = crypto.generateKeyPairSync('ed25519');
 const records = [{ phoneHmac: hmacPhone(pepper, '13700000000'), authorityId: 'tenant-1', accountId: 'account-1' }];
 const calls = { issued: [], registered: [], sessionContexts: [] };
 const privateKey = crypto.generateKeyPairSync('ed25519').privateKey;
@@ -22,6 +23,7 @@ const service = createCloudDesktopRegistrationService({
   phoneVerifier: async code => code === 'verified-phone-code' ? '13700000000' : (() => { throw Object.assign(new Error('invalid'), { code: 'PHONE_VERIFICATION_REJECTED' }); })(),
   lookupAccount: createOperatorPhoneLookup({ pepper, records }),
   ticketSecret,
+  leasePrivateKey: leaseKeyPair.privateKey,
   issueAssertion: async input => { calls.issued.push(input); },
   register: async input => { calls.registered.push(input); return { receiptId: input.receiptId, sessionId: input.sessionId, replayed: false }; },
   readSessionContext: async input => {
@@ -34,6 +36,8 @@ const service = createCloudDesktopRegistrationService({
       sessionId: input.sessionId,
       expiresAt: input.expiresAt,
       roles: ['super_admin'],
+      teacherId: null,
+      studentId: null,
     };
   },
 });
@@ -57,6 +61,7 @@ const service = createCloudDesktopRegistrationService({
   const unsignedLease = { ...registered.offlineLease };
   delete unsignedLease.signature;
   assert.deepStrictEqual(unsignedLease, {
+    v: 1,
     id: `offline-lease-${registered.sessionId}`,
     userId: 'account-1',
     deviceId: calls.issued[0].deviceId,
@@ -70,10 +75,12 @@ const service = createCloudDesktopRegistrationService({
     expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
     scope: { kind: 'super_admin' },
   }, 'the cloud registration result must issue a short-lived lease bound to this session and device');
-  const expectedLeaseSignature = crypto.createHmac('sha256', ticketSecret)
-    .update(Buffer.from(JSON.stringify(unsignedLease), 'utf8').toString('base64url'))
-    .digest('base64url');
-  assert.strictEqual(registered.offlineLease.signature, expectedLeaseSignature,
+  assert.strictEqual(crypto.verify(
+    null,
+    Buffer.from(JSON.stringify(unsignedLease), 'utf8'),
+    leaseKeyPair.publicKey,
+    Buffer.from(registered.offlineLease.signature, 'base64url'),
+  ), true,
     'the lease is signed by the cloud service over every locally persisted binding');
   assert.strictEqual(calls.issued.length, 1);
   assert.strictEqual(calls.registered.length, 1);
@@ -92,6 +99,8 @@ const service = createCloudDesktopRegistrationService({
       sessionId: registered.sessionId,
       expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
       roles: ['super_admin'],
+      teacherId: null,
+      studentId: null,
     },
     'a desktop session context must be derived from the signed current cloud session',
   );

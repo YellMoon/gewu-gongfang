@@ -99,7 +99,7 @@ async function main() {
           user: { id: 'account-cloud-1' },
           deviceId: 'desktop-device-a1b2c3d4e5f60708',
           authorizationId: 'session-cloud-1', credentialVersion: 1,
-          activeRole: 'teacher', eligibleRoles: ['teacher'], offlineLease: null,
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-cloud-1', offlineLease: null,
         };
       },
     },
@@ -118,8 +118,8 @@ async function main() {
       if (url === 'https://cloud.test/api/desktop/online-registration') {
         return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1', offlineLease: {
           id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',
-          credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: null, studentId: null,
-          issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: null },
+          credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: 'teacher-cloud-1', studentId: null,
+          issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: 'teacher-cloud-1' }, signature: 'cloud-lease-signature-1',
         } }) };
       }
       if (url === 'https://cloud.test/api/desktop/session-context') {
@@ -127,7 +127,7 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true,
           authorityId: 'authority-cloud-1', accountId: 'account-cloud-1',
           deviceId: 'desktop-device-a1b2c3d4e5f60708', installationId: 'desktop-device-a1b2c3d4e5f60708',
-          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['teacher'],
+          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['teacher'], teacherId: 'teacher-cloud-1', studentId: null,
         }) };
       }
       if (url === 'https://cloud.test/api/business/schedules') {
@@ -178,13 +178,15 @@ async function main() {
   });
   assert.deepStrictEqual(unifiedCloudSealed.offlineLease, {
     id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',
-    credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: null, studentId: null,
-    issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: null },
+    credentialVersion: 1, eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: 'teacher-cloud-1', studentId: null,
+    issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: 'teacher-cloud-1' }, signature: 'cloud-lease-signature-1',
   }, 'a new unified registration seals only the cloud-issued, device-bound offline lease');
   assert.strictEqual(unifiedCloudSealed.authorization.userId, 'account-cloud-1');
   assert.deepStrictEqual(unifiedCloudSealed.profile.eligibleRoles, ['teacher']);
   assert.strictEqual(unifiedCloudSealed.profile.activeRole, 'teacher',
     'a verified teacher account must register silently without a super-admin role');
+  assert.strictEqual(unifiedCloudSealed.profile.teacherId, 'teacher-cloud-1',
+    'a teacher lease must carry the cloud-resolved teacher subject rather than inventing one locally');
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
