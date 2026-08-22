@@ -40,7 +40,6 @@ def owner_sql(statement):
 
 
 LEDGER_SQL = """
-CREATE SCHEMA IF NOT EXISTS business;
 CREATE TABLE IF NOT EXISTS business.cloud_schema_migrations (
   name text COLLATE \"C\" PRIMARY KEY,
   sha256 text COLLATE \"C\" NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),

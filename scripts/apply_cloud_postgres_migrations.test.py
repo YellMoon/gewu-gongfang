@@ -45,6 +45,7 @@ class CloudPostgresMigrationTests(unittest.TestCase):
             rows = read_migrations(root)
             executor = FakeExecutor()
             self.assertEqual(apply_migrations(executor, rows), {"applied": ["20260823-a.sql"], "skipped": []})
+            self.assertFalse(any("CREATE SCHEMA" in call for call in executor.calls))
             self.assertEqual(apply_migrations(executor, rows), {"applied": [], "skipped": ["20260823-a.sql"]})
             rows[0]["sha256"] = "0" * 64
             with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
