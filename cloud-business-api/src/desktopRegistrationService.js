@@ -211,7 +211,7 @@ function createCloudDesktopRegistrationService(config) {
       }
       let identity;
       try {
-        identity = settings.lookupAccount(phone);
+        identity = await settings.lookupAccount(phone);
       } catch (_) {
         throw rejected();
       }

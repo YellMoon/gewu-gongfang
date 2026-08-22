@@ -21,7 +21,7 @@ const service = createCloudDesktopRegistrationService({
   now: () => new Date(now),
   randomId: prefix => `${prefix}-fixed`,
   phoneVerifier: async code => code === 'verified-phone-code' ? '13700000000' : (() => { throw Object.assign(new Error('invalid'), { code: 'PHONE_VERIFICATION_REJECTED' }); })(),
-  lookupAccount: createOperatorPhoneLookup({ pepper, records }),
+  lookupAccount: async phone => createOperatorPhoneLookup({ pepper, records })(phone),
   ticketSecret,
   leasePrivateKey: leaseKeyPair.privateKey,
   issueAssertion: async input => { calls.issued.push(input); },
