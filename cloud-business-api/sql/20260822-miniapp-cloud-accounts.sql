@@ -18,6 +18,6 @@ CREATE TABLE business.miniapp_cloud_role_grants (
 );
 
 REVOKE ALL ON business.miniapp_cloud_accounts,business.miniapp_cloud_role_grants FROM PUBLIC;
-GRANT SELECT,INSERT,UPDATE ON business.miniapp_cloud_accounts,business.miniapp_cloud_role_grants TO gewu_app;
+GRANT SELECT,INSERT,UPDATE ON business.miniapp_cloud_accounts,business.miniapp_cloud_role_grants TO gewu_cloud_schedule_reader;
 
 COMMIT;
