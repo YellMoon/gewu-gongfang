@@ -91,6 +91,33 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
   }), '/api/business/schedules', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
   assert.strictEqual(miniappBusiness.status, 200);
+  const scopedQueries = [];
+  const teacherIdentity = {
+    ...miniappIdentity,
+    context: async input => {
+      if (input.token !== 'teacher-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return { accountId: 'teacher-account', status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-1' } };
+    },
+  };
+  const teacherSchedules = await request(createCloudBusinessApp({
+    query: async (text, values) => { scopedQueries.push([text, values]); return { rows: [] }; }, miniappCloudAccount: teacherIdentity, businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer teacher-ticket.signature' } });
+  assert.strictEqual(teacherSchedules.status, 200);
+  assert.deepStrictEqual(scopedQueries[0][1], ['default', 'teacher', 'teacher-1']);
+  assert.ok(scopedQueries[0][0].includes('c.teacher_id=$3'), 'a teacher schedule query must bind the assigned teacher profile');
+  const studentIdentity = {
+    ...miniappIdentity,
+    context: async input => {
+      if (input.token !== 'student-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return { accountId: 'student-account', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } };
+    },
+  };
+  const studentSchedules = await request(createCloudBusinessApp({
+    query: async (text, values) => { scopedQueries.push([text, values]); return { rows: [] }; }, miniappCloudAccount: studentIdentity, businessTenantId: 'default',
+  }), '/api/business/schedules', { headers: { authorization: 'Bearer student-ticket.signature' } });
+  assert.strictEqual(studentSchedules.status, 200);
+  assert.deepStrictEqual(scopedQueries[1][1], ['default', 'student', 'student-1']);
+  assert.ok(scopedQueries[1][0].includes('course_student_pricings'), 'a student schedule query must use the assigned student profile, not a client-provided identifier');
   const legacyBusiness = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
   }), '/api/business/schedules', { headers: { authorization: 'Bearer old.jwt.token' } });
@@ -110,7 +137,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     schedules: [{ id: 'schedule-1', courseId: 'course-1', courseName: '\\u6570\\u5b66', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', status: 1, roomDisplay: 'A101', tuition: '100', teacherFee: '50' }],
   });
   assert.strictEqual(businessQueries.length, 1);
-  assert.deepStrictEqual(businessQueries[0][1], ['default']);
+  assert.deepStrictEqual(businessQueries[0][1], ['default', 'super_admin', null]);
   assert.ok(businessQueries[0][0].startsWith('SELECT s.id AS "id", s.course_id AS "courseId"'));
   const businessWrites = [];
   const scheduleUpdate = await request(createCloudBusinessApp({

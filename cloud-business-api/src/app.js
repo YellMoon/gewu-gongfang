@@ -98,6 +98,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
+  function scheduleScope(context) {
+    if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
+    if (context.roles.includes('super_admin')) return { role: 'super_admin', profileId: null };
+    const profile = context.profile && typeof context.profile === 'object' ? context.profile : null;
+    if (context.roles.includes('teacher')) {
+      const profileId = profile?.type === 'teacher' ? profile.id : context.teacherId;
+      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'teacher', profileId };
+    }
+    if (context.roles.includes('student')) {
+      const profileId = profile?.type === 'student' ? profile.id : context.studentId;
+      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'student', profileId };
+    }
+    throw businessAccessDenied();
+  }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
@@ -165,16 +179,23 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
     try {
       const context = await businessContext(request);
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
-        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      }
+      const scope = scheduleScope(context);
       const result = await query(
-        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.updated_at AS "updatedAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay", s.calculated_tuition AS "tuition", s.calculated_teacher_fee AS "teacherFee"
+        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.updated_at AS "updatedAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay",
+           CASE WHEN $2='super_admin' THEN s.calculated_tuition WHEN $2='student' THEN COALESCE((SELECT o.tuition FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3), (SELECT p.tuition FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3)) ELSE NULL END AS "tuition",
+           CASE WHEN $2 IN ('super_admin','teacher') THEN s.calculated_teacher_fee ELSE NULL END AS "teacherFee"
          FROM business.schedules s
          JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
          WHERE s.tenant_id=$1
+           AND ($2='super_admin'
+             OR ($2='teacher' AND c.teacher_id=$3)
+             OR ($2='student' AND (
+               EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3)
+               OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id)
+                   AND EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3))
+             )))
          ORDER BY s.start_at ASC, s.id ASC`,
-        [businessTenantId],
+        [businessTenantId, scope.role, scope.profileId],
       );
       response.json({ ok: true, schedules: result.rows });
     } catch (error) {
