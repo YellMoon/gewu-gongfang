@@ -170,6 +170,21 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(businessQueries.length, 1);
   assert.deepStrictEqual(businessQueries[0][1], ['default', 'super_admin', null]);
   assert.ok(businessQueries[0][0].startsWith('SELECT s.id AS "id", s.course_id AS "courseId"'));
+  const projectionQueries = [];
+  const desktopProjection = await request(createCloudBusinessApp({
+    query: async (text, values) => {
+      projectionQueries.push([text, values]);
+      return { rows: [{ projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }] };
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/desktop-projection', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(desktopProjection.status, 200);
+  assert.deepStrictEqual(desktopProjection.body, {
+    ok: true, projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] },
+  });
+  assert.deepStrictEqual(projectionQueries[0][1], ['default']);
+  assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.schedules'));
   const businessWrites = [];
   const scheduleUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -241,11 +256,12 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
     ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
-    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
-    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
-    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
-  ]);
+ ]);
   const denied = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: { begin: async () => { throw Object.assign(new Error('no'), { code: 'CLOUD_ONLINE_IDENTITY_REJECTED' }); }, register: async () => null } }), '/api/desktop/online-verification', { method: 'POST', body: { phoneCode: 'bad' } });
   assert.strictEqual(denied.status, 403);
   assert.deepStrictEqual(denied.body, { ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });

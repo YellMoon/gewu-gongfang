@@ -145,6 +145,21 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
+  const desktopProjectionSql = [
+    'SELECT jsonb_build_object(',
+    "'students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name,'phone',s.phone_legacy,'school',s.school_legacy,'grade_year',s.grade_year,'grade_current',s.grade_current,'institution_id',s.institution_id,'parent_name',s.parent_name_legacy,'parent_wechat',s.parent_wechat_legacy,'balance_hours',s.legacy_balance_hours,'balance_money',s.legacy_balance_money,'notes',s.notes,'deleted',s.legacy_deleted,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.students s WHERE s.tenant_id=$1),'[]'::jsonb),",
+    "'teachers',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'name',t.name,'phone',t.phone_legacy,'subject',t.subject,'hourly_rate',t.hourly_rate,'notes',t.notes,'deleted',t.legacy_deleted,'created_at',t.created_at,'updated_at',t.updated_at) ORDER BY t.id) FROM business.teachers t WHERE t.tenant_id=$1),'[]'::jsonb),",
+    "'courses',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'year',c.year,'semester',c.semester,'display_name',c.display_name,'type',c.course_type,'source_type',c.legacy_source_type,'institution_id',c.institution_id,'price_tuition',c.price_tuition,'price_teacher',c.price_teacher,'billing_unit',c.billing_unit,'teacher_fee_mode',c.teacher_fee_mode,'room_id',c.legacy_room_id,'room_name',c.room_name_snapshot,'teacher_id',c.teacher_id,'teacher_name',c.teacher_name_snapshot,'active',c.legacy_active,'default_duration_minutes',c.default_duration_minutes,'notes',c.notes,'deleted',c.legacy_deleted,'created_at',c.created_at,'updated_at',c.updated_at,'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',p.teacher_fee) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id),'[]'::jsonb)) ORDER BY c.id) FROM business.courses c WHERE c.tenant_id=$1),'[]'::jsonb),",
+    "'schedules',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'course_id',s.course_id,'start_time',s.start_at,'end_time',s.end_at,'recurring_rule',s.recurring_rule_json,'status',s.status,'room',s.room_display_snapshot,'service_type',s.service_type,'calculated_tuition',s.calculated_tuition,'calculated_teacher_fee',s.calculated_teacher_fee,'notes',s.notes,'deleted',s.legacy_deleted,'created_at',s.created_at,'updated_at',s.updated_at,'student_ids',COALESCE((SELECT jsonb_agg(o.student_id ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id),(SELECT jsonb_agg(p.student_id ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id),'[]'::jsonb),'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',o.student_id,'tuition',o.tuition,'teacher_fee',o.teacher_fee,'attendance_status',o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id),(SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',p.teacher_fee) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id),'[]'::jsonb)) ORDER BY s.start_at,s.id) FROM business.schedules s WHERE s.tenant_id=$1),'[]'::jsonb),",
+    "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',i.legacy_deleted,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1),'[]'::jsonb),",
+    "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',s.legacy_deleted,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1),'[]'::jsonb),",
+    "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',r.legacy_deleted,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1),'[]'::jsonb)",
+    ') AS projection',
+  ].join(' ');
+  function isDesktopProjection(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+      && ['students', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms'].every(key => Array.isArray(value[key]));
+  }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
     try {
@@ -350,8 +365,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
-  app.get('/api/business/schedules', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
+ app.get('/api/business/schedules', async (request, response) => {
+   if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
     try {
       const context = await businessContext(request);
       const scope = scheduleScope(context);
@@ -375,10 +390,24 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.json({ ok: true, schedules: result.rows });
     } catch (error) {
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+     businessUnavailable(response);
+   }
+ });
+  app.get('/api/business/desktop-projection', async (request, response) => {
+    if (!desktopRegistration || !businessTenantId) return businessUnavailable(response);
+    try {
+      const context = await desktopQuestionContext(request);
+      if (!Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
+      const result = await query(desktopProjectionSql, [businessTenantId]);
+      const projection = result?.rows?.[0]?.projection;
+      if (!isDesktopProjection(projection)) return businessUnavailable(response);
+      response.json({ ok: true, projection });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
-  app.put('/api/business/schedules/:scheduleId', async (request, response) => {
+ app.put('/api/business/schedules/:scheduleId', async (request, response) => {
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
