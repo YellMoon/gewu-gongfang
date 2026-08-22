@@ -134,6 +134,36 @@ const storeCandidatesSql = [
   ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM advanced_task',
 ].join(' ');
 
+const prepareDraftsSql = [
+  'WITH eligible_items AS (',
+  "SELECT item_id FROM business.question_import_items WHERE import_task_id=$1 AND status IN ('accepted','warning')",
+  '), owned_task AS (',
+  "UPDATE business.question_import_tasks SET status='drafts_prepared',phase='drafts_prepared',updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND tenant_id=$2 AND account_id=$3 AND status='candidates_ready' AND EXISTS (SELECT 1 FROM eligible_items)",
+  'RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+  '), marked_items AS (',
+  "UPDATE business.question_import_items item SET status='draft_prepared',updated_at=transaction_timestamp()",
+  "FROM owned_task task WHERE item.import_task_id=task.task_id AND item.status IN ('accepted','warning')",
+  'RETURNING item.item_id AS "itemId",item.item_index AS "itemIndex",item.content_hash AS "contentHash",item.candidate_json AS candidate,item.validation_json AS validation,item.media_manifest_json AS "mediaManifest"',
+  ') SELECT task.task_id AS "taskId",task.status,task.phase,task."requestHash",task."createdAt",task."updatedAt",',
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('itemId',item.\"itemId\",'itemIndex',item.\"itemIndex\",'contentHash',item.\"contentHash\",'candidate',item.candidate,'validation',item.validation,'mediaManifest',item.\"mediaManifest\") ORDER BY item.\"itemIndex\") FROM marked_items item),'[]'::jsonb) AS items",
+  'FROM owned_task task',
+].join(' ');
+
+function preparedTaskRow(row) {
+  const task = taskRow(row, false);
+  if (!Array.isArray(row.items) || row.items.length < 1 || row.items.some(item => !plainObject(item)
+    || typeof item.itemId !== 'string' || !/^question_import_item_[A-Za-z0-9_-]{1,128}$/.test(item.itemId)
+    || !Number.isSafeInteger(item.itemIndex) || item.itemIndex < 0 || !/^[0-9a-f]{64}$/.test(item.contentHash)
+    || !plainObject(item.candidate) || !plainObject(item.validation) || !Array.isArray(item.mediaManifest))) {
+    throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+  }
+  return { ...task, items: row.items.map(item => ({
+    itemId: item.itemId, itemIndex: item.itemIndex, contentHash: item.contentHash,
+    candidate: item.candidate, validation: item.validation, mediaManifest: item.mediaManifest,
+  })) };
+}
+
 function candidateRows(value, randomId) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 500) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   return value.map((entry, itemIndex) => {
@@ -207,6 +237,16 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       const result = await query(storeCandidatesSql, [taskId, stableJson(candidates)]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       return taskRow(result.rows[0], false);
+    },
+    async prepareDrafts(input) {
+      const request = exact(input, ['tenantId', 'actor', 'taskId']);
+      const tenantId = text(request.tenantId, 128);
+      const currentActor = actor(request.actor);
+      const taskId = text(request.taskId, 160);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const result = await query(prepareDraftsSql, [taskId, tenantId, currentActor.accountId]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_NOT_CONFIRMABLE');
+      return preparedTaskRow(result.rows[0]);
     },
   });
 }

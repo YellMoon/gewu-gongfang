@@ -35,6 +35,16 @@ async function main() {
         taskId: values[0], status: 'candidates_ready', phase: 'candidates_ready', requestHash: 'b'.repeat(64),
         createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:02:00.000Z'),
       }] };
+      if (text.includes("SET status='draft_prepared'")) {
+        if (values[0] === 'question_import_task_unconfirmed') return { rows: [] };
+        return { rows: [{
+        taskId: values[0], status: 'drafts_prepared', phase: 'drafts_prepared', requestHash: 'b'.repeat(64),
+        createdAt: new Date('2026-08-23T00:00:00.000Z'), updatedAt: new Date('2026-08-23T00:03:00.000Z'),
+        items: [{ itemId: 'question_import_item_fixed-import-id_0', itemIndex: 0, contentHash: 'c'.repeat(64),
+          candidate: { subject: 'physics', stem: 'What is force?', options: [], answer: 'mass times acceleration' },
+          validation: { status: 'accepted' }, mediaManifest: [] }],
+        }] };
+      }
       throw new Error(`unexpected query: ${text}`);
     },
   });
@@ -88,6 +98,21 @@ async function main() {
     'parsed text candidates must be persisted as cloud task items');
   assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
     'candidate storage must not create a cloud question before explicit confirmation');
+
+  const prepared = await repository.prepareDrafts({
+    tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: created.taskId,
+  });
+  assert.strictEqual(prepared.status, 'drafts_prepared');
+  assert.deepStrictEqual(prepared.items.map(item => item.itemId), ['question_import_item_fixed-import-id_0']);
+  assert.ok(calls.some(([text, values]) => text.includes("SET status='draft_prepared'")
+    && values[0] === created.taskId && values[1] === 'default' && values[2] === 'teacher-1'),
+  'only the cloud task owner may prepare local pending drafts');
+  assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
+    'preparing drafts must not write question authority tables');
+  await assert.rejects(() => repository.prepareDrafts({
+    tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: 'question_import_task_unconfirmed',
+  }), /CLOUD_QUESTION_IMPORT_NOT_CONFIRMABLE/,
+  'an import task without cloud-ready candidates must not create local submission drafts');
 
   console.log('cloud question import task repository checks passed');
 }
