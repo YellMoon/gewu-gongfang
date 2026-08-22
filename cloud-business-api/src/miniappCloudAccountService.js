@@ -144,13 +144,15 @@ function createMiniappCloudAccountService(config) {
       }));
     },
     async assignRole(input) {
-      const request = exact(input, ['token', 'accountId', 'role', 'profileId']);
+      const request = exact(input, ['token', 'accountId', 'role', 'profileId', 'studentRelationship']);
       const actor = await currentContext(request.token);
       const assignedRole = role(request.role);
-      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole || !text(request.profileId)) throw rejected();
+      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole || !text(request.profileId)
+        || (assignedRole === 'student' && !['student', 'guardian'].includes(request.studentRelationship))
+        || (assignedRole !== 'student' && request.studentRelationship !== null)) throw rejected();
       let assigned;
       try {
-        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole, profileId: request.profileId });
+        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole, profileId: request.profileId, studentRelationship: request.studentRelationship });
       } catch (_) {
         throw rejected();
       }

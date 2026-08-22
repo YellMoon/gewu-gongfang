@@ -61,9 +61,8 @@ export default function LoginPage() {
     if (session.token && session.identity) Taro.reLaunch({ url: '/pages/schedule/index' });
   });
 
-  const handleCloudLogin = async (event: any) => {
-    const phoneCode = event?.detail?.code;
-    if (typeof phoneCode !== 'string' || !phoneCode.trim()) {
+  const handleCloudLogin = async (phoneCode: string | null) => {
+    if (phoneCode !== null && (typeof phoneCode !== 'string' || !phoneCode.trim())) {
       Taro.showToast({ title: '\u8bf7\u6388\u6743\u5fae\u4fe1\u624b\u673a\u53f7\u540e\u767b\u5f55', icon: 'none' });
       return;
     }
@@ -106,8 +105,9 @@ export default function LoginPage() {
       <Text className="login-title">{'\u683c\u7269\u5de5\u574a'}</Text>
     </View>
     <View className="login-form">
-      <Text className="login-description">{'\u4f7f\u7528\u5fae\u4fe1\u624b\u673a\u53f7\u5b8c\u6210\u4e91\u7aef\u767b\u5f55\u3002\u65b0\u8d26\u53f7\u9700\u7b49\u5f85\u8d85\u7ea7\u7ba1\u7406\u5458\u6388\u4e88\u6743\u9650\u3002'}</Text>
-      <Button className="wx-login-btn" openType="getPhoneNumber" onGetPhoneNumber={(event) => void handleCloudLogin(event)} loading={loading} disabled={loading}>{'\u7528\u5fae\u4fe1\u624b\u673a\u53f7\u767b\u5f55'}</Button>
+      <Text className="login-description">{'\u9996\u6b21\u767b\u5f55\u8bf7\u9a8c\u8bc1\u5fae\u4fe1\u624b\u673a\u53f7\u3002\u5df2\u7ed1\u5b9a\u7684\u5fae\u4fe1\u53ef\u76f4\u63a5\u767b\u5f55\uff1b\u65b0\u8d26\u53f7\u9700\u7b49\u5f85\u8d85\u7ea7\u7ba1\u7406\u5458\u6388\u6743\u9650\u3002'}</Text>
+      <Button className="wx-login-btn" onClick={() => void handleCloudLogin(null)} loading={loading} disabled={loading}>{'\u5df2\u7ed1\u5b9a\u5fae\u4fe1\u76f4\u63a5\u767b\u5f55'}</Button>
+      <Button className="wx-login-btn" openType="getPhoneNumber" onGetPhoneNumber={(event) => void handleCloudLogin(event?.detail?.code || '')} loading={loading} disabled={loading}>{'\u9996\u6b21\u767b\u5f55 / \u9a8c\u8bc1\u624b\u673a\u53f7'}</Button>
     </View>
     <View className="privacy-entry">
       <Text className="privacy-text">{'\u767b\u5f55\u524d\u8bf7\u9605\u8bfb'}</Text>

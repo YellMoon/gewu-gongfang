@@ -7,17 +7,23 @@ import './index.scss';
 
 type PendingAccount = { accountId: string; status: 'pending_authorization'; createdAt: string };
 type AssignableRole = 'teacher' | 'student';
+type StudentRelationship = 'student' | 'guardian';
 type BusinessProfile = { id: string; name: string };
 
 const ROLE_OPTIONS: Array<{ value: AssignableRole; label: string }> = [
   { value: 'teacher', label: '\u8001\u5e08' },
   { value: 'student', label: '\u5b66\u751f' },
 ];
+const STUDENT_RELATIONSHIP_OPTIONS: Array<{ value: StudentRelationship; label: string }> = [
+  { value: 'student', label: '\u5b66\u751f\u672c\u4eba' },
+  { value: 'guardian', label: '\u5bb6\u957f / \u76d1\u62a4\u4eba' },
+];
 
 export default function CloudAccountAdminPage() {
   const identity: any = Taro.getStorageSync('user_info') || {};
   const [accounts, setAccounts] = useState<PendingAccount[]>([]);
   const [roleIndexByAccount, setRoleIndexByAccount] = useState<Record<string, number>>({});
+  const [relationshipIndexByAccount, setRelationshipIndexByAccount] = useState<Record<string, number>>({});
   const [profilesByRole, setProfilesByRole] = useState<Record<AssignableRole, BusinessProfile[]>>({ teacher: [], student: [] });
   const [profileIndexByAccount, setProfileIndexByAccount] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -51,13 +57,14 @@ export default function CloudAccountAdminPage() {
     const token = authSessionRuntime.capture().token;
     if (!token || busyAccountId) return;
     const role = ROLE_OPTIONS[roleIndexByAccount[accountId] || 0].value;
+    const studentRelationship = role === 'student' ? STUDENT_RELATIONSHIP_OPTIONS[relationshipIndexByAccount[accountId] || 0].value : null;
     const profile = profilesByRole[role][profileIndexByAccount[accountId] || 0];
     if (!profile) {
       Taro.showToast({ title: '\u8bf7\u5148\u9009\u62e9\u5df2\u5bfc\u5165\u7684\u6863\u6848', icon: 'none' });
       return;
     }
     setBusyAccountId(accountId);
-    const response = await miniappCloudBusinessApi.assignAccountRole(token, accountId, role, profile.id);
+    const response = await miniappCloudBusinessApi.assignAccountRole(token, accountId, role, profile.id, studentRelationship);
     if (response.success) {
       Taro.showToast({ title: '\u89d2\u8272\u5df2\u6388\u4e88', icon: 'success' });
       setAccounts(current => current.filter(account => account.accountId !== accountId));
@@ -86,9 +93,13 @@ export default function CloudAccountAdminPage() {
         <Picker mode='selector' range={ROLE_OPTIONS.map(option => option.label)} value={roleIndex} onChange={event => {
           setRoleIndexByAccount(current => ({ ...current, [account.accountId]: Number(event.detail.value) }));
           setProfileIndexByAccount(current => ({ ...current, [account.accountId]: 0 }));
+          setRelationshipIndexByAccount(current => ({ ...current, [account.accountId]: 0 }));
         }}>
           <View className='cloud-account-admin-picker'>{ROLE_OPTIONS[roleIndex].label}<Text>{'\u203a'}</Text></View>
         </Picker>
+        {role === 'student' ? <Picker mode='selector' range={STUDENT_RELATIONSHIP_OPTIONS.map(option => option.label)} value={relationshipIndexByAccount[account.accountId] || 0} onChange={event => setRelationshipIndexByAccount(current => ({ ...current, [account.accountId]: Number(event.detail.value) }))}>
+          <View className='cloud-account-admin-picker'>{STUDENT_RELATIONSHIP_OPTIONS[relationshipIndexByAccount[account.accountId] || 0].label}<Text>{'\u203a'}</Text></View>
+        </Picker> : null}
         <Picker mode='selector' range={profiles.map(profile => profile.name)} value={profileIndex} disabled={profiles.length === 0} onChange={event => setProfileIndexByAccount(current => ({ ...current, [account.accountId]: Number(event.detail.value) }))}>
           <View className='cloud-account-admin-picker'>{profiles[profileIndex]?.name || '\u6682\u65e0\u53ef\u7ed1\u5b9a\u6863\u6848'}<Text>{'\u203a'}</Text></View>
         </Picker>

@@ -241,7 +241,7 @@ class ApiClient {
 export const api = new ApiClient();
 
 export const miniappCloudAuthApi = {
-  async login(loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
+  async login(loginCode: string, phoneCode: string | null): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
     try {
       const response = await Taro.request({
         url: cloudBusinessUrl('/api/miniapp/cloud-login'),
@@ -306,11 +306,13 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud profile request unavailable' };
     }
   },
-  async assignAccountRole(token: string, accountId: string, role: 'teacher' | 'student', profileId: string): Promise<ApiResponse<{ ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } }>> {
-    if (typeof token !== 'string' || !token.trim() || typeof accountId !== 'string' || !accountId.trim() || typeof profileId !== 'string' || !profileId.trim()) return { success: false, error: 'Cloud session required' };
+  async assignAccountRole(token: string, accountId: string, role: 'teacher' | 'student', profileId: string, studentRelationship: 'student' | 'guardian' | null): Promise<ApiResponse<{ ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof accountId !== 'string' || !accountId.trim() || typeof profileId !== 'string' || !profileId.trim()
+      || (role === 'student' && studentRelationship !== 'student' && studentRelationship !== 'guardian')
+      || (role !== 'student' && studentRelationship !== null)) return { success: false, error: 'Cloud session required' };
     try {
       const response = await Taro.request({
-        url: cloudBusinessUrl(`/api/miniapp/cloud-accounts/${encodeURIComponent(accountId)}/role`), method: 'PUT', data: { role, profileId },
+        url: cloudBusinessUrl(`/api/miniapp/cloud-accounts/${encodeURIComponent(accountId)}/role`), method: 'PUT', data: { role, profileId, studentRelationship },
         header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
       });
       if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.account) return { success: true, data: response.data as { ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } } };

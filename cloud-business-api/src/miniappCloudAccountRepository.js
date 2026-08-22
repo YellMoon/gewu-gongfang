@@ -93,9 +93,11 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
       return result.rows.map(row => Object.freeze({ accountId: row.accountId, status: 'pending_authorization', createdAt: row.createdAt.toISOString() }));
     },
     async assignRole(input) {
-      const request = exact(input, ['accountId', 'role', 'profileId']);
+      const request = exact(input, ['accountId', 'role', 'profileId', 'studentRelationship']);
       const role = grantRole(request.role);
-      if (typeof request.accountId !== 'string' || !request.accountId || typeof request.profileId !== 'string' || !request.profileId || !role) throw invalid();
+      if (typeof request.accountId !== 'string' || !request.accountId || typeof request.profileId !== 'string' || !request.profileId || !role
+        || (role === 'student' && !['student', 'guardian'].includes(request.studentRelationship))
+        || (role !== 'student' && request.studentRelationship !== null)) throw invalid();
       const result = await query(
         `WITH target AS (
            SELECT a.account_id,a.status
@@ -103,14 +105,15 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
            WHERE a.account_id=$1
            FOR UPDATE
          ), profile AS (
-           SELECT id FROM business.teachers WHERE $2='teacher' AND id=$3 AND tenant_id=$4 AND legacy_deleted=false
+           SELECT id FROM business.teachers WHERE $2='teacher' AND id=$3 AND tenant_id=$5 AND legacy_deleted=false
            UNION ALL
-           SELECT id FROM business.students WHERE $2='student' AND id=$3 AND tenant_id=$4 AND legacy_deleted=false
+           SELECT id FROM business.students WHERE $2='student' AND id=$3 AND tenant_id=$5 AND legacy_deleted=false
          ), compatible AS (
            SELECT t.account_id
            FROM target t
            WHERE t.status='active'
              AND EXISTS (SELECT 1 FROM profile)
+             AND (($2='student' AND $4 IN ('student','guardian')) OR ($2<>'student' AND $4 IS NULL))
              AND NOT EXISTS (
                SELECT 1 FROM business.miniapp_cloud_role_grants g
                WHERE g.account_id=t.account_id AND g.status='active' AND g.role<>$2
@@ -123,7 +126,7 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
            RETURNING a.account_id,a.status
          ), granted AS (
            INSERT INTO business.miniapp_cloud_role_grants (account_id,role,status,profile_type,profile_id,student_relationship)
-           SELECT account_id,$2,'active',$2,$3,CASE WHEN $2='student' THEN 'student' ELSE NULL END FROM activated
+           SELECT account_id,$2,'active',$2,$3,$4::text FROM activated
            ON CONFLICT (account_id,role) DO UPDATE SET status='active',profile_type=EXCLUDED.profile_type,profile_id=EXCLUDED.profile_id,student_relationship=EXCLUDED.student_relationship,updated_at=transaction_timestamp()
            RETURNING account_id
          )
@@ -135,7 +138,7 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
          JOIN granted r ON r.account_id=a.account_id
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          GROUP BY a.account_id,a.status`,
-        [request.accountId, role, request.profileId, tenantId],
+        [request.accountId, role, request.profileId, request.studentRelationship, tenantId],
       );
       return result.rows[0] ? accountRow(result.rows[0]) : null;
     },
