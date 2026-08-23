@@ -777,7 +777,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
  app.put('/api/business/schedules/:scheduleId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
+    if (!businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
     if (!scheduleId || !update) return businessInputInvalid(response);
@@ -818,7 +818,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.put('/api/business/schedules/:scheduleId/students/:studentId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessScheduleStudentOverride) return businessUnavailable(response);
+    if (!businessTenantId || !businessScheduleStudentOverride) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const studentId = String(request.params.studentId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'attendanceStatus', 'tuition', 'teacherFee']);
@@ -852,7 +852,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.put('/api/business/students/:studentId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentUpdate) return businessUnavailable(response);
+    if (!businessTenantId || !businessStudentUpdate) return businessUnavailable(response);
     const studentId = String(request.params.studentId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'school', 'gradeYear', 'gradeCurrent', 'institutionId', 'parentName', 'notes', 'sourceType', 'studentSource']);
     if (!studentId || !update) return businessInputInvalid(response);
@@ -899,7 +899,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.post('/api/business/courses', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
     const courseId = String(request.body?.courseId || '').trim();
     const update = courseRecord(request.body?.data, false);
     if (!courseId || !update || !exactBody(request.body, ['courseId', 'data'])) return businessInputInvalid(response);
@@ -915,7 +915,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.put('/api/business/courses/:courseId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
     const courseId = String(request.params.courseId || '').trim(); const update = courseRecord(request.body, true);
     if (!courseId || !update) return businessInputInvalid(response);
     try {
@@ -930,7 +930,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.delete('/api/business/courses/:courseId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
     const courseId = String(request.params.courseId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!courseId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
@@ -946,7 +946,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
 
   app.post('/api/business/rooms', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
     const update = exactBody(request.body, ['roomId', 'name', 'address']);
     const roomId = String(update?.roomId || '').trim(); const name = boundedText(update?.name, 256); const address = optionalText(update?.address);
     if (!roomId || !name || address === undefined) return businessInputInvalid(response);
@@ -962,7 +962,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.put('/api/business/rooms/:roomId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
     const roomId = String(request.params.roomId || '').trim(); const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'address']);
     const expectedUpdatedAt = instant(update?.expectedUpdatedAt); const name = boundedText(update?.name, 256); const address = optionalText(update?.address);
     if (!roomId || !expectedUpdatedAt || !name || address === undefined) return businessInputInvalid(response);
@@ -978,7 +978,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.delete('/api/business/rooms/:roomId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
     const roomId = String(request.params.roomId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!roomId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
@@ -994,7 +994,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
 
   app.post('/api/business/teachers', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
     const update = exactBody(request.body, ['teacherId', 'name', 'phone', 'subject', 'hourlyRate', 'notes']);
     const teacherId = String(update?.teacherId || '').trim(); const name = boundedText(update?.name, 256);
     const phone = boundedText(update?.phone, 64); const subject = boundedText(update?.subject, 128); const notes = optionalText(update?.notes);
@@ -1009,7 +1009,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (_) { businessUnavailable(response); }
   });
   app.put('/api/business/teachers/:teacherId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
     const teacherId = String(request.params.teacherId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'phone', 'subject', 'hourlyRate', 'notes']);
     const expectedUpdatedAt = instant(update?.expectedUpdatedAt); const name = boundedText(update?.name, 256);
@@ -1025,7 +1025,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (_) { businessUnavailable(response); }
   });
   app.delete('/api/business/teachers/:teacherId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
     const teacherId = String(request.params.teacherId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!teacherId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
@@ -1041,7 +1041,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
 
   app.put('/api/business/students/:studentId/record', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentRecordUpdate) return businessUnavailable(response);
+    if (!businessTenantId || !businessStudentRecordUpdate) return businessUnavailable(response);
     const studentId = String(request.params.studentId || '').trim();
     const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'school', 'gradeYear', 'gradeCurrent', 'institutionId', 'parentName', 'notes', 'sourceType', 'studentSource', 'contacts']);
     if (!studentId || !update) return businessInputInvalid(response);
@@ -1079,7 +1079,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.post('/api/business/students', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessStudentLifecycleMutations) return businessUnavailable(response);
     const update = exactBody(request.body, ['studentId', 'name', 'school', 'gradeYear', 'gradeCurrent', 'institutionId', 'parentName', 'notes', 'sourceType', 'studentSource', 'contacts']);
     const studentId = String(update?.studentId || '').trim();
     const name = boundedText(update?.name, 256); const school = boundedText(update?.school, 256); const gradeCurrent = boundedText(update?.gradeCurrent, 128);
@@ -1097,7 +1097,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (_) { businessUnavailable(response); }
   });
   app.delete('/api/business/students/:studentId', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentLifecycleMutations) return businessUnavailable(response);
+    if (!businessTenantId || !businessStudentLifecycleMutations) return businessUnavailable(response);
     const studentId = String(request.params.studentId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!studentId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
@@ -1112,7 +1112,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.put('/api/business/students/:studentId/contacts/:contactSlot', async (request, response) => {
-    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
+    if (!businessTenantId) return businessUnavailable(response);
     const studentId = String(request.params.studentId || '').trim();
     const contactSlot = Number(request.params.contactSlot);
     const update = exactBody(request.body, ['expectedUpdatedAt', 'relationship', 'phone', 'wechat']);
