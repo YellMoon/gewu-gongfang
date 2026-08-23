@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.0.6",
+  "version": "8.1.0",
   "scripts": {
     "start": "node server.js",
     "migrate": "node scripts/applyMigrations.js",
