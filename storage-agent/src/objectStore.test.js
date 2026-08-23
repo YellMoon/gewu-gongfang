@@ -63,6 +63,15 @@ async function main() {
       'a directory link beneath the NAS root must not redirect an object write outside the allow-listed root'
     );
     assert.deepStrictEqual(fs.readdirSync(outside), [], 'a rejected linked path must not write outside the NAS root');
+
+    const linkedRoot = path.join(root, 'linked-root');
+    fs.symlinkSync(outside, linkedRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    assert.throws(
+      () => createObjectStore({ nasRoot: linkedRoot }),
+      /STORAGE_OBJECT_REPARSE_POINT/,
+      'the configured NAS root itself must not be a junction or symbolic link'
+    );
+    assert.deepStrictEqual(fs.readdirSync(outside), [], 'a linked NAS root must not receive an object write');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });

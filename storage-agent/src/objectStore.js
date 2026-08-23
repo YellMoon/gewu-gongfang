@@ -48,9 +48,22 @@ function assertNoReparsePoint(candidate, nasRoot) {
   return safeCandidate;
 }
 
+function assertSafeNasRoot(root) {
+  let stats;
+  try {
+    stats = fs.lstatSync(root);
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw failure('STORAGE_OBJECT_INVALID');
+    throw error;
+  }
+  if (stats.isSymbolicLink()) throw failure('STORAGE_OBJECT_REPARSE_POINT');
+  if (!stats.isDirectory()) throw failure('STORAGE_OBJECT_INVALID');
+  return root;
+}
+
 function createObjectStore({ nasRoot } = {}) {
   if (typeof nasRoot !== 'string' || !path.isAbsolute(nasRoot)) throw failure('STORAGE_OBJECT_INVALID');
-  const root = path.resolve(nasRoot);
+  const root = assertSafeNasRoot(path.resolve(nasRoot));
 
   function objectPath(descriptor) {
     const { objectId, version, sha256 } = validateDescriptor(descriptor);

@@ -42,6 +42,21 @@ async function main() {
       'a linked health namespace must not redirect a probe outside the NAS root'
     );
     assert.deepStrictEqual(fs.readdirSync(outside), [], 'a rejected health link must not write outside the NAS root');
+
+    const linkedRoot = `${root}-linked`;
+    fs.symlinkSync(outside, linkedRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    await assert.rejects(
+      () => runStorageAgentHealthCheck({
+        config: { agentId: 'storage-agent-1', nasRoot: linkedRoot },
+        version: '8.0.6',
+        randomId: () => 'healthcheck-3',
+        now: () => new Date('2026-08-22T00:00:00.000Z'),
+      }),
+      /STORAGE_AGENT_HEALTH_FAILED/,
+      'the configured NAS root itself must not be a junction or symbolic link'
+    );
+    assert.deepStrictEqual(fs.readdirSync(outside), [], 'a linked NAS root must not receive a health probe');
+    fs.rmSync(linkedRoot, { recursive: true, force: true });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });

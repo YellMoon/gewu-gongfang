@@ -29,10 +29,21 @@ function assertNoReparsePoint(candidate, root) {
   return safeCandidate;
 }
 
+function assertSafeNasRoot(root) {
+  let stats;
+  try {
+    stats = fs.lstatSync(root);
+  } catch (_) {
+    throw healthFailure();
+  }
+  if (stats.isSymbolicLink() || !stats.isDirectory()) throw healthFailure();
+  return root;
+}
+
 async function runStorageAgentHealthCheck({ config, version, randomId = () => crypto.randomUUID(), now = () => new Date() } = {}) {
   if (!config || typeof config.agentId !== 'string' || typeof config.nasRoot !== 'string' || !path.isAbsolute(config.nasRoot)
     || typeof version !== 'string' || !version || typeof randomId !== 'function' || typeof now !== 'function') throw healthFailure();
-  const root = path.resolve(config.nasRoot);
+  const root = assertSafeNasRoot(path.resolve(config.nasRoot));
   const checkedAt = now();
   const probeId = String(randomId());
   if (!(checkedAt instanceof Date) || !Number.isFinite(checkedAt.getTime()) || !/^[A-Za-z0-9_-]{4,128}$/.test(probeId)) throw healthFailure();
