@@ -43,13 +43,10 @@ assert.ok(
 );
 
 for (const key of [
-  'backendDesktopIdentityV2',
-  'gatewayDesktopPairingV1Tombstone',
-  'userRoleGrantMigration',
-  'primaryHostGeneration',
+  'cloudUnifiedDesktopRegistration',
+  'desktopOfflineDraftConfirmation',
   'miniappDesktopAuthorization',
   'desktopIdentityGate',
-  'identityDeviceCenter',
 ]) {
   assert.ok(source.includes(key), `deploy readiness should expose identity evidence: ${key}`);
 }
@@ -58,40 +55,26 @@ for (const name of [
   'checkIdentityArchitecture',
   'checkIdentitySourceSafety',
   'checkIdentityBuildSafety',
-  'checkPrimaryHostRecoveryDelivery',
-  'checkDesktopPasswordReset',
+  'checkUnifiedDesktopRegistration',
   'checkDesktopReleaseBoundary',
 ]) {
   assert.strictEqual(typeof readiness[name], 'function', `deploy readiness should export ${name}`);
 }
 
-for (const marker of [
-  'host_recovery_deliveries',
-  'primaryHostRecoveryDeliveryProtocol',
-  'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED',
-  'revealRecoveryPackage',
-  'acknowledgeRecoveryPackage',
-  'RECOVERY_DELIVERY_STORE_VERSION',
-]) {
-  assert.ok(source.includes(marker), `deploy readiness must gate recovery delivery marker: ${marker}`);
+for (const marker of ['beginUnifiedOnlineRegistration', 'offlineLease', 'awaiting_confirmation', 'confirmAndSubmit']) {
+  assert.ok(source.includes(marker), `deploy readiness must gate unified desktop marker: ${marker}`);
 }
-assert.strictEqual(source.includes("setRecoveryPackage(result.recoveryPackage)"), false);
+assert.strictEqual(source.includes("router.post('/primary-host/bootstrap'"), false);
 
 const architecture = readiness.checkIdentityArchitecture();
 assert.deepStrictEqual(architecture.issues, [], `identity architecture evidence failed: ${architecture.issues.join(', ')}`);
 const sourceSafety = readiness.checkIdentitySourceSafety();
 assert.deepStrictEqual(sourceSafety.issues, [], `identity source safety failed: ${sourceSafety.issues.join(', ')}`);
-const recoveryDelivery = readiness.checkPrimaryHostRecoveryDelivery();
+const unifiedRegistration = readiness.checkUnifiedDesktopRegistration();
 assert.deepStrictEqual(
-  recoveryDelivery.issues,
+  unifiedRegistration.issues,
   [],
-  `primary-host recovery delivery evidence failed: ${recoveryDelivery.issues.join(', ')}`
-);
-const passwordReset = readiness.checkDesktopPasswordReset();
-assert.deepStrictEqual(
-  passwordReset.issues,
-  [],
-  `desktop password reset evidence failed: ${passwordReset.issues.join(', ')}`
+  `unified desktop registration evidence failed: ${unifiedRegistration.issues.join(', ')}`
 );
 const buildSafety = readiness.checkIdentityBuildSafety();
 assert.deepStrictEqual(buildSafety.issues, [], `identity build safety failed: ${buildSafety.issues.join(', ')}`);
@@ -99,6 +82,6 @@ assert.strictEqual(buildSafety.scanned, true, 'fresh desktop build artifacts mus
 const desktopRelease = readiness.checkDesktopReleaseBoundary();
 assert.deepStrictEqual(desktopRelease.issues, [], `desktop release boundary failed: ${desktopRelease.issues.join(', ')}`);
 assert.strictEqual(desktopRelease.miniappReleaseState, 'frozen');
-assert.strictEqual(desktopRelease.defaultDesktopFlavor, 'desktop-client');
+assert.strictEqual(desktopRelease.defaultDesktopFlavor, 'unified-desktop');
 
 console.log('deploy readiness checks passed');

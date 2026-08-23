@@ -39,21 +39,22 @@ const PROJECT_CONFIG_PATH = 'miniapp/project.config.json';
 const PROD_CONFIG_PATH = 'miniapp/config/prod.ts';
 const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
   Object.freeze({
-    key: 'backendDesktopIdentityV2',
+    key: 'cloudUnifiedDesktopRegistration',
     files: Object.freeze([
-      Object.freeze({ path: 'backend/src/routes/desktopIdentity.js', markers: Object.freeze([
-        "router.post('/session/challenges/start'",
-        "router.post('/primary-host/bootstrap'",
-        "router.post('/primary-host/recover'",
+      Object.freeze({ path: 'cloud-business-api/src/desktopRegistrationService.js', markers: Object.freeze([
+        "audience: 'unified-desktop'",
+        'offlineLease(',
+        'async register(input)',
       ]) }),
     ]),
   }),
   Object.freeze({
-    key: 'gatewayDesktopPairingV1Tombstone',
+    key: 'desktopOfflineDraftConfirmation',
     files: Object.freeze([
-      Object.freeze({ path: 'gateway/src/routes/desktopPairing.js', markers: Object.freeze([
-        'res.status(410)',
-        'DESKTOP_PAIRING_V1_REMOVED',
+      Object.freeze({ path: 'src/services/desktopCommandOutbox.mjs', markers: Object.freeze([
+        "status: 'awaiting_confirmation'",
+        'async function confirm(id)',
+        'AUTHORITY_DRAFT_NOT_CONFIRMED',
       ]) }),
     ]),
   }),
@@ -70,16 +71,11 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: 'primaryHostGeneration',
+    key: 'unifiedDesktopIdentityVault',
     files: Object.freeze([
-      Object.freeze({ path: 'backend/src/schema.sql', markers: Object.freeze([
-        'CREATE TABLE IF NOT EXISTS primary_host_epochs',
-        'idx_primary_host_single_active',
-      ]) }),
-      Object.freeze({ path: 'public/runtimeConfig.js', markers: Object.freeze([
-        'primaryHostEpochId',
-        'primaryHostGeneration',
-        'writeManagedHostRuntimeConfig',
+      Object.freeze({ path: 'public/desktopIdentityVault.js', markers: Object.freeze([
+        'beginUnifiedOnlineRegistration',
+        'normalizeOfflineLease',
       ]) }),
     ]),
   }),
@@ -110,16 +106,11 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: 'identityDeviceCenter',
+    key: 'identityRuntimeGate',
     files: Object.freeze([
-      Object.freeze({ path: 'src/App.tsx', markers: Object.freeze([
-        "import('./pages/IdentityDeviceCenter')",
-        "case 'identity-devices'",
-      ]) }),
-      Object.freeze({ path: 'src/pages/IdentityDeviceCenter.tsx', markers: Object.freeze([
-        'loadIdentityDeviceCenter',
-        'startPrimaryHostOperation',
-        'requiresRuntimeDemotion',
+      Object.freeze({ path: 'src/components/DesktopIdentityGate.tsx', markers: Object.freeze([
+        'onlineVerificationMode',
+        'beginRegistration',
       ]) }),
     ]),
   }),
@@ -196,18 +187,15 @@ function checkIdentityArchitecture() {
   return Object.freeze({ evidence: Object.freeze(evidence), issues: Object.freeze(issues) });
 }
 
-function checkPrimaryHostRecoveryDelivery() {
+function checkUnifiedDesktopRegistration() {
   const issues = [];
   const required = [
-    ['backend/src/schema.sql', 'CREATE TABLE IF NOT EXISTS host_recovery_deliveries'],
-    ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_OAEP_PADDING'],
-    ['backend/src/services/primaryHostRecoveryDeliveryProtocol.js', 'RSA_PKCS1_PSS_PADDING'],
-    ['backend/src/services/primaryHostIdentityService.js', 'PRIMARY_HOST_RECOVERY_DELIVERY_KEY_REQUIRED'],
-    ['backend/src/services/primaryHostRecoveryDeliveryService.js', "status='acknowledged'"],
-    ['public/primaryHostCredentialStore.js', 'RECOVERY_DELIVERY_STORE_VERSION'],
-    ['public/primaryHostRuntimeManager.js', 'revealRecoveryPackage'],
-    ['public/primaryHostRuntimeManager.js', 'acknowledgeRecoveryPackage'],
-    ['src/pages/IdentityDeviceCenter.tsx', 'acknowledgeRecoveryPackageAndRestart'],
+    ['cloud-business-api/src/desktopRegistrationService.js', "audience: 'unified-desktop'"],
+    ['cloud-business-api/src/desktopRegistrationService.js', 'offlineLease('],
+    ['public/desktopIdentityVault.js', 'beginUnifiedOnlineRegistration'],
+    ['src/services/desktopCommandOutbox.mjs', "status: 'awaiting_confirmation'"],
+    ['src/services/desktopCommandOutbox.mjs', 'AUTHORITY_DRAFT_NOT_CONFIRMED'],
+    ['public/electron.js', "desktop-authority:confirm-and-submit"],
   ];
   const evidence = required.map(([file, marker]) => {
     let found = false;
@@ -220,22 +208,6 @@ function checkPrimaryHostRecoveryDelivery() {
       status: found ? 'present' : 'missing',
     });
   });
-  const databaseSource = readText('backend/src/database.js');
-  const schemaVersion = Number(databaseSource.match(/const SCHEMA_VERSION = (\d+)/)?.[1] || 0);
-  const schemaVersionPresent = schemaVersion >= 3120;
-  if (!schemaVersionPresent) issues.push('backend/src/database.js requires SCHEMA_VERSION >= 3120');
-  evidence.push(Object.freeze({
-    key: 'backend/src/database.js:SCHEMA_VERSION>=3120',
-    status: schemaVersionPresent ? 'present' : 'missing',
-  }));
-  const identityService = readText('backend/src/services/primaryHostIdentityService.js');
-  const deviceCenter = readText('src/pages/IdentityDeviceCenter.tsx');
-  if (identityService.includes('recoveryPackage: prepared.recovery.recoveryPackage')) {
-    issues.push('primary-host activation still returns a plaintext recovery package');
-  }
-  if (deviceCenter.includes('result' + '.recoveryPackage')) {
-    issues.push('renderer still consumes a plaintext HTTP recovery package');
-  }
   return Object.freeze({ evidence: Object.freeze(evidence), issues: Object.freeze(issues) });
 }
 
@@ -367,13 +339,8 @@ function checkIdentityBuildSafety() {
     .join('\n');
   const secretLogPattern = /console\.(?:log|info|warn|error)\([^)]{0,240}(?:password|privateKey|hostCredential|recoveryCode|desktopSyncToken)/i;
   if (secretLogPattern.test(identityBuild)) issues.push('desktop identity build contains a secret-bearing log statement');
-  for (const required of ['identity-devices', 'primary-host']) {
+  for (const required of ['beginUnifiedOnlineRegistration', 'confirmAndSubmit']) {
     if (!aggregate.includes(required)) issues.push(`desktop build is missing identity marker: ${required}`);
-  }
-  for (const required of ['revealRecoveryPackage', 'acknowledgeRecoveryPackage']) {
-    if (!aggregate.includes(required)) {
-      issues.push(`desktop build is missing recovery delivery marker: ${required}`);
-    }
   }
   for (const forbidden of [
     'offline-secret-code',
@@ -465,8 +432,7 @@ function main() {
   const optional = checkOptionalEnv();
   const miniapp = checkMiniappReleaseConfig();
   const identityArchitecture = checkIdentityArchitecture();
-  const primaryHostRecoveryDelivery = checkPrimaryHostRecoveryDelivery();
-  const desktopPasswordReset = checkDesktopPasswordReset();
+  const unifiedDesktopRegistration = checkUnifiedDesktopRegistration();
   const identitySourceSafety = checkIdentitySourceSafety();
   const identityBuildSafety = checkIdentityBuildSafety();
   const desktopReleaseBoundary = checkDesktopReleaseBoundary();
@@ -481,10 +447,8 @@ function main() {
   console.log(`Miniapp API: ${miniapp.apiBase}`);
   console.log('Desktop identity evidence:');
   identityArchitecture.evidence.forEach(item => console.log(`- ${item.key}: ${item.status}`));
-  console.log('Primary-host recovery delivery evidence:');
-  primaryHostRecoveryDelivery.evidence.forEach(item => console.log(`- ${item.key}: ${item.status}`));
-  console.log('Desktop password reset evidence:');
-  desktopPasswordReset.evidence.forEach(item => console.log(`- ${item.key}: ${item.status}`));
+  console.log('Unified desktop registration evidence:');
+  unifiedDesktopRegistration.evidence.forEach(item => console.log(`- ${item.key}: ${item.status}`));
   console.log(`Desktop identity source safety: ${identitySourceSafety.issues.length === 0 ? 'pass' : 'fail'}`);
   console.log(`Desktop identity build safety: ${identityBuildSafety.issues.length === 0 ? 'pass' : 'fail'}`);
   console.log(`Desktop release boundary: ${desktopReleaseBoundary.issues.length === 0 ? 'pass' : 'fail'}`);
@@ -500,8 +464,7 @@ function main() {
 
   const identityIssues = [
     ...identityArchitecture.issues,
-    ...primaryHostRecoveryDelivery.issues,
-    ...desktopPasswordReset.issues,
+    ...unifiedDesktopRegistration.issues,
     ...identitySourceSafety.issues,
     ...identityBuildSafety.issues,
     ...desktopReleaseBoundary.issues,
@@ -525,8 +488,7 @@ module.exports = {
   checkOptionalEnv,
   checkMiniappReleaseConfig,
   checkIdentityArchitecture,
-  checkPrimaryHostRecoveryDelivery,
-  checkDesktopPasswordReset,
+  checkUnifiedDesktopRegistration,
   checkIdentitySourceSafety,
   checkIdentityBuildSafety,
   checkDesktopReleaseBoundary,
