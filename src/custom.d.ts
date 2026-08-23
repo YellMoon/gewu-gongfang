@@ -84,6 +84,7 @@ interface Window {
   desktopIdentitySessionProvider?: {
     listCloudBusinessProjection(): Promise<{
       students: any[];
+      student_contacts: any[];
       teachers: any[];
       courses: any[];
       schedules: any[];
@@ -92,6 +93,19 @@ interface Window {
       rooms: any[];
     }>;
     listCloudQuestions(): Promise<any[]>;
+    updateCloudStudent(input: {
+      studentId: string;
+      expectedUpdatedAt: string;
+      name: string;
+      school: string | null;
+      gradeYear: number | null;
+      gradeCurrent: string | null;
+      institutionId: string | null;
+      parentName: string | null;
+      notes: string | null;
+      sourceType: 1 | 2 | null;
+      studentSource: string | null;
+    }): Promise<{ id: string; updatedAt: string }>;
   };
   desktopAuthority?: {
     appendDraft(input: {

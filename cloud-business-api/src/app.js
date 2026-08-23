@@ -2,10 +2,11 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
+  if (businessStudentUpdate !== null && typeof businessStudentUpdate !== 'function') throw new TypeError('businessStudentUpdate is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
@@ -95,6 +96,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function optionalText(value) {
     return value === null || (typeof value === 'string' && value === value.trim() && value.length <= 4096) ? value : undefined;
+  }
+  function boundedText(value, maximumLength = 4096) {
+    return value === null || (typeof value === 'string' && value === value.trim() && value.length > 0 && value.length <= maximumLength)
+      ? value
+      : undefined;
   }
   function nonNegativeNumber(value) {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100000000 ? value : null;
@@ -578,6 +584,53 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       }
       response.json({ ok: true, schedule: result });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
+  app.put('/api/business/students/:studentId', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentUpdate) return businessUnavailable(response);
+    const studentId = String(request.params.studentId || '').trim();
+    const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'school', 'gradeYear', 'gradeCurrent', 'institutionId', 'parentName', 'notes', 'sourceType', 'studentSource']);
+    if (!studentId || !update) return businessInputInvalid(response);
+    const expectedUpdatedAt = instant(update.expectedUpdatedAt);
+    const name = boundedText(update.name, 256);
+    const school = boundedText(update.school, 256);
+    const gradeCurrent = boundedText(update.gradeCurrent, 128);
+    const institutionId = boundedText(update.institutionId, 256);
+    const parentName = boundedText(update.parentName, 256);
+    const notes = optionalText(update.notes);
+    const studentSource = boundedText(update.studentSource, 512);
+    const gradeYear = update.gradeYear;
+    const sourceType = update.sourceType;
+    if (!expectedUpdatedAt || !name || school === undefined || gradeCurrent === undefined || institutionId === undefined
+      || parentName === undefined || notes === undefined || studentSource === undefined
+      || !(gradeYear === null || (Number.isInteger(gradeYear) && gradeYear >= 1900 && gradeYear <= 2200))
+      || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      }
+      const result = await businessStudentUpdate({
+        tenantId: businessTenantId,
+        studentId,
+        expectedUpdatedAt,
+        name,
+        school,
+        gradeYear,
+        gradeCurrent,
+        institutionId,
+        parentName,
+        notes,
+        sourceType,
+        studentSource,
+      });
+      if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
+        return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
+      }
+      response.json({ ok: true, student: result });
     } catch (error) {
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);

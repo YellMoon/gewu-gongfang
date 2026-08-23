@@ -225,6 +225,54 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
     roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
   });
+  const studentWrites = [];
+  const studentUpdate = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessStudentUpdate: async input => {
+      studentWrites.push(input);
+      return { id: 'student-1', updatedAt: '2026-08-23T01:07:00.000Z' };
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/students/student-1', {
+    method: 'PUT',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: {
+      expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
+      name: 'Student updated',
+      school: 'School one',
+      gradeYear: 2024,
+      gradeCurrent: '\\u4e8c\\u5e74\\u7ea7',
+      institutionId: null,
+      parentName: 'Parent one',
+      notes: 'cloud command update',
+      sourceType: 1,
+      studentSource: 'Referral',
+    },
+  });
+  assert.strictEqual(studentUpdate.status, 200);
+  assert.deepStrictEqual(studentUpdate.body, { ok: true, student: { id: 'student-1', updatedAt: '2026-08-23T01:07:00.000Z' } });
+  assert.deepStrictEqual(studentWrites, [{
+    tenantId: 'default', studentId: 'student-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
+    name: 'Student updated', school: 'School one', gradeYear: 2024, gradeCurrent: '\\u4e8c\\u5e74\\u7ea7',
+    institutionId: null, parentName: 'Parent one', notes: 'cloud command update', sourceType: 1, studentSource: 'Referral',
+  }]);
+  const staleStudentUpdate = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessStudentUpdate: async () => null,
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/students/student-1', {
+    method: 'PUT',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: {
+      expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
+      name: 'Student updated', school: null, gradeYear: null, gradeCurrent: null,
+      institutionId: null, parentName: null, notes: null, sourceType: null, studentSource: null,
+    },
+  });
+  assert.strictEqual(staleStudentUpdate.status, 409);
+  assert.deepStrictEqual(staleStudentUpdate.body, { ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
   const studentOverrideWrites = [];
   const studentOverride = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -282,6 +330,8 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],

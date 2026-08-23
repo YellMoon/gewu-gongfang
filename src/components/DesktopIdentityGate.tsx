@@ -206,6 +206,15 @@ const DesktopIdentityGate: React.FC = () => {
               currentSession,
             });
           },
+          updateCloudStudent: async (input: any) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.updateCloudStudent({
+              ...input,
+              baseUrl: identityBaseUrl,
+              currentSession,
+            });
+          },
           updateCloudScheduleStudentOverride: async (input: any) => {
             const currentSession = onlineSessionRef.current;
             if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
