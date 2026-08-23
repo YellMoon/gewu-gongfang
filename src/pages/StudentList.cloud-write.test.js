@@ -7,7 +7,10 @@ const source = fs.readFileSync('src/pages/StudentList.tsx', 'utf8');
 
 assert.ok(source.includes('getAllStudentContacts'), 'student editor must read cloud-projected contact records');
 assert.ok(source.includes('updateCloudStudentRecord'), 'online student edits must use the atomic cloud command');
+assert.ok(source.includes('createCloudStudentRecord'), 'online student creation must use the cloud command');
+assert.ok(source.includes('deleteCloudStudent'), 'online student deletion must use the cloud command');
 assert.ok(source.includes('expectedUpdatedAt: editingStudent.updated_at'), 'student record updates must carry the observed student version');
+assert.ok(source.includes('expectedUpdatedAt: deletedStudent.updated_at'), 'student deletion must carry the observed student version');
 assert.ok(source.includes('expectedUpdatedAt: existing.updated_at'), 'student contact updates must carry every observed contact version');
 assert.ok(source.includes('refreshAuthorityProjection'), 'a successful command must refresh the cloud projection before rendering');
 assert.ok(source.includes('CLOUD_BUSINESS_STUDENT_CONFLICT'), 'the UI must surface concurrent changes instead of overwriting them');

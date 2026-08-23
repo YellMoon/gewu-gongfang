@@ -1005,6 +1005,43 @@ export function createDesktopIdentityClient({
     return data.student;
   }
 
+  async function createCloudStudentRecord({
+    baseUrl, currentSession, studentId, name, school, gradeYear, gradeCurrent,
+    institutionId, parentName, notes, sourceType, studentSource, contacts,
+  } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedStudentId = String(studentId || '').trim();
+    if (!normalizedStudentId || !Array.isArray(contacts)) throw identityError('DESKTOP_CLOUD_STUDENT_RECORD_INPUT_INVALID');
+    const data = await request(fetchImpl, baseUrl, '/api/business/students', {
+      method: 'POST',
+      token: currentSession.token,
+      body: { studentId: normalizedStudentId, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource, contacts },
+    });
+    if (!data?.student || data.student.id !== normalizedStudentId || typeof data.student.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_STUDENT_RESPONSE_INVALID');
+    }
+    return data.student;
+  }
+
+  async function deleteCloudStudent({ baseUrl, currentSession, studentId, expectedUpdatedAt } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedStudentId = String(studentId || '').trim();
+    if (!normalizedStudentId) throw identityError('DESKTOP_CLOUD_STUDENT_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/students/${encodeURIComponent(normalizedStudentId)}`, {
+      method: 'DELETE',
+      token: currentSession.token,
+      body: { expectedUpdatedAt },
+    });
+    if (!data?.student || data.student.id !== normalizedStudentId || typeof data.student.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_STUDENT_RESPONSE_INVALID');
+    }
+    return data.student;
+  }
+
   async function updateCloudScheduleStudentOverride({
     baseUrl, currentSession, scheduleId, studentId, expectedUpdatedAt, attendanceStatus, tuition, teacherFee,
   } = {}) {
@@ -1075,6 +1112,8 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    createCloudStudentRecord,
+    deleteCloudStudent,
     beginUnifiedOnlineRecovery,
     completeRegistration,
     completeUnifiedOnlineRegistration,

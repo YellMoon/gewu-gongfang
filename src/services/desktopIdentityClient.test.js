@@ -152,6 +152,11 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' } }) };
       }
       if (url === 'https://cloud.test/api/business/students/student-cloud-1') {
+        if (options.method === 'DELETE') {
+          assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+          assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-23T00:04:00.000Z' });
+          return { ok: true, json: async () => ({ ok: true, student: { id: 'student-cloud-1', updatedAt: '2026-08-23T00:05:00.000Z' } }) };
+        }
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         assert.deepStrictEqual(JSON.parse(options.body), {
@@ -159,6 +164,16 @@ async function main() {
           gradeYear: 2024, gradeCurrent: 'Grade two', institutionId: null, parentName: 'Cloud parent', notes: 'cloud student update', sourceType: 1, studentSource: 'Referral',
         });
         return { ok: true, json: async () => ({ ok: true, student: { id: 'student-cloud-1', updatedAt: '2026-08-23T00:02:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/students') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          studentId: 'student-cloud-new-1', name: 'New student', school: null, gradeYear: 2025,
+          gradeCurrent: null, institutionId: null, parentName: null, notes: null, sourceType: 1,
+          studentSource: 'Referral', contacts: [{ slot: 1, relationship: 'student', phone: '13800138001', wechat: null }],
+        });
+        return { ok: true, json: async () => ({ ok: true, student: { id: 'student-cloud-new-1', updatedAt: '2026-08-23T00:04:00.000Z' } }) };
       }
       if (url === 'https://cloud.test/api/business/students/student-cloud-1/record') {
         assert.strictEqual(options.method, 'PUT');
@@ -391,6 +406,19 @@ async function main() {
   });
   assert.deepStrictEqual(updatedCloudStudentRecord, { id: 'student-cloud-1', updatedAt: '2026-08-23T00:03:00.000Z' });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students/student-cloud-1/record');
+  const createdCloudStudent = await unifiedCloudClient.createCloudStudentRecord({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-new-1',
+    name: 'New student', school: null, gradeYear: 2025, gradeCurrent: null, institutionId: null,
+    parentName: null, notes: null, sourceType: 1, studentSource: 'Referral',
+    contacts: [{ slot: 1, relationship: 'student', phone: '13800138001', wechat: null }],
+  });
+  assert.deepStrictEqual(createdCloudStudent, { id: 'student-cloud-new-1', updatedAt: '2026-08-23T00:04:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students');
+  const deletedCloudStudent = await unifiedCloudClient.deleteCloudStudent({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-1', expectedUpdatedAt: '2026-08-23T00:04:00.000Z',
+  });
+  assert.deepStrictEqual(deletedCloudStudent, { id: 'student-cloud-1', updatedAt: '2026-08-23T00:05:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students/student-cloud-1');
   const updatedCloudStudentOverride = await unifiedCloudClient.updateCloudScheduleStudentOverride({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1', studentId: 'student-cloud-1',
     expectedUpdatedAt: '2026-08-22T00:00:00.000Z', attendanceStatus: 4, tuition: 80, teacherFee: 40,

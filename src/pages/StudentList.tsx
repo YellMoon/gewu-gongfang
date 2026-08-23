@@ -104,12 +104,48 @@ const StudentList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const legacyStageDeletedStudentAsDraft = async (id: string) => {
     const deletedStudent = students.find(s => s.id === id);
     dbService.deleteStudent(id);
     message.success('删除成功');
     (window as any).operateLogger?.log('删除', `删除学生「${deletedStudent?.name || id}」`, '学生管理');
     loadData();
+  };
+
+  const handleDelete = async (id: string) => {
+    const deletedStudent = students.find(student => student.id === id);
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const stageLocalDraft = () => {
+      dbService.deleteStudent(id);
+      (window as any).operateLogger?.log('delete', `student:${deletedStudent?.name || id}`, 'students');
+    };
+    if (typeof cloudRuntime?.deleteCloudStudent !== 'function' || !deletedStudent?.updated_at) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+      return;
+    }
+    try {
+      await cloudRuntime.deleteCloudStudent({ studentId: id, expectedUpdatedAt: deletedStudent.updated_at });
+      await dbService.refreshAuthorityProjection();
+      message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u5220\u9664');
+      loadData();
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_STUDENT_REFERENCED') {
+        message.error('\u8be5\u5b66\u751f\u5df2\u88ab\u6392\u8bfe\u6216\u8bfe\u7a0b\u5f15\u7528\uff0c\u4e0d\u80fd\u5220\u9664');
+        return;
+      }
+      const offline = code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+        || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+      if (!offline) {
+        message.error('\u4e91\u7aef\u5220\u9664\u5b66\u751f\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+    }
   };
 
   const submitExistingStudentToAuthority = async (values: any) => {
@@ -171,12 +207,71 @@ const StudentList: React.FC = () => {
     }
   };
 
+  const submitNewStudentToAuthority = async (values: any) => {
+    const stageLocalDraft = () => {
+      if (values.school) dbService.addOrUpdateSchool(values.school);
+      dbService.createStudent(values);
+      (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
+    };
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (typeof cloudRuntime?.createCloudStudentRecord !== 'function') {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    const phone = typeof values.phone === 'string' ? values.phone.trim() : '';
+    const parentWechat = typeof values.parent_wechat === 'string' ? values.parent_wechat.trim() : '';
+    const contacts = [
+      ...(phone ? [{ slot: 1, relationship: 'student', phone, wechat: null }] : []),
+      ...(parentWechat ? [{ slot: 2, relationship: 'guardian', phone: null, wechat: parentWechat }] : []),
+    ];
+    const studentId = globalThis.crypto?.randomUUID?.() || `student-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await cloudRuntime.createCloudStudentRecord({
+        studentId,
+        name: values.name.trim(),
+        school: values.school || null,
+        gradeYear: values.grade_year ?? null,
+        gradeCurrent: values.grade_current || calculateGrade(values.grade_year),
+        institutionId: values.institution_id ?? null,
+        parentName: values.parent_name?.trim() || null,
+        notes: values.notes ?? null,
+        sourceType: values.source_type ?? null,
+        studentSource: values.student_source?.trim() || null,
+        contacts,
+      });
+      await dbService.refreshAuthorityProjection();
+      (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
+      message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u521b\u5efa');
+      return true;
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      const offline = code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+        || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+      if (!offline) {
+        message.error('\u4e91\u7aef\u521b\u5efa\u5b66\u751f\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return false;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       // 处理学校字段（AutoComplete 返回单个字符串）
       values.school = normalizeSchoolName(Array.isArray(values.school) ? values.school[0] : values.school);
       const legacyEditedStudent = editingStudent;
+      if (!editingStudent) {
+        const completed = await submitNewStudentToAuthority(values);
+        if (completed) {
+          setModalVisible(false);
+          loadData();
+        }
+        return;
+      }
       if (editingStudent) {
         const completed = await submitExistingStudentToAuthority(values);
         if (completed) {

@@ -120,6 +120,20 @@ interface Window {
       studentSource: string | null;
       contacts: Array<{ slot: 1 | 2 | 3; relationship: 'student' | 'guardian'; phone: string | null; wechat: string | null; expectedUpdatedAt: string | null }>;
     }): Promise<{ id: string; updatedAt: string }>;
+    createCloudStudentRecord(input: {
+      studentId: string;
+      name: string;
+      school: string | null;
+      gradeYear: number | null;
+      gradeCurrent: string | null;
+      institutionId: string | null;
+      parentName: string | null;
+      notes: string | null;
+      sourceType: 1 | 2 | null;
+      studentSource: string | null;
+      contacts: Array<{ slot: 1 | 2 | 3; relationship: 'student' | 'guardian'; phone: string | null; wechat: string | null }>;
+    }): Promise<{ id: string; updatedAt: string }>;
+    deleteCloudStudent(input: { studentId: string; expectedUpdatedAt: string }): Promise<{ id: string; updatedAt: string }>;
   };
   desktopAuthority?: {
     appendDraft(input: {
