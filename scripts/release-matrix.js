@@ -16,6 +16,11 @@ function historicalManifestPath(manifestPath, manifest) {
   return path.join(path.dirname(manifestPath), 'history', `${manifest.version}-${createdAt}-${commit}.json`);
 }
 
+function supersededManifestPath(manifestPath, manifest) {
+  const base = historicalManifestPath(manifestPath, manifest).replace(/\.json$/u, '');
+  return `${base}-superseded.json`;
+}
+
 function isVersion(value) {
   return /^\d+\.\d+\.\d+$/.test(String(value || ''));
 }
@@ -101,6 +106,25 @@ function archiveCompletedHistoricalManifest({ manifestPath, manifest } = {}) {
   }
   const archivePath = historicalManifestPath(manifestPath, manifest);
   if (fs.existsSync(archivePath)) throw new Error(`Historical release manifest already exists: ${archivePath}`);
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  fs.renameSync(manifestPath, archivePath);
+  return archivePath;
+}
+
+function isUntouchedPendingManifest(manifest) {
+  const validation = validateManifest(manifest);
+  return validation.issues.length === 0 && DEFAULT_TARGETS.every(target => {
+    const state = manifest.targets[target];
+    return state?.status === 'pending' && !state.receipt;
+  });
+}
+
+function archiveUntouchedPendingManifest({ manifestPath, manifest } = {}) {
+  if (!manifestPath || !isUntouchedPendingManifest(manifest)) {
+    throw new Error('Only an untouched pending release manifest may be superseded automatically');
+  }
+  const archivePath = supersededManifestPath(manifestPath, manifest);
+  if (fs.existsSync(archivePath)) throw new Error(`Superseded release manifest already exists: ${archivePath}`);
   fs.mkdirSync(path.dirname(archivePath), { recursive: true });
   fs.renameSync(manifestPath, archivePath);
   return archivePath;
@@ -204,9 +228,15 @@ function prepareReleaseManifest({
   assertSourceVersionMatrix(matrix, version);
   if (fs.existsSync(manifestPath)) {
     const existingRaw = readJson(manifestPath);
-    if (existingRaw.version === version) {
+    if (existingRaw.version === version && existingRaw.commit === commit) {
       const existing = readManifest(manifestPath);
       return { action: 'reuse', version, manifestPath, manifest: existing, archivedManifestPath: null };
+    }
+    if (isUntouchedPendingManifest(existingRaw)) {
+      const archivedManifestPath = archiveUntouchedPendingManifest({ manifestPath, manifest: existingRaw });
+      const manifest = createReleaseManifest({ version, commit });
+      writeManifest(manifestPath, manifest);
+      return { action: 'superseded-and-prepared', version, manifestPath, manifest, archivedManifestPath };
     }
     const archivedManifestPath = archiveCompletedHistoricalManifest({ manifestPath, manifest: existingRaw });
     const manifest = createReleaseManifest({ version, commit });
@@ -291,7 +321,9 @@ module.exports = {
   createReleaseManifest,
   defaultManifestPath,
   historicalManifestPath,
+  supersededManifestPath,
   isCompletedHistoricalManifest,
+  isUntouchedPendingManifest,
   isReleaseComplete,
   prepareReleaseManifest,
   readManifest,

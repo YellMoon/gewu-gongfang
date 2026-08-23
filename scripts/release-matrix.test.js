@@ -98,6 +98,25 @@ try {
     'one unified desktop update may publish only after its cloud prerequisites are verified'
   );
 
+  const supersededPending = matrix.prepareReleaseManifest({ rootDir: fixtureRoot, commit: 'new-source-commit' });
+  assert.strictEqual(supersededPending.action, 'superseded-and-prepared',
+    'a fully pending manifest for another source commit must never be reused');
+  assert.ok(fs.existsSync(supersededPending.archivedManifestPath),
+    'the unstarted manifest must be preserved before its active path is replaced');
+  assert.strictEqual(matrix.readManifest(manifestPath).commit, 'new-source-commit',
+    'the new active manifest must bind the current source commit');
+
+  const partiallyPublished = matrix.createReleaseManifest({ version: '7.2.0', commit: 'partial-source' });
+  matrix.recordReceipt(partiallyPublished, {
+    target: 'cloud_business', version: '7.2.0', evidence: 'already-deployed',
+  });
+  matrix.writeManifest(manifestPath, partiallyPublished);
+  assert.throws(
+    () => matrix.prepareReleaseManifest({ rootDir: fixtureRoot, commit: 'other-source' }),
+    /completed historical release manifest/i,
+    'a partially published manifest must require explicit recovery rather than automatic replacement'
+  );
+
   const completedHistoricalManifest = {
     schema: matrix.MANIFEST_SCHEMA,
     version: '7.1.9',
