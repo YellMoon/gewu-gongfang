@@ -10,18 +10,46 @@ export function createDesktopAuthorityClient({
   transports,
   createCloudQuestionCommand = null,
   submitCloudQuestion = null,
+  createCloudBusinessCommand = null,
+  submitCloudBusiness = null,
 } = {}) {
   if (!outbox || typeof outbox.append !== 'function' || typeof outbox.get !== 'function'
     || typeof createEnvelope !== 'function' || typeof transports?.submit !== 'function') {
     throw authorityClientError('DESKTOP_AUTHORITY_CLIENT_DEPENDENCY_REQUIRED');
   }
   if ((createCloudQuestionCommand !== null && typeof createCloudQuestionCommand !== 'function')
-    || (submitCloudQuestion !== null && typeof submitCloudQuestion !== 'function')) {
+    || (submitCloudQuestion !== null && typeof submitCloudQuestion !== 'function')
+    || (createCloudBusinessCommand !== null && typeof createCloudBusinessCommand !== 'function')
+    || (submitCloudBusiness !== null && typeof submitCloudBusiness !== 'function')) {
     throw authorityClientError('DESKTOP_AUTHORITY_CLIENT_DEPENDENCY_REQUIRED');
   }
 
   function cloudQuestionDraft(draft) {
     return /^question\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+  }
+
+  function cloudBusinessDraft(draft) {
+    return /^(student|course|schedule|teacher|room)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+  }
+
+  async function submitCloudDraft(id, draft, options, createCommand, submitCommand, transportUsed, unavailableCode, invalidCode) {
+    if (!createCommand || !submitCommand) throw authorityClientError(unavailableCode);
+    let command;
+    if (draft.status === 'confirmed') {
+      command = await createCommand(draft);
+      if (!command || command.commandId !== draft.id || command.type !== draft.type
+        || command.payload !== draft.payload || typeof command.payloadHash !== 'string') {
+        throw authorityClientError(invalidCode);
+      }
+      await outbox.markSubmitted(id, { commandId: command.commandId, payloadHash: command.payloadHash, transportUsed, command });
+    } else if (draft.status === 'submitted' && draft.submission?.command) {
+      command = draft.submission.command;
+    } else {
+      throw authorityClientError('AUTHORITY_DRAFT_NOT_SUBMITTABLE');
+    }
+    const receipt = await submitCommand(command, options);
+    const acknowledged = await outbox.acknowledge(id, receipt);
+    return Object.freeze({ command, receipt, transportUsed, rejected: acknowledged?.status === 'conflict' && receipt?.status === 'rejected' });
   }
 
   async function appendDraft(draft) {
@@ -32,35 +60,12 @@ export function createDesktopAuthorityClient({
     const draft = await outbox.get(id);
     if (draft.status === 'awaiting_confirmation') return undefined;
     if (cloudQuestionDraft(draft)) {
-      if (!createCloudQuestionCommand || !submitCloudQuestion) {
-        throw authorityClientError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
-      }
-      let command;
-      if (draft.status === 'confirmed') {
-        command = await createCloudQuestionCommand(draft);
-        if (!command || command.commandId !== draft.id || command.type !== draft.type
-          || command.payload !== draft.payload || typeof command.payloadHash !== 'string') {
-          throw authorityClientError('CLOUD_QUESTION_COMMAND_INVALID');
-        }
-        await outbox.markSubmitted(id, {
-          commandId: command.commandId,
-          payloadHash: command.payloadHash,
-          transportUsed: 'cloud-question-authority',
-          command,
-        });
-      } else if (draft.status === 'submitted' && draft.submission?.command) {
-        command = draft.submission.command;
-      } else {
-        throw authorityClientError('AUTHORITY_DRAFT_NOT_SUBMITTABLE');
-      }
-      const receipt = await submitCloudQuestion(command, options);
-      const acknowledged = await outbox.acknowledge(id, receipt);
-      return Object.freeze({
-        command,
-        receipt,
-        transportUsed: 'cloud-question-authority',
-        rejected: acknowledged?.status === 'conflict' && receipt?.status === 'rejected',
-      });
+      return submitCloudDraft(id, draft, options, createCloudQuestionCommand, submitCloudQuestion,
+        'cloud-question-authority', 'CLOUD_QUESTION_AUTHORITY_UNAVAILABLE', 'CLOUD_QUESTION_COMMAND_INVALID');
+    }
+    if (cloudBusinessDraft(draft) && (createCloudBusinessCommand || submitCloudBusiness)) {
+      return submitCloudDraft(id, draft, options, createCloudBusinessCommand, submitCloudBusiness,
+        'cloud-business-authority', 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE', 'CLOUD_BUSINESS_COMMAND_INVALID');
     }
     let command;
     if (draft.status === 'confirmed') {

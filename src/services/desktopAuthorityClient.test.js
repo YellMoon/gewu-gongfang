@@ -237,6 +237,40 @@ const assert = require('assert');
   assert.ok(!Buffer.from(cloudSealed, 'base64').toString('utf8').includes('sessionToken'),
     'the outbox must never serialize a cloud login token');
 
+  let businessSealed = '';
+  let businessSubmissions = 0;
+  const businessOutbox = createDesktopCommandOutbox({
+    store: { read: async () => businessSealed, write: async value => { businessSealed = value; } },
+    codec: {
+      seal: async value => Buffer.from(JSON.stringify(value)).toString('base64'),
+      open: async value => JSON.parse(Buffer.from(value, 'base64').toString('utf8')),
+    },
+    createId: () => 'business-draft-1', now: () => '2026-08-24T00:00:00.000Z',
+  });
+  const businessClient = createDesktopAuthorityClient({
+    outbox: businessOutbox,
+    createEnvelope: async () => { throw new Error('legacy envelope must not be used for business drafts'); },
+    transports: { submit: async () => { throw new Error('legacy transport must not be used for business drafts'); } },
+    createCloudBusinessCommand: draft => ({
+      commandId: draft.id, payloadHash: 'a'.repeat(64), type: draft.type, payload: draft.payload,
+    }),
+    submitCloudBusiness: async command => {
+      businessSubmissions += 1;
+      return {
+        commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed',
+        result: { id: 'teacher-1' }, resultHash: 'b'.repeat(64),
+      };
+    },
+  });
+  const businessDraft = await businessClient.appendDraft({
+    type: 'teacher.create.v1', payload: { record: { id: 'teacher-1', name: 'Ada' } },
+  });
+  assert.strictEqual(await businessClient.submit(businessDraft.id), undefined);
+  const businessResult = await businessClient.confirmAndSubmit(businessDraft.id);
+  assert.strictEqual(businessResult.transportUsed, 'cloud-business-authority');
+  assert.strictEqual(businessSubmissions, 1);
+  assert.strictEqual((await businessOutbox.get(businessDraft.id)).status, 'completed');
+
   console.log('desktop authority client tests passed');
 })().catch(error => {
   console.error(error);
