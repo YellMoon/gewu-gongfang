@@ -46,6 +46,8 @@ class CloudPostgresMigrationTests(unittest.TestCase):
             executor = FakeExecutor()
             self.assertEqual(apply_migrations(executor, rows), {"applied": ["20260823-a.sql"], "skipped": []})
             self.assertFalse(any("CREATE SCHEMA" in call for call in executor.calls))
+            migration_call = next(call for call in executor.calls if "SELECT 1;" in call)
+            self.assertIn("SET LOCAL ROLE vnext_pg17_business_owner", migration_call)
             self.assertEqual(apply_migrations(executor, rows), {"applied": [], "skipped": ["20260823-a.sql"]})
             rows[0]["sha256"] = "0" * 64
             with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):

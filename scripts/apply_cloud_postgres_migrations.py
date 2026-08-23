@@ -39,6 +39,18 @@ def owner_sql(statement):
     return "BEGIN; SET LOCAL ROLE vnext_pg17_business_owner; " + statement + "; COMMIT;\n"
 
 
+def migration_sql(sql):
+    if not isinstance(sql, str) or not re.match(r"^\s*BEGIN\s*;", sql):
+        raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
+    if re.search(r"\bSET\s+LOCAL\s+ROLE\s+vnext_pg17_business_owner\b", sql, re.IGNORECASE):
+        return sql
+    return re.sub(
+        r"^(\s*BEGIN\s*;)",
+        r"\1\n\nSET LOCAL ROLE vnext_pg17_business_owner;",
+        sql,
+        count=1,
+    )
+
 LEDGER_SQL = """
 CREATE TABLE IF NOT EXISTS business.cloud_schema_migrations (
   name text COLLATE \"C\" PRIMARY KEY,
@@ -65,7 +77,7 @@ def apply_migrations(executor, migrations):
                 raise RuntimeError("CLOUD_MIGRATION_HASH_MISMATCH")
             result["skipped"].append(migration["name"])
             continue
-        executor.run(migration["sql"])
+        executor.run(migration_sql(migration["sql"]))
         executor.run(owner_sql(
             "INSERT INTO business.cloud_schema_migrations(name,sha256) VALUES("
             + sql_literal(migration["name"]) + "," + sql_literal(migration["sha256"]) + ")"
