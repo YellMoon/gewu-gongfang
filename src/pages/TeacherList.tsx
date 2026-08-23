@@ -44,7 +44,7 @@ const TeacherList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const legacyStageDeletedTeacherAsDraft = async (id: string) => {
     const deletedTeacher = teachers.find(t => t.id === id);
     dbService.deleteTeacher(id);
     message.success('删除成功');
@@ -52,11 +52,105 @@ const TeacherList: React.FC = () => {
     loadData();
   };
 
+  const handleDelete = async (id: string) => {
+    const deletedTeacher = teachers.find(teacher => teacher.id === id);
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const stageLocalDraft = () => {
+      dbService.deleteTeacher(id);
+      (window as any).operateLogger?.log('delete', `teacher:${deletedTeacher?.name || id}`, 'teachers');
+    };
+    if (typeof cloudRuntime?.deleteCloudTeacher !== 'function' || !deletedTeacher?.updated_at) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+      return;
+    }
+    try {
+      await cloudRuntime.deleteCloudTeacher({ teacherId: id, expectedUpdatedAt: deletedTeacher.updated_at });
+      await dbService.refreshAuthorityProjection();
+      message.success('\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u5220\u9664');
+      loadData();
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_TEACHER_REFERENCED') {
+        message.error('\u8be5\u6559\u5e08\u5df2\u88ab\u8bfe\u7a0b\u5f15\u7528\uff0c\u4e0d\u80fd\u5220\u9664');
+        return;
+      }
+      const offline = code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+        || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+      if (!offline) {
+        message.error('\u4e91\u7aef\u5220\u9664\u6559\u5e08\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+    }
+  };
+
+  const submitTeacherToAuthority = async (values: any) => {
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const payload = {
+      name: values.name.trim(), phone: values.phone?.trim() || null, subject: values.subject?.trim() || null,
+      hourlyRate: values.hourly_rate ?? null, notes: values.notes?.trim() || null,
+    };
+    const stageLocalDraft = () => {
+      if (editingTeacher) dbService.updateTeacher(editingTeacher.id, values);
+      else dbService.createTeacher(values);
+      (window as any).operateLogger?.log(editingTeacher ? 'update' : 'create', `teacher:${values.name}`, 'teachers');
+    };
+    const offline = (error: any) => {
+      const code = String(error?.code || error?.message || '');
+      return code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+        || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+    };
+    if (!editingTeacher && typeof cloudRuntime?.createCloudTeacher !== 'function') {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    if (editingTeacher && (typeof cloudRuntime?.updateCloudTeacher !== 'function' || !editingTeacher.updated_at)) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    try {
+      if (editingTeacher) {
+        await cloudRuntime.updateCloudTeacher({ teacherId: editingTeacher.id, expectedUpdatedAt: editingTeacher.updated_at, ...payload });
+      } else {
+        const teacherId = globalThis.crypto?.randomUUID?.() || `teacher-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await cloudRuntime.createCloudTeacher({ teacherId, ...payload });
+      }
+      await dbService.refreshAuthorityProjection();
+      message.success(editingTeacher ? '\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u521b\u5efa');
+      return true;
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_TEACHER_CONFLICT') {
+        message.error('\u8be5\u6559\u5e08\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');
+        return false;
+      }
+      if (!offline(error)) {
+        message.error('\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5199\u5165\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return false;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const completed = await submitTeacherToAuthority(values);
+      if (completed) {
+        setModalVisible(false);
+        loadData();
+      }
+      return;
       if (editingTeacher) {
-        dbService.updateTeacher(editingTeacher.id, values);
+        dbService.updateTeacher(editingTeacher!.id, values);
         message.success('更新成功');
         (window as any).operateLogger?.log('修改', `修改老师「${values.name}」`, '老师管理');
       } else {

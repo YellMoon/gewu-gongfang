@@ -106,6 +106,9 @@ interface Window {
       sourceType: 1 | 2 | null;
       studentSource: string | null;
     }): Promise<{ id: string; updatedAt: string }>;
+    createCloudTeacher(input: { teacherId: string; name: string; phone: string | null; subject: string | null; hourlyRate: number | null; notes: string | null }): Promise<{ id: string; updatedAt: string }>;
+    updateCloudTeacher(input: { teacherId: string; expectedUpdatedAt: string; name: string; phone: string | null; subject: string | null; hourlyRate: number | null; notes: string | null }): Promise<{ id: string; updatedAt: string }>;
+    deleteCloudTeacher(input: { teacherId: string; expectedUpdatedAt: string }): Promise<{ id: string; updatedAt: string }>;
     updateCloudStudentRecord(input: {
       studentId: string;
       expectedUpdatedAt: string;

@@ -215,6 +215,21 @@ const DesktopIdentityGate: React.FC = () => {
               currentSession,
             });
           },
+          createCloudTeacher: async (input: any) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.createCloudTeacher({ ...input, baseUrl: identityBaseUrl, currentSession });
+          },
+          updateCloudTeacher: async (input: any) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.updateCloudTeacher({ ...input, baseUrl: identityBaseUrl, currentSession });
+          },
+          deleteCloudTeacher: async (input: any) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.deleteCloudTeacher({ ...input, baseUrl: identityBaseUrl, currentSession });
+          },
           updateCloudStudentRecord: async (input: any) => {
             const currentSession = onlineSessionRef.current;
             if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');

@@ -984,6 +984,39 @@ export function createDesktopIdentityClient({
     return data.student;
   }
 
+  async function createCloudTeacher({ baseUrl, currentSession, teacherId, name, phone, subject, hourlyRate, notes } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedTeacherId = String(teacherId || '').trim();
+    if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, '/api/business/teachers', {
+      method: 'POST', token: currentSession.token, body: { teacherId: normalizedTeacherId, name, phone, subject, hourlyRate, notes },
+    });
+    if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
+    return data.teacher;
+  }
+
+  async function updateCloudTeacher({ baseUrl, currentSession, teacherId, expectedUpdatedAt, name, phone, subject, hourlyRate, notes } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedTeacherId = String(teacherId || '').trim();
+    if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/teachers/${encodeURIComponent(normalizedTeacherId)}`, {
+      method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, name, phone, subject, hourlyRate, notes },
+    });
+    if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
+    return data.teacher;
+  }
+
+  async function deleteCloudTeacher({ baseUrl, currentSession, teacherId, expectedUpdatedAt } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedTeacherId = String(teacherId || '').trim();
+    if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/teachers/${encodeURIComponent(normalizedTeacherId)}`, {
+      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+    });
+    if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
+    return data.teacher;
+  }
+
   async function updateCloudStudentRecord({
     baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
     institutionId, parentName, notes, sourceType, studentSource, contacts,
@@ -1112,7 +1145,9 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    createCloudTeacher,
     createCloudStudentRecord,
+    deleteCloudTeacher,
     deleteCloudStudent,
     beginUnifiedOnlineRecovery,
     completeRegistration,
@@ -1130,6 +1165,7 @@ export function createDesktopIdentityClient({
     switchRole,
     upsertCloudStudentContact,
     updateCloudSchedule,
+    updateCloudTeacher,
     updateCloudStudent,
     updateCloudStudentRecord,
     updateCloudScheduleStudentOverride,
