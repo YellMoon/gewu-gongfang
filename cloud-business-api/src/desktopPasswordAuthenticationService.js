@@ -48,13 +48,26 @@ function ticket(value) {
   return Object.freeze(row);
 }
 
+function verifiedRegistrationTicket(value) {
+  let row;
+  try {
+    row = exact(value, ['v', 'authorityId', 'accountId', 'challenge', 'proofId', 'expiresAt'], rejected);
+  } catch (_) {
+    throw rejected();
+  }
+  if (row.v !== 1 || !text(row.authorityId) || !text(row.accountId) || !text(row.challenge)
+    || !text(row.proofId) || !Number.isSafeInteger(row.expiresAt)) throw rejected();
+  return Object.freeze(row);
+}
+
 function createDesktopPasswordAuthenticationService(config) {
-  const settings = exact(config, ['phoneVerifier', 'resolveCanonicalAccount', 'verificationEvidenceHash', 'passwordIdentity', 'issueRegistrationTicket']);
+  const settings = exact(config, ['phoneVerifier', 'resolveCanonicalAccount', 'verificationEvidenceHash', 'inspectVerificationToken', 'passwordIdentity', 'issueRegistrationTicket']);
   if (typeof settings.phoneVerifier !== 'function' || typeof settings.resolveCanonicalAccount !== 'function'
-    || typeof settings.verificationEvidenceHash !== 'function' || typeof settings.issueRegistrationTicket !== 'function'
+    || typeof settings.verificationEvidenceHash !== 'function' || typeof settings.inspectVerificationToken !== 'function' || typeof settings.issueRegistrationTicket !== 'function'
     || !settings.passwordIdentity || typeof settings.passwordIdentity !== 'object' || types.isProxy(settings.passwordIdentity)
     || Object.getPrototypeOf(settings.passwordIdentity) !== Object.prototype
-    || typeof settings.passwordIdentity.enroll !== 'function' || typeof settings.passwordIdentity.verify !== 'function') throw invalid();
+    || typeof settings.passwordIdentity.enroll !== 'function' || typeof settings.passwordIdentity.enrollVerifiedAccount !== 'function'
+    || typeof settings.passwordIdentity.verify !== 'function') throw invalid();
 
   const issue = value => ticket(settings.issueRegistrationTicket(identity(value)));
   return Object.freeze({
@@ -86,6 +99,25 @@ function createDesktopPasswordAuthenticationService(config) {
         throw rejected();
       }
       return issue(verifiedIdentity);
+    },
+    async enrollFromVerificationTicket(input) {
+      const request = exact(input, ['verificationToken', 'loginName', 'password']);
+      if (!text(request.verificationToken)) throw invalid();
+      let verified;
+      try {
+        verified = verifiedRegistrationTicket(settings.inspectVerificationToken(request.verificationToken));
+        const enrolled = identity(await settings.passwordIdentity.enrollVerifiedAccount({
+          authorityId: verified.authorityId,
+          accountId: verified.accountId,
+          loginName: request.loginName,
+          password: request.password,
+        }));
+        if (enrolled.authorityId !== verified.authorityId || enrolled.accountId !== verified.accountId) throw rejected();
+      } catch (error) {
+        if (error && error.code === 'CLOUD_ONLINE_IDENTITY_INVALID') throw error;
+        throw rejected();
+      }
+      return Object.freeze({ verificationToken: request.verificationToken, deviceChallenge: verified.challenge });
     },
     async verify(input) {
       const request = exact(input, ['loginType', 'login', 'password']);

@@ -11,6 +11,10 @@ const service = createDesktopPasswordAuthenticationService({
     return { authorityId: 'authority-1', accountId: 'account-1' };
   },
   verificationEvidenceHash: code => `evidence:${code}`,
+  inspectVerificationToken: token => {
+    if (token !== 'already-verified-ticket') throw new Error('expired');
+    return { v: 1, authorityId: 'authority-1', accountId: 'account-1', challenge: 'already-verified-challenge', proofId: 'proof-1', expiresAt: Date.now() + 60000 };
+  },
   passwordIdentity: {
     enroll: async input => {
       calls.push(['enroll', input]);
@@ -19,6 +23,10 @@ const service = createDesktopPasswordAuthenticationService({
     verify: async input => {
       calls.push(['verify', input]);
       if (input.password !== 'correct password') throw Object.assign(new Error('rejected'), { code: 'CLOUD_DESKTOP_PASSWORD_REJECTED' });
+      return { authorityId: 'authority-1', accountId: 'account-1' };
+    },
+    enrollVerifiedAccount: async input => {
+      calls.push(['enrollVerifiedAccount', input]);
       return { authorityId: 'authority-1', accountId: 'account-1' };
     },
   },
@@ -44,6 +52,15 @@ const service = createDesktopPasswordAuthenticationService({
     ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1' }],
   ]);
 
+  const beforeVerifiedTicketEnrollment = calls.length;
+  const ticketEnrolled = await service.enrollFromVerificationTicket({
+    verificationToken: 'already-verified-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password',
+  });
+  assert.deepStrictEqual(ticketEnrolled, { verificationToken: 'already-verified-ticket', deviceChallenge: 'already-verified-challenge' });
+  assert.deepStrictEqual(calls.slice(beforeVerifiedTicketEnrollment), [
+    ['enrollVerifiedAccount', { authorityId: 'authority-1', accountId: 'account-1', loginName: 'teacher.ticket', password: 'ticket scoped correct password' }],
+  ], 'a valid ticket must be consumed without another phone verification or issuing a broader ticket');
+
   await assert.rejects(
     () => service.verify({ loginType: 'account_name', login: 'teacher.a', password: 'wrong password' }),
     error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
@@ -52,6 +69,12 @@ const service = createDesktopPasswordAuthenticationService({
     () => service.enroll({ phoneCode: 'invalid', loginName: 'teacher.a', password: 'correct password' }),
     error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
   );
+  const beforeExpiredTicket = calls.length;
+  await assert.rejects(
+    () => service.enrollFromVerificationTicket({ verificationToken: 'expired-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password' }),
+    error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
+  );
+  assert.strictEqual(calls.length, beforeExpiredTicket, 'an expired ticket must not enroll credentials or issue a new registration ticket');
   assert.strictEqual(JSON.stringify(enrolled).includes('account-1'), false, 'public enrollment output must not expose canonical account identifiers');
   console.log('desktop password authentication service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -78,6 +78,9 @@ const DesktopIdentityGate: React.FC = () => {
   const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>('phone');
   const [accountLogin, setAccountLogin] = useState('');
   const [accountPassword, setAccountPassword] = useState('');
+  const [cloudLoginName, setCloudLoginName] = useState('');
+  const [cloudPassword, setCloudPassword] = useState('');
+  const [cloudPasswordAgain, setCloudPasswordAgain] = useState('');
   const [password, setPassword] = useState('');
   const [passwordAgain, setPasswordAgain] = useState('');
   const [elevationPassword, setElevationPassword] = useState('');
@@ -354,14 +357,34 @@ const DesktopIdentityGate: React.FC = () => {
       setError('两次输入的本机密码不一致。');
       return;
     }
+    const passwordEnrollmentRequested = Boolean(cloudLoginName || cloudPassword || cloudPasswordAgain);
+    const canEnrollCloudPassword = pending?.pairingId && pending?.status === 'verified' && pending?.recovery !== true;
+    if (passwordEnrollmentRequested && !canEnrollCloudPassword) {
+      setError('\u5f53\u524d\u8eab\u4efd\u9a8c\u8bc1\u4e0d\u80fd\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u3002');
+      return;
+    }
+    if (passwordEnrollmentRequested && (!cloudPassword || cloudPassword !== cloudPasswordAgain)) {
+      setError('\u4e24\u6b21\u8f93\u5165\u7684\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u4e0d\u4e00\u81f4\u3002');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      const result = pending?.pairingId || pending?.verificationToken
-        ? await clientRef.current.completeUnifiedOnlineRegistration({ pending, password })
+      const verifiedPending = passwordEnrollmentRequested
+        ? await clientRef.current.enrollPasswordForVerifiedRegistration({
+          pending,
+          loginName: cloudLoginName || null,
+          password: cloudPassword,
+        })
+        : pending;
+      const result = verifiedPending?.pairingId || verifiedPending?.verificationToken
+        ? await clientRef.current.completeUnifiedOnlineRegistration({ pending: verifiedPending, password })
         : await clientRef.current.completeRegistration({ pending, password });
       setPassword('');
       setPasswordAgain('');
+      setCloudLoginName('');
+      setCloudPassword('');
+      setCloudPasswordAgain('');
       acceptRuntime(result);
     } catch (caught) {
       // The user-facing message stays deliberately generic; Electron records
@@ -370,6 +393,8 @@ const DesktopIdentityGate: React.FC = () => {
       console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'));
       setError(messageForError(caught));
     } finally {
+      setCloudPassword('');
+      setCloudPasswordAgain('');
       setBusy(false);
     }
   };
@@ -564,9 +589,18 @@ const DesktopIdentityGate: React.FC = () => {
       );
     }
     if (pending?.status === 'verified' && pending?.verificationToken) {
+      const canEnrollCloudPassword = pending?.pairingId && pending?.recovery !== true;
       return (
         <>
-          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u8bf7\u8bbe\u7f6e\u4ec5\u7528\u4e8e\u672c\u673a\u52a0\u5bc6\u7684\u89e3\u9501\u5bc6\u7801\u3002'} />
+          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={canEnrollCloudPassword ? '\u53ef\u9009\uff1a\u540c\u65f6\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\uff0c\u4e4b\u540e\u53ef\u5728\u4efb\u610f\u7535\u8111\u7528\u624b\u673a\u53f7\u6216\u81ea\u5b9a\u4e49\u8d26\u53f7\u767b\u5f55\u3002' : '\u8bf7\u8bbe\u7f6e\u4ec5\u7528\u4e8e\u672c\u673a\u52a0\u5bc6\u7684\u89e3\u9501\u5bc6\u7801\u3002'} />
+          {canEnrollCloudPassword && (
+            <>
+              <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder="\u81ea\u5b9a\u4e49\u8d26\u53f7\uff08\u53ef\u9009\uff1b\u7559\u7a7a\u5219\u7528\u624b\u673a\u53f7\u767b\u5f55\uff09" maxLength={64} />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} placeholder="\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\uff08\u81f3\u5c11 10 \u4e2a\u5b57\u7b26\uff09" />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder="\u518d\u6b21\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801" />
+              <Text type="secondary">{'\u4e91\u7aef\u5bc6\u7801\u53ea\u7ecf\u672c\u6b21\u5df2\u6838\u9a8c\u7684\u77ed\u65f6\u7968\u636e\u63d0\u4ea4\uff1b\u672c\u673a\u4e0d\u4f1a\u8bfb\u53d6\u3001\u4fdd\u5b58\u624b\u673a\u53f7\u6216\u5fae\u4fe1\u9a8c\u8bc1\u7801\u3002'}</Text>
+            </>
+          )}
           <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u81f3\u5c11 6 \u4e2a\u5b57\u7b26'} onPressEnter={completeRegistration} />
           <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={completeRegistration} />
           <Text type="secondary">{'\u672c\u673a\u5bc6\u7801\u4e0d\u4e0a\u4f20\uff0c\u4e0d\u662f\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u3002'}</Text>

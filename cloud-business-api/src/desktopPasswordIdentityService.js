@@ -51,8 +51,14 @@ function derive(password, salt) {
 }
 
 function credentialRow(value) {
-  const row = exact(value, ['authorityId', 'accountId', 'phoneHash', 'loginName', 'saltB64', 'passwordHashB64', 'algorithm'], rejected);
-  if (!identifier(row.authorityId) || !identifier(row.accountId) || !/^[0-9a-f]{64}$/u.test(row.phoneHash)
+  let row;
+  try {
+    row = exact(value, ['authorityId', 'accountId', 'phoneHash', 'loginName', 'saltB64', 'passwordHashB64', 'algorithm'], rejected);
+  } catch (_) {
+    row = exact(value, ['authorityId', 'accountId', 'loginName', 'saltB64', 'passwordHashB64', 'algorithm'], rejected);
+  }
+  if (!identifier(row.authorityId) || !identifier(row.accountId)
+    || (Object.hasOwn(row, 'phoneHash') && row.phoneHash !== null && !/^[0-9a-f]{64}$/u.test(row.phoneHash))
     || loginName(row.loginName) === undefined || typeof row.saltB64 !== 'string' || typeof row.passwordHashB64 !== 'string' || row.algorithm !== SCRYPT.algorithm) throw rejected();
   let salt;
   let passwordHash;
@@ -88,49 +94,57 @@ function createDesktopPasswordIdentityService(config) {
     return credentialRow(value);
   }
 
+  async function persistCredential({ authorityId, accountId, phoneHash, loginName: requestedLoginName, password: requestedPassword }) {
+    const normalizedLoginName = loginName(requestedLoginName);
+    const password = passwordBytes(requestedPassword, invalid);
+    if (!identifier(accountId) || !identifier(authorityId) || normalizedLoginName === undefined
+      || !(phoneHash === null || /^[0-9a-f]{64}$/u.test(phoneHash))) {
+      password.fill(0);
+      throw invalid();
+    }
+    let salt;
+    try {
+      salt = settings.randomBytes(SCRYPT.saltLength);
+    } catch (_) {
+      password.fill(0);
+      throw invalid();
+    }
+    if (!Buffer.isBuffer(salt) || salt.length !== SCRYPT.saltLength) {
+      password.fill(0);
+      throw invalid();
+    }
+    let derived;
+    try {
+      derived = await derive(password, salt);
+      await settings.saveCredential(Object.freeze({
+        authorityId, accountId, phoneHash, loginName: normalizedLoginName,
+        saltB64: salt.toString('base64'), passwordHashB64: derived.toString('base64'), algorithm: SCRYPT.algorithm,
+      }));
+    } catch (_) {
+      throw invalid();
+    } finally {
+      password.fill(0);
+      if (derived) derived.fill(0);
+    }
+    return Object.freeze({ authorityId, accountId });
+  }
+
   return Object.freeze({
     async enroll(input) {
       const request = exact(input, ['verifiedPhone', 'accountId', 'authorityId', 'loginName', 'password']);
       const accountId = identifier(request.accountId);
       const authorityId = identifier(request.authorityId);
-      const normalizedLoginName = loginName(request.loginName);
-      const password = passwordBytes(request.password, invalid);
       let phoneHash;
       try {
         phoneHash = settings.phoneHash(request.verifiedPhone);
       } catch (_) {
-        password.fill(0);
         throw invalid();
       }
-      if (!accountId || !authorityId || normalizedLoginName === undefined || !/^[0-9a-f]{64}$/u.test(phoneHash)) {
-        password.fill(0);
-        throw invalid();
-      }
-      let salt;
-      try {
-        salt = settings.randomBytes(SCRYPT.saltLength);
-      } catch (_) {
-        password.fill(0);
-        throw invalid();
-      }
-      if (!Buffer.isBuffer(salt) || salt.length !== SCRYPT.saltLength) {
-        password.fill(0);
-        throw invalid();
-      }
-      let derived;
-      try {
-        derived = await derive(password, salt);
-        await settings.saveCredential(Object.freeze({
-          authorityId, accountId, phoneHash, loginName: normalizedLoginName,
-          saltB64: salt.toString('base64'), passwordHashB64: derived.toString('base64'), algorithm: SCRYPT.algorithm,
-        }));
-      } catch (_) {
-        throw invalid();
-      } finally {
-        password.fill(0);
-        if (derived) derived.fill(0);
-      }
-      return Object.freeze({ authorityId, accountId });
+      return persistCredential({ authorityId, accountId, phoneHash, loginName: request.loginName, password: request.password });
+    },
+    async enrollVerifiedAccount(input) {
+      const request = exact(input, ['accountId', 'authorityId', 'loginName', 'password']);
+      return persistCredential({ authorityId: request.authorityId, accountId: request.accountId, phoneHash: null, loginName: request.loginName, password: request.password });
     },
     async verify(input) {
       const request = exact(input, ['loginType', 'login', 'password'], rejected);

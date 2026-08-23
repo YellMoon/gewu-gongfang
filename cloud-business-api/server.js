@@ -221,6 +221,7 @@ function createDesktopRegistrationFromEnvironment() {
     phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
     resolveCanonicalAccount: input => canonicalAccount.resolveOrProvision(input),
     verificationEvidenceHash: phoneCode => verificationEvidenceHash(process.env.CLOUD_IDENTITY_TICKET_SECRET, 'wechat-desktop-password-enrollment', phoneCode),
+    inspectVerificationToken: token => registration.inspectVerificationToken(token),
     passwordIdentity: desktopPasswordIdentity,
     issueRegistrationTicket: input => registration.issueVerificationForVerifiedAccount(input),
   });

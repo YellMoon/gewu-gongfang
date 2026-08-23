@@ -3,6 +3,7 @@ const fs = require('fs');
 
 const indexSource = fs.readFileSync('src/index.tsx', 'utf8');
 const gateSource = fs.readFileSync('src/components/DesktopIdentityGate.tsx', 'utf8');
+const identityClientSource = fs.readFileSync('src/services/desktopIdentityClient.mjs', 'utf8');
 const identityErrorSource = fs.readFileSync('src/services/desktopIdentityError.mjs', 'utf8');
 const decodedGateSource = gateSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => (
   String.fromCharCode(Number.parseInt(hex, 16))
@@ -43,6 +44,10 @@ assert.ok(gateSource.includes('pending.qrImageDataUrl') && gateSource.includes('
   'new-device registration must render an official mini-program code image fallback');
 assert.ok(gateSource.includes('请输入本机密码'));
 assert.ok(decodedGateSource.includes('忘记本机密码？重新核验身份并重设'));
+assert.ok(gateSource.includes('enrollPasswordForVerifiedRegistration'), 'verified QR registration must support optional cloud password enrollment without exposing a phone code');
+assert.ok(identityClientSource.includes('body: { verificationToken: pending.verificationToken, loginName, password }'), 'cloud password enrollment must use only the existing short-lived verification ticket');
+assert.ok(gateSource.includes('setCloudPassword(\'\')'), 'cloud password input must be cleared after every enrollment attempt');
+assert.ok(!gateSource.includes('phoneCode: cloudPassword'), 'desktop registration must never substitute or retain a phone verification code');
 assert.ok(!gateSource.includes('beginPasswordReset'));
 assert.ok(gateSource.includes("pending?.challenge?.purpose === 'password_reset'"));
 assert.ok(decodedGateSource.includes('不会删除本机数据或待同步变更'));

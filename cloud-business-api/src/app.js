@@ -7,7 +7,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
-  if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
+  if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
@@ -187,6 +187,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopPasswordAuthentication) return desktopUnavailable(response);
     try {
       const result = await desktopPasswordAuthentication.enroll(request.body);
+      response.json({ ok: true, verificationToken: result.verificationToken, deviceChallenge: result.deviceChallenge });
+    } catch (error) {
+      identityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop/password-enrollment-from-verification', async (request, response) => {
+    if (!desktopPasswordAuthentication) return desktopUnavailable(response);
+    try {
+      const result = await desktopPasswordAuthentication.enrollFromVerificationTicket(request.body);
       response.json({ ok: true, verificationToken: result.verificationToken, deviceChallenge: result.deviceChallenge });
     } catch (error) {
       identityFailure(response, error);

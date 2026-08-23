@@ -714,6 +714,26 @@ export function createDesktopIdentityClient({
     });
   }
 
+  async function enrollPasswordForVerifiedRegistration({ pending, loginName, password } = {}) {
+    if (!pending?.baseUrl || !pending?.verificationToken || !pending?.deviceChallenge
+      || pending?.status !== 'verified' || pending?.recovery === true) {
+      throw identityError('DESKTOP_PASSWORD_ENROLLMENT_CONTEXT_INVALID');
+    }
+    if (!(loginName === null || (typeof loginName === 'string' && loginName === loginName.trim() && loginName.length > 0 && loginName.length <= 64))
+      || typeof password !== 'string' || password.length === 0 || password.length > 1024) {
+      throw identityError('DESKTOP_PASSWORD_ENROLLMENT_INPUT_INVALID');
+    }
+    const enrolled = await request(fetchImpl, pending.baseUrl, '/api/desktop/password-enrollment-from-verification', {
+      method: 'POST',
+      body: { verificationToken: pending.verificationToken, loginName, password },
+    });
+    if (!enrolled?.verificationToken || !enrolled?.deviceChallenge
+      || enrolled.verificationToken !== pending.verificationToken || enrolled.deviceChallenge !== pending.deviceChallenge) {
+      throw identityError('DESKTOP_PASSWORD_ENROLLMENT_INVALID');
+    }
+    return Object.freeze({ ...pending, cloudPasswordEnrolled: true });
+  }
+
   async function pollUnifiedOnlineRegistration(pending) {
     if (!pending?.baseUrl || !pending?.pairingId || !pending?.pairingSecret || !pending?.publicIdentity
       || !pending?.idempotencyKey) {
@@ -988,6 +1008,7 @@ export function createDesktopIdentityClient({
     completeRegistration,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
+    enrollPasswordForVerifiedRegistration,
     listCloudBusinessProjection,
     listCloudQuestions,
     listCloudSchedules,

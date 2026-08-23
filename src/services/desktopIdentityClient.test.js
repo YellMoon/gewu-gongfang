@@ -274,6 +274,9 @@ async function main() {
     sessionStore: { save: async () => { passwordClientStored = true; }, clear: async () => {} },
     fetchImpl: async (url, options) => {
       passwordVerificationRequests.push({ url, body: JSON.parse(options.body) });
+      if (url.endsWith('/api/desktop/password-enrollment-from-verification')) {
+        return { ok: true, json: async () => ({ ok: true, verificationToken: 'already-verified-ticket', deviceChallenge: 'existing-device-proof' }) };
+      }
       if (url.endsWith('/api/desktop/password-enrollment')) {
         return { ok: true, json: async () => ({ ok: true, verificationToken: 'password-enrollment-ticket', deviceChallenge: 'cloud-password-enrollment-proof' }) };
       }
@@ -311,6 +314,21 @@ async function main() {
     body: { phoneCode: 'wechat-phone-proof', loginName: 'teacher.a', password: 'correct horse battery staple' },
   });
   assert.strictEqual(passwordClientStored, false, 'password enrollment must also stop before any local vault or session persistence');
+  const ticketEnrollmentPending = await passwordVerificationClient.enrollPasswordForVerifiedRegistration({
+    pending: {
+      baseUrl: 'https://cloud.test', idempotencyKey: 'ticket-registration-1', status: 'verified',
+      verificationToken: 'already-verified-ticket', deviceChallenge: 'existing-device-proof',
+      pairingId: 'pairing-verified-1', publicIdentity: enrollmentPending.publicIdentity,
+    },
+    loginName: 'teacher.ticket', password: 'ticket scoped correct password',
+  });
+  assert.strictEqual(ticketEnrollmentPending.cloudPasswordEnrolled, true);
+  assert.strictEqual(ticketEnrollmentPending.verificationToken, 'already-verified-ticket', 'ticket enrollment must keep the existing short-lived registration ticket');
+  assert.deepStrictEqual(passwordVerificationRequests.at(-1), {
+    url: 'https://cloud.test/api/desktop/password-enrollment-from-verification',
+    body: { verificationToken: 'already-verified-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password' },
+  });
+  assert.strictEqual(passwordClientStored, false, 'ticket-scoped password enrollment must not persist a local vault or session');
   const cloudSchedules = await unifiedCloudClient.listCloudSchedules({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });

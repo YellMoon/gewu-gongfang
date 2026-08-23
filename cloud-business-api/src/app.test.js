@@ -55,6 +55,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const passwordCalls = [];
   const desktopPasswordAuthentication = {
     enroll: async input => { passwordCalls.push(['enroll', input]); return { verificationToken: 'password-enrollment-ticket', deviceChallenge: 'password-enrollment-challenge' }; },
+    enrollFromVerificationTicket: async input => { passwordCalls.push(['enrollFromVerificationTicket', input]); return { verificationToken: 'verified-ticket', deviceChallenge: 'verified-challenge' }; },
     verify: async input => { passwordCalls.push(['verify', input]); return { verificationToken: 'password-verification-ticket', deviceChallenge: 'password-verification-challenge' }; },
   };
   const passwordEnrollment = await request(createCloudBusinessApp({
@@ -64,6 +65,13 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(passwordEnrollment.status, 200);
   assert.deepStrictEqual(passwordEnrollment.body, { ok: true, verificationToken: 'password-enrollment-ticket', deviceChallenge: 'password-enrollment-challenge' });
+  const ticketEnrollment = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPasswordAuthentication,
+  }), '/api/desktop/password-enrollment-from-verification', {
+    method: 'POST', body: { verificationToken: 'already-verified-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password' },
+  });
+  assert.strictEqual(ticketEnrollment.status, 200);
+  assert.deepStrictEqual(ticketEnrollment.body, { ok: true, verificationToken: 'verified-ticket', deviceChallenge: 'verified-challenge' });
   const passwordVerification = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPasswordAuthentication,
   }), '/api/desktop/password-verification', {
@@ -73,6 +81,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(passwordVerification.body, { ok: true, verificationToken: 'password-verification-ticket', deviceChallenge: 'password-verification-challenge' });
   assert.deepStrictEqual(passwordCalls, [
     ['enroll', { phoneCode: 'provider-code', loginName: 'teacher.a', password: 'correct password' }],
+    ['enrollFromVerificationTicket', { verificationToken: 'already-verified-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password' }],
     ['verify', { loginType: 'account_name', login: 'teacher.a', password: 'correct password' }],
   ]);
   const registration = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/online-registration', { method: 'POST', body: { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' } });
