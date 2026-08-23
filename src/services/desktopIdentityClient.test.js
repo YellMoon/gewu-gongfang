@@ -181,6 +181,22 @@ async function main() {
         assert.deepStrictEqual(JSON.parse(options.body), { teacherId: 'teacher-cloud-1', name: 'New teacher', phone: '13800138002', subject: 'math', hourlyRate: 100, notes: null });
         return { ok: true, json: async () => ({ ok: true, teacher: { id: 'teacher-cloud-1', updatedAt: '2026-08-23T00:06:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/rooms') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), { roomId: 'room-cloud-1', name: 'Cloud room', address: 'Cloud address' });
+        return { ok: true, json: async () => ({ ok: true, room: { id: 'room-cloud-1', updatedAt: '2026-08-23T00:09:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/rooms/room-cloud-1') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        if (options.method === 'DELETE') {
+          assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-23T00:10:00.000Z' });
+          return { ok: true, json: async () => ({ ok: true, room: { id: 'room-cloud-1', updatedAt: '2026-08-23T00:11:00.000Z' } }) };
+        }
+        assert.strictEqual(options.method, 'PUT');
+        assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-23T00:09:00.000Z', name: 'Updated room', address: null });
+        return { ok: true, json: async () => ({ ok: true, room: { id: 'room-cloud-1', updatedAt: '2026-08-23T00:10:00.000Z' } }) };
+      }
       if (url === 'https://cloud.test/api/business/teachers/teacher-cloud-1') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         if (options.method === 'DELETE') {
@@ -419,6 +435,18 @@ async function main() {
     name: 'New teacher', phone: '13800138002', subject: 'math', hourlyRate: 100, notes: null,
   });
   assert.deepStrictEqual(createdCloudTeacher, { id: 'teacher-cloud-1', updatedAt: '2026-08-23T00:06:00.000Z' });
+  const createdCloudRoom = await unifiedCloudClient.createCloudRoom({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, roomId: 'room-cloud-1', name: 'Cloud room', address: 'Cloud address',
+  });
+  assert.deepStrictEqual(createdCloudRoom, { id: 'room-cloud-1', updatedAt: '2026-08-23T00:09:00.000Z' });
+  const updatedCloudRoom = await unifiedCloudClient.updateCloudRoom({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, roomId: 'room-cloud-1', expectedUpdatedAt: '2026-08-23T00:09:00.000Z', name: 'Updated room', address: null,
+  });
+  assert.deepStrictEqual(updatedCloudRoom, { id: 'room-cloud-1', updatedAt: '2026-08-23T00:10:00.000Z' });
+  const deletedCloudRoom = await unifiedCloudClient.deleteCloudRoom({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, roomId: 'room-cloud-1', expectedUpdatedAt: '2026-08-23T00:10:00.000Z',
+  });
+  assert.deepStrictEqual(deletedCloudRoom, { id: 'room-cloud-1', updatedAt: '2026-08-23T00:11:00.000Z' });
   const updatedCloudTeacher = await unifiedCloudClient.updateCloudTeacher({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, teacherId: 'teacher-cloud-1', expectedUpdatedAt: '2026-08-23T00:06:00.000Z',
     name: 'Updated teacher', phone: null, subject: 'physics', hourlyRate: null, notes: 'note',

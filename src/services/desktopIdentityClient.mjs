@@ -1017,6 +1017,33 @@ export function createDesktopIdentityClient({
     return data.teacher;
   }
 
+  async function createCloudRoom({ baseUrl, currentSession, roomId, name, address } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedRoomId = String(roomId || '').trim();
+    if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, '/api/business/rooms', { method: 'POST', token: currentSession.token, body: { roomId: normalizedRoomId, name, address } });
+    if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
+    return data.room;
+  }
+
+  async function updateCloudRoom({ baseUrl, currentSession, roomId, expectedUpdatedAt, name, address } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedRoomId = String(roomId || '').trim();
+    if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, name, address } });
+    if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
+    return data.room;
+  }
+
+  async function deleteCloudRoom({ baseUrl, currentSession, roomId, expectedUpdatedAt } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedRoomId = String(roomId || '').trim();
+    if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt } });
+    if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
+    return data.room;
+  }
+
   async function updateCloudStudentRecord({
     baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
     institutionId, parentName, notes, sourceType, studentSource, contacts,
@@ -1145,10 +1172,12 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    createCloudRoom,
     createCloudTeacher,
     createCloudStudentRecord,
     deleteCloudTeacher,
     deleteCloudStudent,
+    deleteCloudRoom,
     beginUnifiedOnlineRecovery,
     completeRegistration,
     completeUnifiedOnlineRegistration,
@@ -1165,6 +1194,7 @@ export function createDesktopIdentityClient({
     switchRole,
     upsertCloudStudentContact,
     updateCloudSchedule,
+    updateCloudRoom,
     updateCloudTeacher,
     updateCloudStudent,
     updateCloudStudentRecord,
