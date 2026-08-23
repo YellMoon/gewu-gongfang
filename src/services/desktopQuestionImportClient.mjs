@@ -22,6 +22,11 @@ function apiBase(config) {
   if (!/^https:\/\//i.test(base)) throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
   return `${base}/api/desktop/question-imports`;
 }
+function assetApiBase(config) {
+  const base = trimSlash(resolveDesktopIdentityBaseUrl(config));
+  if (!/^https:\/\//i.test(base)) throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
+  return `${base}/api/desktop/question-bank/assets`;
+}
 function authorization(deps) {
   const session = (deps.readSession || readDesktopAuthorizationSession)(deps.authStorage || globalThis.sessionStorage);
   if (!session?.authorization || !session?.authContext?.deviceId) throw failure('AUTHORIZATION_CONTEXT_REQUIRED');
@@ -38,19 +43,30 @@ function nextId(prefix, deps) {
   if (!ids(value, prefix)) throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
   return value;
 }
+function relayRow(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || !ids(value.taskId, 'task') || !ids(value.assetId, 'asset')
+    || typeof value.expiresAt !== 'string' || new Date(value.expiresAt).toISOString() !== value.expiresAt) {
+    throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+  }
+  return value;
+}
 
 export function createDesktopQuestionImportClient(config = {}, deps = {}) {
   const fetchImpl = deps.fetchImpl || globalThis.fetch;
   const seal = deps.seal || globalThis.questionImportRelay?.sealSource;
+  const sealAsset = deps.sealAsset || globalThis.questionImportRelay?.sealAsset;
   const now = deps.now || (() => new Date());
-  if (typeof fetchImpl !== 'function' || typeof seal !== 'function' || typeof now !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
+  if (typeof fetchImpl !== 'function' || (typeof seal !== 'function' && typeof sealAsset !== 'function') || typeof now !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
   const base = apiBase(config);
+  const assetBase = assetApiBase(config);
   async function request(path, options = {}) {
     const response = await fetchImpl(`${base}${path}`, { ...options, headers: { ...authorization(deps), ...(options.headers || {}) } });
     return responseJson(response);
   }
   return Object.freeze({
     async createFromWord(input) {
+      if (typeof seal !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
       const requestInput = exact(input, ['sourceType', 'sourceFileName', 'sourceMimeType', 'bytes', 'metadata']);
       if (!['lecture', 'exam'].includes(requestInput.sourceType) || typeof requestInput.sourceFileName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,507}\.(?:doc|docx)$/iu.test(requestInput.sourceFileName)
         || !['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(requestInput.sourceMimeType)
@@ -85,6 +101,39 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
     async prepareDrafts(taskId) {
       if (!ids(taskId, 'question_import_task')) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
       return taskRow((await request(`/${encodeURIComponent(taskId)}/prepare-drafts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).task);
+    },
+    async relayAsset(input) {
+      if (typeof sealAsset !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
+      const requestInput = exact(input, ['questionId', 'assetId', 'assetType', 'fileName', 'mimeType', 'bytes']);
+      if (typeof requestInput.questionId !== 'string' || !requestInput.questionId.trim() || requestInput.questionId.length > 128
+        || !ids(requestInput.assetId, 'asset') || typeof requestInput.assetType !== 'string' || !requestInput.assetType.trim() || requestInput.assetType.length > 128
+        || !(requestInput.fileName === null || (typeof requestInput.fileName === 'string' && requestInput.fileName.trim() && requestInput.fileName.length <= 512 && !/[\\/\r\n]/.test(requestInput.fileName)))
+        || typeof requestInput.mimeType !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+/-]{0,254}$/.test(requestInput.mimeType)
+        || !(requestInput.bytes instanceof Uint8Array) || !requestInput.bytes.byteLength || requestInput.bytes.byteLength > (64 * 1024 * 1024)) {
+        throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
+      }
+      const relayKeyResponse = await fetchImpl(`${assetBase}/relay-key`, { headers: authorization(deps) });
+      const relayKey = await responseJson(relayKeyResponse);
+      if (typeof relayKey.agentPublicKey !== 'string' || !/^[A-Za-z0-9_-]{40,4096}$/.test(relayKey.agentPublicKey)
+        || typeof relayKey.agentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(relayKey.agentKeyFingerprint)) throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+      const taskId = nextId('task', deps);
+      const objectId = nextId('obj', deps);
+      const sealed = await sealAsset({ agentPublicKey: relayKey.agentPublicKey, storageTaskId: taskId, objectId, objectVersion: 1, bytes: requestInput.bytes });
+      if (!sealed || typeof sealed !== 'object' || !/^[0-9a-f]{64}$/.test(sealed.sourceSha256 || '') || !Number.isSafeInteger(sealed.sourceBytes)
+        || sealed.sourceBytes !== requestInput.bytes.byteLength || !sealed.envelope || typeof sealed.ciphertextBase64 !== 'string') throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+      const current = now();
+      if (!(current instanceof Date) || !Number.isFinite(current.getTime())) throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
+      const response = await fetchImpl(`${assetBase}/relay`, {
+        method: 'POST',
+        headers: { ...authorization(deps), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: requestInput.questionId, assetId: requestInput.assetId, taskId, objectId, objectVersion: 1,
+          assetType: requestInput.assetType, fileName: requestInput.fileName, mimeType: requestInput.mimeType,
+          agentKeyFingerprint: relayKey.agentKeyFingerprint, envelope: sealed.envelope, ciphertextBase64: sealed.ciphertextBase64,
+          expiresAt: new Date(current.getTime() + (15 * 60 * 1000)).toISOString(),
+        }),
+      });
+      return relayRow((await responseJson(response)).relay);
     },
   });
 }
