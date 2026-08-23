@@ -615,6 +615,39 @@ export function createDesktopIdentityClient({
     });
   }
 
+  async function beginUnifiedOnlineRecovery({ baseUrl, deviceName, idempotencyKey } = {}) {
+    if (typeof desktopIdentity.beginUnifiedOnlineRecovery !== 'function') {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_RECOVERY_UNAVAILABLE');
+    }
+    const normalizedUrl = normalizedBaseUrl(baseUrl);
+    const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
+    if (!normalizedIdempotencyKey || normalizedIdempotencyKey.length > 256) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    const publicIdentity = await desktopIdentity.beginUnifiedOnlineRecovery({ deviceName });
+    const started = await request(fetchImpl, normalizedUrl, '/api/desktop/pairing/start', {
+      method: 'POST',
+      body: {
+        installationId: publicIdentity.deviceId,
+        installationPublicKey: publicIdentity.publicKey,
+        idempotencyKey: normalizedIdempotencyKey,
+      },
+    });
+    if (!started?.pairingId || !started?.pairingSecret || !started?.expiresAt) {
+      throw identityError('DESKTOP_UNIFIED_ONLINE_PAIRING_INVALID');
+    }
+    return Object.freeze({
+      baseUrl: normalizedUrl,
+      publicIdentity: Object.freeze({ ...publicIdentity }),
+      idempotencyKey: normalizedIdempotencyKey,
+      pairingId: String(started.pairingId),
+      pairingSecret: String(started.pairingSecret),
+      expiresAt: String(started.expiresAt),
+      recovery: true,
+      qrValue: `gewu://desktop-pairing?pairingId=${encodeURIComponent(started.pairingId)}&secret=${encodeURIComponent(started.pairingSecret)}`,
+    });
+  }
+
   async function beginPasswordVerification({ baseUrl, deviceName, idempotencyKey, loginType, login, password } = {}) {
     if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
@@ -705,8 +738,10 @@ export function createDesktopIdentityClient({
       || !pending?.verificationToken || !pending?.deviceChallenge) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
     }
-    if (typeof desktopIdentity.signChallenge !== 'function'
-      || typeof desktopIdentity.completeRegistration !== 'function') {
+    const completeVault = pending.recovery === true
+      ? desktopIdentity.completeUnifiedOnlineRecovery
+      : desktopIdentity.completeRegistration;
+    if (typeof desktopIdentity.signChallenge !== 'function' || typeof completeVault !== 'function') {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
     }
     const proof = await desktopIdentity.signChallenge({
@@ -763,7 +798,7 @@ export function createDesktopIdentityClient({
       teacherId: activeRole === 'teacher' ? context.teacherId : null,
       studentId: activeRole === 'student' ? context.studentId : null,
     };
-    const vaultStatus = await desktopIdentity.completeRegistration({
+    const vaultStatus = await completeVault({
       password,
       authorization,
       profile,
@@ -949,6 +984,7 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    beginUnifiedOnlineRecovery,
     completeRegistration,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,

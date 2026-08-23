@@ -606,6 +606,18 @@ async function main() {
   assert.strictEqual(resetUnlocked.user.id, 'canonical-human');
   assert.strictEqual(fs.readFileSync(businessFile, 'utf8'), 'business-data-must-survive');
 
+  resetVault.lock();
+  const unifiedRecoveryEnvelope = fs.readFileSync(resetFilePath);
+  const unifiedRecovery = resetVault.beginUnifiedOnlineRecovery({ deviceName: 'Recovered desktop' });
+  assert.notStrictEqual(unifiedRecovery.deviceId, resetOriginalIdentity.deviceId,
+    'cloud silent recovery must register a fresh key-derived device identity');
+  assert.notStrictEqual(unifiedRecovery.keyFingerprint, resetOriginalIdentity.keyFingerprint);
+  assert.strictEqual(resetVault.status().state, 'unified_online_recovery_pending');
+  assert.deepStrictEqual(fs.readFileSync(resetFilePath), unifiedRecoveryEnvelope,
+    'beginning cloud recovery must not replace the committed local vault');
+  resetVault.lock();
+  assert.strictEqual(resetVault.status().state, 'sealed');
+
   vault.lock();
   const originalFile = fs.readFileSync(filePath);
   for (const field of ['deviceId', 'keyFingerprint']) {
@@ -722,8 +734,8 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginPasswordReset', 'beginRegistration', 'beginUnifiedOnlineRegistration',
-      'completePasswordReset', 'completeRegistration',
+      'beginRegistration', 'beginUnifiedOnlineRecovery', 'beginUnifiedOnlineRegistration',
+      'completeRegistration', 'completeUnifiedOnlineRecovery',
       'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
     ]
   );
@@ -731,11 +743,15 @@ async function main() {
   assert.ok(!('write' in exposed.desktopIdentity));
   assert.ok(!('privateKey' in exposed.desktopIdentity));
   assert.ok(!('signPairingEnvelope' in exposed.desktopIdentity));
+  assert.ok(!('beginPasswordReset' in exposed.desktopIdentity));
+  assert.ok(!('completePasswordReset' in exposed.desktopIdentity));
   assert.strictEqual(exposed.singleUserRuntime, undefined, 'ordinary preload must not expose host controls');
   await exposed.desktopIdentity.status();
   assert.strictEqual(invoked[0][0], 'desktop-identity:status');
   await exposed.desktopIdentity.beginUnifiedOnlineRegistration({ deviceName: 'Unified cloud desktop' });
   assert.strictEqual(invoked[1][0], 'desktop-identity:begin-unified-online-registration');
+  await exposed.desktopIdentity.beginUnifiedOnlineRecovery({ deviceName: 'Recovered cloud desktop' });
+  assert.strictEqual(invoked[2][0], 'desktop-identity:begin-unified-online-recovery');
   await assert.rejects(exposed.api.invoke('desktop-auth:get'), /IPC channel not allowed/);
 
   const electronSource = fs.readFileSync(path.join(__dirname, 'electron.js'), 'utf8');
@@ -743,9 +759,9 @@ async function main() {
     'desktop-identity:status',
     'desktop-identity:begin-registration',
     'desktop-identity:begin-unified-online-registration',
-    'desktop-identity:begin-password-reset',
+    'desktop-identity:begin-unified-online-recovery',
     'desktop-identity:complete-registration',
-    'desktop-identity:complete-password-reset',
+    'desktop-identity:complete-unified-online-recovery',
     'desktop-identity:unlock',
     'desktop-identity:lock',
     'desktop-identity:refresh-offline-lease',

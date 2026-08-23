@@ -828,6 +828,27 @@ function createDesktopIdentityVault({
     return Object.freeze({ ...publicIdentity });
   }
 
+  function beginUnifiedOnlineRecovery(input = {}) {
+    if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
+    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
+    const committedIdentity = readEnvelope().publicIdentity;
+    const keyPair = crypto.generateKeyPairSync('ed25519');
+    const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const keyFingerprint = fingerprintPublicKey(publicKey);
+    const publicIdentity = normalizePublicIdentity({
+      deviceId: `desktop-device-${keyFingerprint.slice(0, 32)}`,
+      deviceName: input.deviceName || committedIdentity.deviceName,
+      deviceKind: 'desktop-client',
+      publicKey,
+      keyFingerprint,
+    });
+    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    pendingRegistration = Object.freeze({ purpose: 'unified_online_recovery', publicIdentity, privateKey });
+    unlockedSecret = null;
+    lastUnlockedAt = null;
+    return Object.freeze({ ...publicIdentity });
+  }
+
   function beginPasswordReset() {
     if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
     if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
@@ -884,6 +905,13 @@ function createDesktopIdentityVault({
   function completePasswordReset(input = {}) {
     if (!pendingRegistration || pendingRegistration.purpose !== 'password_reset') {
       throw vaultError('DESKTOP_IDENTITY_PASSWORD_RESET_NOT_PENDING');
+    }
+    return seal(input);
+  }
+
+  function completeUnifiedOnlineRecovery(input = {}) {
+    if (!pendingRegistration || pendingRegistration.purpose !== 'unified_online_recovery') {
+      throw vaultError('DESKTOP_IDENTITY_UNIFIED_ONLINE_RECOVERY_NOT_PENDING');
     }
     return seal(input);
   }
@@ -948,6 +976,8 @@ function createDesktopIdentityVault({
     if (pendingRegistration) {
       const state = pendingRegistration.purpose === 'password_reset'
         ? 'password_reset_pending'
+        : pendingRegistration.purpose === 'unified_online_recovery'
+          ? 'unified_online_recovery_pending'
         : 'registration_pending';
       return presentPublicState(state, pendingRegistration.publicIdentity);
     }
@@ -1197,9 +1227,11 @@ function createDesktopIdentityVault({
     beginPasswordReset,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    beginUnifiedOnlineRecovery,
     clear,
     completePasswordReset,
     completeRegistration,
+    completeUnifiedOnlineRecovery,
     createAuthorityCommand,
     lock,
     refreshOfflineLease,

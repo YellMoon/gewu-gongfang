@@ -6,6 +6,7 @@ import {
   Divider,
   Input,
   QRCode,
+  Select,
   Space,
   Spin,
   Tag,
@@ -73,6 +74,10 @@ const DesktopIdentityGate: React.FC = () => {
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [deviceName, setDeviceName] = useState('');
+  const [onlineVerificationMode, setOnlineVerificationMode] = useState<'wechat' | 'password'>('wechat');
+  const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>('phone');
+  const [accountLogin, setAccountLogin] = useState('');
+  const [accountPassword, setAccountPassword] = useState('');
   const [password, setPassword] = useState('');
   const [passwordAgain, setPasswordAgain] = useState('');
   const [elevationPassword, setElevationPassword] = useState('');
@@ -219,10 +224,12 @@ const DesktopIdentityGate: React.FC = () => {
           setGateState({ kind: 'upgrade-required' });
           return;
         }
-        if (['registration_pending', 'password_reset_pending'].includes(vaultStatus.state)) {
-          setGateState({ kind: vaultStatus.state === 'password_reset_pending'
-            ? 'password-reset-interrupted'
-            : 'registration-interrupted' });
+        if (['registration_pending', 'password_reset_pending', 'unified_online_recovery_pending'].includes(vaultStatus.state)) {
+          setGateState({ kind: vaultStatus.state === 'unified_online_recovery_pending'
+            ? 'registration-interrupted'
+            : vaultStatus.state === 'password_reset_pending'
+              ? 'password-reset-interrupted'
+              : 'registration-interrupted' });
           return;
         }
         const next = resolveDesktopGateState({
@@ -315,6 +322,33 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
+  const beginPasswordVerification = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      if (gateState.kind === 'registration-interrupted') await clientRef.current.lock();
+      const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
+      const started = await clientRef.current.beginPasswordVerification({
+        baseUrl,
+        deviceName,
+        idempotencyKey: 'desktop-password-verification-' + randomPart,
+        loginType: accountLoginType,
+        login: accountLogin,
+        password: accountPassword,
+      });
+      setAccountPassword('');
+      setPending(started);
+      setGateState({ kind: 'registration-active' });
+    } catch (caught) {
+      setAccountPassword('');
+      try { await clientRef.current?.lock(); } catch (_cleanupError) { /* best effort */ }
+      setPending(null);
+      setError(messageForError(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const completeRegistration = async () => {
     if (password !== passwordAgain) {
       setError('两次输入的本机密码不一致。');
@@ -323,7 +357,7 @@ const DesktopIdentityGate: React.FC = () => {
     setBusy(true);
     setError('');
     try {
-      const result = pending?.pairingId
+      const result = pending?.pairingId || pending?.verificationToken
         ? await clientRef.current.completeUnifiedOnlineRegistration({ pending, password })
         : await clientRef.current.completeRegistration({ pending, password });
       setPassword('');
@@ -340,17 +374,22 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
-  const beginPasswordReset = async () => {
+  const beginUnifiedOnlineRecovery = async () => {
     if (!browserOnline()) {
-      setError('\u91cd\u8bbe\u672c\u673a\u5bc6\u7801\u5fc5\u987b\u8054\u7f51\u5b8c\u6210\u5fae\u4fe1\u8eab\u4efd\u6838\u9a8c\u548c\u8bbe\u5907\u5ba1\u6838\u3002');
+      setError('\u91cd\u8bbe\u672c\u673a\u5bc6\u7801\u5fc5\u987b\u8054\u7f51\u5b8c\u6210\u4e91\u7aef\u8d26\u53f7\u6838\u9a8c\u3002');
       return;
     }
     setBusy(true);
     setError('');
     try {
       await clientRef.current.lock();
-      const started = await clientRef.current.beginPasswordReset({ baseUrl });
-      setPending(started);
+      const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
+      const started = await clientRef.current.beginUnifiedOnlineRecovery({
+        baseUrl,
+        deviceName,
+        idempotencyKey: 'desktop-unified-recovery-' + randomPart,
+      });
+      setPending({ ...started, recovery: true });
       setPassword('');
       setPasswordAgain('');
       setGateState({ kind: 'password-reset-active' });
@@ -365,7 +404,7 @@ const DesktopIdentityGate: React.FC = () => {
   };
 
   const beginRecoveryFlow = async () => {
-    await beginPasswordReset();
+    await beginUnifiedOnlineRecovery();
   };
 
   const unlock = async () => {
@@ -486,19 +525,52 @@ const DesktopIdentityGate: React.FC = () => {
     if (!pending) {
       return (
         <>
-          <Paragraph className="desktop-identity-copy">
+          <Paragraph className="desktop-identity-copy" style={{ display: 'none' }}>
             首次在这台电脑使用时，需要用微信扫码并重新核验本人手机号。申请只绑定这台设备，
             不会让电脑自行选择账号或角色。
           </Paragraph>
+          <Paragraph className="desktop-identity-copy">
+            {'\u9996\u6b21\u4f7f\u7528\u5fc5\u987b\u8054\u7f51\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002\u53ef\u4ee5\u4f7f\u7528\u5fae\u4fe1\u6838\u9a8c\uff0c\u6216\u7528\u5df2\u7ed1\u5b9a\u7684\u624b\u673a\u53f7\u3001\u81ea\u5b9a\u4e49\u8d26\u53f7\u548c\u4e91\u7aef\u5bc6\u7801\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u8fd9\u53f0\u7535\u8111\u3002'}
+          </Paragraph>
+          <Space.Compact block>
+            <Button type={onlineVerificationMode === 'wechat' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('wechat')}>
+              {'\u5fae\u4fe1\u6838\u9a8c'}
+            </Button>
+            <Button type={onlineVerificationMode === 'password' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('password')}>
+              {'\u8d26\u53f7\u5bc6\u7801'}
+            </Button>
+          </Space.Compact>
           <Input
             value={deviceName}
             onChange={event => setDeviceName(event.target.value)}
             placeholder="设备名称，例如：办公室主机"
             maxLength={128}
           />
-          <Button type="primary" icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>
+          {onlineVerificationMode === 'password' && (
+            <>
+              <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
+                { value: 'phone', label: '\u624b\u673a\u53f7' },
+                { value: 'account_name', label: '\u81ea\u5b9a\u4e49\u8d26\u53f7' },
+              ]} />
+              <Input value={accountLogin} onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u81ea\u5b9a\u4e49\u8d26\u53f7'} />
+              <Input.Password value={accountPassword} onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} onPressEnter={beginPasswordVerification} />
+              <Button type="primary" loading={busy} onClick={beginPasswordVerification} block>{'\u6838\u9a8c\u8d26\u53f7\u5e76\u767b\u8bb0\u6b64\u7535\u8111'}</Button>
+            </>
+          )}
+          <Button type="primary" icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block style={{ display: onlineVerificationMode === 'wechat' ? undefined : 'none' }}>
             {gateState.kind === 'registration-interrupted' ? '重新开始微信身份注册' : '开始微信身份注册'}
           </Button>
+        </>
+      );
+    }
+    if (pending?.status === 'verified' && pending?.verificationToken) {
+      return (
+        <>
+          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u8bf7\u8bbe\u7f6e\u4ec5\u7528\u4e8e\u672c\u673a\u52a0\u5bc6\u7684\u89e3\u9501\u5bc6\u7801\u3002'} />
+          <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u81f3\u5c11 6 \u4e2a\u5b57\u7b26'} onPressEnter={completeRegistration} />
+          <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={completeRegistration} />
+          <Text type="secondary">{'\u672c\u673a\u5bc6\u7801\u4e0d\u4e0a\u4f20\uff0c\u4e0d\u662f\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u3002'}</Text>
+          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u4fdd\u5b58\u672c\u673a\u5bc6\u7801\u5e76\u8fdb\u5165'}</Button>
         </>
       );
     }
@@ -745,7 +817,7 @@ const DesktopIdentityGate: React.FC = () => {
               <Button type="link" loading={busy} onClick={() => void beginRecoveryFlow()} block>
                 {'\u5fd8\u8bb0\u672c\u673a\u5bc6\u7801\uff1f\u91cd\u65b0\u6838\u9a8c\u8eab\u4efd\u5e76\u91cd\u8bbe'}
               </Button>
-              <Text type="secondary">{'\u91cd\u8bbe\u9700\u8054\u7f51\u3001\u5fae\u4fe1\u9a8c\u8bc1\u672c\u4eba\u624b\u673a\u53f7\u5e76\u7531\u53e6\u4e00\u53f0\u5df2\u6388\u6743\u8bbe\u5907\u6279\u51c6\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}</Text>
+              <Text type="secondary">{'\u91cd\u8bbe\u9700\u8054\u7f51\u5b8c\u6210\u4e91\u7aef\u8d26\u53f7\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u6b64\u8bbe\u5907\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}</Text>
               <Button type="primary" loading={busy} onClick={unlock} block>验证并进入</Button>
               <Text type="secondary">这不是云端通用密码；另一台电脑需要设置自己的本机密码。</Text>
             </>

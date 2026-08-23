@@ -198,6 +198,65 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
+
+  const recoveryRequests = [];
+  let recoverySealed = null;
+  const recoveryClient = createDesktopIdentityClient({
+    now: () => new Date('2026-08-21T12:00:00.000Z'),
+    desktopIdentity: {
+      status: async () => ({ state: 'sealed' }),
+      beginUnifiedOnlineRecovery: async () => ({
+        deviceId: 'desktop-device-recovered-1', deviceName: 'Recovered cloud desktop', deviceKind: 'desktop-client',
+        publicKey: 'recovered-public-key', keyFingerprint: 'c'.repeat(64),
+      }),
+      signChallenge: async input => {
+        assert.deepStrictEqual(input, { purpose: 'unified-online-registration', challenge: 'recovery-device-proof' });
+        return { signature: 'recovery-proof-signature' };
+      },
+      completeUnifiedOnlineRecovery: async input => {
+        recoverySealed = input;
+        return {
+          state: 'unlocked', unlocked: true, user: { id: 'account-cloud-1' },
+          deviceId: 'desktop-device-recovered-1', authorizationId: 'recovery-session-1', credentialVersion: 1,
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-cloud-1', offlineLease: null,
+        };
+      },
+    },
+    sessionStore: { save: async () => {}, clear: async () => {} },
+    fetchImpl: async (url, options = {}) => {
+      recoveryRequests.push({ url, body: options.body ? JSON.parse(options.body) : null });
+      if (url.endsWith('/api/desktop/pairing/start')) {
+        return { ok: true, json: async () => ({ ok: true, pairingId: 'recovery-pairing-1', pairingSecret: 'recovery-pairing-secret', expiresAt: '2026-08-21T12:05:00.000Z' }) };
+      }
+      if (url.includes('/api/desktop/pairing/recovery-pairing-1?secret=recovery-pairing-secret')) {
+        return { ok: true, json: async () => ({ ok: true, status: 'verified', verificationToken: 'recovery-verification-token', deviceChallenge: 'recovery-device-proof' }) };
+      }
+      if (url.endsWith('/api/desktop/online-registration')) {
+        return { ok: true, json: async () => ({ ok: true, receiptId: 'recovery-receipt-1', sessionId: 'recovery-session-1', sessionToken: 'recovery-session-token', offlineLease: {
+          id: 'recovery-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-recovered-1', authorizationId: 'recovery-session-1', credentialVersion: 1,
+          eligibleRoles: ['teacher'], activeRole: 'teacher', teacherId: 'teacher-cloud-1', studentId: null,
+          issuedAt: '2026-08-21T12:00:00.000Z', expiresAt: '2026-08-21T13:00:00.000Z', scope: { kind: 'teacher', teacherId: 'teacher-cloud-1' }, signature: 'recovery-lease-signature',
+        } }) };
+      }
+      if (url.endsWith('/api/desktop/session-context')) {
+        return { ok: true, json: async () => ({ ok: true, authorityId: 'authority-cloud-1', accountId: 'account-cloud-1', deviceId: 'desktop-device-recovered-1', installationId: 'desktop-device-recovered-1', sessionId: 'recovery-session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['teacher'], teacherId: 'teacher-cloud-1', studentId: null }) };
+      }
+      throw new Error(`unexpected recovery request ${url}`);
+    },
+  });
+  const recoveryPending = await recoveryClient.beginUnifiedOnlineRecovery({
+    baseUrl: 'https://cloud.test', deviceName: 'Recovered cloud desktop', idempotencyKey: 'recovery-registration-1',
+  });
+  const recoveryVerified = await recoveryClient.pollUnifiedOnlineRegistration(recoveryPending);
+  const recoveryCompleted = await recoveryClient.completeUnifiedOnlineRegistration({ pending: recoveryVerified, password: 'new-local-password' });
+  assert.strictEqual(recoveryCompleted.gateState.kind, 'online-unlocked');
+  assert.strictEqual(recoverySealed.password, 'new-local-password');
+  assert.deepStrictEqual(recoveryRequests.map(entry => entry.url), [
+    'https://cloud.test/api/desktop/pairing/start',
+    'https://cloud.test/api/desktop/pairing/recovery-pairing-1?secret=recovery-pairing-secret',
+    'https://cloud.test/api/desktop/online-registration',
+    'https://cloud.test/api/desktop/session-context',
+  ], 'cloud recovery must use the normal silent registration path without an approval endpoint');
   let passwordRegistrationPending = false;
   let passwordClientStored = false;
   const passwordVerificationRequests = [];
