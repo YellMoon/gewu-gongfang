@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createProvision, writeProvision } = require('./provision_storage_agent');
+const { createProvision, writeProvision, writeCloudProvision } = require('./provision_storage_agent');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-storage-agent-'));
 try {
@@ -23,6 +23,11 @@ try {
   assert.match(text, /^CLOUD_BUSINESS_BASE_URL=https:\/\/physicsedu\.xyz\/cloud-business$/m);
   assert.match(text, /^STORAGE_AGENT_PRIVATE_KEY=/m);
   assert.ok(!text.includes('undefined'));
+  const cloudPath = path.join(temp, 'cloud-agent.env');
+  writeCloudProvision({ configPath: cloudPath, provision });
+  const cloud = fs.readFileSync(cloudPath, 'utf8');
+  assert.match(cloud, /^CLOUD_STORAGE_AGENT_PUBLIC_KEY=/m);
+  assert.ok(!cloud.includes('STORAGE_AGENT_PRIVATE_KEY'));
   console.log('storage agent provisioning checks passed');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });

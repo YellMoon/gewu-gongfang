@@ -46,4 +46,18 @@ function writeProvision({ configPath, provision } = {}) {
   return target;
 }
 
-module.exports = { createProvision, writeProvision };
+function writeCloudProvision({ configPath, provision } = {}) {
+  const target = plain(configPath);
+  if (!target || !path.isAbsolute(target) || !provision || typeof provision !== 'object') throw failure();
+  const fields = {
+    CLOUD_STORAGE_AGENT_ID: provision.agentId,
+    CLOUD_STORAGE_AGENT_TOKEN: provision.token,
+    CLOUD_STORAGE_AGENT_PUBLIC_KEY: provision.publicKey,
+  };
+  if (Object.values(fields).some(value => !plain(value))) throw failure();
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, Object.entries(fields).map(([key, value]) => `${key}=${value}`).join('\n') + '\n', { encoding: 'utf8', mode: 0o600 });
+  return target;
+}
+
+module.exports = { createProvision, writeProvision, writeCloudProvision };
