@@ -12,4 +12,4 @@ ENV NODE_ENV=production
 ENV QUESTION_IMPORT_PYTHON_BIN=python3
 ENV QUESTION_IMPORT_PARSER_PATH=/app/modules/question-bank/parsers/parse_word.py
 
-CMD ["node", "src/main.js"]
+CMD ["node", "src/launch.js", "/nas-storage/agent.env"]

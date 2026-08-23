@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.1.6",
+  "version": "8.2.0",
   "scripts": {
     "pretest": "npm run test:miniapp-cloud-read",
     "test:miniapp-cloud-read": "node src/miniappBusinessProjection.test.js && node src/miniappLimitedTasks.test.js && node src/paperExportTaskRepository.test.js && node src/miniappArtifactDeliveryRepository.test.js && node src/miniappArtifactDeliveryRoutes.test.js && node src/personalAssetImportRepository.test.js && node src/miniappPersonalAssetImportRoutes.test.js && node sql/miniapp-artifact-deliveries.test.js && node sql/personal-asset-import.test.js",

@@ -11,6 +11,6 @@ assert.match(dockerfile, /^RUN apk add --no-cache python3$/m, 'the Word parser m
 assert.match(dockerfile, /^COPY shared \/app\/shared$/m, 'the NAS agent must include the encrypted relay implementation');
 assert.match(dockerfile, /^COPY storage-agent \/app\/storage-agent$/m, 'the NAS agent must include its runtime');
 assert.match(dockerfile, /^COPY modules\/question-bank\/parsers \/app\/modules\/question-bank\/parsers$/m, 'the NAS agent must include the immutable Word parser');
-assert.match(dockerfile, /^CMD \["node", "src\/main\.js"\]$/m, 'the NAS agent must accept secrets only as runtime environment variables');
+assert.match(dockerfile, /^CMD \["node", "src\/launch\.js", "\/nas-storage\/agent\.env"\]$/m, 'the NAS agent must load its dedicated mounted launch configuration before starting');
 
 console.log('storage agent Docker build context checks passed');
