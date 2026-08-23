@@ -21,7 +21,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         command = switch_command("8.1.0-8c425eab")
         self.assertIn("rollback-8.1.0-8c425eab", command)
         self.assertIn("127.0.0.1:3002:3002", command)
-        self.assertIn("curl --fail --silent --show-error --max-time 30 http://127.0.0.1:3002/api/health", command)
+        self.assertIn("curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health", command)
+        self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
         self.assertIn("docker rename \"$rollback\" \"$current\"", command)
         self.assertNotIn("docker image prune", command)
 

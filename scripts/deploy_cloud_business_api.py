@@ -86,9 +86,9 @@ def switch_command(tag):
         "if docker container inspect \"$rollback\" >/dev/null 2>&1; then exit 2; fi; "
         "docker rm -f \"$candidate\"; "
         "docker stop \"$current\"; docker rename \"$current\" \"$rollback\"; "
-        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --env-file \"$env_path\" -p 127.0.0.1:3002:3002 '{image}' "
-        "&& curl --fail --silent --show-error --max-time 30 http://127.0.0.1:3002/api/health; then "
-        "rm -f -- \"$env_path\"; exit 0; fi; "
+        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --env-file \"$env_path\" -p 127.0.0.1:3002:3002 '{image}'; then "
+        "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+        "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && rm -f -- \"$env_path\" && exit 0; sleep 1; done; fi; "
         "docker rm -f \"$current\" >/dev/null 2>&1 || true; "
         "docker rename \"$rollback\" \"$current\"; docker start \"$current\"; rm -f -- \"$env_path\"; exit 1"
     )
