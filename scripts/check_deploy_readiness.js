@@ -267,11 +267,9 @@ function checkIdentitySourceSafety() {
   const deviceCenter = readText('src/pages/IdentityDeviceCenter.tsx');
   const settings = readText('src/pages/SystemSettings.tsx');
   const identityClient = readText('src/services/desktopIdentityClient.mjs');
-  const credentialStore = readText('public/primaryHostCredentialStore.js');
   const sourceFiles = [
     'public/electron.js',
     'public/desktopIdentityVault.js',
-    'public/primaryHostCredentialStore.js',
     'backend/src/routes/desktopIdentity.js',
     'src/components/DesktopIdentityGate.tsx',
     'src/pages/IdentityDeviceCenter.tsx',
@@ -296,9 +294,10 @@ function checkIdentitySourceSafety() {
     || !identityClient.includes("gateState?.kind === 'offline-unlocked'")) {
     issues.push('business runtime must remain gated behind an unlocked identity state');
   }
-  if (!credentialStore.includes('safeStorage.encryptString')
-    || !credentialStore.includes('safeStorage.decryptString')) {
-    issues.push('primary-host credentials must use the OS encrypted credential store');
+  const identityVault = readText('public/desktopIdentityVault.js');
+  if (!identityVault.includes('safeStorage.encryptString')
+    || !identityVault.includes('safeStorage.decryptString')) {
+    issues.push('desktop identity session must use the OS encrypted credential store');
   }
 
   const secretLogPattern = /(?:console\.(?:log|info|warn|error)|\blog\()[^\r\n]{0,240}(?:password|privateKey|hostCredential|recoveryCode|desktopSyncToken)/i;
@@ -353,10 +352,7 @@ function checkIdentityBuildSafety() {
     }
   }
   const recoverySources = [
-    'backend/src/services/primaryHostRecoveryDeliveryProtocol.js',
-    'backend/src/services/primaryHostRecoveryDeliveryService.js',
-    'public/primaryHostCredentialStore.js',
-    'public/primaryHostRuntimeManager.js',
+    'public/desktopIdentityVault.js',
     'public/electron.js',
     'src/pages/IdentityDeviceCenter.tsx',
   ].map(readText).join('\n');
@@ -374,10 +370,12 @@ function checkDesktopReleaseBoundary() {
   const directTransport = readText('src/services/authorityTransports.mjs');
   const relayRoute = readText('gateway/src/routes/cloudRelay.js');
   const ordinaryFiles = packageJson.build?.files || [];
-  const hostOnlyFiles = [
+  const retiredHostFiles = [
     'public/primaryHostCredentialStore.js',
     'public/primaryHostOperationValidation.js',
     'public/primaryHostRuntimeManager.js',
+    'public/primaryHostListenPolicy.js',
+    'public/windowsHostFirewall.js',
   ];
 
   if (packageJson.desktopBuildFlavor !== 'unified-desktop') {
@@ -386,8 +384,9 @@ function checkDesktopReleaseBoundary() {
   if (!ordinaryFiles.includes('public/electronShellPolicy.js')) {
     issues.push('ordinary package is missing electronShellPolicy.js');
   }
-  for (const file of hostOnlyFiles) {
-    if (ordinaryFiles.includes(file)) issues.push(`ordinary package contains host-only module: ${file}`);
+  for (const file of retiredHostFiles) {
+    if (ordinaryFiles.includes(file)) issues.push(`unified package contains retired host module: ${file}`);
+    if (fs.existsSync(path.join(process.cwd(), file))) issues.push(`retired host module still exists: ${file}`);
   }
   if (fs.existsSync(path.join(process.cwd(), 'electron-builder.host.config.cjs'))) {
     issues.push('a second host-only installer configuration must not exist');

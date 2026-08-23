@@ -9,14 +9,13 @@ const {
   resolveDesktopRoleContext,
 } = require('../services/desktopSessionService');
 const { createDeviceActivationService } = require('../services/deviceActivationService');
-const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
-const { createPrimaryHostLocalValidationService } = require('../services/primaryHostLocalValidationService');
 const {
   createDesktopDeviceChallengeService,
   createDesktopOfflineLease,
   createDesktopSessionProfile,
 } = require('../services/desktopDeviceChallengeService');
 const { createMiniappIdentityService } = require('../services/miniappIdentityService');
+const { createAuthorityCloudEpochService } = require('../services/authorityCloudEpochService');
 const {
   resolveWechatIdentity: defaultResolveWechatIdentity,
   createDesktopAuthorizationQrCode: defaultCreateDesktopAuthorizationQrCode,
@@ -37,35 +36,6 @@ const ROLE_SWITCH_KEYS = new Set([
 ]);
 const SESSION_CHALLENGE_START_KEYS = new Set(['authorizationId', 'deviceId']);
 const SESSION_CHALLENGE_EXCHANGE_KEYS = new Set(['signature', 'expectedRowVersion']);
-const PRIMARY_HOST_CHALLENGE_START_KEYS = new Set(['operation', 'targetDeviceId']);
-const PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS = new Set(['code', 'phone', 'expectedRowVersion']);
-const PRIMARY_HOST_LOCAL_EVIDENCE_KEYS = new Set(['purpose', 'sourceGeneration', 'targetGeneration']);
-const PRIMARY_HOST_PREFLIGHT_PROOF_KEYS = new Set([
-  'operation', 'challengeId', 'transferId', 'sourceEpochId', 'sourceGeneration',
-  'targetGeneration', 'operationManifest', 'localReceipt',
-]);
-const PRIMARY_HOST_BOOTSTRAP_KEYS = new Set([
-  'challengeId', 'expectedChallengeRowVersion', 'localReceipt', 'operationManifest',
-  'recoveryDeliveryKey',
-]);
-const PRIMARY_HOST_TRANSFER_KEYS = new Set([
-  'challengeId', 'expectedChallengeRowVersion', 'expectedActiveEpochRowVersion',
-]);
-const PRIMARY_HOST_TRANSFER_ACTIVATE_KEYS = new Set([
-  'expectedTransferRowVersion', 'localReceipt', 'validationManifest', 'preflightProof',
-  'recoveryDeliveryKey',
-]);
-const PRIMARY_HOST_RECOVERY_KEYS = new Set([
-  'challengeId', 'expectedChallengeRowVersion', 'factorId', 'recoveryCode',
-  'localReceipt', 'evidence', 'preflightProof', 'recoveryDeliveryKey',
-]);
-const PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS = new Set([
-  'epochId', 'factorId', 'recipientKeyFingerprint', 'expectedRowVersion',
-  'acknowledgementNonce', 'acknowledgedAt', 'signature',
-]);
-const PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS = new Set([
-  'epochId', 'deviceId', 'generation', 'credential',
-]);
 
 function routeError(code) {
   const error = new Error(code);
@@ -90,30 +60,12 @@ function bearerToken(req) {
   return token;
 }
 
-function isLoopbackAddress(value) {
-  const address = String(value || '').trim().toLowerCase();
-  return address === '127.0.0.1'
-    || address === '::1'
-    || address === '::ffff:127.0.0.1';
-}
-
-function secretsMatch(expected, actual) {
-  const expectedBuffer = Buffer.from(String(expected || ''), 'utf8');
-  const actualBuffer = Buffer.from(String(actual || ''), 'utf8');
-  return expectedBuffer.length > 0
-    && expectedBuffer.length === actualBuffer.length
-    && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
-}
-
 function statusForError(error, authenticationPhase = false) {
   const code = String(error?.code || 'DESKTOP_IDENTITY_FAILED');
   if (code === 'WECHAT_CONFIG_REQUIRED') return 503;
   if (code === 'DESKTOP_PAIRING_RATE_LIMITED') return 429;
   if (code.startsWith('WECHAT_') && (code.endsWith('_FAILED') || code.endsWith('_TIMEOUT'))) return 502;
   if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND') return 404;
-  if (code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND'
-    || code === 'PRIMARY_HOST_TRANSFER_NOT_FOUND'
-    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_NOT_FOUND') return 404;
   if (code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED'
     || code === 'DESKTOP_SESSION_CHALLENGE_EXPIRED'
     || code === 'DESKTOP_SESSION_CHALLENGE_STALE'
@@ -134,23 +86,12 @@ function statusForError(error, authenticationPhase = false) {
     || code.startsWith('DESKTOP_ROLE_ELEVATION_')
     || code === 'ACTIVE_ROLE_NOT_GRANTED'
     || code === 'DESKTOP_IDENTITY_NOT_ELIGIBLE'
-    || code === 'PRIMARY_HOST_LOCAL_RECEIPT_LOOPBACK_REQUIRED'
-    || code === 'PRIMARY_HOST_LOCAL_BRIDGE_REQUIRED'
-    || code === 'PRIMARY_HOST_CANONICAL_SUPER_ADMIN_REQUIRED'
-    || code === 'PRIMARY_HOST_SUPER_ADMIN_ROLE_REQUIRED'
-    || code === 'PRIMARY_HOST_ACTIVE_DEVICE_REQUIRED'
-    || code === 'PRIMARY_HOST_DEVICE_NOT_ACTIVE'
-    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_ACK_PROOF_INVALID') return 403;
+    ) return 403;
   if (code.includes('STALE')
     || code.includes('CONFLICT')
     || code.includes('ALREADY')
     || code.includes('REPLAY')
     || code.includes('STATE_INVALID')
-    || code.startsWith('PRIMARY_HOST_EPOCH_')
-    || code.startsWith('PRIMARY_HOST_TRANSFER_')
-    || code.startsWith('PRIMARY_HOST_CHALLENGE_')
-    || code === 'PRIMARY_HOST_ALREADY_BOOTSTRAPPED'
-    || code === 'PRIMARY_HOST_RECOVERY_DELIVERY_PENDING'
     || code === 'DESKTOP_ACTIVE_ROLE_UNCHANGED'
     || code === 'DESKTOP_DEVICE_NOT_ACTIVE') return 409;
   return 400;
@@ -167,16 +108,12 @@ function createDesktopIdentityRouter({
   now,
   identityService,
   sessionService,
-  primaryHostIdentityService,
-  primaryHostLocalValidationService,
   deviceChallengeService,
   miniappIdentityService,
   authenticateDesktop,
   resolveWechatIdentity = defaultResolveWechatIdentity,
   createDesktopAuthorizationQrCode = defaultCreateDesktopAuthorizationQrCode,
   createDesktopAuthorizationUrlLink = defaultCreateDesktopAuthorizationUrlLink,
-  localBridgeSecret = process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET,
-  localDeviceId = process.env.GEWU_DEVICE_ID,
   challengeIdFactory = uuidv4,
   resolveActivationAuthority,
   allowDesktopAuthorizationUrlFallback = process.env.NODE_ENV !== 'production' && process.env.APP_ENV !== 'prod',
@@ -184,11 +121,10 @@ function createDesktopIdentityRouter({
   const database = db || getInstance().db;
   let identities = identityService || null;
   let sessions = sessionService || null;
-  let primaryHosts = primaryHostIdentityService || null;
-  let primaryHostLocalValidation = primaryHostLocalValidationService || null;
   let deviceChallenges = deviceChallengeService || null;
   let miniappIdentities = miniappIdentityService || null;
   let activations = null;
+  const cloudEpochs = createAuthorityCloudEpochService({ db: database, now });
   function identity() {
     if (!identities) identities = createDesktopIdentityService({ db: database, now });
     return identities;
@@ -209,14 +145,22 @@ function createDesktopIdentityRouter({
         FROM primary_host_epochs epoch
         WHERE epoch.status='active'`).get();
     const authorityId = String(resolved?.authorityId || '').trim();
-    const hostEpochId = String(resolved?.hostEpochId || '').trim();
     const hostPublicKey = String(resolved?.hostPublicKey || '').trim();
-    const hostGeneration = Number(resolved?.hostGeneration);
-    if (!authorityId || !hostEpochId || !hostPublicKey
-      || !Number.isSafeInteger(hostGeneration) || hostGeneration < 1) {
+    if (!authorityId || !hostPublicKey) {
       throw routeError('PRIMARY_HOST_EPOCH_REQUIRED_FOR_ACTIVATION');
     }
-    return Object.freeze({ authorityId, hostEpochId, hostGeneration, hostPublicKey });
+    let cloudEpoch;
+    try {
+      cloudEpoch = cloudEpochs.ensure(authorityId);
+    } catch (error) {
+      throw routeError(error?.code || 'AUTHORITY_CLOUD_EPOCH_REQUIRED_FOR_ACTIVATION');
+    }
+    return Object.freeze({
+      authorityId,
+      hostEpochId: cloudEpoch.id,
+      hostGeneration: Number(cloudEpoch.generation),
+      hostPublicKey,
+    });
   }
   function activationPackage(authorization) {
     const user = database.prepare(`SELECT id,name,role,status,deleted,is_super_admin_identity,
@@ -265,24 +209,6 @@ function createDesktopIdentityRouter({
       });
     }
     return deviceChallenges;
-  }
-  function primaryHost() {
-    if (!primaryHosts) {
-      primaryHosts = createPrimaryHostIdentityService({ db: database, now });
-    }
-    return primaryHosts;
-  }
-  function localHostValidation() {
-    if (!primaryHostLocalValidation) {
-      primaryHostLocalValidation = createPrimaryHostLocalValidationService({
-        db: database,
-        collectEvidence: input => primaryHost().collectLocalEvidence(input),
-        backupRoot: process.env.GEWU_LOCAL_CACHE_PATH
-          ? require('path').join(process.env.GEWU_LOCAL_CACHE_PATH, 'primary-host-validation')
-          : undefined,
-      });
-    }
-    return primaryHostLocalValidation;
   }
   function miniappIdentity() {
     if (!miniappIdentities) {
@@ -347,42 +273,6 @@ function createDesktopIdentityRouter({
     };
   }
 
-  function assertLocalBridge(req) {
-    const remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress;
-    if (!isLoopbackAddress(remoteAddress)) {
-      throw routeError('PRIMARY_HOST_LOCAL_RECEIPT_LOOPBACK_REQUIRED');
-    }
-    if (!secretsMatch(localBridgeSecret, req.headers['x-gewu-electron-local-bridge'])) {
-      throw routeError('PRIMARY_HOST_LOCAL_BRIDGE_REQUIRED');
-    }
-  }
-
-  async function localBridgeBootstrapContext(req) {
-    if (String(req.body?.purpose || '') === 'bootstrap') {
-      const deviceId = String(localDeviceId || '').trim();
-      if (!deviceId) throw routeError('PRIMARY_HOST_LOCAL_DEVICE_REQUIRED');
-      // Bootstrap is deliberately bridge-authenticated rather than JWT-
-      // authenticated: the host is still unadopted, so its local JWT issuer
-      // is independent from the managed cloud identity issuer.  The required
-      // bearer is consumed by the control plane together with the signed
-      // receipt; it is never trusted as a local host JWT here.
-      return Object.freeze({ deviceId, localBridgeBootstrap: true });
-    }
-    try {
-      return await verifyDesktop(bearerToken(req));
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  function hostChallengeOrNull(challengeId) {
-    try {
-      return primaryHost().readOperationChallenge(challengeId);
-    } catch (error) {
-      if (error?.code === 'PRIMARY_HOST_CHALLENGE_NOT_FOUND') return null;
-      throw error;
-    }
-  }
 
   async function createDesktopAuthorizationEntry(challengeId) {
     try {
@@ -431,10 +321,6 @@ function createDesktopIdentityRouter({
 
   router.get('/challenges/:id/public', function (req, res) {
     try {
-      if (hostChallengeOrNull(req.params.id)) {
-        const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
-        return res.json({ success: true, data: { challenge } });
-      }
       const challenge = identity().readMiniappChallenge(req.params.id);
       return res.json({ success: true, data: { challenge } });
     } catch (error) {
@@ -447,25 +333,6 @@ function createDesktopIdentityRouter({
       assertBodyKeys(req.body, CONFIRM_KEYS);
       const code = String(req.body.code || '').trim();
       const phone = String(req.body.phone || '').trim();
-      const hostChallenge = hostChallengeOrNull(req.params.id);
-      if (hostChallenge) {
-        if (hostChallenge.status !== 'pending_phone') {
-          throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
-        }
-        const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
-          code,
-          phone,
-          platform: `desktop-primary-host-${hostChallenge.operation}`,
-        }));
-        primaryHost().confirmOperationChallenge({
-          challengeId: req.params.id,
-          identity: login.user,
-          loginEventId: login.loginEventId,
-          expectedRowVersion: req.body.expectedRowVersion,
-        });
-        const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
-        return res.json({ success: true, data: { challenge } });
-      }
       const publicChallenge = identity().readMiniappChallenge(req.params.id);
       if (publicChallenge.status !== 'pending_phone') {
         throw routeError('DESKTOP_CHALLENGE_STATE_INVALID');
@@ -618,187 +485,6 @@ function createDesktopIdentityRouter({
     session().assertSuperAdmin(context);
     const items = identity().listAllDevices();
     return res.json({ success: true, data: { items } });
-  }));
-
-  router.get('/primary-host/status', authenticated(function (_req, res, context) {
-    const data = primaryHost().getStatus(context);
-    return res.json({ success: true, data });
-  }));
-
-  router.post('/primary-host/credentials/verify', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_CREDENTIAL_VERIFY_KEYS);
-    const epoch = primaryHost().verifyCredentialAdoption({
-      actorContext: context,
-      epochId: req.body.epochId,
-      deviceId: req.body.deviceId,
-      generation: req.body.generation,
-      credential: req.body.credential,
-    });
-    return res.json({ success: true, data: { epoch } });
-  }));
-
-  router.post('/primary-host/challenges/start', authenticated(async function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_CHALLENGE_START_KEYS);
-    const challenge = primaryHost().startOperationChallenge({
-      actorContext: context,
-      operation: req.body.operation,
-      targetDeviceId: req.body.targetDeviceId,
-    });
-    const entry = await createDesktopAuthorizationEntry(challenge.id);
-    return res.json({ success: true, data: { challenge: { ...challenge, ...entry } } });
-  }));
-
-  router.get('/primary-host/challenges/:id/public', function (req, res) {
-    try {
-      const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
-      return res.json({ success: true, data: { challenge } });
-    } catch (error) {
-      return sendError(res, error);
-    }
-  });
-
-  router.post('/primary-host/challenges/:id/confirm', async function (req, res) {
-    try {
-      assertBodyKeys(req.body, PRIMARY_HOST_CHALLENGE_CONFIRM_KEYS);
-      const code = String(req.body.code || '').trim();
-      const phone = String(req.body.phone || '').trim();
-      const publicChallenge = primaryHost().readOperationChallenge(req.params.id);
-      if (publicChallenge.status !== 'pending_phone') {
-        throw routeError('PRIMARY_HOST_CHALLENGE_STATE_INVALID');
-      }
-      const login = assertDesktopIdentityEligible(await manualMiniappIdentity({
-        code,
-        phone,
-        platform: `desktop-primary-host-${publicChallenge.operation}`,
-      }));
-      primaryHost().confirmOperationChallenge({
-        challengeId: req.params.id,
-        identity: login.user,
-        loginEventId: login.loginEventId,
-        expectedRowVersion: req.body.expectedRowVersion,
-      });
-      const challenge = primaryHost().readPublicOperationChallenge(req.params.id);
-      return res.json({ success: true, data: { challenge } });
-    } catch (error) {
-      return sendError(res, error);
-    }
-  });
-
-  router.post('/primary-host/local-evidence', async function (req, res) {
-    try {
-      assertBodyKeys(req.body, PRIMARY_HOST_LOCAL_EVIDENCE_KEYS);
-      // A cloud token may not be locally verifiable, but the bridge still
-      // requires its presence and the control plane verifies it on use.
-      bearerToken(req);
-      assertLocalBridge(req);
-      const context = await localBridgeBootstrapContext(req);
-      const prepared = await localHostValidation().prepare({
-        deviceId: context.deviceId,
-        operation: req.body.purpose,
-        sourceGeneration: req.body.sourceGeneration,
-        targetGeneration: req.body.targetGeneration,
-        bootstrapCandidateVerified: context.localBridgeBootstrap === true,
-        actorContext: context,
-      });
-      return res.json({ success: true, data: prepared });
-    } catch (error) {
-      return sendError(res, error, String(error?.code || '').startsWith('DESKTOP_SESSION_'));
-    }
-  });
-
-  router.post('/primary-host/local-receipts', authenticated(function (_req, res) {
-    return res.status(410).json({
-      success: false,
-      code: 'PRIMARY_HOST_LOCAL_RECEIPT_MOVED_TO_DEVICE_VAULT',
-    });
-  }));
-
-  router.post('/primary-host/bootstrap', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_BOOTSTRAP_KEYS);
-    const data = primaryHost().bootstrap({
-      actorContext: context,
-      challengeId: req.body.challengeId,
-      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
-      localReceipt: req.body.localReceipt,
-      operationManifest: req.body.operationManifest,
-      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
-    });
-    return res.json({ success: true, data });
-  }));
-
-  router.post('/primary-host/transfers', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_TRANSFER_KEYS);
-    const transfer = primaryHost().beginTransfer({
-      actorContext: context,
-      challengeId: req.body.challengeId,
-      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
-      expectedActiveEpochRowVersion: req.body.expectedActiveEpochRowVersion,
-    });
-    return res.json({ success: true, data: { transfer } });
-  }));
-
-  router.post('/primary-host/preflight-proofs', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_PREFLIGHT_PROOF_KEYS);
-    const preflight = primaryHost().issuePreflightProof({
-      actorContext: context,
-      operation: req.body.operation,
-      challengeId: req.body.challengeId,
-      transferId: req.body.transferId,
-      sourceEpochId: req.body.sourceEpochId,
-      sourceGeneration: req.body.sourceGeneration,
-      targetGeneration: req.body.targetGeneration,
-      operationManifest: req.body.operationManifest,
-      localReceipt: req.body.localReceipt,
-    });
-    return res.json({ success: true, data: { preflight } });
-  }));
-
-  router.post('/primary-host/transfers/:id/activate', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_TRANSFER_ACTIVATE_KEYS);
-    const data = primaryHost().activateTransfer({
-      actorContext: context,
-      transferId: req.params.id,
-      expectedTransferRowVersion: req.body.expectedTransferRowVersion,
-      localReceipt: req.body.localReceipt,
-      validationManifest: req.body.validationManifest,
-      preflightProof: req.body.preflightProof,
-      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
-    });
-    return res.json({ success: true, data });
-  }));
-
-  router.post('/primary-host/recover', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_RECOVERY_KEYS);
-    const data = primaryHost().recover({
-      actorContext: context,
-      challengeId: req.body.challengeId,
-      expectedChallengeRowVersion: req.body.expectedChallengeRowVersion,
-      factorId: req.body.factorId,
-      recoveryCode: req.body.recoveryCode,
-      localReceipt: req.body.localReceipt,
-      evidence: req.body.evidence,
-      preflightProof: req.body.preflightProof,
-      recoveryDeliveryKey: req.body.recoveryDeliveryKey,
-    });
-    return res.json({ success: true, data });
-  }));
-
-  router.post('/primary-host/recovery-deliveries/:deliveryId/acknowledge', authenticated(function (req, res, context) {
-    assertBodyKeys(req.body, PRIMARY_HOST_RECOVERY_DELIVERY_ACK_KEYS);
-    const recoveryDelivery = primaryHost().acknowledgeRecoveryDelivery({
-      actorContext: context,
-      acknowledgement: {
-        deliveryId: req.params.deliveryId,
-        epochId: req.body.epochId,
-        factorId: req.body.factorId,
-        recipientKeyFingerprint: req.body.recipientKeyFingerprint,
-        expectedRowVersion: req.body.expectedRowVersion,
-        acknowledgementNonce: req.body.acknowledgementNonce,
-        acknowledgedAt: req.body.acknowledgedAt,
-      },
-      signature: req.body.signature,
-    });
-    return res.json({ success: true, data: { recoveryDelivery } });
   }));
 
   router.post('/session/challenges/start', function (req, res) {

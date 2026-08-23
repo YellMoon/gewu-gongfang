@@ -81,10 +81,6 @@ const DesktopIdentityGate: React.FC = () => {
   const [cloudLoginName, setCloudLoginName] = useState('');
   const [cloudPassword, setCloudPassword] = useState('');
   const [cloudPasswordAgain, setCloudPasswordAgain] = useState('');
-  const [password, setPassword] = useState('');
-  const [passwordAgain, setPasswordAgain] = useState('');
-  const [elevationPassword, setElevationPassword] = useState('');
-  const [showElevation, setShowElevation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [polling, setPolling] = useState(false);
   const [runtimeSuspended, setRuntimeSuspended] = useState(false);
@@ -308,17 +304,21 @@ const DesktopIdentityGate: React.FC = () => {
               : 'registration-interrupted' });
           return;
         }
-        const next = resolveDesktopGateState({
-          vaultStatus,
-          online: browserOnline(),
-          onlineSession: null,
-          now: new Date(),
-        });
-        if (canStartBusinessRuntime({ gateState: next })) {
-          acceptRuntime({ gateState: next });
-        } else {
-          setGateState(next);
+        if (vaultStatus.state === 'sealed') {
+          try {
+            const resumed = await client.resume({ baseUrl: identityBaseUrl, online: browserOnline() });
+            if (!cancelled) acceptRuntime(resumed);
+          } catch (caught) {
+            if (!cancelled) {
+              const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), now: new Date() });
+              setGateState(next.kind === 'locked' ? { kind: 'online-authentication-required' } : next);
+              setError(messageForError(caught));
+            }
+          }
+          return;
         }
+        const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), onlineSession: null, now: new Date() });
+        setGateState(next);
       } catch (caught) {
         if (!cancelled) setError(messageForError(caught));
       }
@@ -426,10 +426,6 @@ const DesktopIdentityGate: React.FC = () => {
   };
 
   const completeRegistration = async () => {
-    if (password !== passwordAgain) {
-      setError('两次输入的本机密码不一致。');
-      return;
-    }
     const passwordEnrollmentRequested = Boolean(cloudLoginName || cloudPassword || cloudPasswordAgain);
     const canEnrollCloudPassword = pending?.pairingId && pending?.status === 'verified' && pending?.recovery !== true;
     if (passwordEnrollmentRequested && !canEnrollCloudPassword) {
@@ -444,25 +440,14 @@ const DesktopIdentityGate: React.FC = () => {
     setError('');
     try {
       const verifiedPending = passwordEnrollmentRequested
-        ? await clientRef.current.enrollPasswordForVerifiedRegistration({
-          pending,
-          loginName: cloudLoginName || null,
-          password: cloudPassword,
-        })
+        ? await clientRef.current.enrollPasswordForVerifiedRegistration({ pending, loginName: cloudLoginName || null, password: cloudPassword })
         : pending;
-      const result = verifiedPending?.pairingId || verifiedPending?.verificationToken
-        ? await clientRef.current.completeUnifiedOnlineRegistration({ pending: verifiedPending, password })
-        : await clientRef.current.completeRegistration({ pending, password });
-      setPassword('');
-      setPasswordAgain('');
+      const result = await clientRef.current.completeUnifiedOnlineRegistration({ pending: verifiedPending });
       setCloudLoginName('');
       setCloudPassword('');
       setCloudPasswordAgain('');
       acceptRuntime(result);
     } catch (caught) {
-      // The user-facing message stays deliberately generic; Electron records
-      // only this stable code so a failed one-time exchange can be diagnosed
-      // without writing passwords, challenge material, or server responses.
       console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'));
       setError(messageForError(caught));
     } finally {
@@ -472,61 +457,18 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
-  const beginUnifiedOnlineRecovery = async () => {
-    if (!browserOnline()) {
-      setError('\u91cd\u8bbe\u672c\u673a\u5bc6\u7801\u5fc5\u987b\u8054\u7f51\u5b8c\u6210\u4e91\u7aef\u8d26\u53f7\u6838\u9a8c\u3002');
-      return;
-    }
+  const resume = async () => {
     setBusy(true);
     setError('');
     try {
-      await clientRef.current.lock();
-      const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
-      const started = await clientRef.current.beginUnifiedOnlineRecovery({
-        baseUrl,
-        deviceName,
-        idempotencyKey: 'desktop-unified-recovery-' + randomPart,
-      });
-      setPending({ ...started, recovery: true });
-      setPassword('');
-      setPasswordAgain('');
-      setGateState({ kind: 'password-reset-active' });
-    } catch (caught) {
-      try { await clientRef.current?.lock(); } catch (_cleanupError) { /* best effort */ }
-      setPending(null);
-      setGateState({ kind: 'locked' });
-      setError(messageForError(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const beginRecoveryFlow = async () => {
-    await beginUnifiedOnlineRecovery();
-  };
-
-  const unlock = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const result = await clientRef.current.unlock({
-        baseUrl,
-        password,
-        online: browserOnline(),
-      });
-      setPassword('');
+      const result = await clientRef.current.resume({ baseUrl, online: browserOnline() });
       acceptRuntime(result);
     } catch (caught: any) {
       if (isDesktopIdentityNetworkFailure(caught)) {
         try {
           const vaultStatus = await clientRef.current.status();
-          const fallback = resolveDesktopGateState({
-            vaultStatus,
-            online: false,
-            now: new Date(),
-          });
+          const fallback = resolveDesktopGateState({ vaultStatus, online: false, now: new Date() });
           if (canStartBusinessRuntime({ gateState: fallback })) {
-            setPassword('');
             acceptRuntime({ gateState: fallback });
             return;
           }
@@ -553,23 +495,18 @@ const DesktopIdentityGate: React.FC = () => {
   };
 
   const retryRegistration = async () => {
-    const passwordReset = pending?.challenge?.purpose === 'password_reset'
-      || gateState.kind.startsWith('password-reset');
     setBusy(true);
     setError('');
     try {
-      await secureRelock({ kind: passwordReset ? 'locked' : 'registration-required' });
+      await secureRelock({ kind: 'registration-required' });
       setPending(null);
-      setPassword('');
-      setPasswordAgain('');
     } catch (caught) {
       setError(messageForError(caught));
     } finally {
       setBusy(false);
     }
   };
-
-  const performRoleSwitch = async (activeRole: string, rolePassword?: string) => {
+  const performRoleSwitch = async (activeRole: string) => {
     const previousPartition = currentPartitionRef.current;
     setBusy(true);
     setError('');
@@ -578,7 +515,6 @@ const DesktopIdentityGate: React.FC = () => {
         baseUrl,
         currentSession: onlineSession,
         activeRole,
-        ...(rolePassword ? { password: rolePassword } : {}),
       });
       const vaultStatus = await clientRef.current.status();
       const next = resolveDesktopGateState({
@@ -590,8 +526,6 @@ const DesktopIdentityGate: React.FC = () => {
       installIdentityContext(next);
       setOnlineSession(switched);
       setGateState(next);
-      setElevationPassword('');
-      setShowElevation(false);
       setRuntimeSuspended(false);
     } catch (caught) {
       if (previousPartition) {
@@ -605,45 +539,15 @@ const DesktopIdentityGate: React.FC = () => {
   };
 
   const renderRegistration = () => {
-    const passwordReset = pending?.challenge?.purpose === 'password_reset'
-      || gateState.kind.startsWith('password-reset');
-    if (!pending && passwordReset) {
-      return (
-        <>
-          <Alert
-            type="warning"
-            showIcon
-            message={'\u5bc6\u7801\u91cd\u8bbe\u6d41\u7a0b\u5df2\u4e2d\u65ad'}
-            description={'\u65e7\u4fdd\u9669\u5e93\u548c\u672c\u673a\u6570\u636e\u5747\u672a\u6539\u52a8\u3002\u8bf7\u8fd4\u56de\u89e3\u9501\u9875\u540e\u91cd\u65b0\u53d1\u8d77\uff1b\u82e5\u670d\u52a1\u7aef\u4ecd\u6709\u5f85\u5ba1\u7533\u8bf7\uff0c\u53ef\u7b49\u5f85\u5176\u8fc7\u671f\u6216\u8bf7\u7ba1\u7406\u5458\u62d2\u7edd\u3002'}
-          />
-          <Button onClick={retryRegistration} block>{'\u8fd4\u56de\u672c\u673a\u5bc6\u7801\u89e3\u9501'}</Button>
-        </>
-      );
-    }
     if (!pending) {
       return (
         <>
-          <Paragraph className="desktop-identity-copy" style={{ display: 'none' }}>
-            首次在这台电脑使用时，需要用微信扫码并重新核验本人手机号。申请只绑定这台设备，
-            不会让电脑自行选择账号或角色。
-          </Paragraph>
-          <Paragraph className="desktop-identity-copy">
-            {'\u9996\u6b21\u4f7f\u7528\u5fc5\u987b\u8054\u7f51\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002\u53ef\u4ee5\u4f7f\u7528\u5fae\u4fe1\u6838\u9a8c\uff0c\u6216\u7528\u5df2\u7ed1\u5b9a\u7684\u624b\u673a\u53f7\u3001\u81ea\u5b9a\u4e49\u8d26\u53f7\u548c\u4e91\u7aef\u5bc6\u7801\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u8fd9\u53f0\u7535\u8111\u3002'}
-          </Paragraph>
+          <Paragraph className="desktop-identity-copy">{'\u9996\u6b21\u4f7f\u7528\u5fc5\u987b\u8054\u7f51\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002\u53ef\u4ee5\u4f7f\u7528\u5fae\u4fe1\u6838\u9a8c\uff0c\u6216\u7528\u5df2\u7ed1\u5b9a\u7684\u624b\u673a\u53f7\u3001\u81ea\u5b9a\u4e49\u8d26\u53f7\u548c\u4e91\u7aef\u5bc6\u7801\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u8fd9\u53f0\u7535\u8111\u3002'}</Paragraph>
           <Space.Compact block>
-            <Button type={onlineVerificationMode === 'wechat' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('wechat')}>
-              {'\u5fae\u4fe1\u6838\u9a8c'}
-            </Button>
-            <Button type={onlineVerificationMode === 'password' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('password')}>
-              {'\u8d26\u53f7\u5bc6\u7801'}
-            </Button>
+            <Button type={onlineVerificationMode === 'wechat' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('wechat')}>{'\u5fae\u4fe1\u6838\u9a8c'}</Button>
+            <Button type={onlineVerificationMode === 'password' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('password')}>{'\u8d26\u53f7\u5bc6\u7801'}</Button>
           </Space.Compact>
-          <Input
-            value={deviceName}
-            onChange={event => setDeviceName(event.target.value)}
-            placeholder="设备名称，例如：办公室主机"
-            maxLength={128}
-          />
+          <Input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder={'\u8bbe\u5907\u540d\u79f0'} maxLength={128} />
           {onlineVerificationMode === 'password' && (
             <>
               <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
@@ -655,9 +559,7 @@ const DesktopIdentityGate: React.FC = () => {
               <Button type="primary" loading={busy} onClick={beginPasswordVerification} block>{'\u6838\u9a8c\u8d26\u53f7\u5e76\u767b\u8bb0\u6b64\u7535\u8111'}</Button>
             </>
           )}
-          <Button type="primary" icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block style={{ display: onlineVerificationMode === 'wechat' ? undefined : 'none' }}>
-            {gateState.kind === 'registration-interrupted' ? '重新开始微信身份注册' : '开始微信身份注册'}
-          </Button>
+          <Button type="primary" icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block style={{ display: onlineVerificationMode === 'wechat' ? undefined : 'none' }}>{'\u5f00\u59cb\u5fae\u4fe1\u8eab\u4efd\u6ce8\u518c'}</Button>
         </>
       );
     }
@@ -665,157 +567,27 @@ const DesktopIdentityGate: React.FC = () => {
       const canEnrollCloudPassword = pending?.pairingId && pending?.recovery !== true;
       return (
         <>
-          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={canEnrollCloudPassword ? '\u53ef\u9009\uff1a\u540c\u65f6\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\uff0c\u4e4b\u540e\u53ef\u5728\u4efb\u610f\u7535\u8111\u7528\u624b\u673a\u53f7\u6216\u81ea\u5b9a\u4e49\u8d26\u53f7\u767b\u5f55\u3002' : '\u8bf7\u8bbe\u7f6e\u4ec5\u7528\u4e8e\u672c\u673a\u52a0\u5bc6\u7684\u89e3\u9501\u5bc6\u7801\u3002'} />
+          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u672c\u673a\u4f7f\u7528\u7cfb\u7edf\u4fdd\u62a4\u52a0\u5bc6\u4fdd\u5b58\u8bbe\u5907\u5bc6\u94a5\u4e0e\u79bb\u7ebf\u4f1a\u8bdd\u3002'} />
           {canEnrollCloudPassword && (
             <>
-              <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder="\u81ea\u5b9a\u4e49\u8d26\u53f7\uff08\u53ef\u9009\uff1b\u7559\u7a7a\u5219\u7528\u624b\u673a\u53f7\u767b\u5f55\uff09" maxLength={64} />
-              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} placeholder="\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\uff08\u81f3\u5c11 10 \u4e2a\u5b57\u7b26\uff09" />
-              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder="\u518d\u6b21\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801" />
-              <Text type="secondary">{'\u4e91\u7aef\u5bc6\u7801\u53ea\u7ecf\u672c\u6b21\u5df2\u6838\u9a8c\u7684\u77ed\u65f6\u7968\u636e\u63d0\u4ea4\uff1b\u672c\u673a\u4e0d\u4f1a\u8bfb\u53d6\u3001\u4fdd\u5b58\u624b\u673a\u53f7\u6216\u5fae\u4fe1\u9a8c\u8bc1\u7801\u3002'}</Text>
+              <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder={'\u81ea\u5b9a\u4e49\u8d26\u53f7\uff08\u53ef\u9009\uff09'} maxLength={64} />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} placeholder={'\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} />
             </>
           )}
-          <Input.Password prefix={<LockOutlined />} visibilityToggle value={password} onChange={event => setPassword(event.target.value)} placeholder={'\u81f3\u5c11 6 \u4e2a\u5b57\u7b26'} onPressEnter={completeRegistration} />
-          <Input.Password prefix={<LockOutlined />} visibilityToggle value={passwordAgain} onChange={event => setPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'} onPressEnter={completeRegistration} />
-          <Text type="secondary">{'\u672c\u673a\u5bc6\u7801\u4e0d\u4e0a\u4f20\uff0c\u4e0d\u662f\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u3002'}</Text>
-          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u4fdd\u5b58\u672c\u673a\u5bc6\u7801\u5e76\u8fdb\u5165'}</Button>
-        </>
-      );
-    }
-    if (pending?.pairingId) {
-      const verified = pending.status === 'verified';
-      return (
-        <>
-          <Paragraph className="desktop-identity-copy">
-            {'\u8bf7\u4f7f\u7528\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u626b\u7801\u5b8c\u6210\u8d26\u53f7\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\uff0c\u8fd9\u53f0\u7535\u8111\u4f1a\u81ea\u52a8\u767b\u8bb0\uff1b\u4e0d\u9700\u8981\u53e6\u4e00\u53f0\u7535\u8111\u5ba1\u6279\u3002'}
-          </Paragraph>
-          {pending.qrValue ? (
-            <div className="desktop-identity-qr">
-              <QRCode value={pending.qrValue} size={196} bordered={false} />
-            </div>
-          ) : null}
-          {verified ? (
-            <>
-              <Alert type="success" showIcon message={'\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u8bf7\u4e3a\u8fd9\u53f0\u7535\u8111\u8bbe\u7f6e\u72ec\u7acb\u7684\u672c\u673a\u5bc6\u7801\u3002'} />
-              <Input.Password
-                prefix={<LockOutlined />}
-                visibilityToggle
-                value={password}
-                onChange={event => setPassword(event.target.value)}
-                placeholder={'\u81f3\u5c11 6 \u4e2a\u5b57\u7b26'}
-                onPressEnter={completeRegistration}
-              />
-              <Input.Password
-                prefix={<LockOutlined />}
-                visibilityToggle
-                value={passwordAgain}
-                onChange={event => setPasswordAgain(event.target.value)}
-                placeholder={'\u518d\u6b21\u8f93\u5165\u672c\u673a\u5bc6\u7801'}
-                onPressEnter={completeRegistration}
-              />
-              <Text type="secondary">{'\u5bc6\u7801\u53ea\u7528\u4e8e\u89e3\u9501\u8fd9\u53f0\u7535\u8111\uff0c\u4e0d\u4e0a\u4f20\u3001\u4e0d\u8de8\u7535\u8111\u540c\u6b65\u3002'}</Text>
-              <Button type="primary" loading={busy} onClick={completeRegistration} block>
-                {'\u4fdd\u5b58\u672c\u673a\u5bc6\u7801\u5e76\u8fdb\u5165'}
-              </Button>
-            </>
-          ) : (
-            <Paragraph>{'\u8bf7\u5728\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u4e2d\u5b8c\u6210\u624b\u673a\u53f7\u6838\u9a8c\u3002\u672c\u673a\u4e0d\u4f1a\u8bfb\u53d6\u6216\u4fdd\u5b58\u624b\u673a\u53f7\u3002'}</Paragraph>
-          )}
-          {!verified && (
-            <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>
-              {'\u5237\u65b0\u6838\u9a8c\u72b6\u6001'}
-            </Button>
-          )}
-        </>
-      );
-    }
-    const view = registrationViewForChallenge(pending.challenge);
-    if (view.kind === 'password-setup-required') {
-      const resetNotice = passwordReset ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={'\u540c\u4e00\u8bbe\u5907\u7684\u5bc6\u7801\u91cd\u8bbe\u5df2\u83b7\u6279\u51c6'}
-          description={'\u4fdd\u5b58\u6210\u529f\u540e\u53ea\u8f6e\u6362\u8bbe\u5907\u5bc6\u94a5\u4e0e\u672c\u673a\u5bc6\u7801\uff0c\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\uff1b\u4fdd\u5b58\u6210\u529f\u524d\u65e7\u4fdd\u9669\u5e93\u4e0d\u4f1a\u88ab\u8986\u76d6\u3002'}
-        />
-      ) : null;
-      return (
-        <>
-          {resetNotice}
-          <Alert type="success" showIcon message="设备审核已通过" description="请为这台电脑设置独立的本机密码。" />
-          <Input.Password
-            prefix={<LockOutlined />}
-            visibilityToggle
-            value={password}
-            onChange={event => setPassword(event.target.value)}
-            placeholder="至少 6 个字符"
-            onPressEnter={completeRegistration}
-          />
-          <Input.Password
-            prefix={<LockOutlined />}
-            visibilityToggle
-            value={passwordAgain}
-            onChange={event => setPasswordAgain(event.target.value)}
-            placeholder="再次输入本机密码"
-            onPressEnter={completeRegistration}
-          />
-          <Text type="secondary">密码只用于解锁这台电脑，不上传、不跨电脑同步。</Text>
-          <Button type="primary" loading={busy} onClick={completeRegistration} block>
-            保存本机密码并进入
-          </Button>
-        </>
-      );
-    }
-    if (['registration-rejected', 'registration-expired'].includes(view.kind)) {
-      const expired = view.kind === 'registration-expired';
-      return (
-        <>
-          <Alert
-            type="error"
-            showIcon
-            message={expired ? '设备申请已过期' : '设备申请未通过'}
-            description={expired ? '本次二维码已失效，请重新发起申请。' : '请确认申请信息或联系超级管理员后重新申请。'}
-          />
-          <Button icon={<ReloadOutlined />} loading={busy} onClick={retryRegistration} block>
-            重新发起微信身份注册
-          </Button>
+          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u8fdb\u5165\u5de5\u4f5c\u53f0'}</Button>
         </>
       );
     }
     return (
       <>
-        {pending.qrImageDataUrl ? (
-          <div className="desktop-identity-qr">
-            <img src={pending.qrImageDataUrl} width={196} height={196} alt="微信小程序身份核验码" />
-          </div>
-        ) : pending.qrValue ? (
-          <div className="desktop-identity-qr">
-            <QRCode value={pending.qrValue} size={196} bordered={false} />
-          </div>
-        ) : (
-          <Alert type="info" showIcon message="微信扫码入口尚未配置" description="可先在小程序中输入下方设备码；正式扫码入口将在小程序授权页启用。" />
-        )}
-        {pending.challenge?.shortCode && (
-          <div className="desktop-identity-code" aria-label="设备申请码">
-            {pending.challenge.shortCode}
-          </div>
-        )}
-        {view.kind === 'phone-verification-required' ? (
-          <Paragraph>请在微信小程序中完成手机号核验。本机不会读取或保存手机号。</Paragraph>
-        ) : (
-          <Alert
-            type="warning"
-            showIcon
-            message={'\u6b63\u5728\u7b49\u5f85\u5fae\u4fe1\u6838\u9a8c\u7ed3\u679c'}
-            description={'\u8bf7\u5728\u5fae\u4fe1\u5c0f\u7a0b\u5e8f\u5b8c\u6210\u672c\u4eba\u8d26\u53f7\u6838\u9a8c\u3002'}
-          />
-        )}
-        <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>
-          刷新申请状态
-        </Button>
+        <Paragraph className="desktop-identity-copy">{'\u8bf7\u5b8c\u6210\u5fae\u4fe1\u8eab\u4efd\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\uff0c\u6b64\u7535\u8111\u5c06\u81ea\u52a8\u767b\u8bb0\u3002'}</Paragraph>
+        {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt="identity verification code" /></div>
+          : pending.qrValue ? <div className="desktop-identity-qr"><QRCode value={pending.qrValue} size={196} bordered={false} /></div> : null}
+        <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>{'\u5237\u65b0\u6838\u9a8c\u72b6\u6001'}</Button>
       </>
     );
   };
-
   if (canStartBusinessRuntime({ gateState })) {
     const eligibleRoles = onlineSession?.session?.eligibleRoles || gateState.eligibleRoles || [];
     const canElevate = gateState.kind === 'online-unlocked'
@@ -843,35 +615,10 @@ const DesktopIdentityGate: React.FC = () => {
             <Tag color={gateState.activeRole === 'super_admin' ? 'gold' : 'blue'}>
               {roleLabel(gateState.activeRole)}
             </Tag>
-            {canElevate && (
-              <Button size="small" onClick={() => setShowElevation(value => !value)}>
-                切换为超级管理员
-              </Button>
-            )}
-            {canReturnTeacher && (
-              <Button size="small" onClick={() => void performRoleSwitch('teacher')} loading={busy}>
-                切换为老师
-              </Button>
-            )}
-            <Button size="small" icon={<LockOutlined />} onClick={lock} loading={busy}>锁定</Button>
+            {canElevate && <Button size="small" onClick={() => void performRoleSwitch('super_admin')} loading={busy}>{'\u5207\u6362\u4e3a\u8d85\u7ea7\u7ba1\u7406\u5458'}</Button>}
+            {canReturnTeacher && <Button size="small" onClick={() => void performRoleSwitch('teacher')} loading={busy}>{'\u5207\u6362\u4e3a\u8001\u5e08'}</Button>}
+            <Button size="small" icon={<LockOutlined />} onClick={lock} loading={busy}>{'\u9501\u5b9a'}</Button>
           </Space>
-          {showElevation && (
-            <Space.Compact className="desktop-identity-elevation">
-              <Input.Password
-                value={elevationPassword}
-                onChange={event => setElevationPassword(event.target.value)}
-                placeholder="再次输入本机密码"
-                onPressEnter={() => void performRoleSwitch('super_admin', elevationPassword)}
-              />
-              <Button
-                type="primary"
-                loading={busy}
-                onClick={() => void performRoleSwitch('super_admin', elevationPassword)}
-              >
-                验证并切换
-              </Button>
-            </Space.Compact>
-          )}
         </div>
         {error && <Alert className="desktop-identity-runtime-error" type="error" showIcon message={error} closable onClose={() => setError('')} />}
         {runtimeSuspended ? (
@@ -908,33 +655,15 @@ const DesktopIdentityGate: React.FC = () => {
             && renderRegistration()}
           {locked && (
             <>
-              <Paragraph className="desktop-identity-copy">
-                请输入本机密码。联网时将同时完成设备私钥挑战；断网时只在有效离线身份租约内进入。
-              </Paragraph>
-              <Input.Password
-                prefix={<LockOutlined />}
-                visibilityToggle
-                value={password}
-                onChange={event => setPassword(event.target.value)}
-                placeholder="请输入本机密码"
-                onPressEnter={unlock}
-                autoFocus
-              />
-              <Text type="secondary">{'\u5bc6\u7801\u6846\u53f3\u4fa7\u7684\u773c\u775b\u6309\u94ae\u53ea\u663e\u793a\u672c\u6b21\u8f93\u5165\uff0c\u4e0d\u80fd\u663e\u793a\u5386\u53f2\u5bc6\u7801\u3002'}</Text>
-              <Button type="link" loading={busy} onClick={() => void beginRecoveryFlow()} block>
-                {'\u5fd8\u8bb0\u672c\u673a\u5bc6\u7801\uff1f\u91cd\u65b0\u6838\u9a8c\u8eab\u4efd\u5e76\u91cd\u8bbe'}
-              </Button>
-              <Text type="secondary">{'\u91cd\u8bbe\u9700\u8054\u7f51\u5b8c\u6210\u4e91\u7aef\u8d26\u53f7\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u6b64\u8bbe\u5907\uff1b\u4e0d\u4f1a\u5220\u9664\u672c\u673a\u6570\u636e\u6216\u5f85\u540c\u6b65\u53d8\u66f4\u3002'}</Text>
-              <Button type="primary" loading={busy} onClick={unlock} block>验证并进入</Button>
-              <Text type="secondary">这不是云端通用密码；另一台电脑需要设置自己的本机密码。</Text>
+              <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u53d7\u7cfb\u7edf\u4fdd\u62a4\u7684\u4e91\u7aef\u4f1a\u8bdd\u3002\u5982\u679c\u4f1a\u8bdd\u5931\u6548\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u4e91\u7aef\u8d26\u53f7\u91cd\u65b0\u6838\u9a8c\u3002'}</Paragraph>
+              <Button type="primary" loading={busy} onClick={resume} block>{'\u6062\u590d\u4f1a\u8bdd'}</Button>
             </>
-          )}
-          {gateState.kind === 'offline-blocked' && (
+          )}          {gateState.kind === 'offline-blocked' && (
             <Alert
               type="error"
               showIcon
               message="离线身份租约已过期"
-              description="请连接网络后重新输入本机密码，完成设备签名验证。"
+              description={'\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002'}
             />
           )}
           {error && <Alert type="error" showIcon message={error} />}

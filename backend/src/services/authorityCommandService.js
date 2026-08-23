@@ -148,6 +148,21 @@ function createAuthorityCommandService({
     return typeof commit.immediate === 'function' ? commit.immediate() : commit();
   }
 
+  function findReceipt({ commandId, actor } = {}) {
+    const id = String(commandId || '').trim();
+    const userId = String(actor?.userId || '').trim();
+    const deviceId = String(actor?.deviceId || '').trim();
+    if (!id || !userId || !deviceId) return null;
+    const row = db.prepare(`SELECT ledger.*, receipt.result_hash, receipt.result_payload,
+      receipt.projection_version, receipt.completed_at
+      FROM authority_command_ledger ledger
+      JOIN authority_command_receipts receipt ON receipt.command_id=ledger.command_id
+      WHERE ledger.command_id=? AND ledger.actor_user_id=? AND ledger.device_id=?`)
+      .get(id, userId, deviceId);
+    if (!row) return null;
+    return receiptFrom(row, row).receipt;
+  }
+
   function execute(input = {}) {
     const envelope = validateCommand(input);
     const payloadJson = stableJson(envelope.payload);
@@ -204,7 +219,7 @@ function createAuthorityCommandService({
     return response;
   }
 
-  return Object.freeze({ execute });
+  return Object.freeze({ execute, findReceipt });
 }
 
 module.exports = { RECEIPT_PROTOCOL, commandError, createAuthorityCommandService, digest, stableJson, validateCommand };

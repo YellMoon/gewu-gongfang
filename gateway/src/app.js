@@ -20,7 +20,6 @@ const adminRouter = require('./routes/admin');
 const permissionsRouter = require('./routes/permissions');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
-const { createGatewayAuthorityProtocolRouter } = require('./routes/authorityProtocol');
 const gatewayPackage = require('../package.json');
 
 function reviewDemoRemoved(_req, res) {
@@ -71,11 +70,6 @@ function createApp(options = {}) {
   // ===================== 公开路由（无需认证） =====================
   app.use('/api/auth', authRouter);
   app.use('/api', optionalAuth);
-  app.use('/api/authority', createGatewayAuthorityProtocolRouter({
-    db: database,
-    commandPolicy: options.authorityCommandPolicy,
-    hostToken: options.authorityHostToken,
-  }));
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
 
   // ===================== 需要认证的路由 =====================

@@ -3,6 +3,7 @@ const { PROTOCOL, stableJson, validateEnvelope } = require('../../../shared/auth
 const {
   resolveCanonicalAuthorityRoleContext,
 } = require('./authorityRoleGrantAdapter');
+const { createAuthorityCloudEpochService } = require('./authorityCloudEpochService');
 
 const REQUESTABLE_ROLES = new Set(['student', 'teacher']);
 const APPLICATION_ACTOR_ROLES = new Set(['visitor', 'student', 'teacher']);
@@ -70,9 +71,12 @@ function createMiniappAuthorityCommandAdapterService({
         throw adapterError('MINIAPP_AUTHORITY_SCOPE_INVALID', 403);
       }
     }
-    const epoch = db.prepare(`SELECT id,device_id,generation FROM primary_host_epochs
-      WHERE db_authority_id=? AND status='active'`).get(authority);
-    if (!epoch) throw adapterError('MINIAPP_AUTHORITY_HOST_EPOCH_INACTIVE', 503);
+    let epoch;
+    try {
+      epoch = createAuthorityCloudEpochService({ db, now }).ensure(authority);
+    } catch (error) {
+      throw adapterError(error?.code || 'MINIAPP_AUTHORITY_CLOUD_EPOCH_INACTIVE', 503);
+    }
 
     const deviceId = `miniapp-${digest(`${authority}\n${user}`).slice(0, 32)}`;
     const grantId = `miniapp-grant-${digest(`${authority}\n${deviceId}`).slice(0, 32)}`;
@@ -138,7 +142,6 @@ function createMiniappAuthorityCommandAdapterService({
       return Object.freeze({
         authorityId: authority,
         hostEpochId: epoch.id,
-        hostDeviceId: epoch.device_id,
         deviceId,
         grantId: grant.grant_id,
         grantVersion: Number(grant.grant_version),

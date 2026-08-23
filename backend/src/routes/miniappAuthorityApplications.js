@@ -33,13 +33,11 @@ function parseJson(value, fallback = null) {
 
 function createMiniappAuthorityApplicationsRouter({
   db,
-  commandInbox,
-  commandAuthorization,
-  onCommandQueued = () => {},
+  executeCommand,
   now,
   createId,
 } = {}) {
-  if (!db || !commandInbox || !commandAuthorization) {
+  if (!db || typeof executeCommand !== 'function') {
     throw routeError('MINIAPP_AUTHORITY_APPLICATION_DEPENDENCY_REQUIRED', 500);
   }
   const router = Router();
@@ -92,16 +90,36 @@ function createMiniappAuthorityApplicationsRouter({
   }
 
   function latestFor(userId, authorityId) {
-    const rows = db.prepare(`SELECT c.*,r.receipt_json
-      FROM host_commands c
-      LEFT JOIN host_receipts r ON r.command_id=c.command_id
+    const rows = db.prepare(`SELECT c.*,r.result_payload,r.result_hash,r.projection_version,r.completed_at
+      FROM authority_command_ledger c
+      LEFT JOIN authority_command_receipts r ON r.command_id=c.command_id
       WHERE c.actor_user_id=? ORDER BY c.created_at DESC,c.command_id DESC LIMIT 50`)
       .all(userId);
     for (const row of rows) {
-      const envelope = parseJson(row.envelope_json);
-      if (envelope?.type === 'role-application.submit.v1'
-        && envelope.authorityId === authorityId) {
-        return { row, envelope, receipt: parseJson(row.receipt_json) };
+      if (row.command_type === 'role-application.submit.v1'
+        && row.authority_id === authorityId) {
+        const receipt = row.result_payload ? {
+          protocol: 'gewu.authority-receipt.v1',
+          commandId: row.command_id,
+          status: row.status,
+          resultHash: row.result_hash,
+          authorityId: row.authority_id,
+          hostEpochId: row.host_epoch_id,
+          projectionVersion: row.projection_version,
+          completedAt: row.completed_at,
+          result: parseJson(row.result_payload, {}),
+        } : null;
+        return {
+          row,
+          envelope: {
+            payload: receipt?.result?.application ? {
+              requestedRole: receipt.result.application.requestedRole,
+              bindingHint: receipt.result.application.bindingHint,
+            } : {},
+            createdAt: row.created_at,
+          },
+          receipt,
+        };
       }
     }
     return null;
@@ -117,7 +135,7 @@ function createMiniappAuthorityApplicationsRouter({
       || envelope.payload?.requestedRole
       || null;
     const applicationStatus = committedApplication?.status || null;
-    const state = row.status === 'completed'
+    const state = row.status === 'committed'
       ? applicationStatus === 'rejected' ? 'rejected'
         : applicationStatus === 'approved' ? 'approved'
           : receipt?.status === 'rejected' ? 'rejected' : 'submitted'
@@ -163,27 +181,22 @@ function createMiniappAuthorityApplicationsRouter({
         bindingHint: req.body?.bindingHint,
         idempotencyKey: req.get('x-idempotency-key'),
       });
-      commandAuthorization.authorize(created.envelope);
-      const queued = commandInbox.enqueue(created.envelope);
-      try {
-        await onCommandQueued({ envelope: created.envelope, queued, request: req });
-      } catch (_error) {
-        // Durable inbox polling is authoritative; wakeup is best effort only.
-      }
+      const executed = await executeCommand(created.envelope);
       const application = {
-        commandId: queued.id,
+        commandId: executed.command.id,
         requestedRole: created.envelope.payload.requestedRole,
         bindingHint: created.envelope.payload.bindingHint || null,
-        status: queued.status,
+        status: executed.command.status,
         state: 'submitted',
         createdAt: created.envelope.createdAt,
       };
-      return res.status(202).json({
+      return res.json({
         success: true,
         state: 'submitted',
         application,
-        command: queued,
-        data: { state: 'submitted', application, command: queued },
+        command: { ...executed.command, replayed: executed.replayed === true },
+        receipt: executed.receipt,
+        data: { state: 'submitted', application, command: executed.command, receipt: executed.receipt },
       });
     } catch (error) {
       return sendRouteError(res, error);

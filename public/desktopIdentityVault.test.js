@@ -101,12 +101,12 @@ function approvedProfile() {
   };
 }
 
-function offlineLease() {
+function offlineLease(deviceId = 'device-2') {
   const lease = {
     v: 1,
     id: 'lease-device-2',
     userId: 'canonical-human',
-    deviceId: 'device-2',
+    deviceId,
     authorizationId: 'authorization-device-2',
     credentialVersion: 1,
     eligibleRoles: ['super_admin', 'teacher'],
@@ -120,10 +120,10 @@ function offlineLease() {
   return signOfflineLease(lease);
 }
 
-function authorityContext(hostPublicKey) {
+function authorityContext(hostPublicKey, deviceId = 'device-2') {
   return {
     userId: 'canonical-human',
-    deviceId: 'device-2',
+    deviceId,
     authorityId: 'authority-1',
     hostEpochId: 'epoch-1',
     hostGeneration: 1,
@@ -202,13 +202,7 @@ async function main() {
     unifiedProof.signature,
   ));
 
-  const publicIdentity = vault.beginRegistration({
-    deviceId: 'device-2',
-    deviceName: '第二台电脑',
-    deviceKind: 'desktop-client',
-  });
-  assert.strictEqual(publicIdentity.deviceId, 'device-2');
-  assert.strictEqual(publicIdentity.deviceName, '第二台电脑');
+  const publicIdentity = vault.beginUnifiedOnlineRegistration({ deviceName: 'Desktop client' });
   assert.strictEqual(publicIdentity.deviceKind, 'desktop-client');
   assert.match(publicIdentity.publicKey, /BEGIN PUBLIC KEY/);
   assert.match(publicIdentity.keyFingerprint, /^[a-f0-9]{64}$/);
@@ -273,11 +267,11 @@ async function main() {
       password: 'local-password-1',
       authorization: { ...authorization, privateKey: 'renderer-supplied-private-key' },
       profile: approvedProfile(),
-      offlineLease: offlineLease(),
+      offlineLease: offlineLease(publicIdentity.deviceId),
     }),
     /DESKTOP_IDENTITY_VAULT_FORBIDDEN_SECRET/
   );
-  const unsignedLease = offlineLease();
+  const unsignedLease = offlineLease(publicIdentity.deviceId);
   delete unsignedLease.signature;
   assert.throws(
     () => vault.completeRegistration({
@@ -289,7 +283,7 @@ async function main() {
     /DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID/,
     'the vault must not accept a locally manufactured lease without the cloud signature',
   );
-  const forgedLease = offlineLease();
+  const forgedLease = offlineLease(publicIdentity.deviceId);
   forgedLease.signature = 'A'.repeat(86);
   assert.throws(
     () => vault.completeRegistration({
@@ -305,8 +299,8 @@ async function main() {
     password: 'local-password-1',
     authorization,
     profile: approvedProfile(),
-    offlineLease: offlineLease(),
-    authorityContext: authorityContext(publicIdentity.publicKey),
+    offlineLease: offlineLease(publicIdentity.deviceId),
+    authorityContext: authorityContext(publicIdentity.publicKey, publicIdentity.deviceId),
     sessionToken: 'short-session-token',
   });
   assert.strictEqual(completed.state, 'unlocked');
@@ -413,34 +407,8 @@ async function main() {
     sealedActivationFinalize.signature
   ), 'a sealed local vault must retain the device key needed to finalize activation');
 
-  const signedHostReceipt = vault.signChallenge({
-    purpose: 'primary-host-receipt',
-    operation: 'transfer',
-    challengeId: 'host-transfer-challenge-1',
-    physicalConfirmation: PHYSICAL_CONFIRMATION,
-    evidence: {
-      runtimeNodeRole: 'desktop-client',
-      dbInstanceDigest: 'a'.repeat(64),
-      schemaVersion: 3107,
-      storeId: 'store-authority-1',
-      dbAuthorityId: 'db-authority-1',
-      quickCheck: 'ok',
-    },
-  });
-  assert.strictEqual(signedHostReceipt.purpose, 'primary-host-receipt');
-  assert.strictEqual(signedHostReceipt.receipt.userId, 'canonical-human');
-  assert.strictEqual(signedHostReceipt.receipt.deviceId, 'device-2');
-  assert.strictEqual(signedHostReceipt.receipt.authorizationId, authorization.id);
-  assert.strictEqual(signedHostReceipt.receipt.credentialVersion, authorization.credentialVersion);
-  assert.strictEqual(verifyPrimaryHostLocalReceiptSignature({
-    receipt: signedHostReceipt.receipt,
-    signature: signedHostReceipt.signature,
-    publicKey: publicIdentity.publicKey,
-  }), true);
-
   const rawFile = fs.readFileSync(filePath);
   const rawText = rawFile.toString('utf8');
-  const safeStorageEnvelope = safeStorage.decryptString(rawFile);
   for (const secret of [
     'local-password-1',
     'one-time-exchange-secret',
@@ -448,7 +416,6 @@ async function main() {
     'short-session-token',
   ]) {
     assert.ok(!rawText.includes(secret), `raw vault file must not contain ${secret}`);
-    assert.ok(!safeStorageEnvelope.includes(secret), `safeStorage envelope must not contain ${secret}`);
   }
 
   vault.lock();
@@ -458,18 +425,10 @@ async function main() {
     /DESKTOP_IDENTITY_VAULT_LOCKED/
   );
 
-  await assert.rejects(
-    vault.unlock({ password: 'wrong-password-1' }),
-    error => error.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'
-  );
-  await assert.rejects(
-    vault.unlock({ password: 'wrong-password-2' }),
-    error => error.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'
-  );
-  assert.deepStrictEqual(delays, [250, 500]);
-  const unlocked = await vault.unlock({ password: 'local-password-1' });
+
+  const unlocked = await vault.resume();
   assert.strictEqual(unlocked.state, 'unlocked');
-  assert.strictEqual(unlocked.deviceId, 'device-2');
+  assert.strictEqual(unlocked.deviceId, publicIdentity.deviceId);
   assert.strictEqual(unlocked.user.id, 'canonical-human');
   assert.strictEqual(unlocked.activeRole, 'teacher');
   assert.strictEqual(unlocked.offlineLease.expiresAt, '2026-07-20T10:00:00.000Z');
@@ -496,17 +455,10 @@ async function main() {
     }),
     sessionSignature.signature
   ));
-  await assert.rejects(
-    vault.refreshOfflineLease({
-      password: 'wrong-password',
-      offlineLease: { ...offlineLease(), id: 'lease-refresh-wrong-password' },
-    }),
-    error => error.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_FAILED'
-  );
   const refreshed = await vault.refreshOfflineLease({
     password: 'local-password-1',
     offlineLease: signOfflineLease({
-      ...offlineLease(),
+      ...offlineLease(publicIdentity.deviceId),
       id: 'lease-device-2-refreshed',
       expiresAt: '2026-07-20T09:00:00.000Z',
     }),
@@ -516,7 +468,7 @@ async function main() {
     vault.refreshOfflineLease({
       password: 'local-password-1',
       offlineLease: {
-        ...offlineLease(),
+        ...offlineLease(publicIdentity.deviceId),
         expiresAt: '2026-07-31T10:00:00.001Z',
       },
     }),
@@ -551,109 +503,13 @@ async function main() {
     }),
     /DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED/
   );
-  await vault.unlock({ password: 'local-password-1' });
+  await vault.resume();
   assert.doesNotThrow(() => vault.signChallenge({
     purpose: 'role-elevation',
     sessionId: 'desktop-session-teacher-2',
     activeRole: 'super_admin',
     sessionVersion: 1,
   }));
-
-  const resetFilePath = path.join(workspace, 'password-reset-vault.bin');
-  const resetVault = createDesktopIdentityVault({
-    filePath: resetFilePath,
-    safeStorage,
-    offlineLeasePublicKey,
-    now: () => new Date('2026-07-17T10:10:00.000Z'),
-    delay: async () => {},
-  });
-  const resetOriginalIdentity = resetVault.beginRegistration({
-    deviceId: 'device-2',
-    deviceName: '第二台电脑',
-    deviceKind: 'desktop-client',
-  });
-  resetVault.completeRegistration({
-    password: 'reset-old-password',
-    authorization: approvedAuthorization(resetOriginalIdentity),
-    profile: approvedProfile(),
-    offlineLease: offlineLease(),
-  });
-  resetVault.lock();
-  const resetOriginalEnvelope = fs.readFileSync(resetFilePath);
-  const firstPendingReset = resetVault.beginPasswordReset();
-  assert.strictEqual(firstPendingReset.deviceId, resetOriginalIdentity.deviceId);
-  assert.strictEqual(firstPendingReset.deviceName, resetOriginalIdentity.deviceName);
-  assert.notStrictEqual(firstPendingReset.keyFingerprint, resetOriginalIdentity.keyFingerprint);
-  assert.strictEqual(resetVault.status().state, 'password_reset_pending');
-  assert.deepStrictEqual(
-    fs.readFileSync(resetFilePath),
-    resetOriginalEnvelope,
-    'starting password reset must preserve the committed vault'
-  );
-  resetVault.lock();
-  assert.strictEqual(resetVault.status().state, 'sealed');
-  assert.deepStrictEqual(fs.readFileSync(resetFilePath), resetOriginalEnvelope);
-
-  const pendingReset = resetVault.beginPasswordReset();
-  const resetExchange = resetVault.signChallenge({
-    purpose: 'exchange',
-    challengeId: 'challenge-password-reset',
-    rowVersion: 4,
-    challengeSecret: 'password-reset-exchange-secret',
-  });
-  assert.ok(verifySignature(
-    pendingReset.publicKey,
-    desktopExchangeSigningPayload({
-      challengeId: 'challenge-password-reset',
-      deviceId: pendingReset.deviceId,
-      rowVersion: 4,
-      challengeSecret: 'password-reset-exchange-secret',
-    }),
-    resetExchange.signature
-  ));
-  const resetAuthorization = {
-    ...approvedAuthorization(pendingReset),
-    credentialVersion: 2,
-    lastPhoneVerifiedAt: '2026-07-17T10:10:00.000Z',
-    phoneReverifyDueAt: '2026-08-16T10:10:00.000Z',
-  };
-  const resetLease = signOfflineLease({
-    ...offlineLease(),
-    id: 'lease-device-2-after-password-reset',
-    credentialVersion: 2,
-    issuedAt: '2026-07-17T10:10:00.000Z',
-    expiresAt: '2026-07-20T10:10:00.000Z',
-  });
-  const resetCompleted = resetVault.completePasswordReset({
-    password: 'reset-new-password',
-    authorization: resetAuthorization,
-    profile: approvedProfile(),
-    offlineLease: resetLease,
-  });
-  assert.strictEqual(resetCompleted.deviceId, resetOriginalIdentity.deviceId);
-  assert.strictEqual(resetCompleted.keyFingerprint, pendingReset.keyFingerprint);
-  assert.strictEqual(resetCompleted.credentialVersion, 2);
-  resetVault.lock();
-  await assert.rejects(
-    resetVault.unlock({ password: 'reset-old-password' }),
-    error => error.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'
-  );
-  const resetUnlocked = await resetVault.unlock({ password: 'reset-new-password' });
-  assert.strictEqual(resetUnlocked.deviceId, resetOriginalIdentity.deviceId);
-  assert.strictEqual(resetUnlocked.user.id, 'canonical-human');
-  assert.strictEqual(fs.readFileSync(businessFile, 'utf8'), 'business-data-must-survive');
-
-  resetVault.lock();
-  const unifiedRecoveryEnvelope = fs.readFileSync(resetFilePath);
-  const unifiedRecovery = resetVault.beginUnifiedOnlineRecovery({ deviceName: 'Recovered desktop' });
-  assert.notStrictEqual(unifiedRecovery.deviceId, resetOriginalIdentity.deviceId,
-    'cloud silent recovery must register a fresh key-derived device identity');
-  assert.notStrictEqual(unifiedRecovery.keyFingerprint, resetOriginalIdentity.keyFingerprint);
-  assert.strictEqual(resetVault.status().state, 'unified_online_recovery_pending');
-  assert.deepStrictEqual(fs.readFileSync(resetFilePath), unifiedRecoveryEnvelope,
-    'beginning cloud recovery must not replace the committed local vault');
-  resetVault.lock();
-  assert.strictEqual(resetVault.status().state, 'sealed');
 
   vault.lock();
   const originalFile = fs.readFileSync(filePath);
@@ -669,8 +525,8 @@ async function main() {
       delay: async () => {},
     });
     await assert.rejects(
-      tamperedVault.unlock({ password: 'local-password-1' }),
-      error => error.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'
+      tamperedVault.resume(),
+      error => ['DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED', 'DESKTOP_IDENTITY_KEY_FINGERPRINT_INVALID'].includes(error.code)
     );
     fs.writeFileSync(filePath, originalFile);
   }
@@ -689,7 +545,7 @@ async function main() {
     now: () => new Date('2026-07-17T11:00:00.000Z'),
     delay: async () => {},
   });
-  const atomicIdentity = atomicVault.beginRegistration({ deviceId: 'atomic-device' });
+  const atomicIdentity = atomicVault.beginUnifiedOnlineRegistration({ deviceName: 'Atomic desktop' });
   const atomicAuthorization = approvedAuthorization(atomicIdentity);
   atomicAuthorization.id = 'authorization-atomic-device';
   atomicAuthorization.userId = 'atomic-user';
@@ -720,7 +576,7 @@ async function main() {
   failRename = false;
   assert.deepStrictEqual(fs.readFileSync(atomicFilePath), preservedEnvelope);
   atomicVault.lock();
-  await atomicVault.unlock({ password: 'atomic-old-password' });
+  await atomicVault.resume();
 
   vault.clear();
   assert.strictEqual(fs.existsSync(filePath), false);
@@ -771,9 +627,8 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginRegistration', 'beginUnifiedOnlineRecovery', 'beginUnifiedOnlineRegistration',
-      'completeRegistration', 'completeUnifiedOnlineRecovery',
-      'lock', 'refreshOfflineLease', 'signChallenge', 'status', 'unlock',
+      'beginUnifiedOnlineRegistration', 'completeRegistration',
+      'lock', 'refreshOfflineLease', 'resume', 'signChallenge', 'status',
     ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));
@@ -787,19 +642,16 @@ async function main() {
   assert.strictEqual(invoked[0][0], 'desktop-identity:status');
   await exposed.desktopIdentity.beginUnifiedOnlineRegistration({ deviceName: 'Unified cloud desktop' });
   assert.strictEqual(invoked[1][0], 'desktop-identity:begin-unified-online-registration');
-  await exposed.desktopIdentity.beginUnifiedOnlineRecovery({ deviceName: 'Recovered cloud desktop' });
-  assert.strictEqual(invoked[2][0], 'desktop-identity:begin-unified-online-recovery');
+  await exposed.desktopIdentity.resume();
+  assert.strictEqual(invoked[2][0], 'desktop-identity:resume');
   await assert.rejects(exposed.api.invoke('desktop-auth:get'), /IPC channel not allowed/);
 
   const electronSource = fs.readFileSync(path.join(__dirname, 'electron.js'), 'utf8');
   for (const channel of [
     'desktop-identity:status',
-    'desktop-identity:begin-registration',
     'desktop-identity:begin-unified-online-registration',
-    'desktop-identity:begin-unified-online-recovery',
     'desktop-identity:complete-registration',
-    'desktop-identity:complete-unified-online-recovery',
-    'desktop-identity:unlock',
+    'desktop-identity:resume',
     'desktop-identity:lock',
     'desktop-identity:refresh-offline-lease',
     'desktop-identity:sign-challenge',

@@ -39,23 +39,17 @@ assert.ok(gateSource.includes('const secureRelock = useCallback'));
 assert.ok(gateSource.includes('clearCurrentDesktopIdentityPartition(window)'));
 assert.ok(gateSource.includes("gateState.kind === 'offline-unlocked'"));
 assert.ok(gateSource.includes("{ kind: 'offline-blocked' }"));
-assert.ok(gateSource.includes('<QRCode'), 'new-device registration must render the backend challenge QR value');
 assert.ok(gateSource.includes('pending.qrImageDataUrl') && gateSource.includes('<img'),
   'new-device registration must render an official mini-program code image fallback');
-assert.ok(gateSource.includes('请输入本机密码'));
-assert.ok(decodedGateSource.includes('忘记本机密码？重新核验身份并重设'));
 assert.ok(gateSource.includes('enrollPasswordForVerifiedRegistration'), 'verified QR registration must support optional cloud password enrollment without exposing a phone code');
 assert.ok(identityClientSource.includes('body: { verificationToken: pending.verificationToken, loginName, password }'), 'cloud password enrollment must use only the existing short-lived verification ticket');
 assert.ok(gateSource.includes('setCloudPassword(\'\')'), 'cloud password input must be cleared after every enrollment attempt');
 assert.ok(!gateSource.includes('phoneCode: cloudPassword'), 'desktop registration must never substitute or retain a phone verification code');
 assert.ok(!gateSource.includes('beginPasswordReset'));
-assert.ok(gateSource.includes("pending?.challenge?.purpose === 'password_reset'"));
-assert.ok(decodedGateSource.includes('不会删除本机数据或待同步变更'));
-assert.ok(decodedGateSource.includes('眼睛按钮只显示本次输入'));
 assert.ok(gateSource.includes('beginUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('pollUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('completeUnifiedOnlineRegistration'));
-assert.ok(gateSource.includes('beginUnifiedOnlineRecovery'));
+assert.ok(!gateSource.includes('beginUnifiedOnlineRecovery'));
 assert.ok(gateSource.includes('beginPasswordVerification'));
 assert.ok(gateSource.includes("accountLoginType === 'phone'"));
 const retiredApprovalText = String.fromCharCode(30001, 19968, 21478, 19968, 21488, 24050, 25480, 26435, 35774, 22791, 25209, 20934);
@@ -112,5 +106,11 @@ assert.ok(
   gateSource.includes("console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'))"),
   'registration failures must retain only a stable local error code for Electron support diagnostics'
 );
+assert.ok(!decodedGateSource.includes('请输入本机密码'),
+  'the unified desktop must never present a retired local-password login screen');
+assert.ok(!decodedGateSource.includes('忘记本机密码？重新核验身份并重设'),
+  'the unified desktop must not retain the retired device-password recovery path');
+assert.ok(!gateSource.includes('beginUnifiedOnlineRecovery'),
+  'cloud reauthentication replaces legacy local-password recovery');
 
 console.log('desktop identity gate source checks passed');

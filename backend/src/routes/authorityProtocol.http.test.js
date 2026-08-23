@@ -40,11 +40,8 @@ function command(overrides = {}) {
 }
 
 (async function main() {
-  const enqueued = [];
-  const authorized = [];
+  const executed = [];
   const receiptLookups = [];
-  const hostCalls = [];
-  const queuedNotifications = [];
   const receipt = {
     protocol: 'gewu.authority-receipt.v1',
     commandId: 'command-http-1',
@@ -67,45 +64,20 @@ function command(overrides = {}) {
     next();
   });
   app.use('/api/authority', createAuthorityProtocolRouter({
-    authorizeCommand: async ({ envelope, actor }) => {
-      authorized.push({ envelope, actor });
+    executeCommand: async ({ envelope, actor }) => {
       if (envelope.lease.id === 'blocked-lease') {
         throw Object.assign(new Error('DEVICE_LEASE_INACTIVE'), {
           code: 'DEVICE_LEASE_INACTIVE',
           statusCode: 403,
         });
       }
-    },
-    enqueueCommand: async envelope => {
-      enqueued.push(envelope);
-      return { id: envelope.commandId, status: 'pending' };
+      executed.push({ envelope, actor });
+      return { command: { id: envelope.commandId, status: 'committed' }, receipt };
     },
     findReceipt: async ({ commandId, actor }) => {
       receiptLookups.push({ commandId, actor });
       return commandId === receipt.commandId ? receipt : null;
     },
-    authorizeHostRequest: async req => {
-      if (req.headers['x-test-host-id'] !== 'host-http-1') {
-        throw Object.assign(new Error('PRIMARY_HOST_CREDENTIAL_REQUIRED'), {
-          code: 'PRIMARY_HOST_CREDENTIAL_REQUIRED',
-          statusCode: 403,
-        });
-      }
-      return { deviceId: 'host-http-1', generation: 2 };
-    },
-    claimCommands: async input => {
-      hostCalls.push({ operation: 'claim', input });
-      return [{ commandId: 'command-http-1', envelope: command(), claimToken: input.claimToken }];
-    },
-    renewCommandClaim: async input => {
-      hostCalls.push({ operation: 'renew', input });
-      return { commandId: input.commandId, claimUntil: '2026-07-28T00:01:00.000Z' };
-    },
-    publishHostReceipt: async (inputReceipt, claim) => {
-      hostCalls.push({ operation: 'receipt', receipt: inputReceipt, claim });
-      return inputReceipt;
-    },
-    onCommandQueued: input => queuedNotifications.push(input),
   }));
 
   const server = app.listen(0);
@@ -122,7 +94,7 @@ function command(overrides = {}) {
     });
     assert.strictEqual(invalid.status, 400);
     assert.strictEqual(invalid.body.error.code, 'AUTHORITY_PROTOCOL_INVALID');
-    assert.strictEqual(enqueued.length, 0);
+    assert.strictEqual(executed.length, 0);
 
     const mismatchedActor = await requestJson(baseUrl, 'POST', '/api/authority/commands', {
       headers: { ...actorHeaders, 'x-test-device-id': 'other-device' },
@@ -130,7 +102,7 @@ function command(overrides = {}) {
     });
     assert.strictEqual(mismatchedActor.status, 403);
     assert.strictEqual(mismatchedActor.body.error.code, 'AUTHORITY_ACTOR_MISMATCH');
-    assert.strictEqual(enqueued.length, 0);
+    assert.strictEqual(executed.length, 0);
 
     const blockedLease = await requestJson(baseUrl, 'POST', '/api/authority/commands', {
       headers: actorHeaders,
@@ -138,25 +110,22 @@ function command(overrides = {}) {
     });
     assert.strictEqual(blockedLease.status, 403);
     assert.strictEqual(blockedLease.body.error.code, 'DEVICE_LEASE_INACTIVE');
-    assert.strictEqual(enqueued.length, 0);
+    assert.strictEqual(executed.length, 0);
 
     const accepted = await requestJson(baseUrl, 'POST', '/api/authority/commands', {
       headers: actorHeaders,
       body: command(),
     });
-    assert.strictEqual(authorized.length, 2, 'authorization must run before every valid-envelope enqueue attempt');
-    assert.strictEqual(accepted.status, 202);
+    assert.strictEqual(accepted.status, 200);
     assert.deepStrictEqual(accepted.body, {
       success: true,
-      command: { id: 'command-http-1', status: 'pending' },
+      command: { id: 'command-http-1', status: 'committed' },
+      receipt,
     });
-    assert.deepStrictEqual(enqueued, [command()], 'the durable inbox must receive the canonical envelope unchanged');
-    assert.strictEqual(queuedNotifications.length, 1);
-    assert.strictEqual(queuedNotifications[0].envelope.commandId, 'command-http-1');
-    assert.deepStrictEqual(queuedNotifications[0].queued, {
-      id: 'command-http-1',
-      status: 'pending',
-    });
+    assert.deepStrictEqual(executed, [{
+      envelope: command(),
+      actor: { userId: 'user-http-1', deviceId: 'device-http-1', role: 'teacher' },
+    }], 'the cloud executor must receive the canonical envelope unchanged');
 
     const receiptResponse = await requestJson(
       baseUrl,
@@ -180,33 +149,10 @@ function command(overrides = {}) {
     assert.strictEqual(missingReceipt.status, 404);
     assert.strictEqual(missingReceipt.body.error.code, 'AUTHORITY_RECEIPT_NOT_FOUND');
 
-    const forbiddenHost = await requestJson(baseUrl, 'POST', '/api/authority/host/commands/claim', {
-      body: { claimToken: 'host-claim-1', leaseMs: 30_000, limit: 5 },
+    const retiredHostRoute = await requestJson(baseUrl, 'POST', '/api/authority/host/commands/claim', {
+      body: { claimToken: 'retired-host-claim', leaseMs: 30_000, limit: 5 },
     });
-    assert.strictEqual(forbiddenHost.status, 403);
-    assert.strictEqual(forbiddenHost.body.error.code, 'PRIMARY_HOST_CREDENTIAL_REQUIRED');
-
-    const claimed = await requestJson(baseUrl, 'POST', '/api/authority/host/commands/claim', {
-      headers: { 'x-test-host-id': 'host-http-1' },
-      body: { claimToken: 'host-claim-1', leaseMs: 30_000, limit: 5 },
-    });
-    assert.strictEqual(claimed.status, 200);
-    assert.strictEqual(claimed.body.commands[0].commandId, 'command-http-1');
-
-    const renewed = await requestJson(baseUrl, 'POST', '/api/authority/host/commands/command-http-1/renew', {
-      headers: { 'x-test-host-id': 'host-http-1' },
-      body: { claimToken: 'host-claim-1', leaseMs: 30_000 },
-    });
-    assert.strictEqual(renewed.status, 200);
-    assert.strictEqual(renewed.body.claim.claimUntil, '2026-07-28T00:01:00.000Z');
-
-    const published = await requestJson(baseUrl, 'POST', '/api/authority/host/commands/command-http-1/receipt', {
-      headers: { 'x-test-host-id': 'host-http-1' },
-      body: { claimToken: 'host-claim-1', receipt },
-    });
-    assert.strictEqual(published.status, 200);
-    assert.deepStrictEqual(published.body.receipt, receipt);
-    assert.deepStrictEqual(hostCalls.map(call => call.operation), ['claim', 'renew', 'receipt']);
+    assert.strictEqual(retiredHostRoute.status, 404);
 
     console.log('authorityProtocol HTTP contract tests passed');
   } finally {

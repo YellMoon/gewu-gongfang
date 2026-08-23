@@ -1,14 +1,11 @@
 const assert = require('assert');
 const Database = require('better-sqlite3');
 const { createAuthorityCommandAuthorizationService } = require('./authorityCommandAuthorizationService');
+const { createAuthorityCloudEpochService } = require('./authorityCloudEpochService');
 
 function createDb() {
   const db = new Database(':memory:');
   db.exec(`
-    CREATE TABLE primary_host_epochs (
-      id TEXT PRIMARY KEY, db_authority_id TEXT NOT NULL, device_id TEXT NOT NULL,
-      status TEXT NOT NULL
-    );
     CREATE TABLE device_grants (
       grant_id TEXT PRIMARY KEY, authority_id TEXT NOT NULL, device_id TEXT NOT NULL,
       user_id TEXT NOT NULL, status TEXT NOT NULL, grant_version INTEGER NOT NULL
@@ -28,7 +25,6 @@ function createDb() {
       authority_id TEXT NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL,
       PRIMARY KEY (authority_id, user_id)
     );
-    INSERT INTO primary_host_epochs VALUES ('epoch-1', 'authority-1', 'host-device', 'active');
     INSERT INTO device_grants VALUES ('grant-1', 'authority-1', 'device-1', 'user-1', 'active', 3);
     INSERT INTO device_leases VALUES (
       'lease-1', 'grant-1', 'authority-1', 'device-1', 'user-1', 'teacher', 3,
@@ -45,7 +41,7 @@ function createDb() {
 function envelope(overrides = {}) {
   return {
     authorityId: 'authority-1',
-    hostEpochId: 'epoch-1',
+    hostEpochId: cloudEpoch.id,
     actor: { userId: 'user-1', deviceId: 'device-1', role: 'teacher' },
     lease: { id: 'lease-1', grantVersion: 3 },
     type: 'schedule.update.v1',
@@ -54,6 +50,8 @@ function envelope(overrides = {}) {
 }
 
 const db = createDb();
+const cloudEpoch = createAuthorityCloudEpochService({ db, now: () => '2026-07-28T00:00:00.000Z' })
+  .ensure('authority-1');
 const service = createAuthorityCommandAuthorizationService({
   db,
   now: () => new Date('2026-07-28T00:00:00.000Z'),
@@ -61,8 +59,8 @@ const service = createAuthorityCommandAuthorizationService({
 });
 assert.deepStrictEqual(service.authorize(envelope()), {
   authorityId: 'authority-1',
-  hostEpochId: 'epoch-1',
-  hostDeviceId: 'host-device',
+  hostEpochId: cloudEpoch.id,
+  authorityEpochGeneration: 1,
   grantId: 'grant-1',
   leaseId: 'lease-1',
   scope: {
@@ -74,7 +72,7 @@ assert.deepStrictEqual(service.authorize(envelope()), {
 });
 assert.throws(
   () => service.authorize(envelope({ hostEpochId: 'retired-epoch' })),
-  error => error?.code === 'AUTHORITY_HOST_EPOCH_INACTIVE',
+  error => error?.code === 'AUTHORITY_CLOUD_EPOCH_INACTIVE',
 );
 db.prepare("UPDATE device_leases SET expires_at='2026-07-27T00:00:00.000Z' WHERE lease_id='lease-1'").run();
 assert.throws(

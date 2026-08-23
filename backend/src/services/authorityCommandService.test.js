@@ -184,4 +184,15 @@ assert.strictEqual(rollbackCalls, 1);
 assert.strictEqual(rollbackAware.execute(rollbackEnvelope).replayed, true);
 assert.strictEqual(rollbackCalls, 1, 'a rejected receipt replay must not run rollback recovery again');
 
+assert.deepStrictEqual(
+  service.findReceipt({ commandId: 'c1', actor }),
+  first.receipt,
+  'the cloud command executor must expose its durable receipt to the submitting desktop',
+);
+assert.strictEqual(
+  service.findReceipt({ commandId: 'c1', actor: { ...actor, deviceId: 'other-device' } }),
+  null,
+  'a receipt must not be readable from another desktop device',
+);
+
 console.log('authorityCommandService tests passed');

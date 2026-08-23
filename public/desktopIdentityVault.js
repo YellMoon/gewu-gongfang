@@ -2,28 +2,20 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const {
-  createPrimaryHostLocalReceipt,
-  primaryHostReceiptSigningPayload,
-} = require('../backend/src/services/primaryHostReceiptProtocol');
-const {
   activationReceiptSigningPayload,
 } = require('../backend/src/services/deviceActivationService');
 const { validateEnvelope, stableJson } = require('../shared/authorityProtocol');
 const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
 const { createSignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 
-const VAULT_VERSION = 2;
+const VAULT_VERSION = 3;
+const LEGACY_PASSWORD_VAULT_VERSION = 2;
 const PRIVATE_PAYLOAD_VERSION = 1;
-const SCRYPT_N = 16384;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_KEY_LENGTH = 32;
-const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const RECENT_UNLOCK_MS = 2 * 60 * 1000;
 const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
 const ROLE_SET = new Set(['visitor', 'pending', 'super_admin', 'admin', 'teacher', 'student']);
-const DEVICE_KIND_SET = new Set(['primary-host', 'desktop-client']);
+const DEVICE_KIND_SET = new Set(['desktop-client']);
 const CLOUD_OFFLINE_LEASE_PUBLIC_KEY_B64 = 'MCowBQYDK2VwAyEAGY4DlhDvEsOwR7mXM23i+P+lT2n0ZVXKVQXbSZfFR/c=';
 const FORBIDDEN_PERSISTED_KEYS = new Set([
   'password',
@@ -379,67 +371,6 @@ function normalizeAuthorityContext(value, profile, authorization) {
   return Object.freeze(context);
 }
 
-function passwordBuffer(value, creating) {
-  const password = typeof value === 'string' ? value : '';
-  const bytes = Buffer.byteLength(password, 'utf8');
-  if (!password || bytes > 1024 || (creating && bytes < 6)) {
-    throw vaultError(creating
-      ? 'DESKTOP_IDENTITY_LOCAL_PASSWORD_INVALID'
-      : 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
-  }
-  return Buffer.from(password, 'utf8');
-}
-
-function normalizeKdf(value = {}) {
-  if (value.algorithm !== 'scrypt'
-    || Number(value.N) !== SCRYPT_N
-    || Number(value.r) !== SCRYPT_R
-    || Number(value.p) !== SCRYPT_P
-    || Number(value.keyLength) !== SCRYPT_KEY_LENGTH) {
-    throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
-  }
-  const salt = String(value.salt || '');
-  const decoded = Buffer.from(salt, 'base64');
-  if (decoded.length !== 16 || decoded.toString('base64') !== salt) {
-    throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
-  }
-  return Object.freeze({
-    algorithm: 'scrypt',
-    salt,
-    N: SCRYPT_N,
-    r: SCRYPT_R,
-    p: SCRYPT_P,
-    keyLength: SCRYPT_KEY_LENGTH,
-  });
-}
-
-function normalizeCipher(value = {}) {
-  if (value.algorithm !== 'aes-256-gcm') {
-    throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
-  }
-  const iv = Buffer.from(String(value.iv || ''), 'base64');
-  const tag = Buffer.from(String(value.tag || ''), 'base64');
-  const ciphertext = Buffer.from(String(value.ciphertext || ''), 'base64');
-  if (iv.length !== 12 || tag.length !== 16 || !ciphertext.length
-    || ciphertext.length > MAX_ENVELOPE_BYTES) {
-    throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
-  }
-  return Object.freeze({
-    algorithm: 'aes-256-gcm',
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
-    ciphertext: ciphertext.toString('base64'),
-  });
-}
-
-function envelopeAad(publicIdentity, kdf) {
-  return Buffer.from(JSON.stringify({
-    version: VAULT_VERSION,
-    publicIdentity,
-    kdf,
-  }), 'utf8');
-}
-
 function desktopDeviceSessionSigningPayload({
   challengeId,
   authorizationId,
@@ -576,14 +507,24 @@ function createDesktopIdentityVault({
       if (error?.code === 'DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID') throw error;
       throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID', error);
     }
-    if (!parsed || Number(parsed.version) !== VAULT_VERSION) {
+    if (!parsed || typeof parsed !== 'object') {
       throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
     }
+    if (Number(parsed.version) === LEGACY_PASSWORD_VAULT_VERSION) {
+      return Object.freeze({
+        version: LEGACY_PASSWORD_VAULT_VERSION,
+        legacyPasswordVault: true,
+        publicIdentity: normalizePublicIdentity(parsed.publicIdentity),
+      });
+    }
+    if (Number(parsed.version) !== VAULT_VERSION) {
+      throw vaultError('DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID');
+    }
+    const publicIdentity = normalizePublicIdentity(parsed.publicIdentity);
     return Object.freeze({
       version: VAULT_VERSION,
-      publicIdentity: normalizePublicIdentity(parsed.publicIdentity),
-      kdf: normalizeKdf(parsed.kdf),
-      cipher: normalizeCipher(parsed.cipher),
+      publicIdentity,
+      secret: normalizePrivatePayload(parsed.payload, { publicIdentity }),
     });
   }
 
@@ -660,41 +601,7 @@ function createDesktopIdentityVault({
     return secret;
   }
 
-  function decryptPrivatePayload(envelope, password) {
-    const passwordBytes = passwordBuffer(password, false);
-    const salt = Buffer.from(envelope.kdf.salt, 'base64');
-    const iv = Buffer.from(envelope.cipher.iv, 'base64');
-    const tag = Buffer.from(envelope.cipher.tag, 'base64');
-    const ciphertext = Buffer.from(envelope.cipher.ciphertext, 'base64');
-    let key;
-    let plaintext;
-    try {
-      key = crypto.scryptSync(passwordBytes, salt, SCRYPT_KEY_LENGTH, {
-        N: SCRYPT_N,
-        r: SCRYPT_R,
-        p: SCRYPT_P,
-        maxmem: SCRYPT_MAX_MEMORY,
-      });
-      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-      decipher.setAAD(envelopeAad(envelope.publicIdentity, envelope.kdf));
-      decipher.setAuthTag(tag);
-      plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-      if (!plaintext.length || plaintext.length > MAX_ENVELOPE_BYTES) {
-        throw vaultError('DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
-      }
-      return normalizePrivatePayload(JSON.parse(plaintext.toString('utf8')), envelope);
-    } catch (error) {
-      if (error?.code === 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED') throw error;
-      throw vaultError('DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED', error);
-    } finally {
-      passwordBytes.fill(0);
-      if (key) key.fill(0);
-      if (plaintext) plaintext.fill(0);
-    }
-  }
-
   function buildEnvelope({
-    password,
     publicIdentity,
     privateKey,
     authorization,
@@ -702,17 +609,6 @@ function createDesktopIdentityVault({
     offlineLease,
     authorityContext,
   }) {
-    const passwordBytes = passwordBuffer(password, true);
-    const salt = crypto.randomBytes(16);
-    const iv = crypto.randomBytes(12);
-    const kdf = Object.freeze({
-      algorithm: 'scrypt',
-      salt: salt.toString('base64'),
-      N: SCRYPT_N,
-      r: SCRYPT_R,
-      p: SCRYPT_P,
-      keyLength: SCRYPT_KEY_LENGTH,
-    });
     const sealedAt = currentDate(now).toISOString();
     const payload = {
       version: PRIVATE_PAYLOAD_VERSION,
@@ -724,43 +620,16 @@ function createDesktopIdentityVault({
       authorityContext,
       sealedAt,
     };
-    let key;
-    let plaintext;
-    try {
-      plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
-      if (!plaintext.length || plaintext.length > MAX_ENVELOPE_BYTES) {
-        throw vaultError('DESKTOP_IDENTITY_VAULT_DATA_INVALID');
-      }
-      key = crypto.scryptSync(passwordBytes, salt, SCRYPT_KEY_LENGTH, {
-        N: SCRYPT_N,
-        r: SCRYPT_R,
-        p: SCRYPT_P,
-        maxmem: SCRYPT_MAX_MEMORY,
-      });
-      const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-      cipher.setAAD(envelopeAad(publicIdentity, kdf));
-      const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-      const envelope = Object.freeze({
-        version: VAULT_VERSION,
-        publicIdentity,
-        kdf,
-        cipher: Object.freeze({
-          algorithm: 'aes-256-gcm',
-          iv: iv.toString('base64'),
-          tag: cipher.getAuthTag().toString('base64'),
-          ciphertext: ciphertext.toString('base64'),
-        }),
-      });
-      return {
-        envelope,
-        secret: normalizePrivatePayload(payload, envelope),
-        sealedAt,
-      };
-    } finally {
-      passwordBytes.fill(0);
-      if (key) key.fill(0);
-      if (plaintext) plaintext.fill(0);
-    }
+    const envelope = Object.freeze({
+      version: VAULT_VERSION,
+      publicIdentity,
+      payload,
+    });
+    return {
+      envelope,
+      secret: normalizePrivatePayload(payload, envelope),
+      sealedAt,
+    };
   }
 
   function presentPublicState(state, publicIdentity, extra = {}) {
@@ -800,18 +669,10 @@ function createDesktopIdentityVault({
     });
   }
 
-  function beginRegistration(input = {}) {
-    if (fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_ALREADY_SEALED');
-    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
-    const keyPair = crypto.generateKeyPairSync('ed25519');
-    const publicIdentity = publicIdentityFromKeyPair(input, keyPair);
-    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    pendingRegistration = Object.freeze({ purpose: 'register', publicIdentity, privateKey });
-    return Object.freeze({ ...publicIdentity });
-  }
-
   function beginUnifiedOnlineRegistration(input = {}) {
-    if (fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_ALREADY_SEALED');
+    if (fsImpl.existsSync(filePath) && !readEnvelope().legacyPasswordVault) {
+      throw vaultError('DESKTOP_IDENTITY_VAULT_ALREADY_SEALED');
+    }
     if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
     const keyPair = crypto.generateKeyPairSync('ed25519');
     const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -824,45 +685,11 @@ function createDesktopIdentityVault({
       keyFingerprint,
     });
     const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    pendingRegistration = Object.freeze({ purpose: 'register', publicIdentity, privateKey });
-    return Object.freeze({ ...publicIdentity });
-  }
-
-  function beginUnifiedOnlineRecovery(input = {}) {
-    if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
-    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
-    const committedIdentity = readEnvelope().publicIdentity;
-    const keyPair = crypto.generateKeyPairSync('ed25519');
-    const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
-    const keyFingerprint = fingerprintPublicKey(publicKey);
-    const publicIdentity = normalizePublicIdentity({
-      deviceId: `desktop-device-${keyFingerprint.slice(0, 32)}`,
-      deviceName: input.deviceName || committedIdentity.deviceName,
-      deviceKind: 'desktop-client',
-      publicKey,
-      keyFingerprint,
+    pendingRegistration = Object.freeze({
+      purpose: fsImpl.existsSync(filePath) ? 'legacy_password_migration' : 'register',
+      publicIdentity,
+      privateKey,
     });
-    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    pendingRegistration = Object.freeze({ purpose: 'unified_online_recovery', publicIdentity, privateKey });
-    unlockedSecret = null;
-    lastUnlockedAt = null;
-    return Object.freeze({ ...publicIdentity });
-  }
-
-  function beginPasswordReset() {
-    if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_IDENTITY_VAULT_NOT_FOUND');
-    if (pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_ALREADY_PENDING');
-    const committedIdentity = readEnvelope().publicIdentity;
-    const keyPair = crypto.generateKeyPairSync('ed25519');
-    const publicIdentity = publicIdentityFromKeyPair({
-      deviceId: committedIdentity.deviceId,
-      deviceName: committedIdentity.deviceName,
-      deviceKind: committedIdentity.deviceKind,
-    }, keyPair);
-    const privateKey = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
-    pendingRegistration = Object.freeze({ purpose: 'password_reset', publicIdentity, privateKey });
-    unlockedSecret = null;
-    lastUnlockedAt = null;
     return Object.freeze({ ...publicIdentity });
   }
 
@@ -879,7 +706,6 @@ function createDesktopIdentityVault({
       authorization
     );
     const built = buildEnvelope({
-      password: input.password,
       publicIdentity,
       privateKey: source.privateKey,
       authorization,
@@ -896,37 +722,16 @@ function createDesktopIdentityVault({
   }
 
   function completeRegistration(input = {}) {
-    if (!pendingRegistration || pendingRegistration.purpose !== 'register') {
+    if (!pendingRegistration || !['register', 'legacy_password_migration'].includes(pendingRegistration.purpose)) {
       throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
     }
     return seal(input);
   }
 
-  function completePasswordReset(input = {}) {
-    if (!pendingRegistration || pendingRegistration.purpose !== 'password_reset') {
-      throw vaultError('DESKTOP_IDENTITY_PASSWORD_RESET_NOT_PENDING');
-    }
-    return seal(input);
-  }
-
-  function completeUnifiedOnlineRecovery(input = {}) {
-    if (!pendingRegistration || pendingRegistration.purpose !== 'unified_online_recovery') {
-      throw vaultError('DESKTOP_IDENTITY_UNIFIED_ONLINE_RECOVERY_NOT_PENDING');
-    }
-    return seal(input);
-  }
-
-  async function unlock(input = {}) {
-    let secret;
-    try {
-      secret = decryptPrivatePayload(readEnvelope(), input.password);
-    } catch (_error) {
-      unlockFailures += 1;
-      const delayMs = Math.min(30000, 250 * (2 ** Math.min(unlockFailures - 1, 7)));
-      try { await delay(delayMs); } catch (_delayError) { /* keep the stable unlock error */ }
-      throw vaultError('DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
-    }
-    unlockedSecret = secret;
+  async function resume() {
+    const envelope = readEnvelope();
+    if (envelope.legacyPasswordVault) throw vaultError('DESKTOP_IDENTITY_LEGACY_MIGRATION_REQUIRED');
+    unlockedSecret = envelope.secret;
     pendingRegistration = null;
     unlockFailures = 0;
     lastUnlockedAt = currentDate(now).getTime();
@@ -935,12 +740,7 @@ function createDesktopIdentityVault({
 
   async function refreshOfflineLease(input = {}) {
     if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
-    let verified;
-    try {
-      verified = decryptPrivatePayload(readEnvelope(), input.password);
-    } catch (cause) {
-      throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_FAILED', cause);
-    }
+    const verified = unlockedSecret;
     const offlineLease = normalizeOfflineLease(
       input.offlineLease,
       verified.profile,
@@ -948,7 +748,6 @@ function createDesktopIdentityVault({
       verifiedOfflineLeasePublicKey
     );
     const built = buildEnvelope({
-      password: input.password,
       publicIdentity: verified.publicIdentity,
       privateKey: verified.privateKey,
       authorization: verified.authorization,
@@ -983,6 +782,15 @@ function createDesktopIdentityVault({
     }
     if (fsImpl.existsSync(filePath)) {
       const envelope = readEnvelope();
+      if (envelope.legacyPasswordVault) {
+        return Object.freeze({
+          state: 'legacy_upgrade_required',
+          sealed: false,
+          unlocked: false,
+          legacyUpgradeRequired: true,
+          deviceName: envelope.publicIdentity.deviceName,
+        });
+      }
       return presentPublicState('sealed', envelope.publicIdentity);
     }
     if (legacyFilePath && fsImpl.existsSync(legacyFilePath)) {
@@ -1017,7 +825,7 @@ function createDesktopIdentityVault({
 
   function signChallenge(input = {}) {
     const purpose = String(input.purpose || '').trim();
-    if (!['exchange', 'unified-online-registration', 'activation-finalize', 'session', 'role-elevation', 'primary-host-receipt'].includes(purpose)) {
+    if (!['exchange', 'unified-online-registration', 'activation-finalize', 'session', 'role-elevation'].includes(purpose)) {
       throw vaultError('DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID');
     }
     const source = signingSource(purpose);
@@ -1057,29 +865,6 @@ function createDesktopIdentityVault({
         nonceIssuedAt: input.nonceIssuedAt,
       });
       responseExtra = { authorizationId, credentialVersion };
-    } else if (purpose === 'primary-host-receipt') {
-      const current = currentDate(now);
-      if (!Number.isFinite(lastUnlockedAt)
-        || current.getTime() < lastUnlockedAt
-        || current.getTime() - lastUnlockedAt > RECENT_UNLOCK_MS) {
-        throw vaultError('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
-      }
-      const receipt = createPrimaryHostLocalReceipt({
-        operation: input.operation,
-        challengeId: input.challengeId,
-        identity: {
-          userId: unlockedSecret.profile.userId,
-          deviceId: publicIdentity.deviceId,
-          authorizationId: unlockedSecret.authorization.id,
-          credentialVersion: unlockedSecret.authorization.credentialVersion,
-        },
-        evidence: input.evidence,
-        operationManifest: input.operationManifest,
-        physicalConfirmation: input.physicalConfirmation,
-        now: () => current,
-      });
-      payload = primaryHostReceiptSigningPayload(receipt);
-      responseExtra = { receipt };
     } else {
       const current = currentDate(now);
       if (!Number.isFinite(lastUnlockedAt)
@@ -1224,14 +1009,9 @@ function createDesktopIdentityVault({
   }
 
   return Object.freeze({
-    beginPasswordReset,
-    beginRegistration,
     beginUnifiedOnlineRegistration,
-    beginUnifiedOnlineRecovery,
     clear,
-    completePasswordReset,
     completeRegistration,
-    completeUnifiedOnlineRecovery,
     createAuthorityCommand,
     lock,
     refreshOfflineLease,
@@ -1240,7 +1020,7 @@ function createDesktopIdentityVault({
     signAuthorityHttpRequest,
     signChallenge,
     status,
-    unlock,
+    resume,
   });
 }
 

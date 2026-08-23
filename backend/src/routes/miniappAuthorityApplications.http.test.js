@@ -144,21 +144,18 @@ const { createApp } = require('../app');
       headers,
       body: JSON.stringify({
         requestedRole: 'student',
-        bindingHint: 'student-profile-optional',
       }),
     });
-    assert.strictEqual(submitted.status, 202, JSON.stringify(submitted.body));
+    assert.strictEqual(submitted.status, 200, JSON.stringify(submitted.body));
     assert.strictEqual(submitted.body.application.requestedRole, 'student');
     assert.strictEqual(submitted.body.application.state, 'submitted');
-    assert.strictEqual(submitted.body.command.status, 'pending');
+    assert.strictEqual(submitted.body.command.status, 'committed', JSON.stringify(submitted.body));
 
-    const command = db.prepare('SELECT * FROM host_commands WHERE command_id=?')
+    const command = db.prepare('SELECT * FROM authority_command_ledger WHERE command_id=?')
       .get(submitted.body.command.id);
-    const envelope = JSON.parse(command.envelope_json);
-    assert.strictEqual(envelope.type, 'role-application.submit.v1');
-    assert.strictEqual(envelope.actor.userId, 'visitor-http');
-    assert.strictEqual(envelope.actor.role, 'visitor');
-    assert.strictEqual(command.target_host_id, 'host-miniapp-http');
+    assert.strictEqual(command.command_type, 'role-application.submit.v1');
+    assert.strictEqual(command.actor_user_id, 'visitor-http');
+    assert.strictEqual(command.status, 'committed');
     assert.strictEqual(
       db.prepare('SELECT COUNT(*) count FROM miniapp_role_applications').get().count,
       0,
@@ -170,10 +167,9 @@ const { createApp } = require('../app');
       headers,
       body: JSON.stringify({
         requestedRole: 'student',
-        bindingHint: 'student-profile-optional',
       }),
     });
-    assert.strictEqual(replayed.status, 202, JSON.stringify(replayed.body));
+    assert.strictEqual(replayed.status, 200, JSON.stringify(replayed.body));
     assert.strictEqual(replayed.body.command.id, submitted.body.command.id);
     assert.strictEqual(replayed.body.command.replayed, true);
 
@@ -189,7 +185,7 @@ const { createApp } = require('../app');
       headers: { ...headers, 'x-idempotency-key': 'miniapp-role-http-visitor-teacher' },
       body: JSON.stringify({ requestedRole: 'teacher' }),
     });
-    assert.strictEqual(visitorTeacherApplication.status, 202, JSON.stringify(visitorTeacherApplication.body));
+    assert.strictEqual(visitorTeacherApplication.status, 200, JSON.stringify(visitorTeacherApplication.body));
     assert.strictEqual(visitorTeacherApplication.body.application.requestedRole, 'teacher');
 
     const formalSubmitted = await requestJson(origin, '/api/miniapp/applications', {
@@ -201,12 +197,11 @@ const { createApp } = require('../app');
       },
       body: JSON.stringify({ requestedRole: 'teacher' }),
     });
-    assert.strictEqual(formalSubmitted.status, 202, JSON.stringify(formalSubmitted.body));
-    const formalEnvelope = JSON.parse(db.prepare('SELECT envelope_json FROM host_commands WHERE command_id=?')
-      .get(formalSubmitted.body.command.id).envelope_json);
-    assert.strictEqual(formalEnvelope.actor.userId, 'student-http');
-    assert.strictEqual(formalEnvelope.actor.role, 'student');
-    assert.strictEqual(formalEnvelope.payload.requestedRole, 'teacher');
+    assert.strictEqual(formalSubmitted.status, 200, JSON.stringify(formalSubmitted.body));
+    const formalCommand = db.prepare('SELECT * FROM authority_command_ledger WHERE command_id=?')
+      .get(formalSubmitted.body.command.id);
+    assert.strictEqual(formalCommand.actor_user_id, 'student-http');
+    assert.strictEqual(formalCommand.command_type, 'role-application.submit.v1');
 
     const adminSelfApplication = await requestJson(origin, '/api/miniapp/applications', {
       method: 'POST',

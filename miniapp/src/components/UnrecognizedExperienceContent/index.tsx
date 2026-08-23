@@ -15,7 +15,7 @@ const actionCopy: Record<TaskType, string> = {
   'paper-export-pdf': '导出 PDF',
 };
 const statusCopy: Record<string, string> = {
-  pending_host: '等待数据主机',
+  pending_host: '等待云端',
   processing: '处理中',
   completed: '已完成',
   failed: '失败',

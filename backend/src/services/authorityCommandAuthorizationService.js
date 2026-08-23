@@ -1,5 +1,5 @@
 const { resolveActingScope } = require('./authorityAccessService');
-const { createAuthorityRuntimeHostEpochService } = require('./authorityRuntimeHostEpochService');
+const { createAuthorityCloudEpochService } = require('./authorityCloudEpochService');
 const { resolveCanonicalAuthorityRoleContext } = require('./authorityRoleGrantAdapter');
 
 function authorizationError(code, statusCode = 403) {
@@ -18,11 +18,11 @@ function createAuthorityCommandAuthorizationService({
     throw authorizationError('AUTHORITY_COMMAND_POLICY_REQUIRED', 500);
   }
 
-  const runtimeEpochs = createAuthorityRuntimeHostEpochService({ db });
+  const cloudEpochs = createAuthorityCloudEpochService({ db });
   function authorize(envelope = {}) {
-    const epoch = runtimeEpochs.find(envelope.hostEpochId);
+    const epoch = cloudEpochs.find(envelope.hostEpochId);
     if (!epoch || epoch.authority_id !== envelope.authorityId) {
-      throw authorizationError('AUTHORITY_HOST_EPOCH_INACTIVE');
+      throw authorizationError('AUTHORITY_CLOUD_EPOCH_INACTIVE');
     }
 
     const grant = db.prepare(`SELECT * FROM device_grants
@@ -90,7 +90,7 @@ function createAuthorityCommandAuthorizationService({
     return Object.freeze({
       authorityId: envelope.authorityId,
       hostEpochId: envelope.hostEpochId,
-      hostDeviceId: epoch.device_id,
+      authorityEpochGeneration: Number(epoch.generation),
       grantId: grant.grant_id,
       leaseId: lease.lease_id,
       scope: Object.freeze(scope),

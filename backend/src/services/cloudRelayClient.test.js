@@ -47,41 +47,6 @@ assert.deepStrictEqual(client.buildHeaders({
     await client.failMiniappTask('task-2', { claimToken: 'claim-2', expectedRowVersion: 1, errorCode: 'FAILED' }, auth);
     await client.queryMiniappTaskState('task-1', { ...auth, hostDeviceId: 'host-a' });
     await client.readRelayTaskActorGrant('task-1', auth);
-    await client.claimAuthorityCommands({ claimToken: 'authority-claim', leaseMs: 30000, limit: 5 }, auth);
-    await client.renewAuthorityCommand('authority-command-1', { claimToken: 'authority-claim', leaseMs: 30000 }, auth);
-    await client.publishAuthorityReceipt('authority-command-1', {
-      claimToken: 'authority-claim',
-      receipt: { commandId: 'authority-command-1', resultHash: 'result-hash' },
-    }, auth);
-    await client.publishAuthorityHostEpoch({
-      id: 'epoch-1',
-      authorityId: 'authority-1',
-      generation: 1,
-      deviceId: 'host-a',
-      hostSigningKey: {
-        algorithm: 'Ed25519',
-        publicKeyPem: 'host-public-key',
-        publicKeyFingerprint: 'a'.repeat(64),
-      },
-    }, auth);
-    await client.publishAuthorityControlRecords({
-      authorityId: 'authority-1',
-      hostEpochId: 'epoch-1',
-      hostGeneration: 1,
-      sourceVersion: 1,
-      accounts: [],
-      grants: [],
-      leases: [],
-    }, auth);
-    await client.readAuthorityControlRecords(auth);
-    await client.publishAuthorityProjection({
-      authorityId: 'authority-1',
-      hostEpochId: 'epoch-1',
-      userId: 'user-1',
-      role: 'visitor',
-      sourceVersion: 1,
-      signature: 'projection-signature',
-    }, auth);
     assert.deepStrictEqual(calls.map(call => call.url), [
       'https://relay.example/scheduling/api/cloud/tasks/claim',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/progress',
@@ -89,21 +54,11 @@ assert.deepStrictEqual(client.buildHeaders({
       'https://relay.example/scheduling/api/cloud/tasks/task-2/fail',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/state?hostDeviceId=host-a',
       'https://relay.example/scheduling/api/cloud/tasks/task-1/actor-grant',
-      'https://relay.example/scheduling/api/authority/host/commands/claim',
-      'https://relay.example/scheduling/api/authority/host/commands/authority-command-1/renew',
-      'https://relay.example/scheduling/api/authority/host/commands/authority-command-1/receipt',
-      'https://relay.example/scheduling/api/authority/host/epoch',
-      'https://relay.example/scheduling/api/authority/host/control-records',
-      'https://relay.example/scheduling/api/authority/host/control-records',
-      'https://relay.example/scheduling/api/authority/host/projections',
     ]);
     assert.ok(calls.every(call => call.options.headers['x-gewu-host-credential'] === 'managed-host-credential'));
-    assert.strictEqual(calls[11].options.method, undefined, 'control cache read must be an authenticated GET');
     assert.strictEqual(calls[0].body.hostDeviceId, 'host-a');
-    const authoritySource = client.createAuthorityCommandSource(auth);
-    assert.strictEqual(typeof authoritySource.claim, 'function');
-    assert.strictEqual(typeof authoritySource.renew, 'function');
-    assert.strictEqual(typeof authoritySource.publishReceipt, 'function');
+    assert.doesNotMatch(source, /\/api\/authority\/host\//,
+      'storage relay client must not expose retired host-authority endpoints');
 
     global.fetch = async () => ({
       ok: false,

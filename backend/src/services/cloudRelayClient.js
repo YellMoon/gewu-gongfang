@@ -112,98 +112,6 @@ async function readRelayTaskActorGrant(taskId, options = {}) {
   return readJsonResponse(res);
 }
 
-async function claimAuthorityCommands(payload = {}, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured', { commands: [] });
-  return postJson(`${base}/api/authority/host/commands/claim`, payload, options);
-}
-
-async function renewAuthorityCommand(commandId, payload = {}, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(
-    `${base}/api/authority/host/commands/${encodeURIComponent(commandId)}/renew`,
-    payload,
-    options,
-  );
-}
-
-async function publishAuthorityReceipt(commandId, payload = {}, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(
-    `${base}/api/authority/host/commands/${encodeURIComponent(commandId)}/receipt`,
-    payload,
-    options,
-  );
-}
-
-async function publishAuthorityProjection(projection, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(
-    `${base}/api/authority/host/projections`,
-    { projection },
-    options,
-  );
-}
-
-async function publishAuthorityHostEpoch(epoch, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(
-    `${base}/api/authority/host/epoch`,
-    { epoch },
-    options,
-  );
-}
-
-async function publishAuthorityControlRecords(snapshot, options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  return postJson(
-    `${base}/api/authority/host/control-records`,
-    { snapshot },
-    options,
-  );
-}
-
-async function readAuthorityHostEpoch(options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  const res = await fetch(`${base}/api/authority/host/epoch`, { headers: buildHeaders(options) });
-  return readJsonResponse(res);
-}
-
-async function readAuthorityControlRecords(options = {}) {
-  const base = taskOperationBaseUrl(options);
-  if (!base) return skipped('GEWU_CLOUD_BASE_URL is not configured');
-  const res = await fetch(`${base}/api/authority/host/control-records`, {
-    headers: buildHeaders(options),
-  });
-  return readJsonResponse(res);
-}
-
-function createAuthorityCommandSource(options = {}) {
-  return Object.freeze({
-    async claim(input) {
-      const response = await claimAuthorityCommands(input, options);
-      return Array.isArray(response.commands) ? response.commands : [];
-    },
-    async renew(input) {
-      const response = await renewAuthorityCommand(input.commandId, input, options);
-      return response.claim;
-    },
-    async publishReceipt(receipt, claim) {
-      const response = await publishAuthorityReceipt(receipt.commandId, {
-        claimToken: claim?.claimToken,
-        receipt,
-      }, options);
-      return response.receipt;
-    },
-  });
-}
-
 module.exports = {
   IDENTITY_PROVISIONING_CAPABILITY,
   hostCapabilities,
@@ -215,15 +123,6 @@ module.exports = {
   failMiniappTask,
   queryMiniappTaskState,
   readRelayTaskActorGrant,
-  claimAuthorityCommands,
-  renewAuthorityCommand,
-  publishAuthorityReceipt,
-  publishAuthorityControlRecords,
-  readAuthorityHostEpoch,
-  readAuthorityControlRecords,
-  publishAuthorityHostEpoch,
-  publishAuthorityProjection,
-  createAuthorityCommandSource,
   buildHeaders,
   readJsonResponse,
   // 共享逻辑

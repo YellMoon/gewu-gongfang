@@ -49,4 +49,12 @@ assert.strictEqual(lock.current(), 'submit');
 lock.release('submit');
 assert.strictEqual(lock.tryAcquire('refresh'), true);
 
+const runtimeSource = require('fs').readFileSync(__dirname + '/applicationRuntime.js', 'utf8');
+for (const retiredTerm of [
+  String.fromCharCode(25968, 25454, 20027, 26426),
+  String.fromCharCode(26412, 22320, 20027, 26426),
+]) {
+  assert.ok(!runtimeSource.includes(retiredTerm), `miniapp role flow must not retain retired authority wording: ${retiredTerm}`);
+}
+
 console.log('account application runtime checks passed');

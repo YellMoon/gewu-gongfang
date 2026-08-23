@@ -8,20 +8,7 @@ const { authorityHttpSigningPayload } = require('../../../shared/authorityHttpAu
 const { stableJson } = require('../../../shared/authorityProtocol');
 const { createSignedAuthorityProjection } = require('../../../shared/authorityProjectionProtocol');
 const { createAuthorityProjectionStoreService } = require('../services/authorityProjectionStoreService');
-
-const rootPackage = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'package.json'), 'utf8');
-for (const testFile of [
-  'backend/src/routes/authorityProtocol.http.test.js',
-  'backend/src/routes/authorityProtocolApp.http.test.js',
-  'backend/src/routes/authorityCloudControl.http.test.js',
-  'backend/src/services/authorityCommandInboxService.test.js',
-  'backend/src/services/authorityCommandAuthorizationService.test.js',
-  'backend/src/services/authorityCommandInboxSchema.test.js',
-  'backend/src/services/authorityDeviceControlCache.test.js',
-  'backend/src/websocket/cloudRelayAuthorityServer.test.js',
-]) {
-  assert.ok(rootPackage.includes(testFile), `${testFile} must run in the root backend test command`);
-}
+const { createAuthorityCloudEpochService } = require('../services/authorityCloudEpochService');
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-authority-app-http-'));
 process.env.NODE_ENV = 'test';
@@ -38,7 +25,7 @@ const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toSt
 const actor = Object.freeze({ userId: testUser.id, deviceId: 'device-app-1', role: 'teacher' });
 const activeLeaseExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 const payload = Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'signed LAN command' }) });
-const envelope = Object.freeze({
+let envelope = Object.freeze({
   protocol: 'gewu.authority-command.v1',
   commandId: 'app-command-1',
   idempotencyKey: 'app-key-1',
@@ -95,6 +82,8 @@ database.db.prepare(`INSERT INTO authority_accounts
   VALUES('admin-target-app-1',?,'active',?,?)`)
   .run(envelope.authorityId, envelope.createdAt, envelope.createdAt);
 database.db.pragma('foreign_keys = ON');
+const cloudEpoch = createAuthorityCloudEpochService({ db: database.db }).ensure(envelope.authorityId);
+envelope = Object.freeze({ ...envelope, hostEpochId: cloudEpoch.id });
 const databaseModule = require('../database');
 databaseModule.getInstance = () => database;
 delete require.cache[require.resolve('../app')];
@@ -121,7 +110,7 @@ const { createApp } = require('../app');
     }
     assert.strictEqual(response.status, 401, 'the formal app route must exist and reject an unauthenticated actor');
     assert.strictEqual(body.error.code, 'AUTHORITY_ACTOR_REQUIRED');
-    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM host_commands').get().count, 0);
+    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM authority_command_ledger').get().count, 0);
 
     const requestPath = '/api/authority/commands';
     const signature = crypto.sign(null, Buffer.from(authorityHttpSigningPayload({
@@ -142,9 +131,21 @@ const { createApp } = require('../app');
       body: JSON.stringify(envelope),
     });
     const signedBody = await signedResponse.json();
-    assert.strictEqual(signedResponse.status, 202, JSON.stringify(signedBody));
+    assert.strictEqual(signedResponse.status, 200, JSON.stringify(signedBody));
     assert.strictEqual(signedBody.command.id, envelope.commandId);
-    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM host_commands').get().count, 1);
+    assert.strictEqual(signedBody.receipt.commandId, envelope.commandId);
+    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM authority_command_ledger').get().count, 1);
+
+    const retiredHostRoute = await fetch(`${baseUrl}/api/authority/host/commands/claim`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ limit: 1 }),
+    });
+    assert.strictEqual(retiredHostRoute.status, 404,
+      'the cloud app must not retain a host command-claim compatibility route');
 
     const directGrantPayload = Object.freeze({ userId: 'admin-target-app-1' });
     const directGrant = Object.freeze({
@@ -170,8 +171,9 @@ const { createApp } = require('../app');
       body: JSON.stringify(directGrant),
     });
     const forbiddenGrantBody = await forbiddenGrant.json();
-    assert.strictEqual(forbiddenGrant.status, 403);
-    assert.strictEqual(forbiddenGrantBody.error.code, 'AUTHORITY_COMMAND_SCOPE_FORBIDDEN');
+    assert.strictEqual(forbiddenGrant.status, 200);
+    assert.strictEqual(forbiddenGrantBody.receipt.status, 'rejected');
+    assert.strictEqual(forbiddenGrantBody.receipt.result.error.code, 'AUTHORITY_COMMAND_SCOPE_FORBIDDEN');
 
     const superActor = Object.freeze({ ...actor, role: 'super_admin' });
     const superGrant = Object.freeze({
@@ -196,13 +198,13 @@ const { createApp } = require('../app');
       body: JSON.stringify(superGrant),
     });
     const superGrantBody = await superGrantResponse.json();
-    assert.strictEqual(superGrantResponse.status, 202, JSON.stringify(superGrantBody));
+    assert.strictEqual(superGrantResponse.status, 200, JSON.stringify(superGrantBody));
     assert.strictEqual(superGrantBody.command.id, superGrant.commandId);
     assert.strictEqual(
-      JSON.parse(database.db.prepare('SELECT envelope_json FROM host_commands WHERE command_id=?')
-        .get(superGrant.commandId).envelope_json).type,
+      database.db.prepare('SELECT command_type FROM authority_command_ledger WHERE command_id=?')
+        .get(superGrant.commandId).command_type,
       'role-admin.grant.v1',
-      'only a signed super-admin device can queue a direct admin grant to the authority host',
+      'only a signed super-admin device can commit a direct admin grant in the cloud authority',
     );
     const projection = createSignedAuthorityProjection({
       authorityId: envelope.authorityId,

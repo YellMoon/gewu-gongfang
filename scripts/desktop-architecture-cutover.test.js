@@ -19,11 +19,9 @@ assert.ok(!packageJson.includes('singleUserPairingClient'), 'test commands must 
   'backend/src/schema.sql',
   'scripts/audit-runtime-evidence.js',
   'scripts/check_deploy_readiness.js',
-  'public/primaryHostRuntimeManager.js',
   'src/services/desktopIdentityClient.mjs',
   'src/pages/IdentityDeviceCenter.tsx',
   'public/electron.js',
-  'scripts/real-two-desktop-e2e.js',
   'src/custom.d.ts',
 ].forEach(relativePath => {
   const source = read(relativePath);
@@ -69,6 +67,18 @@ for (const relativePath of [
   'src/services/websocketClient.mjs',
   'src/services/websocketClient.test.js',
   'scripts/packaged-host-identity-ui.test.js',
+  'scripts/real-two-desktop-e2e.js',
+  'public/desktopIdentityKind.js',
+  'public/desktopCredentialStore.js',
+  'public/primaryHostCredentialStore.js',
+  'public/primaryHostOperationValidation.js',
+  'public/primaryHostRuntimeManager.js',
+  'public/primaryHostRuntimeStatus.js',
+  'public/primaryHostRelaunchReadiness.js',
+  'public/primaryHostLocalProjectionReader.js',
+  'public/primaryHostLocalDraftExecutor.js',
+  'public/primaryHostListenPolicy.js',
+  'public/windowsHostFirewall.js',
 ].forEach(absent);
 
 console.log('desktop architecture cutover checks passed');

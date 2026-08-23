@@ -61,22 +61,13 @@ interface Window {
   };
   desktopIdentity?: {
     status(): Promise<any>;
-    beginRegistration(input?: { deviceName?: string }): Promise<any>;
     beginUnifiedOnlineRegistration(input?: { deviceName?: string }): Promise<any>;
-    beginPasswordReset(): Promise<any>;
     completeRegistration(input: {
-      password: string;
       authorization: Record<string, any>;
       profile: Record<string, any>;
       offlineLease?: Record<string, any> | null;
     }): Promise<any>;
-    completePasswordReset(input: {
-      password: string;
-      authorization: Record<string, any>;
-      profile: Record<string, any>;
-      offlineLease?: Record<string, any> | null;
-    }): Promise<any>;
-    unlock(input: { password: string }): Promise<any>;
+    resume(): Promise<any>;
     lock(): Promise<any>;
     refreshOfflineLease(input: Record<string, any>): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
