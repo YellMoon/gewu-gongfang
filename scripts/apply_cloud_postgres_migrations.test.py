@@ -41,7 +41,7 @@ class CloudPostgresMigrationTests(unittest.TestCase):
     def test_applies_once_and_rejects_hash_drift(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
-            (root / "20260823-a.sql").write_text("SELECT 1;\n", encoding="utf-8")
+            (root / "20260823-a.sql").write_text("BEGIN;\nSELECT 1;\nCOMMIT;\n", encoding="utf-8")
             rows = read_migrations(root)
             executor = FakeExecutor()
             self.assertEqual(apply_migrations(executor, rows), {"applied": ["20260823-a.sql"], "skipped": []})
