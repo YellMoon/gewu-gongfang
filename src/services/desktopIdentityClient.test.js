@@ -136,7 +136,7 @@ async function main() {
       }
       if (url === 'https://cloud.test/api/business/desktop-projection') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
-        return { ok: true, json: async () => ({ ok: true, projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }) };
+        return { ok: true, json: async () => ({ ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }) };
       }
       if (url === 'https://cloud.test/api/desktop/question-bank/questions?limit=200') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -337,7 +337,7 @@ async function main() {
   const cloudProjection = await unifiedCloudClient.listCloudBusinessProjection({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });
-  assert.deepStrictEqual(cloudProjection, { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] });
+  assert.deepStrictEqual(cloudProjection, { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/desktop-projection');
   const cloudQuestions = await unifiedCloudClient.listCloudQuestions({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,

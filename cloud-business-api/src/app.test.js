@@ -183,17 +183,17 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const desktopProjection = await request(createCloudBusinessApp({
     query: async (text, values) => {
       projectionQueries.push([text, values]);
-      return { rows: [{ projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }] };
+      return { rows: [{ projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] } }] };
     },
     desktopRegistration: identity,
     businessTenantId: 'default',
   }), '/api/business/desktop-projection', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(desktopProjection.status, 200);
   assert.deepStrictEqual(desktopProjection.body, {
-    ok: true, projection: { students: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] },
+    ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [] },
   });
   assert.deepStrictEqual(projectionQueries[0][1], ['default']);
-  assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.schedules'));
+  assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.student_contact_directory') && projectionQueries[0][0].includes('business.schedules'));
   const businessWrites = [];
   const scheduleUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),

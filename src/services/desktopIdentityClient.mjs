@@ -924,7 +924,7 @@ export function createDesktopIdentityClient({
     });
     const projection = data?.projection;
     if (!projection || typeof projection !== 'object' || Array.isArray(projection)
-      || !['students', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms'].every(key => Array.isArray(projection[key]))) {
+      || !['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms'].every(key => Array.isArray(projection[key]))) {
       throw identityError('DESKTOP_CLOUD_PROJECTION_RESPONSE_INVALID');
     }
     return projection;
