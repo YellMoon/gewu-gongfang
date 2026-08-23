@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.1.1",
+  "version": "8.1.2",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
