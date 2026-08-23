@@ -9,5 +9,7 @@ assert.ok(source.includes('db.deleteCloudCachedQuestion'),
   'cloud-cached questions must create encrypted delete drafts instead of calling the retired embedded backend');
 assert.ok(!source.includes('persistRemoteThenLocal('),
   'question preview edits must create encrypted drafts instead of directly writing to the retired embedded backend');
+assert.ok(!source.includes("getApiBase('/api/question-bank')") && !source.includes('/storage/status'),
+  'question preview must not depend on an embedded host or removable-disk storage status');
 
 console.log('question bank preview cloud authority checks passed');

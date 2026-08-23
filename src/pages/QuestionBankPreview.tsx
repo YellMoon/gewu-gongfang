@@ -13,7 +13,6 @@ import {
 import type { Question, KnowledgeNode, QuestionVersion, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
-import { getApiBase } from '../utils/apiBase';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
@@ -43,7 +42,6 @@ const legacyTaxonomyUiEnabled = () => false;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 // utf-8
-const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
 
 type QuestionBankStorageStatus = {
@@ -261,13 +259,7 @@ const QuestionBankPreview: React.FC = () => {
   );
 
   const fetchQuestionBankStorageStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/storage/status`);
-      const data = await res.json();
-      if (data.success) setQuestionBankStorageStatus(data.status || null);
-    } catch (_err) {
-      setQuestionBankStorageStatus(null);
-    }
+    setQuestionBankStorageStatus(null);
   }, []);
 
   const normalizeQuestion = (row: any): Question => ({
