@@ -15,4 +15,8 @@ assert.ok(!source.includes('prepareQuestionAssetsForStorage') && !source.include
   'the import page must not write assets or reconcile a local question bank as an import authority');
 assert.ok(!source.includes('if (questionBankStorageUnavailable)'),
   'a removable disk status must not block the cloud and NAS import architecture');
+assert.ok(!source.includes("getApiBase('/api/question-bank')") && !source.includes('/storage/status'),
+  'the import page must not read retired local question-bank or removable-disk storage state');
+assert.ok(!source.includes('/imports/${task.id}') && !source.includes('getRecentImportTasks') && !source.includes('getImportTaskDetail'),
+  'the import page must not fall back to retired local import history or task-detail endpoints');
 console.log('question bank import cloud authority checks passed');

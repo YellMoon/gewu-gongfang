@@ -11,7 +11,6 @@ import {
 import type { Question, KnowledgeNode, ImportTask, ImportTaskItem, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
-import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
 import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
@@ -36,31 +35,6 @@ const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '�
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
-
-const API_BASE = getApiBase('/api/question-bank');
-
-type QuestionBankStorageStatus = {
-  configured?: boolean;
-  available?: boolean;
-  writable?: boolean;
-  root?: string;
-  reason?: string;
-  detail?: string;
-};
-
-type ImportBatch = {
-  id: string;
-  status: string;
-  total_items: number;
-  accepted_items: number;
-  warning_items?: number;
-  failed_items?: number;
-  duplicate_items: number;
-  rejected_items: number;
-  quality_report?: any;
-  commit_result?: any;
-  items?: any[];
-};
 
 type ExamMeta = {
   year?: string;
@@ -257,7 +231,6 @@ const QuestionBankImport: React.FC = () => {
   const [treeVisible, setTreeVisible] = useState(true);
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
-  const [importBatch, setImportBatch] = useState<ImportBatch | null>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
   const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
@@ -266,11 +239,10 @@ const QuestionBankImport: React.FC = () => {
   const [validationSummary, setValidationSummary] = useState<ImportValidationSummary>({ success: 0, warning: 0, failed: 0, total: 0 });
   const [commitResult, setCommitResult] = useState<ImportCommitResult | null>(null);
   const [cloudImportTask, setCloudImportTask] = useState<CloudImportTask | null>(null);
-  const [recentImportTasks, setRecentImportTasks] = useState<ImportTask[]>([]);
+  const [recentImportTasks] = useState<ImportTask[]>([]);
   const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
   const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
-  const [examPapers, setExamPapers] = useState<any[]>([]);
-  const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
+  const [examPapers] = useState<any[]>([]);
   const [examForm] = Form.useForm();
   const [form] = Form.useForm();
   const saveGate = useRef(createQuestionEditorSaveGate()).current;
@@ -312,37 +284,14 @@ const QuestionBankImport: React.FC = () => {
   useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(modalVisible, editorDirty)), [modalVisible, editorDirty]);
   const examMetaRef = useRef<any>(null);
 
-  const questionBankStorageUnavailable = !!(
-    questionBankStorageStatus?.configured && questionBankStorageStatus.available === false
-  );
-
-  const fetchQuestionBankStorageStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/storage/status`);
-      const data = await res.json();
-      if (data.success) setQuestionBankStorageStatus(data.status || null);
-    } catch (_err) {
-      setQuestionBankStorageStatus(null);
-    }
-  }, []);
-
   const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
-      let localQuestions: Question[] = [];
-      if (db) {
-        localQuestions = (db.getAllQuestions?.() || []).map(normalizeQuestion);
-      }
       try {
-        const res = await fetch(`${API_BASE}/questions?limit=200`);
-        const data = await res.json();
-        if (data.success && Array.isArray(data.data)) {
-          setQuestions(data.data.map(normalizeQuestion));
-        } else {
-          setQuestions(localQuestions);
-        }
+        const remoteQuestions = await (window as any).desktopIdentitySessionProvider?.listCloudQuestions?.();
+        setQuestions(Array.isArray(remoteQuestions) ? remoteQuestions.map(normalizeQuestion) : []);
       } catch (_err) {
-        setQuestions(localQuestions);
+        setQuestions([]);
       }
       if (!db) return;
       const kn = db.getKnowledgeTree?.() || [];
@@ -357,7 +306,6 @@ const QuestionBankImport: React.FC = () => {
         db.initDefaultModelTree?.();
         setModelNodes(db.getModelTree?.() || []);
       }
-      setRecentImportTasks(db.getRecentImportTasks?.(8) || []);
     } catch (e) {
       console.error('QuestionBankImport loadData error:', e);
     }
@@ -365,26 +313,7 @@ const QuestionBankImport: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    fetchQuestionBankStorageStatus();
-  }, [loadData, fetchQuestionBankStorageStatus]);
-
-  const loadExamPapers = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/exam-papers`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setExamPapers(data.data);
-      }
-    } catch (_err) {
-      // fallback to empty array on error
-    }
-  }, []);
-
-  useEffect(() => {
-    if (wordSourceType === 'exam') {
-      loadExamPapers();
-    }
-  }, [wordSourceType, loadExamPapers]);
+  }, [loadData]);
 
   useEffect(() => {
     if (!contextMenuNode) return;
@@ -823,7 +752,6 @@ const QuestionBankImport: React.FC = () => {
         metadata: { ...(examMeta || {}), sourceFileName: file.name },
       });
       setCloudImportTask(task);
-      setImportBatch(null);
       setImportStep(2);
       message.info('\u539f\u4ef6\u5df2\u52a0\u5bc6\u4ea4\u7ed9 NAS \u4ee3\u7406\uff0c\u6b63\u5728\u4e91\u7aef\u89e3\u6790\u3002');
     } catch (error: any) {
@@ -896,7 +824,6 @@ const QuestionBankImport: React.FC = () => {
   const handleSelectWordFile = (file: File) => {
     setSelectedWordFile(file);
     setWordResult(null);
-    setImportBatch(null);
     setValidationRows([]);
     setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
     setCommitResult(null);
@@ -931,37 +858,8 @@ const QuestionBankImport: React.FC = () => {
     startCloudImport(selectedWordFile, meta);
   };
 
-  const openImportTaskDetail = async (task: ImportTask) => {
-    const db = (window as any).dbService;
-    let detail = db?.getImportTaskDetail?.(task.id) || null;
-    if (!detail) {
-      try {
-        const res = await fetch(`${API_BASE}/imports/${task.id}`);
-        const data = await res.json();
-        if (data.success && data.data) {
-          detail = {
-            ...task,
-            ...data.data,
-            items: (data.data.items || []).map((item: any) => ({
-              id: item.id,
-              task_id: item.task_id || item.batch_id || task.id,
-              item_index: item.item_index || 0,
-              question_id: item.question_id || '',
-              content_hash: item.content_hash || '',
-              status: item.status || 'pending',
-              quality_score: Number(item.quality_score || 0),
-              warnings: Array.isArray(item.warnings) ? item.warnings : [],
-              errors: Array.isArray(item.errors) ? item.errors : [],
-              error_message: item.error_message || '',
-              payload: item.payload || null,
-              created_at: item.created_at || data.data.created_at,
-              updated_at: item.updated_at || data.data.updated_at,
-            })),
-          };
-        }
-      } catch (_err) {}
-    }
-    setImportTaskDetail(detail || { ...task, items: [] });
+  const openImportTaskDetail = (task: ImportTask) => {
+    setImportTaskDetail({ ...task, items: [] });
     setImportTaskDrawerOpen(true);
   };
 
