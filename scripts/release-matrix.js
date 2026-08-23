@@ -139,9 +139,15 @@ function isPartiallyVerifiedManifest(manifest) {
     && states.some(state => state.status === 'pending');
 }
 
+function isRecoverableIncompleteManifest(manifest) {
+  const validation = validateManifest(manifest);
+  if (validation.issues.length > 0 || isReleaseComplete(manifest)) return false;
+  return DEFAULT_TARGETS.some(target => manifest.targets[target].status === 'verified');
+}
+
 function archivePartiallyVerifiedManifest({ manifestPath, manifest, reason, recoveredAt = new Date().toISOString(), supersededByCommit } = {}) {
-  if (!manifestPath || !isPartiallyVerifiedManifest(manifest)) {
-    throw new Error('Only a partially verified release manifest may be recovered explicitly');
+  if (!manifestPath || !isRecoverableIncompleteManifest(manifest)) {
+    throw new Error('Only an incomplete release manifest may be recovered explicitly');
   }
   if (!reason || typeof reason !== 'string') throw new Error('A recovery reason is required for a partially verified release manifest');
   const archivePath = `${historicalManifestPath(manifestPath, manifest).replace(/\.json$/u, '')}-recovered.json`;

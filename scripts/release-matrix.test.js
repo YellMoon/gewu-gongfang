@@ -169,6 +169,29 @@ try {
   assert.ok(Object.values(matrix.readManifest(manifestPath).targets).every(target => target.status === 'pending'),
     'a recovered manifest must require fresh target receipts instead of carrying old verification forward');
 
+  const developmentOnlyMiniapp = matrix.createReleaseManifest({ version: '7.2.0', commit: 'development-only-source' });
+  for (const target of ['desktop', 'cloud_business', 'storage_proxy', 'miniapp']) {
+    matrix.recordReceipt(developmentOnlyMiniapp, {
+      target,
+      version: '7.2.0',
+      evidence: `${target}-deployed`,
+      ...(target === 'miniapp' ? { releaseLevel: 'development' } : {}),
+    });
+  }
+  assert.strictEqual(matrix.isReleaseComplete(developmentOnlyMiniapp), false,
+    'a development-only miniapp receipt must keep an otherwise deployed release incomplete');
+  matrix.writeManifest(manifestPath, developmentOnlyMiniapp);
+  const recoveredDevelopmentOnly = matrix.recoverPartiallyPublishedManifest({
+    rootDir: fixtureRoot,
+    manifestPath,
+    commit: 'development-only-recovered-source',
+    reason: 'the WeChat production receipt was unavailable for an otherwise deployed release',
+  });
+  assert.ok(fs.existsSync(recoveredDevelopmentOnly.archivedManifestPath),
+    'an incomplete development-only miniapp release must be recoverable without deleting its evidence');
+  assert.strictEqual(matrix.readManifest(manifestPath).commit, 'development-only-recovered-source',
+    'recovery must prepare a new manifest after preserving the development-only release record');
+
   const staleVersionPartial = matrix.createReleaseManifest({ version: '7.2.0', commit: 'old-version-partial' });
   matrix.recordReceipt(staleVersionPartial, {
     target: 'cloud_business', version: '7.2.0', evidence: 'old-version-cloud',
