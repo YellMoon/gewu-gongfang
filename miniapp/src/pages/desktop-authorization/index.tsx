@@ -10,7 +10,7 @@ import {
   parseDesktopAuthorizationChallengeId,
   projectDesktopAuthorizationChallenge,
 } from '../../utils/desktopAuthorizationRuntime';
-import { normalizeManualPhone, validateManualPhone } from '../login/manualPhoneLoginRuntime';
+import { normalizeManualPhone, validateManualPhone } from '../../utils/manualPhone';
 import './index.scss';
 
 type Challenge = {
