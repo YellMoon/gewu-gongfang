@@ -283,9 +283,6 @@ function recoverPartiallyPublishedManifest({
   const version = matrix.desktop;
   assertSourceVersionMatrix(matrix, version);
   const existing = readManifest(manifestPath);
-  if (existing.version !== version) {
-    throw new Error(`Partial release version mismatch: active ${existing.version}, source ${version}`);
-  }
   const archivedManifestPath = archivePartiallyVerifiedManifest({
     manifestPath,
     manifest: existing,

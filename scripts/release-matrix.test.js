@@ -134,6 +134,27 @@ try {
   assert.ok(Object.values(matrix.readManifest(manifestPath).targets).every(target => target.status === 'pending'),
     'a recovered manifest must require fresh target receipts instead of carrying old verification forward');
 
+  const staleVersionPartial = matrix.createReleaseManifest({ version: '7.2.0', commit: 'old-version-partial' });
+  matrix.recordReceipt(staleVersionPartial, {
+    target: 'cloud_business', version: '7.2.0', evidence: 'old-version-cloud',
+  });
+  matrix.writeManifest(manifestPath, staleVersionPartial);
+  for (const relativePath of ['package.json', 'cloud-business-api/package.json', 'miniapp/package.json']) {
+    fs.writeFileSync(path.join(fixtureRoot, relativePath), JSON.stringify({ version: '7.2.1' }), 'utf8');
+  }
+  const recoveredStaleVersion = matrix.recoverPartiallyPublishedManifest({
+    rootDir: fixtureRoot,
+    manifestPath,
+    commit: 'new-version-source',
+    reason: 'the audited patch release supersedes an incomplete older version',
+  });
+  assert.strictEqual(recoveredStaleVersion.action, 'recovered-and-prepared',
+    'an explicit recovery must permit a new source version after preserving the partial old release');
+  const staleVersionArchive = JSON.parse(fs.readFileSync(recoveredStaleVersion.archivedManifestPath, 'utf8'));
+  assert.strictEqual(staleVersionArchive.version, '7.2.0', 'the archived partial release must retain its original version');
+  assert.strictEqual(matrix.readManifest(manifestPath).version, '7.2.1',
+    'the active manifest must bind the newer source version rather than reusing old receipts');
+
   const completedHistoricalManifest = {
     schema: matrix.MANIFEST_SCHEMA,
     version: '7.1.9',
@@ -146,9 +167,9 @@ try {
   };
   fs.writeFileSync(manifestPath, `${JSON.stringify(completedHistoricalManifest, null, 2)}\n`, 'utf8');
   const prepared = matrix.prepareReleaseManifest({ rootDir: fixtureRoot, commit: 'newcommit' });
-  assert.strictEqual(prepared.manifest.version, '7.2.0', 'a new source version must create a fresh release manifest');
+  assert.strictEqual(prepared.manifest.version, '7.2.1', 'a new source version must create a fresh release manifest');
   assert.ok(fs.existsSync(prepared.archivedManifestPath), 'a completed historical manifest must be preserved before replacement');
-  assert.strictEqual(matrix.readManifest(manifestPath).version, '7.2.0', 'the active path must point only to the new release');
+  assert.strictEqual(matrix.readManifest(manifestPath).version, '7.2.1', 'the active path must point only to the new release');
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }
