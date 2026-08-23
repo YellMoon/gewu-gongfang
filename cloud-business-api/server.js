@@ -7,6 +7,7 @@ const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutation
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createBusinessStudentUpdate } = require('./src/businessStudentMutationService');
 const { createBusinessStudentRecordUpdate } = require('./src/businessStudentRecordMutationService');
+const { createBusinessStudentLifecycleMutations } = require('./src/businessStudentLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
@@ -267,6 +268,7 @@ function createDesktopRegistrationFromEnvironment() {
   const businessStudentRecordUpdate = createBusinessStudentRecordUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
+  const businessStudentLifecycleMutations = createBusinessStudentLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   return {
     registration,
     desktopPasswordAuthentication,
@@ -278,6 +280,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessScheduleStudentOverride,
     businessStudentUpdate,
     businessStudentRecordUpdate,
+    businessStudentLifecycleMutations,
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
   };
 }
@@ -349,6 +352,7 @@ const app = createCloudBusinessApp({
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   businessStudentUpdate: desktopRuntime?.businessStudentUpdate || null,
   businessStudentRecordUpdate: desktopRuntime?.businessStudentRecordUpdate || null,
+  businessStudentLifecycleMutations: desktopRuntime?.businessStudentLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
