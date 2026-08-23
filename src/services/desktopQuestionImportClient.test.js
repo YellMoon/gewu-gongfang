@@ -40,6 +40,7 @@ async function main() {
     fetchImpl: async (url, options = {}) => {
       assetCalls.push({ url, options });
       if (url.endsWith('/relay-key')) return { ok: true, status: 200, json: async () => ({ ok: true, agentPublicKey: 'A'.repeat(44), agentKeyFingerprint: 'b'.repeat(64) }) };
+      if (url.endsWith('/relay/task_87654321')) return { ok: true, status: 200, json: async () => ({ ok: true, relay: { taskId: 'task_87654321', assetId: 'asset_87654321', state: 'verified', verifiedAt: '2026-08-23T00:01:00.000Z' } }) };
       return { ok: true, status: 200, json: async () => ({ ok: true, relay: { taskId: 'task_87654321', assetId: 'asset_87654321', expiresAt: '2026-08-23T00:15:00.000Z' } }) };
     },
   });
@@ -52,6 +53,9 @@ async function main() {
   assert.strictEqual(assetCalls[0].options.headers.Authorization, 'Bearer desktop-token');
   assert.ok(!assetCalls[1].options.body.includes('asset-payload'), 'plaintext asset bytes must not be sent to cloud');
   assert.strictEqual(JSON.parse(assetCalls[1].options.body).questionId, 'question-1');
+  const relayStatus = await assetClient.readAssetRelay('task_87654321');
+  assert.deepStrictEqual(relayStatus, { taskId: 'task_87654321', assetId: 'asset_87654321', state: 'verified', verifiedAt: '2026-08-23T00:01:00.000Z' });
+  assert.strictEqual(assetCalls[2].options.headers.Authorization, 'Bearer desktop-token');
 }
 
 main().then(() => console.log('desktop question import client checks passed')).catch(error => { console.error(error); process.exitCode = 1; });

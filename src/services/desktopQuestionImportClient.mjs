@@ -51,6 +51,16 @@ function relayRow(value) {
   }
   return value;
 }
+function relayStatusRow(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || !ids(value.taskId, 'task') || !ids(value.assetId, 'asset')
+    || !['queued', 'leased', 'verified', 'failed_retryable', 'quarantined'].includes(value.state)
+    || !(value.verifiedAt === null || (typeof value.verifiedAt === 'string' && new Date(value.verifiedAt).toISOString() === value.verifiedAt))) {
+    throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+  }
+  if ((value.state === 'verified') !== (typeof value.verifiedAt === 'string')) throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+  return value;
+}
 
 export function createDesktopQuestionImportClient(config = {}, deps = {}) {
   const fetchImpl = deps.fetchImpl || globalThis.fetch;
@@ -138,6 +148,11 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
         }),
       });
       return relayRow((await responseJson(response)).relay);
+    },
+    async readAssetRelay(taskId) {
+      if (!ids(taskId, 'task')) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
+      const response = await fetchImpl(`${assetBase}/relay/${encodeURIComponent(taskId)}`, { headers: authorization(deps) });
+      return relayStatusRow((await responseJson(response)).relay);
     },
   });
 }

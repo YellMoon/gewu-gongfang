@@ -225,6 +225,22 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
     roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
   });
+  let miniappCoreWriteCalled = false;
+  const miniappCannotUpdateSchedule = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessScheduleUpdate: async () => { miniappCoreWriteCalled = true; return { id: 'schedule-1', updatedAt: '2026-08-22T01:05:00.000Z' }; },
+    miniappCloudAccount: miniappIdentity,
+    businessTenantId: 'default',
+  }), '/api/business/schedules/schedule-1', {
+    method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' },
+    body: {
+      expectedUpdatedAt: '2026-08-22T01:00:00.000Z', startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z',
+      status: 1, roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
+    },
+  });
+  assert.strictEqual(miniappCannotUpdateSchedule.status, 403);
+  assert.deepStrictEqual(miniappCannotUpdateSchedule.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  assert.strictEqual(miniappCoreWriteCalled, false, 'a miniapp ticket must not reach core teaching mutations');
   const studentWrites = [];
   const studentUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -477,19 +493,13 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(agentCandidates.status, 200);
   assert.strictEqual(agentCandidates.body.task.status, 'candidates_ready');
   assert.deepStrictEqual(importAgentCalls.map(call => call[0]), ['authorize', 'completeSourceAndStoreCandidates']);
-  const createdQuestion = await request(questionApp, '/api/desktop/question-bank/questions', {
+  const directQuestionWrite = await request(questionApp, '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
       stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false,
     },
   });
-  assert.strictEqual(createdQuestion.status, 200);
-  assert.deepStrictEqual(createdQuestion.body, { ok: true, question: { id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) } });
-  assert.deepStrictEqual(questionCalls[1], {
-    tenantId: 'default',
-    actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
-    question: { id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3, stem: 'Question text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false },
-  });
+  assert.strictEqual(directQuestionWrite.status, 404, 'question writes must enter through the idempotent command endpoint');
   const submittedQuestionDraft = await request(questionApp, '/api/desktop/question-bank/commands', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       commandId: 'question-command-1', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
@@ -505,7 +515,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       resultHash: 'c'.repeat(64),
     },
   });
-  assert.deepStrictEqual(questionCalls[2], {
+  assert.deepStrictEqual(questionCalls[1], {
     tenantId: 'default',
     actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null },
     command: {
@@ -519,8 +529,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       stem: 'Denied text', answer: null, explanation: null, options: [], richContent: null, taxonomy: {}, hasFormula: false,
     },
   });
-  assert.strictEqual(miniappCannotCreateQuestion.status, 403);
-  assert.deepStrictEqual(miniappCannotCreateQuestion.body, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  assert.strictEqual(miniappCannotCreateQuestion.status, 404);
   const miniappCannotSubmitQuestionCommand = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, questionAuthority, businessTenantId: 'default' }), '/api/desktop/question-bank/commands', {
     method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: {
       commandId: 'question-command-denied', payloadHash: 'd'.repeat(64), type: 'question.create.v1',
@@ -560,6 +569,19 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(encryptedRelayCalls.length, 1);
   assert.strictEqual(encryptedRelayCalls[0].actorAccountId, 'account-1');
   assert.deepStrictEqual(encryptedRelayCalls[0].ciphertext, Buffer.from('ciphertext'));
+  const assetStatusQueries = [];
+  const verifiedAssetRelay = await request(createCloudBusinessApp({
+    query: async (text, values) => {
+      assetStatusQueries.push([text, values]);
+      return { rows: [{ taskId: 'task_12345678', assetId: 'asset_1', taskState: 'verified', assetState: 'verified', verifiedAt: new Date('2026-08-23T00:01:00.000Z') }] };
+    },
+    desktopRegistration: identity, businessTenantId: 'default', storageAgentKeyFingerprint: 'e'.repeat(64), storageAgentPublicKey: 'agent-public-key-base64url',
+    encryptedStorageRelay: { create: async () => ({ taskId: 'task_12345678', assetId: 'asset_1', expiresAt: '2026-08-23T00:15:00.000Z' }) },
+  }), '/api/desktop/question-bank/assets/relay/task_12345678', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(verifiedAssetRelay.status, 200);
+  assert.deepStrictEqual(verifiedAssetRelay.body, { ok: true, relay: { taskId: 'task_12345678', assetId: 'asset_1', state: 'verified', verifiedAt: '2026-08-23T00:01:00.000Z' } });
+  assert.deepStrictEqual(assetStatusQueries[0][1], ['default', 'task_12345678']);
+  assert.ok(assetStatusQueries[0][0].includes('storage_task_receipts') && assetStatusQueries[0][0].includes('business.question_assets'), 'asset status must be derived from the NAS verification receipt and cloud asset record');
 
   const storageCalls = [];
   const storageAgent = {

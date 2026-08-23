@@ -201,7 +201,7 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
               SET state='verified',updated_at=transaction_timestamp()
             WHERE task.task_id=$1 AND task.state='leased' AND task.lease_agent_id=$2 AND task.lease_token_sha256=$3
               AND task.lease_expires_at > transaction_timestamp() AND task.expected_sha256=$4 AND task.expected_bytes=$5
-           RETURNING task.task_id
+           RETURNING task.task_id,task.object_id,task.object_version
          ), receipt AS (
            INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)
            SELECT $6,task_id,$2,$4,$5 FROM completed
@@ -228,6 +228,13 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              FROM completed
             WHERE media.storage_task_id=completed.task_id AND media.storage_state='queued'
            RETURNING media.media_id
+         ), verified_question_asset AS (
+           UPDATE business.question_assets asset
+              SET state='verified',updated_at=transaction_timestamp()
+             FROM completed
+            WHERE asset.storage_object_id=completed.object_id AND asset.storage_object_version=completed.object_version
+              AND asset.state='queued' AND asset.deleted=false
+           RETURNING asset.id
          ), queued_import_task AS (
            UPDATE business.question_import_tasks import_task
               SET status='queued_for_parse',phase='queued_for_parse',updated_at=transaction_timestamp()

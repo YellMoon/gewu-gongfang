@@ -205,6 +205,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       throw businessAccessDenied();
     }
   }
+  // Core teaching records are desktop-only mutations.  Miniapp tickets may read
+  // their scoped data and run explicitly limited task APIs, but never write these tables.
+  async function desktopBusinessContext(request) {
+    return desktopQuestionContext(request);
+  }
   function scheduleScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
     if (context.roles.includes('super_admin')) return { role: 'super_admin', profileId: null };
@@ -288,20 +293,6 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const actor = await desktopQuestionContext(request);
       const questions = await questionAuthority.list({ tenantId: businessTenantId, actor, limit });
       response.json({ ok: true, questions });
-    } catch (error) {
-      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      if (error && error.code === 'CLOUD_QUESTION_INPUT_INVALID') return businessInputInvalid(response);
-      businessUnavailable(response);
-    }
-  });
-  app.post('/api/desktop/question-bank/questions', async (request, response) => {
-    if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
-    const question = exactBody(request.body, ['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula']);
-    if (!question) return businessInputInvalid(response);
-    try {
-      const actor = await desktopQuestionContext(request);
-      const created = await questionAuthority.create({ tenantId: businessTenantId, actor, question });
-      response.json({ ok: true, question: created });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       if (error && error.code === 'CLOUD_QUESTION_INPUT_INVALID') return businessInputInvalid(response);
@@ -461,6 +452,32 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  app.get('/api/desktop/question-bank/assets/relay/:taskId', async (request, response) => {
+    if (!encryptedStorageRelay || businessTenantId === null) return businessUnavailable(response);
+    const taskId = String(request.params.taskId || '').trim();
+    if (!/^task_[A-Za-z0-9_-]{8,128}$/.test(taskId)) return businessInputInvalid(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      const result = await query(
+        `SELECT task.task_id AS "taskId",asset.id AS "assetId",task.state AS "taskState",asset.state AS "assetState",receipt.verified_at AS "verifiedAt"
+           FROM business.storage_object_tasks task
+           JOIN business.question_assets asset ON asset.storage_object_id=task.object_id AND asset.storage_object_version=task.object_version
+           LEFT JOIN business.storage_task_receipts receipt ON receipt.task_id=task.task_id
+          WHERE asset.tenant_id=$1 AND task.task_id=$2 AND asset.deleted=false`,
+        [businessTenantId, taskId],
+      );
+      const row = result?.rows?.[0];
+      if (!row || result.rows.length !== 1 || row.taskId !== taskId || typeof row.assetId !== 'string') return response.status(404).json({ ok: false, code: 'CLOUD_QUESTION_ASSET_RELAY_NOT_FOUND' });
+      const verified = row.taskState === 'verified' && row.assetState === 'verified' && row.verifiedAt instanceof Date;
+      const state = verified ? 'verified' : ['queued', 'leased', 'failed_retryable', 'quarantined'].includes(row.taskState) ? row.taskState : null;
+      if (!state) return businessUnavailable(response);
+      response.json({ ok: true, relay: { taskId, assetId: row.assetId, state, verifiedAt: verified ? row.verifiedAt.toISOString() : null } });
+    } catch (error) {
+      if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
   app.get('/api/desktop/session-context', async (request, response) => {
     if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') return desktopUnavailable(response);
     const token = sessionToken(request);
@@ -584,7 +601,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !Number.isInteger(update.status) || ![1, 2, 3, 4].includes(update.status)
       || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -621,7 +638,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!expectedUpdatedAt || !Number.isInteger(update.attendanceStatus) || ![1, 3, 4].includes(update.attendanceStatus)
       || tuition === null || teacherFee === null) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -663,7 +680,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(gradeYear === null || (Number.isInteger(gradeYear) && gradeYear >= 1900 && gradeYear <= 2200))
       || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -696,7 +713,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const update = courseRecord(request.body?.data, false);
     if (!courseId || !update || !exactBody(request.body, ['courseId', 'data'])) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const course = await businessCourseLifecycleMutations.create({ tenantId: businessTenantId, courseId, ...update });
       if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
@@ -711,7 +728,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const courseId = String(request.params.courseId || '').trim(); const update = courseRecord(request.body, true);
     if (!courseId || !update) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const course = await businessCourseLifecycleMutations.update({ tenantId: businessTenantId, courseId, ...update });
       if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
@@ -726,7 +743,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const courseId = String(request.params.courseId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!courseId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const course = await businessCourseLifecycleMutations.remove({ tenantId: businessTenantId, courseId, expectedUpdatedAt });
       if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
@@ -743,7 +760,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const roomId = String(update?.roomId || '').trim(); const name = boundedText(update?.name, 256); const address = optionalText(update?.address);
     if (!roomId || !name || address === undefined) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const room = await businessRoomLifecycleMutations.create({ tenantId: businessTenantId, roomId, name, address });
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
@@ -759,7 +776,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const expectedUpdatedAt = instant(update?.expectedUpdatedAt); const name = boundedText(update?.name, 256); const address = optionalText(update?.address);
     if (!roomId || !expectedUpdatedAt || !name || address === undefined) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const room = await businessRoomLifecycleMutations.update({ tenantId: businessTenantId, roomId, expectedUpdatedAt, name, address });
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
@@ -774,7 +791,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const roomId = String(request.params.roomId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!roomId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const room = await businessRoomLifecycleMutations.remove({ tenantId: businessTenantId, roomId, expectedUpdatedAt });
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
@@ -793,7 +810,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!teacherId || !name || phone === undefined || subject === undefined || notes === undefined
       || !(update?.hourlyRate === null || (typeof update?.hourlyRate === 'number' && Number.isFinite(update.hourlyRate) && update.hourlyRate >= 0 && update.hourlyRate <= 100000))) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const teacher = await businessTeacherLifecycleMutations.create({ tenantId: businessTenantId, teacherId, name, phone, subject, hourlyRate: update.hourlyRate, notes });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
@@ -809,7 +826,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!teacherId || !expectedUpdatedAt || !name || phone === undefined || subject === undefined || notes === undefined
       || !(update?.hourlyRate === null || (typeof update?.hourlyRate === 'number' && Number.isFinite(update.hourlyRate) && update.hourlyRate >= 0 && update.hourlyRate <= 100000))) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const teacher = await businessTeacherLifecycleMutations.update({ tenantId: businessTenantId, teacherId, expectedUpdatedAt, name, phone, subject, hourlyRate: update.hourlyRate, notes });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
@@ -821,7 +838,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const teacherId = String(request.params.teacherId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!teacherId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const teacher = await businessTeacherLifecycleMutations.remove({ tenantId: businessTenantId, teacherId, expectedUpdatedAt });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
@@ -853,7 +870,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(gradeYear === null || (Number.isInteger(gradeYear) && gradeYear >= 1900 && gradeYear <= 2200))
       || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
         return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       }
@@ -881,7 +898,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(update.gradeYear === null || (Number.isInteger(update.gradeYear) && update.gradeYear >= 1900 && update.gradeYear <= 2200))
       || !(update.sourceType === null || (Number.isInteger(update.sourceType) && [1, 2].includes(update.sourceType)))) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const student = await businessStudentLifecycleMutations.create({ tenantId: businessTenantId, studentId, name, school, gradeYear: update.gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType: update.sourceType, studentSource, contacts });
       if (!student) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
@@ -893,7 +910,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const studentId = String(request.params.studentId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
     if (!studentId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       const student = await businessStudentLifecycleMutations.remove({ tenantId: businessTenantId, studentId, expectedUpdatedAt });
       if (!student) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
@@ -919,7 +936,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || (contactSlot === 1 && relationship !== 'student') || (contactSlot > 1 && relationship !== 'guardian')
       || !validPhone || !validWechat || (phone === null && wechat === null)) return businessInputInvalid(response);
     try {
-      const context = await businessContext(request);
+      const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
       const result = await query(
         `WITH target AS (

@@ -156,8 +156,8 @@ function questionListRow(row) {
   };
 }
 
-function createQuestionAuthorityService({ query } = {}) {
-  if (typeof query !== 'function') throw failure('CLOUD_QUESTION_INPUT_INVALID');
+function createQuestionAuthorityService({ query, transaction } = {}) {
+  if (typeof query !== 'function' || typeof transaction !== 'function') throw failure('CLOUD_QUESTION_INPUT_INVALID');
   return Object.freeze({
     async list(input) {
       const request = exact(input, ['tenantId', 'actor', 'limit']);
@@ -176,7 +176,7 @@ function createQuestionAuthorityService({ query } = {}) {
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
       return result.rows.map(questionListRow);
     },
-    async create(input) {
+    async create(input, currentQuery = query) {
       const request = exact(input, ['tenantId', 'actor', 'question']);
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
@@ -192,7 +192,7 @@ function createQuestionAuthorityService({ query } = {}) {
       const richContent = json(question.richContent, { nullable: true });
       const taxonomy = json(question.taxonomy);
       const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
-      const result = await query(
+      const result = await currentQuery(
         `WITH inserted_question AS (
            INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula)
            VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
@@ -212,7 +212,9 @@ function createQuestionAuthorityService({ query } = {}) {
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
       const command = desktopCommand(request.command);
-      const previous = await query(
+      return transaction(async transactionQuery => {
+      if (typeof transactionQuery !== 'function') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+      const previous = await transactionQuery(
         `SELECT payload_hash AS "payloadHash",status,result_json AS result,result_hash AS "resultHash"
          FROM business.desktop_question_command_receipts WHERE tenant_id=$1 AND command_id=$2`,
         [tenantId, command.commandId],
@@ -230,14 +232,14 @@ function createQuestionAuthorityService({ query } = {}) {
       }
       let result;
       if (command.type === 'question.create.v1') {
-        result = await this.create({ tenantId, actor: currentActor, question: command.question });
+        result = await this.create({ tenantId, actor: currentActor, question: command.question }, transactionQuery);
       } else if (command.type === 'question.update.v1') {
         const question = command.question;
         const options = json(question.options, { array: true });
         const richContent = json(question.richContent, { nullable: true });
         const taxonomy = json(question.taxonomy);
         const contentHash = canonicalContentHash({ stem: question.stem, answer: question.answer, explanation: question.explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
-        const updated = await query(
+        const updated = await transactionQuery(
           `WITH updated_question AS (
              UPDATE business.questions SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,updated_at=transaction_timestamp()
              WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
@@ -250,7 +252,7 @@ function createQuestionAuthorityService({ query } = {}) {
         if (!updated || !Array.isArray(updated.rows) || updated.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
         result = questionRow(updated.rows[0]);
       } else {
-        const deleted = await query(
+        const deleted = await transactionQuery(
           `WITH deleted_question AS (
              UPDATE business.questions SET deleted=true,deleted_at=transaction_timestamp(),updated_at=transaction_timestamp()
              WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
@@ -267,13 +269,14 @@ function createQuestionAuthorityService({ query } = {}) {
         commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed', result,
         resultHash: canonicalHash(result),
       };
-      await query(
+      await transactionQuery(
         `INSERT INTO business.desktop_question_command_receipts
            (tenant_id,command_id,payload_hash,status,result_json,result_hash,actor_account_id)
          VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7)`,
         [tenantId, receipt.commandId, receipt.payloadHash, receipt.status, stableJson(receipt.result), receipt.resultHash, currentActor.accountId],
       );
       return receipt;
+      });
     },
   });
 }

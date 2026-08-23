@@ -43,6 +43,21 @@ const pool = new Pool({
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 5000,
 });
+async function questionCommandTransaction(work) {
+  if (typeof work !== 'function') throw new TypeError('transaction work is required');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work((text, values) => client.query(text, values));
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* Preserve the original command failure. */ }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 const databaseConfig = {
   host: process.env.POSTGRES_HOST || 'gewu-postgres17',
   port: Number(process.env.POSTGRES_PORT || 5432),
@@ -193,7 +208,7 @@ function createDesktopRegistrationFromEnvironment() {
         installationId: row.installationId,
         sessionId: row.sessionId,
         expiresAt: row.expiresAt.toISOString(),
-        roles: account.roles,
+        roles: Array.isArray(account.roles) && account.roles.length ? account.roles : ['pending'],
         teacherId: account.profile?.type === 'teacher' ? account.profile.id : null,
         studentId: account.profile?.type === 'student' ? account.profile.id : null,
       };
@@ -316,6 +331,7 @@ const storageAgent = createStorageAgentRuntimeFromEnvironment({
 });
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
+  transaction: questionCommandTransaction,
 });
 const questionImportTasks = createQuestionImportTaskRepository({
   query: (text, values) => pool.query(text, values),

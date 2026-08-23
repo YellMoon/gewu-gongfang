@@ -103,7 +103,7 @@ function sessionContext(value, ticket) {
     || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
     || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
     || !Array.isArray(copy.roles) || copy.roles.length === 0 || copy.roles.length > 3
-    || copy.roles.some(role => !['super_admin', 'teacher', 'student'].includes(role))
+    || copy.roles.some(role => !['super_admin', 'teacher', 'student', 'pending'].includes(role))
     || new Set(copy.roles).size !== copy.roles.length
     || (copy.teacherId !== null && !text(copy.teacherId))
     || (copy.studentId !== null && !text(copy.studentId))) throw rejected();

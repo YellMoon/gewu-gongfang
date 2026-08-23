@@ -48,6 +48,8 @@ const copy = {
   empty: '\u5f53\u524d\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u6743\u5a01\u547d\u4ee4',
   wsTitle: '\u4e91\u7aef\u63d0\u4ea4\u4e0d\u4f9d\u8d56\u5c40\u57df\u7f51\u4e3b\u673a',
   wsDescription: '\u4efb\u610f\u7535\u8111\u4e0a\u7684\u7edf\u4e00\u684c\u9762\u7aef\u90fd\u53ef\u4fdd\u7559\u79bb\u7ebf\u8349\u7a3f\uff1b\u4e0a\u7ebf\u540e\u9700\u8981\u4f60\u786e\u8ba4\uff0c\u4e0d\u4f1a\u9759\u9ed8\u63a8\u9001\u3002',
+  assetVerificationPending: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u8fdb\u5165 NAS \u6838\u9a8c\u961f\u5217\uff0c\u672a\u901a\u8fc7\u5b8c\u6574\u6027\u56de\u6267\u524d\u4e0d\u89c6\u4e3a\u5b8c\u6210\u3002',
+  assetVerified: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u901a\u8fc7 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
 };
 
 function requireBridge() {
@@ -81,7 +83,7 @@ type AssetRelayState = {
   taskId: string;
   objectId: string;
   objectVersion: number;
-  status: 'queued' | 'failed';
+  status: 'queued' | 'verified' | 'failed';
   updatedAt: string;
   errorCode?: string;
 };
@@ -145,14 +147,28 @@ async function relayQuestionAssetsAfterReceipt(item: AuthorityOutboxItem, receip
     } catch (_error) {
       state = null;
     }
-    if (state?.status === 'queued') continue;
-    const nextState: AssetRelayState = state && state.assetId && state.taskId && state.objectId
+    if (state?.status === 'verified') continue;
+    const client = createDesktopQuestionImportClient();
+    if (state?.status === 'queued') {
+      const remote = await client.readAssetRelay(state.taskId);
+      if (remote.state === 'verified') {
+        localStorage.setItem(stateKey, JSON.stringify({ ...state, status: 'verified', updatedAt: new Date().toISOString(), errorCode: undefined }));
+        continue;
+      }
+      if (remote.state === 'queued' || remote.state === 'leased') {
+        queued += 1;
+        continue;
+      }
+      state = { ...state, status: 'failed', updatedAt: new Date().toISOString(), errorCode: `QUESTION_ASSET_RELAY_${remote.state.toUpperCase()}` };
+      localStorage.setItem(stateKey, JSON.stringify(state));
+    }
+    const nextState: AssetRelayState = state && state.status !== 'failed' && state.assetId && state.taskId && state.objectId
       ? { ...state, status: 'failed', updatedAt: new Date().toISOString() }
       : { assetId: freshRelayId('asset'), taskId: freshRelayId('task'), objectId: freshRelayId('obj'), objectVersion: 1, status: 'failed', updatedAt: new Date().toISOString() };
     try {
       const dataUrl = await getQuestionAssetDataUrl(assetKey);
       const source = await dataUrlBytes(dataUrl);
-      await createDesktopQuestionImportClient().relayAsset({
+      await client.relayAsset({
         questionId, assetId: nextState.assetId, assetType: source.mimeType.startsWith('image/') ? 'image' : 'attachment',
         fileName: `${assetKey.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 480) || 'asset'}.bin`, mimeType: source.mimeType,
         bytes: source.bytes, storage: { taskId: nextState.taskId, objectId: nextState.objectId, objectVersion: nextState.objectVersion },
@@ -270,7 +286,8 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     setBusyId(item.id);
     try {
       const queued = await relayQuestionAssetsAfterReceipt(item, item.receipt);
-      message.success(queued ? `${copy.completed} (${queued})` : copy.completed);
+      if (queued) message.info(copy.assetVerificationPending);
+      else message.success(copy.assetVerified);
     } catch (error: any) {
       message.error(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
     } finally {

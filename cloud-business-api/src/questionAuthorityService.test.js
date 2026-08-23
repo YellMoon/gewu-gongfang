@@ -9,28 +9,31 @@ const { stableJson } = require('../../shared/authorityProtocol');
 async function main() {
   const calls = [];
   const receipts = new Map();
+  let commandTransactions = 0;
+  const query = async (text, values) => {
+    calls.push([text, values]);
+    if (text.includes('FROM business.desktop_question_command_receipts')) {
+      const receipt = receipts.get(`${values[0]}:${values[1]}`);
+      return { rows: receipt ? [receipt] : [] };
+    }
+    if (text.includes('INSERT INTO business.desktop_question_command_receipts')) {
+      receipts.set(`${values[0]}:${values[1]}`, {
+        payloadHash: values[2], status: values[3], result: JSON.parse(values[4]), resultHash: values[5],
+      });
+      return { rows: [] };
+    }
+    if (text.includes('FROM business.questions q')) {
+      return { rows: [{
+        id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
+        content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
+        taxonomy: { knowledgePointIds: [], modelPointIds: [], taxonomyIds: [] }, has_formula: false, version: 1,
+      }] };
+    }
+    return { rows: [{ id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) }] };
+  };
   const service = createQuestionAuthorityService({
-    query: async (text, values) => {
-      calls.push([text, values]);
-      if (text.includes('FROM business.desktop_question_command_receipts')) {
-        const receipt = receipts.get(`${values[0]}:${values[1]}`);
-        return { rows: receipt ? [receipt] : [] };
-      }
-      if (text.includes('INSERT INTO business.desktop_question_command_receipts')) {
-        receipts.set(`${values[0]}:${values[1]}`, {
-          payloadHash: values[2], status: values[3], result: JSON.parse(values[4]), resultHash: values[5],
-        });
-        return { rows: [] };
-      }
-      if (text.includes('FROM business.questions q')) {
-        return { rows: [{
-          id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
-          content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
-          taxonomy: { knowledgePointIds: [], modelPointIds: [], taxonomyIds: [] }, has_formula: false, version: 1,
-        }] };
-      }
-      return { rows: [{ id: 'question-1', status: 'draft', version: 1, contentHash: 'a'.repeat(64) }] };
-    },
+    query,
+    transaction: async work => { commandTransactions += 1; return work(query); },
   });
   const created = await service.create({
     tenantId: 'default',
@@ -86,6 +89,7 @@ async function main() {
     resultHash: receipt.resultHash,
   });
   assert.match(receipt.resultHash, /^[0-9a-f]{64}$/);
+  assert.strictEqual(commandTransactions, 1, 'each accepted desktop draft must execute inside one transaction');
   assert.ok(!calls.some(call => call[0].match(/storage_state|file_path|data_url|oss_url/iu)));
   const replayedReceipt = await service.submitDesktopDraft({
     tenantId: 'default',
@@ -98,6 +102,38 @@ async function main() {
   assert.deepStrictEqual(replayedReceipt, receipt, 'a retry must return the original cloud receipt without a second question write');
   assert.strictEqual(calls.filter(call => call[0].includes('INSERT INTO business.questions')).length, 2,
     'the initial direct-create test and one command create are the only question inserts');
+
+  const failedState = { questionWrites: 0, receiptWrites: 0 };
+  const receiptFailureService = createQuestionAuthorityService({
+    query: async () => { throw new Error('the command path must use its transaction query'); },
+    transaction: async work => {
+      const staged = { ...failedState };
+      const transactionQuery = async text => {
+        if (text.includes('FROM business.desktop_question_command_receipts')) return { rows: [] };
+        if (text.includes('INSERT INTO business.questions')) {
+          staged.questionWrites += 1;
+          return { rows: [{ id: 'question-rollback', status: 'draft', version: 1, contentHash: 'b'.repeat(64) }] };
+        }
+        if (text.includes('INSERT INTO business.desktop_question_command_receipts')) {
+          staged.receiptWrites += 1;
+          throw new Error('receipt write failure');
+        }
+        throw new Error('unexpected query');
+      };
+      const result = await work(transactionQuery);
+      Object.assign(failedState, staged);
+      return result;
+    },
+  });
+  await assert.rejects(
+    () => receiptFailureService.submitDesktopDraft({
+      tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+      command: { commandId: 'question-command-rollback', payloadHash: commandPayloadHash, type: 'question.create.v1', payload: commandPayload },
+    }),
+    /receipt write failure/,
+  );
+  assert.deepStrictEqual(failedState, { questionWrites: 0, receiptWrites: 0 },
+    'a receipt failure must roll back the question text mutation instead of leaving an unreceipted cloud write');
 
   const updatePayload = {
     id: 'question-3',

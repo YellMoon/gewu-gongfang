@@ -128,5 +128,25 @@ const service = createCloudDesktopRegistrationService({
   await assert.rejects(() => service.register({ verificationToken: `${started.verificationToken}x`, installationId: 'installation-1', installationPublicKey: publicKey, deviceProof: proof, idempotencyKey: 'registration-1' }), error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED');
   assert.throws(() => createOperatorPhoneLookup({ pepper, records: [{ ...records[0], authorityId: 'tenant-2' }, { ...records[0], accountId: 'account-2' }] }), error => error.code === 'CLOUD_ONLINE_IDENTITY_INVALID');
 
+  const pendingService = createCloudDesktopRegistrationService({
+    now: () => new Date(now), randomId: prefix => `${prefix}-pending`, phoneVerifier: async () => '13700000000',
+    lookupAccount: async () => ({ authorityId: 'tenant-1', accountId: 'account-pending' }), ticketSecret, leasePrivateKey: leaseKeyPair.privateKey,
+    issueAssertion: async () => {}, register: async input => ({ receiptId: input.receiptId, sessionId: input.sessionId, replayed: false }),
+    readSessionContext: async input => ({
+      authorityId: input.authorityId, accountId: input.accountId, deviceId: input.deviceId, installationId: input.installationId,
+      sessionId: input.sessionId, expiresAt: input.expiresAt, roles: ['pending'], teacherId: null, studentId: null,
+    }),
+  });
+  const pendingStarted = await pendingService.begin({ phoneCode: 'verified-phone-code' });
+  const pendingTicket = pendingService.inspectVerificationToken(pendingStarted.verificationToken);
+  const pendingProof = crypto.sign(null, Buffer.from(pendingTicket.challenge, 'utf8'), privateKey).toString('base64url');
+  const pendingRegistration = await pendingService.register({
+    verificationToken: pendingStarted.verificationToken, installationId: 'installation-pending', installationPublicKey: publicKey, deviceProof: pendingProof, idempotencyKey: 'registration-pending',
+  });
+  assert.deepStrictEqual(pendingRegistration.offlineLease.eligibleRoles, ['pending']);
+  assert.strictEqual(pendingRegistration.offlineLease.activeRole, 'pending');
+  assert.deepStrictEqual(pendingRegistration.offlineLease.scope, { kind: 'pending' },
+    'a newly verified account without a role grant must register safely as pending rather than fail or gain teaching access');
+
   console.log('cloud desktop registration service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -11,6 +11,10 @@ assert.match(panel, /sessionToken/,
   'the panel must pass only a one-time token to the Electron bridge');
 assert.match(panel, /relayQuestionAssetsAfterReceipt\(item, result\.receipt\)/,
   'question rich media must be relayed only after the cloud question receipt exists');
+assert.match(panel, /client\.readAssetRelay\(state\.taskId\)/,
+  'a locally queued relay must be checked against the NAS verification receipt before it is treated as complete');
+assert.match(panel, /assetVerificationPending/,
+  'the UI must clearly state that a cloud relay is still pending NAS verification');
 assert.match(preload, /confirmAndSubmit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:confirm-and-submit', id, input\)/,
   'the preload bridge must forward an explicit one-time submission input');
 assert.match(preload, /submit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:submit', id, input\)/,

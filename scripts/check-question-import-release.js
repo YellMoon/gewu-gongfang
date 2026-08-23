@@ -15,6 +15,15 @@ function receipt(value) {
   return object(value) && typeof value.receiptId === 'string' && value.receiptId.trim().length > 0;
 }
 
+function verifiedStorageReceipt(value) {
+  return receipt(value)
+    && typeof value.taskId === 'string' && value.taskId.trim().length > 0
+    && value.state === 'verified'
+    && typeof value.verifiedAt === 'string'
+    && Number.isFinite(new Date(value.verifiedAt).getTime())
+    && new Date(value.verifiedAt).toISOString() === value.verifiedAt;
+}
+
 function verifyImportRelease(evidence) {
   if (!object(evidence) || typeof evidence.expectedVersion !== 'string' || !evidence.expectedVersion.trim()) throw failure();
   const { cloudHealth, storageHealth, task } = evidence;
@@ -24,9 +33,9 @@ function verifyImportRelease(evidence) {
     || storageHealth.version !== evidence.expectedVersion || storageHealth.writableAuthority !== false || storageHealth.rootProbe !== true) throw failure();
   if (!object(task) || typeof task.taskId !== 'string' || !task.taskId.trim()
     || task.status !== 'submitted' || task.phase !== 'submitted') throw failure();
-  if (!receipt(evidence.sourceReceipt) || !Number.isSafeInteger(evidence.expectedMediaCount) || evidence.expectedMediaCount < 0
+  if (!verifiedStorageReceipt(evidence.sourceReceipt) || !Number.isSafeInteger(evidence.expectedMediaCount) || evidence.expectedMediaCount < 0
     || !Array.isArray(evidence.derivedMediaReceipts) || evidence.derivedMediaReceipts.length !== evidence.expectedMediaCount
-    || evidence.derivedMediaReceipts.some(item => !receipt(item))
+    || evidence.derivedMediaReceipts.some(item => !verifiedStorageReceipt(item))
     || evidence.questionWritesBeforeConfirmation !== 0 || !receipt(evidence.confirmationReceipt)) throw failure();
   return evidence;
 }

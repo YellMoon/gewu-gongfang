@@ -84,6 +84,8 @@ async function main() {
     'a verified source receipt must advance only its cloud-owned import task to parsing readiness');
   assert.ok(calls[4].text.includes('business.question_import_media_objects'),
     'a verified media receipt must mark only its corresponding import media object as NAS-verified');
+  assert.ok(calls[4].text.includes('UPDATE business.question_assets') && calls[4].text.includes("SET state='verified'"),
+    'a verified NAS receipt must advance the matching question asset from queued to verified');
   assert.ok(calls[4].values.includes(leaseHash), 'completion must compare only the lease hash');
   assert.ok(!calls[4].values.includes(LEASE_TOKEN), 'completion must not persist the raw lease token');
 
