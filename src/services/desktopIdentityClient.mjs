@@ -984,6 +984,27 @@ export function createDesktopIdentityClient({
     return data.student;
   }
 
+  async function updateCloudStudentRecord({
+    baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
+    institutionId, parentName, notes, sourceType, studentSource, contacts,
+  } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedStudentId = String(studentId || '').trim();
+    if (!normalizedStudentId || !Array.isArray(contacts)) throw identityError('DESKTOP_CLOUD_STUDENT_RECORD_INPUT_INVALID');
+    const data = await request(fetchImpl, baseUrl, `/api/business/students/${encodeURIComponent(normalizedStudentId)}/record`, {
+      method: 'PUT',
+      token: currentSession.token,
+      body: { expectedUpdatedAt, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource, contacts },
+    });
+    if (!data?.student || typeof data.student !== 'object'
+      || data.student.id !== normalizedStudentId || typeof data.student.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_STUDENT_RESPONSE_INVALID');
+    }
+    return data.student;
+  }
+
   async function updateCloudScheduleStudentOverride({
     baseUrl, currentSession, scheduleId, studentId, expectedUpdatedAt, attendanceStatus, tuition, teacherFee,
   } = {}) {
@@ -1071,6 +1092,7 @@ export function createDesktopIdentityClient({
     upsertCloudStudentContact,
     updateCloudSchedule,
     updateCloudStudent,
+    updateCloudStudentRecord,
     updateCloudScheduleStudentOverride,
     unlock,
   });

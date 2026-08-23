@@ -197,6 +197,7 @@ export function buildAuthorityBackedBrowserCache({
   const payload = projection.payload;
   const cache = {
     students: collectionRows(payload, 'students'),
+    student_contacts: collectionRows(payload, 'student_contacts'),
     grades: collectionRows(payload, 'grades'),
     courses: collectionRows(payload, 'courses').map(normalizeCourse),
     schedules: collectionRows(payload, 'schedules').map(normalizeSchedule),

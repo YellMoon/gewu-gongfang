@@ -45,6 +45,7 @@ function schoolOptionMatches(inputValue: string, optionValue: any) {
 
 const StudentList: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentContacts, setStudentContacts] = useState<any[]>([]);
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [schools, setSchools] = useState<string[]>([]);
   const [schoolSearchText, setSchoolSearchText] = useState('');
@@ -62,6 +63,7 @@ const StudentList: React.FC = () => {
       return;
     }
     const studentsData = dbService.getAllStudents();
+    const studentContactsData = dbService.getAllStudentContacts ? dbService.getAllStudentContacts() : [];
     const institutionsData = dbService.getAllInstitutions();
     const paymentsData = dbService.getAllPayments();
     const consumptionsData = dbService.getAllConsumptions();
@@ -71,6 +73,7 @@ const StudentList: React.FC = () => {
     const schoolsFromDb = buildSchoolOptions(rawSchools).map(option => option.value);
     
     setStudents(studentsData);
+    setStudentContacts(studentContactsData);
     setInstitutions(institutionsData);
     setSchools(schoolsFromDb);
     setPayments(paymentsData);
@@ -88,9 +91,13 @@ const StudentList: React.FC = () => {
   };
 
   const handleEdit = (student: Student) => {
+    const primaryContact = studentContacts.find(contact => contact.student_id === student.id && contact.slot === 1);
+    const guardianContact = studentContacts.find(contact => contact.student_id === student.id && contact.slot === 2);
     setEditingStudent(student);
     form.setFieldsValue({
       ...student,
+      phone: primaryContact?.phone ?? student.phone ?? undefined,
+      parent_wechat: guardianContact?.wechat ?? student.parent_wechat ?? undefined,
       school: student.school ? [student.school] : [],
       grade_year: student.grade_year || new Date().getFullYear()
     });
@@ -105,17 +112,85 @@ const StudentList: React.FC = () => {
     loadData();
   };
 
+  const submitExistingStudentToAuthority = async (values: any) => {
+    if (!editingStudent) return false;
+    const stageLocalDraft = () => {
+      if (values.school) dbService.addOrUpdateSchool(values.school);
+      dbService.updateStudent(editingStudent.id, values);
+      (window as any).operateLogger?.log('update', `student:${values.name}`, 'students');
+    };
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (typeof cloudRuntime?.updateCloudStudentRecord !== 'function' || !editingStudent.updated_at) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    const contactsBySlot = new Map(studentContacts.filter(contact => contact.student_id === editingStudent.id).map(contact => [contact.slot, contact]));
+    const primary = contactsBySlot.get(1);
+    const guardian = contactsBySlot.get(2);
+    const normalizedPhone = typeof values.phone === 'string' ? values.phone.trim() || null : primary?.phone ?? null;
+    const normalizedGuardianWechat = typeof values.parent_wechat === 'string' ? values.parent_wechat.trim() || null : guardian?.wechat ?? null;
+    const contacts = [
+      ...(normalizedPhone || primary?.wechat ? [{ slot: 1, relationship: 'student', phone: normalizedPhone, wechat: primary?.wechat ?? null, expectedUpdatedAt: primary?.updated_at ?? null }] : []),
+      ...(guardian?.phone || normalizedGuardianWechat ? [{ slot: 2, relationship: 'guardian', phone: guardian?.phone ?? null, wechat: normalizedGuardianWechat, expectedUpdatedAt: guardian?.updated_at ?? null }] : []),
+      ...[3].map(slot => contactsBySlot.get(slot)).filter(Boolean).map((existing: any) => ({ slot: 3, relationship: 'guardian', phone: existing.phone ?? null, wechat: existing.wechat ?? null, expectedUpdatedAt: existing.updated_at })),
+    ];
+    try {
+      await cloudRuntime.updateCloudStudentRecord({
+        studentId: editingStudent.id,
+        expectedUpdatedAt: editingStudent.updated_at,
+        name: values.name.trim(),
+        school: values.school || null,
+        gradeYear: values.grade_year ?? null,
+        gradeCurrent: values.grade_current ?? null,
+        institutionId: values.institution_id ?? null,
+        parentName: values.parent_name?.trim() || null,
+        notes: values.notes ?? null,
+        sourceType: values.source_type ?? null,
+        studentSource: values.student_source?.trim() || null,
+        contacts,
+      });
+      await dbService.refreshAuthorityProjection();
+      message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u66f4\u65b0');
+      return true;
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_STUDENT_CONFLICT') {
+        message.error('\u8be5\u5b66\u751f\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');
+        return false;
+      }
+      const offline = code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+        || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+      if (!offline) {
+        message.error('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u66f4\u65b0\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return false;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       // 处理学校字段（AutoComplete 返回单个字符串）
       values.school = normalizeSchoolName(Array.isArray(values.school) ? values.school[0] : values.school);
+      const legacyEditedStudent = editingStudent;
+      if (editingStudent) {
+        const completed = await submitExistingStudentToAuthority(values);
+        if (completed) {
+          setModalVisible(false);
+          loadData();
+        }
+        return;
+      }
       // 自动保存学校信息
       if (values.school) {
         dbService.addOrUpdateSchool(values.school);
       }
-      if (editingStudent) {
-        dbService.updateStudent(editingStudent.id, values);
+      if (Boolean((window as any).__legacyStudentEditFallback) && legacyEditedStudent) {
+        dbService.updateStudent(legacyEditedStudent.id, values);
         message.success('更新成功');
         (window as any).operateLogger?.log('修改', `修改学生「${values.name}」`, '学生管理');
       } else {

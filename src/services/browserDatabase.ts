@@ -34,6 +34,7 @@ import {
 
 interface Database {
   students: Student[];
+  student_contacts: any[];
   grades: Grade[];
   courses: Course[];
   schedules: Schedule[];
@@ -89,6 +90,7 @@ const TAXONOMY_DELETION_BACKUP_LIMIT = 50;
 function emptyDatabase(): Database {
   return {
     students: [],
+    student_contacts: [],
     grades: [],
     courses: [],
     schedules: [],
@@ -258,6 +260,7 @@ class BrowserDatabaseService {
       // 合并数据，确保所有数组字段都存在，旧版本数据缺失就用 []
       this.data = {
         students: [],
+        student_contacts: [],
         grades: [],
         courses: [],
         schedules: [],
@@ -1018,6 +1021,10 @@ class BrowserDatabaseService {
     return this.data.students;
   }
 
+  getAllStudentContacts(): any[] {
+    return this.data.student_contacts || [];
+  }
+
   getStudentById(id: string): Student | undefined {
     return this.data.students.find(s => s.id === id);
   }
@@ -1536,6 +1543,7 @@ class BrowserDatabaseService {
     this.createBusinessDataSafetyBackup('before-importAllData');
     this.data = {
       students: data.students || [],
+      student_contacts: data.student_contacts || [],
       grades: data.grades || [],
       courses: data.courses || [],
       schedules: data.schedules || [],

@@ -160,6 +160,16 @@ async function main() {
         });
         return { ok: true, json: async () => ({ ok: true, student: { id: 'student-cloud-1', updatedAt: '2026-08-23T00:02:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/students/student-cloud-1/record') {
+        assert.strictEqual(options.method, 'PUT');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          expectedUpdatedAt: '2026-08-23T00:02:00.000Z', name: 'Student record', school: null,
+          gradeYear: null, gradeCurrent: null, institutionId: null, parentName: null, notes: null,
+          sourceType: 1, studentSource: 'Referral', contacts: [{ slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null }],
+        });
+        return { ok: true, json: async () => ({ ok: true, student: { id: 'student-cloud-1', updatedAt: '2026-08-23T00:03:00.000Z' } }) };
+      }
       if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1/students/student-cloud-1') {
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -373,6 +383,14 @@ async function main() {
   });
   assert.deepStrictEqual(updatedCloudStudent, { id: 'student-cloud-1', updatedAt: '2026-08-23T00:02:00.000Z' });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students/student-cloud-1');
+  const updatedCloudStudentRecord = await unifiedCloudClient.updateCloudStudentRecord({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-1',
+    expectedUpdatedAt: '2026-08-23T00:02:00.000Z', name: 'Student record', school: null, gradeYear: null,
+    gradeCurrent: null, institutionId: null, parentName: null, notes: null, sourceType: 1, studentSource: 'Referral',
+    contacts: [{ slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null }],
+  });
+  assert.deepStrictEqual(updatedCloudStudentRecord, { id: 'student-cloud-1', updatedAt: '2026-08-23T00:03:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students/student-cloud-1/record');
   const updatedCloudStudentOverride = await unifiedCloudClient.updateCloudScheduleStudentOverride({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1', studentId: 'student-cloud-1',
     expectedUpdatedAt: '2026-08-22T00:00:00.000Z', attendanceStatus: 4, tuition: 80, teacherFee: 40,

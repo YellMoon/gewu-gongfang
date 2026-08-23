@@ -11,6 +11,7 @@ const assert = require('assert');
     sourceVersion: 7,
     payload: {
       students: [{ id: 'student-1', name: 'Authority student' }],
+      student_contacts: [{ id: 'student-contact-1', student_id: 'student-1', slot: 1, relationship: 'student', phone: '13800138000', wechat: null }],
       courses: [{
         id: 'course-1',
         student_pricings: '[{"student_id":"student-1","tuition":100}]',
@@ -84,6 +85,7 @@ const assert = require('assert');
 
   const cache = buildAuthorityBackedBrowserCache({ projection, outbox, localOnly });
   assert.strictEqual(cache.students[0].notes, 'offline draft');
+  assert.deepStrictEqual(cache.student_contacts, [{ id: 'student-contact-1', student_id: 'student-1', slot: 1, relationship: 'student', phone: '13800138000', wechat: null }]);
   assert.deepStrictEqual(cache.rooms, [{ id: 'room-offline', name: 'Offline room' }]);
   assert.deepStrictEqual(cache.schedules[0].student_ids, ['student-1']);
   assert.deepStrictEqual(cache.courses[0].student_pricings, [
