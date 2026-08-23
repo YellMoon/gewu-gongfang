@@ -23,7 +23,17 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
   return Object.freeze({
     async runOnce() {
       const task = await client.lease();
-      if (task === null) return Object.freeze({ state: 'idle' });
+      if (task === null) {
+        if (typeof client.leaseArtifactDelivery !== 'function' || typeof client.uploadArtifactDelivery !== 'function') return Object.freeze({ state: 'idle' });
+        const delivery = await client.leaseArtifactDelivery();
+        if (delivery === null) return Object.freeze({ state: 'idle' });
+        const bytes = await objectStore.readVerified({
+          objectId: delivery.objectId, version: delivery.objectVersion, sha256: delivery.expectedSha256, bytes: delivery.expectedBytes,
+        });
+        assertExpected(delivery, bytes);
+        await client.uploadArtifactDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes });
+        return Object.freeze({ state: 'delivery_uploaded', deliveryId: delivery.deliveryId });
+      }
       if (task.kind === 'question_import_media') {
         const sourceBytes = await objectStore.readVerified({
           objectId: task.source.objectId, version: task.source.objectVersion, sha256: task.source.sha256, bytes: task.source.bytes,

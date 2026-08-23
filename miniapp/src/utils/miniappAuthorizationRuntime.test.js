@@ -81,6 +81,7 @@ assert.strictEqual(usesLimitedQuestionProjection({ id: 'visitor-user', user_type
 assert.strictEqual(usesLimitedQuestionProjection({ id: 'admin-user', user_type: 'admin' }), false);
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
 const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };
+assert.strictEqual(usesLimitedQuestionProjection(normalStudentScope), true, 'students retain a read-only question preview even after their teaching profile is linked');
 const normalStudentAliasScope = { id: 'student-user', role: 'student', tenantId: 'tenant-a', studentId: 'student-a', linkedStudentIds: ['student-b', 'student-c', 'student-b'], reviewStatus: 'approved', status: true, loginEnabled: true };
 assert.strictEqual(businessCacheIdentityKey(normalStudentScope), businessCacheIdentityKey(normalStudentAliasScope), 'business cache scope aliases and student binding order must normalize stably');
 for (const changedScope of [

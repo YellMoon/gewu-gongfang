@@ -28,6 +28,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
     login: async () => { throw new Error('not used'); },
     context: async ({ token }) => {
       if (token === 'miniapp-ticket.signature') return { accountId: 'miniapp-admin-1', status: 'active', roles: ['admin'], profile: null };
+      if (token === 'miniapp-student.signature') return { accountId: 'miniapp-student-1', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } };
       throw new Error('rejected');
     },
     pendingAccounts: async () => [],
@@ -37,7 +38,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
     create: async () => { throw new Error('not used'); },
     list: async input => {
       questionCalls.push(input);
-      return [{ id: 'q-1', type: 'single_choice', content: 'Visible stem', status: 'published', answer: 'A' }];
+      return [{ id: 'q-1', subject: 'physics', type: 'single_choice', content: 'Visible stem', status: 'published', answer: 'A' }];
     },
   };
   const paperExportTasks = {
@@ -48,13 +49,17 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
     read: async () => ({ taskId: 'paper_task_1', status: 'queued', phase: 'queued', progress: 0, requestHash: 'a'.repeat(64), createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', replayed: false }),
     cancel: async () => ({ taskId: 'paper_task_1', status: 'cancelled', phase: 'cancelled', progress: 0, requestHash: 'a'.repeat(64), createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', replayed: false }),
   };
-  const app = createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount, questionAuthority, paperExportTasks, businessTenantId: 'default' });
+  const app = createCloudBusinessApp({ query: async text => (text.includes("q.status='published'") ? { rows: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', status: 'published' }] } : { rows: [] }), miniappCloudAccount, questionAuthority, paperExportTasks, businessTenantId: 'default' });
   const headers = { authorization: 'Bearer miniapp-ticket.signature' };
 
   const previews = await request(app, '/api/business/miniapp-question-previews', { headers });
   assert.strictEqual(previews.status, 200);
-  assert.deepStrictEqual(previews.body, { ok: true, questions: [{ id: 'q-1', type: 'single_choice', stemPreview: 'Visible stem', status: 'published' }] });
+  assert.deepStrictEqual(previews.body, { ok: true, questions: [{ id: 'q-1', subject: 'physics', type: 'single_choice', stemPreview: 'Visible stem', status: 'published' }] });
   assert.deepStrictEqual(questionCalls[0], { tenantId: 'default', actor: { accountId: 'miniapp-admin-1', status: 'active', roles: ['admin'], profile: null }, limit: 200 });
+
+  const studentPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-student.signature' } });
+  assert.strictEqual(studentPreviews.status, 200);
+  assert.deepStrictEqual(studentPreviews.body, { ok: true, questions: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', status: 'published' }] });
 
   const created = await request(app, '/api/business/miniapp-paper-export-tasks', {
     method: 'POST', headers: { ...headers, 'x-idempotency-key': 'miniapp-paper-1' },
@@ -63,6 +68,12 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   assert.strictEqual(created.status, 202);
   assert.strictEqual(paperCalls.length, 1);
   assert.strictEqual(paperCalls[0].actor.accountId, 'miniapp-admin-1');
+
+  const studentExport = await request(app, '/api/business/miniapp-paper-export-tasks', {
+    method: 'POST', headers: { authorization: 'Bearer miniapp-student.signature', 'x-idempotency-key': 'miniapp-student-paper' },
+    body: { taskType: 'paper-export-pdf', request: { questionIds: ['q-public'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native' } },
+  });
+  assert.strictEqual(studentExport.status, 403);
 
   const disallowed = await request(app, '/api/business/miniapp-paper-export-tasks', {
     method: 'POST', headers: { ...headers, 'x-idempotency-key': 'miniapp-paper-2' },

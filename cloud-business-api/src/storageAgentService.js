@@ -20,10 +20,11 @@ function sameToken(expected, actual) {
   return expectedBytes.length === actualBytes.length && crypto.timingSafeEqual(expectedBytes, actualBytes);
 }
 
-function createStorageAgentService({ repository, agentId, token } = {}) {
+function createStorageAgentService({ repository, artifactDeliveries = null, agentId, token } = {}) {
   if (!repository || typeof repository.leaseNext !== 'function' || typeof repository.downloadRelay !== 'function' || typeof repository.complete !== 'function'
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
     || typeof token !== 'string' || token.length < 24) throw rejected();
+  if (artifactDeliveries && (typeof artifactDeliveries.lease !== 'function' || typeof artifactDeliveries.upload !== 'function')) throw rejected();
   function authenticate(input) {
     const request = exact(input, ['agentId', 'token']);
     if (request.agentId !== agentId || !sameToken(token, request.token)) throw rejected();
@@ -52,6 +53,17 @@ function createStorageAgentService({ repository, agentId, token } = {}) {
         observedSha256: request.observedSha256,
         observedBytes: request.observedBytes,
       });
+    },
+    async leaseArtifactDelivery(input) {
+      authenticate(input);
+      if (!artifactDeliveries) return null;
+      return artifactDeliveries.lease({ agentId });
+    },
+    async uploadArtifactDelivery(input) {
+      const request = exact(input, ['agentId', 'token', 'deliveryId', 'leaseToken', 'bytes']);
+      if (request.agentId !== agentId || !sameToken(token, request.token) || !Buffer.isBuffer(request.bytes)) throw rejected();
+      if (!artifactDeliveries) throw rejected();
+      return artifactDeliveries.upload({ agentId, deliveryId: request.deliveryId, leaseToken: request.leaseToken, bytes: Buffer.from(request.bytes) });
     },
   });
 }

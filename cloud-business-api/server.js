@@ -29,6 +29,7 @@ const { createPaperExportTaskProcessor } = require('./src/paperExportTaskProcess
 const { createPaperExportWorkerRuntime } = require('./src/paperExportWorkerRuntime');
 const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
+const { createMiniappArtifactDeliveryRepository } = require('./src/miniappArtifactDeliveryRepository');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
@@ -325,9 +326,13 @@ function createMiniappCloudAccountFromEnvironment(desktopRuntime) {
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
 const miniappCloudAccount = createMiniappCloudAccountFromEnvironment(desktopRuntime);
+const miniappArtifactDeliveries = createMiniappArtifactDeliveryRepository({
+  query: (text, values) => pool.query(text, values),
+});
 const storageAgent = createStorageAgentRuntimeFromEnvironment({
   env: process.env,
   query: (text, values) => pool.query(text, values),
+  artifactDeliveries: miniappArtifactDeliveries,
 });
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
@@ -384,6 +389,7 @@ const app = createCloudBusinessApp({
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
+  miniappArtifactDeliveries,
   storageAgent,
   questionAuthority,
   questionImportTasks,

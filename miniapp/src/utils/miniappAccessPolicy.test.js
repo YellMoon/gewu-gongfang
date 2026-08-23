@@ -16,6 +16,7 @@ const assetsPage = fs.readFileSync('miniapp/src/pages/assets/index.tsx', 'utf-8'
 const assetsStyles = fs.readFileSync('miniapp/src/pages/assets/index.scss', 'utf-8');
 const loginPage = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf-8');
 const storageSource = fs.readFileSync('miniapp/src/utils/storage.ts', 'utf-8');
+const syncSource = fs.readFileSync('miniapp/src/utils/sync.ts', 'utf-8');
 const adminUsersPage = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf-8');
 const studentsPage = fs.readFileSync('miniapp/src/pages/students/index.tsx', 'utf-8');
 const teachersPage = fs.readFileSync('miniapp/src/pages/teachers/index.tsx', 'utf-8');
@@ -61,19 +62,19 @@ assert.ok(permission.includes('getLinkedStudentIds'), 'miniapp permission should
 assert.ok(api.includes('createMiniappTask'), 'miniapp API should create allowed cloud tasks');
 assert.ok(api.includes('authorityProjectionApi'), 'miniapp API should expose the authority projection facade');
 assert.ok(
-  miniappHome.includes('authorityProjectionApi.readCurrent()') && !miniappHome.includes("readCloudSnapshot('full')"),
-  'miniapp home must read the signed authority projection facade instead of the legacy cloud snapshot path',
+  miniappHome.includes('pullFromCloudBusinessProjection()') && !miniappHome.includes("readCloudSnapshot('full')"),
+  'miniapp home must read the cloud business projection instead of the legacy cloud snapshot path',
 );
 assert.ok(
-  miniappHome.includes("console.warn('[AUTHORITY_PROJECTION_LOAD_FAILED]', error)"),
-  'miniapp home must keep authority projection load failures observable',
+  miniappHome.includes("console.warn('[CLOUD_BUSINESS_PROJECTION_LOAD_FAILED]', error)"),
+  'miniapp home must keep cloud business projection load failures observable',
 );
 assert.ok(api.includes('readQuestionPreview'), 'miniapp must consume the answer-free question preview contract');
 assert.ok(
   questionBankPage.includes('if (useLimitedProjection)')
-    && questionBankPage.includes('\\u5c1a\\u672a\\u7ed1\\u5b9a\\u672c\\u5730\\u4e3b\\u4f53')
+    && questionBankPage.includes('miniappCloudBusinessApi.listQuestionPreviews')
     && !questionBankPage.includes('if (isVisitor) {'),
-  'visitor and unbound formal accounts must share the signed limited-preview surface without paper task controls',
+  'visitor and unbound formal accounts must share the cloud limited-preview surface without paper task controls',
 );
 assert.ok(
   miniappHome.includes('usesLimitedQuestionProjection')
@@ -87,8 +88,8 @@ assert.ok(
     && customTabBar.includes('!isUnrecognizedIdentity(currentUser)'),
   'an unbound formal account must retain a visible question-preview navigation entry',
 );
-assert.ok(api.includes('protocolVersion: 2') && api.includes('targetHostDeviceId') && api.includes('idempotencyKey'), 'paper tasks must use the V2 target-host idempotency contract');
-assert.ok(api.includes('cancelMiniappTask'), 'miniapp must support cancelling confirmed V2 tasks');
+assert.ok(api.includes('createPaperExportTask') && api.includes('idempotencyKey'), 'paper exports must use the cloud idempotency contract');
+assert.ok(api.includes('cancelPaperExportTask'), 'miniapp must support cancelling confirmed cloud export tasks');
 assert.ok(api.includes('Cache-Control') && api.includes('no-cache'), 'miniapp API should bypass DevTools 304 caching for JSON endpoints');
 assert.ok(api.includes("_t=${Date.now()}"), 'miniapp GET requests should include cache-busting query to avoid empty 304 responses');
 assert.ok(cloudRelayRoute.includes('filterSnapshotForUser'), 'cloud relay should filter snapshots by user role');
@@ -96,9 +97,7 @@ assert.ok(cloudRelayRoute.includes('isStudentUser'), 'cloud relay should disting
 assert.ok(cloudRelayRoute.includes('student_pricings'), 'student snapshot filter should use course/schedule student links');
 assert.ok(gatewayApp.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'gateway should mount cloud relay with optional auth on its own line');
 assert.ok(miniappHome.includes('getMiniappRolePolicy'), 'home page should use role-specific policy');
-assert.ok(miniappHome.includes("setCachedList('schedules'"), 'home page should cache filtered cloud schedules for student timetable pages');
-assert.ok(miniappHome.includes("setCachedList('courses'"), 'home page should cache filtered cloud courses for student timetable pages');
-assert.ok(miniappHome.includes("setCachedList('students'"), 'home page should cache filtered cloud students for role-scoped pages');
+assert.ok(syncSource.includes('createCloudBusinessProjectionRuntime') && syncSource.includes('writeCache: (table: SyncTable, rows: any[]) => setCachedList(table, rows)'), 'cloud projection sync should cache only the cloud-scoped table lists');
 assert.ok(!permission.includes("'teaching-tools'"), 'miniapp permission should not expose removed teaching tools module');
 assert.ok(!miniappHome.includes("'teaching-tools'"), 'home page should not expose removed teaching tools module');
 assert.ok(!appConfig.includes("'pages/tools/index'"), 'app config should not register removed teaching tools page');
@@ -109,7 +108,7 @@ assert.ok(adminUsersPage.includes('adminApi.disableUser'), 'review workbench sho
 assert.ok(!adminUsersPage.includes('adminApi.reviewUser'), 'miniapp must not mutate legacy scalar roles');
 assert.ok(adminUsersPage.includes('review_status'), 'review workbench should render review status');
 assert.ok(adminUsersPage.includes('teacher_id'), 'teacher review should display the unique teacher binding');
-assert.ok(adminUsersPage.includes('SUPER_ADMIN_PHONE'), 'review workbench should visibly protect the fixed super administrator');
+assert.ok(adminUsersPage.includes('isFixedSuperAdmin') && adminUsersPage.includes('protected-badge'), 'review workbench should visibly protect the fixed super administrator');
 assert.ok(adminUsersPage.includes('loading') && adminUsersPage.includes('empty') && adminUsersPage.includes('error'), 'review workbench should cover loading, empty and error states');
 assert.ok(adminUsersPage.includes('lockedKeys'), 'review workbench should expose per-user and per-pairing saving state');
 assert.ok(adminUsersPage.includes('createLatestRequestCoordinator'), 'review workbench should reject stale load responses');
@@ -133,7 +132,7 @@ assert.ok(miniappHome.includes("!['student', 'pending'].includes(access.role)"),
 assert.ok(miniappHome.includes('access.canReadUsers'), 'home review workbench entry should follow server-derived read capability');
 assert.ok(miniappHome.includes('access.canReviewUsers'), 'home review workbench copy should distinguish reviewer and read-only admin');
 assert.ok(!miniappHome.includes('账号与邀请'), 'home should remove legacy invitation wording');
-assert.ok(miniappHome.includes('scopeDashboardCollections'), 'home dashboard should scope cached collections before aggregation');
+assert.ok(miniappHome.includes('pullFromCloudBusinessProjection') && syncSource.includes('createCloudBusinessProjectionRuntime'), 'home dashboard should consume cloud-scoped collections before aggregation');
 assert.ok(miniappHome.includes('setBusinessCacheIdentity'), 'home should activate the authenticated cache namespace before reads');
 assert.ok(storageSource.includes('cache_${activeCacheIdentity}_${table}'), 'business cache keys should be identity scoped');
 assert.ok(storageSource.includes('previousIdentity !== nextIdentity'), 'business cache should clear the prior identity namespace on account switch');
@@ -166,17 +165,17 @@ assert.ok(loginPage.includes('createAuthenticationEntryBoundary') && loginPage.i
 assert.ok(customTabBar.includes("return 'pending'"), 'tab bar should fail closed when no authenticated role is available');
 assert.ok(customTabBar.includes("userType === 'pending' ? LIMITED_TABS"), 'pending users should not receive business navigation tabs');
 assert.ok(appConfig.includes("'pages/question-bank/index'"), 'app config should register the question bank page');
-assert.ok(questionBankPage.includes('createPaperTaskV2'), 'question bank page should submit V2 question bank operations');
+assert.ok(questionBankPage.includes('miniappCloudBusinessApi.createPaperExportTask'), 'question bank page should submit cloud question export operations');
 assert.ok(questionBankPage.includes("'question-paper'"), 'question bank page should support paper assembly');
 assert.ok(questionBankPage.includes("'paper-export-word'"), 'question bank page should support Word export');
 assert.ok(questionBankPage.includes("'paper-export-pdf'"), 'question bank page should support PDF export');
-assert.ok(questionBankPage.includes('getMiniappTaskResult'), 'question bank page should check paper/export task results');
+assert.ok(questionBankPage.includes('miniappCloudBusinessApi.readPaperExportTask'), 'question bank page should check cloud paper/export task results');
 assert.ok(questionBankPage.includes('createQuestionPaperTaskCacheRuntime') && !questionBankPage.includes("const TASKS_KEY = 'question_paper_tasks_v2'"), 'question bank task history must use the complete authenticated scope namespace');
 assert.ok(questionBankPage.includes('createQuestionPaperTaskCacheRuntime') && questionBankPage.includes('taskState.scopeKey'), 'mounted question-bank task state must bind writes to the scope that produced the snapshot');
-assert.ok(questionBankPage.includes('result?.artifactId') || questionBankPage.includes('result?.accessEndpoint'), 'question bank page should keep authenticated artifact result metadata');
-assert.ok(questionBankPage.includes('Taro.downloadFile'), 'question bank page should download generated paper files');
-assert.ok(questionBankPage.includes('openSessionBoundDocument') && !questionBankPage.includes('await Taro.openDocument'), 'question bank must keep openDocument inside the same tested session boundary as access and download');
-assert.ok(questionBankPage.includes("'x-gewu-artifact-token'") && questionBankPage.includes('accessEndpoint'), 'artifact download must exchange access and send the token in a header');
+assert.ok(questionBankPage.includes('miniappCloudBusinessApi.requestPaperExportDelivery'), 'question bank must request NAS-backed artifact delivery through cloud');
+assert.ok(questionBankPage.includes('miniappCloudBusinessApi.downloadPaperExportDelivery'), 'question bank must use the cloud delivery download helper');
+assert.ok(questionBankPage.includes('await Taro.openDocument'), 'question bank must open the temporary cloud-delivery file');
+assert.ok(!questionBankPage.includes('accessEndpoint') && !questionBankPage.includes("'x-gewu-artifact-token'"), 'artifact download must not expose a direct storage access endpoint');
 assert.ok(!questionBankPage.includes('questionCount:'), 'paper submission must send exact ordered questionIds rather than a count');
 assert.ok(!api.includes('studentApi') || !api.includes("create: (data: any) => api.post<any>('/scheduling/students'"), 'miniapp API must not expose direct student create');
 assert.ok(!api.includes('studentApi') || !api.includes('update: (id: string, data: any) => api.put<any>(`/scheduling/students/${id}`'), 'miniapp API must not expose direct student update');

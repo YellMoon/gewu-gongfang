@@ -332,6 +332,45 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud paper export cancel unavailable' };
     }
   },
+  async requestPaperExportDelivery(token: string, taskId: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof taskId !== 'string' || !taskId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-paper-export-tasks/${encodeURIComponent(taskId)}/delivery`), method: 'POST', data: {},
+        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.delivery) return { success: true, data: response.data as { ok: true; delivery: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud export delivery request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud export delivery request unavailable' };
+    }
+  },
+  async readPaperExportDelivery(token: string, deliveryId: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof deliveryId !== 'string' || !deliveryId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-artifact-deliveries/${encodeURIComponent(deliveryId)}`), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.delivery) return { success: true, data: response.data as { ok: true; delivery: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud export delivery status failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud export delivery status unavailable' };
+    }
+  },
+  async downloadPaperExportDelivery(token: string, deliveryId: string): Promise<ApiResponse<{ tempFilePath: string; statusCode: number }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof deliveryId !== 'string' || !deliveryId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.downloadFile({
+        url: cloudBusinessUrl(`/api/business/miniapp-artifact-deliveries/${encodeURIComponent(deliveryId)}/download`),
+        header: { Authorization: `Bearer ${token}` }, timeout: REQUEST_TIMEOUT,
+      });
+      if (response.statusCode === 200 && typeof response.tempFilePath === 'string' && response.tempFilePath) return { success: true, data: { tempFilePath: response.tempFilePath, statusCode: response.statusCode } };
+      return { success: false, error: `Cloud export download failed (${response.statusCode})` };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud export download unavailable' };
+    }
+  },
   async listSchedules(token: string): Promise<ApiResponse<{ ok: true; schedules: any[] }>> {
     if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     try {

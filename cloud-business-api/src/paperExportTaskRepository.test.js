@@ -28,6 +28,11 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
     taskType: 'paper-export-pdf',
     request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native' },
   });
+  await assert.rejects(
+    () => repository.create({ tenantId: 'default', actor: { accountId: 'student-1', roles: ['student'] }, idempotencyKey: 'student-export', taskType: 'paper-export-pdf', request: { questionIds: ['q1'], title: 'Paper', subject: 'math', answerPosition: 'end', formulaMode: 'latex-vector' } }),
+    /CLOUD_PAPER_EXPORT_ACCESS_DENIED/,
+    'student identities may preview published questions but cannot create export tasks',
+  );
   assert.strictEqual(created.taskId, 'paper-task-1');
   assert.strictEqual(created.status, 'queued');
   assert.strictEqual(created.phase, 'queued');

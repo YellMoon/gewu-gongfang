@@ -29,6 +29,18 @@ function validTask(task) {
       && Number.isSafeInteger(task.assetIndex) && task.assetIndex >= 0 && validSource(task.source)));
 }
 
+function validArtifactDelivery(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
+    && /^delivery_[A-Za-z0-9_-]{8,128}$/.test(value.deliveryId || '') && value.status === 'leased'
+    && /^paper_artifact_[A-Za-z0-9_-]{8,128}$/.test(value.artifactId || '')
+    && /^obj_[A-Za-z0-9_-]{1,128}$/.test(value.objectId || '') && Number.isSafeInteger(value.objectVersion) && value.objectVersion > 0
+    && /^[0-9a-f]{64}$/.test(value.expectedSha256 || '') && Number.isSafeInteger(value.expectedBytes) && value.expectedBytes > 0 && value.expectedBytes <= (64 * 1024 * 1024)
+    && typeof value.fileName === 'string' && value.fileName.length > 0 && value.fileName.length <= 512
+    && typeof value.mimeType === 'string' && value.mimeType.length > 0 && value.mimeType.length <= 255
+    && typeof value.expiresAt === 'string' && Number.isFinite(Date.parse(value.expiresAt))
+    && typeof value.leaseToken === 'string' && value.leaseToken.length >= 16 && typeof value.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(value.leaseExpiresAt));
+}
+
 function validSource(source) {
   return Boolean(source) && typeof source === 'object' && !Array.isArray(source) && Object.getPrototypeOf(source) === Object.prototype
     && typeof source.objectId === 'string' && /^obj_[A-Za-z0-9_-]{1,128}$/.test(source.objectId)
@@ -86,11 +98,44 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
     }
   }
+  async function postBytes(relativePath, bytes, headers) {
+    let response;
+    try {
+      response = await fetchImpl(`${baseUrl}${relativePath}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream', 'x-gewu-storage-agent-token': token, ...headers },
+        body: bytes,
+      });
+    } catch (_) {
+      throw failure('STORAGE_CLOUD_UNAVAILABLE');
+    }
+    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw failure('STORAGE_CLOUD_UNAVAILABLE');
+    try {
+      return await response.json();
+    } catch (_) {
+      throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+    }
+  }
   return Object.freeze({
     async lease() {
       const response = exact(await post('/api/storage-agent/lease', { agentId }), ['ok', 'task']);
       if (response.ok !== true || (response.task !== null && !validTask(response.task))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       return response.task;
+    },
+    async leaseArtifactDelivery() {
+      const response = exact(await post('/api/storage-agent/artifact-deliveries/lease', { agentId }), ['ok', 'delivery']);
+      if (response.ok !== true || (response.delivery !== null && !validArtifactDelivery(response.delivery))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.delivery;
+    },
+    async uploadArtifactDelivery(input) {
+      const request = exact(input, ['deliveryId', 'leaseToken', 'bytes']);
+      if (!/^delivery_[A-Za-z0-9_-]{8,128}$/.test(request.deliveryId || '') || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16
+        || !Buffer.isBuffer(request.bytes) || request.bytes.length < 1 || request.bytes.length > (64 * 1024 * 1024)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      const response = exact(await postBytes(`/api/storage-agent/artifact-deliveries/${encodeURIComponent(request.deliveryId)}/upload`, request.bytes, {
+        'x-gewu-storage-agent-id': agentId, 'x-gewu-storage-agent-lease-token': request.leaseToken,
+      }), ['ok', 'delivery']);
+      if (response.ok !== true || !response.delivery || response.delivery.deliveryId !== request.deliveryId || response.delivery.status !== 'ready') throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.delivery;
     },
     async download(task) {
       if (!validTask(task)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');

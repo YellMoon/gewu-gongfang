@@ -29,6 +29,15 @@ async function main() {
           createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:01:00.000Z', mediaTargets: [],
         } }) };
       }
+      if (url.endsWith('/api/storage-agent/artifact-deliveries/lease')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, delivery: {
+          deliveryId: 'delivery_12345678', status: 'leased', artifactId: 'paper_artifact_12345678', objectId: 'obj_paper_12345678', objectVersion: 1,
+          expectedSha256: 'a'.repeat(64), expectedBytes: 3, fileName: 'paper.pdf', mimeType: 'application/pdf', expiresAt: '2026-08-22T00:15:00.000Z', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z',
+        } }) };
+      }
+      if (url.endsWith('/api/storage-agent/artifact-deliveries/delivery_12345678/upload')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, delivery: { deliveryId: 'delivery_12345678', status: 'ready' } }) };
+      }
       return { ok: true, status: 200, json: async () => ({ ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } }) };
     },
   });
@@ -45,6 +54,9 @@ async function main() {
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(importTask.status, 'candidates_ready');
+  const delivery = await client.leaseArtifactDelivery();
+  assert.strictEqual(delivery.deliveryId, 'delivery_12345678');
+  assert.deepStrictEqual(await client.uploadArtifactDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes: Buffer.from('pdf') }), { deliveryId: 'delivery_12345678', status: 'ready' });
   assert.strictEqual(calls[0].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/lease');
   assert.strictEqual(calls[0].options.headers['x-gewu-storage-agent-token'], 'storage-agent-client-test-token-with-sufficient-length');
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), { agentId: 'storage-agent-1' });
@@ -58,6 +70,13 @@ async function main() {
     agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
+  assert.strictEqual(calls[4].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/lease');
+  assert.deepStrictEqual(JSON.parse(calls[4].options.body), { agentId: 'storage-agent-1' });
+  assert.strictEqual(calls[5].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/delivery_12345678/upload');
+  assert.strictEqual(calls[5].options.headers['content-type'], 'application/octet-stream');
+  assert.strictEqual(calls[5].options.headers['x-gewu-storage-agent-id'], 'storage-agent-1');
+  assert.strictEqual(calls[5].options.headers['x-gewu-storage-agent-lease-token'], 'lease-token-test-value');
+  assert.deepStrictEqual(calls[5].options.body, Buffer.from('pdf'));
   await assert.rejects(
     () => client.lease(),
     /STORAGE_CLOUD_RESPONSE_INVALID/,

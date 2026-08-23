@@ -107,7 +107,7 @@ function questionPaperTaskCacheKey(user) {
 function usesLimitedQuestionProjection(user) {
   const role = roleOf(user);
   if (role === 'visitor') return true;
-  return ['student', 'teacher'].includes(role) && !businessCacheIdentityKey(user);
+  return role === 'student' || (role === 'teacher' && !businessCacheIdentityKey(user));
 }
 
 function createQuestionPaperTaskCacheRuntime(dependencies) {
