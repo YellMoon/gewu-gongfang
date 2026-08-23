@@ -2,11 +2,12 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (businessStudentUpdate !== null && typeof businessStudentUpdate !== 'function') throw new TypeError('businessStudentUpdate is invalid');
+  if (businessStudentRecordUpdate !== null && typeof businessStudentRecordUpdate !== 'function') throw new TypeError('businessStudentRecordUpdate is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
@@ -101,6 +102,26 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     return value === null || (typeof value === 'string' && value === value.trim() && value.length > 0 && value.length <= maximumLength)
       ? value
       : undefined;
+  }
+  function studentContacts(value) {
+    if (!Array.isArray(value) || value.length > 3) return null;
+    const slots = new Set();
+    const contacts = [];
+    for (const candidate of value) {
+      const contact = exactBody(candidate, ['slot', 'relationship', 'phone', 'wechat', 'expectedUpdatedAt']);
+      const expectedUpdatedAt = contact?.expectedUpdatedAt === null ? null : instant(contact?.expectedUpdatedAt);
+      const phone = contact?.phone;
+      const wechat = contact?.wechat;
+      const validPhone = phone === null || (typeof phone === 'string' && /^1[3-9][0-9]{9}$/u.test(phone));
+      const validWechat = wechat === null || (typeof wechat === 'string' && wechat === wechat.trim() && wechat.length > 0 && wechat.length <= 128);
+      if (!contact || !Number.isInteger(contact.slot) || contact.slot < 1 || contact.slot > 3 || slots.has(contact.slot)
+        || !['student', 'guardian'].includes(contact.relationship)
+        || (contact.slot === 1 && contact.relationship !== 'student') || (contact.slot > 1 && contact.relationship !== 'guardian')
+        || expectedUpdatedAt === undefined || !validPhone || !validWechat || (phone === null && wechat === null)) return null;
+      slots.add(contact.slot);
+      contacts.push({ slot: contact.slot, relationship: contact.relationship, phone, wechat, expectedUpdatedAt });
+    }
+    return contacts;
   }
   function nonNegativeNumber(value) {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100000000 ? value : null;
@@ -626,6 +647,44 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         notes,
         sourceType,
         studentSource,
+      });
+      if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
+        return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
+      }
+      response.json({ ok: true, student: result });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
+  app.put('/api/business/students/:studentId/record', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessStudentRecordUpdate) return businessUnavailable(response);
+    const studentId = String(request.params.studentId || '').trim();
+    const update = exactBody(request.body, ['expectedUpdatedAt', 'name', 'school', 'gradeYear', 'gradeCurrent', 'institutionId', 'parentName', 'notes', 'sourceType', 'studentSource', 'contacts']);
+    if (!studentId || !update) return businessInputInvalid(response);
+    const expectedUpdatedAt = instant(update.expectedUpdatedAt);
+    const name = boundedText(update.name, 256);
+    const school = boundedText(update.school, 256);
+    const gradeCurrent = boundedText(update.gradeCurrent, 128);
+    const institutionId = boundedText(update.institutionId, 256);
+    const parentName = boundedText(update.parentName, 256);
+    const notes = optionalText(update.notes);
+    const studentSource = boundedText(update.studentSource, 512);
+    const contacts = studentContacts(update.contacts);
+    const gradeYear = update.gradeYear;
+    const sourceType = update.sourceType;
+    if (!expectedUpdatedAt || !name || school === undefined || gradeCurrent === undefined || institutionId === undefined
+      || parentName === undefined || notes === undefined || studentSource === undefined || contacts === null
+      || !(gradeYear === null || (Number.isInteger(gradeYear) && gradeYear >= 1900 && gradeYear <= 2200))
+      || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      }
+      const result = await businessStudentRecordUpdate({
+        tenantId: businessTenantId, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
+        institutionId, parentName, notes, sourceType, studentSource, contacts,
       });
       if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });

@@ -6,6 +6,7 @@ const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desk
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createBusinessStudentUpdate } = require('./src/businessStudentMutationService');
+const { createBusinessStudentRecordUpdate } = require('./src/businessStudentRecordMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
@@ -263,6 +264,9 @@ function createDesktopRegistrationFromEnvironment() {
   const businessStudentUpdate = createBusinessStudentUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
+  const businessStudentRecordUpdate = createBusinessStudentRecordUpdate({
+    query: (text, values) => writerPool.query(text, values),
+  });
   return {
     registration,
     desktopPasswordAuthentication,
@@ -273,6 +277,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessScheduleUpdate,
     businessScheduleStudentOverride,
     businessStudentUpdate,
+    businessStudentRecordUpdate,
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
   };
 }
@@ -343,6 +348,7 @@ const app = createCloudBusinessApp({
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   businessStudentUpdate: desktopRuntime?.businessStudentUpdate || null,
+  businessStudentRecordUpdate: desktopRuntime?.businessStudentRecordUpdate || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
