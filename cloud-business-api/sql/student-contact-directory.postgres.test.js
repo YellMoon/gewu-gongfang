@@ -20,12 +20,17 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-23T00:00:00.000Z', appliedBy: 
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       await facade.query("INSERT INTO business.tenants(id,name,legacy_status,legacy_plan,legacy_archive_before,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Tenant',NULL,NULL,NULL,false,transaction_timestamp(),transaction_timestamp())");
       await facade.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','Student',false,false,transaction_timestamp(),transaction_timestamp())");
+      await facade.query("UPDATE business.students SET phone_legacy='13800138000',parent_phone_legacy='13900139000',parent_wechat_legacy='guardian-handle' WHERE id='student-1'");
       await facade.query('CREATE ROLE gewu_cloud_schedule_reader');
       await facade.query(SQL);
-      await facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,phone_value,phone_hmac,wechat_handle,status) VALUES ('contact-1','student-1',1,'student','13800138000',repeat('a',64),'student-handle','active')");
-      await facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,phone_value,phone_hmac,wechat_handle,status) VALUES ('contact-2','student-1',2,'guardian',NULL,NULL,'guardian-handle','active')");
+      const migrated = await facade.query("SELECT contact_slot,relationship,phone_value,wechat_handle FROM business.student_contact_directory WHERE student_id='student-1' ORDER BY contact_slot");
+      assert.deepStrictEqual(migrated.rows.map(row => ({ slot: row.contact_slot, relationship: row.relationship, phone: row.phone_value, wechat: row.wechat_handle })), [
+        { slot: 1, relationship: 'student', phone: '13800138000', wechat: null },
+        { slot: 2, relationship: 'guardian', phone: '13900139000', wechat: 'guardian-handle' },
+      ]);
+      await facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,wechat_handle,status) VALUES ('contact-3','student-1',3,'guardian','second-guardian','active')");
       await assert.rejects(
-        () => facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,phone_value,status) VALUES ('contact-duplicate','student-1',2,'guardian','13900139000','active')"),
+        () => facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,phone_value,status) VALUES ('contact-duplicate','student-1',3,'guardian','13900139000','active')"),
         error => error && error.code === '23505',
       );
       await assert.rejects(
@@ -33,7 +38,7 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-23T00:00:00.000Z', appliedBy: 
         error => error && error.code === '23514',
       );
       await assert.rejects(
-        () => facade.query("INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,status) VALUES ('contact-empty','student-1',3,'guardian','active')"),
+        () => facade.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-2','tenant-1','Student two',false,false,transaction_timestamp(),transaction_timestamp()); INSERT INTO business.student_contact_directory(contact_id,student_id,contact_slot,relationship,status) VALUES ('contact-empty','student-2',1,'student','active')"),
         error => error && error.code === '23514',
       );
     });
