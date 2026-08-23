@@ -2,14 +2,18 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Empty, Modal, Space, Statistic, Table, Tag, message } from 'antd';
 import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { getQuestionAssetDataUrl, assetKeyFromRef } from '../services/questionAssetStore';
+
+const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 
 type AuthorityOutboxItem = {
   id: string;
   type: string;
+  payload?: Record<string, any>;
   preview?: Record<string, unknown>;
   status: 'awaiting_confirmation' | 'confirmed' | 'submitted' | 'completed' | 'conflict';
   submission?: { transportUsed?: string } | null;
-  receipt?: { projectionVersion?: number } | null;
+  receipt?: any;
   conflict?: { code?: string } | null;
 };
 
@@ -72,6 +76,97 @@ function cloudQuestionSubmissionInput(item: AuthorityOutboxItem) {
   return { sessionToken: match[1] };
 }
 
+type AssetRelayState = {
+  assetId: string;
+  taskId: string;
+  objectId: string;
+  objectVersion: number;
+  status: 'queued' | 'failed';
+  updatedAt: string;
+  errorCode?: string;
+};
+
+const assetRelayStatePrefix = 'gewu.question-asset-relay.v1:';
+
+function questionIdForRelay(item: AuthorityOutboxItem, receipt: any): string {
+  const fromReceipt = receipt?.result?.id;
+  const payload = item.payload || {};
+  const fromPayload = item.type === 'question.create.v1' ? payload?.record?.id : payload?.id;
+  const id = String(fromReceipt || fromPayload || '').trim();
+  if (!id || id.length > 128) throw new Error('QUESTION_ASSET_RELAY_QUESTION_INVALID');
+  return id;
+}
+
+function questionAssetKeys(value: unknown): string[] {
+  const keys = new Set<string>();
+  const seen = new Set<object>();
+  const walk = (current: any) => {
+    if (typeof current === 'string') {
+      for (const match of current.matchAll(/question-asset:\/\/([A-Za-z0-9._-]{1,512})/g)) keys.add(assetKeyFromRef(match[0]));
+      return;
+    }
+    if (!current || typeof current !== 'object' || seen.has(current)) return;
+    seen.add(current);
+    if (Array.isArray(current)) current.forEach(walk);
+    else Object.values(current).forEach(walk);
+  };
+  walk(value);
+  return [...keys].sort();
+}
+
+function assetRelayStateKey(questionId: string, assetKey: string): string {
+  return `${assetRelayStatePrefix}${encodeURIComponent(questionId)}:${encodeURIComponent(assetKey)}`;
+}
+
+function freshRelayId(prefix: 'asset' | 'task' | 'obj'): string {
+  const raw = globalThis.crypto?.randomUUID?.().replace(/-/g, '') || `${Date.now()}${Math.random()}`.replace(/[^A-Za-z0-9]/g, '');
+  return `${prefix}_${raw.slice(0, 120)}`;
+}
+
+async function dataUrlBytes(dataUrl: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  const response = await fetch(dataUrl);
+  if (!response.ok) throw new Error('QUESTION_ASSET_RELAY_SOURCE_UNAVAILABLE');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const mimeType = String(response.headers.get('content-type') || /^data:([^;,]+)/.exec(dataUrl)?.[1] || 'application/octet-stream').split(';')[0];
+  if (!bytes.byteLength || !/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+/-]{0,254}$/.test(mimeType)) throw new Error('QUESTION_ASSET_RELAY_SOURCE_INVALID');
+  return { bytes, mimeType };
+}
+
+async function relayQuestionAssetsAfterReceipt(item: AuthorityOutboxItem, receipt: any): Promise<number> {
+  if (!/^question\.(create|update)\.v\d+$/.test(item.type) || receipt?.status !== 'committed') return 0;
+  const questionId = questionIdForRelay(item, receipt);
+  const keys = questionAssetKeys(item.payload || {});
+  let queued = 0;
+  for (const assetKey of keys) {
+    const stateKey = assetRelayStateKey(questionId, assetKey);
+    let state: AssetRelayState | null = null;
+    try {
+      state = JSON.parse(localStorage.getItem(stateKey) || 'null') as AssetRelayState | null;
+    } catch (_error) {
+      state = null;
+    }
+    if (state?.status === 'queued') continue;
+    const nextState: AssetRelayState = state && state.assetId && state.taskId && state.objectId
+      ? { ...state, status: 'failed', updatedAt: new Date().toISOString() }
+      : { assetId: freshRelayId('asset'), taskId: freshRelayId('task'), objectId: freshRelayId('obj'), objectVersion: 1, status: 'failed', updatedAt: new Date().toISOString() };
+    try {
+      const dataUrl = await getQuestionAssetDataUrl(assetKey);
+      const source = await dataUrlBytes(dataUrl);
+      await createDesktopQuestionImportClient().relayAsset({
+        questionId, assetId: nextState.assetId, assetType: source.mimeType.startsWith('image/') ? 'image' : 'attachment',
+        fileName: `${assetKey.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 480) || 'asset'}.bin`, mimeType: source.mimeType,
+        bytes: source.bytes, storage: { taskId: nextState.taskId, objectId: nextState.objectId, objectVersion: nextState.objectVersion },
+      });
+      localStorage.setItem(stateKey, JSON.stringify({ ...nextState, status: 'queued', updatedAt: new Date().toISOString(), errorCode: undefined }));
+      queued += 1;
+    } catch (error: any) {
+      localStorage.setItem(stateKey, JSON.stringify({ ...nextState, status: 'failed', updatedAt: new Date().toISOString(), errorCode: error?.code || error?.message || 'QUESTION_ASSET_RELAY_FAILED' }));
+      throw error;
+    }
+  }
+  return queued;
+}
+
 const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
   const [items, setItems] = useState<AuthorityOutboxItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -128,6 +223,11 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
             await (window as any).dbService?.refreshAuthorityProjection?.({
               minSourceVersion: result.receipt?.projectionVersion || 0,
             });
+            try {
+              await relayQuestionAssetsAfterReceipt(item, result.receipt);
+            } catch (error: any) {
+              message.warning(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
+            }
           }
         } catch (error: any) {
           message.error(error?.code || error?.message || 'AUTHORITY_COMMAND_SUBMIT_FAILED');
@@ -151,10 +251,28 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
           await (window as any).dbService?.refreshAuthorityProjection?.({
             minSourceVersion: result.receipt?.projectionVersion || 0,
           });
+          try {
+            await relayQuestionAssetsAfterReceipt(item, result.receipt);
+          } catch (error: any) {
+            message.warning(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
+          }
         }
       }
     } catch (error: any) {
       message.error(error?.code || error?.message || 'AUTHORITY_COMMAND_RETRY_FAILED');
+    } finally {
+      setBusyId('');
+      await refresh();
+    }
+  };
+
+  const retryQuestionAssets = async (item: AuthorityOutboxItem) => {
+    setBusyId(item.id);
+    try {
+      const queued = await relayQuestionAssetsAfterReceipt(item, item.receipt);
+      message.success(queued ? `${copy.completed} (${queued})` : copy.completed);
+    } catch (error: any) {
+      message.error(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
     } finally {
       setBusyId('');
       await refresh();
@@ -199,7 +317,10 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
             onClick={() => void retry(item)}>{copy.retry}</Button>;
         }
         return item.status === 'completed'
-          ? <CheckCircleOutlined style={{ color: '#52c41a' }} />
+          ? (/^question\.(create|update)\.v\d+$/.test(item.type)
+            ? <Button size="small" loading={busyId === item.id}
+              onClick={() => void retryQuestionAssets(item)}>{copy.retry}</Button>
+            : <CheckCircleOutlined style={{ color: '#52c41a' }} />)
           : <span style={{ color: '#cf1322' }}>{copy.retained}</span>;
       },
     },

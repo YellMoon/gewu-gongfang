@@ -46,6 +46,7 @@ async function main() {
   const relay = await assetClient.relayAsset({
     questionId: 'question-1', assetId: 'asset_87654321', assetType: 'image', fileName: 'diagram.png', mimeType: 'image/png',
     bytes: new Uint8Array(Buffer.from('asset-payload')),
+    storage: { taskId: 'task_87654321', objectId: 'obj_87654321', objectVersion: 1 },
   });
   assert.deepStrictEqual(relay, { taskId: 'task_87654321', assetId: 'asset_87654321', expiresAt: '2026-08-23T00:15:00.000Z' });
   assert.strictEqual(assetCalls[0].options.headers.Authorization, 'Bearer desktop-token');

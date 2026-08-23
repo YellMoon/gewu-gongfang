@@ -104,7 +104,7 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
     },
     async relayAsset(input) {
       if (typeof sealAsset !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
-      const requestInput = exact(input, ['questionId', 'assetId', 'assetType', 'fileName', 'mimeType', 'bytes']);
+      const requestInput = exact(input, ['questionId', 'assetId', 'assetType', 'fileName', 'mimeType', 'bytes', 'storage']);
       if (typeof requestInput.questionId !== 'string' || !requestInput.questionId.trim() || requestInput.questionId.length > 128
         || !ids(requestInput.assetId, 'asset') || typeof requestInput.assetType !== 'string' || !requestInput.assetType.trim() || requestInput.assetType.length > 128
         || !(requestInput.fileName === null || (typeof requestInput.fileName === 'string' && requestInput.fileName.trim() && requestInput.fileName.length <= 512 && !/[\\/\r\n]/.test(requestInput.fileName)))
@@ -112,13 +112,17 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
         || !(requestInput.bytes instanceof Uint8Array) || !requestInput.bytes.byteLength || requestInput.bytes.byteLength > (64 * 1024 * 1024)) {
         throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
       }
+      const storage = requestInput.storage;
+      if (!storage || typeof storage !== 'object' || Array.isArray(storage)
+        || !ids(storage.taskId, 'task') || !ids(storage.objectId, 'obj')
+        || !Number.isSafeInteger(storage.objectVersion) || storage.objectVersion < 1) {
+        throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
+      }
       const relayKeyResponse = await fetchImpl(`${assetBase}/relay-key`, { headers: authorization(deps) });
       const relayKey = await responseJson(relayKeyResponse);
       if (typeof relayKey.agentPublicKey !== 'string' || !/^[A-Za-z0-9_-]{40,4096}$/.test(relayKey.agentPublicKey)
         || typeof relayKey.agentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(relayKey.agentKeyFingerprint)) throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
-      const taskId = nextId('task', deps);
-      const objectId = nextId('obj', deps);
-      const sealed = await sealAsset({ agentPublicKey: relayKey.agentPublicKey, storageTaskId: taskId, objectId, objectVersion: 1, bytes: requestInput.bytes });
+      const sealed = await sealAsset({ agentPublicKey: relayKey.agentPublicKey, storageTaskId: storage.taskId, objectId: storage.objectId, objectVersion: storage.objectVersion, bytes: requestInput.bytes });
       if (!sealed || typeof sealed !== 'object' || !/^[0-9a-f]{64}$/.test(sealed.sourceSha256 || '') || !Number.isSafeInteger(sealed.sourceBytes)
         || sealed.sourceBytes !== requestInput.bytes.byteLength || !sealed.envelope || typeof sealed.ciphertextBase64 !== 'string') throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
       const current = now();
@@ -127,7 +131,7 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
         method: 'POST',
         headers: { ...authorization(deps), 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          questionId: requestInput.questionId, assetId: requestInput.assetId, taskId, objectId, objectVersion: 1,
+          questionId: requestInput.questionId, assetId: requestInput.assetId, taskId: storage.taskId, objectId: storage.objectId, objectVersion: storage.objectVersion,
           assetType: requestInput.assetType, fileName: requestInput.fileName, mimeType: requestInput.mimeType,
           agentKeyFingerprint: relayKey.agentKeyFingerprint, envelope: sealed.envelope, ciphertextBase64: sealed.ciphertextBase64,
           expiresAt: new Date(current.getTime() + (15 * 60 * 1000)).toISOString(),
