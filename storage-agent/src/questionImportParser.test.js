@@ -10,6 +10,7 @@ const { createQuestionImportParser } = require('./questionImportParser');
 
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-outside-'));
   const parserPath = path.join(root, 'parse_word.py');
   fs.writeFileSync(parserPath, '# parser fixture\n');
   const assetBytes = Buffer.from('image-fixture');
@@ -44,8 +45,16 @@ async function main() {
       () => parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture'), extra: true }),
       /QUESTION_IMPORT_PARSE_INPUT_INVALID/
     );
+    fs.rmSync(path.join(root, '.gewu-storage-agent'), { recursive: true, force: true });
+    fs.symlinkSync(outside, path.join(root, '.gewu-storage-agent'), process.platform === 'win32' ? 'junction' : 'dir');
+    await assert.rejects(
+      () => parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') }),
+      /QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT/
+    );
+    assert.deepStrictEqual(fs.readdirSync(outside), [], 'a reparse point beneath the NAS root must not receive parser input');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
 }
 

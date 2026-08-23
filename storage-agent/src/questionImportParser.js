@@ -10,6 +10,33 @@ function failure(code) {
   return Object.assign(new Error(code), { code });
 }
 
+function assertInsideRoot(candidate, nasRoot) {
+  const relative = path.relative(nasRoot, candidate);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  return candidate;
+}
+
+function assertNoReparsePoint(candidate, nasRoot) {
+  const safeCandidate = assertInsideRoot(candidate, nasRoot);
+  try {
+    if (fs.lstatSync(nasRoot).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  } catch (error) {
+    if (error?.code === 'QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT') throw error;
+    throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  }
+  let current = nasRoot;
+  for (const segment of path.relative(nasRoot, safeCandidate).split(path.sep)) {
+    current = path.join(current, segment);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+    } catch (error) {
+      if (error?.code === 'ENOENT') break;
+      throw error;
+    }
+  }
+  return safeCandidate;
+}
+
 function plainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     && !types.isProxy(value) && Object.getPrototypeOf(value) === Object.prototype;
@@ -126,6 +153,12 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory() || !fs.existsSync(script) || !fs.statSync(script).isFile()) {
     throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
   }
+  try {
+    if (fs.lstatSync(root).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  } catch (error) {
+    if (error?.code === 'QUESTION_IMPORT_PARSE_CONFIG_INVALID') throw error;
+    throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  }
   return Object.freeze({
     async parse(input) {
       const request = exact(input, ['sourceType', 'sourceFileName', 'bytes']);
@@ -133,11 +166,14 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
         || !/\.(?:doc|docx)$/iu.test(request.sourceFileName) || !Buffer.isBuffer(request.bytes) || request.bytes.length < 1 || request.bytes.length > (64 * 1024 * 1024)) {
         throw failure('QUESTION_IMPORT_PARSE_INPUT_INVALID');
       }
-      const temporaryRoot = path.join(root, '.gewu-storage-agent');
+      const temporaryRoot = assertNoReparsePoint(path.join(root, '.gewu-storage-agent'), root);
       await fs.promises.mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
+      assertNoReparsePoint(temporaryRoot, root);
       const temporaryDirectory = await fs.promises.mkdtemp(path.join(temporaryRoot, 'parser-'));
-      const temporaryPath = path.join(temporaryDirectory, `source${path.extname(request.sourceFileName).toLowerCase()}`);
+      assertNoReparsePoint(temporaryDirectory, root);
+      const temporaryPath = assertNoReparsePoint(path.join(temporaryDirectory, `source${path.extname(request.sourceFileName).toLowerCase()}`), root);
       try {
+        assertNoReparsePoint(temporaryPath, root);
         await fs.promises.writeFile(temporaryPath, request.bytes, { flag: 'wx', mode: 0o600 });
         const raw = await execute({ pythonBin: pythonBin.trim(), parserPath: script, filePath: temporaryPath, sourceType: request.sourceType });
         if (typeof raw !== 'string' && !Buffer.isBuffer(raw)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
@@ -161,6 +197,7 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
           mediaBytes: parsed.map(item => item.mediaBytes),
         };
       } finally {
+        assertNoReparsePoint(temporaryDirectory, root);
         await fs.promises.rm(temporaryDirectory, { recursive: true, force: true });
       }
     },
