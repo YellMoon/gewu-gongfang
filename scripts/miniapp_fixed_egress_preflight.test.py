@@ -33,8 +33,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         return {
             "WECHAT_MINIAPP_FIXED_EGRESS_IP": "203.0.113.17",
             "WECHAT_MINIAPP_FIXED_EGRESS_ECHO_URL": "https://echo.example/ip",
-            "WECHAT_MINIAPP_BACKEND_HEALTH_URL": "https://health.example/backend",
-            "WECHAT_MINIAPP_GATEWAY_HEALTH_URL": "https://health.example/gateway",
+            "WECHAT_MINIAPP_CLOUD_BUSINESS_HEALTH_URL": "https://health.example/cloud-business",
         }
 
     def test_config_requires_canonical_ipv4_and_https_port_443(self):
@@ -42,6 +41,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         self.assertEqual(config.fixed_egress_ip, "203.0.113.17")
         self.assertIn(("echo.example", 443), config.allowlist)
         self.assertIn(("servicewechat.com", 443), config.allowlist)
+        self.assertEqual(config.health_urls, ("https://health.example/cloud-business",))
         invalid_environments = (
             {},
             {**self.base_env(), "WECHAT_MINIAPP_FIXED_EGRESS_IP": "203.0.113.017"},

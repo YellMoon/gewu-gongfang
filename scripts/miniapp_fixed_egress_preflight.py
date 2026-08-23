@@ -32,7 +32,6 @@ EXPECTED_MINIPROGRAM_CI_VERSION = "2.1.31"
 DEFAULT_ECHO_URL = "https://checkip.amazonaws.com/"
 DEFAULT_HEALTH_URLS = (
     "https://physicsedu.xyz/scheduling/api/health",
-    "https://physicsedu.xyz/api/health",
 )
 
 
@@ -99,8 +98,7 @@ def config_from_env(
     ).strip()
     echo_target = _validate_https_url(echo_url, "fixed-egress echo URL")
     health_urls = (
-        env.get("WECHAT_MINIAPP_BACKEND_HEALTH_URL") or DEFAULT_HEALTH_URLS[0],
-        env.get("WECHAT_MINIAPP_GATEWAY_HEALTH_URL") or DEFAULT_HEALTH_URLS[1],
+        env.get("WECHAT_MINIAPP_CLOUD_BUSINESS_HEALTH_URL") or DEFAULT_HEALTH_URLS[0],
     )
     for health_url in health_urls:
         _validate_https_url(health_url, "health URL")
