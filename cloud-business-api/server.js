@@ -8,6 +8,7 @@ const { createBusinessScheduleStudentOverride } = require('./src/businessSchedul
 const { createBusinessStudentUpdate } = require('./src/businessStudentMutationService');
 const { createBusinessStudentRecordUpdate } = require('./src/businessStudentRecordMutationService');
 const { createBusinessStudentLifecycleMutations } = require('./src/businessStudentLifecycleMutationService');
+const { createBusinessTeacherLifecycleMutations } = require('./src/businessTeacherLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
@@ -269,6 +270,7 @@ function createDesktopRegistrationFromEnvironment() {
     query: (text, values) => writerPool.query(text, values),
   });
   const businessStudentLifecycleMutations = createBusinessStudentLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
+  const businessTeacherLifecycleMutations = createBusinessTeacherLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   return {
     registration,
     desktopPasswordAuthentication,
@@ -281,6 +283,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessStudentUpdate,
     businessStudentRecordUpdate,
     businessStudentLifecycleMutations,
+    businessTeacherLifecycleMutations,
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
   };
 }
@@ -353,6 +356,7 @@ const app = createCloudBusinessApp({
   businessStudentUpdate: desktopRuntime?.businessStudentUpdate || null,
   businessStudentRecordUpdate: desktopRuntime?.businessStudentRecordUpdate || null,
   businessStudentLifecycleMutations: desktopRuntime?.businessStudentLifecycleMutations || null,
+  businessTeacherLifecycleMutations: desktopRuntime?.businessTeacherLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
