@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { createMiniappTask } from '../../utils/api';
+import { miniappCloudBusinessApi } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
 import { assertMiniappWriteAllowed } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { EmptyState, NetworkStatus } from '../../components/shared';
+// @ts-ignore CommonJS CSV parser has no TypeScript declarations.
+import { parsePersonalAssetCsv } from '../../utils/personalAssetCsv';
 import './index.scss';
 
 interface AssetRecord { id: string; category_id: string; amount: number; type: 'income' | 'expense'; date: string; notes?: string; }
@@ -23,12 +26,15 @@ export default function Assets() {
   const submitAssetImportTask = async () => {
     try {
       assertMiniappWriteAllowed('asset-import');
-      const response = await createMiniappTask('asset-import', {
-        source: 'miniapp-assets',
-        requestedAt: new Date().toISOString(),
+      const selected: any = await Taro.chooseMessageFile({ count: 1, type: 'file', extension: ['csv'] });
+      const filePath = selected?.tempFiles?.[0]?.path;
+      if (typeof filePath !== 'string' || !filePath) throw new Error('CSV_FILE_REQUIRED');
+      const content = await new Promise<string>((resolve, reject) => {
+        Taro.getFileSystemManager().readFile({ filePath, encoding: 'utf8', success: result => resolve(String(result.data || '')), fail: reject });
       });
+      const response = await miniappCloudBusinessApi.importPersonalAssets(authSessionRuntime.capture().token, parsePersonalAssetCsv(content), `asset-import-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       if (!response.success) throw new Error(response.error || '\u5bfc\u5165\u5931\u8d25');
-      Taro.showToast({ title: '\u8d22\u52a1\u5bfc\u5165\u5df2\u5f00\u59cb', icon: 'success' });
+      Taro.showToast({ title: '\u8d22\u52a1\u5bfc\u5165\u5df2\u4fdd\u5b58', icon: 'success' });
     } catch (error: any) {
       Taro.showToast({ title: error?.message || '\u5bfc\u5165\u5931\u8d25', icon: 'none' });
     }

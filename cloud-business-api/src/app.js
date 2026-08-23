@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -20,6 +20,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
   if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
   if (miniappArtifactDeliveries && (typeof miniappArtifactDeliveries.request !== 'function' || typeof miniappArtifactDeliveries.status !== 'function' || typeof miniappArtifactDeliveries.download !== 'function')) throw new TypeError('miniappArtifactDeliveries is invalid');
+  if (personalAssetImports && typeof personalAssetImports.import !== 'function') throw new TypeError('personalAssetImports is invalid');
   if (questionImportTasks && (typeof questionImportTasks.create !== 'function' || typeof questionImportTasks.read !== 'function' || typeof questionImportTasks.prepareDrafts !== 'function' || typeof questionImportTasks.completeSourceAndStoreCandidates !== 'function')) throw new TypeError('questionImportTasks is invalid');
   if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
   if (storageAgentKeyFingerprint !== null && (typeof storageAgentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(storageAgentKeyFingerprint))) throw new TypeError('storageAgentKeyFingerprint is invalid');
@@ -237,15 +238,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function miniappProjectionScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
-    if (context.roles.includes('super_admin') || context.roles.includes('admin')) return { role: 'manager', profileId: null };
+    if (context.roles.includes('super_admin') || context.roles.includes('admin')) return { role: 'manager', profileId: null, accountId: context.accountId };
     const profile = context.profile && typeof context.profile === 'object' ? context.profile : null;
     if (context.roles.includes('teacher')) {
       const profileId = profile?.type === 'teacher' ? profile.id : context.teacherId;
-      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'teacher', profileId };
+      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'teacher', profileId, accountId: context.accountId };
     }
     if (context.roles.includes('student')) {
       const profileId = profile?.type === 'student' ? profile.id : context.studentId;
-      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'student', profileId };
+      if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'student', profileId, accountId: context.accountId };
     }
     throw businessAccessDenied();
   }
@@ -270,12 +271,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     "'schedules',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'course_id',s.course_id,'start_time',s.start_at,'end_time',s.end_at,'recurring_rule',s.recurring_rule_json,'status',s.status,'room',s.room_display_snapshot,'service_type',s.service_type,'calculated_tuition',CASE WHEN $2='student' THEN COALESCE((SELECT o.tuition FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3),(SELECT p.tuition FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3)) ELSE s.calculated_tuition END,'calculated_teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN s.calculated_teacher_fee ELSE NULL END,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at,'student_ids',COALESCE((SELECT jsonb_agg(o.student_id ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(p.student_id ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb),'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',o.student_id,'tuition',o.tuition,'teacher_fee',o.teacher_fee,'attendance_status',o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',p.teacher_fee) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY s.start_at,s.id) FROM scoped_schedules s),'[]'::jsonb),",
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
-    "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb)",
+    "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
+    "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.record_id,'category_id',asset.category_id,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'notes',asset.note) ORDER BY asset.record_date DESC,asset.record_id) FROM business.personal_asset_records asset WHERE asset.tenant_id=$1 AND asset.account_id=$4),'[]'::jsonb),",
+    "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.category_id,'name',category.name,'type',category.category_type,'color','#999') ORDER BY category.category_type,category.name) FROM business.personal_asset_categories category WHERE category.tenant_id=$1 AND category.account_id=$4),'[]'::jsonb)",
     ') AS projection',
   ].join(' ');
   function isMiniappProjection(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-      && ['students', 'studentContacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms'].every(key => Array.isArray(value[key]));
+      && ['students', 'studentContacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'assetRecords', 'assetCategories'].every(key => Array.isArray(value[key]));
   }
   const desktopProjectionSql = [
     'SELECT jsonb_build_object(',
@@ -600,7 +603,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
     try {
       const scope = miniappProjectionScope(await miniappBusinessContext(request));
-      const result = await query(miniappProjectionSql, [businessTenantId, scope.role, scope.profileId]);
+      const result = await query(miniappProjectionSql, [businessTenantId, scope.role, scope.profileId, scope.accountId]);
       const projection = result?.rows?.[0]?.projection;
       if (!isMiniappProjection(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });
@@ -633,6 +636,20 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       })) });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
+  app.post('/api/business/miniapp-personal-assets/import', async (request, response) => {
+    if (!personalAssetImports || businessTenantId === null) return businessUnavailable(response);
+    const body = exactBody(request.body, ['records']);
+    const idempotencyKey = String(request.get('x-idempotency-key') || '');
+    if (!body || !Array.isArray(body.records) || !idempotencyKey || idempotencyKey.length > 256) return businessInputInvalid(response);
+    try {
+      const receipt = await personalAssetImports.import({ tenantId: businessTenantId, actor: await miniappBusinessContext(request), idempotencyKey, records: body.records });
+      response.status(receipt.replayed ? 200 : 202).json({ ok: true, receipt });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_PERSONAL_ASSET_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && ['CLOUD_PERSONAL_ASSET_INPUT_INVALID', 'CLOUD_PERSONAL_ASSET_IDEMPOTENCY_CONFLICT'].includes(error.code)) return businessInputInvalid(response);
       businessUnavailable(response);
     }
   });

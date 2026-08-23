@@ -371,6 +371,19 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud export download unavailable' };
     }
   },
+  async importPersonalAssets(token: string, records: any[], idempotencyKey: string): Promise<ApiResponse<{ ok: true; receipt: any }>> {
+    if (typeof token !== 'string' || !token.trim() || !Array.isArray(records) || records.length < 1 || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/business/miniapp-personal-assets/import'), method: 'POST', data: { records },
+        header: { Authorization: `Bearer ${token}`, 'x-idempotency-key': idempotencyKey, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.receipt) return { success: true, data: response.data as { ok: true; receipt: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud personal asset import failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud personal asset import unavailable' };
+    }
+  },
   async listSchedules(token: string): Promise<ApiResponse<{ ok: true; schedules: any[] }>> {
     if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     try {

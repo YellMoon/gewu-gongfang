@@ -16,5 +16,7 @@ assert.match(source, /cloudBusinessUrl\('\/api\/business\/miniapp-paper-export-t
 assert.match(source, /async requestPaperExportDelivery\(token: string, taskId: string\)/, 'miniapp must request a short-lived cloud delivery for completed exports');
 assert.match(source, /miniapp-paper-export-tasks\/\$\{encodeURIComponent\(taskId\)\}\/delivery/, 'delivery requests must stay bound to one completed task');
 assert.match(source, /async downloadPaperExportDelivery\(token: string, deliveryId: string\)/, 'miniapp must download only through the scoped cloud delivery route');
+assert.match(source, /async importPersonalAssets\(token: string, records: any\[\], idempotencyKey: string\)/, 'miniapp personal assets must submit parsed records to cloud');
+assert.match(source, /cloudBusinessUrl\('\/api\/business\/miniapp-personal-assets\/import'\)/, 'personal assets must not use the retired generic task route');
 
 console.log('miniapp cloud business projection API checks passed');

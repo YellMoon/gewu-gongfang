@@ -37,7 +37,7 @@ async function request(app, path, { headers = {} } = {}) {
     assignRole: async () => { throw new Error('not used'); },
   };
   const projection = {
-    students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [],
+    students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
   };
   const app = createCloudBusinessApp({
     query: async (text, values) => {
@@ -55,23 +55,25 @@ async function request(app, path, { headers = {} } = {}) {
   assert.strictEqual(response.status, 200);
   assert.deepStrictEqual(response.body, { ok: true, projection });
   assert.strictEqual(queries.length, 1, 'the cloud must assemble the miniapp read model in one scoped query');
-  assert.deepStrictEqual(queries[0][1], ['default', 'manager', null]);
+  assert.deepStrictEqual(queries[0][1], ['default', 'manager', null, 'miniapp-account-1']);
   assert.ok(queries[0][0].includes('business.students'));
   assert.ok(queries[0][0].includes('business.courses'));
   assert.ok(queries[0][0].includes('business.schedules'));
   assert.ok(queries[0][0].includes('business.schedule_student_overrides'));
+  assert.ok(queries[0][0].includes('business.personal_asset_records'), 'personal assets must be read from the cloud authority');
+  assert.ok(queries[0][0].includes('asset.account_id=$4'), 'personal assets must be scoped to the active account');
 
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },
   });
   assert.strictEqual(teacherResponse.status, 200);
-  assert.deepStrictEqual(queries[1][1], ['default', 'teacher', 'teacher-1']);
+  assert.deepStrictEqual(queries[1][1], ['default', 'teacher', 'teacher-1', 'miniapp-account-2']);
 
   const studentResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer student-ticket.signature' },
   });
   assert.strictEqual(studentResponse.status, 200);
-  assert.deepStrictEqual(queries[2][1], ['default', 'student', 'student-1']);
+  assert.deepStrictEqual(queries[2][1], ['default', 'student', 'student-1', 'miniapp-account-3']);
   assert.ok(queries[2][0].includes('NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides'));
   console.log('cloud miniapp business projection checks passed');
 })().catch(error => {

@@ -9,6 +9,8 @@ const TABLES = Object.freeze([
   ['institutions', 'institutions'],
   ['schools', 'schools'],
   ['rooms', 'rooms'],
+  ['assetRecords', 'assetRecords'],
+  ['assetCategories', 'assetCategories'],
 ]);
 
 function validProjection(value) {

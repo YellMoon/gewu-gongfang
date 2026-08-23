@@ -14,6 +14,8 @@ const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProject
     institutions: [{ id: 'institution-1', name: 'Institution One' }],
     schools: [{ id: 'school-1', name: 'School One' }],
     rooms: [{ id: 'room-1', name: 'Room One' }],
+    assetRecords: [{ id: 'asset_record-1', amount: 8 }],
+    assetCategories: [{ id: 'asset_category-1', name: 'Tuition' }],
   };
   const runtime = createCloudBusinessProjectionRuntime({
     readProjection: async token => {
@@ -35,6 +37,8 @@ const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProject
     ['institutions', projection.institutions],
     ['schools', projection.schools],
     ['rooms', projection.rooms],
+    ['assetRecords', projection.assetRecords],
+    ['assetCategories', projection.assetCategories],
     ['payments', []],
     ['grades', []],
   ]);

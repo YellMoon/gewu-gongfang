@@ -6,7 +6,7 @@
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
-    "test:miniapp-cloud-read": "node miniapp/src/utils/cloudBusinessProjection.test.js && node miniapp/src/utils/miniappCloudBusinessProjectionApi.test.js && node miniapp/src/utils/miniappCloudProjectionSync.test.js && node miniapp/src/utils/miniappCloudBusinessReadPages.test.js && node miniapp/src/pages/index/cloudBusinessHome.test.js && node miniapp/src/pages/question-bank/cloudDelivery.test.js && node miniapp/src/utils/miniappAccessPolicy.test.js && npm --prefix cloud-business-api run test:miniapp-cloud-read",
+    "test:miniapp-cloud-read": "node miniapp/src/utils/cloudBusinessProjection.test.js && node miniapp/src/utils/miniappCloudBusinessProjectionApi.test.js && node miniapp/src/utils/miniappCloudProjectionSync.test.js && node miniapp/src/utils/miniappCloudBusinessReadPages.test.js && node miniapp/src/pages/index/cloudBusinessHome.test.js && node miniapp/src/pages/question-bank/cloudDelivery.test.js && node miniapp/src/utils/personalAssetCsv.test.js && node miniapp/src/utils/miniappAccessPolicy.test.js && npm --prefix cloud-business-api run test:miniapp-cloud-read",
     "vnext:migration:inventory": "node scripts/vnext-migration/cli.js inventory",
     "vnext:migration:verify": "node scripts/vnext-migration/cli.js verify",
     "vnext:migration:snapshot": "node scripts/vnext-migration/cli.js snapshot",

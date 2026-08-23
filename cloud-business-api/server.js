@@ -30,6 +30,7 @@ const { createPaperExportWorkerRuntime } = require('./src/paperExportWorkerRunti
 const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { createMiniappArtifactDeliveryRepository } = require('./src/miniappArtifactDeliveryRepository');
+const { createPersonalAssetImportRepository } = require('./src/personalAssetImportRepository');
 const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
@@ -344,6 +345,7 @@ const questionImportTasks = createQuestionImportTaskRepository({
 const paperExportTasks = createPaperExportTaskRepository({
   query: (text, values) => pool.query(text, values),
 });
+const personalAssetImports = createPersonalAssetImportRepository({ transaction: questionCommandTransaction });
 function configuredStorageAgentKeyFingerprint(value) {
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]+$/.test(value) || value.length > 4096) return null;
   const bytes = Buffer.from(value, 'base64url');
@@ -390,6 +392,7 @@ const app = createCloudBusinessApp({
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
   miniappArtifactDeliveries,
+  personalAssetImports,
   storageAgent,
   questionAuthority,
   questionImportTasks,
