@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
-import { getLocalItem, getLocalData } from '../../utils/sync';
+import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import './index.scss';
 
 export default function StudentDetail() {
@@ -14,7 +14,10 @@ export default function StudentDetail() {
   const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'grades'>('info');
 
   useEffect(() => {
-    if (id) {
+    let active = true;
+    const load = async () => {
+      await pullFromCloudBusinessProjection();
+      if (!active || !id) return;
       const s = getLocalItem<Student>('students', id);
       setStudent(s || null);
 
@@ -23,7 +26,9 @@ export default function StudentDetail() {
 
       const allGrades = getLocalData<Grade>('grades');
       setGrades(allGrades.filter((g) => g.student_id === id));
-    }
+    };
+    void load();
+    return () => { active = false; };
   }, [id]);
 
   if (!student) {

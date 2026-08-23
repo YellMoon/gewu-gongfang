@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import { Schedule, ScheduleStatus, Course, CourseType } from '../../types';
-import { getLocalData } from '../../utils/sync';
+import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import './index.scss';
 
 interface StatsData {
@@ -22,7 +22,13 @@ export default function Stats() {
   const [monthCollapsed, setMonthCollapsed] = useState(false);
 
   useEffect(() => {
-    loadStats();
+    let active = true;
+    const load = async () => {
+      await pullFromCloudBusinessProjection();
+      if (active) loadStats();
+    };
+    void load();
+    return () => { active = false; };
   }, []);
 
   const loadStats = () => {

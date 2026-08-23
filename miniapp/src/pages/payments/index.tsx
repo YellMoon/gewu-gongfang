@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import { useDidShow } from '@tarojs/taro';
 import { Payment, PaymentType, Student } from '../../types';
-import { setCachedList } from '../../utils/storage';
-import { paymentApi } from '../../utils/api';
-import { getLocalData } from '../../utils/sync';
+import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import { sortPaymentsNewestFirst } from './paymentsRuntime';
 import './index.scss';
@@ -17,7 +15,7 @@ export default function Payments() {
   const [filterStudentId, setFilterStudentId] = useState('');
 
   useDidShow(() => {
-    loadData();
+    void handleRefresh();
   });
 
   const loadData = () => {
@@ -29,11 +27,8 @@ export default function Payments() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const res = await paymentApi.getAll();
-      if (res.success && res.data) {
-        setCachedList('payments', res.data);
-        setPayments(res.data);
-      }
+      await pullFromCloudBusinessProjection();
+      loadData();
     } catch {
       loadData();
     } finally {

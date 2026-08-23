@@ -4,24 +4,18 @@
 import { useState, useCallback, useMemo } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { api, authorityProjectionApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
 import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
 import {
-  fetchPermissions,
-  getPermittedModules,
-  hasModulePermission,
   clearPermissionCache,
   getMiniappRolePolicy,
-  getLinkedStudentIds,
-  getEffectiveMiniappAccess,
   MiniappCapability,
   MiniappRole,
 } from '../../utils/permission';
-import { getLocalData } from '../../utils/sync';
-import { clearBusinessCache, setBusinessCacheIdentity, setCachedList } from '../../utils/storage';
-import { scopeDashboardCollections, usesLimitedQuestionProjection } from '../../utils/miniappAuthorizationRuntime';
+import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
+import { usesLimitedQuestionProjection } from '../../utils/miniappAuthorizationRuntime';
 import { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } from '../../utils/miniappHomePresentation';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
@@ -74,19 +68,6 @@ const STUDENT_SHORTCUTS = [
   { mark: '卷', label: '题库组卷', desc: '选题、组卷和导出', url: '/pages/question-bank/index' },
 ];
 
-function cacheSnapshotPayload(payload?: Record<string, any>) {
-  if (!payload) return;
-  if (Array.isArray(payload.students)) setCachedList('students', payload.students);
-  if (Array.isArray(payload.courses)) setCachedList('courses', payload.courses);
-  if (Array.isArray(payload.schedules)) setCachedList('schedules', payload.schedules);
-  if (Array.isArray(payload.teachers)) setCachedList('teachers', payload.teachers);
-  if (Array.isArray(payload.payments)) setCachedList('payments', payload.payments);
-  if (Array.isArray(payload.consumptions)) setCachedList('consumptions', payload.consumptions);
-  if (Array.isArray(payload.assetRecords)) setCachedList('assetRecords', payload.assetRecords);
-  if (Array.isArray(payload.assetCategories)) setCachedList('assetCategories', payload.assetCategories);
-  if (Array.isArray(payload.questions)) setCachedList('questions', payload.questions);
-}
-
 export default function Index() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
@@ -111,7 +92,8 @@ export default function Index() {
     const savedUser = session.identity as UserInfo;
     setUser({ ...savedUser, name: getMiniappHomeDisplayName(savedUser) });
     if (isUnrecognizedIdentity(savedUser) || isVisitorIdentity(savedUser)) {
-      const nextAccess = getEffectiveMiniappAccess(savedUser);
+      const policy = getMiniappRolePolicy(savedUser);
+      const nextAccess = { ...policy, canReadUsers: false, canReviewUsers: false };
       setAccess(nextAccess);
       setModules(isVisitorIdentity(savedUser)
         ? [{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]
@@ -125,7 +107,6 @@ export default function Index() {
       return;
     }
     setBusinessCacheIdentity(savedUser);
-    const permissionResult = await fetchPermissions();
     const verifiedSession = captureTrustedAuthSession(authSessionRuntime);
     if (!verifiedSession) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -133,42 +114,45 @@ export default function Index() {
     }
     const verifiedUser = verifiedSession.identity as UserInfo;
     setUser({ ...verifiedUser, name: getMiniappHomeDisplayName(verifiedUser) });
-    const nextAccess = getEffectiveMiniappAccess(verifiedUser);
+    const policy = getMiniappRolePolicy(verifiedUser);
+    const nextAccess = {
+      ...policy,
+      canReadUsers: policy.role === 'super_admin' || policy.role === 'admin',
+      canReviewUsers: policy.role === 'super_admin',
+    };
     setAccess(nextAccess);
-    if (permissionResult.capabilities.length === 0 || nextAccess.modules.length === 0) {
+    if (nextAccess.modules.length === 0) {
       setModules([]);
       setSnapshot(null);
       setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
       setLoading(false);
       return;
     }
-    await Promise.all([loadModules(nextAccess), loadDashboard(verifiedUser), loadSnapshot(verifiedUser)]);
+    await loadSnapshot(verifiedUser);
+    await Promise.all([loadModules(nextAccess), loadDashboard(verifiedUser)]);
   };
 
   const loadSnapshot = async (currentUser: UserInfo) => {
     if (currentUser.user_type === 'pending') return;
     try {
-      const res = await authorityProjectionApi.readCurrent();
-      const payload = res as any;
-      if (res.success) {
-        const nextProjection = payload.projection || payload.data?.projection || null;
-        cacheSnapshotPayload(nextProjection?.payload);
-        setSnapshot(nextProjection ? {
-          ...nextProjection,
-          created_at: nextProjection.generatedAt || nextProjection.generated_at,
-        } : null);
-      }
+      const refreshed = await pullFromCloudBusinessProjection();
+      setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
     } catch (error) {
-      console.warn('[AUTHORITY_PROJECTION_LOAD_FAILED]', error);
+      console.warn('[CLOUD_BUSINESS_PROJECTION_LOAD_FAILED]', error);
       setSnapshot(null);
     }
   };
 
   const loadModules = async (currentAccess: any) => {
     try {
-      const res = await api.get<{ modules: ModuleInfo[] }>('/api/modules');
+      const cloudModuleNames: Record<string, string> = {
+        scheduling: '\u8bfe\u7a0b\u5b89\u6392',
+        'question-bank': '\u7ec4\u5377\u4e0e\u5bfc\u51fa',
+        assets: '\u8d22\u52a1\u5bfc\u5165',
+      };
+      const res = { success: true, data: { modules: Object.keys(MODULE_CONFIG).map(id => ({ id, name: cloudModuleNames[id] || id, description: '', icon: '' })) } };
       if (res.success && res.data) {
-        const permittedIds = currentAccess.modules || getPermittedModules();
+        const permittedIds = currentAccess.modules || [];
         const allModules = res.data.modules.filter((m) => permittedIds.includes(m.id));
         setModules(allModules);
       }
@@ -191,26 +175,8 @@ export default function Index() {
         return;
       }
       const rolePolicy = getMiniappRolePolicy(currentUser);
-      const linkedStudentIds = getLinkedStudentIds(currentUser);
-      const courseStudentIds = (course?: any) => [
-        ...(Array.isArray(course?.student_ids) ? course.student_ids : []),
-        ...(Array.isArray(course?.student_pricings) ? course.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
-      ].filter(Boolean);
-      const identityScoped = scopeDashboardCollections(currentUser, { students, courses, schedules });
-      const courseById = new Map(identityScoped.courses.map((course: any) => [course.id, course]));
-      const scopedSchedules = rolePolicy.role === 'student'
-        ? identityScoped.schedules.filter((schedule: any) => {
-          const directStudentIds = [
-            ...(Array.isArray(schedule.student_ids) ? schedule.student_ids : []),
-            ...(Array.isArray(schedule.student_pricings) ? schedule.student_pricings.map((p: any) => p.student_id || p.studentId) : []),
-            ...courseStudentIds(courseById.get(schedule.course_id)),
-          ].filter(Boolean);
-          return directStudentIds.some((id: string) => linkedStudentIds.includes(id));
-        })
-        : identityScoped.schedules;
-      const scopedStudents = rolePolicy.role === 'student'
-        ? identityScoped.students.filter((student: any) => linkedStudentIds.includes(student.id))
-        : identityScoped.students;
+      const scopedSchedules = schedules;
+      const scopedStudents = students;
 
       const today = new Date().toISOString().split('T')[0];
       const thisMonth = today.substring(0, 7);
@@ -256,7 +222,7 @@ export default function Index() {
   };
 
   const handleModuleClick = useCallback((mod: ModuleInfo) => {
-    if (!hasModulePermission(mod.id, 'view')) {
+    if (!access.modules.includes(mod.id)) {
       Taro.navigateTo({ url: '/pages/forbidden/index' });
       return;
     }

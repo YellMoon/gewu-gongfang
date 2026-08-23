@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { View, Text, Input } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Student, StudentSource } from '../../types';
-import { setCachedList } from '../../utils/storage';
-import { studentApi } from '../../utils/api';
-import { getLocalData } from '../../utils/sync';
+import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton, PullRefreshView } from '../../components/shared';
 import './index.scss';
 
@@ -14,7 +12,7 @@ export default function Students() {
   const [loading, setLoading] = useState(true);
 
   useDidShow(() => {
-    loadStudents();
+    void handleRefresh();
   });
 
   const loadStudents = () => {
@@ -24,11 +22,8 @@ export default function Students() {
 
   const handleRefresh = async () => {
     try {
-      const res = await studentApi.getAll();
-      if (res.success && res.data) {
-        setCachedList('students', res.data);
-        setStudents(res.data);
-      }
+      await pullFromCloudBusinessProjection();
+      loadStudents();
     } catch {
       loadStudents();
     }

@@ -8,10 +8,9 @@ import {
   setCachedList,
   onNetworkChange,
 } from './storage';
-import { getApiBaseUrl } from './api';
+import { miniappCloudBusinessApi } from './api';
 import { authSessionRuntime } from './authSession';
-import { createSessionBoundOperation } from './miniappApiSessionRuntime';
-import { projectionCacheEntries, projectionCacheTables } from './authorityProjectionCache';
+import { createCloudBusinessProjectionRuntime } from './cloudBusinessProjection';
 
 type SyncCallback = (info: { type: 'confirm'; count: number; changes: PendingChange[] } | { type: 'done'; success: boolean; message: string }) => void;
 
@@ -30,46 +29,21 @@ function timestamp(value: unknown): number {
   return Date.now();
 }
 
-async function requestAuthorityProjection(): Promise<any> {
-  const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
-  const response = await sessionBoundary.run((requestSession: any) => Taro.request({
-    url: `${getApiBaseUrl()}/api/miniapp/projection`,
-    method: 'GET',
-    header: {
-      'Content-Type': 'application/json',
-      Authorization: requestSession.token ? `Bearer ${requestSession.token}` : '',
-    },
-    timeout: 30000,
-  }));
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(`HTTP ${response.statusCode}`);
-  }
-  return response.data;
-}
+const cloudBusinessProjectionRuntime = createCloudBusinessProjectionRuntime({
+  readProjection: miniappCloudBusinessApi.readBusinessProjection,
+  writeCache: (table: SyncTable, rows: any[]) => setCachedList(table, rows),
+});
 
-function applyAuthorityProjection(projection: any): void {
-  const payload = projection?.payload;
-  if (!payload || typeof payload !== 'object') {
-    throw new Error('AUTHORITY_PROJECTION_PAYLOAD_REQUIRED');
-  }
-  for (const table of projectionCacheTables) setCachedList(table as SyncTable, []);
-  for (const [table, rows] of projectionCacheEntries(payload) as Array<[SyncTable, any[]]>) {
-    setCachedList(table as SyncTable, rows);
-  }
-  setLastSyncTimestamp(timestamp(projection.generatedAt || projection.generated_at));
-}
-
-async function pullFromAuthority(): Promise<boolean> {
+export async function pullFromCloudBusinessProjection(): Promise<boolean> {
   try {
-    const data = await requestAuthorityProjection();
-    const projection = data?.projection || data?.data?.projection;
-    if (!data?.success || !projection) return false;
-    applyAuthorityProjection(projection);
-    syncCallback?.({ type: 'done', success: true, message: 'AUTHORITY_PROJECTION_REFRESHED' });
+    const session = authSessionRuntime.capture();
+    await cloudBusinessProjectionRuntime.refresh(session.token);
+    setLastSyncTimestamp(timestamp(Date.now()));
+    syncCallback?.({ type: 'done', success: true, message: 'CLOUD_BUSINESS_PROJECTION_REFRESHED' });
     return true;
   } catch (error: any) {
-    console.error('[AuthorityProjection] refresh failed:', error);
-    syncCallback?.({ type: 'done', success: false, message: error?.message || 'AUTHORITY_PROJECTION_REFRESH_FAILED' });
+    console.error('[CloudBusinessProjection] refresh failed:', error);
+    syncCallback?.({ type: 'done', success: false, message: error?.message || 'CLOUD_BUSINESS_PROJECTION_REFRESH_FAILED' });
     return false;
   }
 }
@@ -93,7 +67,7 @@ export function initSyncManager(): void {
       notifyPendingAuthorityHost(pendingNow);
       return;
     }
-    void pullFromAuthority();
+    void pullFromCloudBusinessProjection();
   });
 }
 
@@ -103,7 +77,7 @@ export async function manualSync(): Promise<boolean> {
     notifyPendingAuthorityHost(pending);
     return false;
   }
-  return pullFromAuthority();
+  return pullFromCloudBusinessProjection();
 }
 
 export function getLocalData<T>(table: SyncTable): T[] {
@@ -134,12 +108,10 @@ export async function triggerSync(): Promise<{ success: boolean; message: string
   const success = await manualSync();
   return {
     success,
-    message: success ? 'AUTHORITY_PROJECTION_REFRESHED' : 'AUTHORITY_HOST_REVIEW_REQUIRED',
+    message: success ? 'CLOUD_BUSINESS_PROJECTION_REFRESHED' : 'AUTHORITY_HOST_REVIEW_REQUIRED',
   };
 }
 
 export async function pullFromCloud(): Promise<boolean> {
-  return pullFromAuthority();
+  return pullFromCloudBusinessProjection();
 }
-
-export { applyAuthorityProjection };

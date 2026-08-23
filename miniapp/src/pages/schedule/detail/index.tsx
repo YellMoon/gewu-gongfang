@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../../types';
-import { getLocalItem, getLocalData } from '../../../utils/sync';
+import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../../utils/sync';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -22,7 +22,13 @@ export default function ScheduleDetail() {
   const [students, setStudents] = useState<Student[]>([]);
 
   useEffect(() => {
-    if (id) loadDetail();
+    let active = true;
+    const load = async () => {
+      await pullFromCloudBusinessProjection();
+      if (active && id) loadDetail();
+    };
+    void load();
+    return () => { active = false; };
   }, [id]);
 
   const loadDetail = () => {

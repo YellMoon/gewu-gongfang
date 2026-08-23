@@ -5,7 +5,9 @@ const sync = fs.readFileSync('miniapp/src/utils/sync.ts', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
 assert.ok(!sync.includes('addPendingChange'), 'miniapp sync facade must not enqueue core-table mutations');
-assert.ok(sync.includes('requestAuthorityProjection'), 'miniapp sync facade should refresh its scoped authority projection');
+assert.ok(sync.includes('pullFromCloudBusinessProjection'), 'miniapp sync facade should refresh its scoped cloud business projection');
+assert.ok(sync.includes('miniappCloudBusinessApi.readBusinessProjection'), 'miniapp sync must not keep using the retired local-backend projection route');
+assert.ok(!sync.includes('/api/miniapp/projection'), 'miniapp sync must not route business reads through the retired local backend');
 assert.ok(sync.includes('MINIAPP_CORE_EDIT_REQUIRES_AUTHORITY_HOST'), 'legacy core edits must fail closed');
 for (const mutation of ['updateLocalItem', 'addLocalItem', 'removeLocalItem']) {
   assert.ok(

@@ -2,9 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
-import { getCachedList, setCachedList } from '../../utils/storage';
-import { miniappCloudBusinessApi, scheduleApi } from '../../utils/api';
-import { authSessionRuntime } from '../../utils/authSession';
+import { getCachedList } from '../../utils/storage';
+import { pullFromCloudBusinessProjection } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
@@ -21,28 +20,10 @@ interface ScheduleWithCourse extends Schedule {
   course_type?: number;
 }
 
-function cloudScheduleDateTime(instant: string): string {
-  const date = new Date(instant);
-  if (Number.isNaN(date.getTime())) return '';
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
-}
-
 export default function SchedulePage() {
   const identity = Taro.getStorageSync('user_info');
   const isUnrecognized = isUnrecognizedIdentity(identity);
   const isVisitor = isVisitorIdentity(identity);
-  const isCloudMiniapp = identity?.token_use === 'miniapp-cloud';
   const isLimitedIdentity = isUnrecognized || isVisitor || identity?.account_state === 'pending';
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -54,14 +35,10 @@ export default function SchedulePage() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    loadData();
+    void handleRefresh();
   }, [currentDate]);
 
   const loadData = () => {
-    if (isCloudMiniapp) {
-      void loadCloudSchedules();
-      return;
-    }
     if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
@@ -84,47 +61,7 @@ export default function SchedulePage() {
     setLoading(false);
   };
 
-  const loadCloudSchedules = async () => {
-    const token = authSessionRuntime.capture().token;
-    if (!token) {
-      setSchedules([]);
-      setCourses([]);
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
-    const response = await miniappCloudBusinessApi.listSchedules(token);
-    if (!response.success || !response.data?.schedules) {
-      setSchedules([]);
-      setCourses([]);
-      setStudents([]);
-      setLoading(false);
-      return;
-    }
-    setSchedules(response.data.schedules.map((row: any) => ({
-      id: row.id,
-      course_id: row.courseId,
-      start_time: cloudScheduleDateTime(row.startAt),
-      end_time: cloudScheduleDateTime(row.endAt),
-      status: row.status,
-      room: row.roomDisplay,
-      calculated_tuition: row.tuition,
-      calculated_teacher_fee: row.teacherFee,
-      student_ids: [],
-      course_name: row.courseName,
-    } as ScheduleWithCourse)));
-    setCourses([]);
-    setStudents([]);
-    setLoading(false);
-  };
-
   const handleRefresh = useCallback(async () => {
-    if (isCloudMiniapp) {
-      setRefreshing(true);
-      await loadCloudSchedules();
-      setRefreshing(false);
-      return;
-    }
     if (isLimitedIdentity) {
       setSchedules([]);
       setCourses([]);
@@ -135,11 +72,8 @@ export default function SchedulePage() {
     }
     setRefreshing(true);
     try {
-      const res = await scheduleApi.getAll();
-      if (res.success && res.data) {
-        setCachedList('schedules', res.data);
-        loadData();
-      }
+      await pullFromCloudBusinessProjection();
+      loadData();
     } catch {
       loadData();
     } finally {
@@ -254,7 +188,7 @@ export default function SchedulePage() {
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
 
-      {isCloudMiniapp && identity?.role === 'super_admin' ? (
+      {identity?.role === 'super_admin' ? (
         <View className="view-toggle">
           <View className="toggle-btn active" onClick={() => Taro.navigateTo({ url: '/pages/cloud-account-admin/index' })}>
             <Text>{'\u65b0\u8d26\u53f7\u6388\u6743'}</Text>

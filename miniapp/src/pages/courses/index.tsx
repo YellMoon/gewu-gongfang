@@ -5,9 +5,7 @@ import { useState } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Course, CourseType } from '../../types';
-import { setCachedList } from '../../utils/storage';
-import { courseApi } from '../../utils/api';
-import { getLocalData } from '../../utils/sync';
+import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import './index.scss';
 
@@ -20,7 +18,7 @@ export default function Courses() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useDidShow(() => { loadCourses(); });
+  useDidShow(() => { void handleRefresh(); });
 
   const loadCourses = () => {
     setCourses(getLocalData<Course>('courses'));
@@ -30,11 +28,8 @@ export default function Courses() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const res = await courseApi.getAll();
-      if (res.success && res.data) {
-        setCachedList('courses', res.data);
-        setCourses(res.data);
-      }
+      await pullFromCloudBusinessProjection();
+      loadCourses();
     } catch { loadCourses(); }
     finally { setRefreshing(false); }
   };

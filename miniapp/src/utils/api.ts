@@ -262,6 +262,76 @@ export const miniappCloudAuthApi = {
 };
 
 export const miniappCloudBusinessApi = {
+  async readBusinessProjection(token: string): Promise<ApiResponse<{ ok: true; projection: any }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/business/miniapp-projection'),
+        method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        timeout: REQUEST_TIMEOUT,
+        dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.projection) {
+        return { success: true, data: response.data as { ok: true; projection: any } };
+      }
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud business projection request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud business projection request unavailable' };
+    }
+  },
+  async listQuestionPreviews(token: string): Promise<ApiResponse<{ ok: true; questions: any[] }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/business/miniapp-question-previews'), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.questions)) return { success: true, data: response.data as { ok: true; questions: any[] } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud question preview request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud question preview request unavailable' };
+    }
+  },
+  async createPaperExportTask(token: string, taskType: 'paper-export-word' | 'paper-export-pdf', request: any, idempotencyKey: string): Promise<ApiResponse<{ ok: true; task: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/business/miniapp-paper-export-tasks'), method: 'POST', data: { taskType, request },
+        header: { Authorization: `Bearer ${token}`, 'x-idempotency-key': idempotencyKey, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.task) return { success: true, data: response.data as { ok: true; task: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud paper export request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud paper export request unavailable' };
+    }
+  },
+  async readPaperExportTask(token: string, taskId: string): Promise<ApiResponse<{ ok: true; task: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof taskId !== 'string' || !taskId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-paper-export-tasks/${encodeURIComponent(taskId)}`), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.task) return { success: true, data: response.data as { ok: true; task: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud paper export task request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud paper export task request unavailable' };
+    }
+  },
+  async cancelPaperExportTask(token: string, taskId: string): Promise<ApiResponse<{ ok: true; task: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof taskId !== 'string' || !taskId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-paper-export-tasks/${encodeURIComponent(taskId)}/cancel`), method: 'POST', data: {},
+        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.task) return { success: true, data: response.data as { ok: true; task: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud paper export cancel failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud paper export cancel unavailable' };
+    }
+  },
   async listSchedules(token: string): Promise<ApiResponse<{ ok: true; schedules: any[] }>> {
     if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     try {
