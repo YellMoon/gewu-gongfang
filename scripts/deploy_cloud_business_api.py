@@ -66,7 +66,8 @@ def candidate_command(tag):
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
         f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 '{image}'; "
         "rm -f -- \"$env_path\"; "
-        "curl --fail --silent --show-error --max-time 20 http://127.0.0.1:3003/api/health"
+        "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+        "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3003/api/health && exit 0; sleep 1; done; exit 1"
     )
 
 

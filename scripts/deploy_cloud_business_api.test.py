@@ -1,6 +1,6 @@
 import unittest
 
-from deploy_cloud_business_api import candidate_name, release_tag, switch_command
+from deploy_cloud_business_api import candidate_command, candidate_name, release_tag, switch_command
 
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
@@ -11,6 +11,11 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_candidate_name_uses_the_release_tag(self):
         self.assertEqual(candidate_name("8.1.0-8c425eab"), "gewu-cloud-business-api-candidate-8.1.0-8c425eab")
+
+    def test_candidate_health_waits_for_startup(self):
+        command = candidate_command("8.1.0-8c425eab")
+        self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
+        self.assertIn("sleep 1", command)
 
     def test_switch_command_keeps_a_rollback_container_and_recovers_on_health_failure(self):
         command = switch_command("8.1.0-8c425eab")
