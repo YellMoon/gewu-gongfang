@@ -990,6 +990,36 @@ export function createDesktopIdentityClient({
     return data.schedule;
   }
 
+  async function upsertCloudStudentContact({
+    baseUrl, currentSession, studentId, contactSlot, expectedUpdatedAt, relationship, phone, wechat,
+  } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedStudentId = String(studentId || '').trim();
+    if (!normalizedStudentId || !Number.isInteger(contactSlot) || contactSlot < 1 || contactSlot > 3) {
+      throw identityError('DESKTOP_CLOUD_STUDENT_CONTACT_INPUT_INVALID');
+    }
+    const data = await request(
+      fetchImpl,
+      baseUrl,
+      `/api/business/students/${encodeURIComponent(normalizedStudentId)}/contacts/${contactSlot}`,
+      {
+        method: 'PUT',
+        token: currentSession.token,
+        body: { expectedUpdatedAt, relationship, phone, wechat },
+      },
+    );
+    const contact = data?.contact;
+    if (!contact || typeof contact !== 'object' || typeof contact.id !== 'string' || contact.studentId !== normalizedStudentId
+      || contact.slot !== contactSlot || !['student', 'guardian'].includes(contact.relationship)
+      || !(contact.phone === null || typeof contact.phone === 'string') || !(contact.wechat === null || typeof contact.wechat === 'string')
+      || contact.status !== 'active' || typeof contact.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_STUDENT_CONTACT_RESPONSE_INVALID');
+    }
+    return contact;
+  }
+
   async function registerUnifiedDesktopOnline(requestValue) {
     if (!onlineRegistrationCommand
       || typeof onlineRegistrationCommand.execute !== 'function') {
@@ -1018,6 +1048,7 @@ export function createDesktopIdentityClient({
     registerUnifiedDesktopOnline,
     status: () => desktopIdentity.status(),
     switchRole,
+    upsertCloudStudentContact,
     updateCloudSchedule,
     updateCloudScheduleStudentOverride,
     unlock,

@@ -159,6 +159,12 @@ async function main() {
         });
         return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/students/student-cloud-1/contacts/2') {
+        assert.strictEqual(options.method, 'PUT');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: null, relationship: 'guardian', phone: null, wechat: 'guardian-handle' });
+        return { ok: true, json: async () => ({ ok: true, contact: { id: 'student-contact-student-cloud-1-2', studentId: 'student-cloud-1', slot: 2, relationship: 'guardian', phone: null, wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T00:00:00.000Z' } }) };
+      }
       throw new Error(`unexpected unified cloud request ${url}`);
     },
   });
@@ -357,6 +363,12 @@ async function main() {
   });
   assert.deepStrictEqual(updatedCloudStudentOverride, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules/schedule-cloud-1/students/student-cloud-1');
+  const updatedStudentContact = await unifiedCloudClient.upsertCloudStudentContact({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-1', contactSlot: 2,
+    expectedUpdatedAt: null, relationship: 'guardian', phone: null, wechat: 'guardian-handle',
+  });
+  assert.deepStrictEqual(updatedStudentContact, { id: 'student-contact-student-cloud-1-2', studentId: 'student-cloud-1', slot: 2, relationship: 'guardian', phone: null, wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T00:00:00.000Z' });
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/students/student-cloud-1/contacts/2');
 
   const registrationRequests = [];
   const registrationEvents = [];

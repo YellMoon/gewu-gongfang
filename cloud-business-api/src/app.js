@@ -583,6 +583,45 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  app.put('/api/business/students/:studentId/contacts/:contactSlot', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
+    const studentId = String(request.params.studentId || '').trim();
+    const contactSlot = Number(request.params.contactSlot);
+    const update = exactBody(request.body, ['expectedUpdatedAt', 'relationship', 'phone', 'wechat']);
+    const expectedUpdatedAt = update?.expectedUpdatedAt === null ? null : instant(update?.expectedUpdatedAt);
+    const relationship = update?.relationship;
+    const phone = update?.phone;
+    const wechat = update?.wechat;
+    const validPhone = phone === null || (typeof phone === 'string' && /^1[3-9][0-9]{9}$/u.test(phone));
+    const validWechat = wechat === null || (typeof wechat === 'string' && wechat === wechat.trim() && wechat.length > 0 && wechat.length <= 128);
+    if (!studentId || !Number.isInteger(contactSlot) || contactSlot < 1 || contactSlot > 3 || !update
+      || expectedUpdatedAt === undefined || !['student', 'guardian'].includes(relationship)
+      || (contactSlot === 1 && relationship !== 'student') || (contactSlot > 1 && relationship !== 'guardian')
+      || !validPhone || !validWechat || (phone === null && wechat === null)) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
+      const result = await query(
+        `WITH target AS (
+           SELECT id FROM business.students WHERE id=$1 AND tenant_id=$2 AND legacy_deleted=false
+         ), written AS (
+           INSERT INTO business.student_contact_directory (contact_id,student_id,contact_slot,relationship,phone_value,phone_hmac,wechat_handle,status)
+           SELECT 'student-contact-' || $1 || '-' || $3::text,$1,$3,$4,$5,NULL,$6,'active' FROM target
+           ON CONFLICT (student_id,contact_slot) DO UPDATE
+             SET relationship=EXCLUDED.relationship,phone_value=EXCLUDED.phone_value,phone_hmac=NULL,wechat_handle=EXCLUDED.wechat_handle,status='active',revoked_at=NULL,updated_at=transaction_timestamp()
+             WHERE business.student_contact_directory.updated_at=$7::timestamptz
+           RETURNING contact_id AS "id",student_id AS "studentId",contact_slot AS "slot",relationship,phone_value AS "phone",wechat_handle AS "wechat",status,updated_at AS "updatedAt"
+         ) SELECT * FROM written`,
+        [studentId, businessTenantId, contactSlot, relationship, phone, wechat, expectedUpdatedAt],
+      );
+      const contact = result?.rows?.[0];
+      if (!contact) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONTACT_CONFLICT' });
+      response.json({ ok: true, contact });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
   app.post('/api/storage-agent/lease', async (request, response) => {
     if (!storageAgent) return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
     const body = exactBody(request.body, ['agentId']);
