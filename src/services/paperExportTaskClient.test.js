@@ -110,7 +110,7 @@ function memoryStorage(seed = {}) {
   assert.strictEqual(downloadCalls[3].init.headers['x-gewu-artifact-token'], 'short-2');
   assert.strictEqual(clicked, 'blob:paper');
   await assert.rejects(
-    () => client.downloadPaperExportResult(config, { fileName: 'legacy.pdf', accessEndpoint: '/api/cloud-relay-host/artifacts/a1/access' }, { authStorage }),
+    () => client.downloadPaperExportResult(config, { fileName: 'legacy.pdf', accessEndpoint: '/api/retired-artifacts/a1/access' }, { authStorage }),
     error => error.code === 'ARTIFACT_ACCESS_ENDPOINT_INVALID',
   );
   assert.ok(downloadCalls.every(call => !String(call.url).startsWith('https://cloud.example.com/')), 'artifact access must not use the retired sync endpoint');

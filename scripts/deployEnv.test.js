@@ -469,10 +469,6 @@ assert.ok(deployPy.includes('os.getenv("WECHAT_APPSECRET")'), 'pm2 deploy should
 assert.ok(deployPy.includes('safe_print'), 'pm2 deploy should print remote Unicode output safely on Windows consoles');
 assert.ok(deployPy.includes('which pm2 || npm install -g pm2'), 'pm2 deploy should skip global pm2 installation when pm2 already exists');
 assert.ok(backendPackage.includes('"sanitize-html"'), 'backend production dependencies should include sanitize-html used by questionBankService');
-assert.ok(backendPackage.includes('"docx"'), 'backend production dependencies should include docx used by paperArtifactService');
-for (const dependency of ['fflate', 'sharp', 'pdfkit', 'svg-to-pdfkit', 'katex', 'mathjax-full']) {
-  assert.ok(backendPackage.includes(`"${dependency}"`), `backend production dependencies should include ${dependency} used by the formula artifact pipeline`);
-}
 assert.strictEqual(backendPkg.version, rootPkg.version, 'backend package version should stay aligned with root package version');
 
 assert.ok(packageJson.includes('scripts/deployEnv.test.js'), 'deploy env test should run in npm test');

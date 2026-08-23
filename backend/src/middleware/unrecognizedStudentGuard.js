@@ -10,7 +10,6 @@ const ALLOWED_UNRECOGNIZED_ROUTES = [
   ['POST', /^\/api\/experience\/tasks$/],
   ['GET', /^\/api\/experience\/tasks\/[^/]+\/result$/],
   ['POST', /^\/api\/experience\/tasks\/[^/]+\/cancel$/],
-  ['GET', /^\/api\/experience\/artifacts\/[^/]+$/],
 ];
 
 function normalizePath(pathname) {

@@ -12,7 +12,6 @@ assert.ok(source.includes('experienceApi.questions()'));
 assert.ok(source.includes('experienceApi.createTask('));
 assert.ok(source.includes('experienceApi.getTaskResult(taskId)'));
 assert.ok(source.includes('experienceApi.cancelTask(taskId)'));
-assert.ok(source.includes('experienceApi.downloadArtifact(artifactId)'));
 assert.ok(source.includes('applicationApi.mine()'));
 assert.ok(source.includes('applicationApi.submit('));
 assert.ok(!source.includes('applicationApi.withdraw('));
@@ -26,7 +25,7 @@ for (const removedPath of [
 }
 
 assert.ok(experienceContent.includes('isUnrecognizedIdentity'), 'experience page must verify the shared authoritative identity');
-assert.ok(experienceContent.includes('openSessionBoundDocument'), 'downloaded artifacts must stay bound to the current auth session');
+assert.ok(!experienceContent.includes('downloadArtifact'), 'unrecognized users must not receive local export artifacts');
 assert.ok(experienceContent.includes("'/pages/account-application/index'"), 'experience entry must open the single account application page');
 assert.ok(!page.includes('/pages/unrecognized-apply/index'), 'removed split application route must stay absent');
 assert.ok(!page.includes('loadApplicationStatus'), 'experience page must leave application state to the single application page');

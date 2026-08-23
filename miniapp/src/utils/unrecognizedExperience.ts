@@ -38,8 +38,6 @@ export const unrecognizedExperienceApi = {
     taskType: string;
     title: string;
     questionIds: string[];
-    answerPosition?: string;
-    formulaMode?: string;
   }): Promise<UnrecognizedTask> {
     const { taskType, ...payload } = params;
     const response: any = requireSuccess(await experienceApi.createTask(taskType, payload), 'Failed to create task');
@@ -49,10 +47,6 @@ export const unrecognizedExperienceApi = {
   async getTask(taskId: string): Promise<UnrecognizedTask> {
     const response: any = requireSuccess(await experienceApi.getTaskResult(taskId), 'Failed to get task');
     return response.task || response.data?.task;
-  },
-
-  downloadArtifact(artifactId: string): Promise<any> {
-    return experienceApi.downloadArtifact(artifactId);
   },
 
   async cancelTask(taskId: string): Promise<UnrecognizedTask> {

@@ -16,7 +16,6 @@ const allowed = [
   ['POST', '/api/experience/tasks'],
   ['GET', '/api/experience/tasks/task-1/result'],
   ['POST', '/api/experience/tasks/task-1/cancel'],
-  ['GET', '/api/experience/artifacts/artifact-1'],
 ];
 
 for (const [method, path] of allowed) {

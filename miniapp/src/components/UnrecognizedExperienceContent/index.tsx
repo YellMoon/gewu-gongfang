@@ -1,74 +1,50 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, Input, Button, ScrollView, Checkbox, CheckboxGroup } from '@tarojs/components';
+import { useEffect, useState } from 'react';
+import { Button, Checkbox, CheckboxGroup, Input, ScrollView, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { unrecognizedExperienceApi, UnrecognizedQuestion, UnrecognizedTask } from '../../utils/unrecognizedExperience';
-import { authSessionRuntime } from '../../utils/authSession';
 import { isUnrecognizedIdentity } from '../../utils/accountExperience';
-import { createSessionBoundOperation, openSessionBoundDocument } from '../../utils/miniappApiSessionRuntime';
 import './index.scss';
 
-type TaskType = 'question-paper' | 'paper-export-word' | 'paper-export-pdf';
-type PageState = 'loading' | 'ready' | 'empty' | 'error';
-const actionCopy: Record<TaskType, string> = {
-  'question-paper': '创建组卷',
-  'paper-export-word': '导出 Word',
-  'paper-export-pdf': '导出 PDF',
-};
-const statusCopy: Record<string, string> = {
-  pending_host: '等待云端',
-  processing: '处理中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
-const answers = [
-  { value: 'end', label: '答案统一置后' },
-  { value: 'after-each', label: '答案逐题后' },
-];
-const formulas = [
-  { value: 'word-native', label: 'Word native' },
-  { value: 'eq-field', label: 'EQ field' },
-  { value: 'mathtype-compatible', label: 'MathType' },
-  { value: 'latex-vector', label: 'LaTeX vector' },
-];
+const text = (...codes: number[]) => String.fromCharCode(...codes);
+const COPY = Object.freeze({
+  title: text(20307, 39564, 32452, 21367),
+  subtitle: text(36873, 25321, 31034, 20363, 39064, 30446, 65292, 39044, 35272, 32452, 21367, 20869, 23481),
+  paper: text(21019, 24314, 32452, 21367),
+  loading: text(27491, 22312, 21152, 36733, 39064, 30446),
+  empty: text(26242, 26080, 21487, 29992, 39064, 30446),
+  failed: text(21152, 36733, 22833, 36133),
+  name: text(35797, 21367, 21517, 31216),
+  select: text(36873, 25321, 39064, 30446),
+  refresh: text(21047, 26032),
+  search: text(25628, 32034, 39064, 30446),
+  submit: text(25552, 20132),
+  submitted: text(32452, 21367, 24050, 25104),
+  record: text(32452, 21367, 35760, 24405),
+  noRecord: text(26242, 26080, 32452, 21367),
+  apply: text(30003, 35831, 27491, 24335, 36134, 21495),
+  chooseOne: text(35831, 33267, 36873, 25321, 19968, 36947, 39064),
+  titleRequired: text(35831, 36755, 20837, 35797, 21367, 21517, 31216),
+});
 
 export default function UnrecognizedExperiencePanel() {
   const authorized = isUnrecognizedIdentity(Taro.getStorageSync('user_info'));
-  const [pageState, setPageState] = useState<PageState>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [questions, setQuestions] = useState<UnrecognizedQuestion[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [searchText, setSearchText] = useState('');
-  const [title, setTitle] = useState('练习试卷');
-  const [answerIndex, setAnswerIndex] = useState(0);
-  const [formulaIndex, setFormulaIndex] = useState(0);
+  const [search, setSearch] = useState('');
+  const [title, setTitle] = useState(text(32451, 20064, 35797, 21367));
   const [tasks, setTasks] = useState<UnrecognizedTask[]>([]);
-  const [submitting, setSubmitting] = useState<TaskType | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const loadQuestions = async () => {
-    setPageState('loading');
+    setState('loading');
     try {
-      const list = await unrecognizedExperienceApi.getQuestions();
-      setQuestions(list);
-      setPageState(list.length ? 'ready' : 'empty');
-    } catch {
-      setPageState('error');
+      const rows = await unrecognizedExperienceApi.getQuestions();
+      setQuestions(rows);
+      setState(rows.length ? 'ready' : 'empty');
+    } catch (_error) {
+      setState('error');
     }
-  };
-
-  const refreshTasks = async () => {
-    const updated: UnrecognizedTask[] = [];
-    for (const task of tasks) {
-      if (task.status === 'pending_host' || task.status === 'processing') {
-        try {
-          const fresh = await unrecognizedExperienceApi.getTask(task.id);
-          updated.push(fresh);
-          continue;
-        } catch { /* keep old */ }
-      }
-      updated.push(task);
-    }
-    if (updated.length) setTasks(updated);
   };
 
   useEffect(() => {
@@ -76,195 +52,58 @@ export default function UnrecognizedExperiencePanel() {
       Taro.reLaunch({ url: '/pages/login/index' });
       return undefined;
     }
-    loadQuestions();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    void loadQuestions();
+    return undefined;
   }, [authorized]);
 
-  useEffect(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    if (tasks.some(t => t.status === 'pending_host' || t.status === 'processing')) {
-      pollRef.current = setInterval(refreshTasks, 5000);
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = null;
-    };
-  }, [tasks]);
-
-  const filtered = questions.filter(q => {
-    const key = searchText.trim().toLowerCase();
-    return !key || `${q.stemRichContent} ${q.type}`.toLowerCase().includes(key);
-  });
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
-
-  const submit = async (taskType: TaskType) => {
-    if (!title.trim()) {
-      Taro.showToast({ title: '请输入试卷名称', icon: 'none' });
-      return;
-    }
-    if (selectedIds.length === 0) {
-      Taro.showToast({ title: '请至少选择一道题', icon: 'none' });
-      return;
-    }
-    setSubmitting(taskType);
+  const submit = async () => {
+    if (!title.trim()) return void Taro.showToast({ title: COPY.titleRequired, icon: 'none' });
+    if (!selectedIds.length) return void Taro.showToast({ title: COPY.chooseOne, icon: 'none' });
+    setSubmitting(true);
     try {
-      const task = await unrecognizedExperienceApi.createTask({
-        taskType,
-        title: title.trim(),
-        questionIds: selectedIds,
-        answerPosition: answers[answerIndex].value,
-        formulaMode: formulas[formulaIndex].value,
-      });
-      setTasks(prev => [task, ...prev]);
-      Taro.showToast({ title: '任务已提交', icon: 'success' });
-    } catch (err: any) {
-      Taro.showToast({ title: err?.message || '提交失败', icon: 'none' });
+      const task = await unrecognizedExperienceApi.createTask({ taskType: 'question-paper', title: title.trim(), questionIds: selectedIds });
+      setTasks(previous => [task, ...previous]);
+      Taro.showToast({ title: COPY.submitted, icon: 'success' });
+    } catch (error: any) {
+      Taro.showToast({ title: error?.message || COPY.failed, icon: 'none' });
     } finally {
-      setSubmitting(null);
+      setSubmitting(false);
     }
   };
 
-  const cancelTask = async (task: UnrecognizedTask) => {
-    try {
-      await unrecognizedExperienceApi.cancelTask(task.id);
-      setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'cancelled', phase: 'cancelled' } : t));
-    } catch (err: any) {
-      Taro.showToast({ title: err?.message || '取消失败', icon: 'none' });
-    }
-  };
-
-  const downloadTask = async (task: UnrecognizedTask) => {
-    if (task.status !== 'completed' || !task.result?.artifactId) {
-      Taro.showToast({ title: '任务尚未完成或无产物', icon: 'none' });
-      return;
-    }
-    try {
-      const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
-      const file: any = await unrecognizedExperienceApi.downloadArtifact(task.result.artifactId);
-      if (file.statusCode !== 200 || !file.tempFilePath) throw new Error('\u4e0b\u8f7d\u5931\u8d25');
-      await openSessionBoundDocument(sessionBoundary, {
-        filePath: file.tempFilePath,
-        openDocument: (options: any) => Taro.openDocument(options),
-        removeTemporaryFile: (filePath: string) => new Promise<void>(resolve => {
-          try { Taro.getFileSystemManager().unlink({ filePath, complete: () => resolve() }); } catch (_error) { resolve(); }
-        }),
-      });
-    } catch (err: any) {
-      Taro.showToast({ title: err?.message || '下载失败', icon: 'none' });
-    }
-  };
-
-  const goToApply = () => {
-    Taro.navigateTo({ url: '/pages/account-application/index' });
-  };
-
-  const stateText = pageState === 'loading' ? '正在加载题目' : pageState === 'empty' ? '暂无可用题目' : '加载失败';
+  const filtered = questions.filter(question => {
+    const query = search.trim().toLowerCase();
+    return !query || `${question.stemRichContent} ${question.type}`.toLowerCase().includes(query);
+  });
+  const statusText = state === 'loading' ? COPY.loading : state === 'empty' ? COPY.empty : COPY.failed;
 
   return (
     <View className='unrecognized-page'>
-      <View className='hero-card'>
-        <Text className='hero-title'>体验组卷</Text>
-        <Text className='hero-subtitle'>选择示例题目，提交组卷与导出任务</Text>
-      </View>
-
+      <View className='hero-card'><Text className='hero-title'>{COPY.title}</Text><Text className='hero-subtitle'>{COPY.subtitle}</Text></View>
       <View className='form-card'>
-        <View className='form-row'>
-          <Text className='field-label'>试卷名称</Text>
-          <Input className='field-input' value={title} onInput={e => setTitle(e.detail.value)} />
-        </View>
-        <View className='picker-row' onClick={() => {
-          Taro.showActionSheet({ itemList: answers.map(a => a.label), success: res => setAnswerIndex(res.tapIndex) });
-        }}>
-          <Text>{answers[answerIndex].label}</Text>
-        </View>
-        <View className='picker-row' onClick={() => {
-          Taro.showActionSheet({ itemList: formulas.map(f => f.label), success: res => setFormulaIndex(res.tapIndex) });
-        }}>
-          <Text>{formulas[formulaIndex].label}</Text>
-        </View>
+        <View className='form-row'><Text className='field-label'>{COPY.name}</Text><Input className='field-input' value={title} onInput={event => setTitle(event.detail.value)} /></View>
       </View>
-
       <View className='preview-card'>
-        <View className='preview-header'>
-          <View>
-            <Text className='preview-title'>选择题目 ({selectedIds.length})</Text>
-          </View>
-          <Button className='preview-refresh' onClick={loadQuestions}>刷新</Button>
-        </View>
-        <Input className='preview-search' value={searchText} onInput={e => setSearchText(e.detail.value)} placeholder='搜索题目' />
-        {pageState !== 'ready' ? (
-          <View className='question-preview-empty'>
-            <Text>{stateText}</Text>
-          </View>
-        ) : (
+        <View className='preview-header'><Text className='preview-title'>{COPY.select} ({selectedIds.length})</Text><Button className='preview-refresh' onClick={() => void loadQuestions()}>{COPY.refresh}</Button></View>
+        <Input className='preview-search' value={search} onInput={event => setSearch(event.detail.value)} placeholder={COPY.search} />
+        {state !== 'ready' ? <View className='question-preview-empty'><Text>{statusText}</Text></View> : (
           <ScrollView className='question-preview-list' scrollY>
-            <CheckboxGroup onChange={e => setSelectedIds(e.detail.value)}>
-              {filtered.map(q => (
-                <View key={q.id} className={`question-preview-item ${selectedIds.includes(q.id) ? 'selected' : ''}`} onClick={() => toggleSelect(q.id)}>
-                  <View className='question-preview-meta'>
-                    <Text>{q.type}</Text>
-                    <Text>#{q.number}</Text>
-                  </View>
-                  <Text className='question-preview-stem'>{q.stemRichContent}</Text>
-                </View>
-              ))}
+            <CheckboxGroup onChange={event => setSelectedIds(event.detail.value)}>
+              {filtered.map(question => <View key={question.id} className={`question-preview-item ${selectedIds.includes(question.id) ? 'selected' : ''}`}>
+                <Checkbox value={question.id} checked={selectedIds.includes(question.id)} />
+                <View className='question-preview-meta'><Text>{question.type}</Text><Text>#{question.number}</Text></View>
+                <Text className='question-preview-stem'>{String(question.stemRichContent)}</Text>
+              </View>)}
             </CheckboxGroup>
           </ScrollView>
         )}
       </View>
-
-      <View className='action-card'>
-        {(Object.keys(actionCopy) as TaskType[]).map(a => (
-          <Button
-            key={a}
-            className={`action-button ${a}`}
-            loading={submitting === a}
-            disabled={!!submitting || selectedIds.length === 0}
-            onClick={() => submit(a)}
-          >
-            {actionCopy[a]}
-          </Button>
-        ))}
-      </View>
-
+      <View className='action-card'><Button className='action-button question-paper' loading={submitting} disabled={submitting || !selectedIds.length} onClick={() => void submit()}>{COPY.paper}</Button></View>
       <View className='result-card'>
-        <View className='preview-header'>
-          <Text className='preview-title'>任务记录</Text>
-          <Button className='preview-refresh' onClick={refreshTasks}>刷新</Button>
-        </View>
-        {tasks.length === 0 ? (
-          <Text className='result-text'>暂无任务</Text>
-        ) : (
-          tasks.map(task => (
-            <View key={task.id} className='task-item'>
-              <Text className='result-text'>{task.request?.payload?.title || task.id}</Text>
-              <Text className='result-value'>{statusCopy[task.status] || task.status} / {task.phase} / {task.progress}%</Text>
-              {task.error ? <Text className='task-error'>{task.error}</Text> : null}
-              <View className='task-actions'>
-                {task.status === 'pending_host' || task.status === 'processing' ? (
-                  <Button size='mini' onClick={() => cancelTask(task)}>取消</Button>
-                ) : null}
-                {task.status === 'failed' ? (
-                  <Button size='mini' onClick={() => submit(task.request?.taskType || 'question-paper')}>重试</Button>
-                ) : null}
-                {task.status === 'completed' && task.result?.artifactId ? (
-                  <Button size='mini' onClick={() => downloadTask(task)}>下载</Button>
-                ) : null}
-              </View>
-            </View>
-          ))
-        )}
+        <Text className='preview-title'>{COPY.record}</Text>
+        {tasks.length ? tasks.map(task => <View key={task.id} className='task-item'><Text className='result-text'>{task.request?.title || task.id}</Text><Text className='result-value'>{task.status} / {task.phase} / {task.progress}%</Text></View>) : <Text className='result-text'>{COPY.noRecord}</Text>}
       </View>
-
-      <View className='apply-card'>
-        <Button className='apply-button' onClick={goToApply}>申请正式账号</Button>
-      </View>
+      <View className='apply-card'><Button className='apply-button' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>{COPY.apply}</Button></View>
     </View>
   );
 }

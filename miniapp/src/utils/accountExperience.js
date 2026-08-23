@@ -5,7 +5,6 @@ const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'profile-application:read',
   'profile-application:submit',
   'sample-questions:view',
-  'sample-paper-export',
 ]);
 const VISITOR_CAPABILITIES = Object.freeze([
   'projection:read',
@@ -80,21 +79,11 @@ function accountExperiencePath(identity, operation, id) {
     case 'createTask': return '/api/experience/tasks';
     case 'taskResult': return `/api/experience/tasks/${resourceId(id)}/result`;
     case 'cancelTask': return `/api/experience/tasks/${resourceId(id)}/cancel`;
-    case 'artifact': return `/api/experience/artifacts/${resourceId(id)}`;
     case 'applicationMine': return '/api/miniapp/applications/me';
     case 'applicationSubmit': return '/api/miniapp/applications';
     case 'applicationWithdraw': return `/api/miniapp/applications/${resourceId(id)}/withdraw`;
     default: throw new Error(`unsupported account experience operation: ${operation}`);
   }
-}
-
-function accountExperienceArtifactRequest(identity, token, artifactId) {
-  const normalizedToken = String(token || '').trim();
-  if (!normalizedToken) throw new Error('account experience artifact download requires a token');
-  return {
-    path: accountExperiencePath(identity, 'artifact', artifactId),
-    header: { Authorization: `Bearer ${normalizedToken}` },
-  };
 }
 
 function accountSessionCleanupStorageKeys() {
@@ -105,7 +94,6 @@ module.exports = {
   UNRECOGNIZED_CAPABILITIES,
   VISITOR_CAPABILITIES,
   accountCapabilities,
-  accountExperienceArtifactRequest,
   accountExperiencePath,
   accountSessionCleanupStorageKeys,
   hasLegacyReviewMarker,

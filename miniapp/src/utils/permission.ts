@@ -75,7 +75,6 @@ export type MiniappCapability =
   | 'profile-application:read'
   | 'profile-application:submit'
   | 'sample-questions:view'
-  | 'sample-paper-export';
 
 export function canMiniappWrite(target: string, user: Partial<UserInfo> | null = getCurrentUser()): boolean {
   return canUserSubmitMiniappWrite(user, target, allowedWriteTasks);

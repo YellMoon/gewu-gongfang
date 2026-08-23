@@ -174,7 +174,7 @@ const pageInventory = [
     roleViews: ['super_admin', 'admin', 'teacher', 'student', 'parent', 'unrecognized-student'],
     surface: 'limited-write-task',
     visualStatus: 'optimized',
-    verificationStates: ['preview-loading', 'preview-empty', 'preview-offline', 'preview-forbidden', 'paper-form', 'persistent-task-list', 'task-actions', 'task-result', 'artifact-expired', 'four-sample-experience'],
+    verificationStates: ['preview-loading', 'preview-empty', 'preview-offline', 'preview-forbidden', 'paper-form', 'persistent-task-list', 'task-actions', 'task-result', 'four-sample-experience'],
     realFeatureBasis: ['miniappCloudBusinessApi.listQuestionPreviews', 'local ordered question-paper draft', 'miniappCloudBusinessApi.createPaperExportTask(paper-export-word)', 'miniappCloudBusinessApi.createPaperExportTask(paper-export-pdf)', 'miniappCloudBusinessApi.cancelPaperExportTask', 'miniappCloudBusinessApi.readPaperExportTask', 'miniappCloudBusinessApi.requestPaperExportDelivery', 'miniappCloudBusinessApi.downloadPaperExportDelivery', 'UnrecognizedExperiencePage', 'experienceApi'],
     screenshotRequired: true,
     files: ['src/pages/question-bank/index.tsx', 'src/pages/question-bank/index.scss'],

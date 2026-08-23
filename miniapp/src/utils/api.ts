@@ -12,10 +12,9 @@ import Taro from '@tarojs/taro';
 import { clearBusinessCache } from './storage';
 import { authSessionRuntime } from './authSession';
 import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefreshRuntime';
-import { clearAuthenticatedSession, createApiResponseCoordinator, createSessionBoundOperation } from './miniappApiSessionRuntime';
+import { clearAuthenticatedSession, createApiResponseCoordinator } from './miniappApiSessionRuntime';
 import { selectApiBaseUrl } from './miniappApiRoutingRuntime';
 import {
-  accountExperienceArtifactRequest,
   accountExperiencePath,
 } from './accountExperience';
 
@@ -525,22 +524,6 @@ export const experienceApi = {
     api.get<any>(accountPath('taskResult', taskId)),
   cancelTask: (taskId: string) =>
     api.post<any>(accountPath('cancelTask', taskId), {}),
-  artifactUrl: (artifactId: string) =>
-    (() => {
-      const path = accountPath('artifact', artifactId);
-      return `${getRequestBaseUrl(path)}${path}`;
-    })(),
-  downloadArtifact: (artifactId: string) => {
-    const sessionBoundary = createSessionBoundOperation(authSessionRuntime);
-    return sessionBoundary.run((requestSession: any) => {
-      const identity = Taro.getStorageSync('user_info');
-      const request = accountExperienceArtifactRequest(identity, requestSession.token, artifactId);
-      return Taro.downloadFile({
-        url: `${getRequestBaseUrl(request.path)}${request.path}`,
-        header: request.header,
-      });
-    });
-  },
 };
 
 export const createMiniappTask = cloudRelayApi.createMiniappTask;

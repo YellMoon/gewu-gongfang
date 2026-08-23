@@ -30,7 +30,7 @@ const unrecognizedIdentity = {
   account_state: 'unrecognized', token_use: 'unrecognized-student',
   capabilities: [
     'experience:read', 'profile-application:read', 'profile-application:submit',
-    'sample-questions:view', 'sample-paper-export',
+    'sample-questions:view',
   ],
 };
 const visitorIdentity = {

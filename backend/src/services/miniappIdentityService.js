@@ -25,7 +25,6 @@ const UNRECOGNIZED_CAPABILITIES = Object.freeze([
   'profile-application:read',
   'profile-application:submit',
   'sample-questions:view',
-  'sample-paper-export',
 ]);
 
 function isValidMainlandMobile(value) {

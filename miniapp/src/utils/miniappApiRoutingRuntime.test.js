@@ -13,7 +13,6 @@ for (const path of [
   '/api/miniapp/applications',
   '/api/experience/questions',
   '/api/experience/tasks',
-  '/api/experience/artifacts/artifact-1',
   '/api/students',
 ]) {
   assert.strictEqual(

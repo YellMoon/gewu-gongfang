@@ -1,6 +1,5 @@
 'use strict';
 
-const fs = require('fs');
 const express = require('express');
 const contentTypeParser = require('content-type');
 const { UNRECOGNIZED_TOKEN_USE } = require('../services/miniappIdentityService');
@@ -262,22 +261,6 @@ function createUnrecognizedExperienceRouter(options = {}) {
     }
   });
 
-  router.get('/artifacts/:artifactId', (req, res) => {
-    try {
-      const artifact = sandbox.getArtifact(req.authz.sessionId, req.params.artifactId);
-      const bytes = fs.readFileSync(artifact.filePath);
-      res.set({
-        'Cache-Control': 'private, no-store',
-        'Content-Disposition': `attachment; filename="${artifact.fileName}"`,
-        'Content-Length': String(bytes.length),
-        'Content-Type': artifact.mimeType,
-      });
-      return res.send(bytes);
-    } catch (error) {
-      return sendError(res, error);
-    }
-  });
-
   function methodNotAllowed(allow) {
     return (_req, res) => {
       res.set('Allow', allow);
@@ -289,7 +272,6 @@ function createUnrecognizedExperienceRouter(options = {}) {
   router.all('/tasks', methodNotAllowed('POST'));
   router.all('/tasks/:taskId/result', methodNotAllowed('GET'));
   router.all('/tasks/:taskId/cancel', methodNotAllowed('POST'));
-  router.all('/artifacts/:artifactId', methodNotAllowed('GET'));
   router.use((_req, res) => sendError(res, experienceError('UNRECOGNIZED_EXPERIENCE_ROUTE_NOT_FOUND', 404)));
 
   return router;
