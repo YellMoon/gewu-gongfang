@@ -1,6 +1,8 @@
 'use strict';
 
+const crypto = require('crypto');
 const { BUSINESS_FOUNDATION_MIGRATIONS } = require('../../shared/vnext-pg17/businessFoundationManifest');
+const { isApprovedObsoleteScheduleSet } = require('../../shared/vnext-pg17/coreSchedulingLegacyExceptionManifest');
 
 function inputInvalid() {
   return Object.assign(new Error('cloud business import input is invalid'), { code: 'VNEXT_CLOUD_BUSINESS_IMPORT_INVALID' });
@@ -80,4 +82,74 @@ function buildCloudBusinessImportSql(source) {
   return Object.freeze({ sql: `${lines.join('\n')}\n`, relationCounts, quarantinedScheduleCount: Array.isArray(core.quarantines) ? core.quarantines.length : 0, sourceSnapshotSha256: source.sourceSnapshotSha256, sourceInventorySha256: source.sourceInventorySha256, sourceSchemaSha256: source.sourceSchemaSha256 });
 }
 
-module.exports = Object.freeze({ buildCloudBusinessImportSql });
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value), 'utf8').digest('hex');
+}
+
+function hash(value) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/u.test(value)) throw inputInvalid();
+  return value;
+}
+
+function instant(value) {
+  if (typeof value !== 'string' || new Date(value).toISOString() !== value) throw inputInvalid();
+  return value;
+}
+
+function text(value, code = 'VNEXT_CLOUD_BUSINESS_IMPORT_INVALID') {
+  if (typeof value !== 'string' || !value.trim() || value.trim() !== value || value.length > 512) {
+    const error = new Error(code);
+    error.code = code;
+    throw error;
+  }
+  return value;
+}
+
+function buildBusinessShadowImportPlan({ source, shadowTargetIdentity, consentSha256, createdAt } = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw inputInvalid();
+  const sourceSnapshotSha256 = hash(source.sourceSnapshotSha256);
+  const sourceInventorySha256 = hash(source.sourceInventorySha256);
+  const sourceSchemaSha256 = hash(source.sourceSchemaSha256);
+  const target = text(shadowTargetIdentity);
+  const consent = hash(consentSha256);
+  const timestamp = instant(createdAt);
+  const core = projectCore(source.coreScheduling);
+  const quarantineIds = Array.isArray(core.quarantines) ? core.quarantines.map(row => String(row?.scheduleId || '')) : [];
+  const approvedObsoleteSet = isApprovedObsoleteScheduleSet(core.sourceInventorySha256, quarantineIds);
+  const normalizedCore = approvedObsoleteSet
+    ? { ...core, quarantines: core.quarantines.map(row => ({ ...row, outcome: 'USER_DECLARED_OBSOLETE_LEGACY_SCHEDULE' })) }
+    : core;
+  const importResult = buildCloudBusinessImportSql({
+    sourceSnapshotSha256,
+    sourceInventorySha256,
+    sourceSchemaSha256,
+    foundation: source.foundation,
+    coreScheduling: normalizedCore,
+  });
+  const batchId = `business-shadow-${sourceSnapshotSha256.slice(0, 16)}`;
+  return Object.freeze({
+    batchId,
+    createdAt: timestamp,
+    consentSha256: consent,
+    shadowTargetIdentity: target,
+    sourceSnapshotSha256,
+    sourceInventorySha256,
+    sourceSchemaSha256,
+    relationCounts: importResult.relationCounts,
+    quarantinedScheduleCount: importResult.quarantinedScheduleCount,
+    quarantines: Object.freeze((normalizedCore.quarantines || []).map(row => Object.freeze({
+      scheduleId: String(row.scheduleId), outcome: String(row.outcome),
+    }))),
+    excludedRelations: Object.freeze([
+      'questions', 'question_assets', 'question_contents', 'import_batches', 'import_items',
+    ]),
+    sql: importResult.sql,
+    planSha256: sha256(JSON.stringify({
+      batchId, consentSha256: consent, createdAt: timestamp, shadowTargetIdentity: target,
+      sourceSnapshotSha256, sourceInventorySha256, sourceSchemaSha256,
+      relationCounts: importResult.relationCounts, quarantinedScheduleCount: importResult.quarantinedScheduleCount,
+    })),
+  });
+}
+
+module.exports = Object.freeze({ buildCloudBusinessImportSql, buildBusinessShadowImportPlan });

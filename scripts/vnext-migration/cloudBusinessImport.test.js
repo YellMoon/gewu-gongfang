@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { buildCloudBusinessImportSql } = require('./cloudBusinessImport');
+const { buildCloudBusinessImportSql, buildBusinessShadowImportPlan } = require('./cloudBusinessImport');
 
 function coreSource() {
   return Object.freeze({
@@ -39,5 +39,25 @@ assert.doesNotMatch(result.sql, /obsolete-1/);
 assert.ok(result.sql.indexOf('INSERT INTO business.tenants') < result.sql.indexOf('INSERT INTO business.teachers'));
 assert.ok(result.sql.indexOf('INSERT INTO business.teachers') < result.sql.indexOf('INSERT INTO business.courses'));
 assert.ok(result.sql.indexOf('INSERT INTO business.courses') < result.sql.indexOf('INSERT INTO business.schedules'));
+
+const source = coreSource();
+const plan = buildBusinessShadowImportPlan({
+  source: {
+    sourceSnapshotSha256: source.sourceSnapshotSha256,
+    sourceInventorySha256: source.sourceInventorySha256,
+    sourceSchemaSha256: source.sourceSchemaSha256,
+    foundation: source.foundation,
+    coreScheduling: source.coreScheduling,
+  },
+  shadowTargetIdentity: 'gewu_cloud_shadow_20260823',
+  consentSha256: 'd'.repeat(64),
+  createdAt: '2026-08-23T00:00:00.000Z',
+});
+assert.strictEqual(plan.relationCounts.schedules, 1);
+assert.strictEqual(plan.relationCounts.schedule_student_overrides, 1);
+assert.strictEqual(plan.quarantinedScheduleCount, 1);
+assert.ok(plan.sql.includes('INSERT INTO business.schedule_student_overrides'));
+assert.strictEqual(plan.excludedRelations.includes('questions'), true);
+assert.strictEqual(plan.excludedRelations.includes('question_assets'), true);
 
 console.log('cloud business import tests passed');

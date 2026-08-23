@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const Database = require('better-sqlite3');
+const { parseArguments } = require('./cli');
 
 const cliPath = path.join(__dirname, 'cli.js');
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-migration-cli-'));
@@ -31,6 +32,24 @@ function run(args) {
 }
 
 try {
+  assert.deepStrictEqual(parseArguments([
+    'business-shadow-plan',
+    '--source-root', 'source-root',
+    '--db', 'source.db',
+    '--output', 'output',
+    '--shadow-target', 'gewu_cloud_shadow_20260823',
+    '--consent-sha256', 'a'.repeat(64),
+  ]), {
+    command: 'business-shadow-plan',
+    options: {
+      'source-root': 'source-root',
+      db: 'source.db',
+      output: 'output',
+      'shadow-target': 'gewu_cloud_shadow_20260823',
+      'consent-sha256': 'a'.repeat(64),
+    },
+  });
+
   const dbPath = path.join(workspace, 'source.db');
   const db = new Database(dbPath);
   db.exec('CREATE TABLE records(id INTEGER PRIMARY KEY, value TEXT); INSERT INTO records(value) VALUES (\'kept\')');

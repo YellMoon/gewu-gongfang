@@ -2,6 +2,7 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
 const path = require('path');
 const { createInventoryManifest, validateLedgerEntry } = require('../../shared/migrationBundleProtocol');
 const { version } = require('../../package.json');
@@ -13,6 +14,8 @@ const {
 } = require('./pathSafety');
 const { discoverSources } = require('./sourceDiscovery');
 const { inventorySqlite } = require('./sqliteInventory');
+const { readAuthorizedCoreSchedulingSource } = require('./coreSchedulingReadOnlySource');
+const { buildBusinessShadowImportPlan } = require('./cloudBusinessImport');
 const { createSqliteSnapshot, verifySqliteSnapshot } = require('./sqliteSnapshot');
 const {
   createSourceRecoveryPackage,
@@ -35,6 +38,7 @@ function parseArguments(argv) {
           : command === 'recover-package' ? new Set(['json', 'db', 'user-data', 'question-files', 'output', 'application-exited'])
             : command === 'verify-recover-package' ? new Set(['json', 'package'])
               : command === 'restore-recover-package' ? new Set(['json', 'package', 'output'])
+                : command === 'business-shadow-plan' ? new Set(['json', 'source-root', 'db', 'output', 'shadow-target', 'consent-sha256', 'created-at'])
           : new Set();
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index];
@@ -209,6 +213,65 @@ function restoreRecoverPackageCommand(options) {
   return { ok: true, command: 'restore-recover-package', ...restoreSourceRecoveryPackage({ packagePath: options.package, restorePath: options.output }) };
 }
 
+function sha256(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+function businessShadowPlanCommand(options) {
+  if (!options['source-root']) throw cliError('VNEXT_CORE_SCHEDULING_SOURCE_ROOT_REQUIRED');
+  if (!options.db) throw cliError('MIGRATION_SQLITE_SOURCE_MISSING');
+  if (!options.output) throw cliError('MIGRATION_OUTPUT_REQUIRED');
+  if (!options['shadow-target']) throw cliError('VNEXT_SHADOW_TARGET_REQUIRED');
+  if (!options['consent-sha256']) throw cliError('VNEXT_SHADOW_CONSENT_REQUIRED');
+  const output = assertSafeOutputRoot(options.output);
+  assertDisjointPaths({ sources: [options['source-root'], options.db], output });
+  const captured = readAuthorizedCoreSchedulingSource({
+    sourceRoot: options['source-root'],
+    sourcePath: options.db,
+  });
+  const plan = buildBusinessShadowImportPlan({
+    source: {
+      sourceSnapshotSha256: captured.sourceSnapshotSha256,
+      sourceInventorySha256: captured.sourceInventorySha256,
+      sourceSchemaSha256: captured.sourceSchemaSha256,
+      foundation: captured.foundation,
+      coreScheduling: captured.coreScheduling,
+    },
+    shadowTargetIdentity: options['shadow-target'],
+    consentSha256: options['consent-sha256'],
+    createdAt: options['created-at'] || new Date().toISOString(),
+  });
+  const importSqlSha256 = sha256(plan.sql);
+  const publicPlan = {
+    batchId: plan.batchId,
+    createdAt: plan.createdAt,
+    consentSha256: plan.consentSha256,
+    shadowTargetIdentity: plan.shadowTargetIdentity,
+    sourceSnapshotSha256: plan.sourceSnapshotSha256,
+    sourceInventorySha256: plan.sourceInventorySha256,
+    sourceSchemaSha256: plan.sourceSchemaSha256,
+    relationCounts: plan.relationCounts,
+    quarantinedScheduleCount: plan.quarantinedScheduleCount,
+    quarantines: plan.quarantines,
+    excludedRelations: plan.excludedRelations,
+    planSha256: plan.planSha256,
+    importSqlSha256,
+  };
+  fs.mkdirSync(output, { recursive: false });
+  fs.writeFileSync(path.join(output, 'plan.json'), `${JSON.stringify(publicPlan, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(path.join(output, 'import.sql'), plan.sql, 'utf8');
+  return {
+    ok: true,
+    command: 'business-shadow-plan',
+    batchId: plan.batchId,
+    planSha256: plan.planSha256,
+    importSqlSha256,
+    relationCounts: plan.relationCounts,
+    quarantinedScheduleCount: plan.quarantinedScheduleCount,
+    excludedRelations: plan.excludedRelations,
+  };
+}
+
 async function main(argv = process.argv.slice(2)) {
   const { command, options } = parseArguments(argv);
   if (command === 'inventory') return inventoryCommand(options);
@@ -218,6 +281,7 @@ async function main(argv = process.argv.slice(2)) {
   if (command === 'recover-package') return recoverPackageCommand(options);
   if (command === 'verify-recover-package') return verifyRecoverPackageCommand(options);
   if (command === 'restore-recover-package') return restoreRecoverPackageCommand(options);
+  if (command === 'business-shadow-plan') return businessShadowPlanCommand(options);
   throw cliError('MIGRATION_COMMAND_INVALID');
 }
 
