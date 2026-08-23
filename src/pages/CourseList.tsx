@@ -132,7 +132,7 @@ const CourseList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const legacyStageDeletedCourseAsDraft = async (id: string) => {
     const deletedCourse = courses.find(c => c.id === id);
     dbService.deleteCourse(id);
     message.success('删除成功');
@@ -140,12 +140,139 @@ const CourseList: React.FC = () => {
     loadData();
   };
 
-  const handleToggleActive = async (course: Course) => {
+  const legacyStageCourseActiveAsDraft = async (course: Course) => {
     const nextActive = !course.active;
     dbService.updateCourse(course.id, { active: nextActive });
     message.success(nextActive ? '已设为未结课' : '已设为已结课');
     (window as any).operateLogger?.log('修改', `修改课程「${course.display_name || course.name}」状态为「${nextActive ? '未结课' : '已结课'}」`, '课程管理');
     loadData();
+  };
+
+  const courseCloudPayload = (value: any) => ({
+    name: String(value.name || value.display_name || '').trim(),
+    year: Number(value.year),
+    semester: value.semester,
+    displayName: String(value.display_name || value.name || '').trim(),
+    type: value.type,
+    sourceType: value.source_type,
+    institutionId: value.institution_id ?? null,
+    priceTuition: Number(value.price_tuition || 0),
+    priceTeacher: Number(value.price_teacher || 0),
+    billingUnit: value.billing_unit,
+    teacherFeeMode: value.teacher_fee_mode,
+    roomId: String(value.room_id || '').split(',')[0].trim(),
+    roomName: value.room_name ?? null,
+    teacherId: value.teacher_id,
+    teacherName: value.teacher_name ?? null,
+    active: value.active !== false,
+    defaultDurationMinutes: value.default_duration_minutes ?? null,
+    notes: value.notes ?? null,
+    pricings: (value.student_pricings || []).map((pricing: any) => ({ studentId: pricing.student_id, tuition: Number(pricing.tuition || 0), teacherFee: Number(pricing.teacher_fee || 0) })),
+  });
+
+  const isOfflineCloudFailure = (error: any) => {
+    const code = String(error?.code || error?.message || '');
+    return code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
+      || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
+  };
+
+  const handleDelete = async (id: string) => {
+    const deletedCourse = courses.find(course => course.id === id);
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const stageLocalDraft = () => dbService.deleteCourse(id);
+    if (typeof cloudRuntime?.deleteCloudCourse !== 'function' || !deletedCourse?.updated_at) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+      return;
+    }
+    try {
+      await cloudRuntime.deleteCloudCourse({ courseId: id, expectedUpdatedAt: deletedCourse.updated_at });
+      await dbService.refreshAuthorityProjection();
+      message.success('\u4e91\u7aef\u8bfe\u7a0b\u5df2\u5220\u9664');
+      loadData();
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_COURSE_REFERENCED') {
+        message.error('\u8be5\u8bfe\u7a0b\u5df2\u6709\u6392\u8bfe\u8bb0\u5f55\uff0c\u4e0d\u80fd\u5220\u9664');
+        return;
+      }
+      if (!isOfflineCloudFailure(error)) {
+        message.error('\u4e91\u7aef\u5220\u9664\u8bfe\u7a0b\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+    }
+  };
+
+  const handleToggleActive = async (course: Course) => {
+    const nextActive = !course.active;
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const stageLocalDraft = () => dbService.updateCourse(course.id, { active: nextActive });
+    if (typeof cloudRuntime?.updateCloudCourse !== 'function' || !course.updated_at) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+      return;
+    }
+    try {
+      await cloudRuntime.updateCloudCourse({ courseId: course.id, expectedUpdatedAt: course.updated_at, ...courseCloudPayload({ ...course, active: nextActive }) });
+      await dbService.refreshAuthorityProjection();
+      message.success(nextActive ? '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u672a\u7ed3\u8bfe' : '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u5df2\u7ed3\u8bfe');
+      loadData();
+    } catch (error: any) {
+      if (!isOfflineCloudFailure(error)) {
+        message.error('\u4e91\u7aef\u66f4\u65b0\u8bfe\u7a0b\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      loadData();
+    }
+  };
+
+  const submitCourseToAuthority = async (values: any) => {
+    const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    const stageLocalDraft = () => {
+      if (editingCourse) dbService.updateCourse(editingCourse.id, values);
+      else dbService.createCourse(values);
+      syncSchedulesRoomName(values);
+    };
+    if (!editingCourse && typeof cloudRuntime?.createCloudCourse !== 'function') {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    if (editingCourse && (typeof cloudRuntime?.updateCloudCourse !== 'function' || !editingCourse.updated_at)) {
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
+    try {
+      if (editingCourse) await cloudRuntime.updateCloudCourse({ courseId: editingCourse.id, expectedUpdatedAt: editingCourse.updated_at, ...courseCloudPayload(values) });
+      else {
+        const courseId = globalThis.crypto?.randomUUID?.() || `course-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await cloudRuntime.createCloudCourse({ courseId, ...courseCloudPayload(values) });
+      }
+      await dbService.refreshAuthorityProjection();
+      message.success(editingCourse ? '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u521b\u5efa');
+      return true;
+    } catch (error: any) {
+      const code = String(error?.code || error?.message || '');
+      if (code === 'CLOUD_BUSINESS_COURSE_CONFLICT') {
+        message.error('\u8be5\u8bfe\u7a0b\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');
+        return false;
+      }
+      if (!isOfflineCloudFailure(error)) {
+        message.error('\u4e91\u7aef\u8bfe\u7a0b\u5199\u5165\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
+        return false;
+      }
+      stageLocalDraft();
+      message.warning('\u5f53\u524d\u79bb\u7ebf\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
+      return true;
+    }
   };
 
   const getCourseStudentNames = (course: Course) => {
@@ -193,7 +320,8 @@ const CourseList: React.FC = () => {
           // 用户输入了新地址，自动添加到教室库
           values.room_name = roomId;
           if (dbService.addOrUpdateRoom) {
-            dbService.addOrUpdateRoom(roomId);
+            message.warning('\u8bf7\u5148\u5728\u4e0a\u8bfe\u5730\u5740\u4e2d\u521b\u5efa\u5e76\u540c\u6b65\u8be5\u5730\u5740');
+            return;
           }
         }
       } else {
@@ -207,12 +335,18 @@ const CourseList: React.FC = () => {
       if (values.active === undefined) {
         values.active = true;
       }
+      const completed = await submitCourseToAuthority(values);
+      if (completed) {
+        setModalVisible(false);
+        setTimeout(() => loadData(), 100);
+      }
+      return;
       if (editingCourse) {
         // 确保年份被保留：防止 antd InputNumber defaultValue 导致 year 丢失
         if (values.year === undefined || values.year === null) {
-          values.year = editingCourse.year !== undefined ? Number(editingCourse.year) : new Date().getFullYear();
+          values.year = editingCourse!.year !== undefined ? Number(editingCourse!.year) : new Date().getFullYear();
         }
-        dbService.updateCourse(editingCourse.id, values);
+        dbService.updateCourse(editingCourse!.id, values);
         message.success('更新成功');
         (window as any).operateLogger?.log('修改', `修改课程「${values.display_name || values.name}」`, '课程管理');
         // 自动同步 localStorage 排课数据中的上课地址

@@ -1044,6 +1044,33 @@ export function createDesktopIdentityClient({
     return data.room;
   }
 
+  async function createCloudCourse({ baseUrl, currentSession, courseId, ...data } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedCourseId = String(courseId || '').trim();
+    if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
+    const result = await request(fetchImpl, baseUrl, '/api/business/courses', { method: 'POST', token: currentSession.token, body: { courseId: normalizedCourseId, data } });
+    if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
+    return result.course;
+  }
+
+  async function updateCloudCourse({ baseUrl, currentSession, courseId, expectedUpdatedAt, ...data } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedCourseId = String(courseId || '').trim();
+    if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
+    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, ...data } });
+    if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
+    return result.course;
+  }
+
+  async function deleteCloudCourse({ baseUrl, currentSession, courseId, expectedUpdatedAt } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedCourseId = String(courseId || '').trim();
+    if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
+    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt } });
+    if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
+    return result.course;
+  }
+
   async function updateCloudStudentRecord({
     baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
     institutionId, parentName, notes, sourceType, studentSource, contacts,
@@ -1172,11 +1199,13 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginRegistration,
     beginUnifiedOnlineRegistration,
+    createCloudCourse,
     createCloudRoom,
     createCloudTeacher,
     createCloudStudentRecord,
     deleteCloudTeacher,
     deleteCloudStudent,
+    deleteCloudCourse,
     deleteCloudRoom,
     beginUnifiedOnlineRecovery,
     completeRegistration,
@@ -1194,6 +1223,7 @@ export function createDesktopIdentityClient({
     switchRole,
     upsertCloudStudentContact,
     updateCloudSchedule,
+    updateCloudCourse,
     updateCloudRoom,
     updateCloudTeacher,
     updateCloudStudent,

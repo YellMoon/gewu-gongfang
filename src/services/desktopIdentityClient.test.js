@@ -187,6 +187,22 @@ async function main() {
         assert.deepStrictEqual(JSON.parse(options.body), { roomId: 'room-cloud-1', name: 'Cloud room', address: 'Cloud address' });
         return { ok: true, json: async () => ({ ok: true, room: { id: 'room-cloud-1', updatedAt: '2026-08-23T00:09:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/courses') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        assert.deepStrictEqual(JSON.parse(options.body), { courseId: 'course-cloud-1', data: { name: 'Course cloud', year: 2026, semester: 'spring', displayName: 'Course cloud', type: 1, sourceType: 1, institutionId: null, priceTuition: 100, priceTeacher: 50, billingUnit: 1, teacherFeeMode: 1, roomId: 'room-cloud-1', roomName: 'ignored', teacherId: 'teacher-cloud-1', teacherName: 'ignored', active: true, defaultDurationMinutes: 60, notes: null, pricings: [{ studentId: 'student-cloud-1', tuition: 100, teacherFee: 50 }] } });
+        return { ok: true, json: async () => ({ ok: true, course: { id: 'course-cloud-1', updatedAt: '2026-08-23T00:12:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/courses/course-cloud-1') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        if (options.method === 'DELETE') {
+          assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-23T00:13:00.000Z' });
+          return { ok: true, json: async () => ({ ok: true, course: { id: 'course-cloud-1', updatedAt: '2026-08-23T00:14:00.000Z' } }) };
+        }
+        assert.strictEqual(options.method, 'PUT');
+        assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-23T00:12:00.000Z', name: 'Course cloud updated', year: 2026, semester: 'autumn', displayName: 'Course cloud updated', type: 1, sourceType: 1, institutionId: null, priceTuition: 80, priceTeacher: 40, billingUnit: 1, teacherFeeMode: 1, roomId: 'room-cloud-1', roomName: 'ignored', teacherId: 'teacher-cloud-1', teacherName: 'ignored', active: false, defaultDurationMinutes: 60, notes: 'note', pricings: [] });
+        return { ok: true, json: async () => ({ ok: true, course: { id: 'course-cloud-1', updatedAt: '2026-08-23T00:13:00.000Z' } }) };
+      }
       if (url === 'https://cloud.test/api/business/rooms/room-cloud-1') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         if (options.method === 'DELETE') {
@@ -447,6 +463,18 @@ async function main() {
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, roomId: 'room-cloud-1', expectedUpdatedAt: '2026-08-23T00:10:00.000Z',
   });
   assert.deepStrictEqual(deletedCloudRoom, { id: 'room-cloud-1', updatedAt: '2026-08-23T00:11:00.000Z' });
+  const createdCloudCourse = await unifiedCloudClient.createCloudCourse({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, courseId: 'course-cloud-1', name: 'Course cloud', year: 2026, semester: 'spring', displayName: 'Course cloud', type: 1, sourceType: 1, institutionId: null, priceTuition: 100, priceTeacher: 50, billingUnit: 1, teacherFeeMode: 1, roomId: 'room-cloud-1', roomName: 'ignored', teacherId: 'teacher-cloud-1', teacherName: 'ignored', active: true, defaultDurationMinutes: 60, notes: null, pricings: [{ studentId: 'student-cloud-1', tuition: 100, teacherFee: 50 }],
+  });
+  assert.deepStrictEqual(createdCloudCourse, { id: 'course-cloud-1', updatedAt: '2026-08-23T00:12:00.000Z' });
+  const updatedCloudCourse = await unifiedCloudClient.updateCloudCourse({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, courseId: 'course-cloud-1', expectedUpdatedAt: '2026-08-23T00:12:00.000Z', name: 'Course cloud updated', year: 2026, semester: 'autumn', displayName: 'Course cloud updated', type: 1, sourceType: 1, institutionId: null, priceTuition: 80, priceTeacher: 40, billingUnit: 1, teacherFeeMode: 1, roomId: 'room-cloud-1', roomName: 'ignored', teacherId: 'teacher-cloud-1', teacherName: 'ignored', active: false, defaultDurationMinutes: 60, notes: 'note', pricings: [],
+  });
+  assert.deepStrictEqual(updatedCloudCourse, { id: 'course-cloud-1', updatedAt: '2026-08-23T00:13:00.000Z' });
+  const deletedCloudCourse = await unifiedCloudClient.deleteCloudCourse({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, courseId: 'course-cloud-1', expectedUpdatedAt: '2026-08-23T00:13:00.000Z',
+  });
+  assert.deepStrictEqual(deletedCloudCourse, { id: 'course-cloud-1', updatedAt: '2026-08-23T00:14:00.000Z' });
   const updatedCloudTeacher = await unifiedCloudClient.updateCloudTeacher({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, teacherId: 'teacher-cloud-1', expectedUpdatedAt: '2026-08-23T00:06:00.000Z',
     name: 'Updated teacher', phone: null, subject: 'physics', hourlyRate: null, notes: 'note',

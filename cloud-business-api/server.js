@@ -10,6 +10,7 @@ const { createBusinessStudentRecordUpdate } = require('./src/businessStudentReco
 const { createBusinessStudentLifecycleMutations } = require('./src/businessStudentLifecycleMutationService');
 const { createBusinessTeacherLifecycleMutations } = require('./src/businessTeacherLifecycleMutationService');
 const { createBusinessRoomLifecycleMutations } = require('./src/businessRoomLifecycleMutationService');
+const { createBusinessCourseLifecycleMutations } = require('./src/businessCourseLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
@@ -273,6 +274,7 @@ function createDesktopRegistrationFromEnvironment() {
   const businessStudentLifecycleMutations = createBusinessStudentLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   const businessTeacherLifecycleMutations = createBusinessTeacherLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   const businessRoomLifecycleMutations = createBusinessRoomLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
+  const businessCourseLifecycleMutations = createBusinessCourseLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   return {
     registration,
     desktopPasswordAuthentication,
@@ -287,6 +289,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessStudentLifecycleMutations,
     businessTeacherLifecycleMutations,
     businessRoomLifecycleMutations,
+    businessCourseLifecycleMutations,
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
   };
 }
@@ -361,6 +364,7 @@ const app = createCloudBusinessApp({
   businessStudentLifecycleMutations: desktopRuntime?.businessStudentLifecycleMutations || null,
   businessTeacherLifecycleMutations: desktopRuntime?.businessTeacherLifecycleMutations || null,
   businessRoomLifecycleMutations: desktopRuntime?.businessRoomLifecycleMutations || null,
+  businessCourseLifecycleMutations: desktopRuntime?.businessCourseLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,

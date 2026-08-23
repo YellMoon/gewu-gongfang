@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown' }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -11,6 +11,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessStudentLifecycleMutations !== null && (typeof businessStudentLifecycleMutations.create !== 'function' || typeof businessStudentLifecycleMutations.remove !== 'function')) throw new TypeError('businessStudentLifecycleMutations is invalid');
   if (businessTeacherLifecycleMutations !== null && (typeof businessTeacherLifecycleMutations.create !== 'function' || typeof businessTeacherLifecycleMutations.update !== 'function' || typeof businessTeacherLifecycleMutations.remove !== 'function')) throw new TypeError('businessTeacherLifecycleMutations is invalid');
   if (businessRoomLifecycleMutations !== null && (typeof businessRoomLifecycleMutations.create !== 'function' || typeof businessRoomLifecycleMutations.update !== 'function' || typeof businessRoomLifecycleMutations.remove !== 'function')) throw new TypeError('businessRoomLifecycleMutations is invalid');
+  if (businessCourseLifecycleMutations !== null && (typeof businessCourseLifecycleMutations.create !== 'function' || typeof businessCourseLifecycleMutations.update !== 'function' || typeof businessCourseLifecycleMutations.remove !== 'function')) throw new TypeError('businessCourseLifecycleMutations is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
@@ -126,8 +127,37 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     return contacts;
   }
+  function coursePricings(value) {
+    if (!Array.isArray(value) || value.length > 1000) return null;
+    const studentIds = new Set(); const pricings = [];
+    for (const candidate of value) {
+      const pricing = exactBody(candidate, ['studentId', 'tuition', 'teacherFee']);
+      const studentId = boundedText(pricing?.studentId, 256);
+      const tuition = nonNegativeNumber(pricing?.tuition); const teacherFee = nonNegativeNumber(pricing?.teacherFee);
+      if (!studentId || studentIds.has(studentId) || tuition === null || teacherFee === null) return null;
+      studentIds.add(studentId); pricings.push({ studentId, tuition, teacherFee });
+    }
+    return pricings;
+  }
   function nonNegativeNumber(value) {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100000000 ? value : null;
+  }
+  function courseRecord(value, expectedUpdatedAtRequired = false) {
+    const keys = expectedUpdatedAtRequired
+      ? ['expectedUpdatedAt', 'name', 'year', 'semester', 'displayName', 'type', 'sourceType', 'institutionId', 'priceTuition', 'priceTeacher', 'billingUnit', 'teacherFeeMode', 'roomId', 'roomName', 'teacherId', 'teacherName', 'active', 'defaultDurationMinutes', 'notes', 'pricings']
+      : ['name', 'year', 'semester', 'displayName', 'type', 'sourceType', 'institutionId', 'priceTuition', 'priceTeacher', 'billingUnit', 'teacherFeeMode', 'roomId', 'roomName', 'teacherId', 'teacherName', 'active', 'defaultDurationMinutes', 'notes', 'pricings'];
+    const input = exactBody(value, keys);
+    const name = boundedText(input?.name, 256); const semester = boundedText(input?.semester, 128); const displayName = boundedText(input?.displayName, 256);
+    const institutionId = boundedText(input?.institutionId, 256); const roomId = boundedText(input?.roomId, 256); const teacherId = boundedText(input?.teacherId, 256);
+    const roomName = optionalText(input?.roomName); const teacherName = optionalText(input?.teacherName); const notes = optionalText(input?.notes);
+    const pricings = coursePricings(input?.pricings); const expectedUpdatedAt = expectedUpdatedAtRequired ? instant(input?.expectedUpdatedAt) : undefined;
+    if (!input || !name || !semester || !displayName || institutionId === undefined || !roomId || !teacherId || roomName === undefined || teacherName === undefined || notes === undefined || pricings === null
+      || !Number.isInteger(input.year) || input.year < 1900 || input.year > 2200 || ![1, 2, 3, 4].includes(input.type) || ![1, 2, 3].includes(input.sourceType)
+      || !(input.sourceType === 1 || institutionId) || ![1, 2].includes(input.billingUnit) || ![1, 2].includes(input.teacherFeeMode)
+      || nonNegativeNumber(input.priceTuition) === null || nonNegativeNumber(input.priceTeacher) === null || typeof input.active !== 'boolean'
+      || !(input.defaultDurationMinutes === null || (Number.isInteger(input.defaultDurationMinutes) && input.defaultDurationMinutes > 0 && input.defaultDurationMinutes <= 1440))
+      || (expectedUpdatedAtRequired && !expectedUpdatedAt)) return null;
+    return { expectedUpdatedAt, name, year: input.year, semester, displayName, type: input.type, sourceType: input.sourceType, institutionId, priceTuition: input.priceTuition, priceTeacher: input.priceTeacher, billingUnit: input.billingUnit, teacherFeeMode: input.teacherFeeMode, roomId, roomName, teacherId, teacherName, active: input.active, defaultDurationMinutes: input.defaultDurationMinutes, notes, pricings };
   }
   function sessionToken(request) {
     const authorization = String(request.get('authorization') || '');
@@ -660,6 +690,53 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  app.post('/api/business/courses', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    const courseId = String(request.body?.courseId || '').trim();
+    const update = courseRecord(request.body?.data, false);
+    if (!courseId || !update || !exactBody(request.body, ['courseId', 'data'])) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      const course = await businessCourseLifecycleMutations.create({ tenantId: businessTenantId, courseId, ...update });
+      if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
+      response.status(201).json({ ok: true, course });
+    } catch (error) {
+      if (error?.code === '23503' || error?.code === '22023') return response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_RELATION_INVALID' });
+      businessUnavailable(response);
+    }
+  });
+  app.put('/api/business/courses/:courseId', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    const courseId = String(request.params.courseId || '').trim(); const update = courseRecord(request.body, true);
+    if (!courseId || !update) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      const course = await businessCourseLifecycleMutations.update({ tenantId: businessTenantId, courseId, ...update });
+      if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
+      response.json({ ok: true, course });
+    } catch (error) {
+      if (error?.code === '23503' || error?.code === '22023') return response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_RELATION_INVALID' });
+      businessUnavailable(response);
+    }
+  });
+  app.delete('/api/business/courses/:courseId', async (request, response) => {
+    if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
+    const courseId = String(request.params.courseId || '').trim(); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
+    if (!courseId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
+    try {
+      const context = await businessContext(request);
+      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      const course = await businessCourseLifecycleMutations.remove({ tenantId: businessTenantId, courseId, expectedUpdatedAt });
+      if (!course) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
+      response.json({ ok: true, course });
+    } catch (error) {
+      if (error?.code === 'P0001' || error?.message === 'VNEXT_BUSINESS_COURSE_REFERENCED') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_COURSE_REFERENCED' });
+      businessUnavailable(response);
+    }
+  });
+
   app.post('/api/business/rooms', async (request, response) => {
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
     const update = exactBody(request.body, ['roomId', 'name', 'address']);

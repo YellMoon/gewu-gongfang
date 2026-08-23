@@ -112,6 +112,9 @@ interface Window {
     createCloudRoom(input: { roomId: string; name: string; address: string | null }): Promise<{ id: string; updatedAt: string }>;
     updateCloudRoom(input: { roomId: string; expectedUpdatedAt: string; name: string; address: string | null }): Promise<{ id: string; updatedAt: string }>;
     deleteCloudRoom(input: { roomId: string; expectedUpdatedAt: string }): Promise<{ id: string; updatedAt: string }>;
+    createCloudCourse(input: any): Promise<{ id: string; updatedAt: string }>;
+    updateCloudCourse(input: any): Promise<{ id: string; updatedAt: string }>;
+    deleteCloudCourse(input: { courseId: string; expectedUpdatedAt: string }): Promise<{ id: string; updatedAt: string }>;
     updateCloudStudentRecord(input: {
       studentId: string;
       expectedUpdatedAt: string;
