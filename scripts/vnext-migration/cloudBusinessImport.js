@@ -32,6 +32,11 @@ function sqlBoolean(value) {
   return value ? 'TRUE' : 'FALSE';
 }
 
+function sqlDatabaseIdentifier(value) {
+  if (typeof value !== 'string' || !/^[a-z][a-z0-9_]{0,62}$/u.test(value)) throw inputInvalid();
+  return `"${value}"`;
+}
+
 function insert(relation, fields, values) {
   if (fields.length !== values.length) throw inputInvalid();
   return `INSERT INTO ${relation} (${fields.join(', ')}) VALUES (${values.join(', ')});`;
@@ -46,13 +51,14 @@ function buildCloudBusinessImportSql(source) {
   if (!source || typeof source !== 'object' || !source.foundation || !source.coreScheduling) throw inputInvalid();
   const foundation = source.foundation;
   const core = projectCore(source.coreScheduling);
+  const targetDatabase = sqlDatabaseIdentifier(source.targetDatabase || 'gewu_cloud');
   for (const relation of ['tenants', 'institutions', 'schools', 'rooms']) if (!Array.isArray(foundation[relation])) throw inputInvalid();
   const lines = [
     '\\set ON_ERROR_STOP on',
     'BEGIN;',
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vnext_pg17_business_owner') THEN CREATE ROLE vnext_pg17_business_owner NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS; END IF; IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vnext_pg17_business_verifier') THEN CREATE ROLE vnext_pg17_business_verifier NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS; END IF; END $$;",
     'GRANT vnext_pg17_business_owner TO gewu_app;',
-    'GRANT CREATE ON DATABASE gewu_cloud TO vnext_pg17_business_owner;',
+    `GRANT CREATE ON DATABASE ${targetDatabase} TO vnext_pg17_business_owner;`,
     'SET LOCAL ROLE vnext_pg17_business_owner;',
   ];
   for (const migration of BUSINESS_FOUNDATION_MIGRATIONS) {
@@ -70,7 +76,7 @@ function buildCloudBusinessImportSql(source) {
   for (const row of core.schedules) lines.push(insert('business.schedules', ['id', 'tenant_id', 'course_id', 'start_at', 'end_at', 'recurring_rule_json', 'status', 'room_display_snapshot', 'service_type', 'calculated_tuition', 'calculated_teacher_fee', 'notes', 'legacy_deleted', 'created_at', 'updated_at'], [sqlText(row.id), sqlText(row.tenantId), sqlText(row.courseId), sqlText(row.startAt), sqlText(row.endAt), sqlText(row.recurringRule), sqlInteger(row.status), sqlText(row.roomDisplay), sqlInteger(row.serviceType), sqlNumber(row.calculatedTuition), sqlNumber(row.calculatedTeacherFee), sqlText(row.notes), sqlBoolean(row.legacyDeleted), sqlText(row.createdAt), sqlText(row.updatedAt)]));
   for (const row of core.schedules) if (row.effectiveRosterSource === 'schedule_override') for (const pricing of row.effectiveRoster || []) lines.push(insert('business.schedule_student_overrides', ['tenant_id', 'schedule_id', 'student_id', 'attendance_status', 'tuition', 'teacher_fee'], [sqlText(row.tenantId), sqlText(row.id), sqlText(pricing.studentId), sqlInteger(pricing.attendanceStatus), sqlNumber(pricing.tuition), sqlNumber(pricing.teacherFee)]));
   lines.push('RESET ROLE;');
-  lines.push('REVOKE CREATE ON DATABASE gewu_cloud FROM vnext_pg17_business_owner;');
+  lines.push(`REVOKE CREATE ON DATABASE ${targetDatabase} FROM vnext_pg17_business_owner;`);
   lines.push('REVOKE vnext_pg17_business_owner FROM gewu_app;');
   lines.push('COMMIT;');
   const relationCounts = Object.freeze({
@@ -123,6 +129,7 @@ function buildBusinessShadowImportPlan({ source, shadowTargetIdentity, consentSh
     sourceSnapshotSha256,
     sourceInventorySha256,
     sourceSchemaSha256,
+    targetDatabase: target,
     foundation: source.foundation,
     coreScheduling: normalizedCore,
   });
