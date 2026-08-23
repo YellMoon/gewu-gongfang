@@ -87,4 +87,5 @@ contextBridge.exposeInMainWorld('questionDraftProvenance', {
 });
 contextBridge.exposeInMainWorld('questionImportRelay', Object.freeze({
   sealSource: input => ipcRenderer.invoke('seal-question-import-source', input),
+  sealAsset: input => ipcRenderer.invoke('seal-question-asset', input),
 }));

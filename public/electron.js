@@ -6,7 +6,7 @@ const WebSocket = require('ws');
 const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
 const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
-const { sealQuestionImportSource } = require('./questionImportRelay');
+const { sealQuestionImportSource, sealQuestionAsset } = require('./questionImportRelay');
 const { ensureRuntimeConfig, applyRuntimeConfigToEnv, MANAGED_CLOUD_BASE_URL } = require('./runtimeConfig');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
@@ -264,6 +264,7 @@ ipcMain.handle('desktop-authority:confirm-and-submit', (_event, id, input) => ge
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('seal-question-import-source', (_event, input) => sealQuestionImportSource(input));
+ipcMain.handle('seal-question-asset', (_event, input) => sealQuestionAsset(input));
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) throw new Error('INVALID_EXTERNAL_URL');
   return shell.openExternal(url);

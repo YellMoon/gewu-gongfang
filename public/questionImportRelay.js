@@ -20,7 +20,7 @@ function sourceBytes(value) {
   return bytes;
 }
 
-function sealQuestionImportSource(input) {
+function sealQuestionBytes(input) {
   const request = exact(input, ['agentPublicKey', 'storageTaskId', 'objectId', 'objectVersion', 'bytes']);
   if (typeof request.agentPublicKey !== 'string' || !/^[A-Za-z0-9_-]{40,4096}$/.test(request.agentPublicKey)
     || typeof request.storageTaskId !== 'string' || !/^task_[A-Za-z0-9_-]{8,128}$/.test(request.storageTaskId)
@@ -40,4 +40,12 @@ function sealQuestionImportSource(input) {
   });
 }
 
-module.exports = Object.freeze({ sealQuestionImportSource });
+function sealQuestionImportSource(input) {
+  return sealQuestionBytes(input);
+}
+
+function sealQuestionAsset(input) {
+  return sealQuestionBytes(input);
+}
+
+module.exports = Object.freeze({ sealQuestionImportSource, sealQuestionAsset });
