@@ -1,5 +1,4 @@
 import type { RuntimeConfig } from './runtimeConfigClient';
-import type { HostPaperExportInput } from './hostPaperExport';
 import {
   cancelPaperExportTask as cancelRuntime,
   downloadPaperExportResult,
@@ -11,12 +10,24 @@ import {
 } from './paperExportTaskClient.mjs';
 
 export type PaperExportTaskStatus = 'draft' | 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'timed_out';
+export type FormulaExportMode = 'word-native' | 'eq-field' | 'mathtype-compatible' | 'latex-vector';
+export type PaperArtifactFormat = 'word' | 'pdf';
+export type AnswerPosition = 'end' | 'after-each' | 'hidden';
+
+export interface PaperExportInput {
+  title: string;
+  format: PaperArtifactFormat;
+  formulaMode: FormulaExportMode;
+  questionIds: string[];
+  answerPosition: AnswerPosition;
+  subject?: string;
+}
 
 export interface PaperExportTaskRecord {
   localId: string;
   serverTaskId?: string;
   idempotencyKey: string;
-  request: HostPaperExportInput;
+  request: PaperExportInput;
   status: PaperExportTaskStatus;
   phase: string;
   progress: number;
@@ -33,7 +44,7 @@ export function loadPaperExportTasks(): PaperExportTaskRecord[] {
   return loadRuntime() as PaperExportTaskRecord[];
 }
 
-export async function submitPaperExportTask(config: RuntimeConfig, input: HostPaperExportInput) {
+export async function submitPaperExportTask(config: RuntimeConfig, input: PaperExportInput) {
   return submitRuntime(config, input) as Promise<{ accepted: boolean; task: PaperExportTaskRecord; error?: Error }>;
 }
 

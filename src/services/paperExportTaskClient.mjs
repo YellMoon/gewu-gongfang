@@ -67,6 +67,10 @@ function resultFromServer(row) {
   return row?.result_payload || row?.result || null;
 }
 
+function cloudAnswerPosition(value) {
+  return value === 'after-each' ? 'after' : 'end';
+}
+
 function normalizeRemote(local, row, timestamp) {
     const rawStatus = String(row?.status || local.status || 'queued');
   const status = rawStatus === 'failed' && String(row?.error_code || '').includes('DEADLINE') ? 'timed_out' : rawStatus;
@@ -94,7 +98,7 @@ async function submitDraft(config, draft, deps) {
       body: JSON.stringify({
         taskType: `paper-export-${draft.request.format}`,
         payload: {
-          questionIds: [...draft.request.questionIds], answerPosition: draft.request.answerPosition,
+          questionIds: [...draft.request.questionIds], answerPosition: cloudAnswerPosition(draft.request.answerPosition),
           formulaMode: draft.request.formulaMode, title: draft.request.title, subject: draft.request.subject || '',
         },
       }),

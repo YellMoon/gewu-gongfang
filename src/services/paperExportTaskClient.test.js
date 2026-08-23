@@ -51,7 +51,7 @@ function memoryStorage(seed = {}) {
   assert.strictEqual(accepted.accepted, true);
   assert.deepStrictEqual(JSON.parse(calls[0].init.body), {
     taskType: 'paper-export-pdf',
-    payload: { questionIds: ['q3', 'q1', 'q2'], answerPosition: 'after-each', formulaMode: 'word-native', title: 'Midterm', subject: 'Physics' },
+    payload: { questionIds: ['q3', 'q1', 'q2'], answerPosition: 'after', formulaMode: 'word-native', title: 'Midterm', subject: 'Physics' },
   }, 'cloud submission must preserve editor order and all export choices while cloud freezes the authoritative question snapshot');
   assert.strictEqual(calls[0].url, 'https://cloud-business.example.com/api/desktop/paper-export-tasks');
   assert.strictEqual(calls[0].init.headers.Authorization, 'Bearer jwt-token');

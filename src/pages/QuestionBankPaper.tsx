@@ -32,13 +32,12 @@ import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionRenderer from '../components/QuestionRenderer';
-import type { AnswerPosition, FormulaExportMode, PaperArtifactFormat } from '../services/hostPaperExport';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import {
   cancelPaperExportTask, downloadPaperExportTask, loadPaperExportTasks, refreshPaperExportTask,
   refreshPendingPaperExportTasks, retryPaperExportTask, submitPaperExportTask,
 } from '../services/paperExportTaskService';
-import type { PaperExportTaskRecord } from '../services/paperExportTaskService';
+import type { AnswerPosition, FormulaExportMode, PaperArtifactFormat, PaperExportTaskRecord } from '../services/paperExportTaskService';
 import { getPaperExportTaskPresentation } from '../services/paperExportTaskPresentation.mjs';
 import './QuestionBankPaper.css';
 
