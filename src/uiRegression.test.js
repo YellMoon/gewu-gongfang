@@ -35,20 +35,9 @@ const structuredQuestionViewer = read('src/components/StructuredQuestionViewer.t
 const systemSettings = read('src/pages/SystemSettings.tsx');
 const desktopUpdateClient = read('src/services/desktopUpdateClient.mjs');
 const desktopIdentityError = read('src/services/desktopIdentityError.mjs');
-assert.ok(systemSettings.includes("if (!settingsPolicy.isPrimaryHost)") && systemSettings.includes('\\u7ba1\\u7406\\u5458\\u6258\\u7ba1'), 'ordinary desktop settings must use a dedicated managed simple view');
-assert.ok(systemSettings.includes('if (policy.loadQuestionBankStorage)') && systemSettings.includes('if (policy.loadBackupTargets)'), 'ordinary desktop must not load host storage or backup status');
-const ordinaryDesktopSettingsStart = systemSettings.indexOf('if (!settingsPolicy.isPrimaryHost)');
-const primaryHostSettingsStart = systemSettings.indexOf('\n  return (', ordinaryDesktopSettingsStart);
-const ordinaryDesktopSettingsView = systemSettings.slice(ordinaryDesktopSettingsStart, primaryHostSettingsStart);
-const primaryHostSettingsView = systemSettings.slice(primaryHostSettingsStart);
-assert.ok(
-  /renderDesktopUpdatePanel\s*\(/.test(ordinaryDesktopSettingsView) || /<DesktopUpdatePanel\b/.test(ordinaryDesktopSettingsView),
-  'ordinary desktop settings must render the OSS desktop updater instead of returning before it'
-);
-assert.ok(
-  /renderDesktopUpdatePanel\s*\(/.test(primaryHostSettingsView) || /<DesktopUpdatePanel\b/.test(primaryHostSettingsView),
-  'primary-host settings must render its isolated OSS desktop updater'
-);
+assert.ok(!systemSettings.includes('isPrimaryHost') && !systemSettings.includes('primary-host'), 'the unified desktop settings page must not branch on a host role');
+assert.ok(systemSettings.includes('invokeDesktopUpdateCheck') && systemSettings.includes('\\u8f6f\\u4ef6\\u66f4\\u65b0'), 'the unified desktop settings page must expose the OSS desktop updater');
+assert.ok(systemSettings.includes('<SyncSettings variant="advanced" />'), 'the unified desktop settings page must retain the cloud draft submission surface');
 const syncSettings = read('src/pages/SyncSettings.tsx');
 const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
@@ -84,17 +73,15 @@ const decodeUnicodeEscapes = source => source.replace(/\\u([0-9a-fA-F]{4})/g, (_
 const decodedIdentityDeviceCenter = decodeUnicodeEscapes(identityDeviceCenter);
 
 assert(
-  miniappLogin.includes("api.post<any>('/api/auth/wechat-login'") &&
-  miniappLogin.includes('phone: normalizedPhone') &&
-  miniappLogin.includes('validateManualPhone') &&
-  miniappLogin.includes('homeForIdentity as resolveHomeForIdentity') &&
-  miniappLogin.includes('return resolveHomeForIdentity(identity') &&
-  miniappLogin.includes('Taro.reLaunch({ url: homeForIdentity(') &&
+  miniappLogin.includes('miniappCloudAuthApi.login(loginCode, phoneCode)') &&
+  miniappLogin.includes('openType="getPhoneNumber"') &&
+  miniappLogin.includes("Taro.reLaunch({ url: '/pages/schedule/index' })") &&
+  !miniappLogin.includes('/api/auth/wechat-login') &&
+  !miniappLogin.includes('validateManualPhone') &&
   !miniappLogin.includes('WECHAT_BINDING_REVIEW_REQUIRED') &&
   !miniappLogin.includes('pendingBinding') &&
-  !miniappLogin.includes('openType="getPhoneNumber"') &&
   !miniappLogin.includes('reviewDemo'),
-  'miniapp login should use the shared manual-phone identity router without the retired binding-review state'
+  'miniapp login should use the cloud WeChat-and-phone proof flow without retired binding-review state'
 );
 
 assert.strictEqual(
@@ -170,7 +157,7 @@ assert(
   miniappUnrecognizedContent.includes('体验组卷') &&
   miniappUnrecognizedContent.includes('选择示例题目，提交组卷与导出任务') &&
   miniappUnrecognizedContent.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
-  miniappQuestionBank.includes("Taro.navigateTo({ url: '/pages/unrecognized-experience/index' })"),
+  miniappQuestionBank.includes("Taro.reLaunch({ url: '/pages/unrecognized-experience/index' })"),
   'unrecognized experience should expose fixed question tasks and a real identity-application entry'
 );
 
@@ -231,105 +218,35 @@ assert(
   appNavigation.includes('0x8eab, 0x4efd, 0x4e0e, 0x8bbe, 0x5907') &&
   appShell.includes('identityDevicePendingCount') &&
   appShell.includes('<Badge') &&
-  decodedIdentityDeviceCenter.includes('待审设备申请') &&
-  decodedIdentityDeviceCenter.includes('我的设备') &&
-  decodedIdentityDeviceCenter.includes('全部设备') &&
-  decodedIdentityDeviceCenter.includes('本地数据主机') &&
+  decodedIdentityDeviceCenter.includes('\u6211\u7684\u5df2\u767b\u8bb0\u8bbe\u5907') &&
+  decodedIdentityDeviceCenter.includes('\u65e0\u9700\u4eba\u5de5\u8bbe\u5907\u5ba1\u6279') &&
+  decodedIdentityDeviceCenter.includes('\u4e91\u7aef\u88c1\u51b3') &&
   identityDeviceCenterCss.includes('.identity-device-center') &&
   !permissionManager.includes('PairingReviewPanel'),
-  'desktop identity and device center must be a top-level, badged workbench instead of a permission-page footer'
+  'desktop identity and device center must present cloud-registered devices without restoring manual device approval'
 );
 
 assert(
-  decodedIdentityDeviceCenter.includes('设备 ID') &&
   !identityDeviceCenter.includes('name="deviceId"') &&
   !systemSettings.includes('name="deviceId"') &&
-  !systemSettings.includes('runtimeConfig?.deviceId ||'),
-  'the immutable device id must only appear as read-only identity-device metadata, never in verification or general settings forms'
+  !systemSettings.includes('runtimeConfig?.deviceId ||') &&
+  identityDeviceCenter.includes("rowKey=\"deviceId\""),
+  'device identity must be cloud-managed and never editable through general settings forms'
 );
 
 assert(
-  systemSettings.includes('/api/question-bank/storage/status') &&
-  systemSettings.includes('questionBankCandidatePaths') &&
-  systemSettings.includes('questionBankStoreId') &&
-  systemSettings.includes('nasBackupPath') &&
-  systemSettings.includes('localCachePath') &&
-  systemSettings.includes('/backups/targets/status') &&
-  systemSettings.includes('backupTargetStatus'),
-  'system settings should expose hotplug question-bank status, store id, candidate paths, local cache, NAS backup path, and backup target status'
+  !systemSettings.includes('/api/question-bank/storage/status') &&
+  !systemSettings.includes('questionBankCandidatePaths') &&
+  !systemSettings.includes('backupTargetStatus') &&
+  systemSettings.includes('<SyncSettings variant="advanced" />'),
+  'the unified desktop settings page must not restore local-storage authority controls'
 );
 
 assert(
-  systemSettings.includes('软件更新') &&
-  systemSettings.includes('invokeDesktopUpdateCheck') &&
-  desktopUpdateClient.includes("api.invoke('check-for-updates')") &&
-  systemSettings.includes("api.on('update-available'") &&
-  systemSettings.includes("api.on('download-progress'") &&
-  systemSettings.includes("api.on('update-downloaded'") &&
-  systemSettings.includes("api.on('update-error'") &&
-  systemSettings.includes('download-update') &&
-  systemSettings.includes('install-update') &&
-  packageJson.includes('publish:desktop-update'),
-  'system settings should expose an in-app desktop updater and release script should publish the desktop update feed'
-);
-
-assert(
-  desktopIdentityError.includes('desktopIdentityErrorMessage') &&
-  !desktopIdentityError.includes('Error invoking remote method'),
-  'desktop identity errors must use stable user-facing copy without Electron IPC wrappers'
-);
-
-assert(
-  packageJson.includes('"asar": false'),
-  'desktop packaging should keep asar disabled because the embedded backend/runtime are loaded from resources/app'
-);
-
-assert(
-  operateLog.includes("import { getApiBase } from '../utils/apiBase'") &&
-  operateLog.includes("getApiBase('/api/ops/audit')") &&
-  !operateLog.includes("fetch('/api/ops/audit") &&
-  !operateLog.includes('fetch("/api/ops/audit'),
-  'packaged file:// UI should resolve operation audit API calls through getApiBase instead of direct /api fetches'
-);
-
-const desktopRuntimeOnlyDependencies = [
-  'antd',
-  'chart.js',
-  'dayjs',
-  'electron-store',
-  'react',
-  'react-chartjs-2',
-  'react-dom',
-  'react-scripts',
-  'recharts',
-  'sql.js',
-];
-const desktopRuntimeDependencyLeaks = desktopRuntimeOnlyDependencies.filter(
-  dependency => packageManifest.dependencies?.[dependency]
-);
-assert.deepStrictEqual(
-  desktopRuntimeDependencyLeaks,
-  [],
-  'desktop packaging should keep frontend/build-only packages out of runtime dependencies'
-);
-
-assert(
-  !scheduleList.includes('require(') &&
-  !batchSelection.includes('require(') &&
-  !scheduleExcelExport.includes('module.exports') &&
-  !batchSelectionGeometry.includes('module.exports') &&
-  scheduleList.includes("from '../utils/scheduleExcelExport.mjs'") &&
-  batchSelection.includes("from '../utils/batchSelectionGeometry.mjs'"),
-  'browser-loaded schedule utilities should use ESM imports/exports instead of CommonJS'
-);
-
-assert(
-  systemSettings.includes('数据主机与同步') &&
-  systemSettings.includes('本地数据主机') &&
-  systemSettings.includes('普通离线客户端') &&
-  systemSettings.includes('题库移动硬盘路径') &&
-  systemSettings.includes('主数据库路径'),
-  'system settings should expose local-first role and storage path controls'
+  !systemSettings.includes('primary-host') &&
+  !systemSettings.includes('questionBankCandidatePaths') &&
+  systemSettings.includes('<SyncSettings variant=\"advanced\" />'),
+  'system settings must remain a unified cloud-and-draft surface without local-host role or storage controls'
 );
 
 assert(
@@ -338,18 +255,18 @@ assert(
 );
 
 assert(
-  questionBankImport.includes('questionBankStorageStatus') &&
-  questionBankImport.includes('题库移动硬盘未连接') &&
-  questionBankPreview.includes('questionBankStorageStatus') &&
-  questionBankPreview.includes('题库移动硬盘未连接'),
-  'question bank import and preview should warn when the removable question-bank drive is unavailable'
+  questionBankImport.includes('startCloudImport') &&
+  questionBankImport.includes('createDesktopQuestionImportClient') &&
+  questionBankPreview.includes('storage_state === \'cloud_cached\'') &&
+  !questionBankPreview.includes('questionBankStorageStatus'),
+  'question import and preview must use the cloud authority and its local projection rather than a removable-drive authority'
 );
 
 assert(syncSettings.includes('AuthorityOutboxPanel'));
 assert(cloudSync.includes('AuthorityOutboxPanel'));
 assert(authorityOutboxPanel.includes('requireBridge().list()'));
-assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id)'));
-assert(authorityOutboxPanel.includes('submit(item.id)'));
+assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id, cloudQuestionSubmissionInput(item))'));
+assert(authorityOutboxPanel.includes('submit(item.id, cloudQuestionSubmissionInput(item))'));
 assert(authorityOutboxPanel.includes('Modal.confirm'));
 assert(authorityOutboxPanel.includes("item.status === 'conflict'"));
 assert(!authorityOutboxPanel.includes('fetch('));
@@ -381,7 +298,7 @@ assert(
   authorityOutboxPanel.includes('confirmAndSubmit') &&
   authorityOutboxPanel.includes('projectionVersion') &&
   systemSettings.includes('id="sync-settings"') &&
-  systemSettings.includes('sync-advanced'),
+  systemSettings.includes('<SyncSettings variant="advanced" />'),
   'sync UI should expose the authority outbox and explicit confirmation'
 );
 

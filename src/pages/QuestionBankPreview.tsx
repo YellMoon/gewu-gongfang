@@ -44,15 +44,6 @@ const { Text } = Typography;
 // utf-8
 const QUESTION_PAGE_SIZE = 10;
 
-type QuestionBankStorageStatus = {
-  configured?: boolean;
-  available?: boolean;
-  writable?: boolean;
-  root?: string;
-  reason?: string;
-  detail?: string;
-};
-
 const KATEX_EXPORT_CSS = `
 .katex{font:normal 1em "KaTeX_Main","Times New Roman",serif;line-height:1.08;text-rendering:auto}
 .katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
@@ -206,7 +197,6 @@ const QuestionBankPreview: React.FC = () => {
   const [addingChildName, setAddingChildName] = useState('');
   const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
   const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
-  const [questionBankStorageStatus, setQuestionBankStorageStatus] = useState<QuestionBankStorageStatus | null>(null);
   const [deleteContext, setDeleteContext] = useState<{ capabilities: string[]; deviceId?: string; userId?: string }>({ capabilities: [] });
   const [form] = Form.useForm();
   const saveGate = React.useRef(createQuestionEditorSaveGate()).current;
@@ -254,14 +244,6 @@ const QuestionBankPreview: React.FC = () => {
     return () => window.removeEventListener('beforeunload', protectDirtyEditor);
   }, [modalVisible, editorDirty]);
   useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(modalVisible, editorDirty)), [modalVisible, editorDirty]);
-  const questionBankStorageUnavailable = !!(
-    questionBankStorageStatus?.configured && questionBankStorageStatus.available === false
-  );
-
-  const fetchQuestionBankStorageStatus = useCallback(async () => {
-    setQuestionBankStorageStatus(null);
-  }, []);
-
   const normalizeQuestion = (row: any): Question => ({
     ...row,
     subject: row.subject || '物理',
@@ -316,8 +298,7 @@ const QuestionBankPreview: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    fetchQuestionBankStorageStatus();
-  }, [loadData, fetchQuestionBankStorageStatus]);
+  }, [loadData]);
 
   useEffect(() => {
     if (!contextMenuNode) return;
@@ -1109,16 +1090,6 @@ const QuestionBankPreview: React.FC = () => {
       {/* Main Content */}
       <Col span={treeVisible ? 19 : 24} className="qb-preview-main">
         <Card className="qb-preview-main-card">
-          {questionBankStorageUnavailable && (
-            <Alert
-              showIcon
-              type="warning"
-              message="题库移动硬盘未连接"
-              description={questionBankStorageStatus?.reason || questionBankStorageStatus?.detail || '请在系统设置中配置并连接题库移动硬盘。'}
-              style={{ marginBottom: 16 }}
-            />
-          )}
-
           {/* Header */}
           <div className="qb-preview-header">
             <Space className="qb-preview-titlebar">
@@ -1146,7 +1117,6 @@ const QuestionBankPreview: React.FC = () => {
                   <Button
                     type="primary"
                     icon={<FileWordOutlined />}
-                    disabled={questionBankStorageUnavailable}
                     onClick={handleBatchGroupExam}
                   >
                     批量组卷 ({selectedRowKeys.length})

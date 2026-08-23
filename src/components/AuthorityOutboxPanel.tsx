@@ -189,10 +189,21 @@ function freshRelayId(prefix: 'asset' | 'task' | 'obj'): string {
 }
 
 async function dataUrlBytes(dataUrl: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
-  const response = await fetch(dataUrl);
-  if (!response.ok) throw new Error('QUESTION_ASSET_RELAY_SOURCE_UNAVAILABLE');
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  const mimeType = String(response.headers.get('content-type') || /^data:([^;,]+)/.exec(dataUrl)?.[1] || 'application/octet-stream').split(';')[0];
+  const match = /^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?,([\s\S]*)$/i.exec(dataUrl);
+  if (!match) throw new Error('QUESTION_ASSET_RELAY_SOURCE_UNAVAILABLE');
+  const mimeType = String(match[1] || 'application/octet-stream').split(';')[0];
+  const payload = match[3] || '';
+  let bytes: Uint8Array;
+  try {
+    if (match[2]) {
+      const binary = atob(payload.replace(/\s/g, ''));
+      bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(payload));
+    }
+  } catch (_error) {
+    throw new Error('QUESTION_ASSET_RELAY_SOURCE_INVALID');
+  }
   if (!bytes.byteLength || !/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+/-]{0,254}$/.test(mimeType)) throw new Error('QUESTION_ASSET_RELAY_SOURCE_INVALID');
   return { bytes, mimeType };
 }

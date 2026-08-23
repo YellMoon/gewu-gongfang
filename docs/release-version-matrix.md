@@ -11,7 +11,7 @@ The source of truth is the root `package.json`. `scripts/update-version.js` sync
 | `desktop` | OSS installer and `latest.yml` uploaded, with an exact feed version |
 | `backend` | Backup, migration/restart, then exact `/api/health` version |
 | `gateway` | Backup/restart, then exact Gateway health version |
-| `miniapp` | Successful WeChat development upload; this is not review submission or production publication |
+| `miniapp` | Successful WeChat development upload for compatibility; an official WeChat production-release receipt is additionally required before the matrix may be called complete |
 
 ## Required order
 
@@ -22,7 +22,7 @@ The source of truth is the root `package.json`. `scripts/update-version.js` sync
 5. Deploy Backend and Gateway. Each script creates its normal backup, verifies the exact health version, then records its receipt.
 6. Run `npm run miniapp:upload`. The upload refuses a manual `--version` that differs from the ledger and writes the miniapp receipt only after success.
 7. Publish OSS with `npm run publish:desktop-update`; it refuses to update the unified desktop feed until Backend, Gateway, and Miniapp have exact-version receipts. The successful feed and installer upload records the desktop receipt.
-8. Use `npm run release:status`, then `npm run release:complete`. Completion requires all four exact-version receipts.
+8. Use `npm run release:status`, then `npm run release:complete`. Desktop publication may rely on the exact-version miniapp development-upload receipt, but formal multi-end completion additionally requires the miniapp receipt to be upgraded by a confirmed WeChat production release.
 
 ## Failure and rollback boundary
 

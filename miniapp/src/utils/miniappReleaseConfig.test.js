@@ -29,10 +29,10 @@ assert.ok(prodConfig.includes('https://physicsedu.xyz/scheduling'), 'miniapp pro
 assert.ok(!indexConfig.includes('__REVIEW_API_BASE_URL__') && !prodConfig.includes('__REVIEW_API_BASE_URL__'), 'Taro config must not define the removed review Gateway base URL');
 assert.ok(!api.includes("api.get<any[]>('/scheduling/"), 'miniapp API paths should not duplicate the /scheduling reverse-proxy prefix');
 assert.ok(api.includes("api.get<any[]>('/api/students')"), 'miniapp business API should call backend /api routes under the /scheduling base URL');
-assert.ok(loginPage.includes("'/api/auth/wechat-login'"), 'miniapp WeChat login should call the backend wechat-login route');
+assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'miniapp WeChat login should use the cloud account client with its WeChat and phone proofs');
+assert.ok(!loginPage.includes("'/api/auth/wechat-login'"), 'miniapp WeChat login must not regress to the retired backend account endpoint');
 assert.ok(loginPage.includes('createNormalSessionCommitter'), 'miniapp login should commit the complete backend identity through the shared session boundary');
-assert.ok(loginPage.includes('homeForIdentity'), 'miniapp login should route formal and unrecognized identities to their own homes');
-assert.ok(loginPage.includes('Taro.reLaunch({ url: homeForIdentity('), 'login page should enter the identity-specific home with reLaunch from the non-tab launch page');
+assert.ok(loginPage.includes("relaunch: () => Taro.reLaunch({ url: '/pages/schedule/index' })"), 'cloud login should enter the cloud-backed schedule page with reLaunch from the non-tab login page');
 assert.ok(!loginPage.includes("Taro.switchTab({ url: '/pages/index/index' })"), 'login page should not use switchTab to enter home from the non-tab login page');
 assert.ok(!loginPage.includes('Taro.getNetworkType'), 'login page should not call Taro.getNetworkType before login because DevTools can throw WAServiceMainContext timeout');
 assert.ok(!api.includes('Taro.getNetworkType'), 'API client should rely on request failures instead of Taro.getNetworkType because DevTools can throw WAServiceMainContext timeout');

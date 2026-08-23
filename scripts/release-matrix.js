@@ -5,6 +5,7 @@ const childProcess = require('child_process');
 const DEFAULT_TARGETS = Object.freeze(['desktop', 'cloud_business', 'storage_proxy', 'miniapp']);
 const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['cloud_business', 'storage_proxy', 'miniapp']);
 const MANIFEST_SCHEMA = 'gewu.unified-release.v1';
+const MINIAPP_RELEASE_LEVELS = Object.freeze(['development', 'production']);
 
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
   return path.join(rootDir, 'output', 'release-matrix', 'active.json');
@@ -97,7 +98,7 @@ function isCompletedHistoricalManifest(manifest) {
     && state.receipt?.version === manifest.version
     && typeof state.receipt.evidence === 'string'
     && state.receipt.evidence.length > 0
-  ));
+  )) && targets.miniapp?.receipt?.releaseLevel === 'production';
 }
 
 function archiveCompletedHistoricalManifest({ manifestPath, manifest } = {}) {
@@ -217,22 +218,34 @@ function assertDesktopReleasePrerequisites({
   return { manifest, version, manifestPath };
 }
 
-function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence } = {}) {
+function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const expectedVersion = resolveManifestVersion({ manifest, requestedVersion: version });
   const targetState = manifest.targets[target];
-  if (targetState.status === 'verified') {
+  const resolvedReleaseLevel = target === 'miniapp' && releaseLevel === undefined ? 'development' : releaseLevel;
+  const isMiniappProductionUpgrade = target === 'miniapp'
+    && targetState.status === 'verified'
+    && targetState.receipt?.releaseLevel === 'development'
+    && resolvedReleaseLevel === 'production';
+  if (targetState.status === 'verified' && !isMiniappProductionUpgrade) {
     throw new Error(`Release target ${target} already has a verified receipt for ${expectedVersion}`);
   }
   if (!evidence || typeof evidence !== 'string') throw new Error(`Release receipt evidence is required for ${target}`);
+  if (target === 'miniapp' && !MINIAPP_RELEASE_LEVELS.includes(resolvedReleaseLevel)) {
+    throw new Error('Miniapp release receipt must declare development or production');
+  }
   targetState.status = 'verified';
-  targetState.receipt = { version: expectedVersion, verifiedAt, evidence };
+  targetState.receipt = target === 'miniapp'
+    ? { version: expectedVersion, verifiedAt, evidence, releaseLevel: resolvedReleaseLevel }
+    : { version: expectedVersion, verifiedAt, evidence };
   return manifest;
 }
 
 function isReleaseComplete(manifest) {
   const validation = validateManifest(manifest);
-  return validation.issues.length === 0 && DEFAULT_TARGETS.every(target => manifest.targets[target].status === 'verified');
+  return validation.issues.length === 0
+    && DEFAULT_TARGETS.every(target => manifest.targets[target].status === 'verified')
+    && manifest.targets.miniapp?.receipt?.releaseLevel === 'production';
 }
 
 function gitHead(rootDir) {
@@ -372,6 +385,7 @@ module.exports = {
   DEFAULT_TARGETS,
   DESKTOP_PREREQUISITE_TARGETS,
   MANIFEST_SCHEMA,
+  MINIAPP_RELEASE_LEVELS,
   assertDesktopReleasePrerequisites,
   assertReleaseTarget,
   assertSourceVersionMatrix,

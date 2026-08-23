@@ -41,9 +41,44 @@ for (const target of targets) {
     version: '7.2.0',
     verifiedAt: '2026-07-30T01:00:00.000Z',
     evidence: `${target}-receipt`,
+    releaseLevel: target === 'miniapp' ? 'production' : undefined,
   });
 }
 assert.strictEqual(matrix.isReleaseComplete(manifest), true, 'all exact-version receipts must be required');
+
+const developmentUploadedManifest = matrix.createReleaseManifest({
+  version: '7.2.0',
+  commit: 'development-upload-commit',
+});
+for (const target of ['desktop', 'cloud_business', 'storage_proxy']) {
+  matrix.recordReceipt(developmentUploadedManifest, {
+    target,
+    version: '7.2.0',
+    evidence: `${target}-receipt`,
+  });
+}
+matrix.recordReceipt(developmentUploadedManifest, {
+  target: 'miniapp',
+  version: '7.2.0',
+  evidence: 'miniprogram-ci development upload confirmed',
+  releaseLevel: 'development',
+});
+assert.strictEqual(
+  matrix.isReleaseComplete(developmentUploadedManifest),
+  false,
+  'a miniapp development upload is not a formal cross-platform release'
+);
+matrix.recordReceipt(developmentUploadedManifest, {
+  target: 'miniapp',
+  version: '7.2.0',
+  evidence: 'WeChat production release confirmed',
+  releaseLevel: 'production',
+});
+assert.strictEqual(
+  matrix.isReleaseComplete(developmentUploadedManifest),
+  true,
+  'only a WeChat production receipt may complete the unified release'
+);
 
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-'));
 try {
@@ -162,7 +197,12 @@ try {
     createdAt: '2026-07-01T00:00:00.000Z',
     targets: Object.fromEntries(['desktop', 'local_host', 'backend', 'gateway', 'miniapp'].map(target => [target, {
       status: 'verified',
-      receipt: { version: '7.1.9', verifiedAt: '2026-07-01T01:00:00.000Z', evidence: `${target}-historical` },
+      receipt: {
+        version: '7.1.9',
+        verifiedAt: '2026-07-01T01:00:00.000Z',
+        evidence: `${target}-historical`,
+        ...(target === 'miniapp' ? { releaseLevel: 'production' } : {}),
+      },
     }])),
   };
   fs.writeFileSync(manifestPath, `${JSON.stringify(completedHistoricalManifest, null, 2)}\n`, 'utf8');

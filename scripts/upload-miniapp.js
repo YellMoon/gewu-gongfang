@@ -341,6 +341,7 @@ function recordOrDeferReceipt({
     target: 'miniapp',
     version,
     evidence,
+    releaseLevel: 'development',
   });
   atomicWriteManifest(release.manifestPath, release.manifest, matrix);
 }
@@ -408,6 +409,7 @@ function finalizeDeferredReceipt(options = {}) {
       target: 'miniapp',
       version,
       evidence,
+      releaseLevel: 'development',
     });
     atomicWriteManifest(manifestPath, manifest, matrix);
   } else if (targetState.status === 'verified') {

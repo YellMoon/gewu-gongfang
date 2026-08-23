@@ -1,6 +1,6 @@
 # 云端权威 vNext 交付就绪记录
 
-**状态：** 持续维护；本文件记录当前证据与交付门禁，不构成生产发布、数据迁移或云资源创建授权。
+**状态：** 2026-08-21 的历史就绪快照。它保留当时的前置门禁与风险背景，不再是当前运行时、迁移或发布状态的来源；当前状态以[云端业务权威强制契约](../specs/2026-08-21-vnext-cloud-business-authority-architecture-contract.md)、[`docs/release-version-matrix.md`](../../release-version-matrix.md)和实际健康/发布回执为准。
 
 ## 目标边界
 

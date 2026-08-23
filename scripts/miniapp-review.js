@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const releaseMatrix = require('./release-matrix');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env.local') });
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -115,12 +116,50 @@ async function release() {
   return sanitize(await wechatPost('/wxa/release', token, {}));
 }
 
+function recordProductionRelease({
+  manifest,
+  releaseResult,
+  verifiedAt,
+  evidence = 'WeChat production release API returned errcode 0',
+} = {}) {
+  if (!releaseResult || releaseResult.errcode !== 0) {
+    const code = releaseResult?.errcode ?? 'unknown';
+    throw new Error(`WECHAT_MINIAPP_PRODUCTION_RELEASE_FAILED: ${code}`);
+  }
+  return releaseMatrix.recordReceipt(manifest, {
+    target: 'miniapp',
+    version: manifest?.version,
+    verifiedAt,
+    evidence,
+    releaseLevel: 'production',
+  });
+}
+
+function recordProductionReleaseReceipt({
+  rootDir = ROOT_DIR,
+  manifestPath = releaseMatrix.defaultManifestPath(rootDir),
+  releaseResult,
+  verifiedAt,
+} = {}) {
+  const manifest = releaseMatrix.readManifest(manifestPath);
+  releaseMatrix.assertSourceVersionMatrix(
+    releaseMatrix.readSourceVersionMatrix({ rootDir }),
+    manifest.version,
+  );
+  recordProductionRelease({ manifest, releaseResult, verifiedAt });
+  releaseMatrix.writeManifest(manifestPath, manifest);
+  return manifest;
+}
+
 async function main() {
   const command = process.argv[2] || 'status';
   let result;
   if (command === 'status') result = await status();
   else if (command === 'submit') result = await submitAudit();
-  else if (command === 'release') result = await release();
+  else if (command === 'release') {
+    result = await release();
+    recordProductionReleaseReceipt({ releaseResult: result });
+  }
   else throw new Error(`unknown command: ${command}`);
   console.log(JSON.stringify(result, null, 2));
 }
@@ -136,4 +175,6 @@ module.exports = {
   buildSubmitAuditPayload,
   firstCategory,
   firstPage,
+  recordProductionRelease,
+  recordProductionReleaseReceipt,
 };
