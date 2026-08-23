@@ -132,22 +132,6 @@ const CourseList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const legacyStageDeletedCourseAsDraft = async (id: string) => {
-    const deletedCourse = courses.find(c => c.id === id);
-    dbService.deleteCourse(id);
-    message.success('删除成功');
-    (window as any).operateLogger?.log('删除', `删除课程「${deletedCourse?.display_name || deletedCourse?.name || id}」`, '课程管理');
-    loadData();
-  };
-
-  const legacyStageCourseActiveAsDraft = async (course: Course) => {
-    const nextActive = !course.active;
-    dbService.updateCourse(course.id, { active: nextActive });
-    message.success(nextActive ? '已设为未结课' : '已设为已结课');
-    (window as any).operateLogger?.log('修改', `修改课程「${course.display_name || course.name}」状态为「${nextActive ? '未结课' : '已结课'}」`, '课程管理');
-    loadData();
-  };
-
   const courseCloudPayload = (value: any) => ({
     name: String(value.name || value.display_name || '').trim(),
     year: Number(value.year),
@@ -341,25 +325,6 @@ const CourseList: React.FC = () => {
         setTimeout(() => loadData(), 100);
       }
       return;
-      if (editingCourse) {
-        // 确保年份被保留：防止 antd InputNumber defaultValue 导致 year 丢失
-        if (values.year === undefined || values.year === null) {
-          values.year = editingCourse!.year !== undefined ? Number(editingCourse!.year) : new Date().getFullYear();
-        }
-        dbService.updateCourse(editingCourse!.id, values);
-        message.success('更新成功');
-        (window as any).operateLogger?.log('修改', `修改课程「${values.display_name || values.name}」`, '课程管理');
-        // 自动同步 localStorage 排课数据中的上课地址
-        syncSchedulesRoomName(values);
-      } else {
-        dbService.createCourse(values);
-        message.success('添加成功');
-        (window as any).operateLogger?.log('创建', `创建课程「${values.display_name || values.name}」`, '课程管理');
-        syncSchedulesRoomName(values);
-      }
-      setModalVisible(false);
-      // 重新加载数据确保列表刷新
-      setTimeout(() => loadData(), 100);
     } catch (error: any) {
       console.error('验证失败:', error);
     }

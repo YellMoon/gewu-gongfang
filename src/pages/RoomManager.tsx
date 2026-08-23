@@ -38,14 +38,6 @@ const RoomManager: React.FC = () => {
     setModalVisible(true);
   };
 
-  const legacyStageDeletedRoomAsDraft = (id: string) => {
-    if (dbService.deleteRoom) {
-      dbService.deleteRoom(id);
-      message.success('删除成功');
-      loadData();
-    }
-  };
-
   const handleDelete = async (id: string) => {
     const deletedRoom = rooms.find(room => room.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
@@ -140,24 +132,6 @@ const RoomManager: React.FC = () => {
         loadData();
       }
       return;
-      if (editingRoom) {
-        if (dbService.updateRoom) {
-          dbService.updateRoom(editingRoom!.id, values);
-          message.success('更新成功');
-        }
-      } else {
-        // 检查是否已存在同名地址
-        if (rooms.find(r => r.name === values.name)) {
-          message.warning('该地址已存在');
-          return;
-        }
-        if (dbService.addOrUpdateRoom) {
-          dbService.addOrUpdateRoom(values.name, values.address);
-          message.success('添加成功');
-        }
-      }
-      setModalVisible(false);
-      loadData();
     } catch (error: any) {
       if (error?.errorFields) return;
       console.error('验证失败:', error);

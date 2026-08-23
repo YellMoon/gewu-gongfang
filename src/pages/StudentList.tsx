@@ -104,14 +104,6 @@ const StudentList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const legacyStageDeletedStudentAsDraft = async (id: string) => {
-    const deletedStudent = students.find(s => s.id === id);
-    dbService.deleteStudent(id);
-    message.success('删除成功');
-    (window as any).operateLogger?.log('删除', `删除学生「${deletedStudent?.name || id}」`, '学生管理');
-    loadData();
-  };
-
   const handleDelete = async (id: string) => {
     const deletedStudent = students.find(student => student.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
@@ -280,21 +272,6 @@ const StudentList: React.FC = () => {
         }
         return;
       }
-      // 自动保存学校信息
-      if (values.school) {
-        dbService.addOrUpdateSchool(values.school);
-      }
-      if (Boolean((window as any).__legacyStudentEditFallback) && legacyEditedStudent) {
-        dbService.updateStudent(legacyEditedStudent.id, values);
-        message.success('更新成功');
-        (window as any).operateLogger?.log('修改', `修改学生「${values.name}」`, '学生管理');
-      } else {
-        dbService.createStudent(values);
-        message.success('添加成功');
-        (window as any).operateLogger?.log('创建', `创建学生「${values.name}」`, '学生管理');
-      }
-      setModalVisible(false);
-      loadData();
     } catch (error: any) {
       console.error('验证失败:', error);
     }

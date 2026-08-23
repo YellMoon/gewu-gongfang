@@ -137,7 +137,7 @@ assert(
   miniappUnrecognizedExperience.includes('getQuestions()') &&
   miniappUnrecognizedExperience.includes('createTask(params:') &&
   miniappUnrecognizedExperience.includes('cancelTask(taskId: string)') &&
-  miniappUnrecognizedExperience.includes('downloadArtifact(artifactId: string)') &&
+  !miniappUnrecognizedExperience.includes('downloadArtifact(artifactId: string)') &&
   miniappUnrecognizedExperience.includes('submitApplication') &&
   miniappUnrecognizedExperience.includes('getApplicationStatus') &&
   !miniappUnrecognizedExperience.includes('withdrawApplication'),
@@ -154,8 +154,9 @@ assert(
 
 assert(
   miniappUnrecognizedPage.includes("import UnrecognizedExperienceContent from '../../components/UnrecognizedExperienceContent'") &&
-  miniappUnrecognizedContent.includes('体验组卷') &&
-  miniappUnrecognizedContent.includes('选择示例题目，提交组卷与导出任务') &&
+  miniappUnrecognizedContent.includes("taskType: 'question-paper'") &&
+  miniappUnrecognizedContent.includes('COPY.paper') &&
+  !miniappUnrecognizedContent.includes('downloadArtifact') &&
   miniappUnrecognizedContent.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
   miniappQuestionBank.includes("Taro.reLaunch({ url: '/pages/unrecognized-experience/index' })"),
   'unrecognized experience should expose fixed question tasks and a real identity-application entry'

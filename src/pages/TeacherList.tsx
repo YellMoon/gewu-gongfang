@@ -44,14 +44,6 @@ const TeacherList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const legacyStageDeletedTeacherAsDraft = async (id: string) => {
-    const deletedTeacher = teachers.find(t => t.id === id);
-    dbService.deleteTeacher(id);
-    message.success('删除成功');
-    (window as any).operateLogger?.log('删除', `删除老师「${deletedTeacher?.name || id}」`, '老师管理');
-    loadData();
-  };
-
   const handleDelete = async (id: string) => {
     const deletedTeacher = teachers.find(teacher => teacher.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
@@ -149,17 +141,6 @@ const TeacherList: React.FC = () => {
         loadData();
       }
       return;
-      if (editingTeacher) {
-        dbService.updateTeacher(editingTeacher!.id, values);
-        message.success('更新成功');
-        (window as any).operateLogger?.log('修改', `修改老师「${values.name}」`, '老师管理');
-      } else {
-        dbService.createTeacher(values);
-        message.success('添加成功');
-        (window as any).operateLogger?.log('创建', `创建老师「${values.name}」`, '老师管理');
-      }
-      setModalVisible(false);
-      loadData();
     } catch (error: any) {
       console.error('验证失败:', error);
     }
