@@ -108,6 +108,7 @@ assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should s
 assert.ok(source.includes('syncGatewayPackageVersion'), 'update-version should sync gateway/package.json with the unified root release version');
 assert.ok(source.includes('syncMiniappPackageVersion'), 'update-version should sync miniapp/package.json with the unified root release version');
 assert.ok(source.includes('syncCloudBusinessApiPackageVersion'), 'update-version should sync cloud-business-api/package.json with the unified root release version');
+assert.ok(source.includes('syncStorageAgentPackageVersion'), 'update-version should sync storage-agent/package.json with the unified root release version');
 const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
 const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
 fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));

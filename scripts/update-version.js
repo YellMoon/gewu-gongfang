@@ -178,6 +178,12 @@ function syncCloudBusinessApiPackageVersion(version) {
   return writePackageVersion(packagePath, version);
 }
 
+function syncStorageAgentPackageVersion(version) {
+  const packagePath = path.join(__dirname, '..', 'storage-agent', 'package.json');
+  if (!fs.existsSync(packagePath)) return null;
+  return writePackageVersion(packagePath, version);
+}
+
 function syncMiniappPackageVersion(version, { packagePath } = {}) {
   const miniappPkgPath = packagePath || path.join(__dirname, '..', 'miniapp', 'package.json');
   if (!fs.existsSync(miniappPkgPath)) return null;
@@ -245,6 +251,7 @@ function main() {
     syncBackendPackageVersion(newVersion);
     syncGatewayPackageVersion(newVersion);
     syncCloudBusinessApiPackageVersion(newVersion);
+    syncStorageAgentPackageVersion(newVersion);
     syncMiniappPackageVersion(newVersion);
     writeGeneratedVersion(pkgContent);
     console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
@@ -253,6 +260,7 @@ function main() {
     syncBackendPackageVersion(pkg.version);
     syncGatewayPackageVersion(pkg.version);
     syncCloudBusinessApiPackageVersion(pkg.version);
+    syncStorageAgentPackageVersion(pkg.version);
     syncMiniappPackageVersion(pkg.version);
     writeGeneratedVersion(pkg);
   }
