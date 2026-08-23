@@ -130,6 +130,31 @@ function archiveUntouchedPendingManifest({ manifestPath, manifest } = {}) {
   return archivePath;
 }
 
+function isPartiallyVerifiedManifest(manifest) {
+  const validation = validateManifest(manifest);
+  if (validation.issues.length > 0) return false;
+  const states = DEFAULT_TARGETS.map(target => manifest.targets[target]);
+  return states.some(state => state.status === 'verified')
+    && states.some(state => state.status === 'pending');
+}
+
+function archivePartiallyVerifiedManifest({ manifestPath, manifest, reason, recoveredAt = new Date().toISOString(), supersededByCommit } = {}) {
+  if (!manifestPath || !isPartiallyVerifiedManifest(manifest)) {
+    throw new Error('Only a partially verified release manifest may be recovered explicitly');
+  }
+  if (!reason || typeof reason !== 'string') throw new Error('A recovery reason is required for a partially verified release manifest');
+  const archivePath = `${historicalManifestPath(manifestPath, manifest).replace(/\.json$/u, '')}-recovered.json`;
+  if (fs.existsSync(archivePath)) throw new Error(`Recovered release manifest already exists: ${archivePath}`);
+  const recoveryManifest = {
+    ...manifest,
+    recovery: { reason, recoveredAt, supersededByCommit },
+  };
+  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
+  fs.writeFileSync(archivePath, `${JSON.stringify(recoveryManifest, null, 2)}\n`, 'utf8');
+  fs.unlinkSync(manifestPath);
+  return archivePath;
+}
+
 function readSourceVersionMatrix({ rootDir = path.resolve(__dirname, '..') } = {}) {
   const entries = [
     ['desktop', 'package.json'],
@@ -248,6 +273,30 @@ function prepareReleaseManifest({
   return { action: 'prepared', version, manifestPath, manifest, archivedManifestPath: null };
 }
 
+function recoverPartiallyPublishedManifest({
+  rootDir = path.resolve(__dirname, '..'),
+  manifestPath = defaultManifestPath(rootDir),
+  commit = gitHead(rootDir),
+  reason,
+} = {}) {
+  const matrix = readSourceVersionMatrix({ rootDir });
+  const version = matrix.desktop;
+  assertSourceVersionMatrix(matrix, version);
+  const existing = readManifest(manifestPath);
+  if (existing.version !== version) {
+    throw new Error(`Partial release version mismatch: active ${existing.version}, source ${version}`);
+  }
+  const archivedManifestPath = archivePartiallyVerifiedManifest({
+    manifestPath,
+    manifest: existing,
+    reason,
+    supersededByCommit: commit,
+  });
+  const manifest = createReleaseManifest({ version, commit });
+  writeManifest(manifestPath, manifest);
+  return { action: 'recovered-and-prepared', version, manifestPath, manifest, archivedManifestPath };
+}
+
 function option(argv, name) {
   const prefix = `--${name}=`;
   const inline = argv.find(arg => arg.startsWith(prefix));
@@ -263,6 +312,17 @@ function cli() {
   const manifestPath = option(argv, 'manifest') || defaultManifestPath(rootDir);
   if (command === 'prepare') {
     const result = prepareReleaseManifest({ rootDir, manifestPath });
+    console.log(JSON.stringify({
+      action: result.action,
+      version: result.version,
+      manifestPath,
+      targets: result.manifest.targets,
+      archivedManifestPath: result.archivedManifestPath,
+    }, null, 2));
+    return;
+  }
+  if (command === 'recover') {
+    const result = recoverPartiallyPublishedManifest({ rootDir, manifestPath, reason: option(argv, 'reason') });
     console.log(JSON.stringify({
       action: result.action,
       version: result.version,
@@ -299,7 +359,7 @@ function cli() {
     console.log(JSON.stringify({ action: 'complete', version: manifest.version, manifestPath }, null, 2));
     return;
   }
-  throw new Error('Usage: release-matrix.js prepare|assert|record|status|complete [--target name] [--version x.y.z] [--evidence text]');
+  throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--evidence text] [--reason text]');
 }
 
 if (require.main === module) {
@@ -324,7 +384,9 @@ module.exports = {
   supersededManifestPath,
   isCompletedHistoricalManifest,
   isUntouchedPendingManifest,
+  isPartiallyVerifiedManifest,
   isReleaseComplete,
+  recoverPartiallyPublishedManifest,
   prepareReleaseManifest,
   readManifest,
   readSourceVersionMatrix,

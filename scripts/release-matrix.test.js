@@ -116,6 +116,23 @@ try {
     /completed historical release manifest/i,
     'a partially published manifest must require explicit recovery rather than automatic replacement'
   );
+  const recoveredPartial = matrix.recoverPartiallyPublishedManifest({
+    rootDir: fixtureRoot,
+    manifestPath,
+    commit: 'recovered-source',
+    reason: 'the deployed source commit changed before desktop publication',
+  });
+  assert.strictEqual(recoveredPartial.action, 'recovered-and-prepared',
+    'an explicit recovery must create a fresh active manifest for the new source commit');
+  assert.ok(fs.existsSync(recoveredPartial.archivedManifestPath),
+    'the partially deployed manifest must be retained as a recovery record');
+  const recoveryRecord = JSON.parse(fs.readFileSync(recoveredPartial.archivedManifestPath, 'utf8'));
+  assert.strictEqual(recoveryRecord.recovery.reason, 'the deployed source commit changed before desktop publication',
+    'the recovery archive must state why previously verified receipts were not reused');
+  assert.strictEqual(matrix.readManifest(manifestPath).commit, 'recovered-source',
+    'the recovered active manifest must bind the exact source commit being released');
+  assert.ok(Object.values(matrix.readManifest(manifestPath).targets).every(target => target.status === 'pending'),
+    'a recovered manifest must require fresh target receipts instead of carrying old verification forward');
 
   const completedHistoricalManifest = {
     schema: matrix.MANIFEST_SCHEMA,
