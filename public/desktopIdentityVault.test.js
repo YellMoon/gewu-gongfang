@@ -315,6 +315,43 @@ async function main() {
   assert.strictEqual(completed.teacherId, 'teacher-self');
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
+
+  const pendingVault = createDesktopIdentityVault({
+    filePath: path.join(workspace, 'pending-desktop-identity-v2.bin'),
+    safeStorage,
+    offlineLeasePublicKey,
+    now: () => new Date(clock),
+  });
+  const pendingIdentity = pendingVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Pending account desktop',
+  });
+  const pendingAuthorization = approvedAuthorization(pendingIdentity);
+  pendingAuthorization.id = 'authorization-pending-device';
+  const pendingProfile = {
+    userId: pendingAuthorization.userId,
+    user: { id: pendingAuthorization.userId, name: 'Pending account' },
+    eligibleRoles: ['pending'],
+    activeRole: 'pending',
+    teacherId: null,
+    studentId: null,
+  };
+  const pendingLease = offlineLease();
+  pendingLease.id = 'lease-pending-device';
+  pendingLease.deviceId = pendingIdentity.deviceId;
+  pendingLease.authorizationId = pendingAuthorization.id;
+  pendingLease.eligibleRoles = ['pending'];
+  pendingLease.activeRole = 'pending';
+  pendingLease.teacherId = null;
+  pendingLease.studentId = null;
+  pendingLease.scope = { kind: 'pending' };
+  const pendingCompleted = pendingVault.completeRegistration({
+    password: 'pending-local-password',
+    authorization: pendingAuthorization,
+    profile: pendingProfile,
+    offlineLease: signOfflineLease(pendingLease),
+  });
+  assert.strictEqual(pendingCompleted.activeRole, 'pending');
+  assert.deepStrictEqual(pendingCompleted.eligibleRoles, ['pending']);
   const authoritySocketHandshake = vault.signAuthorityHttpRequest({
     method: 'GET',
     path: '/ws/authority',

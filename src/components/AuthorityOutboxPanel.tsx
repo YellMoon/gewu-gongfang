@@ -50,6 +50,7 @@ const copy = {
   wsDescription: '\u4efb\u610f\u7535\u8111\u4e0a\u7684\u7edf\u4e00\u684c\u9762\u7aef\u90fd\u53ef\u4fdd\u7559\u79bb\u7ebf\u8349\u7a3f\uff1b\u4e0a\u7ebf\u540e\u9700\u8981\u4f60\u786e\u8ba4\uff0c\u4e0d\u4f1a\u9759\u9ed8\u63a8\u9001\u3002',
   assetVerificationPending: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u8fdb\u5165 NAS \u6838\u9a8c\u961f\u5217\uff0c\u672a\u901a\u8fc7\u5b8c\u6574\u6027\u56de\u6267\u524d\u4e0d\u89c6\u4e3a\u5b8c\u6210\u3002',
   assetVerified: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u901a\u8fc7 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
+  questionTextCommitted: '\u9898\u5e93\u6587\u5b57\u5df2\u7531\u4e91\u7aef\u63d0\u4ea4\uff1b\u5bcc\u5a92\u4f53\u6b63\u5728\u7b49\u5f85 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
 };
 
 function requireBridge() {
@@ -61,6 +62,9 @@ function statusTag(item: AuthorityOutboxItem) {
   if (item.status === 'awaiting_confirmation') return <Tag color="gold">{copy.waitConfirm}</Tag>;
   if (item.status === 'confirmed') return <Tag color="blue">{copy.confirmed}</Tag>;
   if (item.status === 'submitted') return <Tag color="processing">{copy.waitReceipt}</Tag>;
+  if (item.status === 'completed' && hasPendingQuestionAssetVerification(item)) {
+    return <Tag color="processing">{copy.assetVerificationPending}</Tag>;
+  }
   if (item.status === 'completed') return <Tag color="success">{copy.completed}</Tag>;
   return <Tag color="error">{copy.issue}</Tag>;
 }
@@ -116,8 +120,67 @@ function questionAssetKeys(value: unknown): string[] {
   return [...keys].sort();
 }
 
+function hasPendingQuestionAssetVerification(item: AuthorityOutboxItem): boolean {
+  if (!/^question\.(create|update)\.v\d+$/.test(item.type)) return false;
+  const keys = questionAssetKeys(item.payload || {});
+  if (!keys.length) return false;
+  let questionId = '';
+  try {
+    questionId = questionIdForRelay(item, item.receipt);
+  } catch (_error) {
+    return true;
+  }
+  return keys.some(assetKey => {
+    try {
+      const stored = localStorage.getItem(assetRelayStateKey(questionId, assetKey));
+      const state = stored ? JSON.parse(stored) as AssetRelayState : null;
+      return state?.status !== 'verified';
+    } catch (_error) {
+      return true;
+    }
+  });
+}
+
 function assetRelayStateKey(questionId: string, assetKey: string): string {
   return `${assetRelayStatePrefix}${encodeURIComponent(questionId)}:${encodeURIComponent(assetKey)}`;
+}
+
+async function refreshQuestionAssetVerification(items: AuthorityOutboxItem[]): Promise<boolean> {
+  let changed = false;
+  for (const item of items) {
+    if (item.status !== 'completed' || !hasPendingQuestionAssetVerification(item)) continue;
+    let questionId = '';
+    try {
+      questionId = questionIdForRelay(item, item.receipt);
+    } catch (_error) {
+      continue;
+    }
+    for (const assetKey of questionAssetKeys(item.payload || {})) {
+      const stateKey = assetRelayStateKey(questionId, assetKey);
+      let state: AssetRelayState | null = null;
+      try {
+        state = JSON.parse(localStorage.getItem(stateKey) || 'null') as AssetRelayState | null;
+      } catch (_error) {
+        state = null;
+      }
+      if (state?.status !== 'queued') continue;
+      try {
+        const remote = await createDesktopQuestionImportClient().readAssetRelay(state.taskId);
+        if (remote.state === 'verified') {
+          localStorage.setItem(stateKey, JSON.stringify({
+            ...state,
+            status: 'verified',
+            updatedAt: new Date().toISOString(),
+            errorCode: undefined,
+          }));
+          changed = true;
+        }
+      } catch (_error) {
+        // Polling must never turn a read failure into a new media upload.
+      }
+    }
+  }
+  return changed;
 }
 
 function freshRelayId(prefix: 'asset' | 'task' | 'obj'): string {
@@ -192,8 +255,10 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const next = await requireBridge().list();
-      setItems(Array.isArray(next) ? next : []);
+      const listed = await requireBridge().list();
+      const next = Array.isArray(listed) ? listed : [];
+      await refreshQuestionAssetVerification(next);
+      setItems([...next]);
       setErrorCode('');
     } catch (error: any) {
       setErrorCode(error?.code || error?.message || 'AUTHORITY_OUTBOX_LOAD_FAILED');
@@ -210,9 +275,10 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
 
   const counts = useMemo(() => ({
     confirmation: items.filter(item => item.status === 'awaiting_confirmation').length,
-    pending: items.filter(item => ['confirmed', 'submitted'].includes(item.status)).length,
+    pending: items.filter(item => ['confirmed', 'submitted'].includes(item.status)
+      || hasPendingQuestionAssetVerification(item)).length,
     issues: items.filter(item => item.status === 'conflict').length,
-    completed: items.filter(item => item.status === 'completed').length,
+    completed: items.filter(item => item.status === 'completed' && !hasPendingQuestionAssetVerification(item)).length,
   }), [items]);
 
   const confirmAndSubmit = (item: AuthorityOutboxItem) => {
@@ -235,7 +301,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
           if (result.receipt?.status === 'rejected') {
             message.error(result.receipt?.result?.error?.code || 'AUTHORITY_COMMAND_REJECTED');
           } else {
-            message.success(`${copy.completed} (${result.transportUsed})`);
+            message.success(`${hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed} (${result.transportUsed})`);
             await (window as any).dbService?.refreshAuthorityProjection?.({
               minSourceVersion: result.receipt?.projectionVersion || 0,
             });
@@ -263,7 +329,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
         if (result.receipt?.status === 'rejected') {
           message.error(result.receipt?.result?.error?.code || 'AUTHORITY_COMMAND_REJECTED');
         } else {
-          message.success(`${copy.completed} (${result.transportUsed})`);
+          message.success(`${hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed} (${result.transportUsed})`);
           await (window as any).dbService?.refreshAuthorityProjection?.({
             minSourceVersion: result.receipt?.projectionVersion || 0,
           });
@@ -299,7 +365,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
   const visibleItems = focus === 'issues'
     ? items.filter(item => item.status === 'conflict')
     : focus === 'pending'
-      ? items.filter(item => item.status !== 'completed')
+      ? items.filter(item => item.status !== 'completed' || hasPendingQuestionAssetVerification(item))
       : items;
 
   const columns = [

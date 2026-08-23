@@ -22,7 +22,7 @@ const SCRYPT_MAX_MEMORY = 64 * 1024 * 1024;
 const RECENT_UNLOCK_MS = 2 * 60 * 1000;
 const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
-const ROLE_SET = new Set(['visitor', 'super_admin', 'admin', 'teacher', 'student']);
+const ROLE_SET = new Set(['visitor', 'pending', 'super_admin', 'admin', 'teacher', 'student']);
 const DEVICE_KIND_SET = new Set(['primary-host', 'desktop-client']);
 const CLOUD_OFFLINE_LEASE_PUBLIC_KEY_B64 = 'MCowBQYDK2VwAyEAGY4DlhDvEsOwR7mXM23i+P+lT2n0ZVXKVQXbSZfFR/c=';
 const FORBIDDEN_PERSISTED_KEYS = new Set([

@@ -15,6 +15,12 @@ assert.match(panel, /client\.readAssetRelay\(state\.taskId\)/,
   'a locally queued relay must be checked against the NAS verification receipt before it is treated as complete');
 assert.match(panel, /assetVerificationPending/,
   'the UI must clearly state that a cloud relay is still pending NAS verification');
+assert.match(panel, /hasPendingQuestionAssetVerification\(item\)/,
+  'completed question commands with unverified media must remain visibly pending');
+assert.match(panel, /item\.status === 'completed' && !hasPendingQuestionAssetVerification\(item\)/,
+  'a question command must not enter the completed count before every media receipt is verified');
+assert.match(panel, /questionTextCommitted/,
+  'the command receipt must distinguish cloud text completion from NAS media verification');
 assert.match(preload, /confirmAndSubmit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:confirm-and-submit', id, input\)/,
   'the preload bridge must forward an explicit one-time submission input');
 assert.match(preload, /submit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:submit', id, input\)/,
