@@ -19,7 +19,10 @@ const eventAllowList = new Set([
   'download-progress',
 ]);
 
-contextBridge.exposeInMainWorld('api', {
+const desktopLoginFixtureEnabled = process.env.NODE_ENV === 'development'
+  && process.env.GEWU_E2E_DESKTOP_LOGIN_FIXTURE === '1';
+
+if (!desktopLoginFixtureEnabled) contextBridge.exposeInMainWorld('api', {
   invoke(channel, ...args) {
     if (!invokeAllowList.has(channel)) {
       return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));
@@ -34,7 +37,7 @@ contextBridge.exposeInMainWorld('api', {
   },
 });
 
-contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
+if (!desktopLoginFixtureEnabled) contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   status: () => ipcRenderer.invoke('desktop-identity:status'),
   beginUnifiedOnlineRegistration: input => ipcRenderer.invoke('desktop-identity:begin-unified-online-registration', input),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),

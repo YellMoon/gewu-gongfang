@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const DISPOSABLE_ROOT = /^(?:tmp-real-desktop-two-app|tmp-packaged-single-instance|gewu-real-profile-migration|tmp-real-desktop-identity-cloud)-[A-Za-z0-9]+$/;
+const DISPOSABLE_ROOT = /^(?:tmp-real-desktop-two-app|tmp-real-desktop-client|tmp-packaged-single-instance|gewu-real-profile-migration|tmp-real-desktop-identity-cloud)-[A-Za-z0-9]+$/;
 
 function cleanupError(code) {
   const error = new Error(code);

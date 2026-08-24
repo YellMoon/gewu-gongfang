@@ -175,7 +175,10 @@ function createWindow() {
   });
   mainWindow.maximize();
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:3000');
+    const rendererUrl = process.env.GEWU_E2E_DESKTOP_LOGIN_FIXTURE === '1'
+      ? 'http://localhost:3000/?__desktopLoginFixture=1'
+      : 'http://localhost:3000';
+    mainWindow.loadURL(rendererUrl);
     mainWindow.webContents.openDevTools();
     mainWindow.show();
   } else {

@@ -25,6 +25,14 @@ assert.deepStrictEqual(
 );
 assert.strictEqual(fs.existsSync(root), false);
 
+const desktopClientRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-real-desktop-client-'));
+fs.writeFileSync(path.join(desktopClientRoot, 'marker.txt'), 'isolated-client', 'utf8');
+assert.deepStrictEqual(
+  cleanupDisposableRoot(desktopClientRoot, { listProcesses: () => [] }),
+  { root: path.resolve(desktopClientRoot), removed: true },
+);
+assert.strictEqual(fs.existsSync(desktopClientRoot), false);
+
 const liveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tmp-packaged-single-instance-'));
 assert.throws(
   () => cleanupDisposableRoot(liveRoot, { listProcesses: () => [{ pid: 42 }] }),
