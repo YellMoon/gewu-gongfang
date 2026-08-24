@@ -10,6 +10,9 @@ const {
   runPublicAcceptance,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
+  ensureBusinessSuperAdmin,
+  resolveOperatorIdentity,
+  ensureCanonicalPhoneContact,
 } = require('./real-cloud-business-acceptance');
 
 function response(status, body) {
@@ -173,11 +176,49 @@ async function controlledSessionIsShortLivedAndRevoked() {
   assert.strictEqual(calls.filter(call => call[0] === 'COMMIT').length, 2);
 }
 
+async function canonicalPhoneMappingActivatesTheExistingBusinessAccount() {
+  const calls = [];
+  const pool = { async query(text, values) { calls.push([text, values]); return { rows: [{ count: 1 }] }; } };
+  assert.strictEqual(await ensureBusinessSuperAdmin(pool, { accountId: 'canonical-admin', phoneHmac: 'c'.repeat(64) }), true);
+  assert.match(calls[0][0], /ON CONFLICT\(phone_hmac\) DO UPDATE/);
+  assert.match(calls[0][0], /'super_admin','active'/);
+  assert.deepStrictEqual(calls[0][1], ['canonical-admin', 'c'.repeat(64)]);
+}
+
+function operatorIdentityIsResolvedWithoutPhonePlaintext() {
+  assert.deepStrictEqual(resolveOperatorIdentity(JSON.stringify([
+    { phoneHmac: 'd'.repeat(64), authorityId: 'authority-1', accountId: 'canonical-admin' },
+  ]), 'canonical-admin'), { accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) });
+  assert.throws(() => resolveOperatorIdentity('[]', 'canonical-admin'), error => error.code === 'REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+}
+
+async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push([text, values]);
+      if (text.includes('SELECT account_id FROM vnext_control_plane.vnext_verified_contacts')) return { rows: [] };
+      if (text.includes('INSERT INTO vnext_control_plane.vnext_verified_contacts')) return { rows: [{ account_id: 'canonical-admin' }] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = { async connect() { return client; } };
+  assert.strictEqual(await ensureCanonicalPhoneContact(pool, { accountId: 'canonical-admin', phoneHmac: 'e'.repeat(64) }), true);
+  const insertion = calls.find(([text]) => text.includes('INSERT INTO vnext_control_plane.vnext_verified_contacts'));
+  assert.ok(insertion);
+  assert.ok(insertion[1].every(value => !String(value).includes('13732250653')));
+  assert.match(insertion[1][3], /^[0-9a-f]{64}$/);
+}
+
 Promise.resolve()
   .then(tokenIsBoundAndOpaque)
   .then(runtimeLayoutIsExplicit)
   .then(stageAndCleanupErrorsStayDiagnosable)
   .then(controlledSessionIsShortLivedAndRevoked)
+  .then(canonicalPhoneMappingActivatesTheExistingBusinessAccount)
+  .then(operatorIdentityIsResolvedWithoutPhonePlaintext)
+  .then(operatorPhoneBecomesCanonicalWithoutPlaintext)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
   .then(() => console.log('real cloud business acceptance checks passed'));

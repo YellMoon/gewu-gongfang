@@ -16,6 +16,7 @@ const { createBusinessRoomLifecycleMutations } = require('./src/businessRoomLife
 const { createBusinessCourseLifecycleMutations } = require('./src/businessCourseLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
+const { selectDesktopBusinessAccount } = require('./src/desktopBusinessAccountResolver');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
@@ -208,8 +209,9 @@ function createDesktopRegistrationFromEnvironment() {
       );
       const row = result.rows[0];
       if (!row || !(row.expiresAt instanceof Date)) return null;
-      const account = await accountRepository.readContext({ accountId: input.accountId })
-        || await accountRepository.readContextByPhoneHmac({ phoneHmac: row.phoneHmac });
+      const directAccount = await accountRepository.readContext({ accountId: input.accountId });
+      const phoneAccount = await accountRepository.readContextByPhoneHmac({ phoneHmac: row.phoneHmac });
+      const account = selectDesktopBusinessAccount({ directAccount, phoneAccount });
       if (!account || account.status !== 'active') return null;
       return {
         authorityId: row.authorityId,

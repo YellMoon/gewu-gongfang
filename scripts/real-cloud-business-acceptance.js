@@ -244,7 +244,17 @@ function resolveRuntimeModules(scriptDir, existsSync = fs.existsSync) {
   throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_RUNTIME_LAYOUT_INVALID');
 }
 
-async function loadActiveSuperAdminSession(appPool, writerPool) {
+function resolveOperatorIdentity(recordsJson, accountId) {
+  let records;
+  try { records = JSON.parse(String(recordsJson || '')); } catch (_) { throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID'); }
+  if (!Array.isArray(records) || typeof accountId !== 'string' || !accountId.trim()) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+  const matches = records.filter(record => record && typeof record === 'object' && !Array.isArray(record)
+    && record.accountId === accountId && typeof record.phoneHmac === 'string' && /^[0-9a-f]{64}$/.test(record.phoneHmac));
+  if (matches.length !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+  return { accountId, phoneHmac: matches[0].phoneHmac };
+}
+
+async function loadActiveSuperAdminSession(appPool, writerPool, operatorRecordsJson) {
   const accounts = await runStage('REAL_CLOUD_ACCEPTANCE_ADMIN_LOOKUP_FAILED', () => writerPool.query(
     `SELECT DISTINCT ac.account_id AS "accountId"
        FROM vnext_control_plane.vnext_accounts ac
@@ -266,12 +276,67 @@ async function loadActiveSuperAdminSession(appPool, writerPool) {
       ORDER BY s.expires_at DESC LIMIT 2`,
     [accounts.rows.map(row => row.accountId)],
   ));
-  if (sessions.rows.length < 1) return { session: null, accountIds: accounts.rows.map(row => row.accountId) };
+  const identity = resolveOperatorIdentity(operatorRecordsJson, accounts.rows[0].accountId);
+  if (sessions.rows.length < 1) return { session: null, accountIds: accounts.rows.map(row => row.accountId), identity };
   const session = sessions.rows[0];
   return {
     session: { ...session, expiresAt: session.expiresAt instanceof Date ? session.expiresAt.toISOString() : String(session.expiresAt) },
     accountIds: accounts.rows.map(row => row.accountId),
+    identity,
   };
+}
+
+async function ensureBusinessSuperAdmin(appPool, identity) {
+  if (!identity || typeof identity.accountId !== 'string' || !identity.accountId.trim()
+    || typeof identity.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/.test(identity.phoneHmac)) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+  }
+  const result = await runStage('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED', () => appPool.query(
+    `WITH selected AS (
+       INSERT INTO business.miniapp_cloud_accounts(account_id,phone_hmac,status)
+       VALUES($1,$2,'active')
+       ON CONFLICT(phone_hmac) DO UPDATE SET phone_hmac=EXCLUDED.phone_hmac,status='active',updated_at=transaction_timestamp()
+       RETURNING account_id
+     ), granted AS (
+       INSERT INTO business.miniapp_cloud_role_grants(account_id,role,status)
+       SELECT account_id,'super_admin','active' FROM selected
+       ON CONFLICT(account_id,role) DO UPDATE SET status='active',updated_at=transaction_timestamp()
+       RETURNING account_id
+     )
+     SELECT count(*)::int AS count FROM granted`,
+    [identity.accountId, identity.phoneHmac],
+  ));
+  if (result.rows[0]?.count !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED');
+  return true;
+}
+
+async function ensureCanonicalPhoneContact(writerPool, identity) {
+  if (!identity || typeof identity.accountId !== 'string' || !identity.accountId.trim()
+    || typeof identity.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/.test(identity.phoneHmac)) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+  }
+  return withOwnerTransaction(writerPool, 'REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_FAILED', async client => {
+    const existing = await client.query(
+      `SELECT account_id FROM vnext_control_plane.vnext_verified_contacts
+        WHERE contact_type='phone' AND normalized_value_hash=$1 AND verification_state='verified' AND revoked_at IS NULL`,
+      [identity.phoneHmac],
+    );
+    if (existing.rows.length > 1 || (existing.rows.length === 1 && existing.rows[0].account_id !== identity.accountId)) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_CONFLICT');
+    }
+    if (existing.rows.length === 1) return true;
+    const contactId = `operator-phone-${crypto.createHash('sha256').update(identity.phoneHmac, 'utf8').digest('hex').slice(0, 32)}`;
+    const evidenceHash = crypto.createHash('sha256').update(`operator-config:${identity.phoneHmac}`, 'utf8').digest('hex');
+    const inserted = await client.query(
+      `INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at)
+       SELECT $1,authority_id,account_id,'phone',$3,'verified',$4,transaction_timestamp(),NULL,1,transaction_timestamp(),transaction_timestamp()
+         FROM vnext_control_plane.vnext_accounts WHERE account_id=$2 AND status='active'
+       RETURNING account_id`,
+      [contactId, identity.accountId, identity.phoneHmac, evidenceHash],
+    );
+    if (inserted.rows.length !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_FAILED');
+    return true;
+  });
 }
 
 async function withOwnerTransaction(pool, code, work) {
@@ -429,7 +494,9 @@ async function runFromEnvironment(env = process.env) {
   try {
     return await runWithCleanup(
       async () => {
-        const loaded = await loadActiveSuperAdminSession(appPool, writerPool);
+        const loaded = await loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
+        await ensureCanonicalPhoneContact(writerPool, loaded.identity);
+        await ensureBusinessSuperAdmin(appPool, loaded.identity);
         const session = loaded.session || await createControlledAcceptanceSession(writerPool, loaded.accountIds);
         if (!loaded.session) controlledSession = session;
         const sessionToken = makeSessionToken(env.CLOUD_IDENTITY_TICKET_SECRET, session);
@@ -454,6 +521,9 @@ module.exports = Object.freeze({
   resolveRuntimeModules,
   runPublicAcceptance,
   loadActiveSuperAdminSession,
+  resolveOperatorIdentity,
+  ensureBusinessSuperAdmin,
+  ensureCanonicalPhoneContact,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
   forceCleanup,
@@ -468,6 +538,8 @@ if (require.main === module) {
         ok: false,
         code: error?.code || 'REAL_CLOUD_ACCEPTANCE_FAILED',
         databaseCode: typeof error?.details?.databaseCode === 'string' ? error.details.databaseCode : null,
+        status: Number.isSafeInteger(error?.details?.status) ? error.details.status : null,
+        responseCode: typeof error?.details?.responseCode === 'string' ? error.details.responseCode : null,
       })}\n`);
       process.exitCode = 1;
     });
