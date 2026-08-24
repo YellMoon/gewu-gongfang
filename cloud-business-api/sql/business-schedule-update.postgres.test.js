@@ -9,6 +9,7 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
 
 const SQL = fs.readFileSync(path.join(__dirname, '20260821-business-schedule-update.sql'), 'utf8');
 const OVERRIDE_SQL = fs.readFileSync(path.join(__dirname, '20260822-business-schedule-student-override.sql'), 'utf8');
+const ATOMIC_UPDATE_SQL = fs.readFileSync(path.join(__dirname, '20260825-business-schedule-update-overrides.sql'), 'utf8');
 const APPLY = Object.freeze({ appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 'business-schedule-update-test' });
 
 (async () => {
@@ -20,6 +21,7 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, APPLY);
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(SQL));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(OVERRIDE_SQL));
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', facade => facade.query(ATOMIC_UPDATE_SQL));
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       await facade.query(
         'INSERT INTO business.tenants(id,name,legacy_status,legacy_plan,legacy_archive_before,legacy_deleted,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8::timestamptz)',
@@ -46,31 +48,32 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 
         ['schedule-1', 'tenant-1', 'course-1', '2026-08-21T01:00:00.000Z', '2026-08-21T02:00:00.000Z', null, 1, 'Room A', null, 100, 50, null, false, '2026-08-20T00:00:00.000Z', '2026-08-20T00:00:00.000Z'],
       );
     });
+    let legacyUpdatedAt;
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
       const result = await facade.query(
-        'SELECT * FROM business.vnext_update_schedule($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10)',
-        ['tenant-absent', 'schedule-absent', '2026-08-21T00:00:00.000Z', '2026-08-22T00:00:00.000Z', '2026-08-22T01:00:00.000Z', 1, null, 0, 0, null],
+        'SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)',
+        ['tenant-absent', 'schedule-absent', '2026-08-21T00:00:00.000Z', '2026-08-22T00:00:00.000Z', '2026-08-22T01:00:00.000Z', 1, null, 0, 0, null, '[]'],
       );
       assert.deepStrictEqual(result.rows, []);
 
       const updated = await facade.query(
-        'SELECT * FROM business.vnext_update_schedule($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10)',
-        ['tenant-1', 'schedule-1', '2026-08-20T00:00:00.000Z', '2026-08-21T03:00:00.000Z', '2026-08-21T04:30:00.000Z', 2, 'Room B', 120, 65, 'updated once'],
+        'SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)',
+        ['tenant-1', 'schedule-1', '2026-08-20T00:00:00.000Z', '2026-08-21T03:00:00.000Z', '2026-08-21T04:30:00.000Z', 2, 'Room B', 120, 65, 'updated once', JSON.stringify([{ student_id: 'student-1', attendance_status: 4, tuition: 80, teacher_fee: 40 }])],
       );
       assert.strictEqual(updated.rows.length, 1);
       assert.strictEqual(updated.rows[0].id, 'schedule-1');
       assert.notStrictEqual(updated.rows[0].updated_at.toISOString(), '2026-08-20T00:00:00.000Z');
 
-      const overridden = await facade.query(
-        'SELECT * FROM business.vnext_upsert_schedule_student_override($1,$2,$3,$4::timestamptz,$5,$6,$7)',
-        ['tenant-1', 'schedule-1', 'student-1', updated.rows[0].updated_at.toISOString(), 4, 80, 40],
+      const legacyCompatible = await facade.query(
+        'SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)',
+        ['tenant-1', 'schedule-1', updated.rows[0].updated_at.toISOString(), '2026-08-21T04:00:00.000Z', '2026-08-21T05:00:00.000Z', 2, 'Room B', 120, 65, 'legacy compatible', null],
       );
-      assert.strictEqual(overridden.rows.length, 1);
-      assert.strictEqual(overridden.rows[0].id, 'schedule-1');
+      assert.strictEqual(legacyCompatible.rows.length, 1);
+      legacyUpdatedAt = legacyCompatible.rows[0].updated_at.toISOString();
 
       const stale = await facade.query(
-        'SELECT * FROM business.vnext_update_schedule($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10)',
-        ['tenant-1', 'schedule-1', '2026-08-20T00:00:00.000Z', '2026-08-21T05:00:00.000Z', '2026-08-21T06:00:00.000Z', 3, 'Room C', 130, 70, 'must not apply'],
+        'SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)',
+        ['tenant-1', 'schedule-1', '2026-08-20T00:00:00.000Z', '2026-08-21T05:00:00.000Z', '2026-08-21T06:00:00.000Z', 3, 'Room C', 130, 70, 'must not apply', '[]'],
       );
       assert.deepStrictEqual(stale.rows, []);
 
@@ -80,22 +83,31 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-21T00:00:00.000Z', appliedBy: 
       );
     });
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+      const preservedOverride = await facade.query('SELECT attendance_status,tuition,teacher_fee FROM business.schedule_student_overrides WHERE tenant_id=$1 AND schedule_id=$2 AND student_id=$3', ['tenant-1', 'schedule-1', 'student-1']);
+      assert.deepStrictEqual(preservedOverride.rows.map(row => ({ attendanceStatus: row.attendance_status, tuition: Number(row.tuition), teacherFee: Number(row.teacher_fee) })), [{ attendanceStatus: 4, tuition: 80, teacherFee: 40 }]);
+    });
+    await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
+      const cleared = await facade.query(
+        'SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)',
+        ['tenant-1', 'schedule-1', legacyUpdatedAt, '2026-08-21T05:00:00.000Z', '2026-08-21T06:00:00.000Z', 3, 'Room C', 130, 70, 'overrides cleared', '[]'],
+      );
+      assert.strictEqual(cleared.rows.length, 1);
+    });
+    await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       const schedule = await facade.query('SELECT start_at,end_at,status,room_display_snapshot,calculated_tuition,calculated_teacher_fee,notes FROM business.schedules WHERE tenant_id=$1 AND id=$2', ['tenant-1', 'schedule-1']);
       assert.deepStrictEqual(schedule.rows.map(row => ({
         startAt: row.start_at.toISOString(), endAt: row.end_at.toISOString(), status: row.status,
         room: row.room_display_snapshot, tuition: Number(row.calculated_tuition), teacherFee: Number(row.calculated_teacher_fee), notes: row.notes,
       })), [{
-        startAt: '2026-08-21T03:00:00.000Z', endAt: '2026-08-21T04:30:00.000Z', status: 2,
-        room: 'Room B', tuition: 120, teacherFee: 65, notes: 'updated once',
+        startAt: '2026-08-21T05:00:00.000Z', endAt: '2026-08-21T06:00:00.000Z', status: 3,
+        room: 'Room C', tuition: 130, teacherFee: 70, notes: 'overrides cleared',
       }]);
       const override = await facade.query('SELECT attendance_status,tuition,teacher_fee FROM business.schedule_student_overrides WHERE tenant_id=$1 AND schedule_id=$2 AND student_id=$3', ['tenant-1', 'schedule-1', 'student-1']);
-      assert.deepStrictEqual(override.rows.map(row => ({
-        attendanceStatus: row.attendance_status, tuition: Number(row.tuition), teacherFee: Number(row.teacher_fee),
-      })), [{ attendanceStatus: 4, tuition: 80, teacherFee: 40 }]);
+      assert.deepStrictEqual(override.rows, []);
     });
     await withVNextPg17SyntheticQuery(handle, 'verifier', async facade => {
       await assert.rejects(
-        () => facade.query('SELECT * FROM business.vnext_update_schedule($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10)', ['tenant-absent', 'schedule-absent', '2026-08-21T00:00:00.000Z', '2026-08-22T00:00:00.000Z', '2026-08-22T01:00:00.000Z', 1, null, 0, 0, null]),
+        () => facade.query('SELECT * FROM business.vnext_update_schedule_record_v2($1,$2,$3::timestamptz,$4::timestamptz,$5::timestamptz,$6,$7,$8,$9,$10,$11::jsonb)', ['tenant-absent', 'schedule-absent', '2026-08-21T00:00:00.000Z', '2026-08-22T00:00:00.000Z', '2026-08-22T01:00:00.000Z', 1, null, 0, 0, null, '[]']),
         error => error && error.code === '42501',
       );
       await assert.rejects(

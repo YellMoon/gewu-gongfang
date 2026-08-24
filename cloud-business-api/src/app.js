@@ -954,7 +954,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   app.put('/api/business/schedules/:scheduleId', async (request, response) => {
     if (!businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
-    const update = exactBody(request.body, ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
+    const hasPricings = Boolean(request.body && Object.prototype.hasOwnProperty.call(request.body, 'pricings'));
+    const update = exactBody(request.body, hasPricings
+      ? ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes', 'pricings']
+      : ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
     if (!scheduleId || !update) return businessInputInvalid(response);
     const expectedUpdatedAt = instant(update.expectedUpdatedAt);
     const startAt = instant(update.startAt);
@@ -963,9 +966,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const notes = optionalText(update.notes);
     const tuition = nonNegativeNumber(update.tuition);
     const teacherFee = nonNegativeNumber(update.teacherFee);
+    const pricings = hasPricings ? schedulePricings(update.pricings) : null;
     if (!expectedUpdatedAt || !startAt || !endAt || new Date(endAt).getTime() <= new Date(startAt).getTime()
       || !Number.isInteger(update.status) || ![1, 2, 3, 4].includes(update.status)
-      || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null) return businessInputInvalid(response);
+      || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null
+      || (hasPricings && pricings === null)) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
@@ -982,12 +987,16 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         tuition,
         teacherFee,
         notes,
+        pricings,
       });
       if (!result || typeof result !== 'object' || !result.id || !result.updatedAt) {
         return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       }
       response.json({ ok: true, schedule: result });
     } catch (error) {
+      if (error && (error.code === '23503' || error.code === '22023')) {
+        return response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_RELATION_INVALID' });
+      }
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }

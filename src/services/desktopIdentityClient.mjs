@@ -664,16 +664,16 @@ export function createDesktopIdentityClient({
     return data.questions;
   }
 
-  async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes } = {}) {
+  async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes, pricings } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     }
     const normalizedScheduleId = String(scheduleId || '').trim();
-    if (!normalizedScheduleId) throw identityError('DESKTOP_CLOUD_SCHEDULE_ID_REQUIRED');
+    if (!normalizedScheduleId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
       method: 'PUT',
       token: currentSession.token,
-      body: { expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes },
+      body: { expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes, pricings },
     });
     if (!data?.schedule || typeof data.schedule !== 'object'
       || typeof data.schedule.id !== 'string' || typeof data.schedule.updatedAt !== 'string') {

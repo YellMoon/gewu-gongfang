@@ -131,6 +131,14 @@ function scheduleInput(record) {
     tuition: record.calculated_tuition,
     teacherFee: record.calculated_teacher_fee,
     notes: nullable(record.notes),
+    pricings: Array.isArray(record.student_pricings)
+      ? record.student_pricings.map(item => ({
+        studentId: item.student_id,
+        attendanceStatus: item.status ?? item.attendance_status ?? 1,
+        tuition: item.tuition,
+        teacherFee: item.teacher_fee ?? 0,
+      }))
+      : [],
   };
 }
 

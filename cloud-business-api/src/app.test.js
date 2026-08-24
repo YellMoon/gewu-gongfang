@@ -207,7 +207,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       businessWrites.push(input);
       return { id: 'schedule-1', updatedAt: '2026-08-22T01:05:00.000Z' };
     },
-    desktopRegistration: identity,
+    desktopRegistration: { ...identity, sessionContext: async () => ({ authorityId: 'authority-1', accountId: 'account-1', roles: ['super_admin'] }) },
     businessTenantId: 'default',
   }), '/api/business/schedules/schedule-1', {
     method: 'PUT',
@@ -221,6 +221,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       tuition: 120,
       teacherFee: 60,
       notes: null,
+      pricings: [{ studentId: 'student-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
     },
   });
   assert.strictEqual(scheduleUpdate.status, 200);
@@ -230,7 +231,33 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     tenantId: 'default', scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
     startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
     roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
+    pricings: [{ studentId: 'student-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
   });
+  const legacyScheduleUpdate = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessScheduleUpdate: async input => {
+      businessWrites.push(input);
+      return { id: 'schedule-1', updatedAt: '2026-08-22T01:06:00.000Z' };
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/schedules/schedule-1', {
+    method: 'PUT',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: {
+      expectedUpdatedAt: '2026-08-22T01:05:00.000Z',
+      startAt: '2026-08-23T01:30:00.000Z',
+      endAt: '2026-08-23T02:30:00.000Z',
+      status: 1,
+      roomDisplay: 'A102',
+      tuition: 120,
+      teacherFee: 60,
+      notes: null,
+    },
+  });
+  assert.strictEqual(legacyScheduleUpdate.status, 200);
+  assert.strictEqual(businessWrites.length, 2);
+  assert.strictEqual(businessWrites[1].pricings, null, 'legacy desktop update must preserve existing student overrides');
   const scheduleLifecycleWrites = [];
   const scheduleLifecycleMutations = {
     create: async input => { scheduleLifecycleWrites.push(['create', input]); return { id: input.scheduleId, updatedAt: '2026-08-24T03:00:00.000Z' }; },
@@ -277,7 +304,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' },
     body: {
       expectedUpdatedAt: '2026-08-22T01:00:00.000Z', startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z',
-      status: 1, roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
+      status: 1, roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null, pricings: [],
     },
   });
   assert.strictEqual(miniappCannotUpdateSchedule.status, 403);

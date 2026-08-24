@@ -205,6 +205,7 @@ const assert = require('assert');
     payload: { id: 'schedule-1', expectedVersion: '2026-08-24T00:00:00.000Z', changes: {
       start_time: '2026-08-25T01:00:00.000Z', end_time: '2026-08-25T02:00:00.000Z', status: 1,
       room: 'Room One', calculated_tuition: 100, calculated_teacher_fee: 60, notes: null,
+      student_pricings: [{ student_id: 'student-1', status: 4, tuition: 80, teacher_fee: 40 }],
     } },
   });
   await adapter.submit(scheduleUpdate, { sessionToken: 'desktop-session-token' });
@@ -214,6 +215,7 @@ const assert = require('assert');
     scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-24T00:00:00.000Z',
     startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z', status: 1,
     roomDisplay: 'Room One', tuition: 100, teacherFee: 60, notes: null,
+    pricings: [{ studentId: 'student-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
   });
 
   const scheduleRecord = {

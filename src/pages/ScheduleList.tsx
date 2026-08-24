@@ -342,6 +342,12 @@ const ScheduleList: React.FC = () => {
         tuition: values.tuition,
         teacherFee: values.teacherFee,
         notes: values.notes?.trim() || null,
+        pricings: (editingSchedule.student_pricings || []).map((pricing: any) => ({
+          studentId: pricing.student_id,
+          attendanceStatus: pricing.status ?? pricing.attendance_status ?? 1,
+          tuition: Number(pricing.tuition || 0),
+          teacherFee: Number(pricing.teacher_fee || 0),
+        })),
       });
       setSchedules(previous => previous.map(schedule => schedule.id === editingSchedule.id ? {
         ...schedule,
