@@ -6,7 +6,6 @@ import json
 import os
 import posixpath
 import re
-import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +22,7 @@ REMOTE_BUILD_ROOT = "/root/gewu-cloud-business-builds"
 SWITCH_LOCK_PATH = "/tmp/gewu-cloud-business-api-switch.lock"
 PROMOTION_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
-OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+PROMOTION_LOCK_READY = b"GEWU_PROMOTION_LOCK_READY\n"
 
 
 def failure(code):
@@ -79,26 +78,27 @@ def discard_candidate_command(tag):
     return f"docker rm -f -- '{candidate_name(tag)}'"
 
 
-def promotion_lock_acquire_command(operation_id):
-    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
-        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+def promotion_lock_command():
     return (
-        "set -eu; "
-        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; tmp='{PROMOTION_LOCK_PATH}.{operation_id}.tmp'; "
-        "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s\\n' \"$owner\" > \"$tmp\"; "
-        "if ! ln \"$tmp\" \"$lock\"; then exit 3; fi"
+        f"exec flock -n '{PROMOTION_LOCK_PATH}' sh -c "
+        "'printf \"GEWU_PROMOTION_LOCK_READY\\n\"; while :; do sleep 30; done'"
     )
 
 
-def promotion_lock_release_command(operation_id):
-    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
-        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
-    return (
-        "set -eu; "
-        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; "
-        "if [ ! -e \"$lock\" ]; then exit 0; fi; "
-        "test \"$(cat \"$lock\")\" = \"$owner\"; rm -f -- \"$lock\""
-    )
+class PromotionLease:
+    def __init__(self, ssh, channel):
+        self.ssh = ssh
+        self.channel = channel
+        self.closed = False
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            self.channel.close()
+        finally:
+            self.ssh.close()
 
 
 def switch_command(tag):
@@ -237,26 +237,31 @@ def rollback_promoted_release(tag):
         ssh.close()
 
 
-def release_promotion_lock(operation_id):
+def acquire_promotion_lock():
     ssh = deploy.connect()
+    channel = None
     try:
-        deploy.run(ssh, promotion_lock_release_command(operation_id), timeout=30)
-    finally:
-        ssh.close()
-
-
-def acquire_promotion_lock(operation_id):
-    ssh = deploy.connect()
-    try:
-        deploy.run(ssh, promotion_lock_acquire_command(operation_id), timeout=30)
+        transport = ssh.get_transport()
+        if transport is None or not transport.is_active():
+            raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
+        transport.set_keepalive(15)
+        channel = transport.open_session(timeout=30)
+        channel.settimeout(30)
+        channel.exec_command(promotion_lock_command())
+        received = b""
+        while len(received) < len(PROMOTION_LOCK_READY):
+            chunk = channel.recv(len(PROMOTION_LOCK_READY) - len(received))
+            if not chunk:
+                raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
+            received += chunk
+        if received != PROMOTION_LOCK_READY:
+            raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
+        return PromotionLease(ssh, channel)
     except BaseException:
-        try:
-            release_promotion_lock(operation_id)
-        except BaseException:
-            pass
-        raise
-    finally:
+        if channel is not None:
+            channel.close()
         ssh.close()
+        raise
 
 
 def reconcile_uncertain_switch(tag):
@@ -268,12 +273,11 @@ def reconcile_uncertain_switch(tag):
 
 
 def promote_validated_candidate(tag, version, evidence):
-    operation_id = secrets.token_hex(16)
-    acquire_promotion_lock(operation_id)
+    lease = acquire_promotion_lock()
     try:
         return promote_candidate_under_lock(tag, version, evidence)
     finally:
-        release_promotion_lock(operation_id)
+        lease.close()
 
 
 def promote_candidate_under_lock(tag, version, evidence):
