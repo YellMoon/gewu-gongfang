@@ -1140,6 +1140,27 @@ const FIXED_SUPER_ADMIN_INVARIANT_MIGRATION = Object.freeze({
   sql: FIXED_SUPER_ADMIN_INVARIANT_SQL, manifestSha256: sha256(FIXED_SUPER_ADMIN_INVARIANT_SQL),
 });
 
+const DESKTOP_SESSION_CONTEXT_READER_SQL = `GRANT USAGE ON SCHEMA vnext_control_plane TO vnext_pg17_writer;
+GRANT SELECT ON TABLE
+  vnext_control_plane.vnext_authorities,
+  vnext_control_plane.vnext_accounts,
+  vnext_control_plane.vnext_trusted_devices,
+  vnext_control_plane.vnext_device_installations,
+  vnext_control_plane.vnext_account_device_links,
+  vnext_control_plane.vnext_sessions,
+  vnext_control_plane.vnext_role_grants
+TO vnext_pg17_writer;`;
+const DESKTOP_SESSION_CONTEXT_READER_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-session-context-reader-21', semanticVersion: 21,
+  sql: DESKTOP_SESSION_CONTEXT_READER_SQL, manifestSha256: sha256(DESKTOP_SESSION_CONTEXT_READER_SQL),
+});
+
+const DESKTOP_CANONICAL_PHONE_READER_SQL = `GRANT SELECT ON TABLE vnext_control_plane.vnext_verified_contacts TO vnext_pg17_writer;`;
+const DESKTOP_CANONICAL_PHONE_READER_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-canonical-phone-reader-22', semanticVersion: 22,
+  sql: DESKTOP_CANONICAL_PHONE_READER_SQL, manifestSha256: sha256(DESKTOP_CANONICAL_PHONE_READER_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1161,6 +1182,8 @@ const MIGRATIONS = Object.freeze([
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
+  DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
+  DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1380,6 +1403,8 @@ module.exports = {
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
+  DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
+  DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

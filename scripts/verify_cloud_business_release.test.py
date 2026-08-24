@@ -19,6 +19,9 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("business.question_taxonomy_systems", sql)
         self.assertIn("vnext_create_question_taxonomy_node_v1", sql)
         self.assertIn("vnext-pg17-fixed-super-admin-invariant-20", sql)
+        self.assertIn("vnext-pg17-desktop-session-context-reader-21", sql)
+        self.assertIn("desktopSessionReaderPrivileges", sql)
+        self.assertIn("vnext-pg17-desktop-canonical-phone-reader-22", sql)
         self.assertIn("vnext_role_grants_one_active_super_admin", sql)
         self.assertIn("activeSuperAdminAccountId", sql)
 
@@ -41,6 +44,10 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "runtimeSupplementalInsert": False,
             "readerSupplementalWrite": False,
             "controlPlaneM20": True,
+            "controlPlaneM21": True,
+            "desktopSessionReaderPrivileges": True,
+            "controlPlaneM22": True,
+            "desktopCanonicalPhoneReader": True,
             "oneActiveSuperAdmin": True,
             "uniqueSuperAdminIndex": True,
             "fixedSuperAdminPhone": True,

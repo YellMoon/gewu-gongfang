@@ -27,6 +27,10 @@ EXPECTED_COUNTS = {
 }
 CONTROL_PLANE_M20_ID = "vnext-pg17-fixed-super-admin-invariant-20"
 CONTROL_PLANE_M20_SHA256 = "96c48125a805aa0d26684fcd59d9b9d6dd92eae6f8609db15830755063182934"
+CONTROL_PLANE_M21_ID = "vnext-pg17-desktop-session-context-reader-21"
+CONTROL_PLANE_M21_SHA256 = "877a5159d4aee994129b7553f39e8d8309a3f81b317b59dd3e467a42b57d7d93"
+CONTROL_PLANE_M22_ID = "vnext-pg17-desktop-canonical-phone-reader-22"
+CONTROL_PLANE_M22_SHA256 = "1c01a3467b90f66fbee3029802b0d5bd4a2547f1955aebffb7aca12cd4d60fee"
 
 
 def verification_sql():
@@ -94,6 +98,22 @@ def verification_sql():
         "'controlPlaneM20'",
         "(SELECT count(*)=1 FROM vnext_control_plane.vnext_schema_migrations "
         f"WHERE migration_id='{CONTROL_PLANE_M20_ID}' AND semantic_version=20 AND manifest_sha256='{CONTROL_PLANE_M20_SHA256}')",
+        "'controlPlaneM21'",
+        "(SELECT count(*)=1 FROM vnext_control_plane.vnext_schema_migrations "
+        f"WHERE migration_id='{CONTROL_PLANE_M21_ID}' AND semantic_version=21 AND manifest_sha256='{CONTROL_PLANE_M21_SHA256}')",
+        "'desktopSessionReaderPrivileges'",
+        "has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_authorities','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_accounts','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_trusted_devices','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_device_installations','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_account_device_links','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_sessions','SELECT') "
+        "AND has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_role_grants','SELECT')",
+        "'controlPlaneM22'",
+        "(SELECT count(*)=1 FROM vnext_control_plane.vnext_schema_migrations "
+        f"WHERE migration_id='{CONTROL_PLANE_M22_ID}' AND semantic_version=22 AND manifest_sha256='{CONTROL_PLANE_M22_SHA256}')",
+        "'desktopCanonicalPhoneReader'",
+        "has_table_privilege('vnext_pg17_writer','vnext_control_plane.vnext_verified_contacts','SELECT')",
         "'oneActiveSuperAdmin'",
         "(SELECT count(*)=1 FROM vnext_control_plane.vnext_role_grants WHERE role='super_admin' AND status='active')",
         "'activeSuperAdminAccountId'",
@@ -122,7 +142,8 @@ def validate(payload):
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_DIRECT_WRITE_OPEN")
     if any(payload.get(key) is not True for key in (
-        "controlPlaneM20", "oneActiveSuperAdmin", "uniqueSuperAdminIndex", "fixedSuperAdminPhone",
+        "controlPlaneM20", "controlPlaneM21", "desktopSessionReaderPrivileges", "controlPlaneM22", "desktopCanonicalPhoneReader",
+        "oneActiveSuperAdmin", "uniqueSuperAdminIndex", "fixedSuperAdminPhone",
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_CONTROL_PLANE_INVARIANT")
     return payload

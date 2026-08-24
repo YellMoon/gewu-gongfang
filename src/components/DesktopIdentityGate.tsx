@@ -86,7 +86,7 @@ const DesktopIdentityGate: React.FC = () => {
   const clientRef = useRef<any>(null);
   const onlineSessionRef = useRef<any>(null);
   const currentPartitionRef = useRef<string | null>(null);
-  const pollingRef = useRef(false);
+  const pollingFlowRef = useRef<number | null>(null);
   const registrationFlowRef = useRef(0);
 
   const suspendBusinessMemory = useCallback(async (_partitionKey?: string) => {
@@ -330,21 +330,23 @@ const DesktopIdentityGate: React.FC = () => {
   }, [acceptRuntime, suspendBusinessMemory]);
 
   const pollRegistration = useCallback(async () => {
-    if (!pending || pollingRef.current || !clientRef.current) return;
+    if (!pending || pollingFlowRef.current === registrationFlowRef.current || !clientRef.current) return;
     const flowId = registrationFlowRef.current;
-    pollingRef.current = true;
+    pollingFlowRef.current = flowId;
     setPolling(true);
     try {
       const next = pending?.pairingId
         ? await clientRef.current.pollUnifiedOnlineRegistration(pending)
         : await clientRef.current.pollRegistration(pending);
-      if (registrationFlowRef.current === flowId) setPending(next);
-      setError('');
+      if (registrationFlowRef.current === flowId) {
+        setPending(next);
+        setError('');
+      }
     } catch (caught) {
-      setError(messageForError(caught));
+      if (registrationFlowRef.current === flowId) setError(messageForError(caught));
     } finally {
-      pollingRef.current = false;
-      setPolling(false);
+      if (pollingFlowRef.current === flowId) pollingFlowRef.current = null;
+      if (registrationFlowRef.current === flowId) setPolling(false);
     }
   }, [pending]);
 
@@ -495,6 +497,7 @@ const DesktopIdentityGate: React.FC = () => {
 
   const returnToPasswordLogin = async () => {
     registrationFlowRef.current += 1;
+    setPolling(false);
     setBusy(true);
     setError('');
     try {

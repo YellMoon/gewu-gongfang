@@ -77,6 +77,22 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
       );
       return result.rows[0] ? accountRow(result.rows[0]) : null;
     },
+    async readContextByPhoneHmac(input) {
+      const request = exact(input, ['phoneHmac']);
+      if (typeof request.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/u.test(request.phoneHmac)) throw invalid();
+      const result = await query(
+        `SELECT a.account_id AS "accountId",a.status AS "status",
+           COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
+           MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
+         FROM business.miniapp_cloud_accounts a
+         LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
+         WHERE a.phone_hmac=$1
+         GROUP BY a.account_id,a.status`,
+        [request.phoneHmac],
+      );
+      return result.rows[0] ? accountRow(result.rows[0]) : null;
+    },
     async listPending() {
       const result = await query(
         `SELECT a.account_id AS "accountId",a.status AS "status",a.created_at AS "createdAt"

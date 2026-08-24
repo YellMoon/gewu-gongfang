@@ -1,0 +1,11 @@
+'use strict';
+const assert = require('assert');
+const { buildCloudControlPlaneM22UpgradeSql } = require('./cloudControlPlaneM22Upgrade');
+const result = buildCloudControlPlaneM22UpgradeSql();
+assert.strictEqual(result.migrationId, 'vnext-pg17-desktop-canonical-phone-reader-22');
+assert.strictEqual(result.semanticVersion, 22);
+assert.match(result.manifestSha256, /^[0-9a-f]{64}$/);
+assert.match(result.sql, /VNEXT_CLOUD_CONTROL_PLANE_M21_PREFIX_INVALID/);
+assert.match(result.sql, /GRANT SELECT ON TABLE vnext_control_plane\.vnext_verified_contacts TO vnext_pg17_writer/);
+assert.doesNotMatch(result.sql, /GRANT (?:INSERT|UPDATE|DELETE)/);
+console.log('cloud control-plane M22 upgrade tests passed');

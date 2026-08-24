@@ -81,6 +81,14 @@ assert.ok(decodedGateSource.includes('\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'),
   'the WeChat QR state must offer a clear return to password login');
 assert.ok(gateSource.includes('onClick={returnToPasswordLogin}'),
   'returning from WeChat login must clear the pending local registration through the recovery handler');
+assert.ok(gateSource.includes('const pollingFlowRef = useRef<number | null>(null)'),
+  'registration polling must be owned by a specific login-flow generation');
+assert.ok(gateSource.includes('if (registrationFlowRef.current === flowId) setError(messageForError(caught))'),
+  'an obsolete WeChat poll must not write its error into a later password-login flow');
+assert.ok(gateSource.includes('if (registrationFlowRef.current === flowId) setPolling(false)'),
+  'an obsolete WeChat poll must not clear the loading state of a later login flow');
+assert.ok(gateSource.includes('setPolling(false);\n    setBusy(true);'),
+  'returning to password login must clear only the visible polling state immediately');
 assert.ok(gateSource.includes('离线身份租约已过期'));
 assert.ok(gateSource.includes('desktop-identity-runtime--offline'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));

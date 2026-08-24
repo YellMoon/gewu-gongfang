@@ -133,9 +133,11 @@ def build_image(ssh, tag):
 
 
 def run_cloud_migrations():
-    control = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m20.py")], cwd=ROOT, check=True, text=True)
+    control_m20 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m20.py")], cwd=ROOT, check=True, text=True)
+    control_m21 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m21.py")], cwd=ROOT, check=True, text=True)
+    control_m22 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m22.py")], cwd=ROOT, check=True, text=True)
     business = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_postgres_migrations.py")], cwd=ROOT, check=True, text=True)
-    return max(control.returncode, business.returncode)
+    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, business.returncode)
 
 
 def health_url():

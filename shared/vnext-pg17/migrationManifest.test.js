@@ -22,6 +22,8 @@ const {
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
+  DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
+  DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -61,10 +63,15 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
   assert.strictEqual(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.semanticVersion, 20);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /vnext_role_grants_one_active_super_admin/);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /role='super_admin' AND status='active'/);
+  assert.strictEqual(DESKTOP_SESSION_CONTEXT_READER_MIGRATION.semanticVersion, 21);
+  assert.match(DESKTOP_SESSION_CONTEXT_READER_MIGRATION.sql, /GRANT SELECT ON TABLE[\s\S]*vnext_control_plane\.vnext_sessions[\s\S]*TO vnext_pg17_writer/);
+  assert.doesNotMatch(DESKTOP_SESSION_CONTEXT_READER_MIGRATION.sql, /GRANT (?:INSERT|UPDATE|DELETE)/);
+  assert.strictEqual(DESKTOP_CANONICAL_PHONE_READER_MIGRATION.semanticVersion, 22);
+  assert.match(DESKTOP_CANONICAL_PHONE_READER_MIGRATION.sql, /GRANT SELECT ON TABLE vnext_control_plane\.vnext_verified_contacts TO vnext_pg17_writer/);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(

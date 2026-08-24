@@ -36,9 +36,11 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
             self.assertEqual(module.run_cloud_migrations(), 0)
-        self.assertEqual(len(run.call_args_list), 2)
+        self.assertEqual(len(run.call_args_list), 4)
         self.assertTrue(str(run.call_args_list[0].args[0][1]).endswith("apply_cloud_control_plane_m20.py"))
-        self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
+        self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_control_plane_m21.py"))
+        self.assertTrue(str(run.call_args_list[2].args[0][1]).endswith("apply_cloud_control_plane_m22.py"))
+        self.assertTrue(str(run.call_args_list[3].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
 
 if __name__ == "__main__":

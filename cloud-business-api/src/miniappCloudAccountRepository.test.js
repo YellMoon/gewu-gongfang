@@ -28,6 +28,9 @@ const query = async (text, values) => {
   assert.deepStrictEqual(calls[0][1], ['canonical-account-1', 'a'.repeat(64), true]);
   const context = await repository.readContext({ accountId: 'account-1' });
   assert.deepStrictEqual(context, { accountId: 'account-1', status: 'active', roles: ['super_admin'], profile: null });
+  const phoneContext = await repository.readContextByPhoneHmac({ phoneHmac: 'b'.repeat(64) });
+  assert.deepStrictEqual(phoneContext, { accountId: 'account-1', status: 'active', roles: ['super_admin'], profile: null });
+  assert.ok(calls.some(([text, values]) => text.includes('WHERE a.phone_hmac=$1') && values[0] === 'b'.repeat(64)));
   assert.deepStrictEqual(await repository.listPending(), [{ accountId: 'account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }]);
   const pendingQuery = calls.find(([text]) => text.includes('ORDER BY a.created_at ASC,a.account_id ASC'))?.[0] || '';
   assert.ok(pendingQuery.includes("a.status='active'"), 'pending accounts must be active account records without a role, not an unpersisted account status');
