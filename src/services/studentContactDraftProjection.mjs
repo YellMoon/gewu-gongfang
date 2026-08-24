@@ -68,4 +68,3 @@ export function overlayStudentContactDraftProjection(student = {}, contacts = []
   });
   return [...otherContacts, ...projected];
 }
-

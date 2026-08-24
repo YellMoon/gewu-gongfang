@@ -56,4 +56,3 @@ const assert = require('assert');
   console.error(error);
   process.exitCode = 1;
 });
-
