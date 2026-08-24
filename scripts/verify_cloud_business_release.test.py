@@ -20,6 +20,7 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("vnext_create_question_taxonomy_node_v1", sql)
         self.assertIn("vnext-pg17-fixed-super-admin-invariant-20", sql)
         self.assertIn("vnext_role_grants_one_active_super_admin", sql)
+        self.assertIn("activeSuperAdminAccountId", sql)
 
     def test_validation_fails_closed(self):
         valid = dict(MODULE.EXPECTED_COUNTS)
@@ -48,6 +49,16 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             MODULE.validate(dict(valid, writerDirectScheduleInsert=True))
         with self.assertRaisesRegex(RuntimeError, "CONTROL_PLANE_INVARIANT"):
             MODULE.validate(dict(valid, fixedSuperAdminPhone=False))
+
+    def test_fixed_admin_account_comparison_does_not_persist_the_account_id(self):
+        payload = {"activeSuperAdminAccountId": "account-fixed"}
+        self.assertEqual(MODULE.merge_fixed_admin(
+            payload, {"fixedSuperAdminAccountId": "account-fixed"}
+        ), {"fixedSuperAdminPhone": True})
+        self.assertEqual(MODULE.merge_fixed_admin(
+            {"activeSuperAdminAccountId": "account-other"},
+            {"fixedSuperAdminAccountId": "account-fixed"},
+        ), {"fixedSuperAdminPhone": False})
 
 
 if __name__ == "__main__":

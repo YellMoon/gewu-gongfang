@@ -2,6 +2,7 @@
 """Verify the deployed cloud authority schema, imported row counts, and write boundary."""
 
 import json
+import hmac
 import pathlib
 import sys
 
@@ -77,6 +78,8 @@ def verification_sql():
         f"WHERE migration_id='{CONTROL_PLANE_M20_ID}' AND semantic_version=20 AND manifest_sha256='{CONTROL_PLANE_M20_SHA256}')",
         "'oneActiveSuperAdmin'",
         "(SELECT count(*)=1 FROM vnext_control_plane.vnext_role_grants WHERE role='super_admin' AND status='active')",
+        "'activeSuperAdminAccountId'",
+        "(SELECT max(account_id) FROM vnext_control_plane.vnext_role_grants WHERE role='super_admin' AND status='active')",
         "'uniqueSuperAdminIndex'",
         "EXISTS (SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('vnext_control_plane.vnext_role_grants_one_active_super_admin') "
         "AND indisunique AND pg_get_expr(indpred,indrelid) LIKE '%super_admin%' AND pg_get_expr(indpred,indrelid) LIKE '%active%')",
@@ -106,24 +109,45 @@ def validate(payload):
     return payload
 
 
+def merge_fixed_admin(payload, fixed_admin):
+    if not isinstance(payload, dict) or not isinstance(fixed_admin, dict) \
+            or set(fixed_admin) != {"fixedSuperAdminAccountId"}:
+        raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_FAILED")
+    actual = payload.pop("activeSuperAdminAccountId", None)
+    expected = fixed_admin.get("fixedSuperAdminAccountId")
+    if not all(isinstance(value, str) and value.strip() == value and value for value in (actual, expected)):
+        raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_FAILED")
+    payload["fixedSuperAdminPhone"] = hmac.compare_digest(actual, expected)
+    return payload
+
+
+def resolve_fixed_admin_silently(ssh):
+    command = "docker exec gewu-cloud-business-api node scripts/verifyFixedSuperAdmin.js"
+    _, stdout, stderr = ssh.exec_command(command, timeout=30)
+    body = stdout.read().decode("utf-8")
+    error = stderr.read().decode("utf-8")
+    status = stdout.channel.recv_exit_status()
+    if status != 0:
+        raise RuntimeError("CLOUD_FIXED_SUPER_ADMIN_RESOLUTION_FAILED") from None
+    try:
+        value = json.loads(body)
+    except json.JSONDecodeError as parse_error:
+        raise RuntimeError("CLOUD_FIXED_SUPER_ADMIN_RESOLUTION_FAILED") from parse_error
+    if error.strip() or not isinstance(value, dict):
+        raise RuntimeError("CLOUD_FIXED_SUPER_ADMIN_RESOLUTION_FAILED")
+    return value
+
+
 def verify():
     ssh = deploy.connect()
     try:
         raw = DockerPsqlExecutor(ssh, "gewu-postgres17", "gewu_cloud", "gewu_app").run(verification_sql()).strip()
-        fixed_admin_raw, _ = deploy.run(
-            ssh,
-            "docker exec gewu-cloud-business-api node scripts/verifyFixedSuperAdmin.js",
-            timeout=30,
-        )
+        fixed_admin = resolve_fixed_admin_silently(ssh)
     finally:
         ssh.close()
     try:
         payload = json.loads(raw)
-        fixed_admin = json.loads(fixed_admin_raw)
-        if not isinstance(fixed_admin, dict) or set(fixed_admin) != {"fixedSuperAdminPhone"}:
-            raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_FAILED")
-        payload.update(fixed_admin)
-        return validate(payload)
+        return validate(merge_fixed_admin(payload, fixed_admin))
     except json.JSONDecodeError as error:
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_FAILED") from error
 
