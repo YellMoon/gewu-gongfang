@@ -28,5 +28,8 @@ assert.ok(deployGateway.includes("record_release_receipt('gateway'"), 'gateway h
 assert.ok(deployCloudBusiness.includes('require_release_manifest("cloud_business")'), 'cloud business deployment must require the unified release manifest');
 assert.ok(deployCloudBusiness.includes('record_release_receipt("cloud_business"'), 'cloud business health success must write an exact-version receipt');
 assert.ok(deployCloudBusiness.includes('payload.get("version") != expected_version'), 'cloud business public health must match the exact release version');
+assert.ok(deployCloudBusiness.includes('validated_release_tag(args.tag)'), 'cloud business candidates must match the checked-out source revision');
+assert.ok(deployCloudBusiness.includes('rollback_promoted_release(tag)'), 'cloud business promotion failures must automatically restore the previous container');
+assert.ok(deployBackend.includes('manifest.get("commit") != current_source_commit()'), 'deployment manifests must match the checked-out source commit');
 
 console.log('release boundary checks passed');

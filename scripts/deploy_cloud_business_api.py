@@ -98,6 +98,20 @@ def switch_command(tag):
     )
 
 
+def rollback_command(tag):
+    candidate_name(tag)
+    rollback = f"gewu-cloud-business-api-rollback-{tag}"
+    return (
+        "set -eu; "
+        f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
+        "docker container inspect \"$rollback\" >/dev/null 2>&1; "
+        "docker rm -f \"$current\"; "
+        "docker rename \"$rollback\" \"$current\"; docker start \"$current\"; "
+        "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+        "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && exit 0; sleep 1; done; exit 1"
+    )
+
+
 def source_version():
     payload = json.loads((ROOT / "cloud-business-api" / "package.json").read_text(encoding="utf-8"))
     value = payload.get("version")
@@ -109,6 +123,13 @@ def source_version():
 def source_revision():
     result = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True)
     return result.stdout.strip()
+
+
+def validated_release_tag(requested_tag=None):
+    expected = release_tag(source_version(), source_revision())
+    if requested_tag is not None and requested_tag != expected:
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return expected
 
 
 def upload_source(ssh, tag):
@@ -163,10 +184,36 @@ def verify_public_health(expected_version):
     return payload
 
 
+def rollback_promoted_release(tag):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, rollback_command(tag), timeout=120)
+    finally:
+        ssh.close()
+
+
+def promote_validated_candidate(tag, version, evidence):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, switch_command(tag), timeout=120)
+    finally:
+        ssh.close()
+    try:
+        health = verify_public_health(version)
+        deploy.record_release_receipt("cloud_business", evidence)
+        return health
+    except BaseException as primary_error:
+        try:
+            rollback_promoted_release(tag)
+        except BaseException as rollback_error:
+            raise RuntimeError("CLOUD_DOCKER_DEPLOY_ROLLBACK_FAILED") from rollback_error
+        raise primary_error
+
+
 def deploy_release():
     version = source_version()
     deploy.require_release_manifest("cloud_business")
-    tag = release_tag(version, source_revision())
+    tag = validated_release_tag()
     ssh = deploy.connect()
     try:
         upload_source(ssh, tag)
@@ -177,29 +224,24 @@ def deploy_release():
         except Exception:
             deploy.run(ssh, discard_candidate_command(tag))
             raise
-        deploy.run(ssh, switch_command(tag), timeout=120)
     finally:
         ssh.close()
-    health = verify_public_health(version)
-    deploy.record_release_receipt("cloud_business", f"public cloud business health verified at version {version}")
-    return health
+    return promote_validated_candidate(
+        tag,
+        version,
+        f"public cloud business health verified at version {version}",
+    )
 
 
 def promote_release(tag):
-    if not isinstance(tag, str) or not TAG_PATTERN.fullmatch(tag):
-        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     version = source_version()
-    if tag != release_tag(version, source_revision()):
-        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    tag = validated_release_tag(tag)
     deploy.require_release_manifest("cloud_business")
-    ssh = deploy.connect()
-    try:
-        deploy.run(ssh, switch_command(tag), timeout=120)
-    finally:
-        ssh.close()
-    health = verify_public_health(version)
-    deploy.record_release_receipt("cloud_business", f"promoted cloud business candidate verified at version {version}")
-    return health
+    return promote_validated_candidate(
+        tag,
+        version,
+        f"promoted cloud business candidate verified at version {version}",
+    )
 
 
 def main():
@@ -207,9 +249,12 @@ def main():
     parser.add_argument("command", choices=("deploy", "candidate", "promote", "discard"))
     parser.add_argument("--tag")
     args = parser.parse_args()
-    tag = args.tag or release_tag(source_version(), source_revision())
-    if not TAG_PATTERN.fullmatch(tag):
-        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    if args.command == "discard":
+        tag = args.tag or validated_release_tag()
+        if not TAG_PATTERN.fullmatch(tag):
+            raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    else:
+        tag = validated_release_tag(args.tag)
     if args.command == "candidate":
         deploy.require_release_manifest("cloud_business")
         ssh = deploy.connect()

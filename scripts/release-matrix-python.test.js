@@ -7,12 +7,19 @@ const { spawnSync } = require('child_process');
 const rootPackage = require('../package.json');
 const matrix = require('./release-matrix');
 
+const currentCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
+  cwd: path.resolve(__dirname, '..'),
+  encoding: 'utf8',
+});
+assert.strictEqual(currentCommit.status, 0, currentCommit.stderr || 'current commit must be readable');
+const commit = currentCommit.stdout.trim();
+
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-python-'));
 const manifestPath = path.join(fixtureRoot, 'active.json');
 try {
   matrix.writeManifest(manifestPath, matrix.createReleaseManifest({
     version: rootPackage.version,
-    commit: 'unit-test-commit',
+    commit,
   }));
   const probe = spawnSync('python', ['-c', [
     'import json',
@@ -35,6 +42,21 @@ try {
     /already has a verified receipt/i,
     'a duplicate deployment receipt must fail instead of silently reusing a target'
   );
+
+  matrix.writeManifest(manifestPath, matrix.createReleaseManifest({
+    version: rootPackage.version,
+    commit: '0'.repeat(40),
+  }));
+  const staleProbe = spawnSync('python', ['-c', [
+    'import scripts.deploy as deploy',
+    "deploy.require_release_manifest('cloud_business')",
+  ].join('\n')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: manifestPath },
+    encoding: 'utf8',
+  });
+  assert.notStrictEqual(staleProbe.status, 0, 'a manifest from another source commit must fail closed');
+  assert.match(`${staleProbe.stderr}\n${staleProbe.stdout}`, /does not match the checked-out source commit/i);
 } finally {
   fs.rmSync(fixtureRoot, { recursive: true, force: true });
 }

@@ -19,6 +19,7 @@ import posixpath
 import re
 import secrets
 import shlex
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -108,6 +109,23 @@ RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
 RELEASE_MATRIX_TARGETS = ("desktop", "cloud_business", "storage_proxy", "miniapp")
 
 
+def current_source_commit():
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise SystemExit("Unable to resolve the checked-out source commit for unified release") from error
+    commit = result.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise SystemExit("Checked-out source commit is invalid for unified release")
+    return commit
+
+
 def require_release_manifest(target):
     """Fail closed unless this deployment belongs to the one prepared release."""
     if target not in RELEASE_MATRIX_TARGETS:
@@ -121,6 +139,8 @@ def require_release_manifest(target):
     expected_version = read_root_version()
     if manifest.get("schema") != RELEASE_MATRIX_SCHEMA or manifest.get("version") != expected_version:
         raise SystemExit("Unified release manifest does not match the checked-out source version")
+    if manifest.get("commit") != current_source_commit():
+        raise SystemExit("Unified release manifest does not match the checked-out source commit")
     package_paths = {
         "desktop": PROJECT_ROOT / "package.json",
         "cloud_business": PROJECT_ROOT / "cloud-business-api" / "package.json",

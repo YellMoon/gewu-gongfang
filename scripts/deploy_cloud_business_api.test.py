@@ -2,7 +2,7 @@ import unittest
 from unittest import mock
 
 import deploy_cloud_business_api as module
-from deploy_cloud_business_api import candidate_command, candidate_name, release_tag, switch_command
+from deploy_cloud_business_api import candidate_command, candidate_name, release_tag, rollback_command, switch_command
 
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
@@ -31,6 +31,21 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_promote_reuses_only_a_validated_candidate_tag(self):
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
             switch_command("8.3.0-current;id")
+
+    def test_candidate_tag_must_match_the_checked_out_source(self):
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1101687f349d"
+        ):
+            self.assertEqual(module.validated_release_tag(), "8.5.0-1101687f349d")
+            with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
+                module.validated_release_tag("8.5.0-deadbee")
+
+    def test_explicit_rollback_restores_the_preserved_container(self):
+        command = rollback_command("8.5.0-1101687f349d")
+        self.assertIn("rollback-8.5.0-1101687f349d", command)
+        self.assertIn('docker rm -f "$current"', command)
+        self.assertIn('docker rename "$rollback" "$current"', command)
+        self.assertIn("127.0.0.1:3002/api/health", command)
 
     def test_discard_targets_only_the_exact_candidate(self):
         self.assertEqual(
@@ -79,6 +94,37 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         record_receipt.assert_called_once()
         self.assertEqual(record_receipt.call_args.args[0], "cloud_business")
         self.assertIn("8.5.0", record_receipt.call_args.args[1])
+
+    def test_public_health_failure_rolls_back_and_skips_receipt(self):
+        switch_ssh = mock.Mock()
+        rollback_ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
+            module.deploy, "run"
+        ) as run, mock.patch.object(
+            module, "verify_public_health", side_effect=RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
+        ), mock.patch.object(module.deploy, "record_release_receipt") as record_receipt:
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_HEALTH_INVALID"):
+                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[1].args[1])
+        record_receipt.assert_not_called()
+        switch_ssh.close.assert_called_once()
+        rollback_ssh.close.assert_called_once()
+
+    def test_receipt_failure_rolls_back_the_switched_release(self):
+        switch_ssh = mock.Mock()
+        rollback_ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
+            module.deploy, "run"
+        ) as run, mock.patch.object(
+            module, "verify_public_health", return_value={"ok": True, "version": "8.5.0"}
+        ), mock.patch.object(
+            module.deploy, "record_release_receipt", side_effect=OSError("receipt write failed")
+        ):
+            with self.assertRaisesRegex(OSError, "receipt write failed"):
+                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[1].args[1])
 
     def test_promote_rejects_a_candidate_from_another_source_revision(self):
         with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
