@@ -46,7 +46,7 @@ function createOperatorPhoneLookup({ pepper, records }) {
     const row = exact(raw, ['phoneHmac', 'authorityId', 'accountId']);
     if (!/^[0-9a-f]{64}$/u.test(row.phoneHmac) || !text(row.authorityId) || !text(row.accountId)) throw failure();
     if (lookup.has(row.phoneHmac)) throw failure();
-    lookup.set(row.phoneHmac, Object.freeze({ authorityId: row.authorityId, accountId: row.accountId }));
+    lookup.set(row.phoneHmac, Object.freeze({ authorityId: row.authorityId, accountId: row.accountId, phoneHmac: row.phoneHmac }));
   }
   return Object.freeze(phone => lookup.get(hmacPhone(pepper, phone)) || null);
 }
@@ -83,8 +83,10 @@ function signedTicketPayload(secret, token) {
 
 function inspectTicket(secret, token, now) {
   const payload = signedTicketPayload(secret, token);
-  const copy = exact(payload, ['v', 'authorityId', 'accountId', 'challenge', 'proofId', 'expiresAt']);
-  if (copy.v !== 1 || !text(copy.authorityId) || !text(copy.accountId) || !text(copy.challenge) || !text(copy.proofId) || !Number.isSafeInteger(copy.expiresAt) || copy.expiresAt <= now.getTime()) throw rejected();
+  const copy = exact(payload, ['v', 'authorityId', 'accountId', 'phoneHmac', 'challenge', 'proofId', 'expiresAt']);
+  if (copy.v !== 1 || !text(copy.authorityId) || !text(copy.accountId)
+    || !(copy.phoneHmac === null || /^[0-9a-f]{64}$/u.test(copy.phoneHmac))
+    || !text(copy.challenge) || !text(copy.proofId) || !Number.isSafeInteger(copy.expiresAt) || copy.expiresAt <= now.getTime()) throw rejected();
   return Object.freeze(copy);
 }
 
@@ -184,11 +186,12 @@ function createCloudDesktopRegistrationService(config) {
   const issueVerificationForVerifiedAccount = input => {
     let identity;
     try {
-      identity = exact(input, ['authorityId', 'accountId']);
+      identity = exact(input, ['authorityId', 'accountId', 'phoneHmac']);
     } catch (_) {
       throw rejected();
     }
-    if (!text(identity.authorityId) || !text(identity.accountId)) throw rejected();
+    if (!text(identity.authorityId) || !text(identity.accountId)
+      || !(identity.phoneHmac === null || /^[0-9a-f]{64}$/u.test(identity.phoneHmac))) throw rejected();
     const now = currentNow();
     const deviceChallenge = String(settings.randomId('desktop-proof-challenge'));
     return Object.freeze({
@@ -196,6 +199,7 @@ function createCloudDesktopRegistrationService(config) {
         v: 1,
         authorityId: identity.authorityId,
         accountId: identity.accountId,
+        phoneHmac: identity.phoneHmac,
         challenge: deviceChallenge,
         proofId: String(settings.randomId('online-identity-proof')),
         expiresAt: now.getTime() + 5 * 60 * 1000,

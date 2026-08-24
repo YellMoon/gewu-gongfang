@@ -143,8 +143,8 @@ function createDesktopPasswordIdentityService(config) {
       return persistCredential({ authorityId, accountId, phoneHash, loginName: request.loginName, password: request.password });
     },
     async enrollVerifiedAccount(input) {
-      const request = exact(input, ['accountId', 'authorityId', 'loginName', 'password']);
-      return persistCredential({ authorityId: request.authorityId, accountId: request.accountId, phoneHash: null, loginName: request.loginName, password: request.password });
+      const request = exact(input, ['accountId', 'authorityId', 'phoneHash', 'loginName', 'password']);
+      return persistCredential({ authorityId: request.authorityId, accountId: request.accountId, phoneHash: request.phoneHash, loginName: request.loginName, password: request.password });
     },
     async verify(input) {
       const request = exact(input, ['loginType', 'login', 'password'], rejected);
@@ -160,7 +160,7 @@ function createDesktopPasswordIdentityService(config) {
           row.salt.fill(0);
           row.passwordHash.fill(0);
         }
-        return Object.freeze({ authorityId: row.authorityId, accountId: row.accountId });
+        return Object.freeze({ authorityId: row.authorityId, accountId: row.accountId, phoneHmac: row.phoneHash ?? null });
       } catch (error) {
         if (error && error.code === 'CLOUD_DESKTOP_PASSWORD_REJECTED') throw error;
         throw rejected();

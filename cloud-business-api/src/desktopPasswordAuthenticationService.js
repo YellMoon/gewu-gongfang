@@ -37,6 +37,30 @@ function identity(value) {
   return Object.freeze(row);
 }
 
+function canonicalPhoneIdentity(value) {
+  let row;
+  try {
+    row = exact(value, ['authorityId', 'accountId', 'phoneHmac', 'provisioned'], rejected);
+  } catch (_) {
+    throw rejected();
+  }
+  if (!text(row.authorityId) || !text(row.accountId) || !/^[0-9a-f]{64}$/u.test(row.phoneHmac)
+    || typeof row.provisioned !== 'boolean') throw rejected();
+  return Object.freeze(row);
+}
+
+function registrationIdentity(value) {
+  let row;
+  try {
+    row = exact(value, ['authorityId', 'accountId', 'phoneHmac'], rejected);
+  } catch (_) {
+    throw rejected();
+  }
+  if (!text(row.authorityId) || !text(row.accountId)
+    || !(row.phoneHmac === null || /^[0-9a-f]{64}$/u.test(row.phoneHmac))) throw rejected();
+  return Object.freeze(row);
+}
+
 function ticket(value) {
   let row;
   try {
@@ -51,11 +75,11 @@ function ticket(value) {
 function verifiedRegistrationTicket(value) {
   let row;
   try {
-    row = exact(value, ['v', 'authorityId', 'accountId', 'challenge', 'proofId', 'expiresAt'], rejected);
+    row = exact(value, ['v', 'authorityId', 'accountId', 'phoneHmac', 'challenge', 'proofId', 'expiresAt'], rejected);
   } catch (_) {
     throw rejected();
   }
-  if (row.v !== 1 || !text(row.authorityId) || !text(row.accountId) || !text(row.challenge)
+  if (row.v !== 1 || !text(row.authorityId) || !text(row.accountId) || !/^[0-9a-f]{64}$/u.test(row.phoneHmac) || !text(row.challenge)
     || !text(row.proofId) || !Number.isSafeInteger(row.expiresAt)) throw rejected();
   return Object.freeze(row);
 }
@@ -69,7 +93,7 @@ function createDesktopPasswordAuthenticationService(config) {
     || typeof settings.passwordIdentity.enroll !== 'function' || typeof settings.passwordIdentity.enrollVerifiedAccount !== 'function'
     || typeof settings.passwordIdentity.verify !== 'function') throw invalid();
 
-  const issue = value => ticket(settings.issueRegistrationTicket(identity(value)));
+  const issue = value => ticket(settings.issueRegistrationTicket(registrationIdentity(value)));
   return Object.freeze({
     async enroll(input) {
       const request = exact(input, ['phoneCode', 'loginName', 'password']);
@@ -85,7 +109,7 @@ function createDesktopPasswordAuthenticationService(config) {
       try {
         const evidenceHash = settings.verificationEvidenceHash(request.phoneCode);
         if (!text(evidenceHash)) throw rejected();
-        verifiedIdentity = identity(await settings.resolveCanonicalAccount({ verifiedPhone: phone, verificationEvidenceHash: evidenceHash }));
+        verifiedIdentity = canonicalPhoneIdentity(await settings.resolveCanonicalAccount({ verifiedPhone: phone, verificationEvidenceHash: evidenceHash }));
         const enrolled = identity(await settings.passwordIdentity.enroll({
           verifiedPhone: phone,
           authorityId: verifiedIdentity.authorityId,
@@ -98,7 +122,7 @@ function createDesktopPasswordAuthenticationService(config) {
         if (error && error.code === 'CLOUD_ONLINE_IDENTITY_INVALID') throw error;
         throw rejected();
       }
-      return issue(verifiedIdentity);
+      return issue({ authorityId: verifiedIdentity.authorityId, accountId: verifiedIdentity.accountId, phoneHmac: verifiedIdentity.phoneHmac });
     },
     async enrollFromVerificationTicket(input) {
       const request = exact(input, ['verificationToken', 'loginName', 'password']);
@@ -109,6 +133,7 @@ function createDesktopPasswordAuthenticationService(config) {
         const enrolled = identity(await settings.passwordIdentity.enrollVerifiedAccount({
           authorityId: verified.authorityId,
           accountId: verified.accountId,
+          phoneHash: verified.phoneHmac,
           loginName: request.loginName,
           password: request.password,
         }));
@@ -123,7 +148,7 @@ function createDesktopPasswordAuthenticationService(config) {
       const request = exact(input, ['loginType', 'login', 'password']);
       let verifiedIdentity;
       try {
-        verifiedIdentity = identity(await settings.passwordIdentity.verify(request));
+        verifiedIdentity = registrationIdentity(await settings.passwordIdentity.verify(request));
       } catch (_) {
         throw rejected();
       }

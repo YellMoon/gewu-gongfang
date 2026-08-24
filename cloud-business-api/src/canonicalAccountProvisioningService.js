@@ -88,7 +88,7 @@ function createCanonicalAccountProvisioningService(config = {}) {
         throw unavailable();
       }
       const canonical = canonicalAccount(provisioned);
-      return Object.freeze({ ...canonical, provisioned: true });
+      return Object.freeze({ ...canonical, phoneHmac: phoneHash, provisioned: true });
     },
   });
 }

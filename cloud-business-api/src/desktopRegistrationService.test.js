@@ -47,7 +47,8 @@ const service = createCloudDesktopRegistrationService({
   assert.ok(typeof started.verificationToken === 'string' && started.verificationToken.length > 40);
   assert.strictEqual(JSON.stringify(started).includes('13700000000'), false);
 
-  const passwordVerified = service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: 'account-1' });
+  const phoneHmac = hmacPhone(pepper, '13700000000');
+  const passwordVerified = service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: 'account-1', phoneHmac });
   assert.ok(typeof passwordVerified.verificationToken === 'string' && passwordVerified.verificationToken.length > 40);
   assert.ok(typeof passwordVerified.deviceChallenge === 'string' && passwordVerified.deviceChallenge.length > 0);
   assert.deepStrictEqual(
@@ -55,8 +56,9 @@ const service = createCloudDesktopRegistrationService({
     'tenant-1',
     'an already verified password identity may only obtain the same short-lived registration ticket format',
   );
+  assert.strictEqual(service.inspectVerificationToken(passwordVerified.verificationToken).phoneHmac, phoneHmac);
   assert.throws(
-    () => service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: '' }),
+    () => service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: '', phoneHmac }),
     error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
   );
 
@@ -130,7 +132,7 @@ const service = createCloudDesktopRegistrationService({
 
   const pendingService = createCloudDesktopRegistrationService({
     now: () => new Date(now), randomId: prefix => `${prefix}-pending`, phoneVerifier: async () => '13700000000',
-    lookupAccount: async () => ({ authorityId: 'tenant-1', accountId: 'account-pending' }), ticketSecret, leasePrivateKey: leaseKeyPair.privateKey,
+    lookupAccount: async () => ({ authorityId: 'tenant-1', accountId: 'account-pending', phoneHmac }), ticketSecret, leasePrivateKey: leaseKeyPair.privateKey,
     issueAssertion: async () => {}, register: async input => ({ receiptId: input.receiptId, sessionId: input.sessionId, replayed: false }),
     readSessionContext: async input => ({
       authorityId: input.authorityId, accountId: input.accountId, deviceId: input.deviceId, installationId: input.installationId,

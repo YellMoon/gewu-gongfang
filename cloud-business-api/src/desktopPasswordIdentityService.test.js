@@ -34,23 +34,28 @@ const phoneHash = value => crypto.createHash('sha256').update(`phone:${value}`, 
   const ticketEnrolled = await service.enrollVerifiedAccount({
     accountId: 'account-verified-1',
     authorityId: 'authority-1',
+    phoneHash: phoneHash('13700137000'),
     loginName: 'teacher.ticket',
     password: 'ticket scoped correct password',
   });
   assert.deepStrictEqual(ticketEnrolled, { authorityId: 'authority-1', accountId: 'account-verified-1' });
-  assert.strictEqual(credentialsByPhoneHash.size, 1, 'a verified registration ticket must not need the desktop process to receive a phone number');
+  assert.strictEqual(credentialsByPhoneHash.size, 2, 'a verified registration ticket must retain the verified phone hash without exposing the phone number');
+  assert.deepStrictEqual(
+    await service.verify({ loginType: 'phone', login: '13700137000', password: 'ticket scoped correct password' }),
+    { authorityId: 'authority-1', accountId: 'account-verified-1', phoneHmac: phoneHash('13700137000') },
+  );
   assert.deepStrictEqual(
     await service.verify({ loginType: 'account_name', login: 'teacher.ticket', password: 'ticket scoped correct password' }),
-    { authorityId: 'authority-1', accountId: 'account-verified-1' },
+    { authorityId: 'authority-1', accountId: 'account-verified-1', phoneHmac: phoneHash('13700137000') },
   );
 
   assert.deepStrictEqual(
     await service.verify({ loginType: 'account_name', login: 'teacher.a', password: 'correct horse battery staple' }),
-    { authorityId: 'authority-1', accountId: 'account-1' },
+    { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: phoneHash('13800138000') },
   );
   assert.deepStrictEqual(
     await service.verify({ loginType: 'phone', login: '13800138000', password: 'correct horse battery staple' }),
-    { authorityId: 'authority-1', accountId: 'account-1' },
+    { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: phoneHash('13800138000') },
   );
   await assert.rejects(
     () => service.verify({ loginType: 'phone', login: '13800138000', password: 'wrong password' }),
@@ -73,7 +78,7 @@ const phoneHash = value => crypto.createHash('sha256').update(`phone:${value}`, 
   });
   assert.deepStrictEqual(
     await service.verify({ loginType: 'phone', login: '13900139000', password: 'another correct battery staple' }),
-    { authorityId: 'authority-1', accountId: 'account-2' },
+    { authorityId: 'authority-1', accountId: 'account-2', phoneHmac: phoneHash('13900139000') },
   );
   console.log('desktop password identity service checks passed');
 })().catch(error => {

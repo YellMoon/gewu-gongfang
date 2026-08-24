@@ -33,7 +33,7 @@ const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { createMiniappArtifactDeliveryRepository } = require('./src/miniappArtifactDeliveryRepository');
 const { createPersonalAssetImportRepository } = require('./src/personalAssetImportRepository');
-const { resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
+const { BOOTSTRAP_SUPER_ADMIN_PHONE, resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
 
 const port = Number(process.env.PORT || 3002);
@@ -151,7 +151,7 @@ function createDesktopRegistrationFromEnvironment() {
   try {
     bootstrapAdminAccountId = resolveBootstrapAdminAccountId({
       records,
-      accountId: process.env.CLOUD_BOOTSTRAP_SUPER_ADMIN_ACCOUNT_ID,
+      phoneHmac: hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, BOOTSTRAP_SUPER_ADMIN_PHONE),
     });
   } catch (_) {
     identityPool.end().catch(() => {});
@@ -167,10 +167,13 @@ function createDesktopRegistrationFromEnvironment() {
     randomId,
     now: () => new Date(),
     phoneVerifier: createWechatPhoneVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
-    lookupAccount: phone => canonicalAccount.resolveOrProvision({
-      verifiedPhone: phone,
-      verificationEvidenceHash: verificationEvidenceHash(process.env.CLOUD_IDENTITY_TICKET_SECRET, 'wechat-desktop-phone', phone),
-    }),
+    lookupAccount: async phone => {
+      const canonical = await canonicalAccount.resolveOrProvision({
+        verifiedPhone: phone,
+        verificationEvidenceHash: verificationEvidenceHash(process.env.CLOUD_IDENTITY_TICKET_SECRET, 'wechat-desktop-phone', phone),
+      });
+      return { authorityId: canonical.authorityId, accountId: canonical.accountId, phoneHmac: canonical.phoneHmac };
+    },
     ticketSecret: process.env.CLOUD_IDENTITY_TICKET_SECRET,
     leasePrivateKey,
     issueAssertion: input => identityPool.query(
@@ -182,7 +185,7 @@ function createDesktopRegistrationFromEnvironment() {
         'SELECT receipt_id AS "receiptId", session_id AS "sessionId", replayed FROM vnext_control_plane.vnext_register_unified_desktop_online($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
         [input.assertionId, input.idempotencyKey, input.receiptId, input.auditEventId, input.outboxEventId, input.sessionId, input.linkId, input.sessionExpiresAt, input.canonicalResultJson, input.resultSha256, input.canonicalPayloadJson, input.payloadSha256],
       );
-      return result.rows[0] || null;
+      return result.rows[0] ? { ...result.rows[0], phoneHash } : null;
     },
     readSessionContext: async input => {
       const result = await writerPool.query(
@@ -232,7 +235,7 @@ function createDesktopRegistrationFromEnvironment() {
         'SELECT authority_id AS "authorityId", account_id AS "accountId", login_name AS "loginName", password_algorithm AS "algorithm", password_salt_base64 AS "saltB64", password_hash_base64 AS "passwordHashB64" FROM vnext_control_plane.vnext_read_desktop_password_by_phone_hash($1)',
         [phoneHash],
       );
-      return result.rows[0] || null;
+      return result.rows[0] ? { ...result.rows[0], phoneHash: null } : null;
     },
     lookupByLoginName: async loginName => {
       const result = await identityPool.query(
@@ -267,7 +270,7 @@ function createDesktopRegistrationFromEnvironment() {
         verifiedPhone: phone,
         verificationEvidenceHash: verificationEvidenceHash(process.env.CLOUD_MINIAPP_TICKET_SECRET, 'wechat-miniapp-phone-code', phoneCode),
       });
-      return { ...canonical, phoneHmac: hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone) };
+      return canonical;
     },
     bind: async input => {
       const result = await identityPool.query(

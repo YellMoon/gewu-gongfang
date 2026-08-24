@@ -35,13 +35,16 @@ function nonBlank(value) {
   return typeof value === 'string' && value.trim() === value && value !== '';
 }
 
+const BOOTSTRAP_SUPER_ADMIN_PHONE = '13732250653';
+
 function resolveBootstrapAdminAccountId(input) {
-  const request = exact(input, ['records', 'accountId']);
-  if (!nonBlank(request.accountId)) throw invalid();
+  const request = exact(input, ['records', 'phoneHmac']);
+  if (!/^[0-9a-f]{64}$/u.test(request.phoneHmac)) throw invalid();
   const records = exactArray(request.records).map(record => exact(record, ['phoneHmac', 'authorityId', 'accountId']));
   if (records.some(record => !/^[0-9a-f]{64}$/u.test(record.phoneHmac)
     || !nonBlank(record.authorityId) || !nonBlank(record.accountId))) throw invalid();
-  return records.filter(record => record.accountId === request.accountId).length === 1 ? request.accountId : null;
+  const matches = records.filter(record => record.phoneHmac === request.phoneHmac);
+  return matches.length === 1 ? matches[0].accountId : null;
 }
 
-module.exports = Object.freeze({ resolveBootstrapAdminAccountId });
+module.exports = Object.freeze({ BOOTSTRAP_SUPER_ADMIN_PHONE, resolveBootstrapAdminAccountId });

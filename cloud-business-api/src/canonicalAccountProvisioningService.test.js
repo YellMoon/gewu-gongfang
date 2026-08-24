@@ -23,7 +23,7 @@ async function main() {
 
   assert.deepStrictEqual(
     await service.resolveOrProvision({ verifiedPhone: 'existing-phone', verificationEvidenceHash: 'b'.repeat(64) }),
-    { authorityId: 'authority-1', accountId: 'existing-account', provisioned: true },
+    { authorityId: 'authority-1', accountId: 'existing-account', phoneHmac: hash('phone:existing-phone'), provisioned: true },
   );
   assert.deepStrictEqual(calls[0], {
     accountId: 'account-generated',
@@ -34,7 +34,7 @@ async function main() {
 
   assert.deepStrictEqual(
     await service.resolveOrProvision({ verifiedPhone: 'new-phone', verificationEvidenceHash: 'c'.repeat(64) }),
-    { authorityId: 'authority-1', accountId: 'account-generated', provisioned: true },
+    { authorityId: 'authority-1', accountId: 'account-generated', phoneHmac: hash('phone:new-phone'), provisioned: true },
   );
   assert.deepStrictEqual(calls[1], {
     accountId: 'account-generated',
@@ -45,7 +45,7 @@ async function main() {
 
   assert.deepStrictEqual(
     await service.resolveOrProvision({ verifiedPhone: 'legacy-phone', verificationEvidenceHash: 'd'.repeat(64) }),
-    { authorityId: 'authority-1', accountId: 'legacy-account', provisioned: true },
+    { authorityId: 'authority-1', accountId: 'legacy-account', phoneHmac: hash('phone:legacy-phone'), provisioned: true },
   );
   assert.strictEqual(calls[2].accountId, 'legacy-account');
 

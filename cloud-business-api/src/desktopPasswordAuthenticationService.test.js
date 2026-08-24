@@ -8,12 +8,12 @@ const service = createDesktopPasswordAuthenticationService({
   phoneVerifier: async code => code === 'wechat-phone-proof' ? '13800138000' : (() => { throw new Error('rejected'); })(),
   resolveCanonicalAccount: async input => {
     calls.push(['resolveCanonicalAccount', input]);
-    return { authorityId: 'authority-1', accountId: 'account-1' };
+    return { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64), provisioned: true };
   },
   verificationEvidenceHash: code => `evidence:${code}`,
   inspectVerificationToken: token => {
     if (token !== 'already-verified-ticket') throw new Error('expired');
-    return { v: 1, authorityId: 'authority-1', accountId: 'account-1', challenge: 'already-verified-challenge', proofId: 'proof-1', expiresAt: Date.now() + 60000 };
+    return { v: 1, authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64), challenge: 'already-verified-challenge', proofId: 'proof-1', expiresAt: Date.now() + 60000 };
   },
   passwordIdentity: {
     enroll: async input => {
@@ -23,7 +23,7 @@ const service = createDesktopPasswordAuthenticationService({
     verify: async input => {
       calls.push(['verify', input]);
       if (input.password !== 'correct password') throw Object.assign(new Error('rejected'), { code: 'CLOUD_DESKTOP_PASSWORD_REJECTED' });
-      return { authorityId: 'authority-1', accountId: 'account-1' };
+      return { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) };
     },
     enrollVerifiedAccount: async input => {
       calls.push(['enrollVerifiedAccount', input]);
@@ -42,14 +42,14 @@ const service = createDesktopPasswordAuthenticationService({
   assert.deepStrictEqual(calls.slice(0, 3), [
     ['resolveCanonicalAccount', { verifiedPhone: '13800138000', verificationEvidenceHash: 'evidence:wechat-phone-proof' }],
     ['enroll', { verifiedPhone: '13800138000', authorityId: 'authority-1', accountId: 'account-1', loginName: 'teacher.a', password: 'correct password' }],
-    ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1' }],
+    ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) }],
   ]);
 
   const verified = await service.verify({ loginType: 'account_name', login: 'teacher.a', password: 'correct password' });
   assert.deepStrictEqual(verified, { verificationToken: 'signed-registration-ticket', deviceChallenge: 'cloud-device-proof-1' });
   assert.deepStrictEqual(calls.slice(3), [
     ['verify', { loginType: 'account_name', login: 'teacher.a', password: 'correct password' }],
-    ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1' }],
+    ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) }],
   ]);
 
   const beforeVerifiedTicketEnrollment = calls.length;
@@ -58,7 +58,7 @@ const service = createDesktopPasswordAuthenticationService({
   });
   assert.deepStrictEqual(ticketEnrolled, { verificationToken: 'already-verified-ticket', deviceChallenge: 'already-verified-challenge' });
   assert.deepStrictEqual(calls.slice(beforeVerifiedTicketEnrollment), [
-    ['enrollVerifiedAccount', { authorityId: 'authority-1', accountId: 'account-1', loginName: 'teacher.ticket', password: 'ticket scoped correct password' }],
+    ['enrollVerifiedAccount', { authorityId: 'authority-1', accountId: 'account-1', phoneHash: 'a'.repeat(64), loginName: 'teacher.ticket', password: 'ticket scoped correct password' }],
   ], 'a valid ticket must be consumed without another phone verification or issuing a broader ticket');
 
   await assert.rejects(
