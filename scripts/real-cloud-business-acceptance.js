@@ -66,6 +66,21 @@ function makeSessionToken(secret, session) {
   return `${encoded}.${signature}`;
 }
 
+function makeMiniappSessionToken(secret, accountId, now = new Date()) {
+  if (typeof secret !== 'string' || secret.length < 24 || typeof accountId !== 'string' || accountId !== accountId.trim()
+    || !accountId || accountId.length > 512 || !(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_SESSION_INVALID');
+  }
+  const encoded = Buffer.from(JSON.stringify({
+    v: 1,
+    kind: 'miniapp-cloud',
+    accountId,
+    expiresAt: now.getTime() + 10 * 60 * 1000,
+  }), 'utf8').toString('base64url');
+  const signature = crypto.createHmac('sha256', secret).update(encoded, 'utf8').digest('base64url');
+  return `${encoded}.${signature}`;
+}
+
 function inspectSessionTokenWithRuntime(runtimeModules, secret, sessionToken) {
   const modulePath = path.join(path.dirname(runtimeModules.packagePath), 'src', 'desktopRegistrationService');
   const { createCloudDesktopRegistrationService } = require(modulePath);
@@ -355,6 +370,89 @@ async function runPublicAcceptance({
   }
 }
 
+function miniappAssetRecordMatches(record, categoryName) {
+  return Boolean(record) && typeof record === 'object'
+    && (record.category_name === categoryName || record.categoryName === categoryName)
+    && record.note === 'controlled temporary miniapp acceptance';
+}
+
+async function runMiniappLimitedWriteAcceptance({
+  fetchImpl,
+  sessionToken,
+  accountId,
+  cleanup,
+  baseUrl = PUBLIC_BASE_URL,
+  version,
+  marker,
+} = {}) {
+  if (typeof fetchImpl !== 'function' || typeof cleanup !== 'function' || typeof sessionToken !== 'string'
+    || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(sessionToken) || typeof accountId !== 'string' || accountId !== accountId.trim()
+    || !accountId || accountId.length > 512 || baseUrl !== PUBLIC_BASE_URL || !MARKER_PATTERN.test(marker)
+    || typeof version !== 'string' || !marker.startsWith(`codex-e2e-${version}-`)) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  }
+  const categoryName = `codex-e2e-asset-${marker.slice('codex-e2e-'.length)}`;
+  const idempotencyKey = `asset-import-${marker}`;
+  const fixture = { accountId, importId: null, idempotencyKey, categoryName };
+  let importAttempted = false;
+  let cleanupConfirmed = false;
+  const requestImport = async () => {
+    const response = await fetchImpl(`${baseUrl}/api/business/miniapp-personal-assets/import`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'x-idempotency-key': idempotencyKey,
+      },
+      body: JSON.stringify({ records: [{
+        date: '2026-08-25',
+        type: 'income',
+        amount: 0.01,
+        category: categoryName,
+        note: 'controlled temporary miniapp acceptance',
+      }] }),
+    });
+    return { status: response.status, body: await readJson(response) };
+  };
+  try {
+    importAttempted = true;
+    const created = requireResponse(await requestImport(), 202, 'REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_IMPORT_FAILED');
+    const receipt = created.body.receipt;
+    if (!receipt || typeof receipt.importId !== 'string' || !/^asset_import_[A-Za-z0-9_-]{8,128}$/.test(receipt.importId)
+      || receipt.recordCount !== 1 || receipt.replayed !== false) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_IMPORT_FAILED');
+    }
+    fixture.importId = receipt.importId;
+    const replayed = requireResponse(await requestImport(), 200, 'REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_REPLAY_FAILED');
+    if (replayed.body?.receipt?.importId !== fixture.importId || replayed.body?.receipt?.recordCount !== 1 || replayed.body?.receipt?.replayed !== true) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_REPLAY_FAILED');
+    }
+    const projection = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/miniapp-projection`), 200, 'REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_READ_FAILED');
+    if (!Array.isArray(projection.body?.projection?.assetRecords)
+      || !projection.body.projection.assetRecords.some(record => miniappAssetRecordMatches(record, categoryName))) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_READ_FAILED');
+    }
+    cleanupConfirmed = await cleanup(Object.freeze({ ...fixture })) === true;
+    if (!cleanupConfirmed) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED');
+    const after = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/miniapp-projection`), 200, 'REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED');
+    if (!Array.isArray(after.body?.projection?.assetRecords)
+      || after.body.projection.assetRecords.some(record => miniappAssetRecordMatches(record, categoryName))) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED');
+    }
+    return Object.freeze({
+      miniappAssetImportStatus: created.status,
+      miniappAssetReplayStatus: replayed.status,
+      miniappAssetReadBack: true,
+      miniappAssetCleanupConfirmed: true,
+    });
+  } finally {
+    if (importAttempted && !cleanupConfirmed) {
+      try { cleanupConfirmed = await cleanup(Object.freeze({ ...fixture })) === true; } catch (_) { cleanupConfirmed = false; }
+    }
+  }
+}
+
 function postgresConfig(env, user, password) {
   if (typeof password !== 'string' || password.length < 24) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
   return {
@@ -526,6 +624,21 @@ async function withOwnerTransaction(pool, code, work) {
   }
 }
 
+async function withTransaction(pool, code, work) {
+  const client = await runStage(code, () => pool.connect());
+  try {
+    await runStage(code, () => client.query('BEGIN'));
+    const result = await runStage(code, () => work(client));
+    await runStage(code, () => client.query('COMMIT'));
+    return result;
+  } catch (error) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* preserve the staged failure */ }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function createControlledAcceptanceSession(appPool, accountIds, randomUUID = crypto.randomUUID) {
   if (!Array.isArray(accountIds) || accountIds.length < 1 || accountIds.some(value => typeof value !== 'string' || !value.trim())) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
@@ -653,6 +766,70 @@ async function forceCleanup(appPool, writerPool, tenantId, marker) {
   return true;
 }
 
+async function forceMiniappAssetCleanup(appPool, writerPool, tenantId, fixture) {
+  const marker = typeof fixture?.idempotencyKey === 'string' && fixture.idempotencyKey.startsWith('asset-import-')
+    ? fixture.idempotencyKey.slice('asset-import-'.length)
+    : '';
+  const expectedCategoryName = MARKER_PATTERN.test(marker)
+    ? `codex-e2e-asset-${marker.slice('codex-e2e-'.length)}`
+    : '';
+  if (typeof tenantId !== 'string' || !/^[A-Za-z0-9_.:-]{1,128}$/.test(tenantId)
+    || typeof fixture?.accountId !== 'string' || fixture.accountId !== fixture.accountId.trim()
+    || !fixture.accountId || fixture.accountId.length > 512 || !MARKER_PATTERN.test(marker)
+    || fixture.categoryName !== expectedCategoryName
+    || (fixture.importId !== null && (typeof fixture.importId !== 'string'
+      || !/^asset_import_[A-Za-z0-9_-]{8,128}$/.test(fixture.importId)))) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  }
+
+  await withTransaction(appPool, 'REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED', async client => {
+    const found = await client.query(
+      `SELECT import_id AS "importId" FROM business.personal_asset_imports
+        WHERE tenant_id=$1 AND account_id=$2 AND idempotency_key=$3`,
+      [tenantId, fixture.accountId, fixture.idempotencyKey],
+    );
+    if (found.rows.length > 1 || (fixture.importId && found.rows.length === 1 && found.rows[0].importId !== fixture.importId)) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED');
+    }
+    const importId = found.rows[0]?.importId || fixture.importId;
+    if (importId) {
+      await client.query(
+        'DELETE FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$2 AND import_id=$3',
+        [tenantId, fixture.accountId, importId],
+      );
+      await client.query(
+        'DELETE FROM business.personal_asset_imports WHERE tenant_id=$1 AND account_id=$2 AND import_id=$3 AND idempotency_key=$4',
+        [tenantId, fixture.accountId, importId, fixture.idempotencyKey],
+      );
+    }
+    await client.query(
+      `DELETE FROM business.personal_asset_categories category
+        WHERE category.tenant_id=$1 AND category.account_id=$2 AND category.name=$3 AND category.category_type='income'
+          AND NOT EXISTS (
+            SELECT 1 FROM business.personal_asset_records record
+             WHERE record.tenant_id=category.tenant_id AND record.account_id=category.account_id
+               AND record.category_id=category.category_id
+          )`,
+      [tenantId, fixture.accountId, fixture.categoryName],
+    );
+  });
+
+  const after = await runStage('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_VERIFY_FAILED', () => appPool.query(
+    `SELECT
+       (SELECT count(*)::int FROM business.personal_asset_imports
+         WHERE tenant_id=$1 AND account_id=$2 AND idempotency_key=$3) AS imports,
+       (SELECT count(*)::int FROM business.personal_asset_records
+         WHERE tenant_id=$1 AND account_id=$2 AND category_name=$4) AS records,
+       (SELECT count(*)::int FROM business.personal_asset_categories
+         WHERE tenant_id=$1 AND account_id=$2 AND name=$4 AND category_type='income') AS categories`,
+    [tenantId, fixture.accountId, fixture.idempotencyKey, fixture.categoryName],
+  ));
+  if (after.rows.length !== 1 || after.rows[0].imports !== 0 || after.rows[0].records !== 0 || after.rows[0].categories !== 0) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_MINIAPP_ASSET_CLEANUP_FAILED');
+  }
+  return true;
+}
+
 async function runFromEnvironment(env = process.env) {
   const runtimeModules = resolveRuntimeModules(__dirname);
   const version = require(runtimeModules.packagePath).version;
@@ -670,7 +847,8 @@ async function runFromEnvironment(env = process.env) {
         const loaded = await loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
         await ensureCanonicalPhoneContact(writerPool, loaded.identity);
         await ensureBusinessSuperAdmin(appPool, loaded.identity);
-        if (!pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', env.CLOUD_IDENTITY_TICKET_SECRET)) {
+        if (!pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', env.CLOUD_IDENTITY_TICKET_SECRET)
+          || !pidOneEnvironmentMatches('CLOUD_MINIAPP_TICKET_SECRET', env.CLOUD_MINIAPP_TICKET_SECRET)) {
           throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SERVER_ENVIRONMENT_MISMATCH');
         }
         onlineRegistration = await runOnlineRegistrationAcceptance({
@@ -702,7 +880,17 @@ async function runFromEnvironment(env = process.env) {
           });
         }
         const businessEvidence = await runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
-        return Object.freeze({ ...businessEvidence, ...onlineRegistration.evidence });
+        const miniappSessionToken = makeMiniappSessionToken(env.CLOUD_MINIAPP_TICKET_SECRET, loaded.identity.accountId);
+        const miniappEvidence = await runMiniappLimitedWriteAcceptance({
+          fetchImpl: fetch,
+          sessionToken: miniappSessionToken,
+          accountId: loaded.identity.accountId,
+          cleanup: fixture => forceMiniappAssetCleanup(appPool, writerPool, tenantId, fixture),
+          baseUrl: PUBLIC_BASE_URL,
+          version,
+          marker,
+        });
+        return Object.freeze({ ...businessEvidence, ...onlineRegistration.evidence, ...miniappEvidence });
       },
       () => runWithCleanup(
         () => forceCleanup(appPool, writerPool, tenantId, marker),
@@ -718,7 +906,9 @@ module.exports = Object.freeze({
   PUBLIC_BASE_URL,
   runStage,
   runWithCleanup,
+  withTransaction,
   makeSessionToken,
+  makeMiniappSessionToken,
   inspectSessionTokenWithRuntime,
   createOnlineRegistrationRequest,
   runOnlineRegistrationAcceptance,
@@ -727,6 +917,7 @@ module.exports = Object.freeze({
   makeMarker,
   resolveRuntimeModules,
   runPublicAcceptance,
+  runMiniappLimitedWriteAcceptance,
   loadActiveSuperAdminSession,
   resolveOperatorIdentity,
   ensureBusinessSuperAdmin,
@@ -735,6 +926,7 @@ module.exports = Object.freeze({
   revokeControlledAcceptanceSession,
   revokeOnlineRegistrationAcceptance,
   forceCleanup,
+  forceMiniappAssetCleanup,
   runFromEnvironment,
 });
 

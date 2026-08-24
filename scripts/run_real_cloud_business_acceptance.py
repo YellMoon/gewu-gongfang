@@ -32,6 +32,10 @@ RECEIPT_KEYS = {
     "onlineSessionContextStatus",
     "onlineRegistrationReplayed",
     "onlineReceiptSha256",
+    "miniappAssetImportStatus",
+    "miniappAssetReplayStatus",
+    "miniappAssetReadBack",
+    "miniappAssetCleanupConfirmed",
 }
 
 
@@ -96,6 +100,10 @@ def parse_receipt(output):
         and isinstance(payload.get("onlineReceiptSha256"), str)
         and len(payload["onlineReceiptSha256"]) == 64
         and all(character in "0123456789abcdef" for character in payload["onlineReceiptSha256"])
+        and payload.get("miniappAssetImportStatus") == 202
+        and payload.get("miniappAssetReplayStatus") == 200
+        and payload.get("miniappAssetReadBack") is True
+        and payload.get("miniappAssetCleanupConfirmed") is True
     )
     if not valid:
         raise ValueError("REAL_CLOUD_ACCEPTANCE_RECEIPT_INVALID")

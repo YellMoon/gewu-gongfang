@@ -4,10 +4,13 @@ const assert = require('assert');
 const crypto = require('crypto');
 const {
   makeSessionToken,
+  makeMiniappSessionToken,
   resolveRuntimeModules,
   runStage,
   runWithCleanup,
   runPublicAcceptance,
+  runMiniappLimitedWriteAcceptance,
+  forceMiniappAssetCleanup,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
   ensureBusinessSuperAdmin,
@@ -117,6 +120,95 @@ function tokenIsBoundAndOpaque() {
     sessionId: 'session-1',
     expiresAt: Date.parse('2026-08-24T15:00:00.000Z'),
   });
+}
+
+async function miniappLimitedWriteIsRealReplayedReadableAndCleaned() {
+  const token = makeMiniappSessionToken('m'.repeat(32), 'canonical-admin', new Date('2026-08-25T00:00:00.000Z'));
+  const ticket = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString('utf8'));
+  assert.deepStrictEqual(ticket, {
+    v: 1,
+    kind: 'miniapp-cloud',
+    accountId: 'canonical-admin',
+    expiresAt: Date.parse('2026-08-25T00:10:00.000Z'),
+  });
+
+  let cleaned = false;
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    calls.push({ path, authorization: options.headers?.Authorization, idempotencyKey: options.headers?.['x-idempotency-key'] });
+    if (path.endsWith('/miniapp-personal-assets/import')) {
+      const replayed = calls.filter(call => call.path.endsWith('/miniapp-personal-assets/import')).length > 1;
+      return response(replayed ? 200 : 202, {
+        ok: true,
+        receipt: { importId: 'asset_import_12345678', recordCount: 1, createdAt: '2026-08-25T00:00:00.000Z', replayed },
+      });
+    }
+    return response(200, {
+      ok: true,
+      projection: { assetRecords: cleaned ? [] : [{ id: 'asset_record_12345678', category_name: 'codex-e2e-asset-8.4.1-fixed', note: 'controlled temporary miniapp acceptance' }] },
+    });
+  };
+  const result = await runMiniappLimitedWriteAcceptance({
+    fetchImpl,
+    sessionToken: token,
+    accountId: 'canonical-admin',
+    baseUrl: 'https://physicsedu.xyz/scheduling',
+    version: '8.4.1',
+    marker: 'codex-e2e-8.4.1-fixed',
+    cleanup: async fixture => {
+      assert.deepStrictEqual(fixture, {
+        accountId: 'canonical-admin',
+        importId: 'asset_import_12345678',
+        idempotencyKey: 'asset-import-codex-e2e-8.4.1-fixed',
+        categoryName: 'codex-e2e-asset-8.4.1-fixed',
+      });
+      cleaned = true;
+      return true;
+    },
+  });
+  assert.deepStrictEqual(result, {
+    miniappAssetImportStatus: 202,
+    miniappAssetReplayStatus: 200,
+    miniappAssetReadBack: true,
+    miniappAssetCleanupConfirmed: true,
+  });
+  assert.strictEqual(calls.length, 4);
+  assert.ok(calls.every(call => call.authorization === `Bearer ${token}`));
+  assert.ok(calls.slice(0, 2).every(call => call.idempotencyKey === 'asset-import-codex-e2e-8.4.1-fixed'));
+  assert.ok(!JSON.stringify(result).includes(token));
+}
+
+async function miniappCleanupUsesTheBusinessRoleAndVerifiesAbsence() {
+  const statements = [];
+  const client = {
+    query: async (text, values) => {
+      statements.push([text, values]);
+      if (text.includes('SELECT import_id AS')) return { rows: [{ importId: 'asset_import_12345678' }] };
+      return { rows: [] };
+    },
+    release: () => { statements.push(['RELEASE']); },
+  };
+  const appPool = {
+    connect: async () => client,
+    query: async (text, values) => {
+      statements.push([text, values]);
+      return { rows: [{ imports: 0, records: 0, categories: 0 }] };
+    },
+  };
+  const fixture = {
+    accountId: 'canonical-admin',
+    importId: 'asset_import_12345678',
+    idempotencyKey: 'asset-import-codex-e2e-8.4.1-fixed',
+    categoryName: 'codex-e2e-asset-8.4.1-fixed',
+  };
+  assert.strictEqual(await forceMiniappAssetCleanup(appPool, null, 'default', fixture), true);
+  const sql = statements.map(([text]) => text).join('\n');
+  assert.ok(sql.includes('BEGIN') && sql.includes('COMMIT'));
+  assert.ok(sql.includes('DELETE FROM business.personal_asset_records'));
+  assert.ok(sql.includes('DELETE FROM business.personal_asset_imports'));
+  assert.ok(sql.includes('DELETE FROM business.personal_asset_categories'));
+  assert.ok(!sql.includes('SET LOCAL ROLE'), 'the app role already owns the limited-write tables and must perform cleanup');
 }
 
 function serverEnvironmentComparisonDoesNotExposeTheSecret() {
@@ -376,6 +468,8 @@ async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
 
 Promise.resolve()
   .then(tokenIsBoundAndOpaque)
+  .then(miniappLimitedWriteIsRealReplayedReadableAndCleaned)
+  .then(miniappCleanupUsesTheBusinessRoleAndVerifiesAbsence)
   .then(serverEnvironmentComparisonDoesNotExposeTheSecret)
   .then(tokenIsAcceptedByDesktopSessionContract)
   .then(runtimeLayoutIsExplicit)

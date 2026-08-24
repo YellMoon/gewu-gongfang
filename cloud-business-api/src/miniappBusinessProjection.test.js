@@ -63,6 +63,8 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[0][0].includes('business.personal_asset_records'), 'personal assets must be read from the cloud authority');
   assert.ok(queries[0][0].includes('account_id=$4'), 'personal assets must be scoped to the active account');
   assert.ok(queries[0][0].includes('business.personal_asset_manual_records'), 'manual desktop asset records must join the same cloud projection');
+  assert.ok(queries[0][0].includes('JOIN scoped_students s ON s.id=d.student_id'), 'contacts inherit tenant scope from the selected student');
+  assert.ok(!queries[0][0].includes('d.tenant_id'), 'the contact directory has no tenant_id column');
 
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },

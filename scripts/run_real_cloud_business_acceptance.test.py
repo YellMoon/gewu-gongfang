@@ -56,6 +56,10 @@ def test_receipt_is_strict_and_contains_no_session_material():
         "onlineSessionContextStatus": 200,
         "onlineRegistrationReplayed": False,
         "onlineReceiptSha256": "b" * 64,
+        "miniappAssetImportStatus": 202,
+        "miniappAssetReplayStatus": 200,
+        "miniappAssetReadBack": True,
+        "miniappAssetCleanupConfirmed": True,
     }
     assert module.parse_receipt(json.dumps(payload)) == payload
     for key in ("sessionToken", "token", "password", "phone"):
