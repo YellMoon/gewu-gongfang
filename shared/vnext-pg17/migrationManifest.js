@@ -1121,6 +1121,25 @@ GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_bind_canonical_wechat_identi
 GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_canonical_account_by_verified_contact(text,text) TO vnext_pg17_identity_verifier;`;
 const CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION = Object.freeze({ migrationId: 'vnext-pg17-canonical-wechat-contact-binding-19', semanticVersion: 19, sql: CANONICAL_WECHAT_CONTACT_BINDING_SQL, manifestSha256: sha256(CANONICAL_WECHAT_CONTACT_BINDING_SQL) });
 
+const FIXED_SUPER_ADMIN_INVARIANT_SQL = `DO $$
+BEGIN
+  IF EXISTS (
+    SELECT authority_id FROM vnext_control_plane.vnext_role_grants
+    WHERE role='super_admin' AND status='active'
+    GROUP BY authority_id HAVING count(*)>1
+  ) THEN
+    RAISE EXCEPTION 'vNext fixed super administrator invariant violated' USING ERRCODE='P0001';
+  END IF;
+END;
+$$;
+CREATE UNIQUE INDEX vnext_role_grants_one_active_super_admin
+  ON vnext_control_plane.vnext_role_grants(authority_id)
+  WHERE role='super_admin' AND status='active';`;
+const FIXED_SUPER_ADMIN_INVARIANT_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-fixed-super-admin-invariant-20', semanticVersion: 20,
+  sql: FIXED_SUPER_ADMIN_INVARIANT_SQL, manifestSha256: sha256(FIXED_SUPER_ADMIN_INVARIANT_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1141,6 +1160,7 @@ const MIGRATIONS = Object.freeze([
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
+  FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1359,6 +1379,7 @@ module.exports = {
   CANONICAL_PHONE_ACCOUNT_PROVISIONING_MIGRATION,
   DESKTOP_PASSWORD_CREDENTIALS_MIGRATION,
   CANONICAL_WECHAT_CONTACT_BINDING_MIGRATION,
+  FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

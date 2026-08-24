@@ -446,13 +446,14 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_trust_root_evidence_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
 });
 const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '521f02f31b30eb197e29ec9f68f34c3460cccb4a932ed1eabd50df62b4fce5bc';
-const FOUNDATION_INDEX_CATALOG_SHA256 = '7cf4086f089e3469aeee8eb0549ae5ba3a766d1b77a036ae84b9df35e0fbe7c7';
+const FOUNDATION_INDEX_CATALOG_SHA256 = '2455625d99696aa4a0cc576681f016a24b9a23fc232a0265e7d73fe4298d06d6';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
   vnext_data_scope_grants_one_active_scope: "CREATE UNIQUE INDEX vnext_data_scope_grants_one_active_scope ON vnext_control_plane.vnext_data_scope_grants USING btree (authority_id, account_id, scope_type, scope_value_hash) WHERE (status = 'active'::text)",
   vnext_profile_bindings_one_active_account_type: "CREATE UNIQUE INDEX vnext_profile_bindings_one_active_account_type ON vnext_control_plane.vnext_profile_bindings USING btree (authority_id, account_id, profile_type) WHERE (status = 'active'::text)",
   vnext_profile_bindings_one_active_profile: "CREATE UNIQUE INDEX vnext_profile_bindings_one_active_profile ON vnext_control_plane.vnext_profile_bindings USING btree (authority_id, profile_type, profile_id) WHERE (status = 'active'::text)",
   vnext_role_grants_one_active_role: "CREATE UNIQUE INDEX vnext_role_grants_one_active_role ON vnext_control_plane.vnext_role_grants USING btree (authority_id, account_id, role) WHERE (status = 'active'::text)",
+  vnext_role_grants_one_active_super_admin: "CREATE UNIQUE INDEX vnext_role_grants_one_active_super_admin ON vnext_control_plane.vnext_role_grants USING btree (authority_id) WHERE ((role = 'super_admin'::text) AND (status = 'active'::text))",
 });
 const FOUNDATION_TABLE_NAMES = Object.freeze(Object.keys(FOUNDATION_COLUMNS).sort());
 const ONLINE_IDENTITY_TABLE_NAMES = Object.freeze(Object.keys(ONLINE_IDENTITY_COLUMNS_WITH_VERSIONS).sort());

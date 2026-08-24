@@ -16,6 +16,10 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("vnext_create_schedule_record_v1", sql)
         self.assertIn("has_table_privilege('vnext_pg17_writer'", sql)
         self.assertIn("has_table_privilege('vnext_pg17_runtime'", sql)
+        self.assertIn("business.question_taxonomy_systems", sql)
+        self.assertIn("vnext_create_question_taxonomy_node_v1", sql)
+        self.assertIn("vnext-pg17-fixed-super-admin-invariant-20", sql)
+        self.assertIn("vnext_role_grants_one_active_super_admin", sql)
 
     def test_validation_fails_closed(self):
         valid = dict(MODULE.EXPECTED_COUNTS)
@@ -26,6 +30,15 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "writerScheduleExecute": True,
             "writerDirectScheduleInsert": False,
             "runtimeDirectScheduleInsert": False,
+            "taxonomySystemTable": True,
+            "taxonomyNodeTable": True,
+            "taxonomyFunctions": True,
+            "writerTaxonomyExecute": True,
+            "writerDirectTaxonomyInsert": False,
+            "controlPlaneM20": True,
+            "oneActiveSuperAdmin": True,
+            "uniqueSuperAdminIndex": True,
+            "fixedSuperAdminPhone": True,
         })
         self.assertEqual(MODULE.validate(valid), valid)
         invalid = dict(valid, schedules=554)
@@ -33,6 +46,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             MODULE.validate(invalid)
         with self.assertRaisesRegex(RuntimeError, "DIRECT_WRITE_OPEN"):
             MODULE.validate(dict(valid, writerDirectScheduleInsert=True))
+        with self.assertRaisesRegex(RuntimeError, "CONTROL_PLANE_INVARIANT"):
+            MODULE.validate(dict(valid, fixedSuperAdminPhone=False))
 
 
 if __name__ == "__main__":

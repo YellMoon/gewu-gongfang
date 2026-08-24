@@ -94,7 +94,8 @@ async function runRoleMutationCases(runtime) {
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, grantCommand({ idempotencyKey: 'duplicate' })), { code: 'ROLE_GRANT_CONFLICT', replayed: false, status: 'rejected' });
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, revokeCommand(granted.grantId)), { code: 'ROLE_REVOKED', grantId: granted.grantId, replayed: false, status: 'accepted' });
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, revokeCommand(granted.grantId, { expectedTargetRowVersion: 2, idempotencyKey: 'noop' })), { code: 'ROLE_ALREADY_REVOKED', grantId: granted.grantId, replayed: false, status: 'noop' });
-    assert.deepStrictEqual(await writer.execute(current.actorAssertion, revokeCommand('bootstrap-bootstrap-grant', { idempotencyKey: 'last-admin' })), { code: 'LAST_SUPER_ADMIN_REVOKE_FORBIDDEN', replayed: false, status: 'rejected' });
+    assert.deepStrictEqual(await writer.execute(current.actorAssertion, grantCommand({ role: 'super_admin', idempotencyKey: 'replace-fixed-admin' })), { code: 'FIXED_SUPER_ADMIN_REASSIGN_FORBIDDEN', replayed: false, status: 'rejected' });
+    assert.deepStrictEqual(await writer.execute(current.actorAssertion, revokeCommand('bootstrap-bootstrap-grant', { idempotencyKey: 'last-admin' })), { code: 'FIXED_SUPER_ADMIN_REVOKE_FORBIDDEN', replayed: false, status: 'rejected' });
     assert.deepStrictEqual(await writer.execute(current.actorAssertion, grantCommand({ targetAccountId: 'missing', idempotencyKey: 'missing' })), { code: 'TARGET_ACCOUNT_NOT_ACTIVE', replayed: false, status: 'rejected' });
   } finally { await runtime.disposeHandle(current.handle); }
   for (const stage of ['target', 'account', 'receipt', 'audit', 'outbox']) {

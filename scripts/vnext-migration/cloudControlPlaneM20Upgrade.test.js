@@ -1,0 +1,14 @@
+'use strict';
+const assert = require('assert');
+const { buildCloudControlPlaneM20UpgradeSql } = require('./cloudControlPlaneM20Upgrade');
+const result = buildCloudControlPlaneM20UpgradeSql();
+assert.strictEqual(result.migrationCount, 1);
+assert.strictEqual(result.migrationId, 'vnext-pg17-fixed-super-admin-invariant-20');
+assert.strictEqual(result.semanticVersion, 20);
+assert.match(result.manifestSha256, /^[0-9a-f]{64}$/u);
+assert.match(result.sql, /VNEXT_CLOUD_CONTROL_PLANE_M19_PREFIX_INVALID/);
+assert.match(result.sql, /vnext-pg17-canonical-wechat-contact-binding-19/);
+assert.match(result.sql, /vnext-pg17-fixed-super-admin-invariant-20/);
+assert.match(result.sql, /vnext_role_grants_one_active_super_admin/);
+assert.strictEqual((result.sql.match(/INSERT INTO vnext_control_plane\.vnext_schema_migrations/g) || []).length, 1);
+console.log('cloud control-plane M20 upgrade tests passed');

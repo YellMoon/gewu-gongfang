@@ -26,7 +26,7 @@ function buildCloudOperatorIdentitySeedSql(input) {
     if (typeof operator.id !== 'string' || operator.id.trim() !== operator.id || operator.id === '') throw invalid();
     return Object.freeze({ id: operator.id, role: operator.role });
   });
-  if (operators.length === 0) throw invalid();
+  if (operators.length === 0 || operators.filter(operator => operator.role === 'super_admin').length !== 1) throw invalid();
   const lines = ['BEGIN;', "SET LOCAL ROLE vnext_pg17_owner;"];
   lines.push(`INSERT INTO vnext_control_plane.vnext_authorities (authority_id,status,created_at,updated_at) VALUES (${authorityId},'active',transaction_timestamp(),transaction_timestamp());`);
   for (const operator of operators) {

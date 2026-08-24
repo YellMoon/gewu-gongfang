@@ -31,4 +31,11 @@ assert.match(quoted.sql, new RegExp(opaque('account', "legacy-o'hare")));
 assert.match(quoted.sql, new RegExp(opaque('role', "legacy-o'hare")));
 assert.doesNotMatch(quoted.sql, /o''hare/);
 
+assert.throws(() => buildCloudOperatorIdentitySeedSql({
+  authorityId: 'tenant-1', operators: [{ id: 'admin-only', role: 'admin' }],
+}), error => error?.code === 'VNEXT_CLOUD_OPERATOR_IDENTITY_INVALID');
+assert.throws(() => buildCloudOperatorIdentitySeedSql({
+  authorityId: 'tenant-1', operators: [{ id: 'super-1', role: 'super_admin' }, { id: 'super-2', role: 'super_admin' }],
+}), error => error?.code === 'VNEXT_CLOUD_OPERATOR_IDENTITY_INVALID');
+
 console.log('cloud operator identity seed tests passed');

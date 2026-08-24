@@ -1,5 +1,7 @@
 import unittest
+from unittest import mock
 
+import deploy_cloud_business_api as module
 from deploy_cloud_business_api import candidate_command, candidate_name, release_tag, switch_command
 
 
@@ -29,6 +31,14 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_promote_reuses_only_a_validated_candidate_tag(self):
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
             switch_command("8.3.0-current;id")
+
+    def test_cloud_migrations_apply_control_plane_before_business_schema(self):
+        with mock.patch.object(module.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            self.assertEqual(module.run_cloud_migrations(), 0)
+        self.assertEqual(len(run.call_args_list), 2)
+        self.assertTrue(str(run.call_args_list[0].args[0][1]).endswith("apply_cloud_control_plane_m20.py"))
+        self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
 
 if __name__ == "__main__":
