@@ -18,8 +18,8 @@ assert.ok(
   'token refresh should use the single Backend API base resolver',
 );
 assert.ok(
-  api.includes('url: `${getRequestBaseUrl(request.path)}${request.path}`'),
-  'experience artifact downloads should use the single Backend API base resolver',
+  !api.includes('url: `${getRequestBaseUrl(request.path)}${request.path}`'),
+  'retired experience artifact downloads must not remain in the miniapp API client',
 );
 assert.ok(!api.includes("DEFAULT_BASE_URL = 'http://39.106.172.132'"), 'miniapp default API should not be bare HTTP IP');
 assert.ok(api.includes('https://physicsedu.xyz/scheduling'), 'miniapp default API should use HTTPS legal domain');

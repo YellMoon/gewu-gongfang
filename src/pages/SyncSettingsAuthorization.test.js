@@ -26,8 +26,8 @@ for (const pageSource of [syncSettings, cloudSync]) {
 }
 
 assert.ok(outboxPanel.includes('requireBridge().list()'));
-assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudQuestionSubmissionInput(item))'));
-assert.ok(outboxPanel.includes('requireBridge().submit(item.id, cloudQuestionSubmissionInput(item))'));
+assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item))'));
+assert.ok(outboxPanel.includes('requireBridge().submit(item.id, cloudDraftSubmissionInput(item))'));
 assert.ok(outboxPanel.includes('Modal.confirm'));
 assert.ok(outboxPanel.includes('item.preview'));
 assert.ok(!outboxPanel.includes('fetch('), 'renderer authority UI must never bypass the preload facade');

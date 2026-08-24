@@ -40,6 +40,24 @@ for (const table of [
 assert.ok(source.includes(", 'create',"), 'browser database should queue create operations');
 assert.ok(source.includes(", 'update',"), 'browser database should queue update operations');
 assert.ok(source.includes(", 'delete',"), 'browser database should queue delete operations');
+for (const marker of [
+  "this.recordAuthorityDraft('rooms', 'update', id, this.data.rooms[index], baseVersion)",
+  "this.recordAuthorityDraft('rooms', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('students', 'update', id, draftValue, baseVersion)",
+  "this.recordAuthorityDraft('students', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion)",
+  "this.recordAuthorityDraft('courses', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('schedules', 'update', id, this.data.schedules[index], baseVersion)",
+  "this.recordAuthorityDraft('schedules', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('teachers', 'update', id, this.data.teachers[index], baseVersion)",
+  "this.recordAuthorityDraft('teachers', 'delete', id, { id }, baseVersion)",
+]) {
+  assert.ok(source.includes(marker), `cloud business update/delete must capture the observed updated_at baseline: ${marker}`);
+}
+assert.ok(source.includes('baseVersion: previous.updated_at || null'),
+  'schedule replacement drafts must preserve each prior record version');
+assert.ok(source.includes('contacts: this.studentAuthorityContacts(updated)'),
+  'offline student update drafts must include observed contact versions for the atomic cloud record contract');
 assert.ok(packageJson.includes('src/services/browserDatabaseSyncCapture.test.js'), 'browser database sync capture test should run in npm test');
 assert.ok(source.includes('normalizeBrowserQuestionRecord(question as any)'), 'browser records should use the tested pure rich-content normalizer');
 assert.ok(source.includes('applyQuestionSyncRecords(map)'), 'incoming desktop sync should use the tested pure apply helper');

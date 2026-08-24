@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const MANAGED_CLOUD_BASE_URL = 'https://physicsedu.xyz/scheduling';
+const MANAGED_CLOUD_BUSINESS_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/[\\/]+$/, '');
@@ -31,6 +32,7 @@ function defaultConfig(userDataPath) {
     desktopIdentityMode: 'full',
     deviceId: makeDeviceId(),
     cloudBaseUrl: MANAGED_CLOUD_BASE_URL,
+    cloudBusinessIdentityBaseUrl: MANAGED_CLOUD_BUSINESS_BASE_URL,
     mainDbPath: path.join(userDataPath, 'data', 'scheduling.db'),
     questionBankPath: '',
     questionAssetPath: '',
@@ -49,6 +51,9 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   next.desktopIdentityMode = 'full';
   next.deviceId = next.deviceId || defaults.deviceId;
   next.cloudBaseUrl = trimTrailingSlash(options.managedCloudBaseUrl || isolatedE2EManagedCloudBaseUrl() || MANAGED_CLOUD_BASE_URL);
+  next.cloudBusinessIdentityBaseUrl = trimTrailingSlash(
+    options.managedCloudBusinessBaseUrl || MANAGED_CLOUD_BUSINESS_BASE_URL,
+  );
   // The former desktopSyncToken was a shared relay secret.  Managed host
   // credentials live only in the OS protected credential store; never keep a
   // relay secret in the editable runtime configuration.
@@ -193,6 +198,7 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   delete env.GEWU_PRIMARY_HOST_GENERATION;
   delete env.GEWU_HOST_BASE_URL;
   env.GEWU_CLOUD_BASE_URL = config.cloudBaseUrl || '';
+  env.GEWU_CLOUD_BUSINESS_IDENTITY_BASE_URL = config.cloudBusinessIdentityBaseUrl || '';
   delete env.GEWU_DESKTOP_SYNC_TOKEN;
   delete env.GEWU_CLOUD_RELAY_HOST_TOKEN;
   env.DB_PATH = config.mainDbPath;
@@ -218,4 +224,5 @@ module.exports = {
   writeManagedDesktopIdentityMode,
   applyRuntimeConfigToEnv,
   MANAGED_CLOUD_BASE_URL,
+  MANAGED_CLOUD_BUSINESS_BASE_URL,
 };

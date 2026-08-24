@@ -29,7 +29,7 @@ export function createDesktopAuthorityClient({
   }
 
   function cloudBusinessDraft(draft) {
-    return /^(student|course|schedule|teacher|room)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+    return /^(student|course|schedule|teacher|room|institution|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
   }
 
   async function submitCloudDraft(id, draft, options, createCommand, submitCommand, transportUsed, unavailableCode, invalidCode) {
@@ -63,7 +63,7 @@ export function createDesktopAuthorityClient({
       return submitCloudDraft(id, draft, options, createCloudQuestionCommand, submitCloudQuestion,
         'cloud-question-authority', 'CLOUD_QUESTION_AUTHORITY_UNAVAILABLE', 'CLOUD_QUESTION_COMMAND_INVALID');
     }
-    if (cloudBusinessDraft(draft) && (createCloudBusinessCommand || submitCloudBusiness)) {
+    if (cloudBusinessDraft(draft)) {
       return submitCloudDraft(id, draft, options, createCloudBusinessCommand, submitCloudBusiness,
         'cloud-business-authority', 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE', 'CLOUD_BUSINESS_COMMAND_INVALID');
     }

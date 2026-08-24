@@ -1,5 +1,7 @@
 ﻿# 格物工坊：权威数据主机架构重写与真实双端验收
 
+> **Current execution phase (2026-08-24):** Confirmed student, teacher, room, and course create/update/delete drafts plus schedule update drafts now use the managed `cloud-business-api` REST base after explicit user confirmation. Update/delete drafts carry the observed `updated_at`; the current session token is call-only and is not persisted. Schedule create/delete and institution, payment, consumption, grade, and desktop personal-asset mutations fail closed with a stable restricted receipt and never fall back to `/api/authority/commands`. The binding design and checklist are `docs/superpowers/specs/2026-08-24-desktop-business-draft-cloud-submit-design.md` and `docs/superpowers/plans/2026-08-24-desktop-business-draft-cloud-submit.md`. Local tests pass; no live cloud deployment, migration, NAS change, miniapp upload, or OSS desktop publication is claimed by this status.
+
 <!-- current-architecture-contract:start -->
 > **Current architecture contract (2026-08-21, binding)**
 >

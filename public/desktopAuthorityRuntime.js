@@ -20,6 +20,7 @@ function createDesktopAuthorityRuntime({
   safeStorage,
   vault,
   durableRelayBaseUrl,
+  cloudBusinessBaseUrl,
   relayWebSocketBaseUrl,
   relayWebSocketTransport,
   WebSocketImpl,
@@ -139,6 +140,10 @@ function createDesktopAuthorityRuntime({
 
   function isCloudQuestionDraft(draft) {
     return /^question\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+  }
+
+  function isCloudBusinessDraft(draft) {
+    return /^(student|course|schedule|teacher|room|institution|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
   }
 
   function cloudSessionToken(value) {
@@ -311,11 +316,15 @@ function createDesktopAuthorityRuntime({
       clientPromise = (async () => {
         const [{ createDesktopCommandOutbox }, { createDesktopAuthorityClient },
           { createAuthorityTransportSelector },
-          { authorityWebSocketUrl, createAuthorityWebSocketTransport }] = await Promise.all([
+          { authorityWebSocketUrl, createAuthorityWebSocketTransport },
+          { createDesktopIdentityClient },
+          { createDesktopCloudBusinessDraftAdapter }] = await Promise.all([
           import('../src/services/desktopCommandOutbox.mjs'),
           import('../src/services/desktopAuthorityClient.mjs'),
           import('../src/services/authorityTransports.mjs'),
           import('../src/services/authorityWebSocketTransport.mjs'),
+          import('../src/services/desktopIdentityClient.mjs'),
+          import('../src/services/desktopCloudBusinessDraft.mjs'),
         ]);
         const outbox = createDesktopCommandOutbox({
           store,
@@ -342,6 +351,20 @@ function createDesktopAuthorityRuntime({
             || socketTransport('relay-websocket', relayWebSocketBaseUrl),
           durableRelayTransport: durableTransport(),
         });
+        const baseUrl = String(durableRelayBaseUrl || '').replace(/\/+$/, '');
+        const normalizedCloudBusinessBaseUrl = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
+        const cloudBusinessAdapter = normalizedCloudBusinessBaseUrl
+          ? createDesktopCloudBusinessDraftAdapter({
+            cloudClient: createDesktopIdentityClient({
+              desktopIdentity: vault,
+              fetchImpl,
+              sessionStore: { save: async () => {}, clear: async () => {} },
+            }),
+            baseUrl: normalizedCloudBusinessBaseUrl,
+            sha256: value => crypto.createHash('sha256').update(String(value), 'utf8').digest('hex'),
+            now: now || (() => new Date().toISOString()),
+          })
+          : null;
         return createDesktopAuthorityClient({
           outbox,
           createEnvelope: async draft => vault.createAuthorityCommand({
@@ -358,7 +381,6 @@ function createDesktopAuthorityRuntime({
           }),
           submitCloudQuestion: async (command, input) => {
             const token = cloudSessionToken(input);
-            const baseUrl = String(durableRelayBaseUrl || '').replace(/\/+$/, '');
             if (!baseUrl) throw runtimeError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
             const body = await requestJson(`${baseUrl}/api/desktop/question-bank/commands`, {
               method: 'POST',
@@ -373,6 +395,14 @@ function createDesktopAuthorityRuntime({
             }
             return body.receipt;
           },
+          createCloudBusinessCommand: cloudBusinessAdapter
+            ? draft => cloudBusinessAdapter.createCommand(draft)
+            : null,
+          submitCloudBusiness: cloudBusinessAdapter
+            ? (command, input) => cloudBusinessAdapter.submit(command, {
+              sessionToken: cloudSessionToken(input),
+            })
+            : null,
         });
       })();
     }
@@ -451,7 +481,7 @@ function createDesktopAuthorityRuntime({
       assertOnlineSubmission();
       const client = await getClient();
       const draft = await client.get(id);
-      if (isCloudQuestionDraft(draft)) cloudSessionToken(input);
+      if (isCloudQuestionDraft(draft) || isCloudBusinessDraft(draft)) cloudSessionToken(input);
       return client.confirmAndSubmit(id, input);
     },
     get: async id => (await getClient()).get(id),
@@ -461,7 +491,7 @@ function createDesktopAuthorityRuntime({
       assertOnlineSubmission();
       const client = await getClient();
       const draft = await client.get(id);
-      if (isCloudQuestionDraft(draft)) cloudSessionToken(input);
+      if (isCloudQuestionDraft(draft) || isCloudBusinessDraft(draft)) cloudSessionToken(input);
       return client.submit(id, input);
     },
   });

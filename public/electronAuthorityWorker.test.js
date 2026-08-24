@@ -9,6 +9,8 @@ for (const marker of [
 assert.ok(source.includes("listen(port, '127.0.0.1'"));
 assert.ok(source.includes('createDesktopAuthorityRuntime'));
 assert.ok(source.includes('durableRelayBaseUrl'));
+assert.ok(source.includes('cloudBusinessBaseUrl'));
+assert.ok(source.includes('cloudBusinessIdentityBaseUrl'));
 assert.ok(source.includes('desktop-authority:confirm-and-submit'));
 
 console.log('unified Electron authority runtime checks passed');

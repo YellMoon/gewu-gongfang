@@ -9,7 +9,7 @@ const COLLECTIONS = Object.freeze({
       'name', 'phone', 'parent_phone', 'parent_relation', 'school', 'grade_year',
       'grade_current', 'source_type', 'institution_id', 'is_institution_student',
       'parent_name', 'parent_wechat', 'student_source', 'balance_hours',
-      'balance_money', 'notes',
+      'balance_money', 'notes', 'contacts',
     ],
   },
   courses: {

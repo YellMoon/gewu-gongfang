@@ -25,7 +25,7 @@ const assert = require('assert');
     hostEpochId: 'epoch-1',
     actor: Object.freeze({ userId: 'user-1', deviceId: 'device-1', role: 'teacher' }),
     lease: Object.freeze({ id: 'lease-1', grantVersion: 1 }),
-    type: 'schedule.update.v1',
+    type: 'role-application.update.v1',
     payload: Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'safe' }) }),
     payloadHash: 'payload-hash-1',
     createdAt: '2026-07-28T00:00:00.000Z',
@@ -270,6 +270,31 @@ const assert = require('assert');
   assert.strictEqual(businessResult.transportUsed, 'cloud-business-authority');
   assert.strictEqual(businessSubmissions, 1);
   assert.strictEqual((await businessOutbox.get(businessDraft.id)).status, 'completed');
+
+  let legacyBusinessCalls = 0;
+  let failClosedSealed = '';
+  const failClosedOutbox = createDesktopCommandOutbox({
+    store: { read: async () => failClosedSealed, write: async value => { failClosedSealed = value; } },
+    codec: {
+      seal: async value => JSON.stringify(value),
+      open: async value => JSON.parse(value),
+    },
+    createId: () => 'business-fail-closed-1', now: () => '2026-08-24T00:00:00.000Z',
+  });
+  const failClosedClient = createDesktopAuthorityClient({
+    outbox: failClosedOutbox,
+    createEnvelope: async () => { legacyBusinessCalls += 1; return envelope; },
+    transports: { submit: async () => { legacyBusinessCalls += 1; return { receipt, transportUsed: 'durable-relay' }; } },
+  });
+  const failClosedDraft = await failClosedClient.appendDraft({
+    type: 'student.update.v1',
+    payload: { id: 'student-1', expectedVersion: '2026-08-23T00:00:00.000Z', changes: { name: 'Student' } },
+  });
+  await assert.rejects(
+    () => failClosedClient.confirmAndSubmit(failClosedDraft.id),
+    error => error?.code === 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE',
+  );
+  assert.strictEqual(legacyBusinessCalls, 0, 'business drafts must never enter legacy envelope or transport fallback');
 
   console.log('desktop authority client tests passed');
 })().catch(error => {

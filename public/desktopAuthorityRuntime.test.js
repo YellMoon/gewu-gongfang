@@ -40,6 +40,7 @@ async function withTimeout(promise, timeoutMs, message) {
     'public/desktopAuthorityRuntime.js',
     'src/services/desktopCommandOutbox.mjs',
     'src/services/desktopAuthorityClient.mjs',
+    'src/services/desktopCloudBusinessDraft.mjs',
     'src/services/authorityTransports.mjs',
     'src/services/authorityWebSocketTransport.mjs',
   ]) {
@@ -55,7 +56,7 @@ async function withTimeout(promise, timeoutMs, message) {
     hostEpochId: 'epoch-1',
     actor: Object.freeze({ userId: 'user-1', deviceId: 'device-1', role: 'teacher' }),
     lease: Object.freeze({ id: 'lease-1', grantVersion: 1 }),
-    type: 'schedule.update.v1',
+    type: 'role-application.update.v1',
     payload: Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'private runtime draft' }) }),
     payloadHash: 'payload-hash-1',
     createdAt: '2026-07-28T00:00:00.000Z',
@@ -133,6 +134,7 @@ async function withTimeout(promise, timeoutMs, message) {
     vault,
     lanBaseUrl: 'http://host.lan',
     durableRelayBaseUrl: 'https://control.example',
+    cloudBusinessBaseUrl: 'https://business.example',
     lanTransport: { name: 'lan', isReady: async () => false },
     relayWebSocketTransport: { name: 'relay-websocket', isReady: async () => false },
     fetchImpl: async (url, options = {}) => {
@@ -161,6 +163,17 @@ async function withTimeout(promise, timeoutMs, message) {
             result: { id: 'question-runtime-1' }, resultHash: '1'.repeat(64),
           },
         });
+      }
+      if (url === 'https://business.example/api/business/students/student-runtime-1/record') {
+        assert.strictEqual(options.method, 'PUT');
+        assert.strictEqual(options.headers.Authorization, 'Bearer desktop-session-token');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          expectedUpdatedAt: '2026-08-23T00:00:00.000Z',
+          name: 'Student Runtime', school: null, gradeYear: null, gradeCurrent: null,
+          institutionId: null, parentName: null, notes: 'confirmed cloud update',
+          sourceType: 1, studentSource: null, contacts: [],
+        });
+        return response(200, { ok: true, student: { id: 'student-runtime-1', updatedAt: '2026-08-24T00:00:01.000Z' } });
       }
       if (url === 'http://host.lan/api/authority/projections/current') {
         return response(503, { error: { code: 'HOST_TEMPORARILY_UNAVAILABLE' } });
@@ -385,6 +398,31 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.strictEqual((await runtime.get(questionDraft.id)).status, 'completed');
   const decryptedOutbox = Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8');
   assert.ok(!decryptedOutbox.includes('desktop-session-token'), 'the renderer session token must not be persisted in the encrypted outbox payload');
+  const legacyBusinessCallsBefore = calls.filter(call => call.url.endsWith('/api/authority/commands')).length;
+  const businessDraft = await runtime.appendDraft({
+    type: 'student.update.v1',
+    payload: {
+      id: 'student-runtime-1', expectedVersion: '2026-08-23T00:00:00.000Z',
+      changes: {
+        name: 'Student Runtime', school: null, grade_year: null, grade_current: null,
+        institution_id: null, parent_name: null, notes: 'confirmed cloud update',
+        source_type: 1, student_source: null,
+      },
+    },
+    preview: { title: 'Cloud business draft' },
+  });
+  await assert.rejects(
+    () => runtime.confirmAndSubmit(businessDraft.id),
+    error => error?.code === 'DESKTOP_CLOUD_SESSION_REQUIRED',
+  );
+  assert.strictEqual((await runtime.get(businessDraft.id)).status, 'awaiting_confirmation');
+  const businessResult = await runtime.confirmAndSubmit(businessDraft.id, { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(businessResult.transportUsed, 'cloud-business-authority');
+  assert.strictEqual((await runtime.get(businessDraft.id)).status, 'completed');
+  assert.strictEqual(calls.filter(call => call.url.endsWith('/api/authority/commands')).length, legacyBusinessCallsBefore,
+    'cloud business drafts must never use the legacy authority command relay');
+  assert.ok(!Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8').includes('desktop-session-token'),
+    'the business session token must not be persisted in the encrypted outbox payload');
   assert.strictEqual(runtime.confirmAndExecuteLocal, undefined,
     'a unified desktop must not expose a local authority execution path');
   assert.strictEqual(runtime.submitLocal, undefined,

@@ -7,7 +7,12 @@ const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
 const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
 const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
 const { sealQuestionImportSource, sealQuestionAsset } = require('./questionImportRelay');
-const { ensureRuntimeConfig, applyRuntimeConfigToEnv, MANAGED_CLOUD_BASE_URL } = require('./runtimeConfig');
+const {
+  ensureRuntimeConfig,
+  applyRuntimeConfigToEnv,
+  MANAGED_CLOUD_BASE_URL,
+  MANAGED_CLOUD_BUSINESS_BASE_URL,
+} = require('./runtimeConfig');
 const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
 const { resolveDesktopBuildFlavor, updateFeedForFlavor, validateDesktopCapabilityManifest } = require('./desktopBuildFlavor');
@@ -100,6 +105,7 @@ function getDesktopAuthorityRuntime() {
       safeStorage,
       vault: getDesktopIdentityVault(),
       durableRelayBaseUrl: String(config.cloudBaseUrl || MANAGED_CLOUD_BASE_URL),
+      cloudBusinessBaseUrl: String(config.cloudBusinessIdentityBaseUrl || MANAGED_CLOUD_BUSINESS_BASE_URL),
       relayWebSocketBaseUrl: String(config.cloudBaseUrl || MANAGED_CLOUD_BASE_URL),
       WebSocketImpl: WebSocket,
       isOnline: () => net.isOnline(),

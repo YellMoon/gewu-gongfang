@@ -9,6 +9,12 @@ assert.match(panel, /readDesktopAuthorizationSession/,
   'question draft confirmation must obtain the process-memory desktop session only when the user confirms');
 assert.match(panel, /sessionToken/,
   'the panel must pass only a one-time token to the Electron bridge');
+assert.match(panel, /function cloudDraftSubmissionInput/,
+  'question and business drafts must share the one-time cloud session input boundary');
+assert.match(panel, /student\|course\|schedule\|teacher\|room\|institution\|payment\|consumption\|grade\|personal-asset-record\|personal-asset-category/,
+  'the one-time cloud session boundary must include every known business draft family');
+assert.ok(!panel.includes('cloudQuestionSubmissionInput'),
+  'the renderer must not keep a question-only token path that omits business drafts');
 assert.match(panel, /relayQuestionAssetsAfterReceipt\(item, result\.receipt\)/,
   'question rich media must be relayed only after the cloud question receipt exists');
 assert.match(panel, /client\.readAssetRelay\(state\.taskId\)/,

@@ -44,6 +44,24 @@ const assert = require('assert');
   assert.deepStrictEqual(deleted.payload, { id: 'student-1' });
   assert.strictEqual(deleted.type, 'student.delete.v1');
 
+  const studentWithContacts = createAuthorityDraftFromLocalMutation({
+    collection: 'students',
+    action: 'update',
+    recordId: 'student-1',
+    baseVersion: 'student-version-1',
+    value: {
+      name: 'Student One',
+      contacts: [{
+        slot: 1, relationship: 'student', phone: '13700000001', wechat: null,
+        updated_at: '2026-08-23T00:00:00.000Z',
+      }],
+    },
+  });
+  assert.deepStrictEqual(studentWithContacts.payload.changes.contacts, [{
+    slot: 1, relationship: 'student', phone: '13700000001', wechat: null,
+    updated_at: '2026-08-23T00:00:00.000Z',
+  }]);
+
   const taxonomyDelete = createAuthorityDraftFromLocalMutation({
     collection: 'taxonomy_nodes',
     action: 'delete',

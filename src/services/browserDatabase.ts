@@ -927,8 +927,9 @@ class BrowserDatabaseService {
   updateRoom(id: string, updates: Partial<Room>): Room | undefined {
     const index = this.data.rooms.findIndex(r => r.id === id);
     if (index === -1) return undefined;
+    const baseVersion = this.data.rooms[index].updated_at || null;
     this.data.rooms[index] = { ...this.data.rooms[index], ...updates, updated_at: new Date().toISOString() };
-    this.recordAuthorityDraft('rooms', 'update', id, this.data.rooms[index]);
+    this.recordAuthorityDraft('rooms', 'update', id, this.data.rooms[index], baseVersion);
     this.saveData();
     return this.data.rooms[index];
   }
@@ -936,8 +937,9 @@ class BrowserDatabaseService {
   deleteRoom(id: string): boolean {
     const index = this.data.rooms.findIndex(r => r.id === id);
     if (index === -1) return false;
+    const baseVersion = this.data.rooms[index].updated_at || null;
     this.data.rooms.splice(index, 1);
-    this.recordAuthorityDraft('rooms', 'delete', id, { id });
+    this.recordAuthorityDraft('rooms', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1025,6 +1027,43 @@ class BrowserDatabaseService {
     return this.data.student_contacts || [];
   }
 
+  private studentAuthorityContacts(student: Student): Array<Record<string, any>> {
+    const bySlot = new Map(
+      (this.data.student_contacts || [])
+        .filter(contact => contact.student_id === student.id)
+        .map(contact => [Number(contact.slot), contact]),
+    );
+    const primary = bySlot.get(1);
+    const guardian = bySlot.get(2);
+    const primaryPhone = student.phone ?? primary?.phone ?? null;
+    const primaryWechat = primary?.wechat ?? null;
+    const guardianPhone = (student as any).parent_phone ?? guardian?.phone ?? null;
+    const guardianWechat = student.parent_wechat ?? guardian?.wechat ?? null;
+    return [
+      ...(primaryPhone || primaryWechat ? [{
+        slot: 1,
+        relationship: 'student',
+        phone: primaryPhone,
+        wechat: primaryWechat,
+        updated_at: primary?.updated_at ?? null,
+      }] : []),
+      ...(guardianPhone || guardianWechat ? [{
+        slot: 2,
+        relationship: 'guardian',
+        phone: guardianPhone,
+        wechat: guardianWechat,
+        updated_at: guardian?.updated_at ?? null,
+      }] : []),
+      ...[3].map(slot => bySlot.get(slot)).filter(Boolean).map((contact: any) => ({
+        slot: 3,
+        relationship: 'guardian',
+        phone: contact.phone ?? null,
+        wechat: contact.wechat ?? null,
+        updated_at: contact.updated_at ?? null,
+      })),
+    ];
+  }
+
   getStudentById(id: string): Student | undefined {
     return this.data.students.find(s => s.id === id);
   }
@@ -1053,6 +1092,7 @@ class BrowserDatabaseService {
   updateStudent(id: string, updates: Partial<Student>): Student | undefined {
     const index = this.data.students.findIndex(s => s.id === id);
     if (index === -1) return undefined;
+    const baseVersion = this.data.students[index].updated_at || null;
     
     const updated = {
       ...this.data.students[index],
@@ -1071,7 +1111,11 @@ class BrowserDatabaseService {
     }
     
     this.data.students[index] = updated;
-    this.recordAuthorityDraft('students', 'update', id, updated);
+    const draftValue = {
+      ...updated,
+      contacts: this.studentAuthorityContacts(updated),
+    };
+    this.recordAuthorityDraft('students', 'update', id, draftValue, baseVersion);
     this.saveData();
     return updated;
   }
@@ -1079,8 +1123,9 @@ class BrowserDatabaseService {
   deleteStudent(id: string): boolean {
     const index = this.data.students.findIndex(s => s.id === id);
     if (index === -1) return false;
+    const baseVersion = this.data.students[index].updated_at || null;
     this.data.students.splice(index, 1);
-    this.recordAuthorityDraft('students', 'delete', id, { id });
+    this.recordAuthorityDraft('students', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1116,6 +1161,7 @@ class BrowserDatabaseService {
   updateCourse(id: string, updates: Partial<Course>): Course | undefined {
     const index = this.data.courses.findIndex(c => c.id === id);
     if (index === -1) return undefined;
+    const baseVersion = this.data.courses[index].updated_at || null;
     
     this.data.courses[index] = {
       ...this.data.courses[index],
@@ -1126,7 +1172,7 @@ class BrowserDatabaseService {
     if (updates.room_name && !this.data.rooms.find(r => r.name === updates.room_name)) {
       this.addOrUpdateRoom(updates.room_name);
     }
-    this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index]);
+    this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion);
     this.saveData();
     return this.data.courses[index];
   }
@@ -1134,8 +1180,9 @@ class BrowserDatabaseService {
   deleteCourse(id: string): boolean {
     const index = this.data.courses.findIndex(c => c.id === id);
     if (index === -1) return false;
+    const baseVersion = this.data.courses[index].updated_at || null;
     this.data.courses.splice(index, 1);
-    this.recordAuthorityDraft('courses', 'delete', id, { id });
+    this.recordAuthorityDraft('courses', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1167,13 +1214,14 @@ class BrowserDatabaseService {
   updateSchedule(id: string, updates: Partial<Schedule>): Schedule | undefined {
     const index = this.data.schedules.findIndex(s => s.id === id);
     if (index === -1) return undefined;
+    const baseVersion = this.data.schedules[index].updated_at || null;
     
     this.data.schedules[index] = {
       ...this.data.schedules[index],
       ...updates,
       updated_at: new Date().toISOString()
     };
-    this.recordAuthorityDraft('schedules', 'update', id, this.data.schedules[index]);
+    this.recordAuthorityDraft('schedules', 'update', id, this.data.schedules[index], baseVersion);
     this.saveData();
     return this.data.schedules[index];
   }
@@ -1198,8 +1246,9 @@ class BrowserDatabaseService {
       ...schedule,
       updated_at: schedule.updated_at || now
     } as Schedule;
+    const baseVersion = this.data.schedules[index].updated_at || null;
     this.data.schedules[index] = updated;
-    this.recordAuthorityDraft('schedules', 'update', updated.id, updated);
+    this.recordAuthorityDraft('schedules', 'update', updated.id, updated, baseVersion);
     this.saveData();
     return updated;
   }
@@ -1216,11 +1265,11 @@ class BrowserDatabaseService {
       } as Schedule));
 
     const nextById = new Map(nextSchedules.map(s => [s.id, s]));
-    const changes: Array<{ action: SyncAction; id: string; payload: Record<string, any> }> = [];
+    const changes: Array<{ action: SyncAction; id: string; payload: Record<string, any>; baseVersion?: string | null }> = [];
 
     previousById.forEach((previous, id) => {
       if (!nextById.has(id)) {
-        changes.push({ action: 'delete', id, payload: { id } });
+        changes.push({ action: 'delete', id, payload: { id }, baseVersion: previous.updated_at || null });
       }
     });
 
@@ -1231,7 +1280,7 @@ class BrowserDatabaseService {
       } else if (JSON.stringify(previous) !== JSON.stringify(next)) {
         const updated = { ...next, updated_at: now };
         nextById.set(id, updated);
-        changes.push({ action: 'update', id, payload: updated });
+        changes.push({ action: 'update', id, payload: updated, baseVersion: previous.updated_at || null });
       }
     });
 
@@ -1244,6 +1293,7 @@ class BrowserDatabaseService {
       action: change.action,
       recordId: change.id,
       value: change.payload,
+      baseVersion: change.baseVersion || null,
     })));
     this.saveData();
     return this.data.schedules;
@@ -1252,9 +1302,10 @@ class BrowserDatabaseService {
   deleteSchedule(id: string): boolean {
     const index = this.data.schedules.findIndex(s => s.id === id);
     if (index === -1) return false;
+    const baseVersion = this.data.schedules[index].updated_at || null;
     this.createBusinessDataSafetyBackup('before-deleteSchedule');
     this.data.schedules.splice(index, 1);
-    this.recordAuthorityDraft('schedules', 'delete', id, { id });
+    this.recordAuthorityDraft('schedules', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1418,12 +1469,13 @@ class BrowserDatabaseService {
   updateTeacher(id: string, updates: Partial<Omit<Teacher, 'id' | 'created_at' | 'updated_at'>>): Teacher | undefined {
     const index = this.data.teachers.findIndex(t => t.id === id);
     if (index !== -1) {
+      const baseVersion = this.data.teachers[index].updated_at || null;
       this.data.teachers[index] = {
         ...this.data.teachers[index],
         ...updates,
         updated_at: new Date().toISOString()
       };
-      this.recordAuthorityDraft('teachers', 'update', id, this.data.teachers[index]);
+      this.recordAuthorityDraft('teachers', 'update', id, this.data.teachers[index], baseVersion);
       this.saveData();
       return this.data.teachers[index];
     }
@@ -1431,8 +1483,11 @@ class BrowserDatabaseService {
   }
 
   deleteTeacher(id: string): void {
+    const existing = this.data.teachers.find(t => t.id === id);
+    if (!existing) return;
+    const baseVersion = existing.updated_at || null;
     this.data.teachers = this.data.teachers.filter(t => t.id !== id);
-    this.recordAuthorityDraft('teachers', 'delete', id, { id });
+    this.recordAuthorityDraft('teachers', 'delete', id, { id }, baseVersion);
     this.saveData();
   }
 
