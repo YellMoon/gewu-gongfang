@@ -31,6 +31,26 @@ assert.ok(!decodedGateSource.includes(
 ));
 assert.ok(gateSource.includes('className="desktop-identity-header"'));
 assert.ok(gateSource.includes('className="desktop-identity-title"'));
+assert.ok(decodedGateSource.includes('登录格物工坊'), 'the primary gate must present a normal product login title');
+assert.ok(decodedGateSource.includes('首次登录需要联网'), 'first-use copy must explain only the user-visible network requirement');
+assert.ok(decodedGateSource.includes('微信登录') && decodedGateSource.includes('密码登录'),
+  'login modes must use familiar user-facing labels');
+for (const internalLoginCopy of [
+  '格物工坊身份验证', '核验账号并登记此电脑', '设备名称', '开始微信身份注册',
+  '静默登记这台电脑', '云端账号已核验', '请完成微信身份验证', '此电脑将自动登记',
+]) assert.ok(!decodedGateSource.includes(internalLoginCopy),
+  `silent device registration must not leak implementation copy into login: ${internalLoginCopy}`);
+assert.ok(!gateSource.includes('setDeviceName'), 'device naming must be derived silently by the Electron main process');
+assert.ok(!gateSource.includes('deviceName'), 'the renderer must not request or submit a user-selected device name');
+assert.ok(!gateSource.includes('onlineVerificationMode') && !gateSource.includes('setOnlineVerificationMode'),
+  'login methods must be direct actions instead of requiring a mode-switch click first');
+assert.ok(!gateSource.includes('<Space.Compact'), 'login methods must not be rendered as a duplicate action switcher');
+assert.ok(gateSource.includes('onClick={beginRegistration} block'),
+  'WeChat login must start directly from its single visible action');
+assert.ok(
+  electronSource.includes("input.deviceName || config.deviceName || require('os').hostname()"),
+  'Electron main must silently derive the device name when registration starts'
+);
 assert.ok(gateStyle.includes('.desktop-identity-header'));
 assert.ok(gateStyle.includes('align-items: center'));
 assert.ok(gateSource.includes('canStartBusinessRuntime'));
@@ -56,7 +76,11 @@ const retiredApprovalText = String.fromCharCode(30001, 19968, 21478, 19968, 2148
 assert.ok(!decodedGateSource.includes(retiredApprovalText), 'desktop recovery must not require another device approval');
 assert.ok(!gateSource.includes('identity_verified_pending_approval'));
 assert.ok(!decodedGateSource.includes('等待另一台已授权设备审核'));
-assert.ok(gateSource.includes('retryRegistration'));
+assert.ok(gateSource.includes('returnToPasswordLogin'));
+assert.ok(decodedGateSource.includes('\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'),
+  'the WeChat QR state must offer a clear return to password login');
+assert.ok(gateSource.includes('onClick={returnToPasswordLogin}'),
+  'returning from WeChat login must clear the pending local registration through the recovery handler');
 assert.ok(gateSource.includes('离线身份租约已过期'));
 assert.ok(gateSource.includes('desktop-identity-runtime--offline'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));

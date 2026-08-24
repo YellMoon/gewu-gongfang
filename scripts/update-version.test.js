@@ -76,6 +76,22 @@ assert.strictEqual(
   'mentioning --bump=major in tests/docs should not force a major release'
 );
 assert.strictEqual(
+  version.analyzeVersionBump({
+    files: ['src/components/DesktopIdentityGate.tsx', 'src/components/DesktopIdentityGate.test.js', 'task.md'],
+    diff: [
+      'diff --git a/src/components/DesktopIdentityGate.tsx b/src/components/DesktopIdentityGate.tsx',
+      '+++ b/src/components/DesktopIdentityGate.tsx',
+      '+  // fix login back navigation',
+      '+  const returnToPasswordLogin = async () => {};',
+      'diff --git a/task.md b/task.md',
+      '+++ b/task.md',
+      '+ create a disposable acceptance record',
+    ].join('\n'),
+  }),
+  'patch',
+  'release notes must not turn a desktop login bug fix into a minor release'
+);
+assert.strictEqual(
   version.analyzeVersionBump({ files: ['backend/src/routes/permissions.js'], diff: '新增权限接口 router.get' }),
   'minor',
   'new routes/features should auto bump minor'

@@ -73,8 +73,6 @@ const DesktopIdentityGate: React.FC = () => {
   const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [baseUrl, setBaseUrl] = useState('');
-  const [deviceName, setDeviceName] = useState('');
-  const [onlineVerificationMode, setOnlineVerificationMode] = useState<'wechat' | 'password'>('wechat');
   const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>('phone');
   const [accountLogin, setAccountLogin] = useState('');
   const [accountPassword, setAccountPassword] = useState('');
@@ -89,6 +87,7 @@ const DesktopIdentityGate: React.FC = () => {
   const onlineSessionRef = useRef<any>(null);
   const currentPartitionRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
+  const registrationFlowRef = useRef(0);
 
   const suspendBusinessMemory = useCallback(async (_partitionKey?: string) => {
     setRuntimeSuspended(true);
@@ -287,7 +286,6 @@ const DesktopIdentityGate: React.FC = () => {
         };
         (window as any).desktopIdentitySessionProvider = installedProvider;
         setBaseUrl(identityBaseUrl);
-        setDeviceName(String((config as any).deviceName || String.fromCharCode(36825, 21488, 30005, 33041)));
         if (vaultStatus.state === 'empty') {
           setGateState({ kind: 'registration-required' });
           return;
@@ -333,13 +331,14 @@ const DesktopIdentityGate: React.FC = () => {
 
   const pollRegistration = useCallback(async () => {
     if (!pending || pollingRef.current || !clientRef.current) return;
+    const flowId = registrationFlowRef.current;
     pollingRef.current = true;
     setPolling(true);
     try {
       const next = pending?.pairingId
         ? await clientRef.current.pollUnifiedOnlineRegistration(pending)
         : await clientRef.current.pollRegistration(pending);
-      setPending(next);
+      if (registrationFlowRef.current === flowId) setPending(next);
       setError('');
     } catch (caught) {
       setError(messageForError(caught));
@@ -377,6 +376,7 @@ const DesktopIdentityGate: React.FC = () => {
   }, [gateState.expiresAt, gateState.kind, secureRelock]);
 
   const beginRegistration = async () => {
+    registrationFlowRef.current += 1;
     setBusy(true);
     setError('');
     try {
@@ -384,7 +384,6 @@ const DesktopIdentityGate: React.FC = () => {
       const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
       const started = await clientRef.current.beginUnifiedOnlineRegistration({
         baseUrl,
-        deviceName,
         idempotencyKey: 'desktop-registration-' + randomPart,
       });
       setPending(started);
@@ -399,6 +398,7 @@ const DesktopIdentityGate: React.FC = () => {
   };
 
   const beginPasswordVerification = async () => {
+    registrationFlowRef.current += 1;
     setBusy(true);
     setError('');
     try {
@@ -406,7 +406,6 @@ const DesktopIdentityGate: React.FC = () => {
       const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
       const started = await clientRef.current.beginPasswordVerification({
         baseUrl,
-        deviceName,
         idempotencyKey: 'desktop-password-verification-' + randomPart,
         loginType: accountLoginType,
         login: accountLogin,
@@ -494,7 +493,8 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
-  const retryRegistration = async () => {
+  const returnToPasswordLogin = async () => {
+    registrationFlowRef.current += 1;
     setBusy(true);
     setError('');
     try {
@@ -542,24 +542,16 @@ const DesktopIdentityGate: React.FC = () => {
     if (!pending) {
       return (
         <>
-          <Paragraph className="desktop-identity-copy">{'\u9996\u6b21\u4f7f\u7528\u5fc5\u987b\u8054\u7f51\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002\u53ef\u4ee5\u4f7f\u7528\u5fae\u4fe1\u6838\u9a8c\uff0c\u6216\u7528\u5df2\u7ed1\u5b9a\u7684\u624b\u673a\u53f7\u3001\u81ea\u5b9a\u4e49\u8d26\u53f7\u548c\u4e91\u7aef\u5bc6\u7801\u3002\u6838\u9a8c\u901a\u8fc7\u540e\u4e91\u7aef\u4f1a\u9759\u9ed8\u767b\u8bb0\u8fd9\u53f0\u7535\u8111\u3002'}</Paragraph>
-          <Space.Compact block>
-            <Button type={onlineVerificationMode === 'wechat' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('wechat')}>{'\u5fae\u4fe1\u6838\u9a8c'}</Button>
-            <Button type={onlineVerificationMode === 'password' ? 'primary' : 'default'} onClick={() => setOnlineVerificationMode('password')}>{'\u8d26\u53f7\u5bc6\u7801'}</Button>
-          </Space.Compact>
-          <Input value={deviceName} onChange={event => setDeviceName(event.target.value)} placeholder={'\u8bbe\u5907\u540d\u79f0'} maxLength={128} />
-          {onlineVerificationMode === 'password' && (
-            <>
-              <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
-                { value: 'phone', label: '\u624b\u673a\u53f7' },
-                { value: 'account_name', label: '\u81ea\u5b9a\u4e49\u8d26\u53f7' },
-              ]} />
-              <Input value={accountLogin} onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u81ea\u5b9a\u4e49\u8d26\u53f7'} />
-              <Input.Password value={accountPassword} onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} onPressEnter={beginPasswordVerification} />
-              <Button type="primary" loading={busy} onClick={beginPasswordVerification} block>{'\u6838\u9a8c\u8d26\u53f7\u5e76\u767b\u8bb0\u6b64\u7535\u8111'}</Button>
-            </>
-          )}
-          <Button type="primary" icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block style={{ display: onlineVerificationMode === 'wechat' ? undefined : 'none' }}>{'\u5f00\u59cb\u5fae\u4fe1\u8eab\u4efd\u6ce8\u518c'}</Button>
+          <Paragraph className="desktop-identity-copy">{'\u9996\u6b21\u767b\u5f55\u9700\u8981\u8054\u7f51\u3002\u8bf7\u9009\u62e9\u5fae\u4fe1\u767b\u5f55\uff0c\u6216\u4f7f\u7528\u624b\u673a\u53f7\u3001\u8d26\u53f7\u540d\u548c\u5bc6\u7801\u767b\u5f55\u3002'}</Paragraph>
+          <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u767b\u5f55'}</Button>
+          <Divider plain>{'\u6216\u4f7f\u7528\u8d26\u53f7\u5bc6\u7801'}</Divider>
+          <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
+            { value: 'phone', label: '\u624b\u673a\u53f7' },
+            { value: 'account_name', label: '\u8d26\u53f7\u540d' },
+          ]} />
+          <Input value={accountLogin} onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u8d26\u53f7\u540d'} />
+          <Input.Password value={accountPassword} onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u5bc6\u7801'} onPressEnter={beginPasswordVerification} />
+          <Button type="primary" loading={busy} onClick={beginPasswordVerification} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
         </>
       );
     }
@@ -567,24 +559,25 @@ const DesktopIdentityGate: React.FC = () => {
       const canEnrollCloudPassword = pending?.pairingId && pending?.recovery !== true;
       return (
         <>
-          <Alert type="success" showIcon message={'\u4e91\u7aef\u8d26\u53f7\u5df2\u6838\u9a8c'} description={'\u672c\u673a\u4f7f\u7528\u7cfb\u7edf\u4fdd\u62a4\u52a0\u5bc6\u4fdd\u5b58\u8bbe\u5907\u5bc6\u94a5\u4e0e\u79bb\u7ebf\u4f1a\u8bdd\u3002'} />
+          <Alert type="success" showIcon message={'\u767b\u5f55\u6210\u529f'} description={'\u6b63\u5728\u51c6\u5907\u5de5\u4f5c\u53f0\uff0c\u8bf7\u7a0d\u5019\u3002'} />
           {canEnrollCloudPassword && (
             <>
-              <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder={'\u81ea\u5b9a\u4e49\u8d26\u53f7\uff08\u53ef\u9009\uff09'} maxLength={64} />
-              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} placeholder={'\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} />
-              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801'} />
+              <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder={'\u8bbe\u7f6e\u8d26\u53f7\u540d\uff08\u53ef\u9009\uff09'} maxLength={64} />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPassword} onChange={event => setCloudPassword(event.target.value)} placeholder={'\u8bbe\u7f6e\u767b\u5f55\u5bc6\u7801'} />
+              <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u767b\u5f55\u5bc6\u7801'} />
             </>
           )}
-          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u8fdb\u5165\u5de5\u4f5c\u53f0'}</Button>
+          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u8fdb\u5165\u683c\u7269\u5de5\u574a'}</Button>
         </>
       );
     }
     return (
       <>
-        <Paragraph className="desktop-identity-copy">{'\u8bf7\u5b8c\u6210\u5fae\u4fe1\u8eab\u4efd\u6838\u9a8c\u3002\u6838\u9a8c\u901a\u8fc7\u540e\uff0c\u6b64\u7535\u8111\u5c06\u81ea\u52a8\u767b\u8bb0\u3002'}</Paragraph>
+        <Paragraph className="desktop-identity-copy">{'\u8bf7\u5728\u5fae\u4fe1\u4e2d\u786e\u8ba4\u767b\u5f55\u3002'}</Paragraph>
         {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt="identity verification code" /></div>
           : pending.qrValue ? <div className="desktop-identity-qr"><QRCode value={pending.qrValue} size={196} bordered={false} /></div> : null}
-        <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>{'\u5237\u65b0\u6838\u9a8c\u72b6\u6001'}</Button>
+        <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>{'\u5237\u65b0\u767b\u5f55\u72b6\u6001'}</Button>
+        <Button loading={busy} onClick={returnToPasswordLogin} block>{'\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'}</Button>
       </>
     );
   };
@@ -640,7 +633,7 @@ const DesktopIdentityGate: React.FC = () => {
           <div className="desktop-identity-mark" aria-hidden="true">
             <SafetyCertificateOutlined />
           </div>
-          <Title level={2} className="desktop-identity-title">格物工坊身份验证</Title>
+          <Title level={2} className="desktop-identity-title">{'\u767b\u5f55\u683c\u7269\u5de5\u574a'}</Title>
         </header>
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">

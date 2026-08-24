@@ -64,6 +64,9 @@ for (const name of [
 for (const marker of ['beginUnifiedOnlineRegistration', 'offlineLease', 'awaiting_confirmation', 'confirmAndSubmit']) {
   assert.ok(source.includes(marker), `deploy readiness must gate unified desktop marker: ${marker}`);
 }
+for (const marker of ['onClick={beginRegistration} block', 'returnToPasswordLogin', 'onClick={returnToPasswordLogin}']) {
+  assert.ok(source.includes(marker), `deploy readiness must gate recoverable desktop login flow: ${marker}`);
+}
 assert.strictEqual(source.includes("router.post('/primary-host/bootstrap'"), false);
 
 const architecture = readiness.checkIdentityArchitecture();

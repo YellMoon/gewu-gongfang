@@ -69,18 +69,35 @@ function hasAny(text, patterns) {
   return patterns.some(pattern => pattern.test(text));
 }
 
+function sourceAddedChangeText(diff = '') {
+  if (!/(?:^|\n)diff --git /.test(diff)) return diff;
+  const added = [];
+  let include = false;
+  for (const line of diff.split(/\r?\n/)) {
+    const header = line.match(/^diff --git a\/.+ b\/(.+)$/);
+    if (header) {
+      const file = header[1].replace(/\\/g, '/');
+      include = !(
+        /(?:^|\/)task\.md$/i.test(file)
+        || /\.md$/i.test(file)
+        || file === 'scripts/update-version.js'
+        || /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)/i.test(file)
+        || /\.test\.[^.]+$/i.test(file)
+        || RELEASE_ARTIFACT_PATH_PATTERNS.some(pattern => pattern.test(file))
+      );
+      continue;
+    }
+    if (include && line.startsWith('+') && !line.startsWith('+++')) added.push(line.slice(1));
+  }
+  return added.join('\n');
+}
+
 function analyzeVersionBump(context = readChangeContext()) {
   const files = context.files || [];
   const deletedFiles = context.deletedFiles || [];
   const diff = context.diff || '';
   const corpus = `${files.join('\n')}\n${diff}`;
-  const addedChangeText = /(?:^|\n)diff --git |(?:^|\n)@@ /.test(diff)
-    ? diff
-      .split(/\r?\n/)
-      .filter(line => line.startsWith('+') && !line.startsWith('+++'))
-      .map(line => line.slice(1))
-      .join('\n')
-    : diff;
+  const addedChangeText = sourceAddedChangeText(diff);
 
   const majorSignals = [
     /BREAKING[\s_-]?CHANGE/i,
@@ -112,7 +129,7 @@ function analyzeVersionBump(context = readChangeContext()) {
     /^modules\/.+/,
   ];
   const minorContentSignals = [
-    /新增|增加|支持|新功能|\b(?:feature|add(?:ed)?|create(?:d)?)\b|router\.(get|post|put|delete|patch)/i,
+    /新增|增加|支持|新功能|\bfeature\b|\b(?:add(?:ed)?|create(?:d)?)\s+(?:support|route|endpoint|page|module|service|feature|capability)\b|router\.(get|post|put|delete|patch)/i,
     /^\+\s*CREATE TABLE/im,
     /^\+\s*ALTER TABLE/im,
     /^\+\s*app\.use\('/m,

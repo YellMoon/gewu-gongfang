@@ -109,8 +109,9 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
     key: 'identityRuntimeGate',
     files: Object.freeze([
       Object.freeze({ path: 'src/components/DesktopIdentityGate.tsx', markers: Object.freeze([
-        'onlineVerificationMode',
-        'beginRegistration',
+        'onClick={beginRegistration} block',
+        'returnToPasswordLogin',
+        'onClick={returnToPasswordLogin}',
       ]) }),
     ]),
   }),
