@@ -2,7 +2,14 @@ import unittest
 from unittest import mock
 
 import deploy_cloud_business_api as module
-from deploy_cloud_business_api import candidate_command, candidate_name, release_tag, rollback_command, switch_command
+from deploy_cloud_business_api import (
+    candidate_command,
+    candidate_name,
+    reconcile_switch_failure_command,
+    release_tag,
+    rollback_command,
+    switch_command,
+)
 
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
@@ -21,6 +28,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_switch_command_keeps_a_rollback_container_and_recovers_on_health_failure(self):
         command = switch_command("8.1.0-8c425eab")
+        self.assertIn("flock -x 9", command)
         self.assertIn("rollback-8.1.0-8c425eab", command)
         self.assertIn("127.0.0.1:3002:3002", command)
         self.assertIn("curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health", command)
@@ -45,6 +53,15 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("rollback-8.5.0-1101687f349d", command)
         self.assertIn('docker rm -f "$current"', command)
         self.assertIn('docker rename "$rollback" "$current"', command)
+        self.assertIn("127.0.0.1:3002/api/health", command)
+        self.assertIn("flock -x 9", command)
+
+    def test_uncertain_switch_reconciliation_serializes_and_restores_if_needed(self):
+        command = reconcile_switch_failure_command("8.5.0-b195691c27e9")
+        self.assertIn("flock -x 9", command)
+        self.assertIn('if docker container inspect "$rollback"', command)
+        self.assertIn('docker rename "$rollback" "$current"', command)
+        self.assertIn('docker container inspect "$current"', command)
         self.assertIn("127.0.0.1:3002/api/health", command)
 
     def test_discard_targets_only_the_exact_candidate(self):
@@ -125,6 +142,24 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
                 module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
         self.assertEqual(run.call_count, 2)
         self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[1].args[1])
+
+    def test_switch_transport_failure_reconnects_and_reconciles_before_returning_failure(self):
+        switch_ssh = mock.Mock()
+        reconcile_ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, reconcile_ssh]), mock.patch.object(
+            module.deploy, "run", side_effect=[TimeoutError("ssh timeout"), ("healthy", "")]
+        ) as run, mock.patch.object(module, "verify_public_health") as verify_health, mock.patch.object(
+            module.deploy, "record_release_receipt"
+        ) as record_receipt:
+            with self.assertRaisesRegex(TimeoutError, "ssh timeout"):
+                module.promote_validated_candidate("8.5.0-b195691c27e9", "8.5.0", "evidence")
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("flock -x 9", run.call_args_list[0].args[1])
+        self.assertIn("rollback-8.5.0-b195691c27e9", run.call_args_list[1].args[1])
+        verify_health.assert_not_called()
+        record_receipt.assert_not_called()
+        switch_ssh.close.assert_called_once()
+        reconcile_ssh.close.assert_called_once()
 
     def test_promote_rejects_a_candidate_from_another_source_revision(self):
         with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(

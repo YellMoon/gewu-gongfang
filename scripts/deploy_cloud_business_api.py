@@ -19,6 +19,7 @@ import deploy  # noqa: E402
 CURRENT_CONTAINER = "gewu-cloud-business-api"
 POSTGRES_CONTAINER = "gewu-postgres17"
 REMOTE_BUILD_ROOT = "/root/gewu-cloud-business-builds"
+SWITCH_LOCK_PATH = "/tmp/gewu-cloud-business-api-switch.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
 
 
@@ -83,6 +84,7 @@ def switch_command(tag):
     return (
         "set -eu; "
         f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; rollback='{rollback}'; env_path='{env_path}'; "
+        f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
         "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$current\" > \"$env_path\"; "
@@ -104,9 +106,26 @@ def rollback_command(tag):
     return (
         "set -eu; "
         f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
+        f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "docker container inspect \"$rollback\" >/dev/null 2>&1; "
         "docker rm -f \"$current\"; "
         "docker rename \"$rollback\" \"$current\"; docker start \"$current\"; "
+        "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+        "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && exit 0; sleep 1; done; exit 1"
+    )
+
+
+def reconcile_switch_failure_command(tag):
+    candidate_name(tag)
+    rollback = f"gewu-cloud-business-api-rollback-{tag}"
+    return (
+        "set -eu; "
+        f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
+        f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
+        "if docker container inspect \"$rollback\" >/dev/null 2>&1; then "
+        "docker rm -f \"$current\" >/dev/null 2>&1 || true; "
+        "docker rename \"$rollback\" \"$current\"; docker start \"$current\"; fi; "
+        "docker container inspect \"$current\" >/dev/null 2>&1; "
         "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
         "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && exit 0; sleep 1; done; exit 1"
     )
@@ -192,12 +211,29 @@ def rollback_promoted_release(tag):
         ssh.close()
 
 
-def promote_validated_candidate(tag, version, evidence):
+def reconcile_uncertain_switch(tag):
     ssh = deploy.connect()
     try:
-        deploy.run(ssh, switch_command(tag), timeout=120)
+        deploy.run(ssh, reconcile_switch_failure_command(tag), timeout=180)
     finally:
         ssh.close()
+
+
+def promote_validated_candidate(tag, version, evidence):
+    ssh = deploy.connect()
+    switch_error = None
+    try:
+        deploy.run(ssh, switch_command(tag), timeout=120)
+    except BaseException as error:
+        switch_error = error
+    finally:
+        ssh.close()
+    if switch_error is not None:
+        try:
+            reconcile_uncertain_switch(tag)
+        except BaseException as reconcile_error:
+            raise RuntimeError("CLOUD_DOCKER_DEPLOY_ROLLBACK_FAILED") from reconcile_error
+        raise switch_error
     try:
         health = verify_public_health(version)
         deploy.record_release_receipt("cloud_business", evidence)
