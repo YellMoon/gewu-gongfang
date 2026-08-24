@@ -26,6 +26,10 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("docker rename \"$rollback\" \"$current\"", command)
         self.assertNotIn("docker image prune", command)
 
+    def test_promote_reuses_only_a_validated_candidate_tag(self):
+        with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
+            switch_command("8.3.0-current;id")
+
 
 if __name__ == "__main__":
     unittest.main()

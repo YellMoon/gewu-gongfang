@@ -45,6 +45,7 @@
     "release:status": "node scripts/release-matrix.js status",
     "release:complete": "node scripts/release-matrix.js complete",
     "backup:cloud-postgres": "python scripts/backup_cloud_postgres.py",
+    "verify:cloud-business-release": "python scripts/verify_cloud_business_release.py",
     "test:release-matrix": "node scripts/release-matrix.test.js && node scripts/release-matrix-python.test.js && node scripts/release-boundary.test.js && node scripts/check-question-import-release.test.js && node scripts/nginx-scheduling.test.js && python scripts/miniapp_fixed_egress.test.py && python scripts/repair_production_tls.test.py",
     "test": "npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node backend/src/runtimePort.test.js",
     "test:formula-export": "python -m unittest discover modules/question-bank/export/tests -v",

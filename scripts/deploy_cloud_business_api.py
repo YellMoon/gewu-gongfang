@@ -167,11 +167,25 @@ def deploy_release():
     return verify_public_health()
 
 
+def promote_release(tag):
+    if not isinstance(tag, str) or not TAG_PATTERN.fullmatch(tag):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, switch_command(tag), timeout=120)
+    finally:
+        ssh.close()
+    return verify_public_health()
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("deploy", "candidate"))
+    parser.add_argument("command", choices=("deploy", "candidate", "promote"))
+    parser.add_argument("--tag")
     args = parser.parse_args()
-    tag = release_tag(source_version(), source_revision())
+    tag = args.tag or release_tag(source_version(), source_revision())
+    if not TAG_PATTERN.fullmatch(tag):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     if args.command == "candidate":
         ssh = deploy.connect()
         try:
@@ -180,6 +194,9 @@ def main():
             deploy.run(ssh, candidate_command(tag), timeout=90)
         finally:
             ssh.close()
+        return
+    if args.command == "promote":
+        print(json.dumps(promote_release(tag), ensure_ascii=True, sort_keys=True))
         return
     print(json.dumps(deploy_release(), ensure_ascii=True, sort_keys=True))
 
