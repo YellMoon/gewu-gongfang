@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList } from '../../utils/storage';
 import { pullFromCloudBusinessProjection } from '../../utils/sync';
+import { shanghaiDateKey } from '../../utils/cloudBusinessProjection';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
@@ -94,7 +95,7 @@ export default function SchedulePage() {
     });
   }, [currentDate, viewMode]);
 
-  const formatDate = (date: Date) => date.toISOString().split('T')[0];
+  const formatDate = (date: Date) => shanghaiDateKey(date);
   const formatTime = (time: string) => time.substring(11, 16);
   const isToday = (date: Date) => {
     const today = new Date();

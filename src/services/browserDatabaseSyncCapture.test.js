@@ -76,6 +76,8 @@ assert.ok(source.includes('baseVersion: previous.updated_at || null'),
   'schedule replacement drafts must preserve each prior record version');
 assert.ok(source.includes('contacts: this.studentAuthorityContacts(updated)'),
   'offline student update drafts must include observed contact versions for the atomic cloud record contract');
+assert.ok(source.includes('this.data.student_contacts = overlayStudentContactDraftProjection(updated, this.data.student_contacts || [])'),
+  'offline student updates must overlay the derived contact cache after recording the versioned cloud draft');
 assert.ok(source.includes('contacts: this.studentAuthorityContacts(newStudent)'),
   'offline student creation drafts must include all three editable contact slots');
 assert.ok(source.includes('primaryPhone || primaryWechat || primary'),

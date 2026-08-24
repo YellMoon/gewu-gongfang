@@ -9,6 +9,7 @@ import { Student, StudentSource, Institution, Payment, Consumption, PaymentType 
 import { calculateGrade } from '../utils/helpers';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import DataPageLayout from '../layout/DataPageLayout';
+import { studentContactFormValues } from '../services/studentContactDraftProjection.mjs';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -45,21 +46,6 @@ function schoolOptionMatches(inputValue: string, optionValue: any) {
 
 function contactText(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
-function studentContactFormValues(student: Student, contacts: any[]) {
-  const bySlot = new Map(contacts.filter(contact => contact.student_id === student.id).map(contact => [contact.slot, contact]));
-  const primary: any = bySlot.get(1);
-  const guardianOne: any = bySlot.get(2);
-  const guardianTwo: any = bySlot.get(3);
-  return {
-    phone: primary?.phone ?? student.phone ?? undefined,
-    student_wechat: primary?.wechat ?? student.student_wechat ?? undefined,
-    parent_phone: guardianOne?.phone ?? student.parent_phone ?? undefined,
-    parent_wechat: guardianOne?.wechat ?? student.parent_wechat ?? undefined,
-    second_parent_phone: guardianTwo?.phone ?? student.second_parent_phone ?? undefined,
-    second_parent_wechat: guardianTwo?.wechat ?? student.second_parent_wechat ?? undefined,
-  };
 }
 
 function studentContactCommands(values: any, existingContacts: any[] = [], includeExpectedVersions = false) {

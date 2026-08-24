@@ -6,6 +6,7 @@ const fs = require('fs');
 const source = fs.readFileSync('src/pages/StudentList.tsx', 'utf8');
 
 assert.ok(source.includes('getAllStudentContacts'), 'student editor must read cloud-projected contact records');
+assert.ok(source.includes("import { studentContactFormValues } from '../services/studentContactDraftProjection.mjs'"), 'student editor must use the behavior-tested local contact draft projection');
 assert.ok(source.includes('updateCloudStudentRecord'), 'online student edits must use the atomic cloud command');
 assert.ok(source.includes('createCloudStudentRecord'), 'online student creation must use the cloud command');
 assert.ok(source.includes('deleteCloudStudent'), 'online student deletion must use the cloud command');

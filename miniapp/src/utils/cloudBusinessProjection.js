@@ -13,6 +13,38 @@ const TABLES = Object.freeze([
   ['assetCategories', 'assetCategories'],
 ]);
 
+const SHANGHAI_DATE_TIME = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hourCycle: 'h23',
+});
+
+function cloudScheduleDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = Object.fromEntries(SHANGHAI_DATE_TIME.formatToParts(date).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function shanghaiDateKey(value) {
+  const normalized = cloudScheduleDateTime(value);
+  return typeof normalized === 'string' && /^\d{4}-\d{2}-\d{2}T/u.test(normalized)
+    ? normalized.slice(0, 10)
+    : '';
+}
+
+function normalizeProjection(projection) {
+  return {
+    ...projection,
+    schedules: projection.schedules.map(schedule => ({
+      ...schedule,
+      start_time: cloudScheduleDateTime(schedule.start_time),
+      end_time: cloudScheduleDateTime(schedule.end_time),
+    })),
+  };
+}
+
 function validProjection(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
     && TABLES.every(([key]) => Array.isArray(value[key]));
@@ -26,12 +58,13 @@ function createCloudBusinessProjectionRuntime({ readProjection, writeCache }) {
       const response = await readProjection(token);
       const projection = response?.success === true && response?.data?.ok === true ? response.data.projection : null;
       if (!validProjection(projection)) throw new Error('CLOUD_BUSINESS_PROJECTION_UNAVAILABLE');
-      TABLES.forEach(([projectionKey, cacheKey]) => writeCache(cacheKey, projection[projectionKey]));
+      const normalized = normalizeProjection(projection);
+      TABLES.forEach(([projectionKey, cacheKey]) => writeCache(cacheKey, normalized[projectionKey]));
       writeCache('payments', []);
       writeCache('grades', []);
-      return projection;
+      return normalized;
     },
   });
 }
 
-module.exports = Object.freeze({ createCloudBusinessProjectionRuntime });
+module.exports = Object.freeze({ cloudScheduleDateTime, shanghaiDateKey, createCloudBusinessProjectionRuntime });

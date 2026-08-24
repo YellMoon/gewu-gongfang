@@ -14,6 +14,7 @@ import {
   MiniappRole,
 } from '../../utils/permission';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { shanghaiDateKey } from '../../utils/cloudBusinessProjection';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
 import { businessCacheIdentityKey } from '../../utils/miniappAuthorizationRuntime';
 import { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } from '../../utils/miniappHomePresentation';
@@ -188,7 +189,7 @@ export default function Index() {
       const scopedSchedules = schedules;
       const scopedStudents = students;
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = shanghaiDateKey(new Date());
       const thisMonth = today.substring(0, 7);
 
       const todayClasses = scopedSchedules.filter(s =>

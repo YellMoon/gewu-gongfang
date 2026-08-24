@@ -25,6 +25,7 @@ import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.m
 import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.mjs';
 import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
+import { overlayStudentContactDraftProjection } from './studentContactDraftProjection.mjs';
 import {
   partitionedStorageKey,
   migrateLegacyStorageValue,
@@ -1171,6 +1172,7 @@ class BrowserDatabaseService {
       contacts: this.studentAuthorityContacts(updated),
     };
     this.recordAuthorityDraft('students', 'update', id, draftValue, baseVersion);
+    this.data.student_contacts = overlayStudentContactDraftProjection(updated, this.data.student_contacts || []);
     this.saveData();
     return updated;
   }

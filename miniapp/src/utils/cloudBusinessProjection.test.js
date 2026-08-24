@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProjection');
+const { createCloudBusinessProjectionRuntime, shanghaiDateKey } = require('./cloudBusinessProjection');
 
 (async () => {
   const writes = [];
@@ -10,7 +10,13 @@ const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProject
     studentContacts: [{ id: 'contact-1', student_id: 'student-1' }],
     teachers: [{ id: 'teacher-1', name: 'Teacher One' }],
     courses: [{ id: 'course-1', name: 'Course One' }],
-    schedules: [{ id: 'schedule-1', course_id: 'course-1' }],
+    schedules: [{
+      id: 'schedule-1',
+      course_id: 'course-1',
+      start_time: '2026-08-24T16:30:00.000Z',
+      end_time: '2026-08-24T17:30:00.000Z',
+      student_ids: ['student-1'],
+    }],
     institutions: [{ id: 'institution-1', name: 'Institution One' }],
     schools: [{ id: 'school-1', name: 'School One' }],
     rooms: [{ id: 'room-1', name: 'Room One' }],
@@ -27,13 +33,18 @@ const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProject
 
   const result = await runtime.refresh('miniapp-ticket.signature');
 
-  assert.deepStrictEqual(result, projection);
+  const normalizedSchedules = [{
+    ...projection.schedules[0],
+    start_time: '2026-08-25T00:30:00',
+    end_time: '2026-08-25T01:30:00',
+  }];
+  assert.deepStrictEqual(result, { ...projection, schedules: normalizedSchedules });
   assert.deepStrictEqual(writes, [
     ['students', projection.students],
     ['studentContacts', projection.studentContacts],
     ['teachers', projection.teachers],
     ['courses', projection.courses],
-    ['schedules', projection.schedules],
+    ['schedules', normalizedSchedules],
     ['institutions', projection.institutions],
     ['schools', projection.schools],
     ['rooms', projection.rooms],
@@ -42,6 +53,8 @@ const { createCloudBusinessProjectionRuntime } = require('./cloudBusinessProject
     ['payments', []],
     ['grades', []],
   ]);
+  assert.deepStrictEqual(normalizedSchedules[0].student_ids, ['student-1'], 'projection normalization must preserve the authoritative roster');
+  assert.strictEqual(shanghaiDateKey('2026-08-24T16:30:00.000Z'), '2026-08-25', 'calendar filtering must use the product time zone instead of UTC date slicing');
   console.log('miniapp cloud business projection cache checks passed');
 })().catch(error => {
   console.error(error);
