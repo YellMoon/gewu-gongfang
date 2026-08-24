@@ -73,7 +73,9 @@
 **Files:**
 - Modify: `package.json` only through the version workflow.
 
-- [ ] Verify the diff excludes user-owned `output/` directories and unrelated changes.
-- [ ] After fresh final verification, stage only this phase's files while explicitly excluding protected user-owned `output/` directories, commit with the required release message, and push `gewu master`.
+- [x] Verify the diff excludes user-owned `output/` directories and unrelated changes.
+- [x] After fresh final verification, stage only this phase's files while explicitly excluding protected user-owned `output/` directories, commit with the required release message, and push `gewu master`.
 - [ ] Determine the version bump, build Windows artifacts, publish OSS update metadata, and verify installer plus `latest.yml`.
-- [ ] Restore and verify Node native dependencies. Report only partial release if any applicable endpoint remains undeployed or externally blocked.
+- [x] Restore and verify Node native dependencies. Report only partial release if any applicable endpoint remains undeployed or externally blocked.
+
+Release status: the automatic minor bump produced unified source version `8.3.0` and was pushed as `81bc5e63`. `npm run dist:win` stopped at its first gate because the protected release matrix still expects `8.2.0`. No Electron ABI switch, 8.3.0 installer, OSS upload, or feed mutation occurred. Node ABI was explicitly rebuilt and verified afterward; changing `output/release-matrix/` is outside this phase's authorization.
