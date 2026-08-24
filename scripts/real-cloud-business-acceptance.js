@@ -83,6 +83,99 @@ function inspectSessionTokenWithRuntime(runtimeModules, secret, sessionToken) {
   return service.inspectSessionToken(sessionToken);
 }
 
+function createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity, randomUUID = crypto.randomUUID) {
+  if (!runtimeModules || typeof runtimeModules.packagePath !== 'string' || typeof ticketSecret !== 'string' || ticketSecret.length < 24
+    || !identity || typeof identity.authorityId !== 'string' || !identity.authorityId.trim()
+    || typeof identity.accountId !== 'string' || !identity.accountId.trim()
+    || !(identity.phoneHmac === null || /^[0-9a-f]{64}$/u.test(identity.phoneHmac)) || typeof randomUUID !== 'function') {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  }
+  const suffix = String(randomUUID()).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 36);
+  if (suffix.length < 4) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  const modulePath = path.join(path.dirname(runtimeModules.packagePath), 'src', 'desktopRegistrationService');
+  const { createCloudDesktopRegistrationService } = require(modulePath);
+  const service = createCloudDesktopRegistrationService({
+    now: () => new Date(),
+    randomId: prefix => `${prefix}-${suffix}`,
+    phoneVerifier: async () => { throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID'); },
+    lookupAccount: async () => { throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID'); },
+    ticketSecret,
+    leasePrivateKey: crypto.generateKeyPairSync('ed25519').privateKey,
+    issueAssertion: async () => {},
+    register: async () => null,
+    readSessionContext: async () => null,
+  });
+  const verification = service.issueVerificationForVerifiedAccount(identity);
+  const keys = crypto.generateKeyPairSync('ed25519');
+  const installationPublicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const keyFingerprint = crypto.createHash('sha256').update(keys.publicKey.export({ type: 'spki', format: 'der' })).digest('hex');
+  return Object.freeze({
+    body: Object.freeze({
+      verificationToken: verification.verificationToken,
+      installationId: `acceptance-registration-${suffix}`,
+      installationPublicKey,
+      deviceProof: crypto.sign(null, Buffer.from(verification.deviceChallenge, 'utf8'), keys.privateKey).toString('base64url'),
+      idempotencyKey: `acceptance-registration-${suffix}`,
+    }),
+    deviceChallenge: verification.deviceChallenge,
+    deviceId: `desktop-device-${keyFingerprint.slice(0, 32)}`,
+  });
+}
+
+async function runOnlineRegistrationAcceptance({
+  fetchImpl,
+  runtimeModules,
+  ticketSecret,
+  identity,
+  baseUrl = PUBLIC_BASE_URL,
+  randomUUID = crypto.randomUUID,
+} = {}) {
+  if (typeof fetchImpl !== 'function' || baseUrl !== PUBLIC_BASE_URL) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  const fixture = createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity, randomUUID);
+  const response = await fetchImpl(`${baseUrl}/api/desktop/online-registration`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(fixture.body),
+  });
+  const payload = await readJson(response);
+  if (response.status !== 200 || payload?.ok !== true || typeof payload.receiptId !== 'string' || !payload.receiptId
+    || typeof payload.sessionId !== 'string' || !payload.sessionId || payload.replayed !== false
+    || typeof payload.sessionToken !== 'string' || !payload.sessionToken
+    || !payload.offlineLease || typeof payload.offlineLease !== 'object' || typeof payload.offlineLease.signature !== 'string') {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_FAILED', {
+      status: response.status,
+      responseCode: payload?.code || null,
+    });
+  }
+  const inspected = inspectSessionTokenWithRuntime(runtimeModules, ticketSecret, payload.sessionToken);
+  if (inspected.authorityId !== identity.authorityId || inspected.accountId !== identity.accountId
+    || inspected.deviceId !== fixture.deviceId || inspected.installationId !== fixture.body.installationId
+    || inspected.sessionId !== payload.sessionId) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_TOKEN_INVALID');
+  }
+  const context = await requestJson(fetchImpl, payload.sessionToken, `${baseUrl}/api/desktop/session-context`);
+  if (context.status !== 200 || context.body?.ok !== true || context.body.authorityId !== identity.authorityId
+    || context.body.accountId !== identity.accountId || context.body.deviceId !== fixture.deviceId
+    || context.body.installationId !== fixture.body.installationId || context.body.sessionId !== payload.sessionId
+    || !Array.isArray(context.body.roles) || !context.body.roles.includes('super_admin')) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_CONTEXT_FAILED', {
+      status: context.status,
+      responseCode: context.body?.code || null,
+      roles: Array.isArray(context.body?.roles) ? context.body.roles.filter(role => typeof role === 'string') : [],
+    });
+  }
+  return Object.freeze({
+    sessionToken: payload.sessionToken,
+    fixture: Object.freeze({ sessionId: payload.sessionId, installationId: fixture.body.installationId, deviceId: fixture.deviceId }),
+    evidence: Object.freeze({
+      onlineRegistrationStatus: response.status,
+      onlineSessionContextStatus: context.status,
+      onlineRegistrationReplayed: payload.replayed,
+      onlineReceiptSha256: crypto.createHash('sha256').update(payload.receiptId, 'utf8').digest('hex'),
+    }),
+  });
+}
+
 function pidOneEnvironmentMatches(name, expected, readFileSync = fs.readFileSync) {
   if (!/^[A-Z0-9_]+$/.test(name) || typeof expected !== 'string') return false;
   const entries = String(readFileSync('/proc/1/environ')).split('\0');
@@ -289,14 +382,15 @@ function resolveOperatorIdentity(recordsJson, accountId) {
   try { records = JSON.parse(String(recordsJson || '')); } catch (_) { throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID'); }
   if (!Array.isArray(records) || typeof accountId !== 'string' || !accountId.trim()) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
   const matches = records.filter(record => record && typeof record === 'object' && !Array.isArray(record)
-    && record.accountId === accountId && typeof record.phoneHmac === 'string' && /^[0-9a-f]{64}$/.test(record.phoneHmac));
+    && record.accountId === accountId && typeof record.authorityId === 'string' && record.authorityId.trim()
+    && typeof record.phoneHmac === 'string' && /^[0-9a-f]{64}$/.test(record.phoneHmac));
   if (matches.length !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
-  return { accountId, phoneHmac: matches[0].phoneHmac };
+  return { authorityId: matches[0].authorityId, accountId, phoneHmac: matches[0].phoneHmac };
 }
 
 async function loadActiveSuperAdminSession(appPool, writerPool, operatorRecordsJson) {
   const accounts = await runStage('REAL_CLOUD_ACCEPTANCE_ADMIN_LOOKUP_FAILED', () => writerPool.query(
-    `SELECT DISTINCT ac.account_id AS "accountId"
+    `SELECT DISTINCT ac.authority_id AS "authorityId", ac.account_id AS "accountId"
        FROM vnext_control_plane.vnext_accounts ac
        JOIN vnext_control_plane.vnext_role_grants g ON g.authority_id=ac.authority_id AND g.account_id=ac.account_id
       WHERE ac.status='active' AND g.status='active' AND g.role='super_admin'
@@ -317,6 +411,7 @@ async function loadActiveSuperAdminSession(appPool, writerPool, operatorRecordsJ
     [accounts.rows.map(row => row.accountId)],
   ));
   const identity = resolveOperatorIdentity(operatorRecordsJson, accounts.rows[0].accountId);
+  if (identity.authorityId !== accounts.rows[0].authorityId) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
   if (sessions.rows.length < 1) return { session: null, accountIds: accounts.rows.map(row => row.accountId), identity };
   const session = sessions.rows[0];
   return {
@@ -324,6 +419,33 @@ async function loadActiveSuperAdminSession(appPool, writerPool, operatorRecordsJ
     accountIds: accounts.rows.map(row => row.accountId),
     identity,
   };
+}
+
+async function revokeOnlineRegistrationAcceptance(writerPool, fixture) {
+  if (!fixture || typeof fixture.sessionId !== 'string' || !/^[A-Za-z0-9_-]{4,256}$/u.test(fixture.sessionId)
+    || typeof fixture.installationId !== 'string' || !/^acceptance-registration-[a-z0-9-]{4,36}$/u.test(fixture.installationId)
+    || typeof fixture.deviceId !== 'string' || !/^desktop-device-[0-9a-f]{32}$/u.test(fixture.deviceId)) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  }
+  const result = await withOwnerTransaction(writerPool, 'REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_REVOKE_FAILED', async client => {
+    const found = await client.query(
+      `SELECT authority_id,account_id,device_id,installation_id,link_id,status
+         FROM vnext_control_plane.vnext_sessions
+        WHERE session_id=$1 AND installation_id=$2 AND device_id=$3`,
+      [fixture.sessionId, fixture.installationId, fixture.deviceId],
+    );
+    if (found.rows.length !== 1 || found.rows[0].status !== 'active') throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_REVOKE_FAILED');
+    const row = found.rows[0];
+    const session = await client.query(`UPDATE vnext_control_plane.vnext_sessions SET status='revoked',revoked_at=transaction_timestamp(),updated_at=transaction_timestamp(),row_version=row_version+1 WHERE session_id=$1 AND status='active' RETURNING status`, [fixture.sessionId]);
+    const link = await client.query(`UPDATE vnext_control_plane.vnext_account_device_links SET status='revoked',revoked_at=transaction_timestamp(),auth_version=auth_version+1,access_version=access_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND link_id=$2 AND installation_id=$3 AND status='active' RETURNING status`, [row.authority_id, row.link_id, fixture.installationId]);
+    const installation = await client.query(`UPDATE vnext_control_plane.vnext_device_installations SET status='revoked',revoked_at=transaction_timestamp(),credential_version=credential_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND installation_id=$2 AND device_id=$3 AND status='active' RETURNING status`, [row.authority_id, fixture.installationId, fixture.deviceId]);
+    const device = await client.query(`UPDATE vnext_control_plane.vnext_trusted_devices SET status='revoked',revoked_at=transaction_timestamp(),credential_version=credential_version+1,risk_version=risk_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND device_id=$2 AND status='active' RETURNING status`, [row.authority_id, fixture.deviceId]);
+    return [session, link, installation, device];
+  });
+  if (result.some(item => item.rows.length !== 1 || item.rows[0].status !== 'revoked')) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_REVOKE_FAILED');
+  }
+  return true;
 }
 
 async function ensureBusinessSuperAdmin(appPool, identity) {
@@ -528,27 +650,27 @@ async function runFromEnvironment(env = process.env) {
   const marker = makeMarker(version, crypto.randomUUID);
   const tenantId = env.CLOUD_BUSINESS_TENANT_ID || 'default';
   const { Pool } = require(runtimeModules.pgPath);
-  const appPool = new Pool(postgresConfig(env, env.POSTGRES_USER || 'gewu_app', env.POSTGRES_PASSWORD));
+  const { resolveRuntimeDatabaseUser } = require(path.join(path.dirname(runtimeModules.packagePath), 'src', 'runtimeDatabaseRole'));
+  const appPool = new Pool(postgresConfig(env, resolveRuntimeDatabaseUser(env.POSTGRES_USER), env.POSTGRES_PASSWORD));
   const writerPool = new Pool(postgresConfig(env, 'vnext_pg17_writer', env.COMMAND_WRITER_POSTGRES_PASSWORD));
-  let controlledSession = null;
+  let onlineRegistration = null;
   try {
     return await runWithCleanup(
       async () => {
         const loaded = await loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
         await ensureCanonicalPhoneContact(writerPool, loaded.identity);
         await ensureBusinessSuperAdmin(appPool, loaded.identity);
-        const session = loaded.session || await createControlledAcceptanceSession(writerPool, loaded.accountIds);
-        if (!loaded.session) controlledSession = session;
         if (!pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', env.CLOUD_IDENTITY_TICKET_SECRET)) {
           throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SERVER_ENVIRONMENT_MISMATCH');
         }
-        const sessionToken = makeSessionToken(env.CLOUD_IDENTITY_TICKET_SECRET, session);
-        const inspectedTicket = inspectSessionTokenWithRuntime(runtimeModules, env.CLOUD_IDENTITY_TICKET_SECRET, sessionToken);
-        if (inspectedTicket.authorityId !== session.authorityId || inspectedTicket.accountId !== session.accountId
-          || inspectedTicket.deviceId !== session.deviceId || inspectedTicket.installationId !== session.installationId
-          || inspectedTicket.sessionId !== session.sessionId) {
-          throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SESSION_TOKEN_SELF_CHECK_FAILED');
-        }
+        onlineRegistration = await runOnlineRegistrationAcceptance({
+          fetchImpl: fetch,
+          runtimeModules,
+          ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET,
+          identity: loaded.identity,
+          baseUrl: PUBLIC_BASE_URL,
+        });
+        const sessionToken = onlineRegistration.sessionToken;
         await verifyDesktopProjectionSources(appPool);
         const localSessionCheck = await requestJson(fetch, sessionToken, `${LOCAL_BASE_URL}/api/desktop/session-context`);
         if (localSessionCheck.status !== 200 || localSessionCheck.body?.ok !== true || !Array.isArray(localSessionCheck.body?.roles)
@@ -568,11 +690,12 @@ async function runFromEnvironment(env = process.env) {
             roles: Array.isArray(sessionCheck.body?.roles) ? sessionCheck.body.roles.filter(role => typeof role === 'string') : [],
           });
         }
-        return runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
+        const businessEvidence = await runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
+        return Object.freeze({ ...businessEvidence, ...onlineRegistration.evidence });
       },
       () => runWithCleanup(
         () => forceCleanup(appPool, writerPool, tenantId, marker),
-        () => controlledSession ? revokeControlledAcceptanceSession(writerPool, controlledSession) : Promise.resolve(),
+        () => onlineRegistration ? revokeOnlineRegistrationAcceptance(writerPool, onlineRegistration.fixture) : Promise.resolve(),
       ),
     );
   } finally {
@@ -586,6 +709,8 @@ module.exports = Object.freeze({
   runWithCleanup,
   makeSessionToken,
   inspectSessionTokenWithRuntime,
+  createOnlineRegistrationRequest,
+  runOnlineRegistrationAcceptance,
   pidOneEnvironmentMatches,
   verifyDesktopProjectionSources,
   makeMarker,
@@ -597,6 +722,7 @@ module.exports = Object.freeze({
   ensureCanonicalPhoneContact,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
+  revokeOnlineRegistrationAcceptance,
   forceCleanup,
   runFromEnvironment,
 });

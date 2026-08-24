@@ -24,6 +24,8 @@ const { createCanonicalAccountProvisioningService } = require('./src/canonicalAc
 const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
+const { createDesktopRegistrationPgAdapter } = require('./src/desktopRegistrationPgAdapter');
+const { resolveRuntimeDatabaseUser } = require('./src/runtimeDatabaseRole');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
 const { createQuestionImportTaskRepository } = require('./src/questionImportTaskRepository');
@@ -43,7 +45,7 @@ const pool = new Pool({
   host: process.env.POSTGRES_HOST || 'gewu-postgres17',
   port: Number(process.env.POSTGRES_PORT || 5432),
   database: process.env.POSTGRES_DB || 'gewu_cloud',
-  user: process.env.POSTGRES_USER || 'gewu_app',
+  user: resolveRuntimeDatabaseUser(process.env.POSTGRES_USER),
   password: process.env.POSTGRES_PASSWORD,
   max: 5,
   idleTimeoutMillis: 10000,
@@ -182,13 +184,7 @@ function createDesktopRegistrationFromEnvironment() {
       'SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
       [input.assertionId, input.authorityId, input.accountId, input.deviceId, input.installationId, input.installationPublicKey, input.keyFingerprint, input.audience, input.nonceSha256, input.canonicalRequestSha256, input.identityProofSha256, input.hardwareEvidenceSha256, input.issuedAt, input.expiresAt],
     ),
-    register: async input => {
-      const result = await writerPool.query(
-        'SELECT receipt_id AS "receiptId", session_id AS "sessionId", replayed FROM vnext_control_plane.vnext_register_unified_desktop_online($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-        [input.assertionId, input.idempotencyKey, input.receiptId, input.auditEventId, input.outboxEventId, input.sessionId, input.linkId, input.sessionExpiresAt, input.canonicalResultJson, input.resultSha256, input.canonicalPayloadJson, input.payloadSha256],
-      );
-      return result.rows[0] ? { ...result.rows[0], phoneHash } : null;
-    },
+    register: createDesktopRegistrationPgAdapter({ writerPool }),
     readSessionContext: async input => {
       const result = await writerPool.query(
         `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt", vc.normalized_value_hash AS "phoneHmac", NULL::text AS "teacherId", NULL::text AS "studentId",

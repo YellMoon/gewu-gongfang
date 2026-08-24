@@ -52,6 +52,10 @@ def test_receipt_is_strict_and_contains_no_session_material():
         "absenceConfirmed": True,
         "cleanupConfirmed": True,
         "markerSha256": "a" * 64,
+        "onlineRegistrationStatus": 200,
+        "onlineSessionContextStatus": 200,
+        "onlineRegistrationReplayed": False,
+        "onlineReceiptSha256": "b" * 64,
     }
     assert module.parse_receipt(json.dumps(payload)) == payload
     for key in ("sessionToken", "token", "password", "phone"):

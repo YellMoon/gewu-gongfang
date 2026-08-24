@@ -28,6 +28,10 @@ RECEIPT_KEYS = {
     "absenceConfirmed",
     "cleanupConfirmed",
     "markerSha256",
+    "onlineRegistrationStatus",
+    "onlineSessionContextStatus",
+    "onlineRegistrationReplayed",
+    "onlineReceiptSha256",
 }
 
 
@@ -86,6 +90,12 @@ def parse_receipt(output):
         and isinstance(payload.get("markerSha256"), str)
         and len(payload["markerSha256"]) == 64
         and all(character in "0123456789abcdef" for character in payload["markerSha256"])
+        and payload.get("onlineRegistrationStatus") == 200
+        and payload.get("onlineSessionContextStatus") == 200
+        and payload.get("onlineRegistrationReplayed") is False
+        and isinstance(payload.get("onlineReceiptSha256"), str)
+        and len(payload["onlineReceiptSha256"]) == 64
+        and all(character in "0123456789abcdef" for character in payload["onlineReceiptSha256"])
     )
     if not valid:
         raise ValueError("REAL_CLOUD_ACCEPTANCE_RECEIPT_INVALID")

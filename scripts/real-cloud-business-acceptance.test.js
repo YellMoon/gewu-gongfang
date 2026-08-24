@@ -13,6 +13,9 @@ const {
   ensureBusinessSuperAdmin,
   resolveOperatorIdentity,
   ensureCanonicalPhoneContact,
+  createOnlineRegistrationRequest,
+  runOnlineRegistrationAcceptance,
+  revokeOnlineRegistrationAcceptance,
   pidOneEnvironmentMatches,
 } = require('./real-cloud-business-acceptance');
 const { createCloudDesktopRegistrationService } = require('../cloud-business-api/src/desktopRegistrationService');
@@ -224,8 +227,83 @@ async function canonicalPhoneMappingActivatesTheExistingBusinessAccount() {
 function operatorIdentityIsResolvedWithoutPhonePlaintext() {
   assert.deepStrictEqual(resolveOperatorIdentity(JSON.stringify([
     { phoneHmac: 'd'.repeat(64), authorityId: 'authority-1', accountId: 'canonical-admin' },
-  ]), 'canonical-admin'), { accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) });
+  ]), 'canonical-admin'), { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) });
   assert.throws(() => resolveOperatorIdentity('[]', 'canonical-admin'), error => error.code === 'REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
+}
+
+async function onlineRegistrationIsRealAndTokenFreeInEvidence() {
+  const runtimeModules = resolveRuntimeModules(__dirname, candidate => candidate.includes('/cloud-business-api/'));
+  const ticketSecret = 'registration-acceptance-secret'.repeat(2);
+  const identity = { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) };
+  const fixture = createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity, () => 'fixed-registration');
+  assert.match(fixture.body.installationId, /^acceptance-registration-/);
+  assert.strictEqual(
+    crypto.verify(null, Buffer.from(fixture.deviceChallenge, 'utf8'), crypto.createPublicKey(fixture.body.installationPublicKey), Buffer.from(fixture.body.deviceProof, 'base64url')),
+    true,
+  );
+
+  const calls = [];
+  const sessionExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ path, body, authorization: options.headers?.Authorization || null });
+    if (path.endsWith('/api/desktop/online-registration')) {
+      const deviceId = `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(body.installationPublicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`;
+      const session = {
+        authorityId: identity.authorityId,
+        accountId: identity.accountId,
+        deviceId,
+        installationId: body.installationId,
+        sessionId: 'session-online-fixed',
+        expiresAt: sessionExpiresAt,
+      };
+      return response(200, {
+        ok: true,
+        receiptId: 'receipt-online-fixed',
+        sessionId: session.sessionId,
+        replayed: false,
+        sessionToken: makeSessionToken(ticketSecret, session),
+        offlineLease: { id: 'offline-lease-session-online-fixed', signature: 'signed' },
+      });
+    }
+    const registrationBody = calls[0].body;
+    const deviceId = `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(registrationBody.installationPublicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`;
+    return response(200, { ok: true, ...identity, deviceId, installationId: registrationBody.installationId, sessionId: 'session-online-fixed', expiresAt: sessionExpiresAt, roles: ['super_admin'], teacherId: null, studentId: null });
+  };
+  const accepted = await runOnlineRegistrationAcceptance({
+    fetchImpl,
+    runtimeModules,
+    ticketSecret,
+    identity,
+    baseUrl: 'https://physicsedu.xyz/scheduling',
+    randomUUID: () => 'fixed-registration',
+  });
+  assert.strictEqual(calls[0].path, '/scheduling/api/desktop/online-registration');
+  assert.strictEqual(calls[0].authorization, null, 'registration must use the verification ticket, not an existing session');
+  assert.strictEqual(calls[1].authorization, `Bearer ${accepted.sessionToken}`);
+  assert.strictEqual(accepted.evidence.onlineRegistrationStatus, 200);
+  assert.strictEqual(accepted.evidence.onlineSessionContextStatus, 200);
+  assert.ok(!JSON.stringify(accepted.evidence).includes(accepted.sessionToken));
+}
+
+async function onlineRegistrationFixtureIsRevoked() {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push([text, values]);
+      if (text.includes('SELECT authority_id')) return { rows: [{ authority_id: 'authority-1', account_id: 'canonical-admin', device_id: `desktop-device-${'a'.repeat(32)}`, installation_id: 'acceptance-registration-fixed', link_id: 'link-fixed', status: 'active' }] };
+      return { rows: [{ status: 'revoked' }] };
+    },
+    release() {},
+  };
+  const pool = { async connect() { return client; } };
+  assert.strictEqual(await revokeOnlineRegistrationAcceptance(pool, {
+    sessionId: 'session-online-fixed', installationId: 'acceptance-registration-fixed', deviceId: `desktop-device-${'a'.repeat(32)}`,
+  }), true);
+  assert.ok(calls.some(([text]) => text.includes('vnext_account_device_links')));
+  assert.ok(calls.some(([text]) => text.includes('vnext_device_installations')));
+  assert.ok(calls.some(([text]) => text.includes('vnext_trusted_devices')));
 }
 
 async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
@@ -257,6 +335,8 @@ Promise.resolve()
   .then(canonicalPhoneMappingActivatesTheExistingBusinessAccount)
   .then(operatorIdentityIsResolvedWithoutPhonePlaintext)
   .then(operatorPhoneBecomesCanonicalWithoutPlaintext)
+  .then(onlineRegistrationIsRealAndTokenFreeInEvidence)
+  .then(onlineRegistrationFixtureIsRevoked)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
   .then(() => console.log('real cloud business acceptance checks passed'));
