@@ -326,7 +326,7 @@ class BrowserDatabaseService {
       ...s,
       grade_current: calculateGrade(s.grade_year)
     }));
-    this.ensureInstitutionStudents();
+    this.ensureInstitutionStudents(false);
 
     // 题型迁移：旧题型统一为5种
     const typeMigrateMap: Record<string, string> = {
@@ -905,10 +905,11 @@ class BrowserDatabaseService {
   addOrUpdateRoom(roomName: string, address?: string): void {
     const existing = this.data.rooms.find(s => s.name === roomName);
     if (existing) {
+      const baseVersion = existing.updated_at || null;
       existing.count++;
       existing.updated_at = new Date().toISOString();
       if (address) existing.address = address;
-      this.recordAuthorityDraft('rooms', 'update', existing.id, existing);
+      this.recordAuthorityDraft('rooms', 'update', existing.id, existing, baseVersion);
     } else {
       const room = {
         id: this.generateId(),
@@ -953,18 +954,42 @@ class BrowserDatabaseService {
   addOrUpdateSchool(schoolName: string): void {
     const existing = this.data.schools.find(s => s.name === schoolName);
     if (existing) {
+      const baseVersion = existing.updated_at || null;
       existing.count++;
       existing.updated_at = new Date().toISOString();
+      this.recordAuthorityDraft('schools', 'update', existing.id, existing, baseVersion);
     } else {
-      this.data.schools.push({
+      const school = {
         id: this.generateId(),
         name: schoolName,
         count: 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
-      });
+      };
+      this.data.schools.push(school);
+      this.recordAuthorityDraft('schools', 'create', school.id, school);
     }
     this.saveData();
+  }
+
+  updateSchool(id: string, updates: Partial<SchoolInfo>): SchoolInfo | undefined {
+    const index = this.data.schools.findIndex(s => s.id === id);
+    if (index === -1) return undefined;
+    const baseVersion = this.data.schools[index].updated_at || null;
+    this.data.schools[index] = { ...this.data.schools[index], ...updates, updated_at: new Date().toISOString() };
+    this.recordAuthorityDraft('schools', 'update', id, this.data.schools[index], baseVersion);
+    this.saveData();
+    return this.data.schools[index];
+  }
+
+  deleteSchool(id: string): boolean {
+    const index = this.data.schools.findIndex(s => s.id === id);
+    if (index === -1) return false;
+    const baseVersion = this.data.schools[index].updated_at || null;
+    this.data.schools.splice(index, 1);
+    this.recordAuthorityDraft('schools', 'delete', id, { id }, baseVersion);
+    this.saveData();
+    return true;
   }
 
   // ========== 机构管理 ==========
@@ -973,16 +998,17 @@ class BrowserDatabaseService {
     return this.data.institutions;
   }
 
-  createInstitution(institution: Omit<Institution, 'id' | 'created_at'>): Institution {
+  createInstitution(institution: Omit<Institution, 'id' | 'created_at' | 'updated_at'>): Institution {
     const now = new Date().toISOString();
     const newInstitution: Institution = {
       ...institution,
       id: this.generateId(),
-      created_at: now
+      created_at: now,
+      updated_at: now
     };
     this.data.institutions.push(newInstitution);
-    this.ensureInstitutionStudents();
     this.recordAuthorityDraft('institutions', 'create', newInstitution.id, newInstitution);
+    this.ensureInstitutionStudents(true);
     this.saveData();
     return newInstitution;
   }
@@ -990,29 +1016,39 @@ class BrowserDatabaseService {
   updateInstitution(id: string, updates: Partial<Institution>): Institution | undefined {
     const index = this.data.institutions.findIndex(i => i.id === id);
     if (index === -1) return undefined;
-    this.data.institutions[index] = { ...this.data.institutions[index], ...updates };
-    this.ensureInstitutionStudents();
-    this.recordAuthorityDraft('institutions', 'update', id, this.data.institutions[index]);
+    const baseVersion = this.data.institutions[index].updated_at || null;
+    this.data.institutions[index] = { ...this.data.institutions[index], ...updates, updated_at: new Date().toISOString() };
+    this.recordAuthorityDraft('institutions', 'update', id, this.data.institutions[index], baseVersion);
+    this.ensureInstitutionStudents(true);
     this.saveData();
     return this.data.institutions[index];
   }
 
-  private ensureInstitutionStudents(): void {
+  private ensureInstitutionStudents(captureDrafts = false): void {
     const now = new Date().toISOString();
     for (const institution of this.data.institutions || []) {
       const existing = (this.data.students || []).find(student => student.is_institution_student && student.institution_id === institution.id);
       const name = String(institution.name || '').trim() + '\u5b66\u751f';
-      if (existing) { existing.name = name; existing.source_type = StudentSource.INSTITUTION; existing.updated_at = now; }
-      else this.data.students.push({ id: this.generateId(), name, source_type: StudentSource.INSTITUTION, institution_id: institution.id,
-        is_institution_student: true, balance_hours: 0, balance_money: 0, notes: '\u673a\u6784\u8bfe\u7a0b\u8d39\u7528\u4e13\u7528\u5b66\u751f', created_at: now, updated_at: now });
+      if (existing) {
+        if (existing.name === name && existing.source_type === StudentSource.INSTITUTION) continue;
+        const baseVersion = existing.updated_at || null;
+        existing.name = name; existing.source_type = StudentSource.INSTITUTION; existing.updated_at = now;
+        if (captureDrafts) this.recordAuthorityDraft('students', 'update', existing.id, { ...existing, contacts: this.studentAuthorityContacts(existing) }, baseVersion);
+      } else {
+        const created = { id: this.generateId(), name, source_type: StudentSource.INSTITUTION, institution_id: institution.id,
+          is_institution_student: true, balance_hours: 0, balance_money: 0, notes: '\u673a\u6784\u8bfe\u7a0b\u8d39\u7528\u4e13\u7528\u5b66\u751f', created_at: now, updated_at: now } as Student;
+        this.data.students.push(created);
+        if (captureDrafts) this.recordAuthorityDraft('students', 'create', created.id, { ...created, contacts: this.studentAuthorityContacts(created) });
+      }
     }
   }
 
   deleteInstitution(id: string): boolean {
     const index = this.data.institutions.findIndex(i => i.id === id);
     if (index === -1) return false;
+    const baseVersion = this.data.institutions[index].updated_at || null;
     this.data.institutions.splice(index, 1);
-    this.recordAuthorityDraft('institutions', 'delete', id, { id });
+    this.recordAuthorityDraft('institutions', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }

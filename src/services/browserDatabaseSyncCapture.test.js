@@ -30,6 +30,7 @@ for (const table of [
   'grades',
   'rooms',
   'institutions',
+  'schools',
   'assetRecords',
   'assetCategories',
   'questions',
@@ -51,6 +52,10 @@ for (const marker of [
   "this.recordAuthorityDraft('schedules', 'delete', id, { id }, baseVersion)",
   "this.recordAuthorityDraft('teachers', 'update', id, this.data.teachers[index], baseVersion)",
   "this.recordAuthorityDraft('teachers', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('institutions', 'update', id, this.data.institutions[index], baseVersion)",
+  "this.recordAuthorityDraft('institutions', 'delete', id, { id }, baseVersion)",
+  "this.recordAuthorityDraft('schools', 'update', id, this.data.schools[index], baseVersion)",
+  "this.recordAuthorityDraft('schools', 'delete', id, { id }, baseVersion)",
 ]) {
   assert.ok(source.includes(marker), `cloud business update/delete must capture the observed updated_at baseline: ${marker}`);
 }

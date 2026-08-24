@@ -8,7 +8,7 @@ import { migrateLegacyStorageValue, partitionedStorageKey } from './desktopIdent
 
 export type SyncTable =
   | 'students' | 'courses' | 'schedules' | 'payments' | 'consumptions'
-  | 'teachers' | 'grades' | 'rooms' | 'institutions' | 'assetRecords'
+  | 'teachers' | 'grades' | 'rooms' | 'institutions' | 'schools' | 'assetRecords'
   | 'questions' | 'assetCategories'
   | 'taxonomy_systems' | 'taxonomy_nodes';
 

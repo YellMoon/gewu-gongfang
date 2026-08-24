@@ -168,6 +168,20 @@ async function main() {
         });
         return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' } }) };
       }
+      if (url === 'https://cloud.test/api/business/institutions') {
+        assert.strictEqual(options.method, 'POST');
+        return { ok: true, json: async () => ({ ok: true, institution: { id: 'institution-cloud-1', updatedAt: '2026-08-24T04:00:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/institutions/institution-cloud-1') {
+        return { ok: true, json: async () => ({ ok: true, institution: { id: 'institution-cloud-1', updatedAt: options.method === 'PUT' ? '2026-08-24T04:01:00.000Z' : '2026-08-24T04:02:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/schools') {
+        assert.strictEqual(options.method, 'POST');
+        return { ok: true, json: async () => ({ ok: true, school: { id: 'school-cloud-1', updatedAt: '2026-08-24T04:00:00.000Z' } }) };
+      }
+      if (url === 'https://cloud.test/api/business/schools/school-cloud-1') {
+        return { ok: true, json: async () => ({ ok: true, school: { id: 'school-cloud-1', updatedAt: options.method === 'PUT' ? '2026-08-24T04:01:00.000Z' : '2026-08-24T04:02:00.000Z' } }) };
+      }
       if (url === 'https://cloud.test/api/business/students/student-cloud-1') {
         if (options.method === 'DELETE') {
           assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -410,6 +424,12 @@ async function main() {
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1', expectedUpdatedAt: '2026-08-22T00:00:00.000Z',
   });
   assert.deepStrictEqual(deletedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.createCloudInstitution({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, institutionId: 'institution-cloud-1', name: 'Institution', contactPerson: null, contactPhone: null, revenueShare: 30, notes: null }), { id: 'institution-cloud-1', updatedAt: '2026-08-24T04:00:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.updateCloudInstitution({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, institutionId: 'institution-cloud-1', expectedUpdatedAt: '2026-08-24T04:00:00.000Z', name: 'Institution', contactPerson: null, contactPhone: null, revenueShare: 30, notes: null }), { id: 'institution-cloud-1', updatedAt: '2026-08-24T04:01:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.deleteCloudInstitution({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, institutionId: 'institution-cloud-1', expectedUpdatedAt: '2026-08-24T04:01:00.000Z' }), { id: 'institution-cloud-1', updatedAt: '2026-08-24T04:02:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.createCloudSchool({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, schoolId: 'school-cloud-1', name: 'School', count: 3 }), { id: 'school-cloud-1', updatedAt: '2026-08-24T04:00:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.updateCloudSchool({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, schoolId: 'school-cloud-1', expectedUpdatedAt: '2026-08-24T04:00:00.000Z', name: 'School', count: 3 }), { id: 'school-cloud-1', updatedAt: '2026-08-24T04:01:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.deleteCloudSchool({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, schoolId: 'school-cloud-1', expectedUpdatedAt: '2026-08-24T04:01:00.000Z' }), { id: 'school-cloud-1', updatedAt: '2026-08-24T04:02:00.000Z' });
   const updatedCloudStudent = await unifiedCloudClient.updateCloudStudent({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-1',
     expectedUpdatedAt: '2026-08-22T00:00:00.000Z', name: 'Student cloud updated', school: 'Cloud school',

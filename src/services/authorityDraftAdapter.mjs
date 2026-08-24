@@ -66,6 +66,10 @@ const COLLECTIONS = Object.freeze({
       'name', 'contact_person', 'contact_phone', 'revenue_share', 'notes',
     ],
   },
+  schools: {
+    entity: 'school',
+    fields: ['name', 'count'],
+  },
   assetRecords: {
     entity: 'personal-asset-record',
     fields: [

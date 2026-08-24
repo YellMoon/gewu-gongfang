@@ -44,6 +44,16 @@ const assert = require('assert');
   assert.deepStrictEqual(deleted.payload, { id: 'student-1' });
   assert.strictEqual(deleted.type, 'student.delete.v1');
 
+  const school = createAuthorityDraftFromLocalMutation({
+    collection: 'schools', action: 'update', recordId: 'school-1', baseVersion: 'school-version-1',
+    value: { name: 'School One', count: 3, notes: 'not in cloud schema' },
+  });
+  assert.deepStrictEqual(school, {
+    type: 'school.update.v1',
+    payload: { id: 'school-1', changes: { name: 'School One', count: 3 }, expectedVersion: 'school-version-1' },
+    preview: { title: 'school.update', summary: 'school-1' },
+  });
+
   const studentWithContacts = createAuthorityDraftFromLocalMutation({
     collection: 'students',
     action: 'update',

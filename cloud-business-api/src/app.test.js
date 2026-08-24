@@ -196,6 +196,9 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(projectionQueries[0][1], ['default']);
   assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.student_contact_directory') && projectionQueries[0][0].includes('business.schedules'));
   assert.ok(projectionQueries[0][0].includes("'status',o.attendance_status") && projectionQueries[0][0].includes('s.legacy_deleted=false'));
+  for (const activeFilter of ['c.legacy_deleted=false', 'i.legacy_deleted=false', 'r.legacy_deleted=false', 't.legacy_deleted=false']) {
+    assert.ok(projectionQueries[0][0].includes(activeFilter), `desktop projection must exclude soft-deleted records via ${activeFilter}`);
+  }
   const businessWrites = [];
   const scheduleUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),

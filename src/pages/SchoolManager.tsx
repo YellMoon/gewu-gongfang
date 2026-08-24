@@ -46,8 +46,7 @@ const SchoolManager: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    dbService.data.schools = dbService.data.schools.filter((s: School) => s.id !== id);
-    dbService.saveData();
+    dbService.deleteSchool(id);
     message.success('删除成功');
     loadData();
   };
@@ -57,12 +56,7 @@ const SchoolManager: React.FC = () => {
       const values = await form.validateFields();
       if (editingSchool) {
         // 编辑
-        const school = dbService.data.schools.find((s: School) => s.id === editingSchool.id);
-        if (school) {
-          school.name = values.name;
-          school.updated_at = new Date().toISOString();
-          dbService.saveData();
-        }
+        dbService.updateSchool(editingSchool.id, { name: values.name });
         message.success('更新成功');
       } else {
         // 新增

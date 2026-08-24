@@ -79,6 +79,7 @@ export interface Institution {
   revenue_share?: number;
   notes?: string;
   created_at: string;
+  updated_at: string;
 }
 
 // 计费单位

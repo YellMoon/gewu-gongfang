@@ -6,6 +6,7 @@ const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desk
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createBusinessScheduleLifecycleMutations } = require('./src/businessScheduleLifecycleMutationService');
+const { createBusinessFoundationLifecycleMutations } = require('./src/businessFoundationLifecycleMutationService');
 const { createBusinessStudentUpdate } = require('./src/businessStudentMutationService');
 const { createBusinessStudentRecordUpdate } = require('./src/businessStudentRecordMutationService');
 const { createBusinessStudentLifecycleMutations } = require('./src/businessStudentLifecycleMutationService');
@@ -286,6 +287,9 @@ function createDesktopRegistrationFromEnvironment() {
   const businessScheduleLifecycleMutations = createBusinessScheduleLifecycleMutations({
     query: (text, values) => writerPool.query(text, values),
   });
+  const businessFoundationLifecycleMutations = createBusinessFoundationLifecycleMutations({
+    query: (text, values) => writerPool.query(text, values),
+  });
   const businessStudentUpdate = createBusinessStudentUpdate({
     query: (text, values) => writerPool.query(text, values),
   });
@@ -306,6 +310,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessScheduleUpdate,
     businessScheduleStudentOverride,
     businessScheduleLifecycleMutations,
+    businessFoundationLifecycleMutations,
     businessStudentUpdate,
     businessStudentRecordUpdate,
     businessStudentLifecycleMutations,
@@ -388,6 +393,7 @@ const app = createCloudBusinessApp({
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   businessScheduleLifecycleMutations: desktopRuntime?.businessScheduleLifecycleMutations || null,
+  businessFoundationLifecycleMutations: desktopRuntime?.businessFoundationLifecycleMutations || null,
   businessStudentUpdate: desktopRuntime?.businessStudentUpdate || null,
   businessStudentRecordUpdate: desktopRuntime?.businessStudentRecordUpdate || null,
   businessStudentLifecycleMutations: desktopRuntime?.businessStudentLifecycleMutations || null,

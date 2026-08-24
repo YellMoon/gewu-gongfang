@@ -755,6 +755,46 @@ export function createDesktopIdentityClient({
     return data.schedule;
   }
 
+  async function createCloudFoundationRecord({ baseUrl, currentSession, resource, responseKey, idKey, recordId, data: recordData }) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedId = String(recordId || '').trim();
+    if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/${resource}`, {
+      method: 'POST', token: currentSession.token, body: { [idKey]: normalizedId, data: recordData },
+    });
+    if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
+    return data[responseKey];
+  }
+
+  async function updateCloudFoundationRecord({ baseUrl, currentSession, resource, responseKey, recordId, data: recordData }) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedId = String(recordId || '').trim();
+    if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
+      method: 'PUT', token: currentSession.token, body: recordData,
+    });
+    if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
+    return data[responseKey];
+  }
+
+  async function deleteCloudFoundationRecord({ baseUrl, currentSession, resource, responseKey, recordId, expectedUpdatedAt }) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedId = String(recordId || '').trim();
+    if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
+      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+    });
+    if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
+    return data[responseKey];
+  }
+
+  const createCloudInstitution = input => createCloudFoundationRecord({ ...input, resource: 'institutions', responseKey: 'institution', idKey: 'institutionId', recordId: input?.institutionId, data: { name: input?.name, contactPerson: input?.contactPerson, contactPhone: input?.contactPhone, revenueShare: input?.revenueShare, notes: input?.notes } });
+  const updateCloudInstitution = input => updateCloudFoundationRecord({ ...input, resource: 'institutions', responseKey: 'institution', recordId: input?.institutionId, data: { expectedUpdatedAt: input?.expectedUpdatedAt, name: input?.name, contactPerson: input?.contactPerson, contactPhone: input?.contactPhone, revenueShare: input?.revenueShare, notes: input?.notes } });
+  const deleteCloudInstitution = input => deleteCloudFoundationRecord({ ...input, resource: 'institutions', responseKey: 'institution', recordId: input?.institutionId });
+  const createCloudSchool = input => createCloudFoundationRecord({ ...input, resource: 'schools', responseKey: 'school', idKey: 'schoolId', recordId: input?.schoolId, data: { name: input?.name, count: input?.count } });
+  const updateCloudSchool = input => updateCloudFoundationRecord({ ...input, resource: 'schools', responseKey: 'school', recordId: input?.schoolId, data: { expectedUpdatedAt: input?.expectedUpdatedAt, name: input?.name, count: input?.count } });
+  const deleteCloudSchool = input => deleteCloudFoundationRecord({ ...input, resource: 'schools', responseKey: 'school', recordId: input?.schoolId });
+
   async function updateCloudStudent({
     baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource,
   } = {}) {
@@ -989,7 +1029,9 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginUnifiedOnlineRegistration,
     createCloudCourse,
+    createCloudInstitution,
     createCloudSchedule,
+    createCloudSchool,
     createCloudRoom,
     createCloudTeacher,
     createCloudStudentRecord,
@@ -997,7 +1039,9 @@ export function createDesktopIdentityClient({
     deleteCloudStudent,
     deleteCloudCourse,
     deleteCloudRoom,
+    deleteCloudInstitution,
     deleteCloudSchedule,
+    deleteCloudSchool,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
     enrollPasswordForVerifiedRegistration,
@@ -1013,7 +1057,9 @@ export function createDesktopIdentityClient({
     upsertCloudStudentContact,
     updateCloudSchedule,
     updateCloudCourse,
+    updateCloudInstitution,
     updateCloudRoom,
+    updateCloudSchool,
     updateCloudTeacher,
     updateCloudStudent,
     updateCloudStudentRecord,

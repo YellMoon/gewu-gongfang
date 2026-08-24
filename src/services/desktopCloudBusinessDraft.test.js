@@ -120,6 +120,22 @@ const assert = require('assert');
   }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'deleteCloudRoom');
 
+  const institutionRecord = { id: 'institution-1', name: 'Institution One', contact_person: 'Contact', contact_phone: '13700000004', revenue_share: 30, notes: null };
+  await adapter.submit(adapter.createCommand({ id: 'draft-institution-create', type: 'institution.create.v1', payload: { record: institutionRecord } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'createCloudInstitution');
+  await adapter.submit(adapter.createCommand({ id: 'draft-institution-update', type: 'institution.update.v1', payload: { id: 'institution-1', expectedVersion: '2026-08-23T00:00:00.000Z', changes: institutionRecord } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'updateCloudInstitution');
+  await adapter.submit(adapter.createCommand({ id: 'draft-institution-delete', type: 'institution.delete.v1', payload: { id: 'institution-1', expectedVersion: '2026-08-23T00:00:00.000Z' } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'deleteCloudInstitution');
+
+  const schoolRecord = { id: 'school-1', name: 'School One', count: 3 };
+  await adapter.submit(adapter.createCommand({ id: 'draft-school-create', type: 'school.create.v1', payload: { record: schoolRecord } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'createCloudSchool');
+  await adapter.submit(adapter.createCommand({ id: 'draft-school-update', type: 'school.update.v1', payload: { id: 'school-1', expectedVersion: '2026-08-23T00:00:00.000Z', changes: schoolRecord } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'updateCloudSchool');
+  await adapter.submit(adapter.createCommand({ id: 'draft-school-delete', type: 'school.delete.v1', payload: { id: 'school-1', expectedVersion: '2026-08-23T00:00:00.000Z' } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'deleteCloudSchool');
+
   const courseRecord = {
     id: 'course-1', name: 'Physics', year: 2026, semester: 'Fall', display_name: 'Physics Fall', type: 1,
     source_type: 1, institution_id: null, price_tuition: 100, price_teacher: 60, billing_unit: 1,

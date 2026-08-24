@@ -12,6 +12,6 @@ const mutationRoutes = source.slice(mutationStart, mutationEnd);
 
 assert.ok(!mutationRoutes.includes('!desktopRegistration && !miniappCloudAccount'), 'miniapp identity must never make a core teaching mutation route available');
 assert.ok(!mutationRoutes.includes('await businessContext(request)'), 'core teaching mutation routes must not accept a miniapp context');
-assert.strictEqual((mutationRoutes.match(/await desktopBusinessContext\(request\)/g) || []).length, 18, 'every core teaching mutation must use desktop-only identity');
+assert.strictEqual((mutationRoutes.match(/await desktopBusinessContext\(request\)/g) || []).length, 21, 'every core teaching mutation source path must use desktop-only identity');
 
 console.log('miniapp core mutation boundary checks passed');
