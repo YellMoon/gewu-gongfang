@@ -10,6 +10,23 @@ function failure() {
   });
 }
 
+function buildVerifierPoolConfig(environment) {
+  if (!environment || typeof environment !== 'object') throw failure();
+  const port = Number(environment.POSTGRES_PORT || 5432);
+  if (!Number.isInteger(port) || port < 1 || port > 65535
+    || typeof environment.COMMAND_WRITER_POSTGRES_PASSWORD !== 'string'
+    || environment.COMMAND_WRITER_POSTGRES_PASSWORD === '') throw failure();
+  return Object.freeze({
+    host: environment.POSTGRES_HOST || 'gewu-postgres17',
+    port,
+    database: environment.POSTGRES_DB || 'gewu_cloud',
+    user: 'vnext_pg17_writer',
+    password: environment.COMMAND_WRITER_POSTGRES_PASSWORD,
+    max: 1,
+    connectionTimeoutMillis: 5000,
+  });
+}
+
 async function verifyFixedSuperAdmin({ recordsJson, phonePepper, query }) {
   if (typeof recordsJson !== 'string' || typeof phonePepper !== 'string' || typeof query !== 'function') throw failure();
   let records;
@@ -38,15 +55,7 @@ async function verifyFixedSuperAdmin({ recordsJson, phonePepper, query }) {
 }
 
 async function main() {
-  const pool = new Pool({
-    host: process.env.POSTGRES_HOST || 'gewu-postgres17',
-    port: Number(process.env.POSTGRES_PORT || 5432),
-    database: process.env.POSTGRES_DB || 'gewu_cloud',
-    user: process.env.POSTGRES_USER || 'gewu_app',
-    password: process.env.POSTGRES_PASSWORD,
-    max: 1,
-    connectionTimeoutMillis: 5000,
-  });
+  const pool = new Pool(buildVerifierPoolConfig(process.env));
   try {
     const result = await verifyFixedSuperAdmin({
       recordsJson: process.env.CLOUD_OPERATOR_PHONE_HMACS,
@@ -66,4 +75,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = Object.freeze({ verifyFixedSuperAdmin });
+module.exports = Object.freeze({ buildVerifierPoolConfig, verifyFixedSuperAdmin });

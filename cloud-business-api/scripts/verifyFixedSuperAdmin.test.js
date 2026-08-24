@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { verifyFixedSuperAdmin } = require('./verifyFixedSuperAdmin');
+const { buildVerifierPoolConfig, verifyFixedSuperAdmin } = require('./verifyFixedSuperAdmin');
 const { hmacPhone } = require('../src/desktopRegistrationService');
 
 const pepper = 'fixed-admin-phone-pepper-for-tests';
@@ -11,6 +11,16 @@ const recordsJson = JSON.stringify([{
   accountId: expectedAccountId,
   phoneHmac: hmacPhone(pepper, '13732250653'),
 }]);
+
+assert.deepStrictEqual(buildVerifierPoolConfig({
+  POSTGRES_HOST: 'postgres',
+  POSTGRES_PORT: '5433',
+  POSTGRES_DB: 'authority',
+  COMMAND_WRITER_POSTGRES_PASSWORD: 'writer-secret',
+}), {
+  host: 'postgres', port: 5433, database: 'authority', user: 'vnext_pg17_writer',
+  password: 'writer-secret', max: 1, connectionTimeoutMillis: 5000,
+});
 
 (async () => {
   const ok = await verifyFixedSuperAdmin({
