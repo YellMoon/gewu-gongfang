@@ -16,7 +16,7 @@ const { createBusinessRoomLifecycleMutations } = require('./src/businessRoomLife
 const { createBusinessCourseLifecycleMutations } = require('./src/businessCourseLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
-const { selectDesktopBusinessAccount } = require('./src/desktopBusinessAccountResolver');
+const { selectDesktopBusinessAccount, desktopSessionRoles } = require('./src/desktopBusinessAccountResolver');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
@@ -220,7 +220,7 @@ function createDesktopRegistrationFromEnvironment() {
         installationId: row.installationId,
         sessionId: row.sessionId,
         expiresAt: row.expiresAt.toISOString(),
-        roles: Array.isArray(account.roles) && account.roles.length ? account.roles : ['pending'],
+        roles: desktopSessionRoles(account.roles),
         teacherId: account.profile?.type === 'teacher' ? account.profile.id : null,
         studentId: account.profile?.type === 'student' ? account.profile.id : null,
       };

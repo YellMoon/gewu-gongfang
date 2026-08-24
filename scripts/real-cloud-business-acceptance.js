@@ -500,6 +500,15 @@ async function runFromEnvironment(env = process.env) {
         const session = loaded.session || await createControlledAcceptanceSession(writerPool, loaded.accountIds);
         if (!loaded.session) controlledSession = session;
         const sessionToken = makeSessionToken(env.CLOUD_IDENTITY_TICKET_SECRET, session);
+        const sessionCheck = await requestJson(fetch, sessionToken, `${PUBLIC_BASE_URL}/api/desktop/session-context`);
+        if (sessionCheck.status !== 200 || sessionCheck.body?.ok !== true || !Array.isArray(sessionCheck.body?.roles)
+          || !sessionCheck.body.roles.includes('super_admin')) {
+          throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SESSION_CONTEXT_FAILED', {
+            status: sessionCheck.status,
+            responseCode: sessionCheck.body?.code || null,
+            roles: Array.isArray(sessionCheck.body?.roles) ? sessionCheck.body.roles.filter(role => typeof role === 'string') : [],
+          });
+        }
         return runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
       },
       () => runWithCleanup(
@@ -540,6 +549,7 @@ if (require.main === module) {
         databaseCode: typeof error?.details?.databaseCode === 'string' ? error.details.databaseCode : null,
         status: Number.isSafeInteger(error?.details?.status) ? error.details.status : null,
         responseCode: typeof error?.details?.responseCode === 'string' ? error.details.responseCode : null,
+        roles: Array.isArray(error?.details?.roles) ? error.details.roles : [],
       })}\n`);
       process.exitCode = 1;
     });
