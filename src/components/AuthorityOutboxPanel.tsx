@@ -75,7 +75,7 @@ function previewText(item: AuthorityOutboxItem) {
 }
 
 function cloudDraftSubmissionInput(item: AuthorityOutboxItem) {
-  if (!/^(question|student|course|schedule|teacher|room|institution|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v\d+$/.test(item.type)) return undefined;
+  if (!/^(question|student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v\d+$/.test(item.type)) return undefined;
   const authorization = readDesktopAuthorizationSession().authorization;
   const match = /^Bearer (.+)$/.exec(authorization);
   if (!match) throw new Error('DESKTOP_CLOUD_SESSION_REQUIRED');
