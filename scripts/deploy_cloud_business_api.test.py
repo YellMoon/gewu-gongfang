@@ -48,6 +48,45 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertTrue(str(run.call_args_list[2].args[0][1]).endswith("apply_cloud_control_plane_m22.py"))
         self.assertTrue(str(run.call_args_list[3].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
+    def test_public_health_requires_the_exact_release_version(self):
+        ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
+            module.deploy,
+            "run",
+            return_value=(' {"ok":true,"businessAuthority":"cloud","version":"8.4.1"} ', ""),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_HEALTH_INVALID"):
+                module.verify_public_health("8.5.0")
+        ssh.close.assert_called_once()
+
+    def test_deploy_release_requires_manifest_and_records_verified_receipt(self):
+        ssh = mock.Mock()
+        health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ), mock.patch.object(module.deploy, "require_release_manifest") as require_manifest, mock.patch.object(
+            module.deploy, "record_release_receipt"
+        ) as record_receipt, mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
+            module, "upload_source"
+        ), mock.patch.object(module, "build_image"), mock.patch.object(
+            module.deploy, "run"
+        ), mock.patch.object(module, "run_cloud_migrations", return_value=0), mock.patch.object(
+            module, "verify_public_health", return_value=health
+        ) as verify_health:
+            self.assertEqual(module.deploy_release(), health)
+        require_manifest.assert_called_once_with("cloud_business")
+        verify_health.assert_called_once_with("8.5.0")
+        record_receipt.assert_called_once()
+        self.assertEqual(record_receipt.call_args.args[0], "cloud_business")
+        self.assertIn("8.5.0", record_receipt.call_args.args[1])
+
+    def test_promote_rejects_a_candidate_from_another_source_revision(self):
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ):
+            with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
+                module.promote_release("8.5.0-deadbee")
+
 
 if __name__ == "__main__":
     unittest.main()

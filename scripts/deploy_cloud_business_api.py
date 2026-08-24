@@ -148,20 +148,25 @@ def health_url():
     return "https://physicsedu.xyz/scheduling/api/health"
 
 
-def verify_public_health():
+def verify_public_health(expected_version):
+    if not isinstance(expected_version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", expected_version):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     ssh = deploy.connect()
     try:
         output, _ = deploy.run(ssh, f"curl --fail --silent --show-error --max-time 30 '{health_url()}'", timeout=45)
     finally:
         ssh.close()
     payload = json.loads(output)
-    if payload.get("ok") is not True or payload.get("businessAuthority") != "cloud":
+    if (payload.get("ok") is not True or payload.get("businessAuthority") != "cloud"
+            or payload.get("version") != expected_version):
         raise RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
     return payload
 
 
 def deploy_release():
-    tag = release_tag(source_version(), source_revision())
+    version = source_version()
+    deploy.require_release_manifest("cloud_business")
+    tag = release_tag(version, source_revision())
     ssh = deploy.connect()
     try:
         upload_source(ssh, tag)
@@ -175,18 +180,26 @@ def deploy_release():
         deploy.run(ssh, switch_command(tag), timeout=120)
     finally:
         ssh.close()
-    return verify_public_health()
+    health = verify_public_health(version)
+    deploy.record_release_receipt("cloud_business", f"public cloud business health verified at version {version}")
+    return health
 
 
 def promote_release(tag):
     if not isinstance(tag, str) or not TAG_PATTERN.fullmatch(tag):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    version = source_version()
+    if tag != release_tag(version, source_revision()):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    deploy.require_release_manifest("cloud_business")
     ssh = deploy.connect()
     try:
         deploy.run(ssh, switch_command(tag), timeout=120)
     finally:
         ssh.close()
-    return verify_public_health()
+    health = verify_public_health(version)
+    deploy.record_release_receipt("cloud_business", f"promoted cloud business candidate verified at version {version}")
+    return health
 
 
 def main():
@@ -198,6 +211,7 @@ def main():
     if not TAG_PATTERN.fullmatch(tag):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     if args.command == "candidate":
+        deploy.require_release_manifest("cloud_business")
         ssh = deploy.connect()
         try:
             upload_source(ssh, tag)

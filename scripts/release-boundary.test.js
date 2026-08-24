@@ -6,6 +6,7 @@ const uploadMiniapp = fs.readFileSync('scripts/upload-miniapp.js', 'utf8');
 const publishDesktop = fs.readFileSync('scripts/publish-oss-feed.js', 'utf8');
 const deployBackend = fs.readFileSync('scripts/deploy.py', 'utf8');
 const deployGateway = fs.readFileSync('scripts/deploy_gateway.py', 'utf8');
+const deployCloudBusiness = fs.readFileSync('scripts/deploy_cloud_business_api.py', 'utf8');
 
 assert.ok(packageJson.scripts['release:prepare'], 'formal releases must create one manifest before build or publish');
 assert.ok(packageJson.scripts['release:status'], 'operators must be able to inspect a partial release');
@@ -24,5 +25,8 @@ assert.ok(deployBackend.includes('require_release_manifest'), 'backend deploymen
 assert.ok(deployBackend.includes("record_release_receipt('backend'"), 'backend health success must write an exact-version receipt');
 assert.ok(deployGateway.includes('require_release_manifest'), 'gateway deployment must require the unified release manifest');
 assert.ok(deployGateway.includes("record_release_receipt('gateway'"), 'gateway health success must write an exact-version receipt');
+assert.ok(deployCloudBusiness.includes('require_release_manifest("cloud_business")'), 'cloud business deployment must require the unified release manifest');
+assert.ok(deployCloudBusiness.includes('record_release_receipt("cloud_business"'), 'cloud business health success must write an exact-version receipt');
+assert.ok(deployCloudBusiness.includes('payload.get("version") != expected_version'), 'cloud business public health must match the exact release version');
 
 console.log('release boundary checks passed');
