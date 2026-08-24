@@ -35,6 +35,11 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
         self.assertIn("docker rename \"$rollback\" \"$current\"", command)
         self.assertNotIn("docker image prune", command)
+        self.assertLess(
+            command.index('docker rename "$current" "$rollback"'),
+            command.index('docker stop "$rollback"'),
+            "the rollback marker must exist before the old service is stopped",
+        )
 
     def test_promote_reuses_only_a_validated_candidate_tag(self):
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
@@ -62,6 +67,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn('if docker container inspect "$rollback"', command)
         self.assertIn('docker rename "$rollback" "$current"', command)
         self.assertIn('docker container inspect "$current"', command)
+        self.assertIn("{{.State.Running}}", command)
+        self.assertIn('docker start "$current"', command)
         self.assertIn("127.0.0.1:3002/api/health", command)
 
     def test_discard_targets_only_the_exact_candidate(self):
