@@ -18,14 +18,26 @@ dayjs.extend(weekOfYear);
 dayjs.locale('zh-cn');
 dayjs.updateLocale('zh-cn', { weekStart: 1 });
 
-const rootElement = document.getElementById('root');
-if (rootElement) {
-  const root = ReactDOM.createRoot(rootElement);
-  root.render(
-    <ConfigProvider locale={zhCN} theme={appTheme} select={{ showSearch: true }}>
-      <AntdApp>
-        <DesktopIdentityGate />
-      </AntdApp>
-    </ConfigProvider>
-  );
+async function renderRoot() {
+  if (process.env.NODE_ENV === 'development') {
+    const fixture = await import('./services/desktopLoginChromeFixture.mjs');
+    if (fixture.shouldInstallDesktopLoginChromeFixture({
+      nodeEnv: process.env.NODE_ENV,
+      location: window.location,
+    })) fixture.installDesktopLoginChromeFixture(window);
+  }
+
+  const rootElement = document.getElementById('root');
+  if (rootElement) {
+    const root = ReactDOM.createRoot(rootElement);
+    root.render(
+      <ConfigProvider locale={zhCN} theme={appTheme} select={{ showSearch: true }}>
+        <AntdApp>
+          <DesktopIdentityGate />
+        </AntdApp>
+      </ConfigProvider>
+    );
+  }
 }
+
+void renderRoot();
