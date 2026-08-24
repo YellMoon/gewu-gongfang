@@ -8,6 +8,8 @@ const MANIFEST_SCHEMA = 'gewu.unified-release.v1';
 const MINIAPP_RELEASE_LEVELS = Object.freeze(['development', 'production']);
 
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
+  const configured = String(process.env.GEWU_RELEASE_MANIFEST_PATH || '').trim();
+  if (configured) return path.resolve(rootDir, configured);
   return path.join(rootDir, 'output', 'release-matrix', 'active.json');
 }
 

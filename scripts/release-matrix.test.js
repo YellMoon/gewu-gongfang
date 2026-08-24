@@ -5,6 +5,19 @@ const path = require('path');
 
 const matrix = require('./release-matrix');
 
+const previousManifestPath = process.env.GEWU_RELEASE_MANIFEST_PATH;
+try {
+  process.env.GEWU_RELEASE_MANIFEST_PATH = 'output/release-matrix-8.3.0/active.json';
+  assert.strictEqual(
+    matrix.defaultManifestPath('C:/fixture-root'),
+    path.resolve('C:/fixture-root', 'output/release-matrix-8.3.0/active.json'),
+    'every release entrypoint must honor the explicitly selected unified release manifest',
+  );
+} finally {
+  if (previousManifestPath === undefined) delete process.env.GEWU_RELEASE_MANIFEST_PATH;
+  else process.env.GEWU_RELEASE_MANIFEST_PATH = previousManifestPath;
+}
+
 const targets = matrix.DEFAULT_TARGETS;
 assert.deepStrictEqual(
   targets,
