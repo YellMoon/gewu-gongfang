@@ -129,8 +129,11 @@ async function runOnlineRegistrationAcceptance({
   identity,
   baseUrl = PUBLIC_BASE_URL,
   randomUUID = crypto.randomUUID,
+  onRegistrationPersisted = () => {},
 } = {}) {
-  if (typeof fetchImpl !== 'function' || baseUrl !== PUBLIC_BASE_URL) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  if (typeof fetchImpl !== 'function' || baseUrl !== PUBLIC_BASE_URL || typeof onRegistrationPersisted !== 'function') {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  }
   const fixture = createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity, randomUUID);
   const response = await fetchImpl(`${baseUrl}/api/desktop/online-registration`, {
     method: 'POST',
@@ -139,7 +142,7 @@ async function runOnlineRegistrationAcceptance({
   });
   const payload = await readJson(response);
   if (response.status !== 200 || payload?.ok !== true || typeof payload.receiptId !== 'string' || !payload.receiptId
-    || typeof payload.sessionId !== 'string' || !payload.sessionId || payload.replayed !== false
+    || typeof payload.sessionId !== 'string' || !/^[A-Za-z0-9_-]{4,256}$/u.test(payload.sessionId) || payload.replayed !== false
     || typeof payload.sessionToken !== 'string' || !payload.sessionToken
     || !payload.offlineLease || typeof payload.offlineLease !== 'object' || typeof payload.offlineLease.signature !== 'string') {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_FAILED', {
@@ -147,6 +150,12 @@ async function runOnlineRegistrationAcceptance({
       responseCode: payload?.code || null,
     });
   }
+  const cleanupFixture = Object.freeze({
+    sessionId: payload.sessionId,
+    installationId: fixture.body.installationId,
+    deviceId: fixture.deviceId,
+  });
+  onRegistrationPersisted(cleanupFixture);
   const inspected = inspectSessionTokenWithRuntime(runtimeModules, ticketSecret, payload.sessionToken);
   if (inspected.authorityId !== identity.authorityId || inspected.accountId !== identity.accountId
     || inspected.deviceId !== fixture.deviceId || inspected.installationId !== fixture.body.installationId
@@ -166,7 +175,7 @@ async function runOnlineRegistrationAcceptance({
   }
   return Object.freeze({
     sessionToken: payload.sessionToken,
-    fixture: Object.freeze({ sessionId: payload.sessionId, installationId: fixture.body.installationId, deviceId: fixture.deviceId }),
+    fixture: cleanupFixture,
     evidence: Object.freeze({
       onlineRegistrationStatus: response.status,
       onlineSessionContextStatus: context.status,
@@ -654,6 +663,7 @@ async function runFromEnvironment(env = process.env) {
   const appPool = new Pool(postgresConfig(env, resolveRuntimeDatabaseUser(env.POSTGRES_USER), env.POSTGRES_PASSWORD));
   const writerPool = new Pool(postgresConfig(env, 'vnext_pg17_writer', env.COMMAND_WRITER_POSTGRES_PASSWORD));
   let onlineRegistration = null;
+  let onlineRegistrationFixture = null;
   try {
     return await runWithCleanup(
       async () => {
@@ -669,6 +679,7 @@ async function runFromEnvironment(env = process.env) {
           ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET,
           identity: loaded.identity,
           baseUrl: PUBLIC_BASE_URL,
+          onRegistrationPersisted: fixture => { onlineRegistrationFixture = fixture; },
         });
         const sessionToken = onlineRegistration.sessionToken;
         await verifyDesktopProjectionSources(appPool);
@@ -695,7 +706,7 @@ async function runFromEnvironment(env = process.env) {
       },
       () => runWithCleanup(
         () => forceCleanup(appPool, writerPool, tenantId, marker),
-        () => onlineRegistration ? revokeOnlineRegistrationAcceptance(writerPool, onlineRegistration.fixture) : Promise.resolve(),
+        () => onlineRegistrationFixture ? revokeOnlineRegistrationAcceptance(writerPool, onlineRegistrationFixture) : Promise.resolve(),
       ),
     );
   } finally {

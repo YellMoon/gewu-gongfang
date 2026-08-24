@@ -306,6 +306,55 @@ async function onlineRegistrationFixtureIsRevoked() {
   assert.ok(calls.some(([text]) => text.includes('vnext_trusted_devices')));
 }
 
+async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
+  const runtimeModules = resolveRuntimeModules(__dirname, candidate => candidate.includes('/cloud-business-api/'));
+  const ticketSecret = 'registration-cleanup-secret'.repeat(2);
+  const identity = { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) };
+  const sessionExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  let cleanupFixture = null;
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    if (path.endsWith('/api/desktop/online-registration')) {
+      const body = JSON.parse(options.body);
+      const deviceId = `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(body.installationPublicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`;
+      return response(200, {
+        ok: true,
+        receiptId: 'receipt-cleanup-fixed',
+        sessionId: 'session-cleanup-fixed',
+        replayed: false,
+        sessionToken: makeSessionToken(ticketSecret, {
+          ...identity,
+          deviceId,
+          installationId: body.installationId,
+          sessionId: 'session-cleanup-fixed',
+          expiresAt: sessionExpiresAt,
+        }),
+        offlineLease: { id: 'offline-lease-session-cleanup-fixed', signature: 'signed' },
+      });
+    }
+    return response(503, { ok: false, code: 'CONTEXT_UNAVAILABLE' });
+  };
+
+  await assert.rejects(
+    runOnlineRegistrationAcceptance({
+      fetchImpl,
+      runtimeModules,
+      ticketSecret,
+      identity,
+      baseUrl: 'https://physicsedu.xyz/scheduling',
+      randomUUID: () => 'fixed-cleanup',
+      onRegistrationPersisted: fixture => { cleanupFixture = fixture; },
+    }),
+    error => error.code === 'REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_CONTEXT_FAILED',
+  );
+  assert.deepStrictEqual(cleanupFixture, {
+    sessionId: 'session-cleanup-fixed',
+    installationId: 'acceptance-registration-fixed-cleanup',
+    deviceId: cleanupFixture.deviceId,
+  });
+  assert.match(cleanupFixture.deviceId, /^desktop-device-[0-9a-f]{32}$/u);
+}
+
 async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
   const calls = [];
   const client = {
@@ -336,6 +385,7 @@ Promise.resolve()
   .then(operatorIdentityIsResolvedWithoutPhonePlaintext)
   .then(operatorPhoneBecomesCanonicalWithoutPlaintext)
   .then(onlineRegistrationIsRealAndTokenFreeInEvidence)
+  .then(onlineRegistrationCleanupHandleSurvivesContextFailure)
   .then(onlineRegistrationFixtureIsRevoked)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
