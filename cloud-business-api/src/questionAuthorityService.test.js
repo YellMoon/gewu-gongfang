@@ -22,6 +22,12 @@ async function main() {
       });
       return { rows: [] };
     }
+    if (text.includes('vnext_create_question_taxonomy_system_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:00:00.000Z', affectedQuestionCount: 0 }] };
+    if (text.includes('vnext_update_question_taxonomy_system_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:01:00.000Z', affectedQuestionCount: 0 }] };
+    if (text.includes('vnext_delete_question_taxonomy_system_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:02:00.000Z', affectedQuestionCount: values[3] }] };
+    if (text.includes('vnext_create_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:03:00.000Z', affectedQuestionCount: 0 }] };
+    if (text.includes('vnext_update_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:04:00.000Z', affectedQuestionCount: 0 }] };
+    if (text.includes('vnext_delete_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:05:00.000Z', affectedQuestionCount: values[4] }] };
     if (text.includes('FROM business.questions q')) {
       return { rows: [{
         id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
@@ -59,7 +65,7 @@ async function main() {
   assert.deepStrictEqual(listed, [{
     id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
     content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
-    knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1,
+    knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: {}, has_formula: false, version: 1,
   }]);
   assert.ok(calls.some(call => call[0].includes('FROM business.questions q') && call[0].includes('business.question_contents c')),
     'the question list must read cloud structured text only from the cloud authority tables');
@@ -102,6 +108,60 @@ async function main() {
   assert.deepStrictEqual(replayedReceipt, receipt, 'a retry must return the original cloud receipt without a second question write');
   assert.strictEqual(calls.filter(call => call[0].includes('INSERT INTO business.questions')).length, 2,
     'the initial direct-create test and one command create are the only question inserts');
+
+  let taxonomySequence = 0;
+  async function submitTaxonomy(type, payload) {
+    taxonomySequence += 1;
+    return service.submitDesktopDraft({
+      tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+      command: {
+        commandId: `taxonomy-command-${taxonomySequence}`, type, payload,
+        payloadHash: crypto.createHash('sha256').update(stableJson({ type, payload }), 'utf8').digest('hex'),
+      },
+    });
+  }
+  const taxonomyReceipts = [];
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-system.create.v1', { record: { id: 'system-1', subject: 'physics', name: 'Knowledge', sort_order: 1 } }));
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-system.update.v1', { id: 'system-1', expectedVersion: '2026-08-24T05:00:00.000Z', changes: { subject: 'physics', name: 'Knowledge points', sort_order: 2 } }));
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-node.create.v1', { record: { id: 'node-1', system_id: 'system-1', parent_id: null, name: 'Mechanics', sort_order: 1 } }));
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-node.update.v1', { id: 'node-1', expectedVersion: '2026-08-24T05:03:00.000Z', changes: { system_id: 'system-1', parent_id: null, name: 'Dynamics', sort_order: 2 } }));
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-node.delete.v1', { id: 'node-1', systemId: 'system-1', expectedVersion: '2026-08-24T05:04:00.000Z', confirmation: { confirmed: true, expectedAffectedQuestionCount: 1 } }));
+  taxonomyReceipts.push(await submitTaxonomy('taxonomy-system.delete.v1', { id: 'system-1', expectedVersion: '2026-08-24T05:01:00.000Z', confirmation: { confirmed: true, expectedAffectedQuestionCount: 0 } }));
+  assert.ok(taxonomyReceipts.every(item => item.status === 'committed'));
+  for (const functionName of [
+    'vnext_create_question_taxonomy_system_v1', 'vnext_update_question_taxonomy_system_v1',
+    'vnext_delete_question_taxonomy_system_v1', 'vnext_create_question_taxonomy_node_v1',
+    'vnext_update_question_taxonomy_node_v1', 'vnext_delete_question_taxonomy_node_v1',
+  ]) assert.ok(calls.some(call => call[0].includes(functionName)), `${functionName} must adjudicate taxonomy drafts`);
+
+  const rejectedReceipts = new Map();
+  const rejectedService = createQuestionAuthorityService({
+    query: async () => ({ rows: [] }),
+    transaction: async work => work(async (text, values) => {
+      if (text.includes('FROM business.desktop_question_command_receipts')) {
+        const stored = rejectedReceipts.get(`${values[0]}:${values[1]}`);
+        return { rows: stored ? [stored] : [] };
+      }
+      if (text.includes('vnext_delete_question_taxonomy_node_v1')) {
+        return { rows: [{ outcome: 'impact_changed', id: values[1], updatedAt: null, affectedQuestionCount: 2 }] };
+      }
+      if (text.includes('INSERT INTO business.desktop_question_command_receipts')) {
+        rejectedReceipts.set(`${values[0]}:${values[1]}`, { payloadHash: values[2], status: values[3], result: JSON.parse(values[4]), resultHash: values[5] });
+        return { rows: [] };
+      }
+      throw new Error('unexpected rejected taxonomy query');
+    }),
+  });
+  const rejectedPayload = { id: 'node-2', systemId: 'system-1', expectedVersion: '2026-08-24T05:04:00.000Z', confirmation: { confirmed: true, expectedAffectedQuestionCount: 1 } };
+  const rejectedCommand = {
+    commandId: 'taxonomy-command-rejected', type: 'taxonomy-node.delete.v1', payload: rejectedPayload,
+    payloadHash: crypto.createHash('sha256').update(stableJson({ type: 'taxonomy-node.delete.v1', payload: rejectedPayload }), 'utf8').digest('hex'),
+  };
+  const rejectedReceipt = await rejectedService.submitDesktopDraft({ tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, command: rejectedCommand });
+  assert.strictEqual(rejectedReceipt.status, 'rejected');
+  assert.deepStrictEqual(rejectedReceipt.result, { error: { code: 'CLOUD_QUESTION_TAXONOMY_DELETE_IMPACT_CHANGED' }, id: 'node-2', affectedQuestionCount: 2 });
+  assert.deepStrictEqual(await rejectedService.submitDesktopDraft({ tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, command: rejectedCommand }), rejectedReceipt,
+    'a rejected taxonomy command must replay its durable receipt without mutating again');
 
   const failedState = { questionWrites: 0, receiptWrites: 0 };
   const receiptFailureService = createQuestionAuthorityService({

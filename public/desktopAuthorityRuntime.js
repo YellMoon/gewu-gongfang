@@ -139,11 +139,11 @@ function createDesktopAuthorityRuntime({
   }
 
   function isCloudQuestionDraft(draft) {
-    return /^question\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+    return /^(question|taxonomy-system|taxonomy-node)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
   }
 
   function isCloudBusinessDraft(draft) {
-    return /^(student|course|schedule|teacher|room|institution|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+    return /^(student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
   }
 
   function cloudSessionToken(value) {

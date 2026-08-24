@@ -72,6 +72,55 @@ function idList(value) {
   return value.map(item => text(item, { max: 128 }));
 }
 
+function taxonomyMap(value) {
+  if (value === undefined || value === null) return {};
+  if (Array.isArray(value)) return Object.fromEntries(value.map(id => [text(id, { max: 128 }), []]));
+  if (!plainObject(value) || Reflect.ownKeys(value).length > 128) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  const result = {};
+  for (const [systemId, nodeIds] of Object.entries(value)) {
+    const id = text(systemId, { max: 128 });
+    result[id] = idList(nodeIds);
+  }
+  return result;
+}
+
+function sortOrder(value) {
+  if (!Number.isSafeInteger(value) || value < -1000000 || value > 1000000) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return value;
+}
+
+function expectedVersion(value) {
+  const version = text(value, { max: 64 });
+  if (!Number.isFinite(Date.parse(version))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return version;
+}
+
+function deletionConfirmation(value) {
+  const confirmation = exact(value, ['confirmed', 'expectedAffectedQuestionCount']);
+  if (confirmation.confirmed !== true || !Number.isSafeInteger(confirmation.expectedAffectedQuestionCount) || confirmation.expectedAffectedQuestionCount < 0) {
+    throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  }
+  return confirmation.expectedAffectedQuestionCount;
+}
+
+function taxonomySystem(value, idOverride = null) {
+  const record = exact(value, idOverride === null ? ['id', 'subject', 'name', 'sort_order'] : ['subject', 'name', 'sort_order']);
+  return {
+    id: idOverride === null ? text(record.id, { max: 128 }) : text(idOverride, { max: 128 }),
+    subject: text(record.subject, { max: 128 }), name: text(record.name, { max: 256 }), sortOrder: sortOrder(record.sort_order),
+  };
+}
+
+function taxonomyNode(value, idOverride = null) {
+  const record = exact(value, idOverride === null ? ['id', 'system_id', 'parent_id', 'name', 'sort_order'] : ['system_id', 'parent_id', 'name', 'sort_order']);
+  return {
+    id: idOverride === null ? text(record.id, { max: 128 }) : text(idOverride, { max: 128 }),
+    systemId: text(record.system_id, { max: 128 }),
+    parentId: record.parent_id === null ? null : text(record.parent_id, { max: 128 }),
+    name: text(record.name, { max: 256 }), sortOrder: sortOrder(record.sort_order),
+  };
+}
+
 function legacyQuestion(record) {
   if (!plainObject(record) || Reflect.ownKeys(record).some(key => !LEGACY_QUESTION_FIELDS.has(key))) {
     throw failure('CLOUD_QUESTION_INPUT_INVALID');
@@ -92,7 +141,7 @@ function legacyQuestion(record) {
     options, richContent,
     taxonomy: {
       knowledgePointIds: idList(record.knowledge_point_ids), modelPointIds: idList(record.model_point_ids),
-      taxonomyIds: idList(record.taxonomy_ids),
+      taxonomyIds: taxonomyMap(record.taxonomy_ids),
     },
     hasFormula: Boolean(record.has_formula),
   };
@@ -102,7 +151,7 @@ function desktopCommand(value) {
   const command = exact(value, ['commandId', 'payloadHash', 'type', 'payload']);
   const commandId = text(command.commandId, { max: 128 });
   const type = text(command.type, { max: 128 });
-  if (!['question.create.v1', 'question.update.v1', 'question.delete.v1'].includes(type)
+  if (!/^(question|taxonomy-system|taxonomy-node)\.(create|update|delete)\.v1$/.test(type)
     || typeof command.payloadHash !== 'string' || !/^[0-9a-f]{64}$/.test(command.payloadHash)) {
     throw failure('CLOUD_QUESTION_INPUT_INVALID');
   }
@@ -111,6 +160,35 @@ function desktopCommand(value) {
   if (type === 'question.create.v1') {
     const draft = exact(payload, ['record']);
     return { commandId, payloadHash: command.payloadHash, type, question: legacyQuestion(draft.record) };
+  }
+  if (type === 'taxonomy-system.create.v1') {
+    const draft = exact(payload, ['record']);
+    return { commandId, payloadHash: command.payloadHash, type, taxonomy: taxonomySystem(draft.record) };
+  }
+  if (type === 'taxonomy-node.create.v1') {
+    const draft = exact(payload, ['record']);
+    return { commandId, payloadHash: command.payloadHash, type, taxonomy: taxonomyNode(draft.record) };
+  }
+  if (type === 'taxonomy-system.update.v1' || type === 'taxonomy-node.update.v1') {
+    const draft = exact(payload, ['id', 'changes', 'expectedVersion']);
+    return {
+      commandId, payloadHash: command.payloadHash, type, expectedVersion: expectedVersion(draft.expectedVersion),
+      taxonomy: type.startsWith('taxonomy-system.') ? taxonomySystem(draft.changes, draft.id) : taxonomyNode(draft.changes, draft.id),
+    };
+  }
+  if (type === 'taxonomy-system.delete.v1') {
+    const draft = exact(payload, ['id', 'expectedVersion', 'confirmation']);
+    return {
+      commandId, payloadHash: command.payloadHash, type, id: text(draft.id, { max: 128 }),
+      expectedVersion: expectedVersion(draft.expectedVersion), expectedAffectedQuestionCount: deletionConfirmation(draft.confirmation),
+    };
+  }
+  if (type === 'taxonomy-node.delete.v1') {
+    const draft = exact(payload, ['id', 'systemId', 'expectedVersion', 'confirmation']);
+    return {
+      commandId, payloadHash: command.payloadHash, type, id: text(draft.id, { max: 128 }), systemId: text(draft.systemId, { max: 128 }),
+      expectedVersion: expectedVersion(draft.expectedVersion), expectedAffectedQuestionCount: deletionConfirmation(draft.confirmation),
+    };
   }
   if (type === 'question.update.v1') {
     if (Reflect.ownKeys(payload).some(key => !['id', 'changes', 'expectedVersion'].includes(key))
@@ -143,7 +221,7 @@ function questionListRow(row) {
   const taxonomy = plainObject(row.taxonomy) ? row.taxonomy : {};
   const knowledgePointIds = idList(taxonomy.knowledgePointIds);
   const modelPointIds = idList(taxonomy.modelPointIds);
-  const taxonomyIds = idList(taxonomy.taxonomyIds);
+  const taxonomyIds = taxonomyMap(taxonomy.taxonomyIds);
   if (row.answer !== null && row.answer !== undefined && typeof row.answer !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
   if (row.analysis !== null && row.analysis !== undefined && typeof row.analysis !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
   if (row.rich_content !== null && row.rich_content !== undefined && !plainObject(row.rich_content)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
@@ -154,6 +232,65 @@ function questionListRow(row) {
     rich_content: row.rich_content ?? null, knowledge_point_ids: knowledgePointIds, model_point_ids: modelPointIds,
     taxonomy_ids: taxonomyIds, has_formula: row.has_formula, version: Number(row.version),
   };
+}
+
+function taxonomyMutationRow(result, entity) {
+  if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  const row = result.rows[0];
+  if (!plainObject(row) || !['committed', 'conflict', 'impact_changed'].includes(row.outcome)
+    || typeof row.id !== 'string' || row.id.length === 0 || !Number.isSafeInteger(Number(row.affectedQuestionCount)) || Number(row.affectedQuestionCount) < 0) {
+    throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  }
+  if (row.outcome !== 'committed') {
+    return {
+      status: 'rejected',
+      result: {
+        error: { code: row.outcome === 'impact_changed' ? 'CLOUD_QUESTION_TAXONOMY_DELETE_IMPACT_CHANGED' : 'CLOUD_QUESTION_TAXONOMY_CONFLICT' },
+        id: row.id, affectedQuestionCount: Number(row.affectedQuestionCount),
+      },
+    };
+  }
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt || '');
+  if (!Number.isFinite(Date.parse(updatedAt))) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  return { status: 'committed', result: { id: row.id, entity, updatedAt, affectedQuestionCount: Number(row.affectedQuestionCount) } };
+}
+
+async function executeTaxonomyCommand(command, tenantId, currentQuery) {
+  const value = command.taxonomy;
+  switch (command.type) {
+    case 'taxonomy-system.create.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_create_question_taxonomy_system_v1($1,$2,$3,$4,$5)',
+        [tenantId, value.id, value.subject, value.name, value.sortOrder],
+      ), 'taxonomy-system');
+    case 'taxonomy-system.update.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_update_question_taxonomy_system_v1($1,$2,$3::timestamptz,$4,$5,$6)',
+        [tenantId, value.id, command.expectedVersion, value.subject, value.name, value.sortOrder],
+      ), 'taxonomy-system');
+    case 'taxonomy-system.delete.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_delete_question_taxonomy_system_v1($1,$2,$3::timestamptz,$4)',
+        [tenantId, command.id, command.expectedVersion, command.expectedAffectedQuestionCount],
+      ), 'taxonomy-system');
+    case 'taxonomy-node.create.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_create_question_taxonomy_node_v1($1,$2,$3,$4,$5,$6)',
+        [tenantId, value.id, value.systemId, value.parentId, value.name, value.sortOrder],
+      ), 'taxonomy-node');
+    case 'taxonomy-node.update.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_update_question_taxonomy_node_v1($1,$2,$3::timestamptz,$4,$5,$6,$7)',
+        [tenantId, value.id, command.expectedVersion, value.systemId, value.parentId, value.name, value.sortOrder],
+      ), 'taxonomy-node');
+    case 'taxonomy-node.delete.v1':
+      return taxonomyMutationRow(await currentQuery(
+        'SELECT outcome,id,updated_at AS "updatedAt",affected_question_count AS "affectedQuestionCount" FROM business.vnext_delete_question_taxonomy_node_v1($1,$2,$3::timestamptz,$4,$5)',
+        [tenantId, command.id, command.expectedVersion, command.systemId, command.expectedAffectedQuestionCount],
+      ), 'taxonomy-node');
+    default:
+      throw failure('CLOUD_QUESTION_COMMAND_UNSUPPORTED');
+  }
 }
 
 function createQuestionAuthorityService({ query, transaction } = {}) {
@@ -223,14 +360,15 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       if (previous.rows.length > 1) throw failure('CLOUD_QUESTION_RECEIPT_CONFLICT');
       if (previous.rows.length === 1) {
         const stored = previous.rows[0];
-        if (!plainObject(stored) || stored.payloadHash !== command.payloadHash || stored.status !== 'committed'
+        if (!plainObject(stored) || stored.payloadHash !== command.payloadHash || !['committed', 'rejected'].includes(stored.status)
           || !plainObject(stored.result) || typeof stored.resultHash !== 'string'
           || canonicalHash(stored.result) !== stored.resultHash) {
           throw failure('CLOUD_QUESTION_RECEIPT_CONFLICT');
         }
-        return { commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed', result: stored.result, resultHash: stored.resultHash };
+        return { commandId: command.commandId, payloadHash: command.payloadHash, status: stored.status, result: stored.result, resultHash: stored.resultHash };
       }
       let result;
+      let receiptStatus = 'committed';
       if (command.type === 'question.create.v1') {
         result = await this.create({ tenantId, actor: currentActor, question: command.question }, transactionQuery);
       } else if (command.type === 'question.update.v1') {
@@ -251,7 +389,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
         );
         if (!updated || !Array.isArray(updated.rows) || updated.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
         result = questionRow(updated.rows[0]);
-      } else {
+      } else if (command.type === 'question.delete.v1') {
         const deleted = await transactionQuery(
           `WITH deleted_question AS (
              UPDATE business.questions SET deleted=true,deleted_at=transaction_timestamp(),updated_at=transaction_timestamp()
@@ -264,9 +402,13 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
         );
         if (!deleted || !Array.isArray(deleted.rows) || deleted.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
         result = questionRow(deleted.rows[0]);
+      } else {
+        const taxonomyResult = await executeTaxonomyCommand(command, tenantId, transactionQuery);
+        receiptStatus = taxonomyResult.status;
+        result = taxonomyResult.result;
       }
       const receipt = {
-        commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed', result,
+        commandId: command.commandId, payloadHash: command.payloadHash, status: receiptStatus, result,
         resultHash: canonicalHash(result),
       };
       await transactionQuery(

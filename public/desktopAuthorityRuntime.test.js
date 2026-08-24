@@ -154,13 +154,13 @@ async function withTimeout(promise, timeoutMs, message) {
         assert.strictEqual(options.method, 'POST');
         assert.strictEqual(options.headers.authorization, 'Bearer desktop-session-token');
         const command = JSON.parse(options.body);
-        assert.strictEqual(command.type, 'question.create.v1');
+        assert.ok(['question.create.v1', 'taxonomy-system.create.v1'].includes(command.type));
         assert.match(command.payloadHash, /^[0-9a-f]{64}$/);
         return response(200, {
           ok: true,
           receipt: {
             commandId: command.commandId, payloadHash: command.payloadHash, status: 'committed',
-            result: { id: 'question-runtime-1' }, resultHash: '1'.repeat(64),
+            result: { id: command.type === 'question.create.v1' ? 'question-runtime-1' : 'taxonomy-runtime-1' }, resultHash: '1'.repeat(64),
           },
         });
       }
@@ -174,6 +174,14 @@ async function withTimeout(promise, timeoutMs, message) {
           sourceType: 1, studentSource: null, contacts: [],
         });
         return response(200, { ok: true, student: { id: 'student-runtime-1', updatedAt: '2026-08-24T00:00:01.000Z' } });
+      }
+      if (url === 'https://business.example/api/business/schools/school-runtime-1') {
+        assert.strictEqual(options.method, 'DELETE');
+        assert.strictEqual(options.headers.Authorization, 'Bearer desktop-session-token');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          expectedUpdatedAt: '2026-08-23T00:00:00.000Z',
+        });
+        return response(200, { ok: true, school: { id: 'school-runtime-1', updatedAt: '2026-08-24T00:00:02.000Z' } });
       }
       if (url === 'http://host.lan/api/authority/projections/current') {
         return response(503, { error: { code: 'HOST_TEMPORARILY_UNAVAILABLE' } });
@@ -396,6 +404,14 @@ async function withTimeout(promise, timeoutMs, message) {
   const questionResult = await runtime.confirmAndSubmit(questionDraft.id, { sessionToken: 'desktop-session-token' });
   assert.strictEqual(questionResult.transportUsed, 'cloud-question-authority');
   assert.strictEqual((await runtime.get(questionDraft.id)).status, 'completed');
+  const taxonomyDraft = await runtime.appendDraft({
+    type: 'taxonomy-system.create.v1',
+    payload: { record: { id: 'taxonomy-runtime-1', subject: 'physics', name: 'Knowledge', sort_order: 1 } },
+    preview: { title: 'Cloud taxonomy draft' },
+  });
+  const taxonomyResult = await runtime.confirmAndSubmit(taxonomyDraft.id, { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(taxonomyResult.transportUsed, 'cloud-question-authority');
+  assert.strictEqual((await runtime.get(taxonomyDraft.id)).status, 'completed');
   const decryptedOutbox = Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8');
   assert.ok(!decryptedOutbox.includes('desktop-session-token'), 'the renderer session token must not be persisted in the encrypted outbox payload');
   const legacyBusinessCallsBefore = calls.filter(call => call.url.endsWith('/api/authority/commands')).length;
@@ -421,6 +437,15 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.strictEqual((await runtime.get(businessDraft.id)).status, 'completed');
   assert.strictEqual(calls.filter(call => call.url.endsWith('/api/authority/commands')).length, legacyBusinessCallsBefore,
     'cloud business drafts must never use the legacy authority command relay');
+  const schoolDraft = await runtime.appendDraft({
+    type: 'school.delete.v1',
+    payload: { id: 'school-runtime-1', expectedVersion: '2026-08-23T00:00:00.000Z' },
+    preview: { title: 'Cloud school draft' },
+  });
+  const schoolResult = await runtime.confirmAndSubmit(schoolDraft.id, { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(schoolResult.transportUsed, 'cloud-business-authority');
+  assert.strictEqual(calls.filter(call => call.url.endsWith('/api/authority/commands')).length, legacyBusinessCallsBefore,
+    'school drafts must never use the legacy authority command relay');
   assert.ok(!Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8').includes('desktop-session-token'),
     'the business session token must not be persisted in the encrypted outbox payload');
   assert.strictEqual(runtime.confirmAndExecuteLocal, undefined,

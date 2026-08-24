@@ -152,6 +152,7 @@ export function createAuthorityDraftFromLocalMutation({
     const expectedVersion = String(baseVersion || '').trim();
     if (expectedVersion) payload.expectedVersion = expectedVersion;
     if (definition.entity === 'taxonomy-system' || definition.entity === 'taxonomy-node') {
+      if (definition.entity === 'taxonomy-node') payload.systemId = requiredId(value?.system_id);
       const confirmation = value?._taxonomy_delete_confirmation;
       const expectedAffectedQuestionCount = Number(
         confirmation?.expected_affected_question_count,

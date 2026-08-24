@@ -3,7 +3,7 @@
   "private": true,
   "version": "8.3.0",
   "scripts": {
-    "pretest": "npm run test:miniapp-cloud-read && node src/businessCourseLifecycleMutationService.test.js && node sql/course-lifecycle.test.js && node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node sql/foundation-lifecycle.test.js && node sql/foundation-lifecycle.postgres.test.js && node sql/schedule-lifecycle.postgres.test.js",
+    "pretest": "npm run test:miniapp-cloud-read && node src/businessCourseLifecycleMutationService.test.js && node sql/course-lifecycle.test.js && node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node sql/foundation-lifecycle.test.js && node sql/foundation-lifecycle.postgres.test.js && node sql/schedule-lifecycle.postgres.test.js && node sql/question-taxonomy-authority.test.js && node sql/question-taxonomy-authority.postgres.test.js",
     "test:miniapp-cloud-read": "node src/miniappBusinessProjection.test.js && node src/miniappLimitedTasks.test.js && node src/paperExportTaskRepository.test.js && node src/miniappArtifactDeliveryRepository.test.js && node src/miniappArtifactDeliveryRoutes.test.js && node src/personalAssetImportRepository.test.js && node src/miniappPersonalAssetImportRoutes.test.js && node sql/miniapp-artifact-deliveries.test.js && node sql/personal-asset-import.test.js",
     "start": "node server.js",
     "migrate": "node scripts/applyMigrations.js",

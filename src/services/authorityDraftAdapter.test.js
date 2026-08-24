@@ -88,6 +88,7 @@ const assert = require('assert');
   });
   assert.deepStrictEqual(taxonomyDelete.payload, {
     id: 'node-1',
+    systemId: 'knowledge',
     expectedVersion: 'taxonomy-version-3',
     confirmation: {
       confirmed: true,

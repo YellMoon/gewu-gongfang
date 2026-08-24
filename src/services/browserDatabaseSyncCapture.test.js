@@ -12,6 +12,7 @@ assert.ok(source.includes("storage_state: 'cloud_cached'"), 'cloud question text
 assert.ok(source.includes('deleteCloudCachedQuestion'), 'cloud-cached question deletes must be captured as typed encrypted drafts');
 assert.ok(source.includes('window.desktopAuthority.appendDraftSync'), 'typed drafts must be encrypted before a synchronous local edit returns');
 assert.ok(source.includes('window.desktopAuthority.appendDraftBatchSync'), 'multi-command edits must append one atomic encrypted draft batch');
+assert.ok(source.includes('authorityCacheCheckpoint.guard'), 'failed draft persistence must restore the last durable derived-cache checkpoint');
 assert.ok(
   !/this\.saveData\(\);\s*this\.recordAuthorityDraft(?:Batch)?\(/.test(source),
   'authority drafts must be durably appended before the derived browser cache is saved',
@@ -56,6 +57,10 @@ for (const marker of [
   "this.recordAuthorityDraft('institutions', 'delete', id, { id }, baseVersion)",
   "this.recordAuthorityDraft('schools', 'update', id, this.data.schools[index], baseVersion)",
   "this.recordAuthorityDraft('schools', 'delete', id, { id }, baseVersion)",
+  "}, current.updated_at || null)",
+  "}, system.updated_at || null)",
+  "}, current?.updated_at || null)",
+  "}, root?.updated_at || null)",
 ]) {
   assert.ok(source.includes(marker), `cloud business update/delete must capture the observed updated_at baseline: ${marker}`);
 }

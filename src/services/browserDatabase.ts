@@ -23,6 +23,7 @@ import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQ
 import { projectDesktopCacheForIdentity } from './desktopCacheProjection.mjs';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.mjs';
+import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
 import {
   partitionedStorageKey,
@@ -124,6 +125,7 @@ class BrowserDatabaseService {
   private storageKey = partitionedStorageKey('scheduling_system_db_v3');
   private questionSearchIndex = new Map<string, string>();
   private data: Database = emptyDatabase();
+  private authorityCacheCheckpoint = createAuthorityCacheCheckpoint(this.data);
 
   constructor() {
     this.loadData();
@@ -136,6 +138,7 @@ class BrowserDatabaseService {
   public prepareIdentityPartitionChange(): void {
     this.data = emptyDatabase();
     this.questionSearchIndex.clear();
+    this.authorityCacheCheckpoint.commit(this.data);
   }
 
   public switchIdentityPartition(partitionKey: string): void {
@@ -320,6 +323,7 @@ class BrowserDatabaseService {
       if (s.end_time) s.end_time = fixTime(s.end_time);
       return s;
     });
+    this.authorityCacheCheckpoint.commit(this.data);
 
     // 自动更新学生年级
     this.data.students = (this.data.students || []).map(s => ({
@@ -419,6 +423,12 @@ class BrowserDatabaseService {
       this.compactLargeQuestionPayloads();
       localStorage.setItem(this.storageKey, JSON.stringify(this.data));
     }
+    this.authorityCacheCheckpoint.commit(this.data);
+  }
+
+  private restoreAuthorityCacheCheckpoint(restored: Database): void {
+    this.data = restored;
+    this.rebuildQuestionIndexes();
   }
 
   private getSyncDeviceId(): string {
@@ -462,12 +472,14 @@ class BrowserDatabaseService {
       value,
       baseVersion,
     });
-    if (!window.desktopAuthority?.appendDraftSync) {
-      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
-        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
-      });
-    }
-    window.desktopAuthority.appendDraftSync(draft);
+    this.authorityCacheCheckpoint.guard(() => {
+      if (!window.desktopAuthority?.appendDraftSync) {
+        throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
+          code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
+        });
+      }
+      window.desktopAuthority.appendDraftSync(draft);
+    }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
   }
 
   private recordAuthorityDraftBatch(changes: Array<{
@@ -485,12 +497,14 @@ class BrowserDatabaseService {
       value: change.value || {},
       baseVersion: change.baseVersion || null,
     }));
-    if (!window.desktopAuthority?.appendDraftBatchSync) {
-      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
-        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
-      });
-    }
-    window.desktopAuthority.appendDraftBatchSync(drafts);
+    this.authorityCacheCheckpoint.guard(() => {
+      if (!window.desktopAuthority?.appendDraftBatchSync) {
+        throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
+          code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
+        });
+      }
+      window.desktopAuthority.appendDraftBatchSync(drafts);
+    }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
   }
 
   private compactLargeQuestionPayloads(): void {
@@ -2092,7 +2106,7 @@ class BrowserDatabaseService {
     this.recordAuthorityDraft('taxonomy_systems', 'update', id, {
       subject: updated.subject, name: updated.name, sort_order: updated.sort_no,
       deleted: 0, created_at: updated.created_at, updated_at: updated.updated_at,
-    });
+    }, current.updated_at || null);
     this.saveData();
     return this.data.taxonomySystems[index];
   }
@@ -2228,7 +2242,7 @@ class BrowserDatabaseService {
           confirmed: true,
           expected_affected_question_count: impact.affected_question_count,
         },
-      });
+      }, system.updated_at || null);
       this.saveData();
       this.appendTaxonomyDeletionAudit(backupId, 'success');
     } catch (error) {

@@ -273,13 +273,14 @@ const assert = require('assert');
 
   let legacyBusinessCalls = 0;
   let failClosedSealed = '';
+  let failClosedDraftSequence = 0;
   const failClosedOutbox = createDesktopCommandOutbox({
     store: { read: async () => failClosedSealed, write: async value => { failClosedSealed = value; } },
     codec: {
       seal: async value => JSON.stringify(value),
       open: async value => JSON.parse(value),
     },
-    createId: () => 'business-fail-closed-1', now: () => '2026-08-24T00:00:00.000Z',
+    createId: () => `business-fail-closed-${++failClosedDraftSequence}`, now: () => '2026-08-24T00:00:00.000Z',
   });
   const failClosedClient = createDesktopAuthorityClient({
     outbox: failClosedOutbox,
@@ -294,7 +295,25 @@ const assert = require('assert');
     () => failClosedClient.confirmAndSubmit(failClosedDraft.id),
     error => error?.code === 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE',
   );
+  const failClosedSchoolDraft = await failClosedClient.appendDraft({
+    type: 'school.delete.v1',
+    payload: { id: 'school-1', expectedVersion: '2026-08-23T00:00:00.000Z' },
+  });
+  await assert.rejects(
+    () => failClosedClient.confirmAndSubmit(failClosedSchoolDraft.id),
+    error => error?.code === 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE',
+  );
   assert.strictEqual(legacyBusinessCalls, 0, 'business drafts must never enter legacy envelope or transport fallback');
+
+  const failClosedTaxonomyDraft = await failClosedClient.appendDraft({
+    type: 'taxonomy-system.create.v1',
+    payload: { record: { id: 'taxonomy-1', subject: 'physics', name: 'Knowledge', sort_order: 1 } },
+  });
+  await assert.rejects(
+    () => failClosedClient.confirmAndSubmit(failClosedTaxonomyDraft.id),
+    error => error?.code === 'CLOUD_QUESTION_AUTHORITY_UNAVAILABLE',
+  );
+  assert.strictEqual(legacyBusinessCalls, 0, 'taxonomy drafts must never enter legacy envelope or transport fallback');
 
   console.log('desktop authority client tests passed');
 })().catch(error => {
