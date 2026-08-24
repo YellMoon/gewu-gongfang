@@ -82,7 +82,7 @@ def apply_control_plane_m21(executor, upgrade):
         raise RuntimeError("CLOUD_CONTROL_PLANE_M21_CONFIG_INVALID")
     upgrade = validate_upgrade(upgrade)
     before = read_state(executor, upgrade)
-    if before == {"ledgerCount": 21, "targetCount": 1, "readerPrivileges": True}:
+    if before.get("ledgerCount", 0) >= 21 and before.get("targetCount") == 1 and before.get("readerPrivileges") is True:
         return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != {"ledgerCount": 20, "targetCount": 0, "readerPrivileges": False}:
         raise RuntimeError("CLOUD_CONTROL_PLANE_M21_STATE_INVALID")

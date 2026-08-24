@@ -42,6 +42,10 @@ class CloudControlPlaneM20Tests(unittest.TestCase):
         })
         self.assertNotIn(UPGRADE["sql"], executor.calls)
 
+    def test_skips_verified_m20_when_later_migrations_exist(self):
+        executor = FakeExecutor({"ledgerCount": 22, "targetCount": 1, "indexPresent": True})
+        self.assertEqual(apply_control_plane_m20(executor, UPGRADE)["skipped"], [UPGRADE["migrationId"]])
+
     def test_rejects_unknown_or_partially_applied_state(self):
         for state in (
             {"ledgerCount": 18, "targetCount": 0, "indexPresent": False},

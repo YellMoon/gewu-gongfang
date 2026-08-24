@@ -80,8 +80,8 @@ def apply_control_plane_m20(executor, upgrade):
         raise RuntimeError("CLOUD_CONTROL_PLANE_M20_CONFIG_INVALID")
     upgrade = validate_upgrade(upgrade)
     before = read_state(executor, upgrade)
-    exact_m20 = before == {"ledgerCount": 20, "targetCount": 1, "indexPresent": True}
-    if exact_m20:
+    verified_m20 = before.get("ledgerCount", 0) >= 20 and before.get("targetCount") == 1 and before.get("indexPresent") is True
+    if verified_m20:
         return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != {"ledgerCount": 19, "targetCount": 0, "indexPresent": False}:
         raise RuntimeError("CLOUD_CONTROL_PLANE_M20_STATE_INVALID")

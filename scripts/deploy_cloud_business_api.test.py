@@ -32,6 +32,12 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
             switch_command("8.3.0-current;id")
 
+    def test_discard_targets_only_the_exact_candidate(self):
+        self.assertEqual(
+            module.discard_candidate_command("8.4.1-881fe92c01ff"),
+            "docker rm -f -- 'gewu-cloud-business-api-candidate-8.4.1-881fe92c01ff'",
+        )
+
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0

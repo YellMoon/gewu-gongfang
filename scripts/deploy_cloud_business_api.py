@@ -71,6 +71,10 @@ def candidate_command(tag):
     )
 
 
+def discard_candidate_command(tag):
+    return f"docker rm -f -- '{candidate_name(tag)}'"
+
+
 def switch_command(tag):
     image = f"gewu-cloud-business-api:{tag}"
     candidate = candidate_name(tag)
@@ -163,7 +167,11 @@ def deploy_release():
         upload_source(ssh, tag)
         build_image(ssh, tag)
         deploy.run(ssh, candidate_command(tag), timeout=90)
-        run_cloud_migrations()
+        try:
+            run_cloud_migrations()
+        except Exception:
+            deploy.run(ssh, discard_candidate_command(tag))
+            raise
         deploy.run(ssh, switch_command(tag), timeout=120)
     finally:
         ssh.close()
@@ -183,7 +191,7 @@ def promote_release(tag):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("deploy", "candidate", "promote"))
+    parser.add_argument("command", choices=("deploy", "candidate", "promote", "discard"))
     parser.add_argument("--tag")
     args = parser.parse_args()
     tag = args.tag or release_tag(source_version(), source_revision())
@@ -200,6 +208,13 @@ def main():
         return
     if args.command == "promote":
         print(json.dumps(promote_release(tag), ensure_ascii=True, sort_keys=True))
+        return
+    if args.command == "discard":
+        ssh = deploy.connect()
+        try:
+            deploy.run(ssh, discard_candidate_command(tag))
+        finally:
+            ssh.close()
         return
     print(json.dumps(deploy_release(), ensure_ascii=True, sort_keys=True))
 

@@ -47,6 +47,10 @@ class ControlPlaneM21Tests(unittest.TestCase):
             "applied": [], "skipped": [UPGRADE["migrationId"]],
         })
 
+    def test_skips_verified_m21_when_later_migrations_exist(self):
+        state = '{"ledgerCount":22,"targetCount":1,"readerPrivileges":true}'
+        self.assertEqual(apply_control_plane_m21(FakeExecutor([state]), UPGRADE)["skipped"], [UPGRADE["migrationId"]])
+
     def test_rejects_drift_and_bad_config(self):
         with self.assertRaisesRegex(RuntimeError, "M21_STATE_INVALID"):
             apply_control_plane_m21(FakeExecutor(['{"ledgerCount":21,"targetCount":1,"readerPrivileges":false}']), UPGRADE)
