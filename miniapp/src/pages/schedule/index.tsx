@@ -4,7 +4,12 @@ import Taro from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList } from '../../utils/storage';
 import { pullFromCloudBusinessProjection } from '../../utils/sync';
-import { shanghaiDateKey } from '../../utils/cloudBusinessProjection';
+import {
+  shanghaiDateKey,
+  shiftShanghaiDateKey,
+  shanghaiWeekDateKeys,
+  shanghaiDateParts,
+} from '../../utils/cloudBusinessProjection';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
 import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
@@ -27,7 +32,7 @@ export default function SchedulePage() {
   const isVisitor = isVisitorIdentity(identity);
   const isLimitedIdentity = isUnrecognized || isVisitor || identity?.account_state === 'pending';
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDateKey, setCurrentDateKey] = useState(() => shanghaiDateKey(new Date()));
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -37,7 +42,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     void handleRefresh();
-  }, [currentDate]);
+  }, [currentDateKey]);
 
   const loadData = () => {
     if (isLimitedIdentity) {
@@ -84,25 +89,18 @@ export default function SchedulePage() {
 
   const weekRange = useMemo(() => {
     if (viewMode === 'day') return null;
-    const day = currentDate.getDay();
-    const monday = new Date(currentDate);
-    monday.setDate(currentDate.getDate() - (day === 0 ? 6 : day - 1));
-    monday.setHours(0, 0, 0, 0);
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(monday);
-      date.setDate(monday.getDate() + index);
-      return date;
-    });
-  }, [currentDate, viewMode]);
+    return shanghaiWeekDateKeys(currentDateKey);
+  }, [currentDateKey, viewMode]);
+  const weekTitle = useMemo(() => {
+    if (!weekRange) return '';
+    const start = shanghaiDateParts(weekRange[0]);
+    const end = shanghaiDateParts(weekRange[6]);
+    return `${start.month}\u6708${start.day}\u65e5 - ${end.month}\u6708${end.day}\u65e5`;
+  }, [weekRange]);
+  const currentDateParts = useMemo(() => shanghaiDateParts(currentDateKey), [currentDateKey]);
 
-  const formatDate = (date: Date) => shanghaiDateKey(date);
   const formatTime = (time: string) => time.substring(11, 16);
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.getDate() === today.getDate()
-      && date.getMonth() === today.getMonth()
-      && date.getFullYear() === today.getFullYear();
-  };
+  const isToday = (dateKey: string) => dateKey === shanghaiDateKey(new Date());
 
   const getCourseTypeLabel = (type?: number) => {
     const map: Record<number, string> = { 1: '一对一', 2: '一对二', 3: '小组课', 4: '大班课' };
@@ -125,15 +123,12 @@ export default function SchedulePage() {
   };
 
   const navigateWeek = (dir: number) => {
-    const date = new Date(currentDate);
-    date.setDate(date.getDate() + dir * 7);
-    setCurrentDate(date);
+    setCurrentDateKey(current => shiftShanghaiDateKey(current, dir * 7));
   };
 
-  const getSchedulesForDate = (date: Date): ScheduleWithCourse[] => {
-    const dateString = formatDate(date);
+  const getSchedulesForDate = (dateKey: string): ScheduleWithCourse[] => {
     return schedules.filter((schedule) => {
-      if (!schedule.start_time?.startsWith(dateString)) return false;
+      if (!schedule.start_time?.startsWith(dateKey)) return false;
       
       // 如果选中了学生，筛选该学生的课程，但排除请假和取消的
       if (selectedStudentId) {
@@ -153,9 +148,10 @@ export default function SchedulePage() {
       return true;
     });
   };
-  const getDayTitle = (date: Date, index: number) => (
-    `\u5468${WEEKDAYS[index]} ${date.getMonth() + 1}/${date.getDate()}`
-  );
+  const getDayTitle = (dateKey: string, index: number) => {
+    const date = shanghaiDateParts(dateKey);
+    return `\u5468${WEEKDAYS[index]} ${date.month}/${date.day}`;
+  };
 
   const renderScheduleCard = (schedule: ScheduleWithCourse) => (
     <View
@@ -241,28 +237,28 @@ export default function SchedulePage() {
           <View className="week-nav">
             <Text className="nav-arrow" onClick={() => navigateWeek(-1)}>‹</Text>
             <Text className="nav-title">
-              {weekRange ? `${weekRange[0].getMonth() + 1}月${weekRange[0].getDate()}日 - ${weekRange[6].getMonth() + 1}月${weekRange[6].getDate()}日` : ''}
+              {weekTitle}
             </Text>
             <Text className="nav-arrow" onClick={() => navigateWeek(1)}>›</Text>
-            <Text className="nav-today" onClick={() => setCurrentDate(new Date())}>今天</Text>
+            <Text className="nav-today" onClick={() => setCurrentDateKey(shanghaiDateKey(new Date()))}>今天</Text>
           </View>
 
           <View className="week-header">
-            {weekRange?.map((date, index) => (
-              <View key={index} className={`week-day ${isToday(date) ? 'today' : ''}`}>
+            {weekRange?.map((dateKey, index) => (
+              <View key={dateKey} className={`week-day ${isToday(dateKey) ? 'today' : ''}`}>
                 <Text className="day-name">{WEEKDAYS[index]}</Text>
-                <Text className="day-num">{date.getDate()}</Text>
+                <Text className="day-num">{shanghaiDateParts(dateKey).day}</Text>
               </View>
             ))}
           </View>
 
           <View className="week-grid">
-            {weekRange?.map((date, index) => {
-              const daySchedules = getSchedulesForDate(date);
+            {weekRange?.map((dateKey, index) => {
+              const daySchedules = getSchedulesForDate(dateKey);
               return (
-                <View key={index} className={`day-column ${daySchedules.length === 0 ? 'is-empty' : ''}`}>
-                  <View className={`day-section-title ${isToday(date) ? 'today' : ''}`}>
-                    <Text>{getDayTitle(date, index)}</Text>
+                <View key={dateKey} className={`day-column ${daySchedules.length === 0 ? 'is-empty' : ''}`}>
+                  <View className={`day-section-title ${isToday(dateKey) ? 'today' : ''}`}>
+                    <Text>{getDayTitle(dateKey, index)}</Text>
                     <Text className="day-section-count">{daySchedules.length} {'\u8282'}</Text>
                   </View>
                   <View className="day-column-inner">
@@ -289,21 +285,21 @@ export default function SchedulePage() {
           refresherBackground="#f7f4ee"
         >
           <View className="day-nav">
-            <Text className="nav-arrow" onClick={() => { const date = new Date(currentDate); date.setDate(date.getDate() - 1); setCurrentDate(date); }}>‹</Text>
+            <Text className="nav-arrow" onClick={() => setCurrentDateKey(current => shiftShanghaiDateKey(current, -1))}>‹</Text>
             <View className="day-title-wrap">
               <Text className="day-title-text">
-                {currentDate.getMonth() + 1}月{currentDate.getDate()}日{isToday(currentDate) ? '（今天）' : ''}
+                {currentDateParts.month}{'\u6708'}{currentDateParts.day}{'\u65e5'}{isToday(currentDateKey) ? '\uff08\u4eca\u5929\uff09' : ''}
               </Text>
             </View>
-            <Text className="nav-arrow" onClick={() => { const date = new Date(currentDate); date.setDate(date.getDate() + 1); setCurrentDate(date); }}>›</Text>
-            <Text className="nav-today" onClick={() => setCurrentDate(new Date())}>今天</Text>
+            <Text className="nav-arrow" onClick={() => setCurrentDateKey(current => shiftShanghaiDateKey(current, 1))}>›</Text>
+            <Text className="nav-today" onClick={() => setCurrentDateKey(shanghaiDateKey(new Date()))}>今天</Text>
           </View>
 
           <View className="day-column-inner">
-            {getSchedulesForDate(currentDate).map(renderScheduleCard)}
+            {getSchedulesForDate(currentDateKey).map(renderScheduleCard)}
           </View>
 
-          {getSchedulesForDate(currentDate).length === 0 && (
+          {getSchedulesForDate(currentDateKey).length === 0 && (
             <EmptyState icon="课" text="当天没有课程" />
           )}
         </ScrollView>

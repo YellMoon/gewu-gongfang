@@ -34,6 +34,38 @@ function shanghaiDateKey(value) {
     : '';
 }
 
+function dateKeyParts(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(String(value || ''));
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return null;
+  return { year, month, day, date };
+}
+
+function shiftShanghaiDateKey(value, days) {
+  const parts = dateKeyParts(value);
+  if (!parts || !Number.isInteger(days)) throw new TypeError('Shanghai calendar date is required');
+  const shifted = new Date(parts.date.getTime() + days * 24 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+function shanghaiWeekDateKeys(value) {
+  const parts = dateKeyParts(value);
+  if (!parts) throw new TypeError('Shanghai calendar date is required');
+  const day = parts.date.getUTCDay();
+  const monday = shiftShanghaiDateKey(value, -(day === 0 ? 6 : day - 1));
+  return Object.freeze(Array.from({ length: 7 }, (_, index) => shiftShanghaiDateKey(monday, index)));
+}
+
+function shanghaiDateParts(value) {
+  const parts = dateKeyParts(value);
+  if (!parts) throw new TypeError('Shanghai calendar date is required');
+  return Object.freeze({ year: parts.year, month: parts.month, day: parts.day });
+}
+
 function normalizeProjection(projection) {
   return {
     ...projection,
@@ -67,4 +99,11 @@ function createCloudBusinessProjectionRuntime({ readProjection, writeCache }) {
   });
 }
 
-module.exports = Object.freeze({ cloudScheduleDateTime, shanghaiDateKey, createCloudBusinessProjectionRuntime });
+module.exports = Object.freeze({
+  cloudScheduleDateTime,
+  shanghaiDateKey,
+  shiftShanghaiDateKey,
+  shanghaiWeekDateKeys,
+  shanghaiDateParts,
+  createCloudBusinessProjectionRuntime,
+});

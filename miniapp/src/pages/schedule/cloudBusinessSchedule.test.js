@@ -8,7 +8,9 @@ const projectionSource = fs.readFileSync('miniapp/src/utils/cloudBusinessProject
 const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 assert.ok(source.includes('pullFromCloudBusinessProjection()'), 'schedule page must refresh the role-scoped cloud business projection');
 assert.ok(source.includes("getCachedList<Schedule>('schedules')"), 'schedule page must render the cloud-backed derived cache');
-assert.ok(source.includes('shanghaiDateKey(date)'), 'schedule calendar date filtering must use the product time zone');
+assert.ok(source.includes('shanghaiWeekDateKeys(currentDateKey)'), 'schedule week layout must use the product calendar instead of device-local dates');
+assert.ok(source.includes('shiftShanghaiDateKey(current, dir * 7)'), 'schedule week navigation must use product-calendar date keys');
+assert.ok(!source.includes('.getDate()') && !source.includes('.getMonth()') && !source.includes('.getDay()'), 'schedule labels and today highlighting must not mix device-local calendar fields');
 assert.ok(!source.includes('miniappCloudBusinessApi'), 'schedule page must not bypass the shared cloud projection runtime');
 assert.ok(source.includes("course_name: course?.display_name || course?.name || '未知课程'"), 'cloud schedule cache must retain the course display name');
 assert.ok(projectionSource.includes("timeZone: 'Asia/Shanghai'"), 'cloud schedule instants must be projected in the product time zone before date filtering');
