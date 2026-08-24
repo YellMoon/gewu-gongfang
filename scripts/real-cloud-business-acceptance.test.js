@@ -422,6 +422,28 @@ async function preparedOnlineRegistrationCleanupIsSafeBeforePersistence() {
   assert.ok(!calls.some(([text]) => text.includes(' SET status=')), 'an unpersisted registration must be a cleanup no-op');
 }
 
+async function preparedOnlineRegistrationCleanupRevokesPersistedSessionWithoutReceiptId() {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push([text, values]);
+      if (text.includes('SELECT authority_id')) return { rows: [{
+        authority_id: 'authority-1', account_id: 'canonical-admin', device_id: `desktop-device-${'a'.repeat(32)}`,
+        installation_id: 'acceptance-registration-fixed', link_id: 'link-fixed', session_id: 'actual-session-fixed', status: 'active',
+      }] };
+      return { rows: [{ status: 'revoked' }] };
+    },
+    release() {},
+  };
+  const pool = { async connect() { return client; } };
+  assert.strictEqual(await revokeOnlineRegistrationAcceptance(pool, {
+    sessionId: null, installationId: 'acceptance-registration-fixed', deviceId: `desktop-device-${'a'.repeat(32)}`,
+  }), true);
+  const sessionUpdate = calls.find(([text]) => text.includes('UPDATE vnext_control_plane.vnext_sessions'));
+  assert.deepStrictEqual(sessionUpdate[1], ['actual-session-fixed']);
+  assert.strictEqual(calls.filter(([text]) => text.includes(' SET status=')).length, 4);
+}
+
 async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
   const runtimeModules = resolveRuntimeModules(__dirname, candidate => candidate.includes('/cloud-business-api/'));
   const ticketSecret = 'registration-cleanup-secret'.repeat(2);
@@ -497,6 +519,44 @@ async function onlineRegistrationCleanupHandlePrecedesPayloadValidation() {
   assert.match(cleanupFixture.deviceId, /^desktop-device-[0-9a-f]{32}$/u);
 }
 
+async function unverifiedReceiptSessionIdNeverReplacesPreparedCleanupHandle() {
+  const runtimeModules = resolveRuntimeModules(__dirname, candidate => candidate.includes('/cloud-business-api/'));
+  const ticketSecret = 'registration-wrong-session-secret'.repeat(2);
+  const identity = { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) };
+  let preparedFixture = null;
+  let persistedFixture = null;
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  await assert.rejects(
+    runOnlineRegistrationAcceptance({
+      fetchImpl: async (_url, options = {}) => {
+        const body = JSON.parse(options.body);
+        const deviceId = `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(body.installationPublicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`;
+        return response(200, {
+          ok: true,
+          receiptId: 'receipt-wrong-session',
+          sessionId: 'wrong-session-fixed',
+          replayed: false,
+          sessionToken: makeSessionToken(ticketSecret, {
+            ...identity, deviceId, installationId: body.installationId, sessionId: 'actual-session-fixed', expiresAt,
+          }),
+          offlineLease: { id: 'offline-lease-wrong-session', signature: 'signed' },
+        });
+      },
+      runtimeModules,
+      ticketSecret,
+      identity,
+      baseUrl: 'https://physicsedu.xyz/scheduling',
+      randomUUID: () => 'fixed-wrong-session',
+      onRegistrationPrepared: fixture => { preparedFixture = fixture; },
+      onRegistrationPersisted: fixture => { persistedFixture = fixture; },
+    }),
+    error => error.code === 'REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_TOKEN_INVALID',
+  );
+  assert.strictEqual(preparedFixture.sessionId, null);
+  assert.strictEqual(persistedFixture, null, 'an unverified receipt session must never replace the prepared cleanup handle');
+}
+
 async function operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated() {
   const calls = [];
   const client = {
@@ -541,9 +601,11 @@ Promise.resolve()
   .then(operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated)
   .then(onlineRegistrationIsRealAndTokenFreeInEvidence)
   .then(onlineRegistrationCleanupHandlePrecedesPayloadValidation)
+  .then(unverifiedReceiptSessionIdNeverReplacesPreparedCleanupHandle)
   .then(onlineRegistrationCleanupHandleSurvivesContextFailure)
   .then(onlineRegistrationFixtureIsRevoked)
   .then(preparedOnlineRegistrationCleanupIsSafeBeforePersistence)
+  .then(preparedOnlineRegistrationCleanupRevokesPersistedSessionWithoutReceiptId)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
   .then(() => console.log('real cloud business acceptance checks passed'));

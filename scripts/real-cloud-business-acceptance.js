@@ -178,13 +178,13 @@ async function runOnlineRegistrationAcceptance({
     installationId: preparedCleanupFixture.installationId,
     deviceId: preparedCleanupFixture.deviceId,
   });
-  onRegistrationPersisted(cleanupFixture);
   const inspected = inspectSessionTokenWithRuntime(runtimeModules, ticketSecret, payload.sessionToken);
   if (inspected.authorityId !== identity.authorityId || inspected.accountId !== identity.accountId
     || inspected.deviceId !== fixture.deviceId || inspected.installationId !== fixture.body.installationId
     || inspected.sessionId !== payload.sessionId) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_TOKEN_INVALID');
   }
+  onRegistrationPersisted(cleanupFixture);
   const context = await requestJson(fetchImpl, payload.sessionToken, `${baseUrl}/api/desktop/session-context`);
   if (context.status !== 200 || context.body?.ok !== true || context.body.authorityId !== identity.authorityId
     || context.body.accountId !== identity.accountId || context.body.deviceId !== fixture.deviceId
