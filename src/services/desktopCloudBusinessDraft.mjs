@@ -120,6 +120,23 @@ function scheduleInput(record) {
   };
 }
 
+function scheduleCreateInput(record) {
+  return {
+    courseId: record.course_id,
+    ...scheduleInput(record),
+    recurringRule: nullable(record.recurring_rule),
+    serviceType: nullable(record.service_type),
+    pricings: Array.isArray(record.student_pricings)
+      ? record.student_pricings.map(item => ({
+        studentId: item.student_id,
+        attendanceStatus: item.status ?? item.attendance_status ?? 1,
+        tuition: item.tuition,
+        teacherFee: item.teacher_fee ?? 0,
+      }))
+      : [],
+  };
+}
+
 function callInput(baseUrl, sessionToken, values) {
   return {
     baseUrl,
@@ -233,6 +250,16 @@ export function createDesktopCloudBusinessDraftAdapter({
           scheduleId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...scheduleInput(updateRecord),
+        }));
+      case 'schedule.create.v1':
+        return cloudClient.createCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+          scheduleId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
+          ...scheduleCreateInput(createRecord),
+        }));
+      case 'schedule.delete.v1':
+        return cloudClient.deleteCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+          scheduleId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
+          expectedUpdatedAt: expectedVersion(payload),
         }));
       default:
         throw businessDraftError('CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED');

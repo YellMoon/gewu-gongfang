@@ -179,6 +179,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(businessQueries.length, 1);
   assert.deepStrictEqual(businessQueries[0][1], ['default', 'super_admin', null]);
   assert.ok(businessQueries[0][0].startsWith('SELECT s.id AS "id", s.course_id AS "courseId"'));
+  assert.ok(businessQueries[0][0].includes('s.legacy_deleted=false') && businessQueries[0][0].includes('c.legacy_deleted=false'));
   const projectionQueries = [];
   const desktopProjection = await request(createCloudBusinessApp({
     query: async (text, values) => {
@@ -194,6 +195,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.deepStrictEqual(projectionQueries[0][1], ['default']);
   assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.student_contact_directory') && projectionQueries[0][0].includes('business.schedules'));
+  assert.ok(projectionQueries[0][0].includes("'status',o.attendance_status") && projectionQueries[0][0].includes('s.legacy_deleted=false'));
   const businessWrites = [];
   const scheduleUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -225,6 +227,42 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
     roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
   });
+  const scheduleLifecycleWrites = [];
+  const scheduleLifecycleMutations = {
+    create: async input => { scheduleLifecycleWrites.push(['create', input]); return { id: input.scheduleId, updatedAt: '2026-08-24T03:00:00.000Z' }; },
+    remove: async input => { scheduleLifecycleWrites.push(['remove', input]); return { id: input.scheduleId, updatedAt: '2026-08-24T03:01:00.000Z' }; },
+  };
+  const scheduleCreate = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), businessScheduleLifecycleMutations: scheduleLifecycleMutations,
+    desktopRegistration: identity, businessTenantId: 'default',
+  }), '/api/business/schedules', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: { scheduleId: 'schedule-2', data: {
+      courseId: 'course-1', startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z',
+      recurringRule: null, status: 1, roomDisplay: 'A102', serviceType: 1, tuition: 120, teacherFee: 60,
+      notes: null, pricings: [{ studentId: 'student-1', attendanceStatus: 1, tuition: 120, teacherFee: 60 }],
+    } },
+  });
+  assert.strictEqual(scheduleCreate.status, 201);
+  assert.deepStrictEqual(scheduleCreate.body, { ok: true, schedule: { id: 'schedule-2', updatedAt: '2026-08-24T03:00:00.000Z' } });
+  assert.deepStrictEqual(scheduleLifecycleWrites[0], ['create', {
+    tenantId: 'default', scheduleId: 'schedule-2', courseId: 'course-1',
+    startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z', recurringRule: null,
+    status: 1, roomDisplay: 'A102', serviceType: 1, tuition: 120, teacherFee: 60, notes: null,
+    pricings: [{ studentId: 'student-1', attendanceStatus: 1, tuition: 120, teacherFee: 60 }],
+  }]);
+  const scheduleDelete = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), businessScheduleLifecycleMutations: scheduleLifecycleMutations,
+    desktopRegistration: identity, businessTenantId: 'default',
+  }), '/api/business/schedules/schedule-2', {
+    method: 'DELETE', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: { expectedUpdatedAt: '2026-08-24T03:00:00.000Z' },
+  });
+  assert.strictEqual(scheduleDelete.status, 200);
+  assert.deepStrictEqual(scheduleDelete.body, { ok: true, schedule: { id: 'schedule-2', updatedAt: '2026-08-24T03:01:00.000Z' } });
+  assert.deepStrictEqual(scheduleLifecycleWrites[1], ['remove', {
+    tenantId: 'default', scheduleId: 'schedule-2', expectedUpdatedAt: '2026-08-24T03:00:00.000Z',
+  }]);
   let miniappCoreWriteCalled = false;
   const miniappCannotUpdateSchedule = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -372,6 +410,8 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],

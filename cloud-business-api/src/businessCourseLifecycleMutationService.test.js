@@ -19,7 +19,7 @@ const { createBusinessCourseLifecycleMutations } = require('./businessCourseLife
   };
   assert.deepStrictEqual(await mutations.create(input), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
   assert.match(calls[0][0], /business\.vnext_create_course_record_v1/);
-  assert.strictEqual(calls[0][1].at(-1), JSON.stringify(input.pricings));
+  assert.strictEqual(calls[0][1].at(-1), JSON.stringify([{ student_id: 'student-1', tuition: 100, teacher_fee: 50 }]));
   assert.deepStrictEqual(await mutations.update({ ...input, expectedUpdatedAt: '2026-08-23T06:00:00.000Z' }), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
   assert.match(calls[1][0], /business\.vnext_update_course_record_v1/);
   assert.deepStrictEqual(await mutations.remove({ tenantId: 'default', courseId: 'course-new', expectedUpdatedAt: '2026-08-23T06:00:00.000Z' }), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });

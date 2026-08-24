@@ -717,6 +717,44 @@ export function createDesktopIdentityClient({
     return data.schedule;
   }
 
+  async function createCloudSchedule({
+    baseUrl, currentSession, scheduleId, courseId, startAt, endAt, recurringRule, status,
+    roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+  } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedScheduleId = String(scheduleId || '').trim();
+    if (!normalizedScheduleId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
+    const data = await request(fetchImpl, baseUrl, '/api/business/schedules', {
+      method: 'POST',
+      token: currentSession.token,
+      body: {
+        scheduleId: normalizedScheduleId,
+        data: { courseId, startAt, endAt, recurringRule, status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings },
+      },
+    });
+    if (!data?.schedule || data.schedule.id !== normalizedScheduleId || typeof data.schedule.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
+    }
+    return data.schedule;
+  }
+
+  async function deleteCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) {
+      throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    }
+    const normalizedScheduleId = String(scheduleId || '').trim();
+    if (!normalizedScheduleId) throw identityError('DESKTOP_CLOUD_SCHEDULE_ID_REQUIRED');
+    const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
+      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+    });
+    if (!data?.schedule || data.schedule.id !== normalizedScheduleId || typeof data.schedule.updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
+    }
+    return data.schedule;
+  }
+
   async function updateCloudStudent({
     baseUrl, currentSession, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource,
   } = {}) {
@@ -951,6 +989,7 @@ export function createDesktopIdentityClient({
     beginPasswordVerification,
     beginUnifiedOnlineRegistration,
     createCloudCourse,
+    createCloudSchedule,
     createCloudRoom,
     createCloudTeacher,
     createCloudStudentRecord,
@@ -958,6 +997,7 @@ export function createDesktopIdentityClient({
     deleteCloudStudent,
     deleteCloudCourse,
     deleteCloudRoom,
+    deleteCloudSchedule,
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
     enrollPasswordForVerifiedRegistration,

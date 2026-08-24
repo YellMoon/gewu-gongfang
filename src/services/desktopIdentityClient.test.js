@@ -132,6 +132,18 @@ async function main() {
       }
       if (url === 'https://cloud.test/api/business/schedules') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        if (options.method === 'POST') {
+          assert.deepStrictEqual(JSON.parse(options.body), {
+            scheduleId: 'schedule-cloud-new-1',
+            data: {
+              courseId: 'course-cloud-1', startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z',
+              recurringRule: null, status: 1, roomDisplay: 'Cloud room', serviceType: 1,
+              tuition: 120, teacherFee: 60, notes: null,
+              pricings: [{ studentId: 'student-cloud-1', attendanceStatus: 1, tuition: 120, teacherFee: 60 }],
+            },
+          });
+          return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-new-1', updatedAt: '2026-08-23T00:00:00.000Z' } }) };
+        }
         return { ok: true, json: async () => ({ ok: true, schedules: [{ id: 'schedule-cloud-1', courseId: 'course-cloud-1' }] }) };
       }
       if (url === 'https://cloud.test/api/business/desktop-projection') {
@@ -143,6 +155,11 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text' }] }) };
       }
       if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1') {
+        if (options.method === 'DELETE') {
+          assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+          assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: '2026-08-22T00:00:00.000Z' });
+          return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' } }) };
+        }
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         assert.deepStrictEqual(JSON.parse(options.body), {
@@ -382,6 +399,17 @@ async function main() {
   });
   assert.deepStrictEqual(updatedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/schedules/schedule-cloud-1');
+  const createdCloudSchedule = await unifiedCloudClient.createCloudSchedule({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-new-1', courseId: 'course-cloud-1',
+    startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', recurringRule: null,
+    status: 1, roomDisplay: 'Cloud room', serviceType: 1, tuition: 120, teacherFee: 60, notes: null,
+    pricings: [{ studentId: 'student-cloud-1', attendanceStatus: 1, tuition: 120, teacherFee: 60 }],
+  });
+  assert.deepStrictEqual(createdCloudSchedule, { id: 'schedule-cloud-new-1', updatedAt: '2026-08-23T00:00:00.000Z' });
+  const deletedCloudSchedule = await unifiedCloudClient.deleteCloudSchedule({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1', expectedUpdatedAt: '2026-08-22T00:00:00.000Z',
+  });
+  assert.deepStrictEqual(deletedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:01:00.000Z' });
   const updatedCloudStudent = await unifiedCloudClient.updateCloudStudent({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, studentId: 'student-cloud-1',
     expectedUpdatedAt: '2026-08-22T00:00:00.000Z', name: 'Student cloud updated', school: 'Cloud school',

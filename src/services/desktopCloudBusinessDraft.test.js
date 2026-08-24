@@ -165,12 +165,29 @@ const assert = require('assert');
     roomDisplay: 'Room One', tuition: 100, teacherFee: 60, notes: null,
   });
 
-  const restrictedReceipt = await adapter.submit(
-    adapter.createCommand({ id: 'draft-schedule-create', type: 'schedule.create.v1', payload: { record: { id: 'schedule-2' } } }),
-    { sessionToken: 'desktop-session-token' },
-  );
-  assert.strictEqual(restrictedReceipt.status, 'rejected');
-  assert.deepStrictEqual(restrictedReceipt.result, { error: { code: 'CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED' } });
+  const scheduleRecord = {
+    id: 'schedule-2', course_id: 'course-1', start_time: '2026-08-26T01:00:00.000Z',
+    end_time: '2026-08-26T02:00:00.000Z', recurring_rule: null, status: 1, room: 'Room One',
+    service_type: 1, calculated_tuition: 100, calculated_teacher_fee: 60, notes: null,
+    student_pricings: [{ student_id: 'student-1', status: 1, tuition: 100, teacher_fee: 60 }],
+  };
+  await adapter.submit(adapter.createCommand({
+    id: 'draft-schedule-create', type: 'schedule.create.v1', payload: { record: scheduleRecord },
+  }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'createCloudSchedule');
+  assert.deepStrictEqual(calls.at(-1).input, {
+    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+    scheduleId: 'schedule-2', courseId: 'course-1', startAt: '2026-08-26T01:00:00.000Z',
+    endAt: '2026-08-26T02:00:00.000Z', recurringRule: null, status: 1, roomDisplay: 'Room One',
+    serviceType: 1, tuition: 100, teacherFee: 60, notes: null,
+    pricings: [{ studentId: 'student-1', attendanceStatus: 1, tuition: 100, teacherFee: 60 }],
+  });
+  await adapter.submit(adapter.createCommand({
+    id: 'draft-schedule-delete', type: 'schedule.delete.v1',
+    payload: { id: 'schedule-2', expectedVersion: '2026-08-24T03:00:00.000Z' },
+  }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(calls.at(-1).method, 'deleteCloudSchedule');
+  assert.strictEqual(calls.at(-1).input.expectedUpdatedAt, '2026-08-24T03:00:00.000Z');
   await assert.rejects(
     () => adapter.submit(adapter.createCommand({ id: 'draft-no-version', type: 'room.update.v1', payload: { id: 'room-1', changes: { name: 'Room' } } }), { sessionToken: 'desktop-session-token' }),
     error => error?.code === 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED',
