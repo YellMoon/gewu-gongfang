@@ -3,6 +3,7 @@ const assert = require('assert');
 (async () => {
   const {
     createDesktopCloudBusinessDraftAdapter,
+    restrictedCloudBusinessDraftTypes,
   } = await import('./desktopCloudBusinessDraft.mjs');
 
   const calls = [];
@@ -135,6 +136,21 @@ const assert = require('assert');
   assert.strictEqual(calls.at(-1).method, 'updateCloudSchool');
   await adapter.submit(adapter.createCommand({ id: 'draft-school-delete', type: 'school.delete.v1', payload: { id: 'school-1', expectedVersion: '2026-08-23T00:00:00.000Z' } }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'deleteCloudSchool');
+
+  assert.deepStrictEqual(Object.keys(restrictedCloudBusinessDraftTypes).sort(), [
+    'consumption.create.v1', 'consumption.delete.v1', 'consumption.update.v1',
+    'grade.create.v1', 'grade.delete.v1',
+    'payment.create.v1', 'payment.delete.v1', 'payment.update.v1',
+    'personal-asset-category.create.v1', 'personal-asset-category.delete.v1',
+    'personal-asset-record.create.v1', 'personal-asset-record.delete.v1', 'personal-asset-record.update.v1',
+  ]);
+  for (const type of Object.keys(restrictedCloudBusinessDraftTypes)) {
+    const action = type.split('.')[1];
+    const payload = action === 'create' ? { record: { id: `restricted-${type}` } } : { id: `restricted-${type}`, ...(action === 'update' || action === 'delete' ? { expectedVersion: '2026-08-24T00:00:00.000Z', changes: { notes: null } } : {}) };
+    const receipt = await adapter.submit(adapter.createCommand({ id: `draft-${type}`, type, payload }), { sessionToken: 'desktop-session-token' });
+    assert.strictEqual(receipt.status, 'rejected');
+    assert.deepStrictEqual(receipt.result, { error: { code: 'CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED' } });
+  }
 
   const courseRecord = {
     id: 'course-1', name: 'Physics', year: 2026, semester: 'Fall', display_name: 'Physics Fall', type: 1,

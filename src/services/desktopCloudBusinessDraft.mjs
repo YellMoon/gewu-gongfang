@@ -167,6 +167,22 @@ function stableCloudRejection(error) {
     : null;
 }
 
+export const restrictedCloudBusinessDraftTypes = Object.freeze({
+  'payment.create.v1': 'cloud schema not enabled; schedule tuition is authoritative',
+  'payment.update.v1': 'cloud schema not enabled; schedule tuition is authoritative',
+  'payment.delete.v1': 'cloud schema not enabled; schedule tuition is authoritative',
+  'consumption.create.v1': 'cloud schema not enabled; schedule attendance is authoritative',
+  'consumption.update.v1': 'cloud schema not enabled; schedule attendance is authoritative',
+  'consumption.delete.v1': 'cloud schema not enabled; schedule attendance is authoritative',
+  'grade.create.v1': 'cloud grade authority is not enabled',
+  'grade.delete.v1': 'cloud grade authority is not enabled',
+  'personal-asset-record.create.v1': 'personal assets accept verified cloud import tasks only',
+  'personal-asset-record.update.v1': 'personal assets accept verified cloud import tasks only',
+  'personal-asset-record.delete.v1': 'personal assets accept verified cloud import tasks only',
+  'personal-asset-category.create.v1': 'personal asset categories are derived by verified cloud imports',
+  'personal-asset-category.delete.v1': 'personal asset categories are derived by verified cloud imports',
+});
+
 export function createDesktopCloudBusinessDraftAdapter({
   cloudClient,
   baseUrl,
@@ -300,6 +316,9 @@ export function createDesktopCloudBusinessDraftAdapter({
           expectedUpdatedAt: expectedVersion(payload),
         }));
       default:
+        if (Object.hasOwn(restrictedCloudBusinessDraftTypes, command.type)) {
+          throw businessDraftError('CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED');
+        }
         throw businessDraftError('CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED');
     }
   }
