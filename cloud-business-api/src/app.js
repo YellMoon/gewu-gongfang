@@ -113,7 +113,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       ? value
       : undefined;
   }
-  function studentContacts(value) {
+  function studentContacts(value, allowUnbind = false) {
     if (!Array.isArray(value) || value.length > 3) return null;
     const slots = new Set();
     const contacts = [];
@@ -127,7 +127,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (!contact || !Number.isInteger(contact.slot) || contact.slot < 1 || contact.slot > 3 || slots.has(contact.slot)
         || !['student', 'guardian'].includes(contact.relationship)
         || (contact.slot === 1 && contact.relationship !== 'student') || (contact.slot > 1 && contact.relationship !== 'guardian')
-        || expectedUpdatedAt === undefined || !validPhone || !validWechat || (phone === null && wechat === null)) return null;
+        || expectedUpdatedAt === undefined || !validPhone || !validWechat
+        || (phone === null && wechat === null && (!allowUnbind || expectedUpdatedAt === null))) return null;
       slots.add(contact.slot);
       contacts.push({ slot: contact.slot, relationship: contact.relationship, phone, wechat, expectedUpdatedAt });
     }
@@ -1304,7 +1305,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const parentName = boundedText(update.parentName, 256);
     const notes = optionalText(update.notes);
     const studentSource = boundedText(update.studentSource, 512);
-    const contacts = studentContacts(update.contacts);
+    const contacts = studentContacts(update.contacts, true);
     const gradeYear = update.gradeYear;
     const sourceType = update.sourceType;
     if (!expectedUpdatedAt || !name || school === undefined || gradeCurrent === undefined || institutionId === undefined

@@ -64,6 +64,9 @@ const assert = require('assert');
       contacts: [{
         slot: 1, relationship: 'student', phone: '13700000001', wechat: null,
         updated_at: '2026-08-23T00:00:00.000Z',
+      }, {
+        slot: 2, relationship: 'guardian', phone: null, wechat: null,
+        updated_at: '2026-08-23T00:00:01.000Z',
       }],
     } },
   });
@@ -73,6 +76,9 @@ const assert = require('assert');
   assert.deepStrictEqual(calls[1].input.contacts, [{
     slot: 1, relationship: 'student', phone: '13700000001', wechat: null,
     expectedUpdatedAt: '2026-08-23T00:00:00.000Z',
+  }, {
+    slot: 2, relationship: 'guardian', phone: null, wechat: null,
+    expectedUpdatedAt: '2026-08-23T00:00:01.000Z',
   }]);
 
   const studentDelete = adapter.createCommand({

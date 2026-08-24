@@ -1085,32 +1085,37 @@ class BrowserDatabaseService {
     );
     const primary = bySlot.get(1);
     const guardian = bySlot.get(2);
-    const primaryPhone = student.phone ?? primary?.phone ?? null;
-    const primaryWechat = primary?.wechat ?? null;
-    const guardianPhone = (student as any).parent_phone ?? guardian?.phone ?? null;
-    const guardianWechat = student.parent_wechat ?? guardian?.wechat ?? null;
+    const owns = (key: string) => Object.prototype.hasOwnProperty.call(student, key);
+    const normalized = (value: any) => typeof value === 'string' && value.trim() ? value.trim() : null;
+    const primaryPhone = owns('phone') ? normalized(student.phone) : primary?.phone ?? null;
+    const primaryWechat = owns('student_wechat') ? normalized(student.student_wechat) : primary?.wechat ?? null;
+    const guardianPhone = owns('parent_phone') ? normalized(student.parent_phone) : guardian?.phone ?? null;
+    const guardianWechat = owns('parent_wechat') ? normalized(student.parent_wechat) : guardian?.wechat ?? null;
+    const guardianTwo = bySlot.get(3);
+    const guardianTwoPhone = owns('second_parent_phone') ? normalized(student.second_parent_phone) : guardianTwo?.phone ?? null;
+    const guardianTwoWechat = owns('second_parent_wechat') ? normalized(student.second_parent_wechat) : guardianTwo?.wechat ?? null;
     return [
-      ...(primaryPhone || primaryWechat ? [{
+      ...(primaryPhone || primaryWechat || primary ? [{
         slot: 1,
         relationship: 'student',
         phone: primaryPhone,
         wechat: primaryWechat,
         updated_at: primary?.updated_at ?? null,
       }] : []),
-      ...(guardianPhone || guardianWechat ? [{
+      ...(guardianPhone || guardianWechat || guardian ? [{
         slot: 2,
         relationship: 'guardian',
         phone: guardianPhone,
         wechat: guardianWechat,
         updated_at: guardian?.updated_at ?? null,
       }] : []),
-      ...[3].map(slot => bySlot.get(slot)).filter(Boolean).map((contact: any) => ({
+      ...(guardianTwoPhone || guardianTwoWechat || guardianTwo ? [{
         slot: 3,
         relationship: 'guardian',
-        phone: contact.phone ?? null,
-        wechat: contact.wechat ?? null,
-        updated_at: contact.updated_at ?? null,
-      })),
+        phone: guardianTwoPhone,
+        wechat: guardianTwoWechat,
+        updated_at: guardianTwo?.updated_at ?? null,
+      }] : []),
     ];
   }
 
@@ -1134,7 +1139,7 @@ class BrowserDatabaseService {
     }
     
     this.data.students.push(newStudent);
-    this.recordAuthorityDraft('students', 'create', newStudent.id, newStudent);
+    this.recordAuthorityDraft('students', 'create', newStudent.id, { ...newStudent, contacts: this.studentAuthorityContacts(newStudent) });
     this.saveData();
     return newStudent;
   }

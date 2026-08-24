@@ -11,6 +11,10 @@ export interface Student {
   id: string;
   name: string;
   phone?: string;
+  student_wechat?: string;
+  parent_phone?: string;
+  second_parent_phone?: string;
+  second_parent_wechat?: string;
   is_institution_student?: boolean;
   school?: string;
   grade_year?: number;

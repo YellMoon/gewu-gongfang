@@ -357,7 +357,10 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     body: {
       expectedUpdatedAt: '2026-08-22T01:00:00.000Z', name: 'Student record', school: null, gradeYear: 2024,
       gradeCurrent: null, institutionId: null, parentName: null, notes: null, sourceType: 1, studentSource: null,
-      contacts: [{ slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null }],
+      contacts: [
+        { slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null },
+        { slot: 2, relationship: 'guardian', phone: null, wechat: null, expectedUpdatedAt: '2026-08-22T00:00:00.000Z' },
+      ],
     },
   });
   assert.strictEqual(studentRecordUpdate.status, 200);
@@ -366,7 +369,10 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     tenantId: 'default', studentId: 'student-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
     name: 'Student record', school: null, gradeYear: 2024, gradeCurrent: null, institutionId: null,
     parentName: null, notes: null, sourceType: 1, studentSource: null,
-    contacts: [{ slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null }],
+    contacts: [
+      { slot: 1, relationship: 'student', phone: '13800138000', wechat: null, expectedUpdatedAt: null },
+      { slot: 2, relationship: 'guardian', phone: null, wechat: null, expectedUpdatedAt: '2026-08-22T00:00:00.000Z' },
+    ],
   }]);
   const staleStudentUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),

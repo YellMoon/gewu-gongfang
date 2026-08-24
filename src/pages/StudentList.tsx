@@ -43,6 +43,49 @@ function schoolOptionMatches(inputValue: string, optionValue: any) {
   return true;
 }
 
+function contactText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function studentContactFormValues(student: Student, contacts: any[]) {
+  const bySlot = new Map(contacts.filter(contact => contact.student_id === student.id).map(contact => [contact.slot, contact]));
+  const primary: any = bySlot.get(1);
+  const guardianOne: any = bySlot.get(2);
+  const guardianTwo: any = bySlot.get(3);
+  return {
+    phone: primary?.phone ?? student.phone ?? undefined,
+    student_wechat: primary?.wechat ?? student.student_wechat ?? undefined,
+    parent_phone: guardianOne?.phone ?? student.parent_phone ?? undefined,
+    parent_wechat: guardianOne?.wechat ?? student.parent_wechat ?? undefined,
+    second_parent_phone: guardianTwo?.phone ?? student.second_parent_phone ?? undefined,
+    second_parent_wechat: guardianTwo?.wechat ?? student.second_parent_wechat ?? undefined,
+  };
+}
+
+function studentContactCommands(values: any, existingContacts: any[] = [], includeExpectedVersions = false) {
+  const fields = [
+    { slot: 1, relationship: 'student', phone: 'phone', wechat: 'student_wechat' },
+    { slot: 2, relationship: 'guardian', phone: 'parent_phone', wechat: 'parent_wechat' },
+    { slot: 3, relationship: 'guardian', phone: 'second_parent_phone', wechat: 'second_parent_wechat' },
+  ] as const;
+  return fields.flatMap(field => {
+    const existing = existingContacts.find(contact => Number(contact.slot) === field.slot);
+    const phone = contactText(values[field.phone]);
+    const wechat = contactText(values[field.wechat]);
+    if (!phone && !wechat && !existing) return [];
+    if (!phone && !wechat && existing && includeExpectedVersions) {
+      return [{ slot: field.slot, relationship: field.relationship, phone: null, wechat: null, expectedUpdatedAt: existing.updated_at }];
+    }
+    return [{
+      slot: field.slot,
+      relationship: field.relationship,
+      phone,
+      wechat,
+      ...(includeExpectedVersions ? { expectedUpdatedAt: existing?.updated_at ?? null } : {}),
+    }];
+  });
+}
+
 const StudentList: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [studentContacts, setStudentContacts] = useState<any[]>([]);
@@ -91,13 +134,10 @@ const StudentList: React.FC = () => {
   };
 
   const handleEdit = (student: Student) => {
-    const primaryContact = studentContacts.find(contact => contact.student_id === student.id && contact.slot === 1);
-    const guardianContact = studentContacts.find(contact => contact.student_id === student.id && contact.slot === 2);
     setEditingStudent(student);
     form.setFieldsValue({
       ...student,
-      phone: primaryContact?.phone ?? student.phone ?? undefined,
-      parent_wechat: guardianContact?.wechat ?? student.parent_wechat ?? undefined,
+      ...studentContactFormValues(student, studentContacts),
       school: student.school ? [student.school] : [],
       grade_year: student.grade_year || new Date().getFullYear()
     });
@@ -153,16 +193,11 @@ const StudentList: React.FC = () => {
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
       return true;
     }
-    const contactsBySlot = new Map(studentContacts.filter(contact => contact.student_id === editingStudent.id).map(contact => [contact.slot, contact]));
-    const primary = contactsBySlot.get(1);
-    const guardian = contactsBySlot.get(2);
-    const normalizedPhone = typeof values.phone === 'string' ? values.phone.trim() || null : primary?.phone ?? null;
-    const normalizedGuardianWechat = typeof values.parent_wechat === 'string' ? values.parent_wechat.trim() || null : guardian?.wechat ?? null;
-    const contacts = [
-      ...(normalizedPhone || primary?.wechat ? [{ slot: 1, relationship: 'student', phone: normalizedPhone, wechat: primary?.wechat ?? null, expectedUpdatedAt: primary?.updated_at ?? null }] : []),
-      ...(guardian?.phone || normalizedGuardianWechat ? [{ slot: 2, relationship: 'guardian', phone: guardian?.phone ?? null, wechat: normalizedGuardianWechat, expectedUpdatedAt: guardian?.updated_at ?? null }] : []),
-      ...[3].map(slot => contactsBySlot.get(slot)).filter(Boolean).map((existing: any) => ({ slot: 3, relationship: 'guardian', phone: existing.phone ?? null, wechat: existing.wechat ?? null, expectedUpdatedAt: existing.updated_at })),
-    ];
+    const contacts = studentContactCommands(
+      values,
+      studentContacts.filter(contact => contact.student_id === editingStudent.id),
+      true,
+    );
     try {
       await cloudRuntime.updateCloudStudentRecord({
         studentId: editingStudent.id,
@@ -211,12 +246,7 @@ const StudentList: React.FC = () => {
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
       return true;
     }
-    const phone = typeof values.phone === 'string' ? values.phone.trim() : '';
-    const parentWechat = typeof values.parent_wechat === 'string' ? values.parent_wechat.trim() : '';
-    const contacts = [
-      ...(phone ? [{ slot: 1, relationship: 'student', phone, wechat: null }] : []),
-      ...(parentWechat ? [{ slot: 2, relationship: 'guardian', phone: null, wechat: parentWechat }] : []),
-    ];
+    const contacts = studentContactCommands(values);
     const studentId = globalThis.crypto?.randomUUID?.() || `student-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     try {
       await cloudRuntime.createCloudStudentRecord({
@@ -557,6 +587,31 @@ const StudentList: React.FC = () => {
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={3} placeholder="其他备注信息" />
           </Form.Item>
+          <Divider>{'\u5b66\u751f\u4e0e\u5bb6\u957f\u8054\u7cfb\u65b9\u5f0f\uff08\u6700\u591a\u4e09\u7ec4\uff09'}</Divider>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="student_wechat" label={'\u5b66\u751f\u5fae\u4fe1\u53f7'}>
+                <Input placeholder={'\u8bf7\u8f93\u5165\u5b66\u751f\u5fae\u4fe1\u53f7'} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="parent_phone" label={'\u5bb6\u957f\u4e00\u624b\u673a\u53f7'}>
+                <Input placeholder={'\u8bf7\u8f93\u5165\u5bb6\u957f\u4e00\u624b\u673a\u53f7'} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="second_parent_phone" label={'\u5bb6\u957f\u4e8c\u624b\u673a\u53f7'}>
+                <Input placeholder={'\u8bf7\u8f93\u5165\u5bb6\u957f\u4e8c\u624b\u673a\u53f7'} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="second_parent_wechat" label={'\u5bb6\u957f\u4e8c\u5fae\u4fe1\u53f7'}>
+                <Input placeholder={'\u8bf7\u8f93\u5165\u5bb6\u957f\u4e8c\u5fae\u4fe1\u53f7'} />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
       }
     />

@@ -76,6 +76,10 @@ assert.ok(source.includes('baseVersion: previous.updated_at || null'),
   'schedule replacement drafts must preserve each prior record version');
 assert.ok(source.includes('contacts: this.studentAuthorityContacts(updated)'),
   'offline student update drafts must include observed contact versions for the atomic cloud record contract');
+assert.ok(source.includes('contacts: this.studentAuthorityContacts(newStudent)'),
+  'offline student creation drafts must include all three editable contact slots');
+assert.ok(source.includes('primaryPhone || primaryWechat || primary'),
+  'clearing an observed primary contact must remain a versioned unbind draft instead of disappearing');
 assert.ok(packageJson.includes('src/services/browserDatabaseSyncCapture.test.js'), 'browser database sync capture test should run in npm test');
 assert.ok(source.includes('normalizeBrowserQuestionRecord(question as any)'), 'browser records should use the tested pure rich-content normalizer');
 assert.ok(source.includes('applyQuestionSyncRecords(map)'), 'incoming desktop sync should use the tested pure apply helper');
