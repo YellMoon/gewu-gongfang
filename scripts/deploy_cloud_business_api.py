@@ -6,6 +6,7 @@ import json
 import os
 import posixpath
 import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -22,7 +23,8 @@ REMOTE_BUILD_ROOT = "/root/gewu-cloud-business-builds"
 SWITCH_LOCK_PATH = "/tmp/gewu-cloud-business-api-switch.lock"
 PROMOTION_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
-PROMOTION_LOCK_READY = b"GEWU_PROMOTION_LOCK_READY\n"
+OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+PROMOTION_LOCK_STALE_SECONDS = 900
 
 
 def failure(code):
@@ -78,27 +80,38 @@ def discard_candidate_command(tag):
     return f"docker rm -f -- '{candidate_name(tag)}'"
 
 
-def promotion_lock_command():
+def promotion_lock_acquire_command(operation_id, tag):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    candidate_name(tag)
     return (
-        f"exec flock -n '{PROMOTION_LOCK_PATH}' sh -c "
-        "'printf \"GEWU_PROMOTION_LOCK_READY\\n\"; while :; do sleep 30; done'"
+        "set -eu; "
+        f"owner='{operation_id}'; tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; tmp='{PROMOTION_LOCK_PATH}.{operation_id}.tmp'; "
+        "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s %s %s\\n' \"$owner\" \"$tag\" \"$(date +%s)\" > \"$tmp\"; "
+        "if ! ln \"$tmp\" \"$lock\"; then exit 3; fi"
     )
 
 
-class PromotionLease:
-    def __init__(self, ssh, channel):
-        self.ssh = ssh
-        self.channel = channel
-        self.closed = False
+def promotion_lock_release_command(operation_id):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return (
+        "set -eu; "
+        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; "
+        "if [ ! -e \"$lock\" ]; then exit 0; fi; "
+        "read -r actual_owner _ < \"$lock\"; test \"$actual_owner\" = \"$owner\"; rm -f -- \"$lock\""
+    )
 
-    def close(self):
-        if self.closed:
-            return
-        self.closed = True
-        try:
-            self.channel.close()
-        finally:
-            self.ssh.close()
+
+def promotion_lock_stale_probe_command(tag):
+    candidate_name(tag)
+    return (
+        "set -eu; "
+        f"expected_tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; stale='{PROMOTION_LOCK_STALE_SECONDS}'; "
+        "read -r owner actual_tag created extra < \"$lock\"; test -z \"${extra:-}\"; "
+        "test \"$actual_tag\" = \"$expected_tag\"; now=$(date +%s); age=$((now - created)); test \"$age\" -ge \"$stale\"; "
+        "printf '%s %s\\n' \"$owner\" \"$age\""
+    )
 
 
 def switch_command(tag):
@@ -237,31 +250,64 @@ def rollback_promoted_release(tag):
         ssh.close()
 
 
-def acquire_promotion_lock():
+def release_promotion_lock(operation_id):
     ssh = deploy.connect()
-    channel = None
     try:
-        transport = ssh.get_transport()
-        if transport is None or not transport.is_active():
-            raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
-        transport.set_keepalive(15)
-        channel = transport.open_session(timeout=30)
-        channel.settimeout(30)
-        channel.exec_command(promotion_lock_command())
-        received = b""
-        while len(received) < len(PROMOTION_LOCK_READY):
-            chunk = channel.recv(len(PROMOTION_LOCK_READY) - len(received))
-            if not chunk:
-                raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
-            received += chunk
-        if received != PROMOTION_LOCK_READY:
-            raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE")
-        return PromotionLease(ssh, channel)
-    except BaseException:
-        if channel is not None:
-            channel.close()
+        deploy.run(ssh, promotion_lock_release_command(operation_id), timeout=30)
+    finally:
         ssh.close()
+
+
+def acquire_promotion_lock(operation_id, tag):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, promotion_lock_acquire_command(operation_id, tag), timeout=30)
+    except BaseException:
+        try:
+            release_promotion_lock(operation_id)
+        except BaseException:
+            pass
         raise
+    finally:
+        ssh.close()
+
+
+def read_stale_promotion_lock(tag):
+    ssh = deploy.connect()
+    try:
+        output, _ = deploy.run(ssh, promotion_lock_stale_probe_command(tag), timeout=30)
+    finally:
+        ssh.close()
+    match = re.fullmatch(r"([0-9a-f]{32}) ([0-9]+)\s*", output)
+    if not match:
+        raise RuntimeError("CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_INVALID")
+    return {"operationId": match.group(1), "ageSeconds": int(match.group(2))}
+
+
+def verify_current_release_tag(tag):
+    candidate_name(tag)
+    ssh = deploy.connect()
+    try:
+        deploy.run(
+            ssh,
+            f"test \"$(docker inspect -f '{{{{.Config.Image}}}}' '{CURRENT_CONTAINER}')\" = 'gewu-cloud-business-api:{tag}'",
+            timeout=30,
+        )
+    finally:
+        ssh.close()
+
+
+def recover_promotion_lock(tag, mode):
+    if mode not in ("rollback", "preserve"):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    stale = read_stale_promotion_lock(tag)
+    if mode == "rollback":
+        reconcile_uncertain_switch(tag)
+    else:
+        verify_current_release_tag(tag)
+        verify_public_health(tag.split("-", 1)[0])
+    release_promotion_lock(stale["operationId"])
+    return {"tag": tag, "mode": mode, "ageSeconds": stale["ageSeconds"]}
 
 
 def reconcile_uncertain_switch(tag):
@@ -273,11 +319,12 @@ def reconcile_uncertain_switch(tag):
 
 
 def promote_validated_candidate(tag, version, evidence):
-    lease = acquire_promotion_lock()
+    operation_id = secrets.token_hex(16)
+    acquire_promotion_lock(operation_id, tag)
     try:
         return promote_candidate_under_lock(tag, version, evidence)
     finally:
-        lease.close()
+        release_promotion_lock(operation_id)
 
 
 def promote_candidate_under_lock(tag, version, evidence):
@@ -343,10 +390,13 @@ def promote_release(tag):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("deploy", "candidate", "promote", "discard"))
+    parser.add_argument("command", choices=("deploy", "candidate", "promote", "discard", "recover-lock"))
     parser.add_argument("--tag")
+    parser.add_argument("--recovery-mode", choices=("rollback", "preserve"))
     args = parser.parse_args()
-    if args.command == "discard":
+    if args.command in ("discard", "recover-lock"):
+        if args.command == "recover-lock" and (not args.tag or not args.recovery_mode):
+            raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
         tag = args.tag or validated_release_tag()
         if not TAG_PATTERN.fullmatch(tag):
             raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
@@ -371,6 +421,9 @@ def main():
             deploy.run(ssh, discard_candidate_command(tag))
         finally:
             ssh.close()
+        return
+    if args.command == "recover-lock":
+        print(json.dumps(recover_promotion_lock(tag, args.recovery_mode), ensure_ascii=True, sort_keys=True))
         return
     print(json.dumps(deploy_release(), ensure_ascii=True, sort_keys=True))
 

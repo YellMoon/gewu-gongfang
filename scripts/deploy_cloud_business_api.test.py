@@ -5,7 +5,9 @@ import deploy_cloud_business_api as module
 from deploy_cloud_business_api import (
     candidate_command,
     candidate_name,
-    promotion_lock_command,
+    promotion_lock_acquire_command,
+    promotion_lock_release_command,
+    promotion_lock_stale_probe_command,
     reconcile_switch_failure_command,
     release_tag,
     rollback_command,
@@ -78,51 +80,60 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             "docker rm -f -- 'gewu-cloud-business-api-candidate-8.4.1-881fe92c01ff'",
         )
 
-    def test_promotion_lock_is_nonblocking_and_owned_by_the_live_ssh_channel(self):
-        command = promotion_lock_command()
-        self.assertIn("flock -n", command)
-        self.assertIn("GEWU_PROMOTION_LOCK_READY", command)
-        self.assertIn("while :; do sleep 30", command)
+    def test_promotion_lock_is_atomic_owned_and_records_recovery_metadata(self):
+        operation_id = "a" * 32
+        tag = "8.5.0-8a40b41050be"
+        acquire = promotion_lock_acquire_command(operation_id, tag)
+        release = promotion_lock_release_command(operation_id)
+        probe = promotion_lock_stale_probe_command(tag)
+        self.assertIn('ln "$tmp" "$lock"', acquire)
+        self.assertIn("$(date +%s)", acquire)
+        self.assertIn(operation_id, acquire)
+        self.assertIn(tag, acquire)
+        self.assertIn('test "$actual_owner" = "$owner"', release)
+        self.assertIn("age=$((now - created))", probe)
+        self.assertIn(str(module.PROMOTION_LOCK_STALE_SECONDS), probe)
 
-        ssh = mock.Mock()
-        transport = mock.Mock()
-        channel = mock.Mock()
-        ssh.get_transport.return_value = transport
-        transport.is_active.return_value = True
-        transport.open_session.return_value = channel
-        channel.recv.return_value = module.PROMOTION_LOCK_READY
-        with mock.patch.object(module.deploy, "connect", return_value=ssh):
-            lease = module.acquire_promotion_lock()
-        transport.set_keepalive.assert_called_once_with(15)
-        channel.exec_command.assert_called_once_with(command)
-        lease.close()
-        channel.close.assert_called_once()
-        ssh.close.assert_called_once()
+    def test_stale_lock_recovery_requires_explicit_mode_and_verification(self):
+        stale = {"operationId": "c" * 32, "ageSeconds": 901}
+        with mock.patch.object(module, "read_stale_promotion_lock", return_value=stale), mock.patch.object(
+            module, "reconcile_uncertain_switch"
+        ) as reconcile, mock.patch.object(module, "verify_public_health") as verify, mock.patch.object(
+            module, "verify_current_release_tag"
+        ) as verify_tag, mock.patch.object(
+            module, "release_promotion_lock"
+        ) as release:
+            result = module.recover_promotion_lock("8.5.0-8a40b41050be", "rollback")
+        reconcile.assert_called_once_with("8.5.0-8a40b41050be")
+        verify.assert_not_called()
+        verify_tag.assert_not_called()
+        release.assert_called_once_with("c" * 32)
+        self.assertEqual(result["ageSeconds"], 901)
 
-    def test_busy_promotion_lock_fails_without_creating_a_persistent_lock(self):
-        ssh = mock.Mock()
-        transport = mock.Mock()
-        channel = mock.Mock()
-        ssh.get_transport.return_value = transport
-        transport.is_active.return_value = True
-        transport.open_session.return_value = channel
-        channel.recv.return_value = b""
-        with mock.patch.object(module.deploy, "connect", return_value=ssh):
-            with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_PROMOTION_LOCK_UNAVAILABLE"):
-                module.acquire_promotion_lock()
-        channel.close.assert_called_once()
-        ssh.close.assert_called_once()
+        with mock.patch.object(module, "read_stale_promotion_lock", return_value=stale), mock.patch.object(
+            module, "reconcile_uncertain_switch"
+        ) as reconcile, mock.patch.object(module, "verify_public_health", return_value={"ok": True}) as verify, mock.patch.object(
+            module, "verify_current_release_tag"
+        ) as verify_tag, mock.patch.object(
+            module, "release_promotion_lock"
+        ) as release:
+            module.recover_promotion_lock("8.5.0-8a40b41050be", "preserve")
+        reconcile.assert_not_called()
+        verify_tag.assert_called_once_with("8.5.0-8a40b41050be")
+        verify.assert_called_once_with("8.5.0")
+        release.assert_called_once_with("c" * 32)
 
     def test_complete_promotion_lifecycle_holds_one_operation_lock(self):
         health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
-        lease = mock.Mock()
-        with mock.patch.object(module, "acquire_promotion_lock", return_value=lease) as acquire, mock.patch.object(
+        with mock.patch.object(module.secrets, "token_hex", return_value="b" * 32), mock.patch.object(
+            module, "acquire_promotion_lock"
+        ) as acquire, mock.patch.object(module, "release_promotion_lock") as release, mock.patch.object(
             module, "promote_candidate_under_lock", return_value=health
         ) as promote:
             self.assertEqual(module.promote_validated_candidate("8.5.0-980f2c842eab", "8.5.0", "evidence"), health)
-        acquire.assert_called_once_with()
+        acquire.assert_called_once_with("b" * 32, "8.5.0-980f2c842eab")
         promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence")
-        lease.close.assert_called_once_with()
+        release.assert_called_once_with("b" * 32)
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:
@@ -160,6 +171,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module, "verify_public_health", return_value=health
         ) as verify_health, mock.patch.object(
             module, "acquire_promotion_lock", return_value=mock.Mock()
+        ), mock.patch.object(
+            module, "release_promotion_lock"
         ):
             self.assertEqual(module.deploy_release(), health)
         require_manifest.assert_called_once_with("cloud_business")
@@ -172,6 +185,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         switch_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
         with mock.patch.object(module, "acquire_promotion_lock", return_value=mock.Mock()), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(
             module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
@@ -190,6 +205,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         switch_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
         with mock.patch.object(module, "acquire_promotion_lock", return_value=mock.Mock()), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(
             module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
@@ -207,6 +224,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         switch_ssh = mock.Mock()
         reconcile_ssh = mock.Mock()
         with mock.patch.object(module, "acquire_promotion_lock", return_value=mock.Mock()), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(
             module.deploy, "connect", side_effect=[switch_ssh, reconcile_ssh]
         ), mock.patch.object(
             module.deploy, "run", side_effect=[TimeoutError("ssh timeout"), ("healthy", "")]
