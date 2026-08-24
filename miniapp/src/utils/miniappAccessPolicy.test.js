@@ -77,10 +77,12 @@ assert.ok(
   'visitor and unbound formal accounts must share the cloud limited-preview surface without paper task controls',
 );
 assert.ok(
-  miniappHome.includes('usesLimitedQuestionProjection')
+  miniappHome.includes('businessCacheIdentityKey')
     && miniappHome.includes('limitedSubject')
+    && miniappHome.includes("['student', 'teacher'].includes(user.user_type)")
+    && miniappHome.includes('!businessCacheIdentityKey(user)')
     && miniappHome.includes('\\u5c1a\\u672a\\u7ed1\\u5b9a\\u672c\\u5730\\u4e3b\\u4f53'),
-  'the home page must keep an authenticated unbound account usable through the limited signed-preview experience',
+  'the home page must reserve the unbound experience for authenticated student or teacher accounts without a cloud business subject binding',
 );
 assert.ok(
   customTabBar.includes("navigationMode === 'preview'")

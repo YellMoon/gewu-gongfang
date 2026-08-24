@@ -1,0 +1,1049 @@
+{
+  "version": "8.3.0",
+  "generatedAt": "2026-08-24T06:13:09.909Z",
+  "runtime": "WeChat DevTools miniprogram-automator",
+  "fixtureBase": "http://127.0.0.1:3019",
+  "fixtureOnly": true,
+  "completed": true,
+  "registeredPageCount": 22,
+  "screenshotCount": 42,
+  "rolesCovered": [
+    "guest",
+    "super_admin",
+    "student",
+    "visitor",
+    "unrecognized-student",
+    "admin",
+    "teacher"
+  ],
+  "requiredStatesCovered": [
+    "guest",
+    "offline",
+    "admin-path",
+    "student-path",
+    "visitor",
+    "unrecognized-student",
+    "empty",
+    "limited-write",
+    "permission-denied"
+  ],
+  "requiredCoverageCategories": [
+    "admin-path",
+    "student-path",
+    "empty",
+    "offline",
+    "permission-denied",
+    "limited-write",
+    "guest",
+    "visitor",
+    "unrecognized-student"
+  ],
+  "requests": [
+    {
+      "scenarioId": "desktop-auth-phone",
+      "method": "GET",
+      "path": "/api/desktop-identity/challenges/fixture-challenge-1234/public?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "desktop-auth-network",
+      "method": "GET",
+      "path": "/api/desktop-identity/challenges/fixture-challenge-1234/public?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "desktop-auth-network",
+      "method": "GET",
+      "path": "/api/desktop-identity/challenges/fixture-challenge-1234/public?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "home-super-admin",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "home-student",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "schedule-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "schedule-student-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "schedule-detail-admin-missing",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "schedule-detail-student-missing",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "students-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "students-teacher-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "student-detail-admin-missing",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "student-detail-student-missing",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "courses-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "courses-teacher-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "teachers-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "teachers-teacher-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "payments-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "stats-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-projection"
+    },
+    {
+      "scenarioId": "question-super-admin-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-question-previews"
+    },
+    {
+      "scenarioId": "question-student-empty",
+      "method": "GET",
+      "path": "/api/business/miniapp-question-previews"
+    },
+    {
+      "scenarioId": "question-student-offline",
+      "method": "GET",
+      "path": "/api/business/miniapp-question-previews"
+    },
+    {
+      "scenarioId": "question-student-forbidden",
+      "method": "GET",
+      "path": "/api/business/miniapp-question-previews"
+    },
+    {
+      "scenarioId": "question-unrecognized",
+      "method": "GET",
+      "path": "/api/experience/questions?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "admin-users-super-admin",
+      "method": "GET",
+      "path": "/api/permissions/my?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "admin-users-super-admin",
+      "method": "GET",
+      "path": "/api/admin/users?page=1&_t=[timestamp]"
+    },
+    {
+      "scenarioId": "admin-users-admin-readonly",
+      "method": "GET",
+      "path": "/api/permissions/my?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "admin-users-admin-readonly",
+      "method": "GET",
+      "path": "/api/admin/users?page=1&_t=[timestamp]"
+    },
+    {
+      "scenarioId": "unrecognized-welcome",
+      "method": "GET",
+      "path": "/api/experience/questions?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "application-visitor",
+      "method": "GET",
+      "path": "/api/miniapp/applications/me?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "application-visitor-offline",
+      "method": "GET",
+      "path": "/api/miniapp/applications/me?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "application-visitor-offline",
+      "method": "GET",
+      "path": "/api/miniapp/applications/me?_t=[timestamp]"
+    },
+    {
+      "scenarioId": "cloud-account-super-admin-empty",
+      "method": "GET",
+      "path": "/api/miniapp/cloud-accounts"
+    },
+    {
+      "scenarioId": "cloud-account-super-admin-empty",
+      "method": "GET",
+      "path": "/api/miniapp/business-profiles?type=teacher"
+    },
+    {
+      "scenarioId": "cloud-account-super-admin-empty",
+      "method": "GET",
+      "path": "/api/miniapp/business-profiles?type=student"
+    }
+  ],
+  "consoleEventCount": 0,
+  "exceptionEventCount": 0,
+  "fatalExceptions": [],
+  "pages": [
+    {
+      "scenarioId": "login-guest",
+      "route": "pages/login/index",
+      "expectedRoute": "pages/login/index",
+      "actualRoute": "pages/login/index",
+      "role": "guest",
+      "state": "cloud-login",
+      "categories": [
+        "guest"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "首次登录",
+      "textMatched": true,
+      "screenshot": "01-login-guest.png",
+      "bytes": 176724,
+      "sha256": "dacc484e83d28a1bbfee26d2d1c0583755bc3d0af6778ff02aa8ef4bfab0d928",
+      "textSample": "格 格物工坊 首次登录请验证微信手机号。已绑定的微信可直接登录；新账号需等待超级管理员授权限。 已绑定微信直接登录 首次登录 / 验证手机号 登录前请阅读 《隐私保护指引》"
+    },
+    {
+      "scenarioId": "privacy-guest",
+      "route": "pages/login/privacy",
+      "expectedRoute": "pages/login/privacy",
+      "actualRoute": "pages/login/privacy",
+      "role": "guest",
+      "state": "privacy-content",
+      "categories": [
+        "guest"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "隐私保护指引",
+      "textMatched": true,
+      "screenshot": "02-privacy-guest.png",
+      "bytes": 168496,
+      "sha256": "0b1c778317d8837f5a0c97788de3fa0c5d079486ac6389fb8638e814affb2fe3",
+      "textSample": "< 隐私保护指引 一、信息收集 我们在您使用服务时可能会收集您的个人信息，包括但不限于：微信授权的开放型信息（昵称、头像等）、手机号码（用于身份验证）、设备信息（设备型号、操作系统等）。 二、信息使用 我们收集的信息仅用于提供和改善服务，包括但不限于：身份验证与登录服务、课程管理与学员管理、账务统计与分析、系统安全与防护、客户支与服务通知。 三、信息共享与保护 我们不会向第三方出售或共享您的个人信息，除非获得您的明确同意，或法律法规要求我们披露。我们采取合理的技术和管理措施保"
+    },
+    {
+      "scenarioId": "desktop-auth-phone",
+      "route": "pages/desktop-authorization/index",
+      "expectedRoute": "pages/desktop-authorization/index",
+      "actualRoute": "pages/desktop-authorization/index",
+      "role": "guest",
+      "state": "phone-required",
+      "categories": [
+        "guest"
+      ],
+      "fixtureMode": "desktop-phone",
+      "routeMatched": true,
+      "expectedText": "请输入手机号",
+      "textMatched": true,
+      "screenshot": "03-desktop-auth-phone.png",
+      "bytes": 125799,
+      "sha256": "f1968fb91ddf0df2daccaa01beb4a7303888cbc15ba41723606274af631fdbcc",
+      "textSample": "设 格物工坊·电脑身份 确认这台电脑的申请 手填手机号仅用于与已有资料核对，不会保存到待授权电脑。 验收电脑 新设备注册 密钥指纹 abcdef12…1234 申请时间 2026/8/24 14:04:51 过期时间 2026/8/24 15:05:51 确认的是你本人 二维码只建立一次性通道，微信手机号用于确认申请人。本页不使用缓存账号替你确认。 +86 请输入手机号 核对手机号并确认 如果你没有在电脑上发起这次申请，请直接关闭本页。"
+    },
+    {
+      "scenarioId": "desktop-auth-network",
+      "route": "pages/desktop-authorization/index",
+      "expectedRoute": "pages/desktop-authorization/index",
+      "actualRoute": "pages/desktop-authorization/index",
+      "role": "guest",
+      "state": "network-error",
+      "categories": [
+        "guest",
+        "offline"
+      ],
+      "fixtureMode": "desktop-offline",
+      "routeMatched": true,
+      "expectedText": "服务器错误 (503)",
+      "textMatched": true,
+      "screenshot": "04-desktop-auth-network.png",
+      "bytes": 83489,
+      "sha256": "e64e0f967862c2ca3f06c137d6e52b3709962634b49c04795dbf2d692d5db6c7",
+      "textSample": "设 格物工坊·电脑身份 确认这台电脑的申请 手填手机号仅用于与已有资料核对，不会保存到待授权电脑。 ! 暂时无法继续 服务器错误 (503) 重新读取申请 如果你没有在电脑上发起这次申请，请直接关闭本页。"
+    },
+    {
+      "scenarioId": "desktop-registration-guest",
+      "route": "pages/desktop-online-registration/index",
+      "expectedRoute": "pages/desktop-online-registration/index",
+      "actualRoute": "pages/desktop-online-registration/index",
+      "role": "guest",
+      "state": "scan-code",
+      "categories": [
+        "guest"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "扫描电脑二维码",
+      "textMatched": true,
+      "screenshot": "05-desktop-registration-guest.png",
+      "bytes": 85275,
+      "sha256": "08de3ee785fc39c2fdb5092fa259970cfe2e47f5f54dc14720865f091850acaa",
+      "textSample": "格物工坊 · 电脑登录 在线验证后自动登记 新电脑首次登录需要联网验证。验证通过后会自动登记本机，不需要人工审批。 请先扫描电脑上显示的二维码。 扫描电脑二维码 没有网络时，新电脑不能登录；已登录电脑只能继续使用未过期的本地会话创建待确认草稿。"
+    },
+    {
+      "scenarioId": "home-super-admin",
+      "route": "pages/index/index",
+      "expectedRoute": "pages/index/index",
+      "actualRoute": "pages/index/index",
+      "role": "super_admin",
+      "state": "admin-dashboard",
+      "categories": [
+        "admin-path"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "运营面板",
+      "textMatched": true,
+      "screenshot": "06-home-super-admin.png",
+      "bytes": 125722,
+      "sha256": "44629d3bfc4a8fbb4610a7b3608ed899595ce72cbb7051d912d819bf3a594656",
+      "textSample": "格物工坊 超级管理员 管 运营面板 管理验收账号，今天先看课程、题库和数据快照。 退出 数据快照 08-24 14:06 同步状态 本地可用 今日课程 0 节 今日收入 ¥0 本月收入 ¥0 学生总数 0 人 核心入口 3 个可用 课 课程安排 查看课程安排 › 题 组卷与导出 组卷与导出 › 账 财务导入 财务导入与统计 › 运营快捷入口 常用管理 生 学生管理 维护学员与课程关系 课 课程管理 课程、班型与收费 缴 缴费记录 付款与课消核对 统 数据统计 收入、课时和趋势"
+    },
+    {
+      "scenarioId": "home-student",
+      "route": "pages/index/index",
+      "expectedRoute": "pages/index/index",
+      "actualRoute": "pages/index/index",
+      "role": "student",
+      "state": "student-dashboard",
+      "categories": [
+        "student-path"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "学习面板",
+      "textMatched": true,
+      "screenshot": "07-home-student.png",
+      "bytes": 123281,
+      "sha256": "4c3d7dc88f42af8ed7e4e3132168e8d23a7165f25736d8377bc6a5e12b5ca28b",
+      "textSample": "格物工坊 学生 学 学习面板 学生验收账号，今天先看课程、题库和数据快照。 退出 数据快照 08-24 14:06 同步状态 本地可用 今日课程 0 节 今日收入 ¥0 本月收入 ¥0 学生总数 0 人 核心入口 2 个可用 课 课程安排 查看课程安排 › 题 组卷与导出 组卷与导出 › 我的学习 只读与组卷 表 我的课表 查看本人相关课程 卷 题库组卷 选题、组卷和导出"
+    },
+    {
+      "scenarioId": "home-visitor",
+      "route": "pages/index/index",
+      "expectedRoute": "pages/index/index",
+      "actualRoute": "pages/index/index",
+      "role": "visitor",
+      "state": "empty-modules",
+      "categories": [
+        "visitor"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "访客",
+      "textMatched": true,
+      "screenshot": "08-home-visitor.png",
+      "bytes": 92050,
+      "sha256": "cfcb6ad87941b95149a86839cac514e435662950d3383772cded7fc084e5b86f",
+      "textSample": "格物工坊 访客 访 访客验收账号 可查看数据主机签名的十道脱敏题目预览，并申请老师或学生角色。 退出 可用功能 2 题 云端题目预览 只读云端权威题库预览，不包含答案和解析 › 申 申请老师/学生角色 申请作为持久命令交由云端审核 ›"
+    },
+    {
+      "scenarioId": "home-unrecognized",
+      "route": "pages/index/index",
+      "expectedRoute": "pages/index/index",
+      "actualRoute": "pages/index/index",
+      "role": "unrecognized-student",
+      "state": "unrecognized-account",
+      "categories": [
+        "unrecognized-student"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "四道示例题",
+      "textMatched": true,
+      "screenshot": "09-home-unrecognized.png",
+      "bytes": 110128,
+      "sha256": "6da8760e91d9f282ce2da6833706d16de4c49667403e2dc2378a2f6e2e60d7c4",
+      "textSample": "体验账号 当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。 格物工坊 体验账号 未 未识别学生 可查看空课表、使用四道示例题并提交正式账号申请。 退出 可用功能 3 课 课程表 当前账号暂无正式课程数据 › 题 示例题与组卷 四道示例题不属于正式题库 › 申 申请正式账号 查看申请状态或提交真实资料 ›"
+    },
+    {
+      "scenarioId": "schedule-admin-empty",
+      "route": "pages/schedule/index",
+      "expectedRoute": "pages/schedule/index",
+      "actualRoute": "pages/schedule/index",
+      "role": "admin",
+      "state": "empty-day",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无排课数据",
+      "textMatched": true,
+      "screenshot": "10-schedule-admin-empty.png",
+      "bytes": 59993,
+      "sha256": "9cf70f698c4b3fdb5813bb17d2810308e0487381ea82348e36ced99ecd385b69",
+      "textSample": "周视图 日视图 ‹ 8月24日 - 8月30日 › 今天 一 24 二 25 三 26 四 27 五 28 六 29 日 30 周一 8/24 0 节 暂无课程 周二 8/25 0 节 暂无课程 周三 8/26 0 节 暂无课程 周四 8/27 0 节 暂无课程 周五 8/28 0 节 暂无课程 周六 8/29 0 节 暂无课程 周日 8/30 0 节 暂无课程 课 暂无排课数据"
+    },
+    {
+      "scenarioId": "schedule-student-empty",
+      "route": "pages/schedule/index",
+      "expectedRoute": "pages/schedule/index",
+      "actualRoute": "pages/schedule/index",
+      "role": "student",
+      "state": "empty-day",
+      "categories": [
+        "student-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无排课数据",
+      "textMatched": true,
+      "screenshot": "11-schedule-student-empty.png",
+      "bytes": 59993,
+      "sha256": "9cf70f698c4b3fdb5813bb17d2810308e0487381ea82348e36ced99ecd385b69",
+      "textSample": "周视图 日视图 ‹ 8月24日 - 8月30日 › 今天 一 24 二 25 三 26 四 27 五 28 六 29 日 30 周一 8/24 0 节 暂无课程 周二 8/25 0 节 暂无课程 周三 8/26 0 节 暂无课程 周四 8/27 0 节 暂无课程 周五 8/28 0 节 暂无课程 周六 8/29 0 节 暂无课程 周日 8/30 0 节 暂无课程 课 暂无排课数据"
+    },
+    {
+      "scenarioId": "schedule-unrecognized-empty",
+      "route": "pages/schedule/index",
+      "expectedRoute": "pages/schedule/index",
+      "actualRoute": "pages/schedule/index",
+      "role": "unrecognized-student",
+      "state": "unrecognized-empty",
+      "categories": [
+        "unrecognized-student",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "当前账号暂无已授权的课程投影",
+      "textMatched": true,
+      "screenshot": "12-schedule-unrecognized-empty.png",
+      "bytes": 38322,
+      "sha256": "15581971f2d456d0f6b95506b7f5261917ed5311ae88339153764fb9caed87e8",
+      "textSample": "体验账号 当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。 课 当前账号暂无已授权的课程投影"
+    },
+    {
+      "scenarioId": "schedule-detail-admin-missing",
+      "route": "pages/schedule/detail/index",
+      "expectedRoute": "pages/schedule/detail/index",
+      "actualRoute": "pages/schedule/detail/index",
+      "role": "admin",
+      "state": "missing-record",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "未找到排课记录",
+      "textMatched": true,
+      "screenshot": "13-schedule-detail-admin-missing.png",
+      "bytes": 21159,
+      "sha256": "5eb9b50481cb7361b9f6c1850f790cdde1eb4f27fa6646cf8b67b8011d9e8953",
+      "textSample": "课 未找到排课记录"
+    },
+    {
+      "scenarioId": "schedule-detail-student-missing",
+      "route": "pages/schedule/detail/index",
+      "expectedRoute": "pages/schedule/detail/index",
+      "actualRoute": "pages/schedule/detail/index",
+      "role": "student",
+      "state": "missing-record",
+      "categories": [
+        "student-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "未找到排课记录",
+      "textMatched": true,
+      "screenshot": "14-schedule-detail-student-missing.png",
+      "bytes": 21127,
+      "sha256": "39f9ed2d233539249b5a9c6353480282449d27532f4eb1999eb51c50791432e1",
+      "textSample": "课 未找到排课记录"
+    },
+    {
+      "scenarioId": "schedule-edit-admin-boundary",
+      "route": "pages/schedule/edit/index",
+      "expectedRoute": "pages/schedule/edit/index",
+      "actualRoute": "pages/schedule/edit/index",
+      "role": "admin",
+      "state": "miniapp-readonly-boundary",
+      "categories": [
+        "admin-path",
+        "limited-write"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "不提供排课新增和编辑",
+      "textMatched": true,
+      "screenshot": "15-schedule-edit-admin-boundary.png",
+      "bytes": 52823,
+      "sha256": "4bb9690f0a423ffa1ff71d69fc0ef634fb280c8168df068eb4fcc5c00870ba7c",
+      "textSample": "排课编辑 微信小程序端不提供排课新增和编辑。请在电脑端完成排课管理。 返回"
+    },
+    {
+      "scenarioId": "schedule-edit-student-boundary",
+      "route": "pages/schedule/edit/index",
+      "expectedRoute": "pages/schedule/edit/index",
+      "actualRoute": "pages/schedule/edit/index",
+      "role": "student",
+      "state": "miniapp-readonly-boundary",
+      "categories": [
+        "student-path",
+        "limited-write"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "不提供排课新增和编辑",
+      "textMatched": true,
+      "screenshot": "16-schedule-edit-student-boundary.png",
+      "bytes": 52823,
+      "sha256": "4bb9690f0a423ffa1ff71d69fc0ef634fb280c8168df068eb4fcc5c00870ba7c",
+      "textSample": "排课编辑 微信小程序端不提供排课新增和编辑。请在电脑端完成排课管理。 返回"
+    },
+    {
+      "scenarioId": "students-admin-empty",
+      "route": "pages/students/index",
+      "expectedRoute": "pages/students/index",
+      "actualRoute": "pages/students/index",
+      "role": "admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无学生数据",
+      "textMatched": true,
+      "screenshot": "17-students-admin-empty.png",
+      "bytes": 25140,
+      "sha256": "772922f8de1c6cf8a699fd2e852b7dab51fac1c651172321776cd20178ba9603",
+      "textSample": "搜索学生姓名/电话/学校 生 暂无学生数据"
+    },
+    {
+      "scenarioId": "students-teacher-empty",
+      "route": "pages/students/index",
+      "expectedRoute": "pages/students/index",
+      "actualRoute": "pages/students/index",
+      "role": "teacher",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无学生数据",
+      "textMatched": true,
+      "screenshot": "18-students-teacher-empty.png",
+      "bytes": 25140,
+      "sha256": "772922f8de1c6cf8a699fd2e852b7dab51fac1c651172321776cd20178ba9603",
+      "textSample": "搜索学生姓名/电话/学校 生 暂无学生数据"
+    },
+    {
+      "scenarioId": "student-detail-admin-missing",
+      "route": "pages/student-detail/index",
+      "expectedRoute": "pages/student-detail/index",
+      "actualRoute": "pages/student-detail/index",
+      "role": "admin",
+      "state": "missing-student",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "未找到该学生信息",
+      "textMatched": true,
+      "screenshot": "19-student-detail-admin-missing.png",
+      "bytes": 21263,
+      "sha256": "1dfb05d36809e090476f3c6620ca098818f1b1b277c8c5454dd696b66c1d38d5",
+      "textSample": "生 未找到该学生信息"
+    },
+    {
+      "scenarioId": "student-detail-student-missing",
+      "route": "pages/student-detail/index",
+      "expectedRoute": "pages/student-detail/index",
+      "actualRoute": "pages/student-detail/index",
+      "role": "student",
+      "state": "missing-student",
+      "categories": [
+        "student-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "未找到该学生信息",
+      "textMatched": true,
+      "screenshot": "20-student-detail-student-missing.png",
+      "bytes": 21263,
+      "sha256": "1dfb05d36809e090476f3c6620ca098818f1b1b277c8c5454dd696b66c1d38d5",
+      "textSample": "生 未找到该学生信息"
+    },
+    {
+      "scenarioId": "courses-admin-empty",
+      "route": "pages/courses/index",
+      "expectedRoute": "pages/courses/index",
+      "actualRoute": "pages/courses/index",
+      "role": "admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无课程",
+      "textMatched": true,
+      "screenshot": "21-courses-admin-empty.png",
+      "bytes": 27468,
+      "sha256": "ddfe56efb12f573980bf3fc99a29418812aa3569fbc24a5ea6acd05b981a1241",
+      "textSample": "全部 一对一 一对二 小组课 大班课 课 暂无课程"
+    },
+    {
+      "scenarioId": "courses-teacher-empty",
+      "route": "pages/courses/index",
+      "expectedRoute": "pages/courses/index",
+      "actualRoute": "pages/courses/index",
+      "role": "teacher",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无课程",
+      "textMatched": true,
+      "screenshot": "22-courses-teacher-empty.png",
+      "bytes": 27468,
+      "sha256": "ddfe56efb12f573980bf3fc99a29418812aa3569fbc24a5ea6acd05b981a1241",
+      "textSample": "全部 一对一 一对二 小组课 大班课 课 暂无课程"
+    },
+    {
+      "scenarioId": "teachers-admin-empty",
+      "route": "pages/teachers/index",
+      "expectedRoute": "pages/teachers/index",
+      "actualRoute": "pages/teachers/index",
+      "role": "admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无教师数据",
+      "textMatched": true,
+      "screenshot": "23-teachers-admin-empty.png",
+      "bytes": 22978,
+      "sha256": "a07f2b6a9601956dbfd1d188e2cf97d33c9ba18c8726224968fd942b887c694e",
+      "textSample": "教师 (0) 师 暂无教师数据"
+    },
+    {
+      "scenarioId": "teachers-teacher-empty",
+      "route": "pages/teachers/index",
+      "expectedRoute": "pages/teachers/index",
+      "actualRoute": "pages/teachers/index",
+      "role": "teacher",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无教师数据",
+      "textMatched": true,
+      "screenshot": "24-teachers-teacher-empty.png",
+      "bytes": 22978,
+      "sha256": "a07f2b6a9601956dbfd1d188e2cf97d33c9ba18c8726224968fd942b887c694e",
+      "textSample": "教师 (0) 师 暂无教师数据"
+    },
+    {
+      "scenarioId": "payments-admin-empty",
+      "route": "pages/payments/index",
+      "expectedRoute": "pages/payments/index",
+      "actualRoute": "pages/payments/index",
+      "role": "admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无缴费记录",
+      "textMatched": true,
+      "screenshot": "25-payments-admin-empty.png",
+      "bytes": 31316,
+      "sha256": "dd5c58a11b087688aa3fd6dcfc42fcb93851fe16bf9432090fafcd1599dfaec3",
+      "textSample": "¥0 总缴费 0 缴费笔数 缴 暂无缴费记录"
+    },
+    {
+      "scenarioId": "stats-admin-empty",
+      "route": "pages/stats/index",
+      "expectedRoute": "pages/stats/index",
+      "actualRoute": "pages/stats/index",
+      "role": "admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无完成课程数据",
+      "textMatched": true,
+      "screenshot": "26-stats-admin-empty.png",
+      "bytes": 50475,
+      "sha256": "1c2a20476907865fa07e54beca0aaa3193a89066e1222202677030ccd380d364",
+      "textSample": "累计收入 ¥0.00 已完成 0 次课程 统 暂无完成课程数据"
+    },
+    {
+      "scenarioId": "question-super-admin-empty",
+      "route": "pages/question-bank/index",
+      "expectedRoute": "pages/question-bank/index",
+      "actualRoute": "pages/question-bank/index",
+      "role": "super_admin",
+      "state": "preview-empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "question-empty",
+      "routeMatched": true,
+      "expectedText": "云端暂无可用题目",
+      "textMatched": true,
+      "screenshot": "27-question-super-admin-empty.png",
+      "bytes": 83506,
+      "sha256": "917f8a06dc57059b6065cac9160563d5993ebb8d7e4704fecb1e9715ee436f7e",
+      "textSample": "题库组卷与导出 选题与导出任务均经云端确认 试卷名称 答案统一置后 Word native 选择题目 (0) 云端题库预览 刷新 云端暂无可用题目 创建组卷 导出 Word 导出 PDF 任务记录 恢复/刷新 暂无任务"
+    },
+    {
+      "scenarioId": "question-student-empty",
+      "route": "pages/question-bank/index",
+      "expectedRoute": "pages/question-bank/index",
+      "actualRoute": "pages/question-bank/index",
+      "role": "student",
+      "state": "preview-empty",
+      "categories": [
+        "student-path",
+        "empty"
+      ],
+      "fixtureMode": "question-empty",
+      "routeMatched": true,
+      "expectedText": "云端暂无可用题目",
+      "textMatched": true,
+      "screenshot": "28-question-student-empty.png",
+      "bytes": 51655,
+      "sha256": "035f85b903d7016b345e8bb1ff7bc13097f83b3427c89fdffe55e90c7952ab45",
+      "textSample": "题目预览 题库文字预览由云端权威提供 题目预览 刷新 云端暂无可用题目"
+    },
+    {
+      "scenarioId": "question-student-offline",
+      "route": "pages/question-bank/index",
+      "expectedRoute": "pages/question-bank/index",
+      "actualRoute": "pages/question-bank/index",
+      "role": "student",
+      "state": "preview-offline",
+      "categories": [
+        "student-path",
+        "offline"
+      ],
+      "fixtureMode": "question-offline",
+      "routeMatched": true,
+      "expectedText": "离线或云端不可达",
+      "textMatched": true,
+      "screenshot": "29-question-student-offline.png",
+      "bytes": 53663,
+      "sha256": "c59a3d028cf48c723443d98ae7e82d8332e9f76a7b174aaded13d232a808c3a0",
+      "textSample": "题目预览 题库文字预览由云端权威提供 题目预览 刷新 离线或云端不可达 fixture offline"
+    },
+    {
+      "scenarioId": "question-student-forbidden",
+      "route": "pages/question-bank/index",
+      "expectedRoute": "pages/question-bank/index",
+      "actualRoute": "pages/question-bank/index",
+      "role": "student",
+      "state": "preview-forbidden",
+      "categories": [
+        "student-path",
+        "permission-denied"
+      ],
+      "fixtureMode": "question-forbidden",
+      "routeMatched": true,
+      "expectedText": "当前账号无权读取题库",
+      "textMatched": true,
+      "screenshot": "30-question-student-forbidden.png",
+      "bytes": 55096,
+      "sha256": "8187a14be4940529f4c5b62a456d93e4d7039f77a5abf9a382b0fe6386240ab1",
+      "textSample": "题目预览 题库文字预览由云端权威提供 题目预览 刷新 当前账号无权读取题库 fixture forbidden"
+    },
+    {
+      "scenarioId": "question-unrecognized",
+      "route": "pages/question-bank/index",
+      "expectedRoute": "pages/unrecognized-experience/index",
+      "actualRoute": "pages/unrecognized-experience/index",
+      "role": "unrecognized-student",
+      "state": "four-sample-experience",
+      "categories": [
+        "unrecognized-student",
+        "limited-write"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "体验组卷",
+      "textMatched": true,
+      "screenshot": "31-question-unrecognized.png",
+      "bytes": 78946,
+      "sha256": "95715edf53865709a77fcec5214a4a72d263dd0f316a639f4111fd717cb6df49",
+      "textSample": "体验组卷 选择示例题目，预览组卷内容 试卷名称 选择题目 (0) 刷新 搜索题目 暂无可用题目 创建组卷 组卷记录 暂无组卷 申请正式账号"
+    },
+    {
+      "scenarioId": "assets-admin-import",
+      "route": "pages/assets/index",
+      "expectedRoute": "pages/assets/index",
+      "actualRoute": "pages/assets/index",
+      "role": "admin",
+      "state": "import-task",
+      "categories": [
+        "admin-path",
+        "limited-write"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "导入财务数据",
+      "textMatched": true,
+      "screenshot": "32-assets-admin-import.png",
+      "bytes": 54195,
+      "sha256": "feaee91f6b9d004048ee9fb674f05188b971f3f84871e5ae117d7cd625f8773e",
+      "textSample": "导入财务数据 选择个人资产统计所需的数据文件并开始导入。 总收入 ¥0 总支出 ¥0 结余 ¥0 本月 本年 全部 账 暂无资产记录"
+    },
+    {
+      "scenarioId": "settings-admin-online",
+      "route": "pages/settings/index",
+      "expectedRoute": "pages/settings/index",
+      "actualRoute": "pages/settings/index",
+      "role": "admin",
+      "state": "online",
+      "categories": [
+        "admin-path"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "在线",
+      "textMatched": true,
+      "screenshot": "33-settings-admin-online.png",
+      "bytes": 77480,
+      "sha256": "473776fe9cc525cf436ca0bf2531fed6343ad49114f320ce1a3615ff10048c0d",
+      "textSample": "用 当前用户 管理验收账号 在线 服务器配置 云 API 服务器地址 http://127.0.0.1:3019 › 同 上次同步 从未同步 数据同步 列 待同步数据 0 条 立即同步 关于 版 版本号 3.1.0-0504 开 开发者 小龙虾 格物工坊教务管理系统 云平台版 v3.1.0 退出登录"
+    },
+    {
+      "scenarioId": "settings-student-online",
+      "route": "pages/settings/index",
+      "expectedRoute": "pages/settings/index",
+      "actualRoute": "pages/settings/index",
+      "role": "student",
+      "state": "online",
+      "categories": [
+        "student-path"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "在线",
+      "textMatched": true,
+      "screenshot": "34-settings-student-online.png",
+      "bytes": 77393,
+      "sha256": "659f18200145cb300a7009b602a462bdc087dc402ceee41725a31b4bbc909063",
+      "textSample": "用 当前用户 学生验收账号 在线 服务器配置 云 API 服务器地址 http://127.0.0.1:3019 › 同 上次同步 从未同步 数据同步 列 待同步数据 0 条 立即同步 关于 版 版本号 3.1.0-0504 开 开发者 小龙虾 格物工坊教务管理系统 云平台版 v3.1.0 退出登录"
+    },
+    {
+      "scenarioId": "settings-unrecognized",
+      "route": "pages/settings/index",
+      "expectedRoute": "pages/settings/index",
+      "actualRoute": "pages/settings/index",
+      "role": "unrecognized-student",
+      "state": "unrecognized-account-application",
+      "categories": [
+        "unrecognized-student"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "未识别学生",
+      "textMatched": true,
+      "screenshot": "35-settings-unrecognized.png",
+      "bytes": 49595,
+      "sha256": "07d1674fef8bc34e1262ddd4c2664eaec6ede1ef8e767f0e9b30e15963c9652e",
+      "textSample": "体验账号 当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。 用 当前账号 未识别学生 申 申请正式账号 › 退出登录"
+    },
+    {
+      "scenarioId": "admin-users-super-admin",
+      "route": "pages/admin/users/index",
+      "expectedRoute": "pages/admin/users/index",
+      "actualRoute": "pages/admin/users/index",
+      "role": "super_admin",
+      "state": "pending-review",
+      "categories": [
+        "admin-path"
+      ],
+      "fixtureMode": "users-one",
+      "routeMatched": true,
+      "expectedText": "待审核用户",
+      "textMatched": true,
+      "screenshot": "36-admin-users-super-admin.png",
+      "bytes": 50211,
+      "sha256": "0b130cb3f5624932c6df79d70fdef99905a9b6dec36486849bdb24d207c7c88f",
+      "textSample": "用户权限 角色申请已转移到数据主机的签名审核工作台 搜索姓名或手机号 查询 全部 待审核 已通过 已拒绝 待审核用户 138****0000 · 老师 · 待审核 teacher_id: fixture-teacher 停用"
+    },
+    {
+      "scenarioId": "admin-users-admin-readonly",
+      "route": "pages/admin/users/index",
+      "expectedRoute": "pages/admin/users/index",
+      "actualRoute": "pages/admin/users/index",
+      "role": "admin",
+      "state": "ordinary-admin-read-only",
+      "categories": [
+        "admin-path",
+        "permission-denied"
+      ],
+      "fixtureMode": "users-one",
+      "routeMatched": true,
+      "expectedText": "普通管理员可查看脱敏用户状态",
+      "textMatched": true,
+      "screenshot": "37-admin-users-admin-readonly.png",
+      "bytes": 60174,
+      "sha256": "421cd71f6216236cb401a154d8e769bda5cd70eda43250b63c800ad780594e4e",
+      "textSample": "用户权限 角色申请已转移到数据主机的签名审核工作台 普通管理员可查看脱敏用户状态，仅超级管理员可处理账号控制操作。 搜索姓名或手机号 查询 全部 待审核 已通过 已拒绝 待审核用户 138****0000 · 老师 · 待审核 teacher_id: fixture-teacher"
+    },
+    {
+      "scenarioId": "forbidden-student",
+      "route": "pages/forbidden/index",
+      "expectedRoute": "pages/forbidden/index",
+      "actualRoute": "pages/forbidden/index",
+      "role": "student",
+      "state": "blocked-module",
+      "categories": [
+        "student-path",
+        "permission-denied"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "暂无权限访问此功能",
+      "textMatched": true,
+      "screenshot": "38-forbidden-student.png",
+      "bytes": 44090,
+      "sha256": "346ca8ee47633c328b60e716b4e2d207dfeb38f9fe706b19da1436281f527b10",
+      "textSample": "限 暂无权限访问此功能 请联系管理员获取权限 返回首页"
+    },
+    {
+      "scenarioId": "unrecognized-welcome",
+      "route": "pages/unrecognized-experience/index",
+      "expectedRoute": "pages/unrecognized-experience/index",
+      "actualRoute": "pages/unrecognized-experience/index",
+      "role": "unrecognized-student",
+      "state": "welcome",
+      "categories": [
+        "unrecognized-student"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "体验组卷",
+      "textMatched": true,
+      "screenshot": "39-unrecognized-welcome.png",
+      "bytes": 78829,
+      "sha256": "59bc2f7995c987e6ef66c305cc5be37ece7fd431948d6b09b300d2f24a17d524",
+      "textSample": "体验组卷 选择示例题目，预览组卷内容 试卷名称 选择题目 (0) 刷新 搜索题目 暂无可用题目 创建组卷 组卷记录 暂无组卷 申请正式账号"
+    },
+    {
+      "scenarioId": "application-visitor",
+      "route": "pages/account-application/index",
+      "expectedRoute": "pages/account-application/index",
+      "actualRoute": "pages/account-application/index",
+      "role": "visitor",
+      "state": "not-submitted",
+      "categories": [
+        "visitor"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "提交角色申请",
+      "textMatched": true,
+      "screenshot": "40-application-visitor.png",
+      "bytes": 64423,
+      "sha256": "034586db0d335a434ec653809c9bc7ca1467b8e9f621da789b7e8e675b74af99",
+      "textSample": "数据主机角色授权 申请老师或学生角色 申请将作为权威命令交由云端超级管理员审核。 申请角色 学生 › 已有档案编号（选填） 如已知老师/学生档案编号，可填写 档案绑定不是角色申请前置条件，最终由数据主机超级管理员确认。 提交角色申请"
+    },
+    {
+      "scenarioId": "application-visitor-offline",
+      "route": "pages/account-application/index",
+      "expectedRoute": "pages/account-application/index",
+      "actualRoute": "pages/account-application/index",
+      "role": "visitor",
+      "state": "network-error",
+      "categories": [
+        "visitor",
+        "offline"
+      ],
+      "fixtureMode": "application-offline",
+      "routeMatched": true,
+      "expectedText": "网络",
+      "textMatched": true,
+      "screenshot": "41-application-visitor-offline.png",
+      "bytes": 34162,
+      "sha256": "0e048a3e91cb103528e048ae8e98f01ffa272ac5fd931ffab2ea0556e79e1d12",
+      "textSample": "数据主机角色授权 暂时无法读取 请检查网络后重试。 刷新状态"
+    },
+    {
+      "scenarioId": "cloud-account-super-admin-empty",
+      "route": "pages/cloud-account-admin/index",
+      "expectedRoute": "pages/cloud-account-admin/index",
+      "actualRoute": "pages/cloud-account-admin/index",
+      "role": "super_admin",
+      "state": "empty",
+      "categories": [
+        "admin-path",
+        "empty"
+      ],
+      "fixtureMode": "empty",
+      "routeMatched": true,
+      "expectedText": "当前没有待授权账号",
+      "textMatched": true,
+      "screenshot": "42-cloud-account-super-admin-empty.png",
+      "bytes": 39176,
+      "sha256": "a66ac7fa3831b0c29101aa4cff993f92294974af7e298ac1fcfc75b599b1cd50",
+      "textSample": "CLOUD ACCOUNT 新账号授权 仅显示等待角色授予的云端账号，不显示手机号。 当前没有待授权账号"
+    }
+  ]
+}

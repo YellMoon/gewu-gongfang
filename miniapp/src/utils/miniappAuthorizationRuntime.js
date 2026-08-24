@@ -199,6 +199,7 @@ function accountExperiencePolicy(user) {
       capabilities: accountCapabilities(user),
       canReviewUsers: false,
       canEditQuestionBank: false,
+      experienceOnly: true,
     };
   }
   if (!isUnrecognizedIdentity(user)) return null;
@@ -212,6 +213,7 @@ function accountExperiencePolicy(user) {
     capabilities: accountCapabilities(user),
     canReviewUsers: false,
     canEditQuestionBank: false,
+    experienceOnly: true,
   };
 }
 

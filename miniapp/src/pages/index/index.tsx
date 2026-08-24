@@ -1,7 +1,7 @@
 /**
  * 首页仪表盘 v3 - 数据快照 + 今日摘要 + 角色入口
  */
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { authSessionRuntime } from '../../utils/authSession';
@@ -15,7 +15,7 @@ import {
 } from '../../utils/permission';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
-import { usesLimitedQuestionProjection } from '../../utils/miniappAuthorizationRuntime';
+import { businessCacheIdentityKey } from '../../utils/miniappAuthorizationRuntime';
 import { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } from '../../utils/miniappHomePresentation';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
@@ -69,6 +69,7 @@ const STUDENT_SHORTCUTS = [
 ];
 
 export default function Index() {
+  const homeLoadGeneration = useRef(0);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +84,14 @@ export default function Index() {
   });
 
   const checkLogin = async () => {
+    const generation = ++homeLoadGeneration.current;
+    const stillCurrent = () => homeLoadGeneration.current === generation;
+    setUser(null);
+    setModules([]);
+    setLoading(true);
+    setSnapshot(null);
+    setAccess({ role: 'pending', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
+    setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
     const session = captureTrustedAuthSession(authSessionRuntime);
     if (!session) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -128,22 +137,23 @@ export default function Index() {
       setLoading(false);
       return;
     }
-    await loadSnapshot(verifiedUser);
-    await Promise.all([loadModules(nextAccess), loadDashboard(verifiedUser)]);
+    await loadSnapshot(verifiedUser, stillCurrent);
+    if (!stillCurrent()) return;
+    await Promise.all([loadModules(nextAccess, stillCurrent), loadDashboard(verifiedUser, stillCurrent)]);
   };
 
-  const loadSnapshot = async (currentUser: UserInfo) => {
+  const loadSnapshot = async (currentUser: UserInfo, stillCurrent: () => boolean = () => true) => {
     if (currentUser.user_type === 'pending') return;
     try {
       const refreshed = await pullFromCloudBusinessProjection();
-      setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
+      if (stillCurrent()) setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
     } catch (error) {
       console.warn('[CLOUD_BUSINESS_PROJECTION_LOAD_FAILED]', error);
-      setSnapshot(null);
+      if (stillCurrent()) setSnapshot(null);
     }
   };
 
-  const loadModules = async (currentAccess: any) => {
+  const loadModules = async (currentAccess: any, stillCurrent: () => boolean = () => true) => {
     try {
       const cloudModuleNames: Record<string, string> = {
         scheduling: '\u8bfe\u7a0b\u5b89\u6392',
@@ -154,24 +164,24 @@ export default function Index() {
       if (res.success && res.data) {
         const permittedIds = currentAccess.modules || [];
         const allModules = res.data.modules.filter((m) => permittedIds.includes(m.id));
-        setModules(allModules);
+        if (stillCurrent()) setModules(allModules);
       }
     } catch (err) {
       console.error('加载模块失败:', err);
     } finally {
-      setLoading(false);
+      if (stillCurrent()) setLoading(false);
     }
   };
 
   /** 从本地数据计算仪表盘统计 */
-  const loadDashboard = async (authenticatedUser?: UserInfo) => {
+  const loadDashboard = async (authenticatedUser?: UserInfo, stillCurrent: () => boolean = () => true) => {
     try {
       const students = getLocalData<Student>('students');
       const schedules = getLocalData<Schedule>('schedules');
       const courses = getLocalData<Course>('courses');
       const currentUser = authenticatedUser || user;
       if (!currentUser || currentUser.user_type === 'pending') {
-        setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+        if (stillCurrent()) setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
         return;
       }
       const rolePolicy = getMiniappRolePolicy(currentUser);
@@ -193,7 +203,7 @@ export default function Index() {
         .filter(s => s.start_time?.startsWith(thisMonth) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
-      setDashboard({
+      if (stillCurrent()) setDashboard({
         todayClasses,
         todayRevenue,
         monthRevenue,
@@ -264,7 +274,8 @@ export default function Index() {
   const limitedSubject = Boolean(user)
     && !visitor
     && !isUnrecognizedIdentity(user)
-    && usesLimitedQuestionProjection(user);
+    && ['student', 'teacher'].includes(user.user_type)
+    && !businessCacheIdentityKey(user);
   const moduleActions = useMemo(() => (
     modules
       .filter((mod) => MODULE_CONFIG[mod.id])

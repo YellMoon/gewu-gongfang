@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { pageInventory } = require('./miniappUiPageInventory');
+const { REQUIRED_COVERAGE_CATEGORIES, runtimeScenarios } = require('./miniappUiRuntimeScenarios');
 
 const root = path.resolve(__dirname, '../..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf-8');
@@ -152,10 +153,52 @@ for (const entry of pageInventory) {
   assert.ok(Array.isArray(entry.verificationStates) && entry.verificationStates.length > 0, `${entry.route} needs verification states`);
   assert.ok(Array.isArray(entry.realFeatureBasis) && entry.realFeatureBasis.length > 0, `${entry.route} needs traceable real feature basis`);
   assert.ok(Array.isArray(entry.files) && entry.files.length >= 2, `${entry.route} needs source and style files`);
+  assert.ok(Array.isArray(entry.runtimeScenarioIds) && entry.runtimeScenarioIds.length > 0, `${entry.route} needs runtime screenshot scenarios`);
   entry.files.forEach((file) => {
     assert.ok(fs.existsSync(path.join(root, file)), `${entry.route} references missing file ${file}`);
   });
 }
+
+const scenarioIds = runtimeScenarios.map(item => item.id);
+assert.strictEqual(new Set(scenarioIds).size, scenarioIds.length, 'runtime scenario ids must be unique');
+for (const scenario of runtimeScenarios) {
+  const entry = pageInventory.find(item => item.route === scenario.route);
+  assert.ok(entry, `${scenario.id} references an unregistered page`);
+  assert.ok(entry.roleViews.includes(scenario.roleView), `${scenario.id} uses an undeclared role view`);
+  assert.ok(entry.verificationStates.includes(scenario.state), `${scenario.id} uses an undeclared verification state`);
+  assert.ok(typeof scenario.expectedText === 'string' && scenario.expectedText.trim(), `${scenario.id} needs visible text evidence`);
+  assert.ok(Array.isArray(scenario.categories) && scenario.categories.length > 0, `${scenario.id} needs coverage categories`);
+  assert.ok(entry.runtimeScenarioIds.includes(scenario.id), `${scenario.id} must be linked from the page inventory`);
+}
+for (const entry of pageInventory) {
+  assert.deepStrictEqual(
+    entry.runtimeScenarioIds.slice().sort(),
+    runtimeScenarios.filter(item => item.route === entry.route).map(item => item.id).sort(),
+    `${entry.route} runtime scenario links must be exact`,
+  );
+}
+const runtimeCategories = new Set(runtimeScenarios.flatMap(item => item.categories));
+for (const category of REQUIRED_COVERAGE_CATEGORIES) {
+  assert.ok(runtimeCategories.has(category), `runtime screenshot matrix missing category ${category}`);
+}
+for (const [route, roles] of Object.entries({
+  'pages/index/index': ['super_admin', 'student', 'visitor', 'unrecognized-student'],
+  'pages/schedule/index': ['admin', 'student', 'unrecognized-student'],
+  'pages/schedule/detail/index': ['admin', 'student'],
+  'pages/schedule/edit/index': ['admin', 'student'],
+  'pages/student-detail/index': ['admin', 'student'],
+  'pages/question-bank/index': ['super_admin', 'student', 'unrecognized-student'],
+  'pages/settings/index': ['admin', 'student', 'unrecognized-student'],
+  'pages/admin/users/index': ['super_admin', 'admin'],
+})) {
+  const covered = new Set(runtimeScenarios.filter(item => item.route === route).map(item => item.roleView));
+  roles.forEach(role => assert.ok(covered.has(role), `${route} runtime matrix missing ${role}`));
+}
+assert.ok(runtimeScenarios.some(item => item.state === 'preview-offline'), 'runtime matrix must capture an offline state');
+assert.ok(runtimeScenarios.some(item => item.state === 'preview-forbidden'), 'runtime matrix must capture a permission-denied state');
+assert.ok(runtimeScenarios.some(item => item.state === 'miniapp-readonly-boundary'), 'runtime matrix must capture the limited-write boundary');
+assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'guardian access is a student relationship, not a parent role');
+assert.ok(pageInventory.every(entry => !entry.roleViews.includes('super-admin')), 'role spelling must use super_admin');
 
 const coveredRoles = new Set(pageInventory.flatMap((entry) => entry.roleViews));
 assert.ok(coveredRoles.has('admin'), 'miniapp UI inventory must cover admin UI');

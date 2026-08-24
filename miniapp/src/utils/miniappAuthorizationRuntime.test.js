@@ -134,6 +134,7 @@ assert.strictEqual(businessCacheIdentityKey(unrecognized), '', 'unrecognized ide
 assert.strictEqual(questionPaperTaskCacheKey(unrecognized), '', 'experience tasks stay in the isolated experience page');
 const unrecognizedPolicy = accountExperiencePolicy(unrecognized);
 assert.deepStrictEqual(unrecognizedPolicy.modules, UNRECOGNIZED_MODULES);
+assert.strictEqual(unrecognizedPolicy.experienceOnly, true);
 assert.strictEqual(unrecognizedPolicy.readonlyScope, 'account-experience');
 assert.deepStrictEqual(unrecognizedPolicy.allowedWriteTasks, []);
 assert.strictEqual(canUserSubmitMiniappWrite(unrecognized, 'asset-import', ['asset-import']), false);
@@ -157,6 +158,7 @@ assert.strictEqual(businessCacheIdentityKey(visitor), '', 'visitor must never op
 assert.ok(permissionIdentityKey(visitor).startsWith('visitor:visitor-1:authority-1'));
 const visitorPolicy = accountExperiencePolicy(visitor);
 assert.strictEqual(visitorPolicy.readonlyScope, 'authority-projection');
+assert.strictEqual(visitorPolicy.experienceOnly, true);
 assert.deepStrictEqual(visitorPolicy.modules, VISITOR_MODULES);
 assert.deepStrictEqual(visitorPolicy.allowedWriteTasks, []);
 assert.strictEqual(canUserSubmitMiniappWrite(visitor, 'asset-import', ['asset-import']), false);
