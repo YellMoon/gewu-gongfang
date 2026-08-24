@@ -127,11 +127,11 @@ def prepare_node_release_fixture(root):
             for target in ("desktop", "cloud_business", "storage_proxy", "miniapp")
         },
     }
-    manifest_path = root / "output/release-matrix/active.json"
+    manifest_path = root / "output/release-matrix-7.2.10/active.json"
     write_json(manifest_path, manifest)
     private_key_path = root / "private.wx-offline-test.key"
     private_key_path.write_text("offline-only-key", encoding="utf-8")
-    return manifest_path, root / "output/release-matrix/miniapp-upload-pending.json", private_key_path
+    return manifest_path, root / "output/release-matrix-7.2.10/miniapp-upload-pending.json", private_key_path
 
 
 class FixedEgressIntegrationTests(unittest.TestCase):
@@ -235,8 +235,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
             root = Path(temp_dir)
             with self.assertRaisesRegex(RuntimeError, "offline post-health failure"):
                 self.run_offline_deferred_upload(root, fail_post_health=True)
-            manifest_path = root / "output/release-matrix/active.json"
-            marker_path = root / "output/release-matrix/miniapp-upload-pending.json"
+            manifest_path = root / "output/release-matrix-7.2.10/active.json"
+            marker_path = root / "output/release-matrix-7.2.10/miniapp-upload-pending.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["targets"]["miniapp"]["status"], "pending")
             self.assertTrue(marker_path.exists())

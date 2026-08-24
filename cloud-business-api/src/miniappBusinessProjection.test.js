@@ -61,7 +61,8 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[0][0].includes('business.schedules'));
   assert.ok(queries[0][0].includes('business.schedule_student_overrides'));
   assert.ok(queries[0][0].includes('business.personal_asset_records'), 'personal assets must be read from the cloud authority');
-  assert.ok(queries[0][0].includes('asset.account_id=$4'), 'personal assets must be scoped to the active account');
+  assert.ok(queries[0][0].includes('account_id=$4'), 'personal assets must be scoped to the active account');
+  assert.ok(queries[0][0].includes('business.personal_asset_manual_records'), 'manual desktop asset records must join the same cloud projection');
 
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },

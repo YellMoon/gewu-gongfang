@@ -151,6 +151,55 @@ function scheduleCreateInput(record) {
   };
 }
 
+function paymentInput(record) {
+  return {
+    studentId: record.student_id,
+    amount: record.amount,
+    paymentType: record.payment_type,
+    paymentDate: record.payment_date,
+    paymentMethod: nullable(record.payment_method),
+    notes: nullable(record.notes),
+  };
+}
+
+function consumptionInput(record) {
+  return {
+    scheduleId: record.schedule_id,
+    studentId: record.student_id,
+    hours: record.hours,
+    amount: record.amount,
+    consumptionDate: record.consumption_date,
+    notes: nullable(record.notes),
+  };
+}
+
+function gradeInput(record) {
+  return {
+    studentId: record.student_id,
+    subject: record.subject,
+    score: record.score,
+    examDate: nullable(record.exam_date),
+    notes: nullable(record.notes),
+  };
+}
+
+function personalAssetCategoryInput(record) {
+  return { name: record.name, type: record.type, color: nullable(record.color) };
+}
+
+function personalAssetRecordInput(record) {
+  return {
+    date: record.date,
+    type: record.type,
+    categoryId: record.category_id,
+    categoryName: record.category_name,
+    amount: record.amount,
+    studentId: nullable(record.student_id),
+    studentName: nullable(record.student_name),
+    note: nullable(record.note),
+  };
+}
+
 function callInput(baseUrl, sessionToken, values) {
   return {
     baseUrl,
@@ -167,21 +216,7 @@ function stableCloudRejection(error) {
     : null;
 }
 
-export const restrictedCloudBusinessDraftTypes = Object.freeze({
-  'payment.create.v1': 'cloud schema not enabled; schedule tuition is authoritative',
-  'payment.update.v1': 'cloud schema not enabled; schedule tuition is authoritative',
-  'payment.delete.v1': 'cloud schema not enabled; schedule tuition is authoritative',
-  'consumption.create.v1': 'cloud schema not enabled; schedule attendance is authoritative',
-  'consumption.update.v1': 'cloud schema not enabled; schedule attendance is authoritative',
-  'consumption.delete.v1': 'cloud schema not enabled; schedule attendance is authoritative',
-  'grade.create.v1': 'cloud grade authority is not enabled',
-  'grade.delete.v1': 'cloud grade authority is not enabled',
-  'personal-asset-record.create.v1': 'personal assets accept verified cloud import tasks only',
-  'personal-asset-record.update.v1': 'personal assets accept verified cloud import tasks only',
-  'personal-asset-record.delete.v1': 'personal assets accept verified cloud import tasks only',
-  'personal-asset-category.create.v1': 'personal asset categories are derived by verified cloud imports',
-  'personal-asset-category.delete.v1': 'personal asset categories are derived by verified cloud imports',
-});
+export const restrictedCloudBusinessDraftTypes = Object.freeze({});
 
 export function createDesktopCloudBusinessDraftAdapter({
   cloudClient,
@@ -314,6 +349,58 @@ export function createDesktopCloudBusinessDraftAdapter({
         return cloudClient.deleteCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
           scheduleId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
+        }));
+      case 'payment.create.v1':
+        return cloudClient.createCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+          paymentId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...paymentInput(createRecord),
+        }));
+      case 'payment.update.v1':
+        return cloudClient.updateCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+          paymentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...paymentInput(updateRecord),
+        }));
+      case 'payment.delete.v1':
+        return cloudClient.deleteCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+          paymentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
+        }));
+      case 'consumption.create.v1':
+        return cloudClient.createCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+          consumptionId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...consumptionInput(createRecord),
+        }));
+      case 'consumption.update.v1':
+        return cloudClient.updateCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+          consumptionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...consumptionInput(updateRecord),
+        }));
+      case 'consumption.delete.v1':
+        return cloudClient.deleteCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+          consumptionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
+        }));
+      case 'grade.create.v1':
+        return cloudClient.createCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+          gradeId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...gradeInput(createRecord),
+        }));
+      case 'grade.delete.v1':
+        return cloudClient.deleteCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+          gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
+        }));
+      case 'personal-asset-category.create.v1':
+        return cloudClient.createCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+          categoryId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetCategoryInput(createRecord),
+        }));
+      case 'personal-asset-category.delete.v1':
+        return cloudClient.deleteCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+          categoryId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
+        }));
+      case 'personal-asset-record.create.v1':
+        return cloudClient.createCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+          recordId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetRecordInput(createRecord),
+        }));
+      case 'personal-asset-record.update.v1':
+        return cloudClient.updateCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+          recordId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...personalAssetRecordInput(updateRecord),
+        }));
+      case 'personal-asset-record.delete.v1':
+        return cloudClient.deleteCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+          recordId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       default:
         if (Object.hasOwn(restrictedCloudBusinessDraftTypes, command.type)) {

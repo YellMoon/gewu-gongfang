@@ -677,7 +677,7 @@ export function createDesktopIdentityClient({
     });
     const projection = data?.projection;
     if (!projection || typeof projection !== 'object' || Array.isArray(projection)
-      || !['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(projection[key]))) {
+      || !['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions', 'assetRecords', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(projection[key]))) {
       throw identityError('DESKTOP_CLOUD_PROJECTION_RESPONSE_INVALID');
     }
     return projection;
@@ -1016,6 +1016,31 @@ export function createDesktopIdentityClient({
     return contact;
   }
 
+  async function mutateCloudSupplementalRecord({ baseUrl, currentSession, resource, responseKey, idKey, recordId, method, body }) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedId = String(recordId || '').trim();
+    if (!normalizedId) throw identityError('DESKTOP_CLOUD_SUPPLEMENTAL_ID_REQUIRED');
+    const create = method === 'POST';
+    const data = await request(fetchImpl, baseUrl, create ? `/api/business/${resource}` : `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
+      method, token: currentSession.token, body: create ? { [idKey]: normalizedId, data: body } : body,
+    });
+    if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') {
+      throw identityError('DESKTOP_CLOUD_SUPPLEMENTAL_RESPONSE_INVALID');
+    }
+    return data[responseKey];
+  }
+
+  const supplemental = (resource, responseKey, idKey, fields) => Object.freeze({
+    create: input => mutateCloudSupplementalRecord({ ...input, resource, responseKey, idKey, recordId: input?.[idKey], method: 'POST', body: Object.fromEntries(fields.map(field => [field, input?.[field]])) }),
+    update: input => mutateCloudSupplementalRecord({ ...input, resource, responseKey, idKey, recordId: input?.[idKey], method: 'PUT', body: { expectedUpdatedAt: input?.expectedUpdatedAt, ...Object.fromEntries(fields.map(field => [field, input?.[field]])) } }),
+    remove: input => mutateCloudSupplementalRecord({ ...input, resource, responseKey, idKey, recordId: input?.[idKey], method: 'DELETE', body: { expectedUpdatedAt: input?.expectedUpdatedAt } }),
+  });
+  const paymentMutations = supplemental('payments', 'payment', 'paymentId', ['studentId', 'amount', 'paymentType', 'paymentDate', 'paymentMethod', 'notes']);
+  const consumptionMutations = supplemental('consumptions', 'consumption', 'consumptionId', ['scheduleId', 'studentId', 'hours', 'amount', 'consumptionDate', 'notes']);
+  const gradeMutations = supplemental('grades', 'grade', 'gradeId', ['studentId', 'subject', 'score', 'examDate', 'notes']);
+  const assetCategoryMutations = supplemental('personal-asset-categories', 'category', 'categoryId', ['name', 'type', 'color']);
+  const assetRecordMutations = supplemental('personal-asset-records', 'record', 'recordId', ['date', 'type', 'categoryId', 'categoryName', 'amount', 'studentId', 'studentName', 'note']);
+
   async function registerUnifiedDesktopOnline(requestValue) {
     if (!onlineRegistrationCommand
       || typeof onlineRegistrationCommand.execute !== 'function') {
@@ -1030,6 +1055,11 @@ export function createDesktopIdentityClient({
     beginUnifiedOnlineRegistration,
     createCloudCourse,
     createCloudInstitution,
+    createCloudPayment: paymentMutations.create,
+    createCloudConsumption: consumptionMutations.create,
+    createCloudGrade: gradeMutations.create,
+    createCloudPersonalAssetCategory: assetCategoryMutations.create,
+    createCloudPersonalAssetRecord: assetRecordMutations.create,
     createCloudSchedule,
     createCloudSchool,
     createCloudRoom,
@@ -1040,6 +1070,11 @@ export function createDesktopIdentityClient({
     deleteCloudCourse,
     deleteCloudRoom,
     deleteCloudInstitution,
+    deleteCloudPayment: paymentMutations.remove,
+    deleteCloudConsumption: consumptionMutations.remove,
+    deleteCloudGrade: gradeMutations.remove,
+    deleteCloudPersonalAssetCategory: assetCategoryMutations.remove,
+    deleteCloudPersonalAssetRecord: assetRecordMutations.remove,
     deleteCloudSchedule,
     deleteCloudSchool,
     completeUnifiedOnlineRegistration,
@@ -1058,6 +1093,9 @@ export function createDesktopIdentityClient({
     updateCloudSchedule,
     updateCloudCourse,
     updateCloudInstitution,
+    updateCloudPayment: paymentMutations.update,
+    updateCloudConsumption: consumptionMutations.update,
+    updateCloudPersonalAssetRecord: assetRecordMutations.update,
     updateCloudRoom,
     updateCloudSchool,
     updateCloudTeacher,

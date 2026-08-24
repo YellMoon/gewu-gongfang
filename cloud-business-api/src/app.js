@@ -2,12 +2,13 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
   if (businessScheduleLifecycleMutations !== null && (typeof businessScheduleLifecycleMutations.create !== 'function' || typeof businessScheduleLifecycleMutations.remove !== 'function')) throw new TypeError('businessScheduleLifecycleMutations is invalid');
   if (businessFoundationLifecycleMutations !== null && (typeof businessFoundationLifecycleMutations.institutions?.create !== 'function' || typeof businessFoundationLifecycleMutations.institutions?.update !== 'function' || typeof businessFoundationLifecycleMutations.institutions?.remove !== 'function' || typeof businessFoundationLifecycleMutations.schools?.create !== 'function' || typeof businessFoundationLifecycleMutations.schools?.update !== 'function' || typeof businessFoundationLifecycleMutations.schools?.remove !== 'function')) throw new TypeError('businessFoundationLifecycleMutations is invalid');
+  if (businessSupplementalLifecycleMutations !== null && (typeof businessSupplementalLifecycleMutations.payments?.create !== 'function' || typeof businessSupplementalLifecycleMutations.payments?.update !== 'function' || typeof businessSupplementalLifecycleMutations.payments?.remove !== 'function' || typeof businessSupplementalLifecycleMutations.consumptions?.create !== 'function' || typeof businessSupplementalLifecycleMutations.consumptions?.update !== 'function' || typeof businessSupplementalLifecycleMutations.consumptions?.remove !== 'function' || typeof businessSupplementalLifecycleMutations.grades?.create !== 'function' || typeof businessSupplementalLifecycleMutations.grades?.remove !== 'function' || typeof businessSupplementalLifecycleMutations.assetCategories?.create !== 'function' || typeof businessSupplementalLifecycleMutations.assetCategories?.remove !== 'function' || typeof businessSupplementalLifecycleMutations.assetRecords?.create !== 'function' || typeof businessSupplementalLifecycleMutations.assetRecords?.update !== 'function' || typeof businessSupplementalLifecycleMutations.assetRecords?.remove !== 'function')) throw new TypeError('businessSupplementalLifecycleMutations is invalid');
   if (businessStudentUpdate !== null && typeof businessStudentUpdate !== 'function') throw new TypeError('businessStudentUpdate is invalid');
   if (businessStudentRecordUpdate !== null && typeof businessStudentRecordUpdate !== 'function') throw new TypeError('businessStudentRecordUpdate is invalid');
   if (businessStudentLifecycleMutations !== null && (typeof businessStudentLifecycleMutations.create !== 'function' || typeof businessStudentLifecycleMutations.remove !== 'function')) throw new TypeError('businessStudentLifecycleMutations is invalid');
@@ -203,6 +204,53 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!input || !name || !Number.isInteger(input.count) || input.count < 0 || input.count > 100000000 || (expectedUpdatedAtRequired && !expectedUpdatedAt)) return null;
     return { expectedUpdatedAt, name, count: input.count };
   }
+  function dateOnly(value, nullable = false) {
+    if (nullable && value === null) return null;
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value ? value : undefined;
+  }
+  function positiveNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 100000000 ? value : null;
+  }
+  function supplementalRecord(kind, value, expectedUpdatedAtRequired = false) {
+    const fields = {
+      payment: ['studentId', 'amount', 'paymentType', 'paymentDate', 'paymentMethod', 'notes'],
+      consumption: ['scheduleId', 'studentId', 'hours', 'amount', 'consumptionDate', 'notes'],
+      grade: ['studentId', 'subject', 'score', 'examDate', 'notes'],
+      assetCategory: ['name', 'type', 'color'],
+      assetRecord: ['date', 'type', 'categoryId', 'categoryName', 'amount', 'studentId', 'studentName', 'note'],
+    }[kind];
+    const input = exactBody(value, expectedUpdatedAtRequired ? ['expectedUpdatedAt', ...fields] : fields);
+    if (!input) return null;
+    const expectedUpdatedAt = expectedUpdatedAtRequired ? instant(input.expectedUpdatedAt) : undefined;
+    if (expectedUpdatedAtRequired && !expectedUpdatedAt) return null;
+    if (kind === 'payment') {
+      const studentId = boundedText(input.studentId, 256); const paymentDate = dateOnly(input.paymentDate);
+      const paymentMethod = optionalText(input.paymentMethod); const notes = optionalText(input.notes);
+      if (!studentId || positiveNumber(input.amount) === null || ![1, 2].includes(input.paymentType) || !paymentDate || paymentMethod === undefined || notes === undefined) return null;
+      return { expectedUpdatedAt, studentId, amount: input.amount, paymentType: input.paymentType, paymentDate, paymentMethod, notes };
+    }
+    if (kind === 'consumption') {
+      const scheduleId = boundedText(input.scheduleId, 256); const studentId = boundedText(input.studentId, 256); const consumptionDate = dateOnly(input.consumptionDate); const notes = optionalText(input.notes);
+      if (!scheduleId || !studentId || positiveNumber(input.hours) === null || nonNegativeNumber(input.amount) === null || !consumptionDate || notes === undefined) return null;
+      return { expectedUpdatedAt, scheduleId, studentId, hours: input.hours, amount: input.amount, consumptionDate, notes };
+    }
+    if (kind === 'grade') {
+      const studentId = boundedText(input.studentId, 256); const subject = boundedText(input.subject, 128); const examDate = dateOnly(input.examDate, true); const notes = optionalText(input.notes);
+      if (!studentId || !subject || nonNegativeNumber(input.score) === null || input.score > 10000 || examDate === undefined || notes === undefined) return null;
+      return { expectedUpdatedAt, studentId, subject, score: input.score, examDate, notes };
+    }
+    if (kind === 'assetCategory') {
+      const name = boundedText(input.name, 128); const color = input.color === null || (typeof input.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(input.color)) ? input.color : undefined;
+      if (!name || !['income', 'expense'].includes(input.type) || color === undefined) return null;
+      return { expectedUpdatedAt, name, type: input.type, color };
+    }
+    const categoryId = boundedText(input.categoryId, 128); const categoryName = boundedText(input.categoryName, 128);
+    const studentId = boundedText(input.studentId, 256); const studentName = boundedText(input.studentName, 256); const note = optionalText(input.note); const date = dateOnly(input.date);
+    if (!date || !['income', 'expense'].includes(input.type) || !categoryId || !categoryName || positiveNumber(input.amount) === null || studentId === undefined || studentName === undefined || note === undefined) return null;
+    return { expectedUpdatedAt, date, type: input.type, categoryId, categoryName, amount: input.amount, studentId, studentName, note: note ?? '' };
+  }
   function sessionToken(request) {
     const authorization = String(request.get('authorization') || '');
     const match = /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/.exec(authorization);
@@ -313,8 +361,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
-    "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.record_id,'category_id',asset.category_id,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'notes',asset.note) ORDER BY asset.record_date DESC,asset.record_id) FROM business.personal_asset_records asset WHERE asset.tenant_id=$1 AND asset.account_id=$4),'[]'::jsonb),",
-    "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.category_id,'name',category.name,'type',category.category_type,'color','#999') ORDER BY category.category_type,category.name) FROM business.personal_asset_categories category WHERE category.tenant_id=$1 AND category.account_id=$4),'[]'::jsonb)",
+    "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.id,'category_id',asset.category_id,'category_name',asset.category_name,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'student_id',asset.student_id,'student_name',asset.student_name,'note',asset.note,'created_at',asset.created_at,'updated_at',asset.updated_at) ORDER BY asset.record_date DESC,asset.id) FROM (SELECT record_id AS id,category_id,category_name,amount,record_type,record_date,NULL::text AS student_id,NULL::text AS student_name,note,created_at,updated_at FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT record_id,category_id,category_name,amount,record_type,record_date,student_id,student_name,note,created_at,updated_at FROM business.personal_asset_manual_records WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) asset),'[]'::jsonb),",
+    "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.id,'name',category.name,'type',category.category_type,'color',category.color,'created_at',category.created_at,'updated_at',category.updated_at) ORDER BY category.category_type,category.name) FROM (SELECT category_id AS id,name,category_type,'#999'::text AS color,created_at,updated_at FROM business.personal_asset_categories WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT category_id,name,category_type,COALESCE(color,'#999'),created_at,updated_at FROM business.personal_asset_manual_categories WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) category),'[]'::jsonb)",
     ') AS projection',
   ].join(' ');
   function isMiniappProjection(value) {
@@ -331,13 +379,18 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false),'[]'::jsonb),",
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false),'[]'::jsonb),",
+    "'grades',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',g.id,'student_id',g.student_id,'subject',g.subject,'score',g.score,'exam_date',g.exam_date,'notes',g.notes,'created_at',g.created_at,'updated_at',g.updated_at) ORDER BY g.exam_date DESC NULLS LAST,g.id) FROM business.grades g WHERE g.tenant_id=$1 AND g.deleted=false),'[]'::jsonb),",
+    "'payments',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',p.id,'student_id',p.student_id,'amount',p.amount,'payment_type',p.payment_type,'payment_date',p.payment_date,'payment_method',p.payment_method,'notes',p.notes,'created_at',p.created_at,'updated_at',p.updated_at) ORDER BY p.payment_date DESC,p.id) FROM business.payments p WHERE p.tenant_id=$1 AND p.deleted=false),'[]'::jsonb),",
+    "'consumptions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'schedule_id',c.schedule_id,'student_id',c.student_id,'hours',c.hours,'amount',c.amount,'consumption_date',c.consumption_date,'notes',c.notes,'created_at',c.created_at,'updated_at',c.updated_at) ORDER BY c.consumption_date DESC,c.id) FROM business.consumptions c WHERE c.tenant_id=$1 AND c.deleted=false),'[]'::jsonb),",
+    "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.id,'category_id',asset.category_id,'category_name',asset.category_name,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'student_id',asset.student_id,'student_name',asset.student_name,'note',asset.note,'created_at',asset.created_at,'updated_at',asset.updated_at) ORDER BY asset.record_date DESC,asset.id) FROM (SELECT record_id AS id,category_id,category_name,amount,record_type,record_date,NULL::text AS student_id,NULL::text AS student_name,note,created_at,updated_at FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT record_id,category_id,category_name,amount,record_type,record_date,student_id,student_name,note,created_at,updated_at FROM business.personal_asset_manual_records WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) asset),'[]'::jsonb),",
+    "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.id,'name',category.name,'type',category.category_type,'color',category.color,'created_at',category.created_at,'updated_at',category.updated_at) ORDER BY category.category_type,category.name) FROM (SELECT category_id AS id,name,category_type,'#999'::text AS color,created_at,updated_at FROM business.personal_asset_categories WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT category_id,name,category_type,COALESCE(color,'#999'),created_at,updated_at FROM business.personal_asset_manual_categories WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) category),'[]'::jsonb),",
     "'taxonomy_systems',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'subject',s.subject,'name',s.name,'sort_order',s.sort_order,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.subject,s.sort_order,s.id) FROM business.question_taxonomy_systems s WHERE s.tenant_id=$1 AND s.deleted=false),'[]'::jsonb),",
     "'taxonomy_nodes',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',n.id,'system_id',n.system_id,'parent_id',n.parent_id,'name',n.name,'sort_order',n.sort_order,'deleted',false,'created_at',n.created_at,'updated_at',n.updated_at) ORDER BY n.system_id,n.sort_order,n.id) FROM business.question_taxonomy_nodes n WHERE n.tenant_id=$1 AND n.deleted=false),'[]'::jsonb)",
     ') AS projection',
   ].join(' ');
   function isDesktopProjection(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-      && ['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(value[key]));
+      && ['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions', 'assetRecords', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(value[key]));
   }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
@@ -810,7 +863,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const context = await desktopQuestionContext(request);
       if (!Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
-      const result = await query(desktopProjectionSql, [businessTenantId]);
+      const result = await query(desktopProjectionSql, [businessTenantId, context.accountId]);
       const projection = result?.rows?.[0]?.projection;
       if (!isDesktopProjection(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });
@@ -819,6 +872,67 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  const supplementalRoutes = [
+    { resource: 'payments', service: 'payments', kind: 'payment', idKey: 'paymentId', responseKey: 'payment', allowUpdate: true, accountScoped: false },
+    { resource: 'consumptions', service: 'consumptions', kind: 'consumption', idKey: 'consumptionId', responseKey: 'consumption', allowUpdate: true, accountScoped: false },
+    { resource: 'grades', service: 'grades', kind: 'grade', idKey: 'gradeId', responseKey: 'grade', allowUpdate: false, accountScoped: false },
+    { resource: 'personal-asset-categories', service: 'assetCategories', kind: 'assetCategory', idKey: 'categoryId', responseKey: 'category', allowUpdate: false, accountScoped: true },
+    { resource: 'personal-asset-records', service: 'assetRecords', kind: 'assetRecord', idKey: 'recordId', responseKey: 'record', allowUpdate: true, accountScoped: true },
+  ];
+  for (const config of supplementalRoutes) {
+    const conflictCode = `CLOUD_BUSINESS_${config.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()}_CONFLICT`;
+    const relationCode = `CLOUD_BUSINESS_${config.kind.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()}_RELATION_INVALID`;
+    app.post(`/api/business/${config.resource}`, async (request, response) => {
+      if (!businessTenantId || !businessSupplementalLifecycleMutations) return businessUnavailable(response);
+      const id = boundedText(request.body?.[config.idKey], 128);
+      const data = supplementalRecord(config.kind, request.body?.data, false);
+      if (!id || !data || !exactBody(request.body, [config.idKey, 'data'])) return businessInputInvalid(response);
+      try {
+        const context = await desktopBusinessContext(request);
+        if (!context?.roles?.includes('super_admin')) throw businessAccessDenied();
+        const record = await businessSupplementalLifecycleMutations[config.service].create({ tenantId: businessTenantId, ...(config.accountScoped ? { accountId: context.accountId } : {}), [config.idKey]: id, ...data });
+        if (!record) return response.status(400).json({ ok: false, code: relationCode });
+        response.status(201).json({ ok: true, [config.responseKey]: record });
+      } catch (error) {
+        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        if (error?.code === '23505') return response.status(409).json({ ok: false, code: conflictCode });
+        if (['23503', '23514', '22003', '22007'].includes(error?.code)) return response.status(400).json({ ok: false, code: relationCode });
+        businessUnavailable(response);
+      }
+    });
+    if (config.allowUpdate) app.put(`/api/business/${config.resource}/:${config.idKey}`, async (request, response) => {
+      if (!businessTenantId || !businessSupplementalLifecycleMutations) return businessUnavailable(response);
+      const id = boundedText(request.params[config.idKey], 128);
+      const data = supplementalRecord(config.kind, request.body, true);
+      if (!id || !data) return businessInputInvalid(response);
+      try {
+        const context = await desktopBusinessContext(request);
+        if (!context?.roles?.includes('super_admin')) throw businessAccessDenied();
+        const record = await businessSupplementalLifecycleMutations[config.service].update({ tenantId: businessTenantId, ...(config.accountScoped ? { accountId: context.accountId } : {}), [config.idKey]: id, ...data });
+        if (!record) return response.status(409).json({ ok: false, code: conflictCode });
+        response.json({ ok: true, [config.responseKey]: record });
+      } catch (error) {
+        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        if (['23503', '23514', '22003', '22007'].includes(error?.code)) return response.status(400).json({ ok: false, code: relationCode });
+        businessUnavailable(response);
+      }
+    });
+    app.delete(`/api/business/${config.resource}/:${config.idKey}`, async (request, response) => {
+      if (!businessTenantId || !businessSupplementalLifecycleMutations) return businessUnavailable(response);
+      const id = boundedText(request.params[config.idKey], 128); const expectedUpdatedAt = instant(request.body?.expectedUpdatedAt);
+      if (!id || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
+      try {
+        const context = await desktopBusinessContext(request);
+        if (!context?.roles?.includes('super_admin')) throw businessAccessDenied();
+        const record = await businessSupplementalLifecycleMutations[config.service].remove({ tenantId: businessTenantId, ...(config.accountScoped ? { accountId: context.accountId } : {}), [config.idKey]: id, expectedUpdatedAt });
+        if (!record) return response.status(409).json({ ok: false, code: conflictCode });
+        response.json({ ok: true, [config.responseKey]: record });
+      } catch (error) {
+        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        businessUnavailable(response);
+      }
+    });
+  }
   app.post('/api/business/schedules', async (request, response) => {
     if (!businessTenantId || !businessScheduleLifecycleMutations) return businessUnavailable(response);
     const scheduleId = String(request.body?.scheduleId || '').trim();

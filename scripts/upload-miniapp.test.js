@@ -91,7 +91,7 @@ function createReleaseRoot() {
   return {
     fixtureRoot,
     manifestPath,
-    markerPath: path.join(fixtureRoot, 'output', 'release-matrix', 'miniapp-upload-pending.json'),
+    markerPath: path.join(path.dirname(manifestPath), 'miniapp-upload-pending.json'),
     privateKeyPath,
   };
 }

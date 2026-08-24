@@ -106,6 +106,11 @@ try {
   }
   const localMatrix = matrix.readSourceVersionMatrix({ rootDir: fixtureRoot });
   assert.strictEqual(
+    matrix.defaultManifestPath(fixtureRoot),
+    path.join(fixtureRoot, 'output', 'release-matrix-7.2.0', 'active.json'),
+    'the default release ledger must be isolated by the current source version',
+  );
+  assert.strictEqual(
     localMatrix.miniapp,
     '7.2.0',
     'the miniapp source package must participate in the unified version matrix'
@@ -242,7 +247,7 @@ try {
     }])),
   };
   fs.writeFileSync(manifestPath, `${JSON.stringify(completedHistoricalManifest, null, 2)}\n`, 'utf8');
-  const prepared = matrix.prepareReleaseManifest({ rootDir: fixtureRoot, commit: 'newcommit' });
+  const prepared = matrix.prepareReleaseManifest({ rootDir: fixtureRoot, manifestPath, commit: 'newcommit' });
   assert.strictEqual(prepared.manifest.version, '7.2.1', 'a new source version must create a fresh release manifest');
   assert.ok(fs.existsSync(prepared.archivedManifestPath), 'a completed historical manifest must be preserved before replacement');
   assert.strictEqual(matrix.readManifest(manifestPath).version, '7.2.1', 'the active path must point only to the new release');

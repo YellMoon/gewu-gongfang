@@ -66,8 +66,9 @@ export default function QuestionBankPage() {
     setPreviewState('loading'); setPreviewMessage('');
     const response: any = await miniappCloudBusinessApi.listQuestionPreviews(sessionToken());
     if (!response.success) {
-      setPreviewState(['CLOUD_BUSINESS_ACCESS_DENIED', 'FORBIDDEN'].includes(String(response.code)) ? 'forbidden' : 'offline');
-      setPreviewMessage(response.error || 'unavailable');
+      const forbidden = ['CLOUD_BUSINESS_ACCESS_DENIED', 'FORBIDDEN'].includes(String(response.code));
+      setPreviewState(forbidden ? 'forbidden' : 'offline');
+      setPreviewMessage(forbidden ? '\u8bf7联系管理员确认题库权限' : '\u8bf7联网后重试');
       return;
     }
     const list = Array.isArray(response.data?.questions) ? response.data.questions : [];
@@ -80,7 +81,7 @@ export default function QuestionBankPage() {
     try {
       const response: any = await miniappCloudBusinessApi.readPaperExportTask(sessionToken(), task.taskId);
       const cloud = response.data?.task;
-      if (!response.success || !cloud) return { ...task, error: response.error || 'not found' };
+      if (!response.success || !cloud) return { ...task, error: '\u6682时无法刷新任务，请稍后重试' };
       return { ...task, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), error: '' };
     } catch { return { ...task, error: 'refresh failed' }; }
   };
@@ -128,7 +129,7 @@ export default function QuestionBankPage() {
         answerPosition: draft.request.payload.answerPosition, formulaMode: draft.request.payload.formulaMode,
       }, draft.request.idempotencyKey);
       const cloud = response.data?.task;
-      if (!response.success || !cloud) throw new Error(response.error || 'cloud not confirmed');
+      if (!response.success || !cloud) throw new Error('\u4e91端未确认本次提交');
       persist([{ ...draft, confirmed: true, taskId: cloud.taskId, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), error: '' }, ...tasks]);
     } catch (error: any) {
       persist([{ ...draft, error: error?.message || 'cloud not confirmed' }, ...tasks]);
@@ -145,13 +146,13 @@ export default function QuestionBankPage() {
     try {
       const requested: any = await miniappCloudBusinessApi.requestPaperExportDelivery(sessionToken(), task.taskId);
       const delivery = requested.data?.delivery;
-      if (!requested.success || !delivery) throw new Error(requested.error || 'delivery unavailable');
+      if (!requested.success || !delivery) throw new Error('\u6682时无法准备导出文件');
       if (delivery.status !== 'ready') {
         Taro.showToast({ title: '\u5bfc\u51fa\u6587\u4ef6\u6b63\u5728\u51c6\u5907\uff0c\u8bf7\u7a0d\u540e\u5237\u65b0', icon: 'none' });
         return;
       }
       const file: any = await miniappCloudBusinessApi.downloadPaperExportDelivery(sessionToken(), delivery.deliveryId);
-      if (!file.success || !file.data?.tempFilePath) throw new Error(file.error || 'download failed');
+      if (!file.success || !file.data?.tempFilePath) throw new Error('\u4e0b载失败，请稍后重试');
       await Taro.openDocument({ filePath: file.data.tempFilePath, showMenu: true });
     } catch (error: any) { Taro.showToast({ title: error?.message || 'download failed', icon: 'none' }); }
   };

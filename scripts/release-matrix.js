@@ -10,7 +10,10 @@ const MINIAPP_RELEASE_LEVELS = Object.freeze(['development', 'production']);
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
   const configured = String(process.env.GEWU_RELEASE_MANIFEST_PATH || '').trim();
   if (configured) return path.resolve(rootDir, configured);
-  return path.join(rootDir, 'output', 'release-matrix', 'active.json');
+  const packagePath = path.join(rootDir, 'package.json');
+  const version = fs.existsSync(packagePath) ? String(JSON.parse(fs.readFileSync(packagePath, 'utf8')).version || '').trim() : '';
+  if (!isVersion(version)) throw new Error('Root package version is required to select the unified release manifest');
+  return path.join(rootDir, 'output', `release-matrix-${version}`, 'active.json');
 }
 
 function historicalManifestPath(manifestPath, manifest) {

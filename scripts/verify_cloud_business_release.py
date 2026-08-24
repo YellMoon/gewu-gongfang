@@ -73,6 +73,24 @@ def verification_sql():
         "has_function_privilege('vnext_pg17_writer','business.vnext_create_question_taxonomy_node_v1(text,text,text,text,text,integer)','EXECUTE')",
         "'writerDirectTaxonomyInsert'",
         "has_table_privilege('vnext_pg17_writer','business.question_taxonomy_nodes','INSERT')",
+        "'supplementalAuthorityTables'",
+        "to_regclass('business.payments') IS NOT NULL AND to_regclass('business.consumptions') IS NOT NULL "
+        "AND to_regclass('business.grades') IS NOT NULL AND to_regclass('business.personal_asset_manual_categories') IS NOT NULL "
+        "AND to_regclass('business.personal_asset_manual_records') IS NOT NULL",
+        "'writerSupplementalInsert'",
+        "has_table_privilege('vnext_pg17_writer','business.payments','INSERT') "
+        "AND has_table_privilege('vnext_pg17_writer','business.consumptions','INSERT') "
+        "AND has_table_privilege('vnext_pg17_writer','business.grades','INSERT') "
+        "AND has_table_privilege('vnext_pg17_writer','business.personal_asset_manual_records','INSERT')",
+        "'runtimeSupplementalInsert'",
+        "has_table_privilege('vnext_pg17_runtime','business.payments','INSERT') "
+        "OR has_table_privilege('vnext_pg17_runtime','business.consumptions','INSERT') "
+        "OR has_table_privilege('vnext_pg17_runtime','business.grades','INSERT') "
+        "OR has_table_privilege('vnext_pg17_runtime','business.personal_asset_manual_records','INSERT')",
+        "'readerSupplementalWrite'",
+        "has_table_privilege('gewu_cloud_schedule_reader','business.payments','INSERT') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.payments','UPDATE') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.payments','DELETE')",
         "'controlPlaneM20'",
         "(SELECT count(*)=1 FROM vnext_control_plane.vnext_schema_migrations "
         f"WHERE migration_id='{CONTROL_PLANE_M20_ID}' AND semantic_version=20 AND manifest_sha256='{CONTROL_PLANE_M20_SHA256}')",
@@ -96,10 +114,11 @@ def validate(payload):
     if any(payload.get(key) is not True for key in (
         "scheduleCreateFunction", "institutionCreateFunction", "schoolCreateFunction", "writerScheduleExecute",
         "taxonomySystemTable", "taxonomyNodeTable", "taxonomyFunctions", "writerTaxonomyExecute",
+        "supplementalAuthorityTables", "writerSupplementalInsert",
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_FUNCTION_MISSING")
     if any(payload.get(key) is not False for key in (
-        "writerDirectScheduleInsert", "runtimeDirectScheduleInsert", "writerDirectTaxonomyInsert",
+        "writerDirectScheduleInsert", "runtimeDirectScheduleInsert", "writerDirectTaxonomyInsert", "runtimeSupplementalInsert", "readerSupplementalWrite",
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_DIRECT_WRITE_OPEN")
     if any(payload.get(key) is not True for key in (

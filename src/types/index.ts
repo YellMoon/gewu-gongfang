@@ -37,6 +37,7 @@ export interface Grade {
   exam_date?: string;
   notes?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 // 课程类型
@@ -194,6 +195,7 @@ export interface Payment {
   payment_method?: string;
   notes?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 // 课时消耗
@@ -206,6 +208,7 @@ export interface Consumption {
   consumption_date: string;
   notes?: string;
   created_at: string;
+  updated_at?: string;
 }
 
 // 统计数据

@@ -188,6 +188,11 @@ async function resetScenarioPage(miniProgram, scenarioId) {
 }
 
 async function run() {
+  const compiledCommon = fs.readFileSync(path.join(ROOT, 'miniapp', 'dist', 'common.js'), 'utf8');
+  assert.ok(
+    compiledCommon.includes(FIXTURE_BASE),
+    `miniapp must be built with MINIAPP_CLOUD_BUSINESS_API_BASE_URL=${FIXTURE_BASE} before fixture capture`,
+  );
   fs.mkdirSync(OUTPUT, { recursive: true });
   const registered = pageInventory.map(entry => entry.route);
   assert.ok(scenarios.length > 0, 'runtime scenario filter did not match any scenario');
@@ -197,7 +202,8 @@ async function run() {
   const { server, requests, setScenario } = await startFixtureServer();
   let miniProgram;
   try {
-    miniProgram = await automator.connect({ wsEndpoint: 'ws://127.0.0.1:9420' });
+    const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();
+    miniProgram = await automator.connect({ wsEndpoint });
   } catch (error) {
     await new Promise(resolve => server.close(resolve));
     throw error;

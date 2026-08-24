@@ -1560,7 +1560,8 @@ class BrowserDatabaseService {
     const newPayment: Payment = {
       ...payment,
       id: this.generateId(),
-      created_at: now
+      created_at: now,
+      updated_at: now
     };
     this.data.payments.push(newPayment);
     this.recordAuthorityDraft('payments', 'create', newPayment.id, newPayment);
@@ -1571,11 +1572,13 @@ class BrowserDatabaseService {
   updatePayment(id: string, updates: Partial<Omit<Payment, 'id' | 'created_at'>>): Payment | undefined {
     const index = this.data.payments.findIndex(p => p.id === id);
     if (index !== -1) {
+      const baseVersion = this.data.payments[index].updated_at || this.data.payments[index].created_at || null;
       this.data.payments[index] = {
         ...this.data.payments[index],
-        ...updates
+        ...updates,
+        updated_at: new Date().toISOString()
       };
-      this.recordAuthorityDraft('payments', 'update', id, this.data.payments[index]);
+      this.recordAuthorityDraft('payments', 'update', id, this.data.payments[index], baseVersion);
       this.saveData();
       return this.data.payments[index];
     }
@@ -1583,8 +1586,11 @@ class BrowserDatabaseService {
   }
 
   deletePayment(id: string): void {
+    const existing = this.data.payments.find(p => p.id === id);
+    if (!existing) return;
+    const baseVersion = existing.updated_at || existing.created_at || null;
     this.data.payments = this.data.payments.filter(p => p.id !== id);
-    this.recordAuthorityDraft('payments', 'delete', id, { id });
+    this.recordAuthorityDraft('payments', 'delete', id, { id }, baseVersion);
     this.saveData();
   }
 
@@ -1607,7 +1613,8 @@ class BrowserDatabaseService {
     const newConsumption: Consumption = {
       ...consumption,
       id: this.generateId(),
-      created_at: now
+      created_at: now,
+      updated_at: now
     };
     this.data.consumptions.push(newConsumption);
     this.recordAuthorityDraft('consumptions', 'create', newConsumption.id, newConsumption);
@@ -1618,11 +1625,13 @@ class BrowserDatabaseService {
   updateConsumption(id: string, updates: Partial<Omit<Consumption, 'id' | 'created_at'>>): Consumption | undefined {
     const index = this.data.consumptions.findIndex(c => c.id === id);
     if (index !== -1) {
+      const baseVersion = this.data.consumptions[index].updated_at || this.data.consumptions[index].created_at || null;
       this.data.consumptions[index] = {
         ...this.data.consumptions[index],
-        ...updates
+        ...updates,
+        updated_at: new Date().toISOString()
       };
-      this.recordAuthorityDraft('consumptions', 'update', id, this.data.consumptions[index]);
+      this.recordAuthorityDraft('consumptions', 'update', id, this.data.consumptions[index], baseVersion);
       this.saveData();
       return this.data.consumptions[index];
     }
@@ -1630,8 +1639,11 @@ class BrowserDatabaseService {
   }
 
   deleteConsumption(id: string): void {
+    const existing = this.data.consumptions.find(c => c.id === id);
+    if (!existing) return;
+    const baseVersion = existing.updated_at || existing.created_at || null;
     this.data.consumptions = this.data.consumptions.filter(c => c.id !== id);
-    this.recordAuthorityDraft('consumptions', 'delete', id, { id });
+    this.recordAuthorityDraft('consumptions', 'delete', id, { id }, baseVersion);
     this.saveData();
   }
 
@@ -1733,8 +1745,9 @@ class BrowserDatabaseService {
   updateAssetRecord(id: string, updates: Partial<Omit<AssetRecord, 'id' | 'created_at'>>): boolean {
     const idx = this.data.assetRecords.findIndex(r => r.id === id);
     if (idx === -1) return false;
+    const baseVersion = this.data.assetRecords[idx].updated_at || this.data.assetRecords[idx].created_at || null;
     this.data.assetRecords[idx] = { ...this.data.assetRecords[idx], ...updates, updated_at: new Date().toISOString() };
-    this.recordAuthorityDraft('assetRecords', 'update', id, this.data.assetRecords[idx]);
+    this.recordAuthorityDraft('assetRecords', 'update', id, this.data.assetRecords[idx], baseVersion);
     this.saveData();
     return true;
   }
@@ -1742,8 +1755,9 @@ class BrowserDatabaseService {
   deleteAssetRecord(id: string): boolean {
     const idx = this.data.assetRecords.findIndex(r => r.id === id);
     if (idx === -1) return false;
+    const baseVersion = this.data.assetRecords[idx].updated_at || this.data.assetRecords[idx].created_at || null;
     this.data.assetRecords.splice(idx, 1);
-    this.recordAuthorityDraft('assetRecords', 'delete', id, { id });
+    this.recordAuthorityDraft('assetRecords', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1776,8 +1790,9 @@ class BrowserDatabaseService {
     if (id.startsWith('builtin-')) return false; // 内置分类不可删除
     const idx = this.data.assetCategories.findIndex(c => c.id === id);
     if (idx === -1) return false;
+    const baseVersion = this.data.assetCategories[idx].updated_at || this.data.assetCategories[idx].created_at || null;
     this.data.assetCategories.splice(idx, 1);
-    this.recordAuthorityDraft('assetCategories', 'delete', id, { id });
+    this.recordAuthorityDraft('assetCategories', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }
@@ -1833,10 +1848,10 @@ class BrowserDatabaseService {
     return this.data.grades.filter(g => g.student_id === studentId);
   }
 
-  createGrade(grade: Omit<Grade, 'id' | 'created_at'>): Grade {
+  createGrade(grade: Omit<Grade, 'id' | 'created_at' | 'updated_at'>): Grade {
     const now = new Date().toISOString();
     const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
-    const newGrade: Grade = { ...grade, id, created_at: now };
+    const newGrade: Grade = { ...grade, id, created_at: now, updated_at: now };
     this.data.grades.push(newGrade);
     this.recordAuthorityDraft('grades', 'create', newGrade.id, newGrade);
     this.saveData();
@@ -1846,8 +1861,9 @@ class BrowserDatabaseService {
   deleteGrade(id: string): boolean {
     const idx = this.data.grades.findIndex(g => g.id === id);
     if (idx === -1) return false;
+    const baseVersion = this.data.grades[idx].updated_at || this.data.grades[idx].created_at || null;
     this.data.grades.splice(idx, 1);
-    this.recordAuthorityDraft('grades', 'delete', id, { id });
+    this.recordAuthorityDraft('grades', 'delete', id, { id }, baseVersion);
     this.saveData();
     return true;
   }

@@ -137,19 +137,38 @@ const assert = require('assert');
   await adapter.submit(adapter.createCommand({ id: 'draft-school-delete', type: 'school.delete.v1', payload: { id: 'school-1', expectedVersion: '2026-08-23T00:00:00.000Z' } }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'deleteCloudSchool');
 
-  assert.deepStrictEqual(Object.keys(restrictedCloudBusinessDraftTypes).sort(), [
-    'consumption.create.v1', 'consumption.delete.v1', 'consumption.update.v1',
-    'grade.create.v1', 'grade.delete.v1',
-    'payment.create.v1', 'payment.delete.v1', 'payment.update.v1',
-    'personal-asset-category.create.v1', 'personal-asset-category.delete.v1',
-    'personal-asset-record.create.v1', 'personal-asset-record.delete.v1', 'personal-asset-record.update.v1',
-  ]);
-  for (const type of Object.keys(restrictedCloudBusinessDraftTypes)) {
-    const action = type.split('.')[1];
-    const payload = action === 'create' ? { record: { id: `restricted-${type}` } } : { id: `restricted-${type}`, ...(action === 'update' || action === 'delete' ? { expectedVersion: '2026-08-24T00:00:00.000Z', changes: { notes: null } } : {}) };
+  assert.deepStrictEqual(Object.keys(restrictedCloudBusinessDraftTypes), []);
+
+  const supplementalDrafts = [
+    ['payment.create.v1', 'createCloudPayment', { record: { id: 'payment-1', student_id: 'student-1', amount: 800, payment_type: 1, payment_date: '2026-08-24', payment_method: 'wechat', notes: null } }],
+    ['payment.update.v1', 'updateCloudPayment', { id: 'payment-1', expectedVersion: '2026-08-24T00:00:00.000Z', changes: { student_id: 'student-1', amount: 900, payment_type: 1, payment_date: '2026-08-24', payment_method: 'wechat', notes: 'updated' } }],
+    ['payment.delete.v1', 'deleteCloudPayment', { id: 'payment-1', expectedVersion: '2026-08-24T00:00:00.000Z' }],
+    ['consumption.create.v1', 'createCloudConsumption', { record: { id: 'consumption-1', schedule_id: 'schedule-1', student_id: 'student-1', hours: 1.5, amount: 150, consumption_date: '2026-08-24', notes: null } }],
+    ['consumption.update.v1', 'updateCloudConsumption', { id: 'consumption-1', expectedVersion: '2026-08-24T00:00:00.000Z', changes: { schedule_id: 'schedule-1', student_id: 'student-1', hours: 2, amount: 200, consumption_date: '2026-08-24', notes: null } }],
+    ['consumption.delete.v1', 'deleteCloudConsumption', { id: 'consumption-1', expectedVersion: '2026-08-24T00:00:00.000Z' }],
+    ['grade.create.v1', 'createCloudGrade', { record: { id: 'grade-1', student_id: 'student-1', subject: 'physics', score: 92, exam_date: '2026-08-24', notes: null } }],
+    ['grade.delete.v1', 'deleteCloudGrade', { id: 'grade-1', expectedVersion: '2026-08-24T00:00:00.000Z' }],
+    ['personal-asset-category.create.v1', 'createCloudPersonalAssetCategory', { record: { id: 'cat-1', name: 'books', type: 'expense', color: '#123456' } }],
+    ['personal-asset-category.delete.v1', 'deleteCloudPersonalAssetCategory', { id: 'cat-1', expectedVersion: '2026-08-24T00:00:00.000Z' }],
+    ['personal-asset-record.create.v1', 'createCloudPersonalAssetRecord', { record: { id: 'asset-1', date: '2026-08-24', type: 'expense', category_id: 'cat-1', category_name: 'books', amount: 60, student_id: null, student_name: null, note: 'notebook' } }],
+    ['personal-asset-record.update.v1', 'updateCloudPersonalAssetRecord', { id: 'asset-1', expectedVersion: '2026-08-24T00:00:00.000Z', changes: { date: '2026-08-24', type: 'expense', category_id: 'cat-1', category_name: 'books', amount: 70, student_id: null, student_name: null, note: 'updated' } }],
+    ['personal-asset-record.delete.v1', 'deleteCloudPersonalAssetRecord', { id: 'asset-1', expectedVersion: '2026-08-24T00:00:00.000Z' }],
+  ];
+  for (const [type, method, payload] of supplementalDrafts) {
     const receipt = await adapter.submit(adapter.createCommand({ id: `draft-${type}`, type, payload }), { sessionToken: 'desktop-session-token' });
-    assert.strictEqual(receipt.status, 'rejected');
-    assert.deepStrictEqual(receipt.result, { error: { code: 'CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED' } });
+    assert.strictEqual(receipt.status, 'committed', type);
+    assert.strictEqual(calls.at(-1).method, method, type);
+    if (payload.expectedVersion) assert.strictEqual(calls.at(-1).input.expectedUpdatedAt, payload.expectedVersion, type);
+    if (type === 'payment.create.v1') assert.deepStrictEqual(calls.at(-1).input, {
+      baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+      paymentId: 'payment-1', studentId: 'student-1', amount: 800, paymentType: 1,
+      paymentDate: '2026-08-24', paymentMethod: 'wechat', notes: null,
+    });
+    if (type === 'personal-asset-record.create.v1') assert.deepStrictEqual(calls.at(-1).input, {
+      baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+      recordId: 'asset-1', date: '2026-08-24', type: 'expense', categoryId: 'cat-1', categoryName: 'books',
+      amount: 60, studentId: null, studentName: null, note: 'notebook',
+    });
   }
 
   const courseRecord = {

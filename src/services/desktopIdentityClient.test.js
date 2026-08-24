@@ -148,7 +148,7 @@ async function main() {
       }
       if (url === 'https://cloud.test/api/business/desktop-projection') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
-        return { ok: true, json: async () => ({ ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], taxonomy_systems: [], taxonomy_nodes: [] } }) };
+        return { ok: true, json: async () => ({ ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [], assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [] } }) };
       }
       if (url === 'https://cloud.test/api/desktop/question-bank/questions?limit=200') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -278,6 +278,16 @@ async function main() {
         assert.deepStrictEqual(JSON.parse(options.body), { expectedUpdatedAt: null, relationship: 'guardian', phone: null, wechat: 'guardian-handle' });
         return { ok: true, json: async () => ({ ok: true, contact: { id: 'student-contact-student-cloud-1-2', studentId: 'student-cloud-1', slot: 2, relationship: 'guardian', phone: null, wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T00:00:00.000Z' } }) };
       }
+      const supplemental = /^https:\/\/cloud\.test\/api\/business\/(payments|consumptions|grades|personal-asset-categories|personal-asset-records)(?:\/([^/]+))?$/.exec(url);
+      if (supplemental) {
+        const settings = {
+          payments: ['payment', 'paymentId'], consumptions: ['consumption', 'consumptionId'], grades: ['grade', 'gradeId'],
+          'personal-asset-categories': ['category', 'categoryId'], 'personal-asset-records': ['record', 'recordId'],
+        }[supplemental[1]];
+        const body = JSON.parse(options.body); const id = supplemental[2] || body[settings[1]];
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true, [settings[0]]: { id, updatedAt: '2026-08-24T07:00:00.000Z' } }) };
+      }
       throw new Error(`unexpected unified cloud request ${url}`);
     },
   });
@@ -399,8 +409,10 @@ async function main() {
   const cloudProjection = await unifiedCloudClient.listCloudBusinessProjection({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });
-  assert.deepStrictEqual(cloudProjection, { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], taxonomy_systems: [], taxonomy_nodes: [] });
+  assert.deepStrictEqual(cloudProjection, { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [], assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [] });
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/business/desktop-projection');
+  assert.deepStrictEqual(await unifiedCloudClient.createCloudPayment({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, paymentId: 'payment-cloud-1', studentId: 'student-cloud-1', amount: 800, paymentType: 1, paymentDate: '2026-08-24', paymentMethod: 'wechat', notes: null }), { id: 'payment-cloud-1', updatedAt: '2026-08-24T07:00:00.000Z' });
+  assert.deepStrictEqual(await unifiedCloudClient.updateCloudPersonalAssetRecord({ baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, recordId: 'asset-cloud-1', expectedUpdatedAt: '2026-08-24T06:00:00.000Z', date: '2026-08-24', type: 'expense', categoryId: 'cat-cloud-1', categoryName: 'books', amount: 60, studentId: null, studentName: null, note: '' }), { id: 'asset-cloud-1', updatedAt: '2026-08-24T07:00:00.000Z' });
   const cloudQuestions = await unifiedCloudClient.listCloudQuestions({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });

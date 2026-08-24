@@ -184,16 +184,16 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const desktopProjection = await request(createCloudBusinessApp({
     query: async (text, values) => {
       projectionQueries.push([text, values]);
-      return { rows: [{ projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], taxonomy_systems: [], taxonomy_nodes: [] } }] };
+      return { rows: [{ projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [], assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [] } }] };
     },
     desktopRegistration: identity,
     businessTenantId: 'default',
   }), '/api/business/desktop-projection', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(desktopProjection.status, 200);
   assert.deepStrictEqual(desktopProjection.body, {
-    ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], taxonomy_systems: [], taxonomy_nodes: [] },
+    ok: true, projection: { students: [], student_contacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [], assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [] },
   });
-  assert.deepStrictEqual(projectionQueries[0][1], ['default']);
+  assert.deepStrictEqual(projectionQueries[0][1], ['default', 'account-1']);
   assert.ok(projectionQueries[0][0].includes('business.students') && projectionQueries[0][0].includes('business.student_contact_directory') && projectionQueries[0][0].includes('business.schedules'));
   assert.ok(projectionQueries[0][0].includes('business.question_taxonomy_systems') && projectionQueries[0][0].includes('business.question_taxonomy_nodes'));
   assert.ok(projectionQueries[0][0].includes("'status',o.attendance_status") && projectionQueries[0][0].includes('s.legacy_deleted=false'));
