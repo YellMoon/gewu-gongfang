@@ -68,6 +68,71 @@ async function main() {
     && source.includes("purpose: 'unified-online-registration'"),
   'registration must use the cloud verification ticket and device proof before saving an online session');
 
+  const resumedOfflineLease = { id: 'lease-resume-1' };
+  const resumeEvents = [];
+  let resumedSessionStored = null;
+  const resumedVaultStatus = {
+    state: 'unlocked', unlocked: true,
+    user: { id: 'user-resume-1', name: 'Resume User' },
+    deviceId: 'device-resume-1', authorizationId: 'authorization-resume-1', credentialVersion: 1,
+    activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-1',
+  };
+  const resumeClient = createDesktopIdentityClient({
+    now: () => new Date('2026-08-25T10:00:00.000Z'),
+    desktopIdentity: {
+      status: async () => ({ state: 'sealed' }),
+      resume: async () => resumedVaultStatus,
+      signChallenge: async input => {
+        resumeEvents.push({ action: 'sign', input });
+        return { signature: 'resume-signature-1' };
+      },
+      refreshOfflineLease: async input => {
+        resumeEvents.push({ action: 'refresh-offline-lease', input });
+      },
+    },
+    sessionStore: {
+      save: async value => { resumedSessionStored = value; },
+      clear: async () => {},
+    },
+    fetchImpl: async (url, options = {}) => {
+      resumeEvents.push({ action: 'request', url, body: options.body ? JSON.parse(options.body) : null });
+      if (url.endsWith('/api/desktop-identity/session/challenges/start')) {
+        return { ok: true, json: async () => ({ success: true, data: { challenge: {
+          id: 'session-challenge-resume-1', authorizationId: 'authorization-resume-1',
+          credentialVersion: 1, nonce: 'resume-nonce-1', nonceIssuedAt: '2026-08-25T10:00:00.000Z', rowVersion: 1,
+        } } }) };
+      }
+      return { ok: true, json: async () => ({ success: true, data: {
+        token: 'session-token-resume-1',
+        session: {
+          id: 'session-resume-1', userId: 'user-resume-1', deviceId: 'device-resume-1',
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-1',
+          expiresAt: '2026-08-25T11:00:00.000Z',
+        },
+        profile: {
+          userId: 'user-resume-1', user: { id: 'user-resume-1', name: 'Resume User' },
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-1',
+        },
+        offlineLease: resumedOfflineLease,
+      } }) };
+    },
+  });
+  const resumed = await resumeClient.resume({ baseUrl: 'https://cloud.test', online: true });
+  assert.strictEqual(resumed.gateState.kind, 'online-unlocked');
+  assert.strictEqual(resumedSessionStored.token, 'session-token-resume-1');
+  assert.deepStrictEqual(
+    resumeEvents.find(event => event.action === 'refresh-offline-lease').input,
+    { offlineLease: resumedOfflineLease },
+    'online resume must refresh the offline lease without an undefined legacy password',
+  );
+  assert.deepStrictEqual(
+    resumeEvents.filter(event => event.action === 'request').map(event => event.url),
+    [
+      'https://cloud.test/api/desktop-identity/session/challenges/start',
+      'https://cloud.test/api/desktop-identity/session/challenges/session-challenge-resume-1/exchange',
+    ],
+  );
+
   const unifiedCloudRequests = [];
   const unifiedCloudEvents = [];
   let unifiedCloudSealed = null;

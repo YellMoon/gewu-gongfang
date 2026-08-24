@@ -292,7 +292,7 @@ export function createDesktopIdentityClient({
     );
   }
 
-  async function saveIssuedSession({ issued, password, vaultStatus }) {
+  async function saveIssuedSession({ issued, vaultStatus }) {
     if (!issued.profile) throw identityError('DESKTOP_SESSION_PROFILE_REQUIRED');
     const profile = profileFrom({
       identity: issued.profile,
@@ -308,10 +308,7 @@ export function createDesktopIdentityClient({
     if (!desktopIdentity.refreshOfflineLease) {
       throw identityError('DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_UNAVAILABLE');
     }
-    await desktopIdentity.refreshOfflineLease({
-      password,
-      offlineLease: issued.offlineLease,
-    });
+    await desktopIdentity.refreshOfflineLease({ offlineLease: issued.offlineLease });
     await sessionStore.save(stored);
     return {
       ...stored,
@@ -341,7 +338,6 @@ export function createDesktopIdentityClient({
     }
     return saveIssuedSession({
       issued: await exchangeDirectSession(baseUrl, vaultStatus),
-      password,
       vaultStatus,
     });
   }
