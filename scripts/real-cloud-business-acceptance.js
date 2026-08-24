@@ -144,12 +144,20 @@ async function runOnlineRegistrationAcceptance({
   identity,
   baseUrl = PUBLIC_BASE_URL,
   randomUUID = crypto.randomUUID,
+  onRegistrationPrepared = () => {},
   onRegistrationPersisted = () => {},
 } = {}) {
-  if (typeof fetchImpl !== 'function' || baseUrl !== PUBLIC_BASE_URL || typeof onRegistrationPersisted !== 'function') {
+  if (typeof fetchImpl !== 'function' || baseUrl !== PUBLIC_BASE_URL
+    || typeof onRegistrationPrepared !== 'function' || typeof onRegistrationPersisted !== 'function') {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
   }
   const fixture = createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity, randomUUID);
+  const preparedCleanupFixture = Object.freeze({
+    sessionId: null,
+    installationId: fixture.body.installationId,
+    deviceId: fixture.deviceId,
+  });
+  onRegistrationPrepared(preparedCleanupFixture);
   const response = await fetchImpl(`${baseUrl}/api/desktop/online-registration`, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -167,8 +175,8 @@ async function runOnlineRegistrationAcceptance({
   }
   const cleanupFixture = Object.freeze({
     sessionId: payload.sessionId,
-    installationId: fixture.body.installationId,
-    deviceId: fixture.deviceId,
+    installationId: preparedCleanupFixture.installationId,
+    deviceId: preparedCleanupFixture.deviceId,
   });
   onRegistrationPersisted(cleanupFixture);
   const inspected = inspectSessionTokenWithRuntime(runtimeModules, ticketSecret, payload.sessionToken);
@@ -529,21 +537,24 @@ async function loadActiveSuperAdminSession(appPool, writerPool, operatorRecordsJ
 }
 
 async function revokeOnlineRegistrationAcceptance(writerPool, fixture) {
-  if (!fixture || typeof fixture.sessionId !== 'string' || !/^[A-Za-z0-9_-]{4,256}$/u.test(fixture.sessionId)
+  if (!fixture || (fixture.sessionId !== null && (typeof fixture.sessionId !== 'string' || !/^[A-Za-z0-9_-]{4,256}$/u.test(fixture.sessionId)))
     || typeof fixture.installationId !== 'string' || !/^acceptance-registration-[a-z0-9-]{4,36}$/u.test(fixture.installationId)
     || typeof fixture.deviceId !== 'string' || !/^desktop-device-[0-9a-f]{32}$/u.test(fixture.deviceId)) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
   }
   const result = await withOwnerTransaction(writerPool, 'REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_REVOKE_FAILED', async client => {
     const found = await client.query(
-      `SELECT authority_id,account_id,device_id,installation_id,link_id,status
+      `SELECT authority_id,account_id,device_id,installation_id,link_id,session_id,status
          FROM vnext_control_plane.vnext_sessions
-        WHERE session_id=$1 AND installation_id=$2 AND device_id=$3`,
-      [fixture.sessionId, fixture.installationId, fixture.deviceId],
+        WHERE installation_id=$1 AND device_id=$2 AND status='active'
+          AND ($3::text IS NULL OR session_id=$3)
+        ORDER BY created_at DESC LIMIT 2`,
+      [fixture.installationId, fixture.deviceId, fixture.sessionId],
     );
+    if (found.rows.length === 0 && fixture.sessionId === null) return [];
     if (found.rows.length !== 1 || found.rows[0].status !== 'active') throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_REVOKE_FAILED');
     const row = found.rows[0];
-    const session = await client.query(`UPDATE vnext_control_plane.vnext_sessions SET status='revoked',revoked_at=transaction_timestamp(),updated_at=transaction_timestamp(),row_version=row_version+1 WHERE session_id=$1 AND status='active' RETURNING status`, [fixture.sessionId]);
+    const session = await client.query(`UPDATE vnext_control_plane.vnext_sessions SET status='revoked',revoked_at=transaction_timestamp(),updated_at=transaction_timestamp(),row_version=row_version+1 WHERE session_id=$1 AND status='active' RETURNING status`, [row.session_id]);
     const link = await client.query(`UPDATE vnext_control_plane.vnext_account_device_links SET status='revoked',revoked_at=transaction_timestamp(),auth_version=auth_version+1,access_version=access_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND link_id=$2 AND installation_id=$3 AND status='active' RETURNING status`, [row.authority_id, row.link_id, fixture.installationId]);
     const installation = await client.query(`UPDATE vnext_control_plane.vnext_device_installations SET status='revoked',revoked_at=transaction_timestamp(),credential_version=credential_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND installation_id=$2 AND device_id=$3 AND status='active' RETURNING status`, [row.authority_id, fixture.installationId, fixture.deviceId]);
     const device = await client.query(`UPDATE vnext_control_plane.vnext_trusted_devices SET status='revoked',revoked_at=transaction_timestamp(),credential_version=credential_version+1,risk_version=risk_version+1,row_version=row_version+1,updated_at=transaction_timestamp() WHERE authority_id=$1 AND device_id=$2 AND status='active' RETURNING status`, [row.authority_id, fixture.deviceId]);
@@ -842,6 +853,7 @@ async function runFromEnvironment(env = process.env) {
           ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET,
           identity: loaded.identity,
           baseUrl: PUBLIC_BASE_URL,
+          onRegistrationPrepared: fixture => { onlineRegistrationFixture = fixture; },
           onRegistrationPersisted: fixture => { onlineRegistrationFixture = fixture; },
         });
         const sessionToken = onlineRegistration.sessionToken;

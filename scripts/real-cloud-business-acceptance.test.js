@@ -389,7 +389,7 @@ async function onlineRegistrationFixtureIsRevoked() {
   const client = {
     async query(text, values) {
       calls.push([text, values]);
-      if (text.includes('SELECT authority_id')) return { rows: [{ authority_id: 'authority-1', account_id: 'canonical-admin', device_id: `desktop-device-${'a'.repeat(32)}`, installation_id: 'acceptance-registration-fixed', link_id: 'link-fixed', status: 'active' }] };
+      if (text.includes('SELECT authority_id')) return { rows: [{ authority_id: 'authority-1', account_id: 'canonical-admin', device_id: `desktop-device-${'a'.repeat(32)}`, installation_id: 'acceptance-registration-fixed', link_id: 'link-fixed', session_id: 'session-online-fixed', status: 'active' }] };
       return { rows: [{ status: 'revoked' }] };
     },
     release() {},
@@ -401,6 +401,25 @@ async function onlineRegistrationFixtureIsRevoked() {
   assert.ok(calls.some(([text]) => text.includes('vnext_account_device_links')));
   assert.ok(calls.some(([text]) => text.includes('vnext_device_installations')));
   assert.ok(calls.some(([text]) => text.includes('vnext_trusted_devices')));
+}
+
+async function preparedOnlineRegistrationCleanupIsSafeBeforePersistence() {
+  const calls = [];
+  const client = {
+    async query(text, values) {
+      calls.push([text, values]);
+      if (text.includes('SELECT authority_id')) return { rows: [] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = { async connect() { return client; } };
+  assert.strictEqual(await revokeOnlineRegistrationAcceptance(pool, {
+    sessionId: null, installationId: 'acceptance-registration-fixed', deviceId: `desktop-device-${'a'.repeat(32)}`,
+  }), true);
+  const selectCall = calls.find(([text]) => text.includes('SELECT authority_id'));
+  assert.deepStrictEqual(selectCall[1], ['acceptance-registration-fixed', `desktop-device-${'a'.repeat(32)}`, null]);
+  assert.ok(!calls.some(([text]) => text.includes(' SET status=')), 'an unpersisted registration must be a cleanup no-op');
 }
 
 async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
@@ -452,6 +471,32 @@ async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
   assert.match(cleanupFixture.deviceId, /^desktop-device-[0-9a-f]{32}$/u);
 }
 
+async function onlineRegistrationCleanupHandlePrecedesPayloadValidation() {
+  const runtimeModules = resolveRuntimeModules(__dirname, candidate => candidate.includes('/cloud-business-api/'));
+  const ticketSecret = 'registration-malformed-secret'.repeat(2);
+  const identity = { authorityId: 'authority-1', accountId: 'canonical-admin', phoneHmac: 'd'.repeat(64) };
+  let cleanupFixture = null;
+
+  await assert.rejects(
+    runOnlineRegistrationAcceptance({
+      fetchImpl: async () => response(200, { ok: true, receiptId: 'receipt-without-session' }),
+      runtimeModules,
+      ticketSecret,
+      identity,
+      baseUrl: 'https://physicsedu.xyz/scheduling',
+      randomUUID: () => 'fixed-malformed',
+      onRegistrationPrepared: fixture => { cleanupFixture = fixture; },
+    }),
+    error => error.code === 'REAL_CLOUD_ACCEPTANCE_ONLINE_REGISTRATION_FAILED',
+  );
+  assert.deepStrictEqual(cleanupFixture, {
+    sessionId: null,
+    installationId: 'acceptance-registration-fixed-malformed',
+    deviceId: cleanupFixture.deviceId,
+  });
+  assert.match(cleanupFixture.deviceId, /^desktop-device-[0-9a-f]{32}$/u);
+}
+
 async function operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated() {
   const calls = [];
   const client = {
@@ -495,8 +540,10 @@ Promise.resolve()
   .then(operatorIdentityIsResolvedWithoutPhonePlaintext)
   .then(operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated)
   .then(onlineRegistrationIsRealAndTokenFreeInEvidence)
+  .then(onlineRegistrationCleanupHandlePrecedesPayloadValidation)
   .then(onlineRegistrationCleanupHandleSurvivesContextFailure)
   .then(onlineRegistrationFixtureIsRevoked)
+  .then(preparedOnlineRegistrationCleanupIsSafeBeforePersistence)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
   .then(() => console.log('real cloud business acceptance checks passed'));
