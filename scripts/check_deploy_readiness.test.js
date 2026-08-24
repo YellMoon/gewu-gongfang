@@ -32,20 +32,12 @@ assert.ok(source.includes('https://physicsedu.xyz/scheduling'), 'deploy readines
 assert.ok(source.includes('npm run miniapp:release-check'), 'deploy readiness should mention miniapp release check command');
 assert.ok(source.includes("require('dotenv')"), 'deploy readiness should load environment files itself');
 assert.ok(source.includes('.env.local'), 'deploy readiness should load the project .env.local file');
-assert.strictEqual(
-  source.includes('openType="getPhoneNumber"'),
-  false,
-  'deploy readiness must reject the retired automatic WeChat phone path'
-);
-assert.ok(
-  source.includes('phone-input'),
-  'deploy readiness must require the manual-phone confirmation field'
-);
+assert.ok(source.includes('getPhoneNumber'), 'cloud desktop registration must use WeChat phone proof');
 
 for (const key of [
   'cloudUnifiedDesktopRegistration',
   'desktopOfflineDraftConfirmation',
-  'miniappDesktopAuthorization',
+  'miniappDesktopOnlineRegistration',
   'desktopIdentityGate',
 ]) {
   assert.ok(source.includes(key), `deploy readiness should expose identity evidence: ${key}`);

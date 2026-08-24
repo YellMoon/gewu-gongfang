@@ -24,18 +24,6 @@ const pageInventory = [
     files: ['src/pages/login/privacy.tsx', 'src/pages/login/privacy.scss'],
   },
   {
-    route: 'pages/desktop-authorization/index',
-    title: '微信手机号确认电脑设备',
-    registered: true,
-    roleViews: ['guest'],
-    surface: 'public-device-identity',
-    visualStatus: 'optimized',
-    verificationStates: ['loading', 'phone-required', 'manual-phone-entry', 'manual-phone-invalid', 'approval-pending', 'approved', 'host-bootstrap', 'host-transfer', 'host-recovery', 'operation-confirmed', 'expired', 'identity-conflict', 'owner-conflict', 'network-error'],
-    realFeatureBasis: ['desktopAuthorizationApi.read', 'desktopAuthorizationApi.confirm', 'Input(type=number)', 'Taro.login fresh code', 'desktop identity public challenge projection'],
-    screenshotRequired: true,
-    files: ['src/pages/desktop-authorization/index.tsx', 'src/pages/desktop-authorization/index.scss'],
-  },
-  {
     route: 'pages/desktop-online-registration/index',
     title: '\u5728\u7ebf\u7535\u8111\u767b\u8bb0',
     registered: true,

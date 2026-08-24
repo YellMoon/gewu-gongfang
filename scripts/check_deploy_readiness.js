@@ -80,15 +80,15 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: 'miniappDesktopAuthorization',
+    key: 'miniappDesktopOnlineRegistration',
     files: Object.freeze([
       Object.freeze({ path: 'miniapp/src/app.config.ts', markers: Object.freeze([
-        'pages/desktop-authorization/index',
+        'pages/desktop-online-registration/index',
       ]) }),
-      Object.freeze({ path: 'miniapp/src/pages/desktop-authorization/index.tsx', markers: Object.freeze([
-        'phone-input',
-        'desktopAuthorizationApi.confirm',
-        'operation-confirmed',
+      Object.freeze({ path: 'miniapp/src/pages/desktop-online-registration/index.tsx', markers: Object.freeze([
+        'Taro.scanCode',
+        "openType=\"getPhoneNumber\"",
+        "'/api/desktop/pairing/confirm'",
       ]) }),
     ]),
   }),
@@ -209,57 +209,6 @@ function checkUnifiedDesktopRegistration() {
       status: found ? 'present' : 'missing',
     });
   });
-  return Object.freeze({ evidence: Object.freeze(evidence), issues: Object.freeze(issues) });
-}
-
-function checkDesktopPasswordReset() {
-  const issues = [];
-  const required = [
-    ['backend/src/services/desktopIdentityService.js', "'password_reset'"],
-    ['backend/src/services/desktopIdentityService.js', 'DESKTOP_PASSWORD_RESET_IDENTITY_MISMATCH'],
-    ['backend/src/services/desktopIdentityService.js', 'desktop_device_password_reset_exchanged'],
-    ['public/desktopIdentityVault.js', 'beginPasswordReset'],
-    ['public/desktopIdentityVault.js', 'completePasswordReset'],
-    ['public/preload.js', 'desktop-identity:begin-password-reset'],
-    ['public/electron.js', 'desktop-identity:complete-password-reset'],
-    ['src/services/desktopIdentityClient.mjs', 'beginPasswordReset'],
-    ['src/components/DesktopIdentityGate.tsx', "pending?.challenge?.purpose === 'password_reset'"],
-    ['src/pages/IdentityDeviceCenter.tsx', "row.purpose === 'password_reset'"],
-    ['miniapp/src/utils/desktopAuthorizationRuntime.js', "'password_reset'"],
-  ];
-  const evidence = required.map(([file, marker]) => {
-    let found = false;
-    try {
-      found = readText(file).includes(marker);
-    } catch (_error) { /* reported below */ }
-    if (!found) issues.push(`${file} missing ${marker}`);
-    return Object.freeze({ key: `${file}:${marker}`, status: found ? 'present' : 'missing' });
-  });
-  const resetSources = required.map(([file]) => file)
-    .filter((file, index, files) => files.indexOf(file) === index)
-    .map(readText)
-    .join('\n');
-  for (const forbidden of [
-    'recoverPlaintextPassword',
-    'plaintextPasswordStore',
-    'passwordHistoryStore',
-  ]) {
-    if (resetSources.includes(forbidden)) {
-      issues.push(`desktop password reset source contains forbidden plaintext recovery marker: ${forbidden}`);
-    }
-  }
-  const buildDir = path.join(process.cwd(), 'build', 'static', 'js');
-  if (!fs.existsSync(buildDir)) {
-    issues.push('desktop build/static/js is missing for password reset gate');
-  } else {
-    const aggregate = fs.readdirSync(buildDir)
-      .filter(name => name.endsWith('.js') && !name.endsWith('.js.map'))
-      .map(name => fs.readFileSync(path.join(buildDir, name), 'utf8'))
-      .join('\n');
-    for (const marker of ['beginPasswordReset', 'password_reset']) {
-      if (!aggregate.includes(marker)) issues.push(`desktop build is missing password reset marker: ${marker}`);
-    }
-  }
   return Object.freeze({ evidence: Object.freeze(evidence), issues: Object.freeze(issues) });
 }
 

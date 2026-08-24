@@ -2,7 +2,6 @@ export default defineAppConfig({
   pages: [
     'pages/login/index',
     'pages/login/privacy',
-    'pages/desktop-authorization/index',
     'pages/desktop-online-registration/index',
     'pages/index/index',
     'pages/forbidden/index',

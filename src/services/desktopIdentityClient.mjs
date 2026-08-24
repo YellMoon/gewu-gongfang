@@ -194,20 +194,6 @@ export function isDesktopIdentityNetworkFailure(error) {
     ].includes(causeCode);
 }
 
-export function registrationViewForChallenge(challenge = {}) {
-  const map = {
-    pending_phone: 'phone-verification-required',
-    identity_verified_pending_approval: 'approval-pending',
-    approved_pending_exchange: 'password-setup-required',
-    rejected: 'registration-rejected',
-    expired: 'registration-expired',
-    cancelled: 'registration-rejected',
-    conflict: 'registration-rejected',
-    exchanged: 'registration-complete',
-  };
-  return { kind: map[challenge.status] || 'registration-pending', challenge };
-}
-
 async function responseData(response) {
   let payload;
   try {
@@ -271,23 +257,6 @@ export function createDesktopIdentityClient({
     const date = current instanceof Date ? new Date(current) : new Date(current);
     if (!Number.isFinite(date.getTime())) throw identityError('DESKTOP_IDENTITY_CLOCK_INVALID');
     return date;
-  }
-
-  async function pollRegistration(pending) {
-    if (!pending?.challenge?.id || !pending?.challengeSecret) {
-      throw identityError('DESKTOP_REGISTRATION_CONTEXT_REQUIRED');
-    }
-    const data = await request(
-      fetchImpl,
-      pending.baseUrl,
-      `/api/desktop-identity/challenges/${encodeURIComponent(pending.challenge.id)}`
-    );
-    return {
-      ...pending,
-      challenge: data.challenge,
-      qrValue: data.challenge?.qrValue || pending.qrValue || null,
-      qrImageDataUrl: data.challenge?.qrImageDataUrl || pending.qrImageDataUrl || null,
-    };
   }
 
   async function exchangeDirectSession(baseUrl, vaultStatus) {
@@ -1084,7 +1053,6 @@ export function createDesktopIdentityClient({
     listCloudQuestions,
     listCloudSchedules,
     lock,
-    pollRegistration,
     pollUnifiedOnlineRegistration,
     registerUnifiedDesktopOnline,
     status: () => desktopIdentity.status(),

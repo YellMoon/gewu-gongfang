@@ -41,7 +41,6 @@ declare module './services/desktopIdentityClient.mjs' {
   export const isDesktopIdentityNetworkFailure: any;
   export const partitionKeyForIdentity: any;
   export const preferredActiveRole: any;
-  export const registrationViewForChallenge: any;
   export const resolveDesktopGateState: any;
 }
 declare module './services/desktopCacheProjection.mjs' {

@@ -1,9 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const {
-  activationReceiptSigningPayload,
-} = require('../backend/src/services/deviceActivationService');
 const { validateEnvelope, stableJson } = require('../shared/authorityProtocol');
 const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
 const { createSignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
@@ -407,24 +404,6 @@ function desktopDeviceSessionSigningPayload({
   ].join('\n');
 }
 
-function desktopExchangeSigningPayload({ challengeId, deviceId, rowVersion, challengeSecret } = {}) {
-  const normalizedChallengeId = stringField(
-    challengeId,
-    'DESKTOP_EXCHANGE_PAYLOAD_INVALID',
-    128
-  );
-  const normalizedDeviceId = stringField(deviceId, 'DESKTOP_EXCHANGE_PAYLOAD_INVALID', 128);
-  const version = safeInteger(rowVersion, 'DESKTOP_EXCHANGE_PAYLOAD_INVALID');
-  const secret = stringField(challengeSecret, 'DESKTOP_EXCHANGE_PAYLOAD_INVALID', 2048);
-  return [
-    'gewu-desktop-exchange-v1',
-    normalizedChallengeId,
-    normalizedDeviceId,
-    String(version),
-    sha256(secret),
-  ].join('\n');
-}
-
 function desktopRoleElevationSigningPayload({
   sessionId,
   deviceId,
@@ -773,9 +752,7 @@ function createDesktopIdentityVault({
   function status() {
     if (unlockedSecret) return presentUnlocked();
     if (pendingRegistration) {
-      const state = pendingRegistration.purpose === 'password_reset'
-        ? 'password_reset_pending'
-        : pendingRegistration.purpose === 'unified_online_recovery'
+      const state = pendingRegistration.purpose === 'unified_online_recovery'
           ? 'unified_online_recovery_pending'
         : 'registration_pending';
       return presentPublicState(state, pendingRegistration.publicIdentity);
@@ -810,14 +787,9 @@ function createDesktopIdentityVault({
   }
 
   function signingSource(purpose) {
-    if (purpose === 'exchange' || purpose === 'unified-online-registration') {
+    if (purpose === 'unified-online-registration') {
       if (!pendingRegistration) throw vaultError('DESKTOP_IDENTITY_REGISTRATION_NOT_PENDING');
       return pendingRegistration;
-    }
-    if (purpose === 'activation-finalize') {
-      if (pendingRegistration) return pendingRegistration;
-      if (unlockedSecret) return unlockedSecret;
-      throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
     }
     if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
     return unlockedSecret;
@@ -825,28 +797,15 @@ function createDesktopIdentityVault({
 
   function signChallenge(input = {}) {
     const purpose = String(input.purpose || '').trim();
-    if (!['exchange', 'unified-online-registration', 'activation-finalize', 'session', 'role-elevation'].includes(purpose)) {
+    if (!['unified-online-registration', 'session', 'role-elevation'].includes(purpose)) {
       throw vaultError('DESKTOP_IDENTITY_SIGNING_PURPOSE_INVALID');
     }
     const source = signingSource(purpose);
     const publicIdentity = source.publicIdentity;
     let payload;
     let responseExtra = {};
-    if (purpose === 'exchange') {
-      payload = desktopExchangeSigningPayload({
-        challengeId: input.challengeId,
-        deviceId: publicIdentity.deviceId,
-        rowVersion: input.rowVersion,
-        challengeSecret: input.challengeSecret,
-      });
-    } else if (purpose === 'unified-online-registration') {
+    if (purpose === 'unified-online-registration') {
       payload = stringField(input.challenge, 'DESKTOP_UNIFIED_ONLINE_REGISTRATION_CHALLENGE_INVALID', 4096);
-    } else if (purpose === 'activation-finalize') {
-      payload = activationReceiptSigningPayload({
-        activationId: input.activationId,
-        packageHash: input.packageHash,
-      });
-      responseExtra = { activationId: String(input.activationId || '').trim() };
     } else if (purpose === 'session') {
       const authorizationId = unlockedSecret.authorization.id;
       if (input.authorizationId && input.authorizationId !== authorizationId) {

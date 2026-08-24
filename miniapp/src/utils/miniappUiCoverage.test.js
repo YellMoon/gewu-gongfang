@@ -205,12 +205,14 @@ assert.ok(coveredRoles.has('admin'), 'miniapp UI inventory must cover admin UI')
 assert.ok(coveredRoles.has('student'), 'miniapp UI inventory must cover student UI');
 assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/guest UI');
 
-const desktopAuthorizationEntry = pageInventory.find(entry => entry.route === 'pages/desktop-authorization/index');
-assert.ok(desktopAuthorizationEntry?.roleViews.includes('guest'), 'desktop authorization must be a public guest entry');
-assert.ok(!desktopAuthorizationEntry?.roleViews.some(role => role.startsWith('review-')), 'review identities must not become desktop claimants');
-assert.ok(desktopAuthorizationEntry?.verificationStates.includes('manual-phone-entry'), 'desktop authorization must cover manual phone entry');
-assert.ok(desktopAuthorizationEntry?.verificationStates.includes('manual-phone-invalid'), 'desktop authorization must cover invalid manual phone input');
-assert.ok(desktopAuthorizationEntry?.verificationStates.includes('operation-confirmed'), 'desktop authorization must cover completed high-risk host verification');
+const desktopRegistrationEntry = pageInventory.find(entry => entry.route === 'pages/desktop-online-registration/index');
+assert.ok(desktopRegistrationEntry?.roleViews.includes('guest'), 'online desktop registration must be a public guest entry');
+assert.ok(desktopRegistrationEntry?.verificationStates.includes('cloud-confirmed'), 'online desktop registration must cover cloud confirmation');
+assert.strictEqual(
+  pageInventory.some(entry => entry.route === 'pages/desktop-authorization/index'),
+  false,
+  'retired manual desktop authorization must not remain in the UI inventory',
+);
 
 const uiFilesToScan = [
   'src/app.tsx',

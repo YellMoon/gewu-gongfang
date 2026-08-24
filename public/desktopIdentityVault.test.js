@@ -5,17 +5,11 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const {
-  desktopExchangeSigningPayload,
-} = require('../backend/src/services/desktopIdentityService');
-const {
   desktopRoleElevationSigningPayload,
 } = require('../backend/src/services/desktopSessionService');
 const {
   desktopDeviceSessionSigningPayload,
 } = require('../backend/src/services/desktopDeviceChallengeService');
-const {
-  activationReceiptSigningPayload,
-} = require('../backend/src/services/deviceActivationService');
 const {
   PHYSICAL_CONFIRMATION,
   verifyPrimaryHostLocalReceiptSignature,
@@ -214,38 +208,6 @@ async function main() {
     'publicKey',
   ]);
 
-  const exchange = vault.signChallenge({
-    purpose: 'exchange',
-    challengeId: 'challenge-device-2',
-    rowVersion: 4,
-    challengeSecret: 'one-time-exchange-secret',
-  });
-  assert.strictEqual(exchange.purpose, 'exchange');
-  assert.strictEqual(exchange.deviceId, publicIdentity.deviceId);
-  assert.ok(verifySignature(
-    publicIdentity.publicKey,
-    desktopExchangeSigningPayload({
-      challengeId: 'challenge-device-2',
-      deviceId: publicIdentity.deviceId,
-      rowVersion: 4,
-      challengeSecret: 'one-time-exchange-secret',
-    }),
-    exchange.signature
-  ));
-  const activationFinalize = vault.signChallenge({
-    purpose: 'activation-finalize',
-    activationId: 'activation-device-2',
-    packageHash: 'a'.repeat(64),
-  });
-  assert.strictEqual(activationFinalize.purpose, 'activation-finalize');
-  assert.ok(verifySignature(
-    publicIdentity.publicKey,
-    activationReceiptSigningPayload({
-      activationId: 'activation-device-2',
-      packageHash: 'a'.repeat(64),
-    }),
-    activationFinalize.signature
-  ));
   const cloudRegistrationProof = vault.signChallenge({
     purpose: 'unified-online-registration',
     challenge: 'cloud-once-device-proof-2',
@@ -393,25 +355,10 @@ async function main() {
     }),
     authorityProjection
   );
-  const sealedActivationFinalize = vault.signChallenge({
-    purpose: 'activation-finalize',
-    activationId: 'activation-device-2',
-    packageHash: 'b'.repeat(64),
-  });
-  assert.ok(verifySignature(
-    publicIdentity.publicKey,
-    activationReceiptSigningPayload({
-      activationId: 'activation-device-2',
-      packageHash: 'b'.repeat(64),
-    }),
-    sealedActivationFinalize.signature
-  ), 'a sealed local vault must retain the device key needed to finalize activation');
-
   const rawFile = fs.readFileSync(filePath);
   const rawText = rawFile.toString('utf8');
   for (const secret of [
     'local-password-1',
-    'one-time-exchange-secret',
     'BEGIN PRIVATE KEY',
     'short-session-token',
   ]) {

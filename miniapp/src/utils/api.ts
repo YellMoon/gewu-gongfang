@@ -30,14 +30,8 @@ const DEFAULT_CLOUD_BUSINESS_BASE_URL = (typeof __CLOUD_BUSINESS_API_BASE_URL__ 
 const RETRY_COUNT = 1;
 const REQUEST_TIMEOUT = 30000;
 const AUTHENTICATION_ENTRY_PATHS = new Set(['/api/auth/login', '/api/auth/wechat-login', '/api/miniapp/cloud-login']);
-const DESKTOP_AUTHORIZATION_ENTRY_PATH = /^\/api\/desktop-identity\/challenges\/[A-Za-z0-9_-]{16,128}\/(?:public|confirm)$/;
-
-function isDesktopAuthorizationEntryPath(path: string): boolean {
-  return DESKTOP_AUTHORIZATION_ENTRY_PATH.test(path);
-}
-
 export function isAuthenticationEntryPath(path: string): boolean {
-  return AUTHENTICATION_ENTRY_PATHS.has(path) || isDesktopAuthorizationEntryPath(path);
+  return AUTHENTICATION_ENTRY_PATHS.has(path);
 }
 
 function getBaseUrl(): string {
@@ -133,7 +127,7 @@ class ApiClient {
   ): Promise<ApiResponse<T>> {
     const url = this.buildUrl(path, method);
     const authenticationEntry = isAuthenticationEntryPath(path);
-    const anonymousEntry = isDesktopAuthorizationEntryPath(path);
+    const anonymousEntry = authenticationEntry;
     const sessionOptions = authenticationEntry ? { allowInvalidated: true } : undefined;
     const requestBinding = authSessionRuntime.capture();
     const responseCoordinator = createApiResponseCoordinator({
@@ -450,16 +444,6 @@ export const authApi = {
     api.post<{ token: string; user: any }>('/api/auth/login', data),
   refresh: (token: string) =>
     api.post<{ token: string }>('/api/auth/refresh', { token }),
-};
-
-export const desktopAuthorizationApi = {
-  read: (challengeId: string) =>
-    api.get<any>(`/api/desktop-identity/challenges/${encodeURIComponent(challengeId)}/public`),
-  confirm: (payload: { challengeId: string; code: string; phone: string; expectedRowVersion: number }) =>
-    api.post<any>(
-      `/api/desktop-identity/challenges/${encodeURIComponent(payload.challengeId)}/confirm`,
-      { code: payload.code, phone: payload.phone, expectedRowVersion: payload.expectedRowVersion },
-    ),
 };
 
 // ========== 模块/权限 API ==========

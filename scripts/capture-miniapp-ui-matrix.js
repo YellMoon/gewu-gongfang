@@ -151,7 +151,6 @@ function sha256(file) {
 }
 
 function launchRoute(scenario) {
-  if (scenario.route === 'pages/desktop-authorization/index') return `${scenario.route}?challengeId=fixture-challenge-1234`;
   if (scenario.route === 'pages/schedule/detail/index') return `${scenario.route}?id=missing-fixture-schedule`;
   if (scenario.route === 'pages/student-detail/index') return `${scenario.route}?id=missing-fixture-student`;
   return scenario.route;

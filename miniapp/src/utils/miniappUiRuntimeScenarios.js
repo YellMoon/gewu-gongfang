@@ -19,8 +19,6 @@ function scenario(id, route, roleView, identity, state, expectedText, categories
 const runtimeScenarios = Object.freeze([
   scenario('login-guest', 'pages/login/index', 'guest', 'guest', 'cloud-login', '首次登录', ['guest']),
   scenario('privacy-guest', 'pages/login/privacy', 'guest', 'guest', 'privacy-content', '隐私保护指引', ['guest']),
-  scenario('desktop-auth-phone', 'pages/desktop-authorization/index', 'guest', 'guest', 'phone-required', '请输入手机号', ['guest'], 'desktop-phone'),
-  scenario('desktop-auth-network', 'pages/desktop-authorization/index', 'guest', 'guest', 'network-error', '服务器错误 (503)', ['guest', 'offline'], 'desktop-offline'),
   scenario('desktop-registration-guest', 'pages/desktop-online-registration/index', 'guest', 'guest', 'scan-code', '扫描电脑二维码', ['guest']),
   scenario('home-super-admin', 'pages/index/index', 'super_admin', 'super_admin', 'admin-dashboard', '运营面板', ['admin-path']),
   scenario('home-student', 'pages/index/index', 'student', 'student', 'student-dashboard', '学习面板', ['student-path']),

@@ -26,7 +26,6 @@ import {
   createDesktopIdentityClient,
   desktopIdentityExpiryDelay,
   isDesktopIdentityNetworkFailure,
-  registrationViewForChallenge,
   resolveDesktopGateState,
 } from '../services/desktopIdentityClient.mjs';
 import {
@@ -294,12 +293,10 @@ const DesktopIdentityGate: React.FC = () => {
           setGateState({ kind: 'upgrade-required' });
           return;
         }
-        if (['registration_pending', 'password_reset_pending', 'unified_online_recovery_pending'].includes(vaultStatus.state)) {
+        if (['registration_pending', 'unified_online_recovery_pending'].includes(vaultStatus.state)) {
           setGateState({ kind: vaultStatus.state === 'unified_online_recovery_pending'
             ? 'registration-interrupted'
-            : vaultStatus.state === 'password_reset_pending'
-              ? 'password-reset-interrupted'
-              : 'registration-interrupted' });
+            : 'registration-interrupted' });
           return;
         }
         if (vaultStatus.state === 'sealed') {
@@ -335,9 +332,7 @@ const DesktopIdentityGate: React.FC = () => {
     pollingFlowRef.current = flowId;
     setPolling(true);
     try {
-      const next = pending?.pairingId
-        ? await clientRef.current.pollUnifiedOnlineRegistration(pending)
-        : await clientRef.current.pollRegistration(pending);
+      const next = await clientRef.current.pollUnifiedOnlineRegistration(pending);
       if (registrationFlowRef.current === flowId) {
         setPending(next);
         setError('');
@@ -351,14 +346,11 @@ const DesktopIdentityGate: React.FC = () => {
   }, [pending]);
 
   useEffect(() => {
-    const status = pending?.pairingId ? pending?.status : pending?.challenge?.status;
-    const waitingForVerification = pending?.pairingId
-      ? status === 'awaiting_online_verification'
-      : status === 'pending_phone';
+    const waitingForVerification = pending?.status === 'awaiting_online_verification';
     if (!waitingForVerification) return undefined;
     const timer = window.setInterval(() => { void pollRegistration(); }, 3000);
     return () => window.clearInterval(timer);
-  }, [pending?.pairingId, pending?.status, pending?.challenge?.status, pollRegistration]);
+  }, [pending?.status, pollRegistration]);
 
   useEffect(() => {
     const remaining = desktopIdentityExpiryDelay(gateState, new Date());
