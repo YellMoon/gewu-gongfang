@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PUBLIC_BASE_URL = 'https://physicsedu.xyz/scheduling';
+const LOCAL_BASE_URL = 'http://127.0.0.1:3002';
 const MARKER_PATTERN = /^codex-e2e-[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9]{4,32}$/;
 
 function acceptanceFailure(code, details) {
@@ -63,6 +64,44 @@ function makeSessionToken(secret, session) {
   }), 'utf8').toString('base64url');
   const signature = crypto.createHmac('sha256', secret).update(encoded, 'utf8').digest('base64url');
   return `${encoded}.${signature}`;
+}
+
+function inspectSessionTokenWithRuntime(runtimeModules, secret, sessionToken) {
+  const modulePath = path.join(path.dirname(runtimeModules.packagePath), 'src', 'desktopRegistrationService');
+  const { createCloudDesktopRegistrationService } = require(modulePath);
+  const service = createCloudDesktopRegistrationService({
+    now: () => new Date(),
+    randomId: prefix => `${prefix}-acceptance`,
+    phoneVerifier: async () => '13700000000',
+    lookupAccount: async () => ({ authorityId: 'unused', accountId: 'unused', phoneHmac: null }),
+    ticketSecret: secret,
+    leasePrivateKey: crypto.generateKeyPairSync('ed25519').privateKey,
+    issueAssertion: async () => {},
+    register: async () => null,
+    readSessionContext: async () => null,
+  });
+  return service.inspectSessionToken(sessionToken);
+}
+
+function pidOneEnvironmentMatches(name, expected, readFileSync = fs.readFileSync) {
+  if (!/^[A-Z0-9_]+$/.test(name) || typeof expected !== 'string') return false;
+  const entries = String(readFileSync('/proc/1/environ')).split('\0');
+  const prefix = `${name}=`;
+  const matches = entries.filter(entry => entry.startsWith(prefix));
+  return matches.length === 1 && matches[0].slice(prefix.length) === expected;
+}
+
+async function verifyDesktopProjectionSources(pool) {
+  const tables = [
+    'students', 'student_contact_directory', 'teachers', 'courses', 'course_student_pricings', 'schedules',
+    'schedule_student_overrides', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions',
+    'personal_asset_records', 'personal_asset_manual_records', 'personal_asset_categories',
+    'personal_asset_manual_categories', 'question_taxonomy_systems', 'question_taxonomy_nodes',
+  ];
+  for (const table of tables) {
+    await runStage(`REAL_CLOUD_ACCEPTANCE_PROJECTION_SOURCE_${table.toUpperCase()}_FAILED`, () => pool.query(`SELECT to_jsonb(source) FROM business.${table} source LIMIT 1`));
+  }
+  return true;
 }
 
 function makeMarker(version, randomUUID) {
@@ -154,8 +193,9 @@ async function runPublicAcceptance({
 
     const firstProjection = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_ACCEPTANCE_READ_FAILED');
     const createdRecord = institutionFromProjection(firstProjection.body, marker);
-    if (!createdRecord || observedTimestamp(createdRecord) !== originalUpdatedAt) {
-      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_READ_BACK_FAILED');
+    if (!createdRecord) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_READ_BACK_MISSING');
+    if (Date.parse(observedTimestamp(createdRecord)) !== Date.parse(originalUpdatedAt)) {
+      throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_READ_BACK_TIMESTAMP_MISMATCH');
     }
 
     await sleep(20);
@@ -422,7 +462,7 @@ async function createControlledAcceptanceSession(appPool, accountIds, randomUUID
        session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,issued_at,expires_at,revoked_at,
        account_auth_version,account_access_version,account_revocation_version,device_credential_version,device_risk_version,
        installation_credential_version,link_auth_version,link_access_version,link_row_version,row_version,created_at,updated_at
-      ) VALUES($1,$2,$3,$4,$5,$6,'online','active',transaction_timestamp(),transaction_timestamp()+interval '10 minutes',NULL,
+      ) VALUES($1,$2,$3,$4,$5,$6,'online','active',transaction_timestamp(),date_trunc('milliseconds',transaction_timestamp())+interval '10 minutes',NULL,
         $7,$8,$9,$10,$11,$12,$13,$14,$15,1,transaction_timestamp(),transaction_timestamp())
       RETURNING authority_id AS "authorityId",account_id AS "accountId",device_id AS "deviceId",
                 installation_id AS "installationId",session_id AS "sessionId",expires_at AS "expiresAt"`,
@@ -499,7 +539,26 @@ async function runFromEnvironment(env = process.env) {
         await ensureBusinessSuperAdmin(appPool, loaded.identity);
         const session = loaded.session || await createControlledAcceptanceSession(writerPool, loaded.accountIds);
         if (!loaded.session) controlledSession = session;
+        if (!pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', env.CLOUD_IDENTITY_TICKET_SECRET)) {
+          throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SERVER_ENVIRONMENT_MISMATCH');
+        }
         const sessionToken = makeSessionToken(env.CLOUD_IDENTITY_TICKET_SECRET, session);
+        const inspectedTicket = inspectSessionTokenWithRuntime(runtimeModules, env.CLOUD_IDENTITY_TICKET_SECRET, sessionToken);
+        if (inspectedTicket.authorityId !== session.authorityId || inspectedTicket.accountId !== session.accountId
+          || inspectedTicket.deviceId !== session.deviceId || inspectedTicket.installationId !== session.installationId
+          || inspectedTicket.sessionId !== session.sessionId) {
+          throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SESSION_TOKEN_SELF_CHECK_FAILED');
+        }
+        await verifyDesktopProjectionSources(appPool);
+        const localSessionCheck = await requestJson(fetch, sessionToken, `${LOCAL_BASE_URL}/api/desktop/session-context`);
+        if (localSessionCheck.status !== 200 || localSessionCheck.body?.ok !== true || !Array.isArray(localSessionCheck.body?.roles)
+          || !localSessionCheck.body.roles.includes('super_admin')) {
+          throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_LOCAL_SESSION_CONTEXT_FAILED', {
+            status: localSessionCheck.status,
+            responseCode: localSessionCheck.body?.code || null,
+            roles: Array.isArray(localSessionCheck.body?.roles) ? localSessionCheck.body.roles.filter(role => typeof role === 'string') : [],
+          });
+        }
         const sessionCheck = await requestJson(fetch, sessionToken, `${PUBLIC_BASE_URL}/api/desktop/session-context`);
         if (sessionCheck.status !== 200 || sessionCheck.body?.ok !== true || !Array.isArray(sessionCheck.body?.roles)
           || !sessionCheck.body.roles.includes('super_admin')) {
@@ -526,6 +585,9 @@ module.exports = Object.freeze({
   runStage,
   runWithCleanup,
   makeSessionToken,
+  inspectSessionTokenWithRuntime,
+  pidOneEnvironmentMatches,
+  verifyDesktopProjectionSources,
   makeMarker,
   resolveRuntimeModules,
   runPublicAcceptance,

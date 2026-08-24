@@ -24,6 +24,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("vnext-pg17-desktop-canonical-phone-reader-22", sql)
         self.assertIn("vnext_role_grants_one_active_super_admin", sql)
         self.assertIn("activeSuperAdminAccountId", sql)
+        self.assertIn("runtimeProjectionRead", sql)
+        self.assertIn("runtimeCoreDirectWrite", sql)
 
     def test_validation_fails_closed(self):
         valid = dict(MODULE.EXPECTED_COUNTS)
@@ -43,6 +45,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "writerSupplementalInsert": True,
             "runtimeSupplementalInsert": False,
             "readerSupplementalWrite": False,
+            "runtimeProjectionRead": True,
+            "runtimeCoreDirectWrite": False,
             "controlPlaneM20": True,
             "controlPlaneM21": True,
             "desktopSessionReaderPrivileges": True,

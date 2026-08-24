@@ -13,7 +13,9 @@ const {
   ensureBusinessSuperAdmin,
   resolveOperatorIdentity,
   ensureCanonicalPhoneContact,
+  pidOneEnvironmentMatches,
 } = require('./real-cloud-business-acceptance');
+const { createCloudDesktopRegistrationService } = require('../cloud-business-api/src/desktopRegistrationService');
 
 function response(status, body) {
   return {
@@ -32,7 +34,7 @@ async function successfulAcceptance() {
     const body = options.body ? JSON.parse(options.body) : null;
     calls.push({ path, method: options.method || 'GET', body, authorization: options.headers?.Authorization });
     if (calls.length === 1) return response(201, { ok: true, institution: { id: 'codex-e2e-8.4.1-fixed', updatedAt: createdAt } });
-    if (calls.length === 2) return response(200, { ok: true, projection: { institutions: [{ id: 'codex-e2e-8.4.1-fixed', updated_at: createdAt }] } });
+    if (calls.length === 2) return response(200, { ok: true, projection: { institutions: [{ id: 'codex-e2e-8.4.1-fixed', updated_at: '2026-08-24T14:30:00.001+00:00' }] } });
     if (calls.length === 3) return response(200, { ok: true, institution: { id: 'codex-e2e-8.4.1-fixed', updatedAt } });
     if (calls.length === 4) return response(409, { ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
     if (calls.length === 5) return response(200, { ok: true, institution: { id: 'codex-e2e-8.4.1-fixed', updatedAt } });
@@ -114,6 +116,37 @@ function tokenIsBoundAndOpaque() {
   });
 }
 
+function serverEnvironmentComparisonDoesNotExposeTheSecret() {
+  const secret = 'sensitive-value';
+  const read = () => Buffer.from(`A=1\0CLOUD_IDENTITY_TICKET_SECRET=${secret}\0B=2\0`, 'utf8');
+  assert.strictEqual(pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', secret, read), true);
+  assert.strictEqual(pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', 'different', read), false);
+}
+
+async function tokenIsAcceptedByDesktopSessionContract() {
+  const secret = 'x'.repeat(32);
+  const now = new Date('2026-08-24T15:00:00.000Z');
+  const session = {
+    authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'installation-1',
+    sessionId: 'acceptance-session-1', expiresAt: '2026-08-24T15:10:00.000Z',
+  };
+  const service = createCloudDesktopRegistrationService({
+    now: () => new Date(now),
+    randomId: prefix => `${prefix}-fixed`,
+    phoneVerifier: async () => '13700000000',
+    lookupAccount: async () => ({ authorityId: session.authorityId, accountId: session.accountId, phoneHmac: null }),
+    ticketSecret: secret,
+    leasePrivateKey: crypto.generateKeyPairSync('ed25519').privateKey,
+    issueAssertion: async () => {},
+    register: async () => null,
+    readSessionContext: async input => ({ ...input, roles: ['super_admin'], teacherId: null, studentId: null }),
+  });
+  assert.deepStrictEqual(
+    await service.sessionContext({ sessionToken: makeSessionToken(secret, session) }),
+    { ...session, roles: ['super_admin'], teacherId: null, studentId: null },
+  );
+}
+
 function runtimeLayoutIsExplicit() {
   assert.deepStrictEqual(
     resolveRuntimeModules('C:/repo/scripts', candidate => candidate.includes('/cloud-business-api/')),
@@ -169,7 +202,10 @@ async function controlledSessionIsShortLivedAndRevoked() {
   const session = await createControlledAcceptanceSession(pool, ['account-1'], () => 'fixed-id');
   assert.strictEqual(session.sessionId, 'acceptance-session-fixed-id');
   assert.strictEqual(session.expiresAt, '2026-08-24T15:10:00.000Z');
-  assert.match(calls.find(call => String(call[0]).includes('INSERT INTO'))[0], /interval '10 minutes'/);
+  const sessionInsert = calls.find(call => String(call[0]).includes('INSERT INTO'))[0];
+  assert.match(sessionInsert, /interval '10 minutes'/);
+  assert.match(sessionInsert, /date_trunc\('milliseconds',transaction_timestamp\(\)\)/,
+    'the disposable session timestamp must round-trip through the millisecond desktop ticket without losing equality');
   assert.ok(calls.some(call => call[0] === 'SET LOCAL ROLE vnext_pg17_owner'));
   assert.strictEqual(await revokeControlledAcceptanceSession(pool, session), true);
   assert.match(calls.find(call => String(call[0]).includes('UPDATE vnext_control_plane'))[0], /status='revoked'/);
@@ -213,6 +249,8 @@ async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
 
 Promise.resolve()
   .then(tokenIsBoundAndOpaque)
+  .then(serverEnvironmentComparisonDoesNotExposeTheSecret)
+  .then(tokenIsAcceptedByDesktopSessionContract)
   .then(runtimeLayoutIsExplicit)
   .then(stageAndCleanupErrorsStayDiagnosable)
   .then(controlledSessionIsShortLivedAndRevoked)

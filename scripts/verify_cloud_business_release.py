@@ -95,6 +95,28 @@ def verification_sql():
         "has_table_privilege('gewu_cloud_schedule_reader','business.payments','INSERT') "
         "OR has_table_privilege('gewu_cloud_schedule_reader','business.payments','UPDATE') "
         "OR has_table_privilege('gewu_cloud_schedule_reader','business.payments','DELETE')",
+        "'runtimeProjectionRead'",
+        "has_table_privilege('gewu_cloud_schedule_reader','business.students','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.student_contact_directory','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.teachers','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.courses','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.course_student_pricings','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.schedules','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.schedule_student_overrides','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.institutions','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.schools','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.rooms','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.grades','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.payments','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.consumptions','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.question_taxonomy_systems','SELECT') "
+        "AND has_table_privilege('gewu_cloud_schedule_reader','business.question_taxonomy_nodes','SELECT')",
+        "'runtimeCoreDirectWrite'",
+        "has_table_privilege('gewu_cloud_schedule_reader','business.students','INSERT') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.teachers','UPDATE') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.courses','DELETE') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.schedules','INSERT') "
+        "OR has_table_privilege('gewu_cloud_schedule_reader','business.institutions','UPDATE')",
         "'controlPlaneM20'",
         "(SELECT count(*)=1 FROM vnext_control_plane.vnext_schema_migrations "
         f"WHERE migration_id='{CONTROL_PLANE_M20_ID}' AND semantic_version=20 AND manifest_sha256='{CONTROL_PLANE_M20_SHA256}')",
@@ -135,10 +157,11 @@ def validate(payload):
         "scheduleCreateFunction", "institutionCreateFunction", "schoolCreateFunction", "writerScheduleExecute",
         "taxonomySystemTable", "taxonomyNodeTable", "taxonomyFunctions", "writerTaxonomyExecute",
         "supplementalAuthorityTables", "writerSupplementalInsert",
+        "runtimeProjectionRead",
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_FUNCTION_MISSING")
     if any(payload.get(key) is not False for key in (
-        "writerDirectScheduleInsert", "runtimeDirectScheduleInsert", "writerDirectTaxonomyInsert", "runtimeSupplementalInsert", "readerSupplementalWrite",
+        "writerDirectScheduleInsert", "runtimeDirectScheduleInsert", "writerDirectTaxonomyInsert", "runtimeSupplementalInsert", "readerSupplementalWrite", "runtimeCoreDirectWrite",
     )):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_DIRECT_WRITE_OPEN")
     if any(payload.get(key) is not True for key in (
