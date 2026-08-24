@@ -217,8 +217,13 @@ function buildUploadCommand(options) {
   };
 }
 
-function defaultPendingMarkerPath(rootDir = path.resolve(__dirname, '..')) {
-  return path.join(rootDir, 'output', 'release-matrix', 'miniapp-upload-pending.json');
+function resolveReleaseManifestPath({ rootDir = path.resolve(__dirname, '..'), argv = [], env = process.env, matrix = releaseMatrix } = {}) {
+  const configured = parseOption(argv, 'release-manifest') || env.GEWU_RELEASE_MANIFEST_PATH;
+  return configured ? path.resolve(rootDir, configured) : matrix.defaultManifestPath(rootDir);
+}
+
+function defaultPendingMarkerPath(rootDir = path.resolve(__dirname, '..'), manifestPath = releaseMatrix.defaultManifestPath(rootDir)) {
+  return path.join(path.dirname(manifestPath), 'miniapp-upload-pending.json');
 }
 
 function isLoopbackProxyUrl(proxyUrl) {
@@ -349,10 +354,11 @@ function recordOrDeferReceipt({
 function loadDeferredReceiptContext(options = {}) {
   const rootDir = options.rootDir || path.resolve(__dirname, '..');
   const argv = options.argv || process.argv.slice(2);
+  const env = options.env || process.env;
   const matrix = options.releaseMatrix || releaseMatrix;
-  const markerPath = options.markerPath || defaultPendingMarkerPath(rootDir);
+  const manifestPath = options.manifestPath || resolveReleaseManifestPath({ rootDir, argv, env, matrix });
+  const markerPath = options.markerPath || defaultPendingMarkerPath(rootDir, manifestPath);
   const marker = readPendingMarker(markerPath);
-  const manifestPath = matrix.defaultManifestPath(rootDir);
   const manifest = matrix.readManifest(manifestPath);
   const version = matrix.resolveManifestVersion({
     manifest,
@@ -433,12 +439,13 @@ async function main(options = {}) {
   const rootDir = options.rootDir || path.resolve(__dirname, '..');
   const matrix = options.releaseMatrix || releaseMatrix;
   const log = options.log || console.log;
-  const markerPath = options.markerPath || defaultPendingMarkerPath(rootDir);
+  const env = options.env || process.env;
+  const manifestPath = options.manifestPath || resolveReleaseManifestPath({ rootDir, argv, env, matrix });
+  const markerPath = options.markerPath || defaultPendingMarkerPath(rootDir, manifestPath);
   const receiptOperationRequested = (
     argv.includes('--validate-deferred-receipt')
     || argv.includes('--finalize-deferred-receipt')
   );
-  const env = options.env || process.env;
   if (
     receiptOperationRequested
     && options.internalReceiptOperation !== true
@@ -468,6 +475,7 @@ async function main(options = {}) {
 
   const release = matrix.assertReleaseTarget({
     rootDir,
+    manifestPath,
     target: 'miniapp',
     requestedVersion: parseOption(argv, 'version'),
   });
@@ -603,6 +611,7 @@ module.exports = {
   readPendingMarker,
   readMiniappAppid,
   resolveMiniappPrivateKeyPath,
+  resolveReleaseManifestPath,
   resolveUploadVersion,
   resolveWechatCliPath,
   uploadWithMiniprogramCi,

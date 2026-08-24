@@ -17,6 +17,7 @@ const {
   buildUploadExecOptions,
   main,
   resolveMiniappPrivateKeyPath,
+  resolveReleaseManifestPath,
   resolveUploadVersion,
   resolveWechatCliPath,
   uploadWithMiniprogramCi,
@@ -120,6 +121,12 @@ assert.strictEqual(
   resolveUploadVersion({ argv: ['--version=6.1.0'], packageJson: { version: '5.0.34' } }),
   '6.1.0',
   'miniapp upload should preserve an explicit version override'
+);
+
+assert.strictEqual(
+  resolveReleaseManifestPath({ rootDir, argv: [], env: { GEWU_RELEASE_MANIFEST_PATH: 'output/release-matrix-8.3.0/active.json' } }),
+  path.join(rootDir, 'output', 'release-matrix-8.3.0', 'active.json'),
+  'miniapp upload should honor the same explicit release manifest path as the unified deploy tooling'
 );
 
 const args = buildUploadArgs({
@@ -626,6 +633,33 @@ async function testExplicitTestInjectionPreservesImmediateReceiptCoverage() {
   }
 }
 
+async function testCustomReleaseManifestPathReceivesTheReceipt() {
+  const fixture = createReleaseRoot();
+  const uploadCalls = [];
+  const customManifestPath = path.join(fixture.fixtureRoot, 'output', 'release-matrix-8.3.0', 'active.json');
+  try {
+    fs.mkdirSync(path.dirname(customManifestPath), { recursive: true });
+    fs.renameSync(fixture.manifestPath, customManifestPath);
+    await main({
+      argv: [
+        '--upload-mode=miniprogram-ci',
+        `--private-key=${fixture.privateKeyPath}`,
+      ],
+      rootDir: fixture.fixtureRoot,
+      env: { GEWU_RELEASE_MANIFEST_PATH: customManifestPath },
+      ci: createFakeCi(uploadCalls),
+      ciVersion: EXPECTED_MINIPROGRAM_CI_VERSION,
+      allowUnsafeTestUpload: true,
+      log: () => {},
+    });
+    assert.strictEqual(uploadCalls.length, 1);
+    assert.strictEqual(releaseMatrix.readManifest(customManifestPath).targets.miniapp.status, 'verified');
+    assert.strictEqual(fs.existsSync(fixture.manifestPath), false, 'the protected default release manifest path must remain untouched');
+  } finally {
+    fs.rmSync(fixture.fixtureRoot, { recursive: true, force: true });
+  }
+}
+
 async function testDryRunRedactsPrivateKeyPath() {
   const fixture = createReleaseRoot();
   const logs = [];
@@ -868,6 +902,7 @@ testMiniprogramCiProxyAndThreads()
   .then(testFinalizeRecoversAfterMarkerDeletionFailure)
   .then(testProductionCliRejectsUnsafeUploadPaths)
   .then(testExplicitTestInjectionPreservesImmediateReceiptCoverage)
+  .then(testCustomReleaseManifestPathReceivesTheReceipt)
   .then(testDryRunRedactsPrivateKeyPath)
   .then(testDeferredMarkerContextMismatchFailsClosed)
   .then(testInvalidDeferredMarkersFailClosed)
