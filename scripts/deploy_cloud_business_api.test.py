@@ -5,6 +5,8 @@ import deploy_cloud_business_api as module
 from deploy_cloud_business_api import (
     candidate_command,
     candidate_name,
+    promotion_lock_acquire_command,
+    promotion_lock_release_command,
     reconcile_switch_failure_command,
     release_tag,
     rollback_command,
@@ -77,6 +79,28 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             "docker rm -f -- 'gewu-cloud-business-api-candidate-8.4.1-881fe92c01ff'",
         )
 
+    def test_promotion_lock_is_atomic_and_only_the_owner_can_release_it(self):
+        operation_id = "a" * 32
+        acquire = promotion_lock_acquire_command(operation_id)
+        release = promotion_lock_release_command(operation_id)
+        self.assertIn('ln "$tmp" "$lock"', acquire)
+        self.assertIn("exit 3", acquire)
+        self.assertIn(operation_id, acquire)
+        self.assertIn('test "$(cat "$lock")" = "$owner"', release)
+        self.assertIn(operation_id, release)
+
+    def test_complete_promotion_lifecycle_holds_one_operation_lock(self):
+        health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
+        with mock.patch.object(module.secrets, "token_hex", return_value="b" * 32), mock.patch.object(
+            module, "acquire_promotion_lock"
+        ) as acquire, mock.patch.object(module, "release_promotion_lock") as release, mock.patch.object(
+            module, "promote_candidate_under_lock", return_value=health
+        ) as promote:
+            self.assertEqual(module.promote_validated_candidate("8.5.0-980f2c842eab", "8.5.0", "evidence"), health)
+        acquire.assert_called_once_with("b" * 32)
+        promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence")
+        release.assert_called_once_with("b" * 32)
+
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
@@ -122,7 +146,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_public_health_failure_rolls_back_and_skips_receipt(self):
         switch_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
-        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
+        with mock.patch.object(module, "acquire_promotion_lock"), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
             module.deploy, "run"
         ) as run, mock.patch.object(
             module, "verify_public_health", side_effect=RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
@@ -138,7 +164,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_receipt_failure_rolls_back_the_switched_release(self):
         switch_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
-        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
+        with mock.patch.object(module, "acquire_promotion_lock"), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]), mock.patch.object(
             module.deploy, "run"
         ) as run, mock.patch.object(
             module, "verify_public_health", return_value={"ok": True, "version": "8.5.0"}
@@ -153,7 +181,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_switch_transport_failure_reconnects_and_reconciles_before_returning_failure(self):
         switch_ssh = mock.Mock()
         reconcile_ssh = mock.Mock()
-        with mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, reconcile_ssh]), mock.patch.object(
+        with mock.patch.object(module, "acquire_promotion_lock"), mock.patch.object(
+            module, "release_promotion_lock"
+        ), mock.patch.object(module.deploy, "connect", side_effect=[switch_ssh, reconcile_ssh]), mock.patch.object(
             module.deploy, "run", side_effect=[TimeoutError("ssh timeout"), ("healthy", "")]
         ) as run, mock.patch.object(module, "verify_public_health") as verify_health, mock.patch.object(
             module.deploy, "record_release_receipt"

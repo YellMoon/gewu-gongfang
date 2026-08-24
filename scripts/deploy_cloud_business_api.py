@@ -6,6 +6,7 @@ import json
 import os
 import posixpath
 import re
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +21,9 @@ CURRENT_CONTAINER = "gewu-cloud-business-api"
 POSTGRES_CONTAINER = "gewu-postgres17"
 REMOTE_BUILD_ROOT = "/root/gewu-cloud-business-builds"
 SWITCH_LOCK_PATH = "/tmp/gewu-cloud-business-api-switch.lock"
+PROMOTION_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
+OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 
 
 def failure(code):
@@ -74,6 +77,28 @@ def candidate_command(tag):
 
 def discard_candidate_command(tag):
     return f"docker rm -f -- '{candidate_name(tag)}'"
+
+
+def promotion_lock_acquire_command(operation_id):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return (
+        "set -eu; "
+        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; tmp='{PROMOTION_LOCK_PATH}.{operation_id}.tmp'; "
+        "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s\\n' \"$owner\" > \"$tmp\"; "
+        "if ! ln \"$tmp\" \"$lock\"; then exit 3; fi"
+    )
+
+
+def promotion_lock_release_command(operation_id):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return (
+        "set -eu; "
+        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; "
+        "if [ ! -e \"$lock\" ]; then exit 0; fi; "
+        "test \"$(cat \"$lock\")\" = \"$owner\"; rm -f -- \"$lock\""
+    )
 
 
 def switch_command(tag):
@@ -212,6 +237,28 @@ def rollback_promoted_release(tag):
         ssh.close()
 
 
+def release_promotion_lock(operation_id):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, promotion_lock_release_command(operation_id), timeout=30)
+    finally:
+        ssh.close()
+
+
+def acquire_promotion_lock(operation_id):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, promotion_lock_acquire_command(operation_id), timeout=30)
+    except BaseException:
+        try:
+            release_promotion_lock(operation_id)
+        except BaseException:
+            pass
+        raise
+    finally:
+        ssh.close()
+
+
 def reconcile_uncertain_switch(tag):
     ssh = deploy.connect()
     try:
@@ -221,6 +268,15 @@ def reconcile_uncertain_switch(tag):
 
 
 def promote_validated_candidate(tag, version, evidence):
+    operation_id = secrets.token_hex(16)
+    acquire_promotion_lock(operation_id)
+    try:
+        return promote_candidate_under_lock(tag, version, evidence)
+    finally:
+        release_promotion_lock(operation_id)
+
+
+def promote_candidate_under_lock(tag, version, evidence):
     ssh = deploy.connect()
     switch_error = None
     try:
