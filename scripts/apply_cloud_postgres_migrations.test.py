@@ -3,7 +3,7 @@ import pathlib
 import tempfile
 import unittest
 
-from apply_cloud_postgres_migrations import DockerPsqlExecutor, apply_migrations, read_migrations
+from apply_cloud_postgres_migrations import DEFAULT_MIGRATION_ROLE, DockerPsqlExecutor, apply_migrations, read_migrations
 
 
 class FakeExecutor:
@@ -24,6 +24,9 @@ class FakeExecutor:
 
 
 class CloudPostgresMigrationTests(unittest.TestCase):
+    def test_uses_the_deployed_database_administration_role(self):
+        self.assertEqual(DEFAULT_MIGRATION_ROLE, "gewu_app")
+
     def test_allows_a_docker_container_name_with_hyphens(self):
         executor = DockerPsqlExecutor(object(), "gewu-postgres17", "gewu_cloud", "vnext_pg17_migrator")
         self.assertIn("gewu-postgres17", executor.command)

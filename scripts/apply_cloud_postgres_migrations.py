@@ -1,8 +1,9 @@
 """Apply cloud SQL migrations through the PostgreSQL container's local socket.
 
 The cloud service account never receives database-owner migration authority or a
-migration password.  This runner streams SQL into the existing PostgreSQL
-container as the dedicated migration role and records an immutable file hash.
+migration password. This runner uses the existing database administration role,
+switches transaction-locally to the business owner, and records an immutable
+file hash.
 """
 
 import argparse
@@ -14,6 +15,7 @@ import re
 MIGRATION_NAME = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*\.sql$")
 IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 DOCKER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+DEFAULT_MIGRATION_ROLE = "gewu_app"
 
 
 def read_migrations(sql_root):
@@ -113,7 +115,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--container", default="gewu-postgres17")
     parser.add_argument("--database", default="gewu_cloud")
-    parser.add_argument("--role", default="vnext_pg17_migrator")
+    parser.add_argument("--role", default=DEFAULT_MIGRATION_ROLE)
     parser.add_argument("--sql-root", default=str(pathlib.Path(__file__).resolve().parents[1] / "cloud-business-api" / "sql"))
     args = parser.parse_args()
     from deploy import connect
