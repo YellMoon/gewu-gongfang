@@ -557,15 +557,18 @@ async function main() {
   };
   vm.runInNewContext(preloadSource, {
     require(moduleName) {
-      if (moduleName !== 'electron') throw new Error(`unexpected module ${moduleName}`);
-      return {
+      if (moduleName === './electronDevelopmentFixture') {
+        return { preloadLoginFixtureEnabled: argv => Array.isArray(argv) && argv.includes('--gewu-desktop-login-fixture=1') };
+      }
+      if (moduleName === 'electron') return {
         contextBridge: {
           exposeInMainWorld(name, value) { exposed[name] = value; },
         },
         ipcRenderer,
       };
+      throw new Error(`unexpected module ${moduleName}`);
     },
-    process: { env: { NODE_ENV: 'test' } },
+    process: { argv: ['electron'], env: { NODE_ENV: 'test' } },
     Buffer,
     Error,
     Promise,

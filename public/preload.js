@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { preloadLoginFixtureEnabled } = require('./electronDevelopmentFixture');
 const desktopBuildFlavor = 'unified-desktop';
 
 const invokeAllowList = new Set([
@@ -19,10 +20,10 @@ const eventAllowList = new Set([
   'download-progress',
 ]);
 
-const desktopLoginFixtureEnabled = process.env.NODE_ENV === 'development'
-  && process.env.GEWU_E2E_DESKTOP_LOGIN_FIXTURE === '1';
+const desktopLoginFixtureEnabled = preloadLoginFixtureEnabled(process.argv);
 
-if (!desktopLoginFixtureEnabled) contextBridge.exposeInMainWorld('api', {
+if (!desktopLoginFixtureEnabled) {
+contextBridge.exposeInMainWorld('api', {
   invoke(channel, ...args) {
     if (!invokeAllowList.has(channel)) {
       return Promise.reject(new Error(`IPC channel not allowed: ${channel}`));
@@ -37,7 +38,7 @@ if (!desktopLoginFixtureEnabled) contextBridge.exposeInMainWorld('api', {
   },
 });
 
-if (!desktopLoginFixtureEnabled) contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
+contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   status: () => ipcRenderer.invoke('desktop-identity:status'),
   beginUnifiedOnlineRegistration: input => ipcRenderer.invoke('desktop-identity:begin-unified-online-registration', input),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
@@ -89,3 +90,4 @@ contextBridge.exposeInMainWorld('questionImportRelay', Object.freeze({
   sealSource: input => ipcRenderer.invoke('seal-question-import-source', input),
   sealAsset: input => ipcRenderer.invoke('seal-question-asset', input),
 }));
+}

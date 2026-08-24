@@ -19,6 +19,7 @@ const { resolveDesktopBuildFlavor, updateFeedForFlavor, validateDesktopCapabilit
 const { withOperationTimeout } = require('./updateCheckTimeout');
 const { buildApplicationMenu, desktopUpdaterErrorMessage, desktopWindowChrome } = require('./electronShellPolicy');
 const { ensureLocalSessionSigningSecret } = require('./localSessionSigningSecret');
+const { LOGIN_FIXTURE_RENDERER_ARGUMENT, resolveDevelopmentRenderer } = require('./electronDevelopmentFixture');
 
 let mainWindow;
 let backendServer = null;
@@ -151,6 +152,11 @@ function startBackendService() {
 
 function createWindow() {
   const chrome = desktopWindowChrome();
+  const developmentRenderer = resolveDevelopmentRenderer({
+    isPackaged: app.isPackaged,
+    nodeEnv: process.env.NODE_ENV,
+    fixtureFlag: process.env.GEWU_E2E_DESKTOP_LOGIN_FIXTURE,
+  });
   Menu.setApplicationMenu(buildApplicationMenu({ isPackaged: app.isPackaged, menuApi: Menu }));
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   mainWindow = new BrowserWindow({
@@ -165,7 +171,10 @@ function createWindow() {
     menuBarVisible: chrome.menuBarVisible,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      additionalArguments: [`--gewu-desktop-build-flavor=${DESKTOP_BUILD_FLAVOR}`],
+      additionalArguments: [
+        `--gewu-desktop-build-flavor=${DESKTOP_BUILD_FLAVOR}`,
+        ...(developmentRenderer.loginFixture ? [LOGIN_FIXTURE_RENDERER_ARGUMENT] : []),
+      ],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
@@ -174,11 +183,8 @@ function createWindow() {
     },
   });
   mainWindow.maximize();
-  if (process.env.NODE_ENV === 'development') {
-    const rendererUrl = process.env.GEWU_E2E_DESKTOP_LOGIN_FIXTURE === '1'
-      ? 'http://localhost:3000/?__desktopLoginFixture=1'
-      : 'http://localhost:3000';
-    mainWindow.loadURL(rendererUrl);
+  if (developmentRenderer.url) {
+    mainWindow.loadURL(developmentRenderer.url);
     mainWindow.webContents.openDevTools();
     mainWindow.show();
   } else {
