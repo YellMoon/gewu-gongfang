@@ -86,6 +86,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         acquire = promotion_lock_acquire_command(operation_id, tag)
         release = promotion_lock_release_command(operation_id)
         probe = promotion_lock_stale_probe_command(tag)
+        self.assertIn('[ ! -s "$lock" ]', acquire)
+        self.assertIn('flock -n "$lock" rm -f', acquire)
         self.assertIn('ln "$tmp" "$lock"', acquire)
         self.assertIn("$(date +%s)", acquire)
         self.assertIn(operation_id, acquire)

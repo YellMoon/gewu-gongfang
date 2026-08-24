@@ -87,6 +87,7 @@ def promotion_lock_acquire_command(operation_id, tag):
     return (
         "set -eu; "
         f"owner='{operation_id}'; tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; tmp='{PROMOTION_LOCK_PATH}.{operation_id}.tmp'; "
+        "if [ -e \"$lock\" ] && [ ! -s \"$lock\" ]; then flock -n \"$lock\" rm -f -- \"$lock\" || true; fi; "
         "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s %s %s\\n' \"$owner\" \"$tag\" \"$(date +%s)\" > \"$tmp\"; "
         "if ! ln \"$tmp\" \"$lock\"; then exit 3; fi"
     )
