@@ -13,9 +13,9 @@ const {
   forceMiniappAssetCleanup,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
-  ensureBusinessSuperAdmin,
+  verifyBusinessSuperAdmin,
   resolveOperatorIdentity,
-  ensureCanonicalPhoneContact,
+  verifyCanonicalPhoneContact,
   createOnlineRegistrationRequest,
   runOnlineRegistrationAcceptance,
   revokeOnlineRegistrationAcceptance,
@@ -307,13 +307,18 @@ async function controlledSessionIsShortLivedAndRevoked() {
   assert.strictEqual(calls.filter(call => call[0] === 'COMMIT').length, 2);
 }
 
-async function canonicalPhoneMappingActivatesTheExistingBusinessAccount() {
+async function canonicalPhoneMappingMustAlreadyBeActiveAndIsNeverMutated() {
   const calls = [];
-  const pool = { async query(text, values) { calls.push([text, values]); return { rows: [{ count: 1 }] }; } };
-  assert.strictEqual(await ensureBusinessSuperAdmin(pool, { accountId: 'canonical-admin', phoneHmac: 'c'.repeat(64) }), true);
-  assert.match(calls[0][0], /ON CONFLICT\(phone_hmac\) DO UPDATE/);
-  assert.match(calls[0][0], /'super_admin','active'/);
+  const pool = { async query(text, values) { calls.push([text, values]); return { rows: [{ accountId: 'canonical-admin' }] }; } };
+  assert.strictEqual(await verifyBusinessSuperAdmin(pool, { accountId: 'canonical-admin', phoneHmac: 'c'.repeat(64) }), true);
+  assert.match(calls[0][0], /SELECT ac\.account_id AS "accountId"/);
+  assert.doesNotMatch(calls[0][0], /INSERT|UPDATE|DELETE/);
   assert.deepStrictEqual(calls[0][1], ['canonical-admin', 'c'.repeat(64)]);
+
+  await assert.rejects(
+    verifyBusinessSuperAdmin({ async query() { return { rows: [] }; } }, { accountId: 'canonical-admin', phoneHmac: 'c'.repeat(64) }),
+    error => error.code === 'REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED',
+  );
 }
 
 function operatorIdentityIsResolvedWithoutPhonePlaintext() {
@@ -447,23 +452,34 @@ async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
   assert.match(cleanupFixture.deviceId, /^desktop-device-[0-9a-f]{32}$/u);
 }
 
-async function operatorPhoneBecomesCanonicalWithoutPlaintext() {
+async function operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated() {
   const calls = [];
   const client = {
     async query(text, values) {
       calls.push([text, values]);
-      if (text.includes('SELECT account_id FROM vnext_control_plane.vnext_verified_contacts')) return { rows: [] };
-      if (text.includes('INSERT INTO vnext_control_plane.vnext_verified_contacts')) return { rows: [{ account_id: 'canonical-admin' }] };
+      if (text.includes('SELECT account_id FROM vnext_control_plane.vnext_verified_contacts')) return { rows: [{ account_id: 'canonical-admin' }] };
       return { rows: [] };
     },
     release() {},
   };
   const pool = { async connect() { return client; } };
-  assert.strictEqual(await ensureCanonicalPhoneContact(pool, { accountId: 'canonical-admin', phoneHmac: 'e'.repeat(64) }), true);
-  const insertion = calls.find(([text]) => text.includes('INSERT INTO vnext_control_plane.vnext_verified_contacts'));
-  assert.ok(insertion);
-  assert.ok(insertion[1].every(value => !String(value).includes('13732250653')));
-  assert.match(insertion[1][3], /^[0-9a-f]{64}$/);
+  assert.strictEqual(await verifyCanonicalPhoneContact(pool, { accountId: 'canonical-admin', phoneHmac: 'e'.repeat(64) }), true);
+  const sql = calls.map(([text]) => text).join('\n');
+  assert.doesNotMatch(sql, /INSERT|UPDATE|DELETE/);
+  assert.ok(calls.every(([, values]) => !Array.isArray(values) || values.every(value => !String(value).includes('13732250653'))));
+  assert.deepStrictEqual(calls.find(([text]) => text.includes('SELECT account_id'))[1], ['e'.repeat(64)]);
+
+  const missingClient = {
+    async query(text) {
+      if (text.includes('SELECT account_id FROM vnext_control_plane.vnext_verified_contacts')) return { rows: [] };
+      return { rows: [] };
+    },
+    release() {},
+  };
+  await assert.rejects(
+    verifyCanonicalPhoneContact({ async connect() { return missingClient; } }, { accountId: 'canonical-admin', phoneHmac: 'e'.repeat(64) }),
+    error => error.code === 'REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_FAILED',
+  );
 }
 
 Promise.resolve()
@@ -475,9 +491,9 @@ Promise.resolve()
   .then(runtimeLayoutIsExplicit)
   .then(stageAndCleanupErrorsStayDiagnosable)
   .then(controlledSessionIsShortLivedAndRevoked)
-  .then(canonicalPhoneMappingActivatesTheExistingBusinessAccount)
+  .then(canonicalPhoneMappingMustAlreadyBeActiveAndIsNeverMutated)
   .then(operatorIdentityIsResolvedWithoutPhonePlaintext)
-  .then(operatorPhoneBecomesCanonicalWithoutPlaintext)
+  .then(operatorPhoneMustAlreadyBeCanonicalAndIsNeverMutated)
   .then(onlineRegistrationIsRealAndTokenFreeInEvidence)
   .then(onlineRegistrationCleanupHandleSurvivesContextFailure)
   .then(onlineRegistrationFixtureIsRevoked)

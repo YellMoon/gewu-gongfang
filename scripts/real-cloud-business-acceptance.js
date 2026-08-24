@@ -555,31 +555,26 @@ async function revokeOnlineRegistrationAcceptance(writerPool, fixture) {
   return true;
 }
 
-async function ensureBusinessSuperAdmin(appPool, identity) {
+async function verifyBusinessSuperAdmin(appPool, identity) {
   if (!identity || typeof identity.accountId !== 'string' || !identity.accountId.trim()
     || typeof identity.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/.test(identity.phoneHmac)) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
   }
   const result = await runStage('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED', () => appPool.query(
-    `WITH selected AS (
-       INSERT INTO business.miniapp_cloud_accounts(account_id,phone_hmac,status)
-       VALUES($1,$2,'active')
-       ON CONFLICT(phone_hmac) DO UPDATE SET phone_hmac=EXCLUDED.phone_hmac,status='active',updated_at=transaction_timestamp()
-       RETURNING account_id
-     ), granted AS (
-       INSERT INTO business.miniapp_cloud_role_grants(account_id,role,status)
-       SELECT account_id,'super_admin','active' FROM selected
-       ON CONFLICT(account_id,role) DO UPDATE SET status='active',updated_at=transaction_timestamp()
-       RETURNING account_id
-     )
-     SELECT count(*)::int AS count FROM granted`,
+    `SELECT ac.account_id AS "accountId"
+       FROM business.miniapp_cloud_accounts ac
+       JOIN business.miniapp_cloud_role_grants g ON g.account_id=ac.account_id
+      WHERE ac.account_id=$1 AND ac.phone_hmac=$2 AND ac.status='active'
+        AND g.role='super_admin' AND g.status='active'`,
     [identity.accountId, identity.phoneHmac],
   ));
-  if (result.rows[0]?.count !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED');
+  if (result.rows.length !== 1 || result.rows[0].accountId !== identity.accountId) {
+    throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_FAILED');
+  }
   return true;
 }
 
-async function ensureCanonicalPhoneContact(writerPool, identity) {
+async function verifyCanonicalPhoneContact(writerPool, identity) {
   if (!identity || typeof identity.accountId !== 'string' || !identity.accountId.trim()
     || typeof identity.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/.test(identity.phoneHmac)) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_MAPPING_INVALID');
@@ -593,17 +588,7 @@ async function ensureCanonicalPhoneContact(writerPool, identity) {
     if (existing.rows.length > 1 || (existing.rows.length === 1 && existing.rows[0].account_id !== identity.accountId)) {
       throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_CONFLICT');
     }
-    if (existing.rows.length === 1) return true;
-    const contactId = `operator-phone-${crypto.createHash('sha256').update(identity.phoneHmac, 'utf8').digest('hex').slice(0, 32)}`;
-    const evidenceHash = crypto.createHash('sha256').update(`operator-config:${identity.phoneHmac}`, 'utf8').digest('hex');
-    const inserted = await client.query(
-      `INSERT INTO vnext_control_plane.vnext_verified_contacts(contact_id,authority_id,account_id,contact_type,normalized_value_hash,verification_state,verification_evidence_hash,verified_at,revoked_at,row_version,created_at,updated_at)
-       SELECT $1,authority_id,account_id,'phone',$3,'verified',$4,transaction_timestamp(),NULL,1,transaction_timestamp(),transaction_timestamp()
-         FROM vnext_control_plane.vnext_accounts WHERE account_id=$2 AND status='active'
-       RETURNING account_id`,
-      [contactId, identity.accountId, identity.phoneHmac, evidenceHash],
-    );
-    if (inserted.rows.length !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_FAILED');
+    if (existing.rows.length !== 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_ADMIN_CONTACT_FAILED');
     return true;
   });
 }
@@ -845,8 +830,8 @@ async function runFromEnvironment(env = process.env) {
     return await runWithCleanup(
       async () => {
         const loaded = await loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
-        await ensureCanonicalPhoneContact(writerPool, loaded.identity);
-        await ensureBusinessSuperAdmin(appPool, loaded.identity);
+        await verifyCanonicalPhoneContact(writerPool, loaded.identity);
+        await verifyBusinessSuperAdmin(appPool, loaded.identity);
         if (!pidOneEnvironmentMatches('CLOUD_IDENTITY_TICKET_SECRET', env.CLOUD_IDENTITY_TICKET_SECRET)
           || !pidOneEnvironmentMatches('CLOUD_MINIAPP_TICKET_SECRET', env.CLOUD_MINIAPP_TICKET_SECRET)) {
           throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_SERVER_ENVIRONMENT_MISMATCH');
@@ -920,8 +905,8 @@ module.exports = Object.freeze({
   runMiniappLimitedWriteAcceptance,
   loadActiveSuperAdminSession,
   resolveOperatorIdentity,
-  ensureBusinessSuperAdmin,
-  ensureCanonicalPhoneContact,
+  verifyBusinessSuperAdmin,
+  verifyCanonicalPhoneContact,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
   revokeOnlineRegistrationAcceptance,
