@@ -8,6 +8,18 @@ const root = path.resolve(__dirname, '../..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf-8');
 
 const appConfig = read('src/app.config.ts');
+const captureRuntimeSource = read('../scripts/capture-miniapp-ui-matrix.js');
+assert.ok(
+  captureRuntimeSource.includes('MINIAPP_UI_OUTPUT_DIR')
+    && captureRuntimeSource.includes('path.resolve(process.env.MINIAPP_UI_OUTPUT_DIR)'),
+  'miniapp runtime capture must support an isolated evidence directory outside user-owned output',
+);
+assert.ok(
+  captureRuntimeSource.includes("MINIAPP_AUTOMATION_LAUNCH === '1'")
+    && captureRuntimeSource.includes("projectPath: path.join(ROOT, 'miniapp', 'dist')")
+    && captureRuntimeSource.includes('trustProject: true'),
+  'miniapp runtime capture must be able to launch a fresh DevTools automation instance for the current dist',
+);
 const pagesMatch = appConfig.match(/pages:\s*\[([\s\S]*?)\]/);
 assert.ok(pagesMatch, 'app.config.ts should define pages');
 

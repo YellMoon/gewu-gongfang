@@ -14,12 +14,14 @@ const VERSION = require('../package.json').version;
 const scenarioIdFilter = new Set(String(process.env.MINIAPP_UI_SCENARIO_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const focusedRun = scenarioIdFilter.size > 0;
 const scenarios = focusedRun ? runtimeScenarios.filter(scenario => scenarioIdFilter.has(scenario.id)) : runtimeScenarios;
-const OUTPUT = path.join(
-  ROOT,
-  'output',
-  `miniapp-${VERSION}-ui-coverage`,
-  focusedRun ? `runtime-diagnostic-${[...scenarioIdFilter].join('-')}` : 'runtime-scenario-matrix',
-);
+const OUTPUT = process.env.MINIAPP_UI_OUTPUT_DIR
+  ? path.resolve(process.env.MINIAPP_UI_OUTPUT_DIR)
+  : path.join(
+    ROOT,
+    'output',
+    `miniapp-${VERSION}-ui-coverage`,
+    focusedRun ? `runtime-diagnostic-${[...scenarioIdFilter].join('-')}` : 'runtime-scenario-matrix',
+  );
 const FIXTURE_PORT = 3019;
 const FIXTURE_BASE = `http://127.0.0.1:${FIXTURE_PORT}`;
 const SCREENSHOT_WAIT_MS = 1100;
@@ -201,8 +203,19 @@ async function run() {
   const { server, requests, setScenario } = await startFixtureServer();
   let miniProgram;
   try {
-    const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();
-    miniProgram = await automator.connect({ wsEndpoint });
+    if (process.env.MINIAPP_AUTOMATION_LAUNCH === '1') {
+      const port = Number(process.env.MINIAPP_AUTOMATION_PORT || 9520);
+      assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'miniapp automation port is invalid');
+      miniProgram = await automator.launch({
+        projectPath: path.join(ROOT, 'miniapp', 'dist'),
+        port,
+        timeout: 60000,
+        trustProject: true,
+      });
+    } else {
+      const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();
+      miniProgram = await automator.connect({ wsEndpoint });
+    }
   } catch (error) {
     await new Promise(resolve => server.close(resolve));
     throw error;
