@@ -12,7 +12,6 @@ import SystemSettings from './pages/SystemSettings';
 import SchoolManager from './pages/SchoolManager';
 import RoomManager from './pages/RoomManager';
 import PersonalAssets from './pages/PersonalAssets';
-import PermissionManager from './pages/PermissionManager';
 import SyncSettings from './pages/SyncSettings';
 import OperateLog from './pages/OperateLog';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -156,7 +155,6 @@ const App: React.FC = () => {
       case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
 
       case 'personal-assets': return <PersonalAssets />;
-      case 'permission': return <PermissionManager />;
       case 'identity-devices': return <LazyPage><IdentityDeviceCenter /></LazyPage>;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings context={pageContext as any} /></ErrorBoundary>;
       case 'system-params': return <SystemSettings context={pageContext as any} />;

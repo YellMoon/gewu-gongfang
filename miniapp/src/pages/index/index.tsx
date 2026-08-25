@@ -16,10 +16,8 @@ import {
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { shanghaiDateKey } from '../../utils/cloudBusinessProjection';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
-import { businessCacheIdentityKey } from '../../utils/miniappAuthorizationRuntime';
 import { getMiniappHomeDisplayName, getMiniappHomeRoleLabel } from '../../utils/miniappHomePresentation';
 import { NetworkStatus, LoadingSkeleton, EmptyState } from '../../components/shared';
-import AccountStatusBanner from '../../components/AccountStatusBanner';
 import MembershipBadge from '../../components/MembershipBadge';
 import { Schedule, ScheduleStatus, Student, Course } from '../../types';
 import './index.scss';
@@ -276,10 +274,6 @@ export default function Index() {
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
   const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';
   const visitor = isVisitorIdentity(user);
-  const limitedSubject = Boolean(user)
-    && !visitor
-    && ['student', 'teacher'].includes(user.user_type)
-    && !businessCacheIdentityKey(user);
   const moduleActions = useMemo(() => (
     modules
       .filter((mod) => MODULE_CONFIG[mod.id])
@@ -287,32 +281,28 @@ export default function Index() {
   ), [modules]);
   const shortcuts = showAdminShortcuts ? ADMIN_SHORTCUTS : STUDENT_SHORTCUTS;
 
-  if ((access.experienceOnly || limitedSubject) && user) {
+  if (visitor && user) {
     return (
       <View className='home-page'>
-        {!visitor ? <AccountStatusBanner /> : null}
         <View className='home-hero'>
           <View className='home-hero__topline'>
             <Text className='home-brand'>{'\u683c\u7269\u5de5\u574a'}</Text>
-            <View className='home-role-pill'><Text className='home-role-pill__text'>{visitor ? '\u8bbf\u5ba2' : limitedSubject ? '\u5c1a\u672a\u7ed1\u5b9a\u672c\u5730\u4e3b\u4f53' : '\u4f53\u9a8c\u8d26\u53f7'}</Text></View>
+            <View className='home-role-pill'><Text className='home-role-pill__text'>{'\u8bbf\u5ba2'}</Text></View>
           </View>
           <View className='home-hero__body'>
             <View className='home-avatar'><Text className='home-avatar__text'>{userDisplayName.charAt(0) || '\u683c'}</Text></View>
             <View className='home-hero__copy'>
               <Text className='home-hero__title'>{userDisplayName}</Text>
-              <Text className='home-hero__subtitle'>{visitor || limitedSubject
-                ? '\u53ef\u67e5\u770b\u6570\u636e\u4e3b\u673a\u7b7e\u540d\u7684\u5341\u9053\u8131\u654f\u9898\u76ee\u9884\u89c8\uff0c\u5e76\u7533\u8bf7\u8001\u5e08\u6216\u5b66\u751f\u89d2\u8272\u3002'
-                : '\u53ef\u67e5\u770b\u7a7a\u8bfe\u8868\u3001\u4f7f\u7528\u56db\u9053\u793a\u4f8b\u9898\u5e76\u63d0\u4ea4\u6b63\u5f0f\u8d26\u53f7\u7533\u8bf7\u3002'}</Text>
+              <Text className='home-hero__subtitle'>{'\u53ef\u9884\u89c8\u4e91\u7aef\u9898\u76ee\uff0c\u5e76\u7533\u8bf7\u8001\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u5173\u7cfb\u3002'}</Text>
             </View>
             <View className='home-logout' onClick={handleLogout}><Text className='home-logout__text'>{'\u9000\u51fa'}</Text></View>
           </View>
         </View>
         <View className='home-section'>
-          <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>{visitor || limitedSubject ? '2' : '3'}</Text></View>
+          <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>{'2'}</Text></View>
           <View className='home-action-list'>
-            {!visitor && !limitedSubject ? <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u6b63\u5f0f\u8bfe\u7a0b\u6570\u636e'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View> : null}
-            <View className='home-action-card tone-indigo' onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{visitor || limitedSubject ? '\u4e91\u7aef\u9898\u76ee\u9884\u89c8' : '\u793a\u4f8b\u9898\u4e0e\u7ec4\u5377'}</Text><Text className='home-action-card__desc'>{visitor || limitedSubject ? '\u53ea\u8bfb\u4e91\u7aef\u6743\u5a01\u9898\u5e93\u9884\u89c8\uff0c\u4e0d\u5305\u542b\u7b54\u6848\u548c\u89e3\u6790' : '\u56db\u9053\u793a\u4f8b\u9898\u4e0d\u5c5e\u4e8e\u6b63\u5f0f\u9898\u5e93'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
-            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{visitor ? '\u7533\u8bf7\u8001\u5e08/\u5b66\u751f\u89d2\u8272' : limitedSubject ? '\u7533\u8bf7\u7ed1\u5b9a\u5df2\u6709\u4e3b\u4f53' : '\u7533\u8bf7\u6b63\u5f0f\u8d26\u53f7'}</Text><Text className='home-action-card__desc'>{visitor || limitedSubject ? '\u7533\u8bf7\u4f5c\u4e3a\u6301\u4e45\u547d\u4ee4\u4ea4\u7531\u4e91\u7aef\u5ba1\u6838' : '\u67e5\u770b\u7533\u8bf7\u72b6\u6001\u6216\u63d0\u4ea4\u771f\u5b9e\u8d44\u6599'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-indigo' onClick={() => Taro.navigateTo({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u4e91\u7aef\u9898\u76ee\u9884\u89c8'}</Text><Text className='home-action-card__desc'>{'\u53ea\u8bfb\u9898\u76ee\u9884\u89c8\uff0c\u4e0d\u5305\u542b\u7b54\u6848\u548c\u89e3\u6790\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u7533\u8bf7\u8001\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458'}</Text><Text className='home-action-card__desc'>{'\u7533\u8bf7\u4f5c\u4e3a\u6301\u4e45\u547d\u4ee4\u4ea4\u7531\u4e91\u7aef\u5ba1\u6838\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
           </View>
         </View>
       </View>

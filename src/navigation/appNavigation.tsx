@@ -12,7 +12,6 @@ import {
   FileTextOutlined,
   FileWordOutlined,
   HomeOutlined,
-  LockOutlined,
   LaptopOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
@@ -28,7 +27,7 @@ export type PageKey =
   | 'school' | 'address' | 'institution'
   | 'question-bank-tools' | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
-  | 'teacher' | 'student' | 'permission' | 'identity-devices'
+  | 'teacher' | 'student' | 'identity-devices'
   | 'system-params' | 'operate-log'
   | 'cloud-sync';
 
@@ -110,7 +109,6 @@ const baseNavGroups: NavGroup[] = [
     label: '系统与数据',
     icon: <SettingOutlined />,
     items: [
-      { key: 'permission', label: '权限管理', description: '配置模块访问权限', icon: <LockOutlined /> },
       { key: 'system-params', label: '系统参数', description: '调整系统基础参数', icon: <SettingOutlined /> },
       { key: 'operate-log', label: '操作日志', description: '查看系统操作记录', icon: <FileProtectOutlined /> },
     ],
@@ -148,7 +146,6 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   'personal-assets': { key: 'personal-assets', label: '个人资产统计', icon: <DatabaseOutlined /> },
   teacher: { key: 'teacher', label: '老师', icon: <TeamOutlined /> },
   student: { key: 'student', label: '学生', icon: <UserOutlined /> },
-  permission: { key: 'permission', label: '权限管理', icon: <LockOutlined /> },
   'system-params': { key: 'system-params', label: '系统参数', icon: <SettingOutlined /> },
   'operate-log': { key: 'operate-log', label: '操作日志', icon: <FileProtectOutlined /> },
   'cloud-sync': { key: 'cloud-sync', label: '云同步', icon: <CloudSyncOutlined /> },

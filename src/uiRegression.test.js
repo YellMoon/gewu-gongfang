@@ -44,12 +44,8 @@ const cloudSync = read('src/pages/CloudSync.tsx');
 const authorityOutboxPanel = read('src/components/AuthorityOutboxPanel.tsx');
 const operateLog = read('src/pages/OperateLog.tsx');
 const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
-const permissionManager = read('src/pages/PermissionManager.tsx');
-const permissionManagerCss = read('src/pages/PermissionManager.css');
 const identityDeviceCenter = read('src/pages/IdentityDeviceCenter.tsx');
 const identityDeviceCenterCss = read('src/pages/IdentityDeviceCenter.css');
-const authorizationApi = read('src/services/authorizationApi.ts');
-const authorizationRequestCoordinator = read('src/services/authorizationRequestCoordinator.mjs');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');
 const packageJson = read('package.json');
 const packageManifest = JSON.parse(packageJson);
@@ -59,23 +55,20 @@ const {
   homeForIdentity: miniappHomeForIdentity,
 } = require('../miniapp/src/pages/login/manualPhoneLoginRuntime');
 const {
-  UNRECOGNIZED_CAPABILITIES,
   VISITOR_CAPABILITIES,
 } = require('../miniapp/src/utils/accountExperience');
 const miniappLoginCss = read('miniapp/src/pages/login/index.scss');
-const miniappUnrecognizedExperience = read('miniapp/src/utils/unrecognizedExperience.ts');
-const miniappUnrecognizedPage = read('miniapp/src/pages/unrecognized-experience/index.tsx');
-const miniappUnrecognizedContent = read('miniapp/src/components/UnrecognizedExperienceContent/index.tsx');
 const miniappAccountApplication = read('miniapp/src/pages/account-application/index.tsx');
 const miniappAppConfig = read('miniapp/src/app.config.ts');
 const miniappQuestionBank = read('miniapp/src/pages/question-bank/index.tsx');
+const miniappHome = read('miniapp/src/pages/index/index.tsx');
 const decodeUnicodeEscapes = source => source.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
 const decodedIdentityDeviceCenter = decodeUnicodeEscapes(identityDeviceCenter);
 
 assert(
   miniappLogin.includes('miniappCloudAuthApi.login(loginCode, phoneCode)') &&
   miniappLogin.includes('openType="getPhoneNumber"') &&
-  miniappLogin.includes("Taro.reLaunch({ url: '/pages/schedule/index' })") &&
+  miniappLogin.includes("Taro.reLaunch({ url: '/pages/index/index' })") &&
   !miniappLogin.includes('/api/auth/wechat-login') &&
   !miniappLogin.includes('validateManualPhone') &&
   !miniappLogin.includes('WECHAT_BINDING_REVIEW_REQUIRED') &&
@@ -91,10 +84,10 @@ assert.strictEqual(
     user_type: 'student',
     account_state: 'unrecognized',
     token_use: 'unrecognized-student',
-    capabilities: [...UNRECOGNIZED_CAPABILITIES],
+    capabilities: [],
   }),
-  '/pages/unrecognized-experience/index',
-  'only the exact unrecognized identity contract should enter the limited experience',
+  '/pages/index/index',
+  'retired unrecognized sessions must never enter a parallel miniapp experience',
 );
 assert.strictEqual(
   miniappHomeForIdentity({
@@ -134,83 +127,44 @@ assert(
 );
 
 assert(
-  miniappUnrecognizedExperience.includes('getQuestions()') &&
-  miniappUnrecognizedExperience.includes('createTask(params:') &&
-  miniappUnrecognizedExperience.includes('cancelTask(taskId: string)') &&
-  !miniappUnrecognizedExperience.includes('downloadArtifact(artifactId: string)') &&
-  miniappUnrecognizedExperience.includes('submitApplication') &&
-  miniappUnrecognizedExperience.includes('getApplicationStatus') &&
-  !miniappUnrecognizedExperience.includes('withdrawApplication'),
-  'unrecognized students should have the fixed-question task and authority-owned role-application API surface'
-);
-
-assert(
   !miniappApi.includes("'/api/auth/review-demo'") &&
   !miniappApi.includes('reviewDemoApi') &&
-  miniappApi.includes("'/api/miniapp/applications/me'") &&
-  miniappApi.includes("accountPath('createTask')"),
-  'miniapp API must remove the public review-demo login while retaining scoped unrecognized-account APIs'
+  miniappApi.includes("'/api/miniapp/role-applications/me'") &&
+  miniappApi.includes("'/api/miniapp/role-applications'"),
+  'miniapp API must remove retired review and unrecognized-account flows while retaining cloud role applications'
 );
 
 assert(
-  miniappUnrecognizedPage.includes("import UnrecognizedExperienceContent from '../../components/UnrecognizedExperienceContent'") &&
-  miniappUnrecognizedContent.includes("taskType: 'question-paper'") &&
-  miniappUnrecognizedContent.includes('COPY.paper') &&
-  !miniappUnrecognizedContent.includes('downloadArtifact') &&
-  miniappUnrecognizedContent.includes("Taro.navigateTo({ url: '/pages/account-application/index' })") &&
-  miniappQuestionBank.includes("Taro.reLaunch({ url: '/pages/unrecognized-experience/index' })"),
-  'unrecognized experience should expose fixed question tasks and a real identity-application entry'
+  !fs.existsSync(path.join(root, 'miniapp/src/pages/unrecognized-experience/index.tsx')) &&
+  !fs.existsSync(path.join(root, 'miniapp/src/components/UnrecognizedExperienceContent/index.tsx')) &&
+  !fs.existsSync(path.join(root, 'miniapp/src/utils/unrecognizedExperience.ts')) &&
+  !miniappAppConfig.includes("'pages/unrecognized-experience/index'") &&
+  !miniappQuestionBank.includes('/pages/unrecognized-experience/index'),
+  'the retired unrecognized-student parallel experience must be physically removed'
 );
 
 assert(
   miniappAccountApplication.includes('buildRoleApplicationRequest') &&
-  miniappAccountApplication.includes('authority_role_application_key') &&
-  miniappAccountApplication.includes('applicationApi.submit') &&
+  miniappAccountApplication.includes('cloud_role_application_key') &&
+  miniappAccountApplication.includes('miniappCloudBusinessApi.submitRoleApplication') &&
+  miniappAccountApplication.includes("'family_member'") &&
   miniappAccountApplication.includes("['not_submitted', 'invalid', 'rejected']") &&
   !miniappAccountApplication.includes('withdrawApplication'),
-  'role applications should use the authority command contract and allow a rejected request to be corrected and resubmitted'
+  'visitors must use the direct cloud role-application contract, including the household-member relation'
 );
 
 assert(
-  miniappAppConfig.includes("'pages/unrecognized-experience/index'") &&
-  miniappAppConfig.includes("'pages/account-application/index'"),
-  'all unrecognized-student routes must be registered and reachable at runtime'
+  miniappAppConfig.includes("'pages/account-application/index'") &&
+  !decodeUnicodeEscapes(miniappHome).includes('申请正式账号') &&
+  !decodeUnicodeEscapes(miniappHome).includes('体验账号'),
+  'only visitors may request a teacher, student, or household relation; formal-account and trial-account labels are retired'
 );
 
 assert(
-  !/\\u[0-9a-fA-F]{4}/.test(permissionManager),
-  'permission manager user-facing copy should use UTF-8 text instead of literal unicode escapes'
-);
-
-assert(
-  permissionManager.includes('createLatestRequestCoordinator') &&
-  permissionManager.includes('requestCoordinator.current.run') &&
-  authorizationRequestCoordinator.includes('requestId === latestRequestId'),
-  'authorization list should ignore stale filter and review responses'
-);
-
-assert(
-  permissionManager.includes("capabilities.includes('users:review')") &&
-  permissionManager.includes('authorization-review-actions') &&
-  permissionManager.includes('Modal.confirm') &&
-  permissionManager.includes('teacher-not-found') &&
-  permissionManager.includes('duplicate-teacher-phone') &&
-  permissionManager.includes('loading={loading || saving}') &&
-  permissionManagerCss.includes(':focus-visible'),
-  'desktop permission manager should expose an accessible capability-gated review workbench with binding and saving states'
-);
-assert(
-  authorizationApi.includes('export async function listUsers') &&
-  authorizationApi.includes('export async function reviewUser') &&
-  authorizationApi.includes('export async function disableUser') &&
-  authorizationApi.includes('export async function getMyCapabilities'),
-  'desktop authorization API should expose the unified user-review contract'
-);
-assert(
-  permissionManager.includes('disableUser(selected.id)') &&
-  permissionManager.includes('authorization-disable-action') &&
-  permissionManager.includes('confirmDisable'),
-  'only the capability-gated review workbench should expose a confirmed user-disable action'
+  !fs.existsSync(path.join(root, 'src/pages/PermissionManager.tsx')) &&
+  !fs.existsSync(path.join(root, 'src/services/authorizationApi.ts')) &&
+  !fs.existsSync(path.join(root, 'src/services/authorizationPresentation.mjs')),
+  'the teacher desktop must not keep the retired admin, pending-classification, or arbitrary role-assignment control plane'
 );
 
 assert(
@@ -222,8 +176,7 @@ assert(
   decodedIdentityDeviceCenter.includes('\u6211\u7684\u5df2\u767b\u8bb0\u8bbe\u5907') &&
   decodedIdentityDeviceCenter.includes('\u65e0\u9700\u4eba\u5de5\u8bbe\u5907\u5ba1\u6279') &&
   decodedIdentityDeviceCenter.includes('\u4e91\u7aef\u88c1\u51b3') &&
-  identityDeviceCenterCss.includes('.identity-device-center') &&
-  !permissionManager.includes('PairingReviewPanel'),
+  identityDeviceCenterCss.includes('.identity-device-center'),
   'desktop identity and device center must present cloud-registered devices without restoring manual device approval'
 );
 

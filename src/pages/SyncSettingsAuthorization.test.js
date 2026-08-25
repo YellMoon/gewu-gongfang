@@ -40,22 +40,22 @@ for (const statusSurface of [todayWorkbench, syncQuickPanel]) {
     'desktop status surfaces must derive pending state from the authority outbox bridge');
 }
 
-const permissionManager = fs.readFileSync('src/pages/PermissionManager.tsx', 'utf8');
 const appNavigation = fs.readFileSync('src/navigation/appNavigation.tsx', 'utf8');
 const identityDeviceCenter = fs.readFileSync('src/pages/IdentityDeviceCenter.tsx', 'utf8');
 const identityDeviceCenterPolicy = fs.readFileSync('src/services/identityDeviceCenterPolicy.mjs', 'utf8');
-const miniappUsers = fs.readFileSync('miniapp/src/pages/admin/users/index.tsx', 'utf8');
 const miniappApi = fs.readFileSync('miniapp/src/utils/api.ts', 'utf8');
 assert.strictEqual(fs.existsSync('src/components/PairingReviewPanel.tsx'), false,
   'legacy V1 pairing review panel must be removed');
-assert.ok(!permissionManager.includes('PairingReviewPanel'));
+assert.strictEqual(fs.existsSync('src/pages/PermissionManager.tsx'), false,
+  'the teacher desktop must not retain the retired account-role assignment workbench');
+assert.ok(!appNavigation.includes("'permission'"),
+  'the retired desktop permission-management route must be removed from navigation');
 assert.ok(appNavigation.includes("'identity-devices'") && appNavigation.includes('identityDeviceNavItem'));
 assert.ok(identityDeviceCenterPolicy.includes('/api/desktop-identity/devices'));
 assert.ok(!identityDeviceCenterPolicy.includes('/api/desktop-identity/authorizations/pending'));
 assert.ok(!identityDeviceCenter.includes('selectedUsers') && !identityDeviceCenter.includes('{ userId }'));
-assert.ok(!miniappUsers.includes('getPendingPairings') && !miniappUsers.includes('reviewPairingCode')
-  && !miniappUsers.includes('pairingUsers') && !miniappUsers.includes('选择绑定账号'),
-  'miniapp user review must not retain the V1 arbitrary account selector');
+assert.strictEqual(fs.existsSync('miniapp/src/pages/admin/users/index.tsx'), false,
+  'miniapp must not retain the retired arbitrary account-review page');
 assert.ok(!miniappApi.includes('/api/desktop-pairing'),
   'miniapp API must not call the removed V1 pairing control plane');
 
