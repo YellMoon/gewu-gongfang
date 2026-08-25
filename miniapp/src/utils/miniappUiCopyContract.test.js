@@ -16,6 +16,10 @@ const homePage = display(read('miniapp/src/pages/index/index.tsx'));
 const forbiddenPage = display(read('miniapp/src/pages/forbidden/index.tsx'));
 const scheduleEditConfig = display(read('miniapp/src/pages/schedule/edit/index.config.ts'));
 const scheduleDetailPage = read('miniapp/src/pages/schedule/detail/index.tsx');
+const studentsConfig = display(read('miniapp/src/pages/students/index.config.ts'));
+const coursesConfig = display(read('miniapp/src/pages/courses/index.config.ts'));
+const teachersConfig = display(read('miniapp/src/pages/teachers/index.config.ts'));
+const assetsConfig = display(read('miniapp/src/pages/assets/index.config.ts'));
 const appConfig = read('miniapp/src/app.config.ts');
 
 const retiredTerms = [
@@ -55,6 +59,8 @@ assert.ok(!homePage.includes('\u7ef4\u62a4\u5b66\u5458\u4e0e\u8bfe\u7a0b\u5173\u
 assert.ok(homePage.includes('\u5b66\u751f\u8d44\u6599') && homePage.includes('\u8bfe\u7a0b\u8d44\u6599'), 'read-only miniapp shortcuts must name the information they show');
 assert.ok(scheduleEditConfig.includes('\u6392\u8bfe\u8bf4\u660e'), 'the read-only scheduling boundary must not be titled as schedule creation');
 assert.ok(scheduleDetailPage.includes('isStudentUser') && scheduleDetailPage.includes('{!isStudent &&'), 'student schedule details must not expose staff-only fee information');
+assert.ok(studentsConfig.includes('\u5b66\u751f\u8d44\u6599') && coursesConfig.includes('\u8bfe\u7a0b\u8d44\u6599') && teachersConfig.includes('\u6559\u5e08\u8d44\u6599'), 'read-only miniapp titles must describe records instead of management');
+assert.ok(assetsConfig.includes('\u4e2a\u4eba\u8d44\u4ea7'), 'the limited-write asset page must identify personal assets');
 
 for (const removedRoute of [
   'pages/admin/users/index',
