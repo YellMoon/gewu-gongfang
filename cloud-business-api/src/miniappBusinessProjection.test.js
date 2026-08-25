@@ -78,6 +78,10 @@ async function request(app, path, { headers = {} } = {}) {
   assert.strictEqual(studentResponse.status, 200);
   assert.deepStrictEqual(queries[2][1], ['default', 'student', 'student-1', 'miniapp-account-3']);
   assert.ok(queries[2][0].includes('NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides'));
+  assert.ok(queries[2][0].includes("CASE WHEN $2 IN ('manager','teacher') THEN t.hourly_rate ELSE NULL END"), 'student projections must not receive teacher hourly rates');
+  assert.ok(queries[2][0].includes("'price_teacher',CASE WHEN $2 IN ('manager','teacher') THEN c.price_teacher ELSE NULL END"), 'student projections must not receive course teacher fees');
+  assert.ok(queries[2][0].includes("'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END"), 'student projections must not receive per-student teacher fees');
+  assert.ok(queries[2][0].includes("'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN o.teacher_fee ELSE NULL END"), 'student projections must not receive override teacher fees');
   console.log('cloud miniapp business projection checks passed');
 })().catch(error => {
   console.error(error);
