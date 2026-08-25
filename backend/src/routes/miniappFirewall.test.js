@@ -30,9 +30,8 @@ assert.ok(!authRoute.includes("res.status(202)"),
 assert.ok(!authRoute.includes('getMiniappUserByWechat(openid)'), 'an existing openid must not bypass verified-phone login');
 assert.ok(database.includes('_ensureMiniappUserColumns'), 'backend database should migrate miniapp login guard columns');
 assert.ok(database.includes('_migrateMiniappMemberships'), 'backend database should migrate formal identities and memberships safely');
-assert.ok(middleware.includes('requireCoreReadAccess'), 'backend auth middleware should include core read firewall');
-assert.ok(app.includes("app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter)"), 'students API should require authenticated core read access');
-assert.ok(app.includes("app.use('/api/payments', optionalAuth, requireCoreReadAccess, requireWriteAccess, paymentsRouter)"), 'payments API should require authenticated core read access');
+assert.ok(!app.includes("app.use('/api/students'"), 'local students CRUD must not remain mounted');
+assert.ok(!app.includes("app.use('/api/payments'"), 'local payments CRUD must not remain mounted');
 assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'cloud relay should enforce miniapp task permissions inside the route');
 assert.ok(cloudRoute.includes('filterSnapshotForUser'), 'backend cloud relay should filter snapshots by user role');
 assert.ok(cloudRoute.includes('requireMiniappTaskAccess'), 'backend cloud relay should enforce task permissions per route');

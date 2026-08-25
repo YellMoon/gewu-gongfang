@@ -7,24 +7,12 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
 const HostWebSocketClient = require('./websocket/client');
 
-const studentsRouter = require('./routes/students');
-const coursesRouter = require('./routes/courses');
-const schedulesRouter = require('./routes/schedules');
-const paymentsRouter = require('./routes/payments');
-const consumptionsRouter = require('./routes/consumptions');
-const teachersRouter = require('./routes/teachers');
-const roomsRouter = require('./routes/rooms');
-const schoolsRouter = require('./routes/schools');
-const institutionsRouter = require('./routes/institutions');
-const statsRouter = require('./routes/stats');
-const dataRouter = require('./routes/export');
-const billImportRouter = require('./routes/billImport');
 const authRouter = require('./routes/auth');
 const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
@@ -370,21 +358,8 @@ function createApp(options = {}) {
   }));
   app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
 
-  // 鍗婂叕寮€璺敱锛堝彲閫夎璇侊級
-  app.use('/api/students', optionalAuth, requireCoreReadAccess, requireWriteAccess, studentsRouter);
-  app.use('/api/courses', optionalAuth, requireCoreReadAccess, requireWriteAccess, coursesRouter);
-  app.use('/api/schedules', optionalAuth, requireCoreReadAccess, requireWriteAccess, schedulesRouter);
-  app.use('/api/payments', optionalAuth, requireCoreReadAccess, requireWriteAccess, paymentsRouter);
-  app.use('/api/consumptions', optionalAuth, requireCoreReadAccess, requireWriteAccess, consumptionsRouter);
-  app.use('/api/teachers', optionalAuth, requireCoreReadAccess, requireWriteAccess, teachersRouter);
-  app.use('/api/rooms', optionalAuth, requireCoreReadAccess, requireWriteAccess, roomsRouter);
-  app.use('/api/schools', optionalAuth, requireCoreReadAccess, requireWriteAccess, schoolsRouter);
-  app.use('/api/institutions', optionalAuth, requireCoreReadAccess, requireWriteAccess, institutionsRouter);
-  app.use('/api/stats', optionalAuth, requireCoreReadAccess, requireWriteAccess, statsRouter);
   app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
-  app.use('/api', optionalAuth, requireWriteAccess, dataRouter);
-  app.use('/api/bill-import', optionalAuth, requireWriteAccess, billImportRouter);
 
   // 閿欒澶勭悊
   app.use(errorHandler);
