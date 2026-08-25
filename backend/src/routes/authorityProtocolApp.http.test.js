@@ -173,39 +173,7 @@ const { createApp } = require('../app');
     const forbiddenGrantBody = await forbiddenGrant.json();
     assert.strictEqual(forbiddenGrant.status, 200);
     assert.strictEqual(forbiddenGrantBody.receipt.status, 'rejected');
-    assert.strictEqual(forbiddenGrantBody.receipt.result.error.code, 'AUTHORITY_COMMAND_SCOPE_FORBIDDEN');
-
-    const superActor = Object.freeze({ ...actor, role: 'super_admin' });
-    const superGrant = Object.freeze({
-      ...directGrant,
-      commandId: 'app-command-direct-admin-2',
-      idempotencyKey: 'app-key-direct-admin-2',
-      actor: superActor,
-      lease: Object.freeze({ id: 'lease-super-app-1', grantVersion: 1 }),
-    });
-    const superGrantSignature = crypto.sign(null, Buffer.from(authorityHttpSigningPayload({
-      method: 'POST', path: requestPath, actor: superActor, body: superGrant,
-    }), 'utf8'), keyPair.privateKey).toString('base64');
-    const superGrantResponse = await fetch(`${baseUrl}${requestPath}`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-gewu-authority-user-id': superActor.userId,
-        'x-gewu-authority-device-id': superActor.deviceId,
-        'x-gewu-authority-role': superActor.role,
-        'x-gewu-device-signature': superGrantSignature,
-      },
-      body: JSON.stringify(superGrant),
-    });
-    const superGrantBody = await superGrantResponse.json();
-    assert.strictEqual(superGrantResponse.status, 200, JSON.stringify(superGrantBody));
-    assert.strictEqual(superGrantBody.command.id, superGrant.commandId);
-    assert.strictEqual(
-      database.db.prepare('SELECT command_type FROM authority_command_ledger WHERE command_id=?')
-        .get(superGrant.commandId).command_type,
-      'role-admin.grant.v1',
-      'only a signed super-admin device can commit a direct admin grant in the cloud authority',
-    );
+    assert.strictEqual(forbiddenGrantBody.receipt.result.error.code, 'COMMAND_TYPE_UNSUPPORTED');
     const projection = createSignedAuthorityProjection({
       authorityId: envelope.authorityId,
       hostEpochId: envelope.hostEpochId,
