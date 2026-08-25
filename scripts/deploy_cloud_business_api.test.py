@@ -57,6 +57,16 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
                 module.validated_release_tag("8.5.0-deadbee")
 
+    def test_upload_source_reuses_only_an_existing_real_directory_for_the_same_immutable_tag(self):
+        ssh = mock.Mock()
+        ssh.open_sftp.return_value = mock.Mock()
+        with mock.patch.object(module.deploy, "run") as run:
+            module.upload_source(ssh, "8.5.0-1101687f349d")
+        command = run.call_args_list[0].args[1]
+        self.assertIn("test -d '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
+        self.assertIn("test ! -L '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
+        self.assertIn("elif test ! -e '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'; then mkdir -p", command)
+
     def test_explicit_rollback_restores_the_preserved_container(self):
         command = rollback_command("8.5.0-1101687f349d", "a" * 32)
         self.assertIn("rollback-8.5.0-1101687f349d", command)

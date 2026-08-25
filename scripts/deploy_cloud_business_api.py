@@ -230,7 +230,11 @@ def validated_release_tag(requested_tag=None):
 
 def upload_source(ssh, tag):
     build_dir = remote_build_dir(tag)
-    deploy.run(ssh, f"test ! -e '{build_dir}' && mkdir -p '{build_dir}'")
+    deploy.run(
+        ssh,
+        f"if test -d '{build_dir}' && test ! -L '{build_dir}'; then :; "
+        f"elif test ! -e '{build_dir}'; then mkdir -p '{build_dir}'; else exit 2; fi",
+    )
     sftp = ssh.open_sftp()
     try:
         for top_level in ("cloud-business-api", "shared"):
