@@ -183,7 +183,7 @@ export default function Settings() {
       </View> : null}
 
       <View className={`sync-status ${online ? 'online' : 'offline'}`}>
-        <Text>{online ? '\u5728\u7ebf' : '\u79bb\u7ebf'}</Text>
+        <Text>{online ? '\u7f51\u7edc\u5df2\u8fde\u63a5' : '\u5f53\u524d\u79bb\u7ebf'}</Text>
       </View>
 
       <View className='section'>
