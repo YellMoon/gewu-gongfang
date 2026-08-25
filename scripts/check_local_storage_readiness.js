@@ -3,10 +3,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  findQuestionBankStore,
-  inspectQuestionBankStore,
-} = require('../backend/src/services/questionBankStorageService');
-const {
   inspectBackupTargets,
 } = require('../backend/src/services/questionBankBackupTargetService');
 
@@ -19,49 +15,34 @@ function readRuntimeConfig() {
   return { configPath, config: JSON.parse(raw), error: '' };
 }
 
-function main() {
-  const { configPath, config, error } = readRuntimeConfig();
-  if (!config) {
-    console.log(JSON.stringify({ ok: false, configPath, error }, null, 2));
-    process.exitCode = 1;
-    return;
-  }
-
-  const QUESTION_BANK_STORE_ID = config.questionBankStoreId || process.env.QUESTION_BANK_STORE_ID || '';
-  const candidates = [
-    config.questionBankPath,
-    ...(Array.isArray(config.questionBankCandidatePaths) ? config.questionBankCandidatePaths : []),
-  ].filter(Boolean);
-  const foundStore = findQuestionBankStore(candidates, { storeId: QUESTION_BANK_STORE_ID });
-  const questionBank = foundStore.available
-    ? inspectQuestionBankStore(foundStore.root)
-    : { available: false, root: config.questionBankPath || '', reason: foundStore.reason };
-
+function buildReadinessReport({ configPath, config, error = '' }) {
+  if (!config) return { ok: false, configPath, error: error || 'runtime config file not found' };
   const backupTargets = inspectBackupTargets({
     localCachePath: config.localCachePath,
     nasBackupPath: config.nasBackupPath,
   });
-
-  const ok = Boolean(questionBank.available && backupTargets.localCache.available && backupTargets.nasBackup.available);
-  const report = {
-    ok,
+  return {
+    ok: Boolean(backupTargets.localCache.available && backupTargets.nasBackup.available),
     configPath,
     nodeRole: config.nodeRole,
     deviceId: config.deviceId,
-    QUESTION_BANK_STORE_ID,
-    questionBank: {
+    retiredQuestionBankStore: {
       configuredRoot: config.questionBankPath,
-      effectiveRoot: foundStore.root || config.questionBankPath || '',
-      available: Boolean(questionBank.available),
-      storeId: questionBank.manifest?.storeId || '',
-      missingDirs: questionBank.missingDirs || [],
-      reason: questionBank.reason || foundStore.reason || '',
+      configuredStoreId: config.questionBankStoreId || '',
+      required: false,
+      reason: 'cloud question-bank structure is authoritative; NAS stores media and backup artifacts only',
     },
     backupTargets,
   };
-
-  console.log(JSON.stringify(report, null, 2));
-  if (!ok) process.exitCode = 1;
 }
 
-main();
+function main() {
+  const report = buildReadinessReport(readRuntimeConfig());
+
+  console.log(JSON.stringify(report, null, 2));
+  if (!report.ok) process.exitCode = 1;
+}
+
+if (require.main === module) main();
+
+module.exports = Object.freeze({ buildReadinessReport, readRuntimeConfig });
