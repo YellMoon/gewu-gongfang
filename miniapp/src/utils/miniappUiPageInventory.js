@@ -24,18 +24,6 @@ const pageInventory = [
     files: ['src/pages/login/privacy.tsx', 'src/pages/login/privacy.scss'],
   },
   {
-    route: 'pages/desktop-online-registration/index',
-    title: '\u5728\u7ebf\u7535\u8111\u767b\u8bb0',
-    registered: true,
-    roleViews: ['guest'],
-    surface: 'cloud-device-pairing',
-    visualStatus: 'optimized',
-    verificationStates: ['scan-code', 'wechat-phone-verification', 'cloud-confirmed', 'network-error'],
-    realFeatureBasis: ['Taro.scanCode(qrCode)', 'Button(openType=getPhoneNumber)', 'POST /api/desktop/pairing/confirm', 'cloud silent device registration'],
-    screenshotRequired: true,
-    files: ['src/pages/desktop-online-registration/index.tsx', 'src/pages/desktop-online-registration/index.scss'],
-  },
-  {
     route: 'pages/index/index',
     title: '首页工作台',
     registered: true,

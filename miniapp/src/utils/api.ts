@@ -265,7 +265,7 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud role application request unavailable' };
     }
   },
-  async submitRoleApplication(token: string, request: { requestedIdentity: 'teacher' | 'student' | 'family_member'; profileMode: 'create' | 'existing'; bindingHint: string | null }, idempotencyKey: string): Promise<ApiResponse<{ ok: true; state: string; application: any }>> {
+  async submitRoleApplication(token: string, request: { requestedIdentity: 'teacher' | 'student' | 'family_member'; profileMode: 'existing'; bindingHint: string }, idempotencyKey: string): Promise<ApiResponse<{ ok: true; state: string; application: any }>> {
     if (typeof token !== 'string' || !token.trim() || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return { success: false, error: 'Cloud session required' };
     try {
       const response = await Taro.request({

@@ -78,7 +78,11 @@ const service = createMiniappRoleApplicationService({
     error => error.code === 'CLOUD_ROLE_APPLICATION_INVALID',
   );
   await assert.rejects(
-    () => service.submit({ token: 'teacher-ticket', idempotencyKey: 'role-application-formal-1', requestedIdentity: 'teacher', profileMode: 'create', bindingHint: '' }),
+    () => service.submit({ token: 'visitor-ticket', idempotencyKey: 'role-application-create-1', requestedIdentity: 'teacher', profileMode: 'create', bindingHint: '' }),
+    error => error.code === 'CLOUD_ROLE_APPLICATION_INVALID',
+  );
+  await assert.rejects(
+    () => service.submit({ token: 'teacher-ticket', idempotencyKey: 'role-application-formal-1', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher-profile-1' }),
     error => error.code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED',
   );
   const pending = await service.listSubmitted({ token: 'super-admin-ticket' });

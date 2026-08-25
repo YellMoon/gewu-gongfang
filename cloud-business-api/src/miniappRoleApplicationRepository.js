@@ -21,7 +21,7 @@ function record(row) {
   const bindingHint = row.bindingHint === null ? null : (typeof row.bindingHint === 'string' ? row.bindingHint : undefined);
   const status = text(row.status, 16);
   if (!applicationId || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
-    || !['create', 'existing'].includes(profileMode) || bindingHint === undefined
+    || profileMode !== 'existing' || bindingHint === undefined || !bindingHint
     || !['submitted', 'approved', 'rejected'].includes(status)) throw invalid();
   const base = { applicationId, requestedIdentity, profileMode, bindingHint, status, submittedAt: instant(row.submittedAt) };
   if (Object.hasOwn(row, 'reviewedAt')) {
@@ -62,7 +62,7 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
     const bindingHint = input?.bindingHint === null ? null : (typeof input?.bindingHint === 'string' && input.bindingHint.length <= 128 ? input.bindingHint : undefined);
     const submittedAt = typeof input?.submittedAt === 'string' && Number.isFinite(Date.parse(input.submittedAt)) ? input.submittedAt : null;
     if (!accountId || !applicationId || !idempotencyKey || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
-      || !['create', 'existing'].includes(profileMode) || bindingHint === undefined || !submittedAt) throw invalid();
+      || profileMode !== 'existing' || bindingHint === undefined || !bindingHint || !submittedAt) throw invalid();
     const result = await query(
       `INSERT INTO business.cloud_role_applications
         (tenant_id,cloud_account_id,application_id,idempotency_key,requested_identity,profile_mode,binding_hint,status,submitted_at,updated_at)

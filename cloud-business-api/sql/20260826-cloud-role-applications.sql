@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS business.cloud_role_applications (
   application_id text NOT NULL,
   idempotency_key text NOT NULL,
   requested_identity text NOT NULL CHECK (requested_identity IN ('teacher','student','family_member')),
-  profile_mode text NOT NULL CHECK (profile_mode IN ('create','existing')),
-  binding_hint text NULL,
+  profile_mode text NOT NULL CHECK (profile_mode='existing'),
+  binding_hint text NOT NULL,
   status text NOT NULL CHECK (status IN ('submitted','approved','rejected')),
   submitted_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL,
@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS business.cloud_role_applications (
   profile_id text NULL,
   PRIMARY KEY (tenant_id, application_id),
   UNIQUE (tenant_id, cloud_account_id, idempotency_key),
-  CHECK ((profile_mode = 'existing' AND binding_hint IS NOT NULL AND length(binding_hint) > 0) OR (profile_mode = 'create')),
-  CHECK (requested_identity <> 'family_member' OR profile_mode = 'existing')
+  CHECK (length(binding_hint) > 0)
 );
 
 ALTER TABLE business.cloud_role_applications

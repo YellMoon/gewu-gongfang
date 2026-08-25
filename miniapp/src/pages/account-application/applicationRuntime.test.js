@@ -26,22 +26,16 @@ assert.deepStrictEqual(buildRoleApplicationRequest({
   bindingHint: 'student-profile-1',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
-  requestedIdentity: 'teacher', profileMode: 'create',
-  bindingHint: '',
-}), {
-  requestedIdentity: 'teacher', profileMode: 'create', bindingHint: null,
-});
-assert.deepStrictEqual(buildRoleApplicationRequest({
   requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
 }), {
   requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
 });
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'admin', profileMode: 'create' }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'admin', profileMode: 'existing', bindingHint: 'profile-1' }),
   /teacher, student, or family_member/,
 );
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'create' }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'teacher', profileMode: 'create', bindingHint: '' }),
   /existing/,
 );
 assert.throws(

@@ -13,9 +13,9 @@ assert.ok(loginPage.includes('Taro.login()'), 'login must obtain the official We
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');
 assert.ok(!loginPage.includes('/api/auth/wechat-login'), 'login must not call the old account endpoint');
 assert.ok(!loginPage.includes('type="number"') && !loginPage.includes('normalizeManualPhone'), 'login must not collect a manually typed phone number');
-assert.ok(loginPage.includes("'/pages/schedule/index'"), 'new cloud identities must enter the cloud-backed schedule surface instead of the legacy home');
-assert.ok(!loginPage.includes("'/pages/index/index'"), 'new cloud login must not route into the legacy API-backed home');
-assert.ok(loginPage.includes('CLOUD_MINIAPP_ACCOUNT_PENDING'), 'new accounts must receive a clear pending-authorization result');
+assert.ok(loginPage.includes("'/pages/index/index'"), 'cloud identities must enter the role-aware home surface');
+assert.ok(!loginPage.includes("'/pages/schedule/index'"), 'new visitors must not bypass the role-aware home shell');
+assert.ok(!loginPage.includes('CLOUD_MINIAPP_ACCOUNT_PENDING'), 'new accounts are visitors rather than a parallel pending-authorization identity');
 assert.ok(!loginPage.includes('WECHAT_BINDING_REVIEW_REQUIRED') && !loginPage.includes('pendingBinding'), 'old manual-review identity state must not be a new login path');
 assert.ok(!loginPage.includes('authApi.reviewDemo'), 'legacy review-code login must be absent');
 assert.ok(!loginPage.includes('reviewCode') && !loginPage.includes('reviewRole'), 'login page must not expose review-code or synthetic-role state');
@@ -24,7 +24,7 @@ assert.ok(apiClient.includes('res.data?.code'), '403 responses should preserve t
 assert.ok(apiClient.includes("'/api/miniapp/cloud-login'"), 'cloud login must run without an old session bearer token');
 assert.ok(apiClient.includes('phoneCode: string | null'), 'the cloud API facade must permit no phone code only for an already-bound identity');
 assert.ok(loginInventory?.verificationStates.includes('wechat-phone-proof'), 'login UI inventory should cover the new cloud phone proof');
-assert.ok(loginInventory?.verificationStates.includes('pending-authorization'), 'login UI inventory should cover a new account awaiting role assignment');
+assert.ok(loginInventory?.verificationStates.includes('visitor-session'), 'login UI inventory should cover a new visitor that can submit a role application');
 assert.ok(loginInventory?.realFeatureBasis.includes('POST /api/miniapp/cloud-login'), 'login inventory must identify the cloud account boundary');
 assert.ok(!JSON.stringify(loginInventory).includes('manual-phone-login'), 'login inventory must not claim a manual phone login path');
 

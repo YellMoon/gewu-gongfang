@@ -80,19 +80,6 @@ const IDENTITY_EVIDENCE_CHECKS = Object.freeze([
     ]),
   }),
   Object.freeze({
-    key: 'miniappDesktopOnlineRegistration',
-    files: Object.freeze([
-      Object.freeze({ path: 'miniapp/src/app.config.ts', markers: Object.freeze([
-        'pages/desktop-online-registration/index',
-      ]) }),
-      Object.freeze({ path: 'miniapp/src/pages/desktop-online-registration/index.tsx', markers: Object.freeze([
-        'Taro.scanCode',
-        "openType=\"getPhoneNumber\"",
-        "'/api/desktop/pairing/confirm'",
-      ]) }),
-    ]),
-  }),
-  Object.freeze({
     key: 'desktopIdentityGate',
     files: Object.freeze([
       Object.freeze({ path: 'src/index.tsx', markers: Object.freeze([

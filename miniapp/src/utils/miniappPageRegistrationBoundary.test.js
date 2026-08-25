@@ -52,8 +52,8 @@ assert.ok(
   'formal question-bank page bundle must not statically include the unrecognized experience implementation',
 );
 assert.ok(
-  questionBankSource.includes('/pages/unrecognized-experience/index'),
-  'unrecognized question-bank access should redirect to the dedicated registered experience page',
+  !questionBankSource.includes('/pages/unrecognized-experience/index'),
+  'retired unrecognized question-bank access must not redirect to a deleted parallel experience page',
 );
 
 console.log('miniapp page registration boundary checks passed');

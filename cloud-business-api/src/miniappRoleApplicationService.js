@@ -88,9 +88,7 @@ function createMiniappRoleApplicationService(config) {
     const profileMode = text(value.profileMode, 16);
     const bindingHint = value.bindingHint === null ? null : (typeof value.bindingHint === 'string' && value.bindingHint === value.bindingHint.trim() && value.bindingHint.length <= 128 ? value.bindingHint || null : undefined);
     if (!idempotencyKey || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
-      || !['create', 'existing'].includes(profileMode) || bindingHint === undefined
-      || (requestedIdentity === 'family_member' && profileMode !== 'existing')
-      || (profileMode === 'existing' && !bindingHint)) throw invalid();
+      || profileMode !== 'existing' || bindingHint === undefined || !bindingHint) throw invalid();
     const submittedAt = asIsoDate(settings.now());
     const applicationId = text(settings.randomId('role_application'), 128);
     if (!applicationId) throw invalid();

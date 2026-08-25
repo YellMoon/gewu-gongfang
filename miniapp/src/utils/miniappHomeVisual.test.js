@@ -22,7 +22,12 @@ assert.ok(
   'miniapp home should use a product-grade hero, status panel, and action list structure'
 );
 
-assert.ok(homePage.includes('isVisitorIdentity') && homePage.includes('AccountStatusBanner'), 'home must render a visitor shell before formal data loading');
+assert.ok(
+  homePage.includes('isVisitorIdentity') &&
+    homePage.includes('if (visitor && user)') &&
+    homePage.includes("'/pages/account-application/index'"),
+  'home must render the visitor-only preview and role-application shell before formal data loading',
+);
 for (const retiredHostAuthorityCopy of ['\u7b49\u5f85\u4e3b\u673a\u53d1\u5e03', '\u672c\u5730\u53ef\u7528']) {
   assert.ok(!homePage.includes(retiredHostAuthorityCopy), 'home must not present a retired host or local cache as the publishing authority');
 }

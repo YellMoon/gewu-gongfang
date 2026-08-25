@@ -11,16 +11,12 @@ import {
 import './index.scss';
 
 type RequestedIdentity = 'student' | 'teacher' | 'family_member';
-type ProfileMode = 'create' | 'existing';
+type ProfileMode = 'existing';
 
 const ROLE_OPTIONS = [
   { value: 'student' as RequestedIdentity, label: '\u5b66\u751f' },
   { value: 'teacher' as RequestedIdentity, label: '\u8001\u5e08' },
   { value: 'family_member' as RequestedIdentity, label: '\u5bb6\u5ead\u6210\u5458' },
-];
-const PROFILE_MODE_OPTIONS = [
-  { value: 'create' as ProfileMode, label: '\u65b0\u5efa\u6863\u6848' },
-  { value: 'existing' as ProfileMode, label: '\u5173\u8054\u5df2\u6709\u6863\u6848' },
 ];
 
 function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode): string {
@@ -43,7 +39,6 @@ export default function AccountApplicationPage() {
   const [state, setState] = useState('loading');
   const [application, setApplication] = useState<any>(null);
   const [roleIndex, setRoleIndex] = useState(0);
-  const [profileModeIndex, setProfileModeIndex] = useState(0);
   const [bindingHint, setBindingHint] = useState('');
 
   const load = async () => {
@@ -58,7 +53,6 @@ export default function AccountApplicationPage() {
       if (nextApplication?.requestedIdentity) {
         setRoleIndex(nextApplication.requestedIdentity === 'teacher' ? 1 : nextApplication.requestedIdentity === 'family_member' ? 2 : 0);
       }
-      if (nextApplication?.profileMode) setProfileModeIndex(nextApplication.profileMode === 'existing' ? 1 : 0);
       if (nextApplication?.bindingHint) setBindingHint(nextApplication.bindingHint);
     } catch (error: any) {
       const message = String(error?.message || '').toLowerCase();
@@ -80,12 +74,12 @@ export default function AccountApplicationPage() {
     if (!operationLock.current.tryAcquire('submit')) return;
     setState('submitting');
     const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
-    const profileMode: ProfileMode = requestedIdentity === 'family_member' ? 'existing' : PROFILE_MODE_OPTIONS[profileModeIndex].value;
+    const profileMode: ProfileMode = 'existing';
     try {
       const request = buildRoleApplicationRequest({ requestedIdentity, profileMode, bindingHint }) as {
         requestedIdentity: RequestedIdentity;
         profileMode: ProfileMode;
-        bindingHint: string | null;
+        bindingHint: string;
       };
       const token = String(Taro.getStorageSync('auth_token') || '').trim();
       const result = responseData(await miniappCloudBusinessApi.submitRoleApplication(
@@ -107,7 +101,7 @@ export default function AccountApplicationPage() {
   const copy = copyForApplicationState(state);
   const editable = ['not_submitted', 'invalid', 'rejected'].includes(state);
   const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
-  const profileMode: ProfileMode = requestedIdentity === 'family_member' ? 'existing' : PROFILE_MODE_OPTIONS[profileModeIndex].value;
+  const profileMode: ProfileMode = 'existing';
 
   return (
       <View className='application-page'>
@@ -134,23 +128,7 @@ export default function AccountApplicationPage() {
             </View>
           </Picker>
 
-          {requestedIdentity !== 'family_member' ? (
-            <>
-              <Text className='section-title'>{'\u6863\u6848\u65b9\u5f0f'}</Text>
-              <Picker
-                mode='selector'
-                range={PROFILE_MODE_OPTIONS.map(option => option.label)}
-                value={profileModeIndex}
-                onChange={event => setProfileModeIndex(Number(event.detail.value))}
-              >
-                <View className='picker-value'>
-                  {PROFILE_MODE_OPTIONS[profileModeIndex].label} <Text>{'\u203a'}</Text>
-                </View>
-              </Picker>
-            </>
-          ) : null}
-
-          {profileMode === 'existing' ? <View className='field'>
+          <View className='field'>
             <Text className='label'>{'\u5df2\u6709\u6863\u6848\u4fe1\u606f'}</Text>
             <Input
               maxlength={128}
@@ -159,7 +137,7 @@ export default function AccountApplicationPage() {
               placeholder={'\u8bf7\u586b\u5199\u5df2\u6709\u6863\u6848\u7684\u540d\u79f0\u6216\u7f16\u53f7'}
             />
             <Text className='field-tip'>{'\u4e91\u7aef\u4f1a\u6838\u5bf9\u4fe1\u606f\u540e\u5173\u8054\u6863\u6848\u3002'}</Text>
-          </View> : null}
+          </View>
 
           <Button
             className='primary-action'

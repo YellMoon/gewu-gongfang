@@ -216,9 +216,11 @@ assert.ok(!coveredRoles.has('admin'), 'miniapp UI inventory must not retain the 
 assert.ok(coveredRoles.has('student'), 'miniapp UI inventory must cover student UI');
 assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/guest UI');
 
-const desktopRegistrationEntry = pageInventory.find(entry => entry.route === 'pages/desktop-online-registration/index');
-assert.ok(desktopRegistrationEntry?.roleViews.includes('guest'), 'online desktop registration must be a public guest entry');
-assert.ok(desktopRegistrationEntry?.verificationStates.includes('cloud-confirmed'), 'online desktop registration must cover cloud confirmation');
+assert.strictEqual(
+  pageInventory.some(entry => entry.route === 'pages/desktop-online-registration/index'),
+  false,
+  'desktop installation registration is silent inside the desktop client and must not expose a miniapp QR pairing page',
+);
 assert.strictEqual(
   pageInventory.some(entry => entry.route === 'pages/desktop-authorization/index'),
   false,

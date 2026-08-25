@@ -36,11 +36,10 @@ function buildRoleApplicationRequest(input = {}) {
     throw new Error('requested identity must be teacher, student, or family_member');
   }
   const profileMode = String(input.profileMode || '').trim();
-  if (!['create', 'existing'].includes(profileMode)) throw new Error('profile mode must be create or existing');
-  if (requestedIdentity === 'family_member' && profileMode !== 'existing') throw new Error('family_member requires an existing student profile');
+  if (profileMode !== 'existing') throw new Error('profile mode must be existing');
   const bindingHint = String(input.bindingHint || '').trim();
   if (bindingHint.length > 128) throw new Error('binding hint must not exceed 128 characters');
-  if (profileMode === 'existing' && !bindingHint) throw new Error('existing profile mode requires a binding hint');
+  if (!bindingHint) throw new Error('existing profile mode requires a binding hint');
   return {
     requestedIdentity,
     profileMode,
