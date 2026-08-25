@@ -1507,7 +1507,7 @@ async function withVNextPg17CopyOnlyRehearsalTarget(target, callback, faultPlan)
 }
 
 async function withVNextPg17SyntheticQuery(handle, purpose, callback) {
-  if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'writer', 'business-verifier', 'migration-admission-verifier', 'fixture-provisioner'].includes(purpose)
+  if (!isVNextPg17DisposableHandle(handle) || !['migrator', 'runtime', 'verifier', 'writer', 'identity-verifier', 'business-verifier', 'migration-admission-verifier', 'fixture-provisioner'].includes(purpose)
     || typeof callback !== 'function' || types.isProxy(callback)) throw invalidHandle();
   const state = handles.get(handle);
   if (state.businessFoundationShadowAdmissionPoisoned) throw unavailable();

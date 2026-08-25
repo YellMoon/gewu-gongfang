@@ -18,16 +18,18 @@ DOCKER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DEFAULT_MIGRATION_ROLE = "gewu_app"
 
 # These two migrations were applied to production before their source files
-# received later repository-only corrections. Their historical hashes are
-# retained here solely to keep the immutable ledger readable; do not add a
-# hash unless it is reproducible from a reviewed repository revision.
-KNOWN_HISTORICAL_MIGRATION_HASHES = {
-    "20260822-miniapp-cloud-accounts.sql": frozenset({
+# received later repository-only corrections. Each exception binds the
+# deployed historical hash to one reviewed current file hash. This is not a
+# general drift exception: editing either current migration must fail closed.
+KNOWN_HISTORICAL_MIGRATION_COMPATIBILITY = {
+    "20260822-miniapp-cloud-accounts.sql": (
         "86d324e5ee4941ad53e9c1232331a33ce8290e7710f9f840adccaeafdb30ff7c",
-    }),
-    "20260822-miniapp-cloud-role-profiles.sql": frozenset({
+        "230b0eb4d6a185c1740a71c33eb16bd1a27c3781f4284f88bb10c043432b93ac",
+    ),
+    "20260822-miniapp-cloud-role-profiles.sql": (
         "8c62d8011d66b09eb0682227ef06e1fb2f77592c6480f3d53e10fac85722533c",
-    }),
+        "4a6c7a5ce14bd9136680f1ed8ad667005d0e3641eedf71ef389239829df291a5",
+    ),
 }
 
 
@@ -50,8 +52,10 @@ def sql_literal(value):
     return "'" + value.replace("'", "''") + "'"
 
 
-def is_known_historical_hash(name, sha256):
-    return isinstance(name, str) and isinstance(sha256, str) and sha256 in KNOWN_HISTORICAL_MIGRATION_HASHES.get(name, ())
+def is_reviewed_historical_compatibility(name, existing_sha256, current_sha256):
+    compatibility = KNOWN_HISTORICAL_MIGRATION_COMPATIBILITY.get(name)
+    return isinstance(existing_sha256, str) and isinstance(current_sha256, str) \
+        and compatibility == (existing_sha256, current_sha256)
 
 
 def owner_sql(statement):
@@ -92,7 +96,8 @@ def apply_migrations(executor, migrations):
             "SELECT sha256 FROM business.cloud_schema_migrations WHERE name=" + sql_literal(migration["name"])
         )).strip()
         if existing:
-            if existing != migration["sha256"] and not is_known_historical_hash(migration["name"], existing):
+            if existing != migration["sha256"] and not is_reviewed_historical_compatibility(
+                    migration["name"], existing, migration["sha256"]):
                 raise RuntimeError("CLOUD_MIGRATION_HASH_MISMATCH")
             result["skipped"].append(migration["name"])
             continue

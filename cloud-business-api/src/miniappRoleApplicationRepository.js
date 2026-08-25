@@ -43,9 +43,7 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
     if (!normalizedAccountId) throw invalid();
     const result = await query(
       `SELECT application_id AS "applicationId",requested_identity AS "requestedIdentity",profile_mode AS "profileMode",binding_hint AS "bindingHint",status,submitted_at AS "submittedAt"
-         FROM business.cloud_role_applications
-        WHERE tenant_id=$1 AND cloud_account_id=$2
-        ORDER BY submitted_at DESC,application_id DESC LIMIT 1`,
+         FROM business.vnext_read_latest_cloud_role_application_v2($1,$2)`,
       [tenantId, normalizedAccountId],
     );
     if (!result || !Array.isArray(result.rows)) throw invalid();
@@ -64,12 +62,8 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
     if (!accountId || !applicationId || !idempotencyKey || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
       || profileMode !== 'existing' || bindingHint === undefined || !bindingHint || !submittedAt) throw invalid();
     const result = await query(
-      `INSERT INTO business.cloud_role_applications
-        (tenant_id,cloud_account_id,application_id,idempotency_key,requested_identity,profile_mode,binding_hint,status,submitted_at,updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'submitted',$8,$8)
-       ON CONFLICT (tenant_id,cloud_account_id,idempotency_key) DO UPDATE
-         SET updated_at=business.cloud_role_applications.updated_at
-       RETURNING application_id AS "applicationId",requested_identity AS "requestedIdentity",profile_mode AS "profileMode",binding_hint AS "bindingHint",status,submitted_at AS "submittedAt"`,
+      `SELECT application_id AS "applicationId",requested_identity AS "requestedIdentity",profile_mode AS "profileMode",binding_hint AS "bindingHint",status,submitted_at AS "submittedAt"
+         FROM business.vnext_submit_cloud_role_application_v2($1,$2,$3,$4,$5,$6,$7,$8)`,
       [tenantId, accountId, applicationId, idempotencyKey, requestedIdentity, profileMode, bindingHint, submittedAt],
     );
     if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw invalid();
@@ -78,9 +72,7 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
   async function listSubmitted() {
     const result = await query(
       `SELECT ${selectColumns}
-         FROM business.cloud_role_applications
-        WHERE tenant_id=$1 AND status='submitted'
-        ORDER BY submitted_at ASC,application_id ASC`,
+         FROM business.vnext_list_submitted_cloud_role_applications_v2($1)`,
       [tenantId],
     );
     if (!result || !Array.isArray(result.rows)) throw invalid();
@@ -96,7 +88,7 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
       || (decision === 'approved' && !profileId) || (decision === 'rejected' && input?.profileId !== null)) throw invalid();
     const result = await query(
       `SELECT ${selectColumns}
-         FROM business.vnext_review_cloud_role_application_v1($1,$2,$3,$4,$5,$6)`,
+         FROM business.vnext_review_cloud_role_application_v2($1,$2,$3,$4,$5,$6)`,
       [tenantId, reviewerAccountId, applicationId, decision, profileId, reviewedAt],
     );
     if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw invalid();

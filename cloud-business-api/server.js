@@ -325,6 +325,7 @@ function createDesktopRegistrationFromEnvironment() {
     canonicalAccount,
     canonicalWechatIdentity,
     accountRepository,
+    roleApplicationQuery: (text, values) => identityPool.query(text, values),
     bootstrapAdminAccountId,
     businessScheduleUpdate,
     businessScheduleStudentOverride,
@@ -363,7 +364,7 @@ const miniappRoleApplications = miniappCloudAccount
     randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
     cloudAccount: miniappCloudAccount,
     repository: createMiniappRoleApplicationRepository({
-      query: (text, values) => pool.query(text, values),
+      query: desktopRuntime.roleApplicationQuery,
       tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
     }),
   })

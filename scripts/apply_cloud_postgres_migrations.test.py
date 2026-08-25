@@ -6,7 +6,7 @@ import unittest
 from apply_cloud_postgres_migrations import (
     DEFAULT_MIGRATION_ROLE,
     DockerPsqlExecutor,
-    KNOWN_HISTORICAL_MIGRATION_HASHES,
+    KNOWN_HISTORICAL_MIGRATION_COMPATIBILITY,
     apply_migrations,
     read_migrations,
 )
@@ -63,13 +63,16 @@ class CloudPostgresMigrationTests(unittest.TestCase):
                 apply_migrations(executor, rows)
         self.assertTrue(any("SET LOCAL ROLE vnext_pg17_business_owner" in call for call in executor.calls))
 
-    def test_skips_only_reviewed_historical_hashes(self):
+    def test_skips_only_exact_reviewed_historical_to_current_pair(self):
         name = "20260822-miniapp-cloud-accounts.sql"
-        historical_hash = next(iter(KNOWN_HISTORICAL_MIGRATION_HASHES[name]))
+        historical_hash, current_hash = KNOWN_HISTORICAL_MIGRATION_COMPATIBILITY[name]
         executor = FakeExecutor()
         executor.applied[name] = historical_hash
-        rows = [{"name": name, "sql": "BEGIN;\nSELECT 1;\nCOMMIT;\n", "sha256": "f" * 64}]
+        rows = [{"name": name, "sql": "BEGIN;\nSELECT 1;\nCOMMIT;\n", "sha256": current_hash}]
         self.assertEqual(apply_migrations(executor, rows), {"applied": [], "skipped": [name]})
+        rows[0]["sha256"] = "f" * 64
+        with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
+            apply_migrations(executor, rows)
         executor.applied[name] = "e" * 64
         with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
             apply_migrations(executor, rows)
