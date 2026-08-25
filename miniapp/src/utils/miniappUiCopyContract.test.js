@@ -50,7 +50,7 @@ assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 25945, 24072,
 assert.ok(settingsPage.includes("application.profileMode === 'new'"), 'role review must distinguish a new-profile request from an existing-profile binding');
 assert.ok(settingsPage.includes(String.fromCharCode(20808, 21019, 24314, 26723, 26696)), 'new-profile review must explain that a profile is created before it is linked');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
-assert.ok(questionBankPage.includes('disabled={Boolean(submitting) || selectedIds.length === 0}'), 'question-bank exports must reject an empty selection before a cloud task is created');
+assert.ok(questionBankPage.includes("disabled={Boolean(submitting) || previewState !== 'ready' || selectedIds.length === 0}"), 'question-bank exports must reject an empty selection and remain disabled while cloud preview access is unavailable');
 assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank empty-selection actions must have a visible disabled state');
 
 assert.ok(!forbiddenPage.includes('\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458'), 'the access boundary must not imply a retired ordinary-administrator role');
