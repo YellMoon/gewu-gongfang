@@ -13,7 +13,7 @@ type TabItem = {
   iconText: string;
 };
 
-const ADMIN_TABS: TabItem[] = [
+const STAFF_TABS: TabItem[] = [
   { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
   { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
   { pagePath: 'pages/students/index', label: '学员', iconText: '生' },
@@ -86,7 +86,7 @@ export default function RoleTabBar() {
   const tabs = useMemo(() => (
     navigationMode === 'visitor' || navigationMode === 'preview'
       ? VISITOR_TABS
-      : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS)
+      : (userType === 'student' ? STUDENT_TABS : STAFF_TABS)
   ), [navigationMode, userType]);
 
   const isTabPage = tabs.some((item) => item.pagePath === currentRoute);

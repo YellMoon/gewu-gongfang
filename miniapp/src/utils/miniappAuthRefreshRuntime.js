@@ -12,7 +12,7 @@ function createAuthRefreshRuntime(dependencies) {
 
   function refresh() {
     const originalSession = dependencies.sessionRuntime.capture();
-    if (!originalSession.token || originalSession.review) {
+    if (!originalSession.token) {
       return Promise.resolve(false);
     }
     const key = refreshKey(originalSession);
@@ -23,7 +23,7 @@ function createAuthRefreshRuntime(dependencies) {
         if (typeof replacementToken !== 'string' || !replacementToken.trim()) return false;
         if (!dependencies.sessionRuntime.isSameSession(originalSession)) return false;
         const currentSession = dependencies.sessionRuntime.capture();
-        if (currentSession.review || currentSession.token !== originalSession.token) return false;
+        if (currentSession.token !== originalSession.token) return false;
         dependencies.writeToken(replacementToken.trim());
         return true;
       } catch (_error) {

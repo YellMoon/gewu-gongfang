@@ -13,15 +13,15 @@ const {
 assert.strictEqual(typeof homeForIdentity, 'function', 'login routing must expose a testable identity boundary');
 assert.strictEqual(
   homeForIdentity({
-    id: 'unrecognized-login',
+    id: 'unsupported-login',
     role: 'student',
     user_type: 'student',
-    account_state: 'unrecognized',
-    token_use: 'unrecognized-student',
+    account_state: 'unsupported',
+    token_use: 'unsupported-token',
     capabilities: [],
   }),
   '/pages/index/index',
-  'retired unrecognized sessions must never enter a parallel experience page',
+  'retired unsupported sessions must never enter a parallel experience page',
 );
 assert.strictEqual(
   homeForIdentity({

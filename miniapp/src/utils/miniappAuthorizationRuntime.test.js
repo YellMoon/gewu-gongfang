@@ -75,7 +75,7 @@ assert.deepStrictEqual(
 assert.ok(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }).includes('teacher-1'));
 assert.strictEqual(usesLimitedQuestionProjection({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }), false);
 assert.strictEqual(usesLimitedQuestionProjection({ id: 'visitor-user', user_type: 'visitor' }), true);
-assert.strictEqual(usesLimitedQuestionProjection({ id: 'admin-user', user_type: 'admin' }), true, 'retired admin identities must never receive a business projection');
+assert.strictEqual(usesLimitedQuestionProjection({ id: 'retired-user', user_type: 'retired' }), true, 'retired admin identities must never receive a business projection');
 assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'legacy pending identities must not have a business cache namespace');
 const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };
 assert.strictEqual(usesLimitedQuestionProjection(normalStudentScope), true, 'students retain a read-only question preview even after their teaching profile is linked');
@@ -113,9 +113,9 @@ assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a 
 assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
 
 for (const legacyUser of [
-  { id: 'admin-1', user_type: 'admin' },
+  { id: 'retired-1', user_type: 'retired' },
   { id: 'pending-1', user_type: 'pending' },
-  { id: 'unrecognized-1', user_type: 'student', account_state: 'unrecognized', token_use: 'unrecognized-student' },
+  { id: 'unsupported-1', user_type: 'student', account_state: 'unsupported', token_use: 'unsupported-token' },
 ]) {
   const legacyAccess = deriveAccess(legacyUser, {
     status: 'loaded', identityKey: permissionIdentityKey(legacyUser), capabilities: ['business:all'],
@@ -151,15 +151,15 @@ assert.deepStrictEqual(visitorPolicy.modules, VISITOR_MODULES);
 assert.deepStrictEqual(visitorPolicy.allowedWriteTasks, []);
 assert.strictEqual(canUserSubmitMiniappWrite(visitor, 'asset-import', ['asset-import']), false);
 
-const legacyReview = { id: 'review-demo:admin:legacy', user_type: 'admin', is_review_demo: true };
-const legacyAccess = deriveAccess(legacyReview, {
-  status: 'loaded', identityKey: permissionIdentityKey(legacyReview), capabilities: ['business:all'],
+const invalidIdentity = { id: 'invalid-identity', user_type: 'retired', account_state: 'invalid', token_use: 'invalid-token' };
+const legacyAccess = deriveAccess(invalidIdentity, {
+  status: 'loaded', identityKey: permissionIdentityKey(invalidIdentity), capabilities: ['business:all'],
 });
 assert.deepStrictEqual(legacyAccess.modules, [], 'legacy review identities must fail closed');
 assert.deepStrictEqual(legacyAccess.capabilities, []);
-assert.strictEqual(permissionIdentityKey(legacyReview), '');
-assert.strictEqual(businessCacheIdentityKey(legacyReview), '');
-assert.deepStrictEqual(accountExperiencePolicy(legacyReview).allowedWriteTasks, []);
+assert.strictEqual(permissionIdentityKey(invalidIdentity), '');
+assert.strictEqual(businessCacheIdentityKey(invalidIdentity), '');
+assert.strictEqual(accountExperiencePolicy(invalidIdentity), null);
 assert.strictEqual(canUserSubmitMiniappWrite({ id: 'teacher-1', user_type: 'teacher' }, 'asset-import', ['asset-import']), true, 'formal write policy must remain unchanged');
 
 console.log('miniapp authorization runtime checks passed');

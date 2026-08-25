@@ -1,11 +1,10 @@
 const {
   accountCapabilities,
-  hasLegacyReviewMarker,
   isVisitorIdentity,
 } = require('./accountExperience');
 
-const ADMIN_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats'];
-const TEACHER_MODULES = ADMIN_MODULES.slice();
+const STAFF_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats'];
+const TEACHER_MODULES = STAFF_MODULES.slice();
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
 const VISITOR_MODULES = ['question-bank', 'settings'];
 const VALID_ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
@@ -13,10 +12,11 @@ const VALID_ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
 function isRetiredIdentity(user) {
   if (!user || typeof user !== 'object') return false;
   const role = user.user_type || user.role;
-  return role === 'admin'
-    || role === 'pending'
-    || user.account_state === 'unrecognized'
-    || user.token_use === 'unrecognized-student';
+  const accountState = user.account_state;
+  const tokenUse = user.token_use;
+  return (role && !VALID_ROLES.has(role))
+    || (accountState && !['formal', 'visitor'].includes(accountState))
+    || (tokenUse && !['miniapp-cloud', 'miniapp-visitor'].includes(tokenUse));
 }
 
 function roleOf(user) {
@@ -56,7 +56,7 @@ function normalizedIdentityIds(...values) {
 
 function permissionIdentityKey(user) {
   if (!user || !user.id) return '';
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user)) return '';
+  if (isRetiredIdentity(user)) return '';
   if (isVisitorIdentity(user)) {
     return `visitor:${normalizedIdentityValue(user.id)}:${normalizedIdentityValue(user.authority_id)}`;
   }
@@ -97,7 +97,7 @@ function studentSubjectIds(user) {
 function businessCacheIdentityKey(user) {
   const role = roleOf(user);
   if (!user || !user.id || role === 'visitor') return '';
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
+  if (isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
   if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
   if (role === 'student' && studentSubjectIds(user).length === 0) return '';
   const scope = permissionIdentityKey(user);
@@ -105,7 +105,7 @@ function businessCacheIdentityKey(user) {
 }
 
 function questionPaperTaskCacheKey(user) {
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
+  if (isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
   const scope = businessCacheIdentityKey(user);
   return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
 }
@@ -151,7 +151,7 @@ function createQuestionPaperTaskCacheRuntime(dependencies) {
 function sanitizeCapabilitiesForIdentity(user, capabilities) {
   const stringCapabilities = Array.isArray(capabilities)
     ? capabilities.filter(capability => typeof capability === 'string') : [];
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user)) return [];
+  if (isRetiredIdentity(user)) return [];
   if (isVisitorIdentity(user)) return accountCapabilities(user);
   return stringCapabilities;
 }
@@ -168,7 +168,7 @@ function deriveAccess(user, permissionState) {
   const capabilities = sanitizeCapabilitiesForIdentity(user, loadedCapabilities);
   let modules = [];
   if (visitor && capabilities.includes('projection:read')) modules = VISITOR_MODULES.slice();
-  else if (!experienceOnly && capabilities.includes('business:all')) modules = ADMIN_MODULES.slice();
+  else if (!experienceOnly && capabilities.includes('business:all')) modules = STAFF_MODULES.slice();
   else if (capabilities.includes('business:teacher-scope') && role === 'teacher') modules = TEACHER_MODULES.slice();
   else if (!experienceOnly && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
   return {
@@ -185,13 +185,6 @@ function deriveAccess(user, permissionState) {
 }
 
 function accountExperiencePolicy(user) {
-  if (hasLegacyReviewMarker(user)) {
-    return {
-      role: 'visitor', modules: [], readonlyScope: 'none', linkedStudentIds: [],
-      allowedWriteTasks: [], canReadAllSnapshots: false, capabilities: [],
-      canReviewUsers: false, canEditQuestionBank: false,
-    };
-  }
   if (isVisitorIdentity(user)) {
     return {
       role: 'visitor',
@@ -210,7 +203,7 @@ function accountExperiencePolicy(user) {
 }
 
 function canUserSubmitMiniappWrite(user, target, allowedTargets) {
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user) || roleOf(user) === 'visitor' || isVisitorIdentity(user)) return false;
+  if (isRetiredIdentity(user) || roleOf(user) === 'visitor' || isVisitorIdentity(user)) return false;
   return Array.isArray(allowedTargets) && allowedTargets.includes(target);
 }
 
@@ -230,7 +223,7 @@ function scopeDashboardCollections(user, collections = {}) {
   const courses = Array.isArray(collections.courses) ? collections.courses : [];
   const schedules = Array.isArray(collections.schedules) ? collections.schedules : [];
   const role = roleOf(user);
-  if (hasLegacyReviewMarker(user) || isRetiredIdentity(user) || role === 'visitor' || isVisitorIdentity(user)) {
+  if (isRetiredIdentity(user) || role === 'visitor' || isVisitorIdentity(user)) {
     return { students: [], courses: [], schedules: [] };
   }
   if (role === 'teacher') {
@@ -257,7 +250,7 @@ function scopeDashboardCollections(user, collections = {}) {
 }
 
 module.exports = {
-  ADMIN_MODULES,
+  STAFF_MODULES,
   TEACHER_MODULES,
   STUDENT_MODULES,
   VISITOR_MODULES,

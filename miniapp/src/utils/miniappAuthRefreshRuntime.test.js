@@ -2,11 +2,8 @@ const assert = require('assert');
 const { createAuthRefreshRuntime, extractRefreshToken } = require('./miniappAuthRefreshRuntime');
 const { createAuthSessionRuntime } = require('./miniappApiSessionRuntime');
 
-const normalIdentity = { id: 'admin-1', role: 'admin', user_type: 'admin' };
-const reviewIdentity = {
-  id: 'review-demo:admin:session-a', role: 'admin', user_type: 'admin', review_status: 'approved',
-  status: 1, login_enabled: 1, is_review_demo: true, read_only: true, review_demo_session_id: 'session-a',
-};
+const normalIdentity = { id: 'super-admin-1', role: 'super_admin', user_type: 'super_admin', account_state: 'formal', token_use: 'miniapp-cloud' };
+const invalidIdentity = { id: 'invalid-session-a', role: 'retired', user_type: 'retired', account_state: 'invalid', token_use: 'invalid-token' };
 
 function createHarness(overrides = {}) {
   const state = { token: 'normal-old', identity: normalIdentity, generation: 1, ...overrides };
@@ -43,13 +40,13 @@ async function main() {
   });
   const stalePending = staleRuntime.refresh();
   assert.strictEqual(staleRequests, 1);
-  stale.state.token = 'review-token';
-  stale.state.identity = reviewIdentity;
+  stale.state.token = 'invalid-token';
+  stale.state.identity = invalidIdentity;
   stale.state.generation += 1;
   resolveStaleRefresh('normal-new');
-  assert.strictEqual(await stalePending, false, 'stale normal refresh must not commit after review login');
-  assert.strictEqual(stale.state.token, 'review-token', 'stale refresh must preserve the newer review token');
-  assert.strictEqual(await staleRuntime.refresh(), false, 'review identity must never enter normal refresh');
+  assert.strictEqual(await stalePending, false, 'stale normal refresh must not commit after unsupported login');
+  assert.strictEqual(stale.state.token, 'invalid-token', 'stale refresh must preserve the newer review token');
+  assert.strictEqual(await staleRuntime.refresh(), false, 'unsupported identity must never enter normal refresh');
   assert.strictEqual(staleRequests, 1);
 
   const shared = createHarness();

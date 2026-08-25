@@ -53,7 +53,7 @@ assert.ok(projectConfig.includes('"uploadWithSourceMap": false'), 'miniapp proje
 assert.ok(projectConfig.includes('"useApiHook": false') && projectConfig.includes('"useApiHostProcess": false'), 'miniapp project config should avoid DevTools API hook host-process timeout noise');
 assert.ok(api.includes("'/api/miniapp/role-applications'"), 'role applications should use the cloud authority API');
 assert.ok(!api.includes("'/api/miniapp/applications'"), 'retired Backend role application routes must stay absent');
-assert.ok(!api.includes("'/api/experience/questions'"), 'retired unrecognized experience routes must stay absent');
+assert.ok(!api.includes("'/api/experience/questions'"), 'retired unsupported experience routes must stay absent');
 assert.ok(!api.includes('reviewDemoApi') && !api.includes('/api/auth/review-demo'), 'removed review-demo client APIs must stay absent');
 assert.ok(packageJson.includes('miniapp/src/utils/miniappReleaseConfig.test.js'), 'miniapp release config test should run in npm test');
 

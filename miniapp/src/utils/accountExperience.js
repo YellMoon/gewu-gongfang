@@ -11,9 +11,6 @@ const SESSION_CLEANUP_KEYS = Object.freeze([
   'auth_token',
   'user_info',
   'user_permissions',
-  'review_demo_session',
-  'review_demo_role',
-  'review_demo_code',
 ]);
 
 function hasExactCapabilities(value, expected = VISITOR_CAPABILITIES) {
@@ -34,16 +31,6 @@ function isVisitorIdentity(identity) {
     && typeof identity.authority_id === 'string'
     && identity.authority_id.trim()
     && hasExactCapabilities(identity.capabilities, VISITOR_CAPABILITIES));
-}
-
-function hasLegacyReviewMarker(identity) {
-  if (!identity || typeof identity !== 'object') return false;
-  const capabilities = Array.isArray(identity.capabilities) ? identity.capabilities : [];
-  return identity.token_use === 'review-demo'
-    || identity.is_review_demo === true
-    || Boolean(identity.review_demo_session_id)
-    || String(identity.id || '').startsWith('review-demo:')
-    || capabilities.some(capability => String(capability).startsWith('review-demo:'));
 }
 
 function accountCapabilities(identity) {
@@ -75,6 +62,5 @@ module.exports = {
   accountCapabilities,
   accountExperiencePath,
   accountSessionCleanupStorageKeys,
-  hasLegacyReviewMarker,
   isVisitorIdentity,
 };

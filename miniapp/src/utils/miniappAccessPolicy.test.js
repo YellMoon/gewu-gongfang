@@ -22,13 +22,13 @@ assert.ok(!api.includes("'/api/miniapp/business-profiles'"));
 for (const retiredPage of [
   'pages/admin/users/index',
   'pages/cloud-account-admin/index',
-  'pages/unrecognized-experience/index',
+  'pages/unsupported-experience/index',
 ]) assert.ok(!appConfig.includes(retiredPage));
 assert.ok(login.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'));
 assert.ok(application.includes('miniappCloudBusinessApi.readRoleApplication'));
 assert.ok(application.includes('miniappCloudBusinessApi.submitRoleApplication'));
 assert.ok(application.includes("'family_member'"));
-assert.ok(application.includes("'existing' as ProfileMode"));
-assert.ok(!application.includes("'create' as ProfileMode"));
+assert.ok(application.includes("const profileMode: ProfileMode = 'existing'"));
+assert.ok(!application.includes("profileMode: 'create'"));
 
 console.log('miniapp role access policy checks passed');

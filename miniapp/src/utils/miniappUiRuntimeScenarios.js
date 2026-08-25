@@ -18,7 +18,7 @@ function scenario(id, route, roleView, identity, state, expectedText, categories
 const runtimeScenarios = Object.freeze([
   scenario('login-guest', 'pages/login/index', 'guest', 'guest', 'cloud-login', '首次登录', ['guest']),
   scenario('privacy-guest', 'pages/login/privacy', 'guest', 'guest', 'privacy-content', '隐私保护指引', ['guest']),
-  scenario('home-super-admin', 'pages/index/index', 'super_admin', 'super_admin', 'admin-dashboard', '运营面板', ['super-admin-path']),
+  scenario('home-super-admin', 'pages/index/index', 'super_admin', 'super_admin', 'super-admin-dashboard', '运营面板', ['super-admin-path']),
   scenario('home-student', 'pages/index/index', 'student', 'student', 'student-dashboard', '学习面板', ['student-path']),
   scenario('home-visitor', 'pages/index/index', 'visitor', 'visitor', 'empty-modules', '访客', ['visitor']),
   scenario('schedule-super-admin-empty', 'pages/schedule/index', 'super_admin', 'super_admin', 'empty-day', '暂无排课数据', ['super-admin-path', 'empty']),
@@ -46,9 +46,9 @@ const runtimeScenarios = Object.freeze([
   scenario('settings-super-admin-online', 'pages/settings/index', 'super_admin', 'super_admin', 'online', '网络已连接', ['super-admin-path']),
   scenario('settings-super-admin-role-review', 'pages/settings/index', 'super_admin', 'super_admin', 'role-application-review', '身份申请处理', ['super-admin-path', 'limited-write'], 'role-applications'),
   scenario('settings-student-online', 'pages/settings/index', 'student', 'student', 'online', '网络已连接', ['student-path']),
-  scenario('settings-visitor', 'pages/settings/index', 'visitor', 'visitor', 'visitor-account-application', '角色申请', ['visitor']),
+  scenario('settings-visitor', 'pages/settings/index', 'visitor', 'visitor', 'visitor-account-application', '申请教师或学生身份', ['visitor']),
   scenario('forbidden-student', 'pages/forbidden/index', 'student', 'student', 'blocked-module', '暂无权限访问此功能', ['student-path', 'permission-denied']),
-  scenario('application-visitor', 'pages/account-application/index', 'visitor', 'visitor', 'not-submitted', '提交角色申请', ['visitor']),
+  scenario('application-visitor', 'pages/account-application/index', 'visitor', 'visitor', 'not-submitted', '提交申请', ['visitor']),
   scenario('application-visitor-offline', 'pages/account-application/index', 'visitor', 'visitor', 'network-error', '网络', ['visitor', 'offline'], 'application-offline'),
 ]);
 

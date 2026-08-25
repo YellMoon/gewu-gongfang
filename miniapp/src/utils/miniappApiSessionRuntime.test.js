@@ -20,14 +20,17 @@ const {
   openSessionBoundDocument,
 } = sessionModule;
 
-const normalIdentity = { id: 'admin-1', role: 'admin', user_type: 'admin' };
-const reviewIdentity = {
-  id: 'review-demo:admin:session-a', role: 'admin', user_type: 'admin', review_status: 'approved',
-  status: 1, login_enabled: 1, is_review_demo: true, read_only: true, review_demo_session_id: 'session-a',
+const normalIdentity = {
+  id: 'super-admin-1', role: 'super_admin', user_type: 'super_admin',
+  account_state: 'formal', token_use: 'miniapp-cloud',
 };
-const unrecognizedIdentity = {
-  id: 'unrecognized-1', role: 'student', user_type: 'student',
-  account_state: 'unrecognized', token_use: 'unrecognized-student',
+const invalidIdentity = {
+  id: 'invalid-session-a', role: 'retired', user_type: 'retired',
+  account_state: 'invalid', token_use: 'invalid-token',
+};
+const unsupportedIdentity = {
+  id: 'unsupported-1', role: 'student', user_type: 'student',
+  account_state: 'unsupported', token_use: 'unsupported-token',
   capabilities: [
     'experience:read', 'profile-application:read', 'profile-application:submit',
     'sample-questions:view',
@@ -237,19 +240,19 @@ async function main() {
   assert.strictEqual(singleNetworkRequests, 2, 'one logical request may send only A and one auth retry with B');
   assert.strictEqual(singleRequest.state.token, 'normal-b', 'the rejected B session must not be overwritten by a second refresh');
 
-  const experienceState = createSessionState({ token: 'experience-a', identity: unrecognizedIdentity });
-  const experienceRequest = experienceState.runtime.capture();
-  assert.strictEqual(experienceRequest.experienceOnly, true, 'real unrecognized identities must be marked as experience-only sessions');
-  let experienceRefreshCalls = 0;
-  const experienceCoordinator = createApiResponseCoordinator({
-    sessionRuntime: experienceState.runtime,
+  const invalidState = createSessionState({ token: 'invalid-a', identity: invalidIdentity });
+  const invalidRequest = invalidState.runtime.capture();
+  assert.strictEqual(invalidRequest.experienceOnly, false, 'unsupported identities must not become a visitor session');
+  let invalidRefreshCalls = 0;
+  const invalidCoordinator = createApiResponseCoordinator({
+    sessionRuntime: invalidState.runtime,
     refresh: async () => {
-      experienceRefreshCalls += 1;
-      experienceState.state.token = 'experience-b';
+      invalidRefreshCalls += 1;
+      invalidState.state.token = 'invalid-b';
     },
   });
-  assert.deepStrictEqual(await experienceCoordinator.handleResponse(experienceRequest, 401), { action: 'retry' });
-  assert.strictEqual(experienceRefreshCalls, 1, 'unrecognized sessions must refresh through the shared Backend session flow');
+  assert.deepStrictEqual(await invalidCoordinator.handleResponse(invalidRequest, 401), { action: 'auth-expired' });
+  assert.strictEqual(invalidRefreshCalls, 0, 'unsupported sessions must not refresh or remain logged in');
 
   const visitorState = createSessionState({ token: 'visitor-a', identity: visitorIdentity });
   const visitorRequest = visitorState.runtime.capture();
@@ -259,8 +262,8 @@ async function main() {
   const identityCases = [
     {
       label: 'tenant switch',
-      before: { id: 'admin-1', role: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 },
-      after: { id: 'admin-1', role: 'admin', tenantId: 'tenant-b', review_status: 'approved', status: 1, login_enabled: 1 },
+      before: { id: 'admin-1', role: 'super_admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 },
+      after: { id: 'admin-1', role: 'super_admin', tenantId: 'tenant-b', review_status: 'approved', status: 1, login_enabled: 1 },
     },
     {
       label: 'teacher binding switch',
@@ -274,23 +277,23 @@ async function main() {
     },
     {
       label: 'review status downgrade',
-      before: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, login_enabled: 1 },
-      after: { id: 'admin-1', role: 'admin', review_status: 'pending', status: 1, login_enabled: 1 },
+      before: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, login_enabled: 1 },
+      after: { id: 'admin-1', role: 'super_admin', review_status: 'pending', status: 1, login_enabled: 1 },
     },
     {
       label: 'account status downgrade',
-      before: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, login_enabled: 1 },
-      after: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 0, login_enabled: 1 },
+      before: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, login_enabled: 1 },
+      after: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 0, login_enabled: 1 },
     },
     {
       label: 'active flag downgrade',
-      before: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, active: true, login_enabled: 1 },
-      after: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, active: false, login_enabled: 1 },
+      before: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, active: true, login_enabled: 1 },
+      after: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, active: false, login_enabled: 1 },
     },
     {
       label: 'login disabled',
-      before: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, login_enabled: 1 },
-      after: { id: 'admin-1', role: 'admin', review_status: 'approved', status: 1, login_enabled: 0 },
+      before: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, login_enabled: 1 },
+      after: { id: 'admin-1', role: 'super_admin', review_status: 'approved', status: 1, login_enabled: 0 },
     },
   ];
   for (const identityCase of identityCases) {
@@ -313,8 +316,8 @@ async function main() {
   assert.strictEqual(stableStudent.runtime.isSameSession(stableStudentResponse), true, 'identity aliases, boolean flags, and student binding order must normalize stably');
 
   const oldNormalResponse = runtime.capture();
-  state.identity = reviewIdentity;
-  state.token = 'review-token';
+  state.identity = invalidIdentity;
+  state.token = 'invalid-token';
   state.generation += 1;
   assert.deepStrictEqual(
     await coordinator.handleResponse(oldNormalResponse, 200),
@@ -333,8 +336,8 @@ async function main() {
     'a normal 2xx remains valid across same-session A to B token rotation',
   );
 
-  state.identity = reviewIdentity;
-  state.token = 'review-token';
+  state.identity = invalidIdentity;
+  state.token = 'invalid-token';
   state.generation += 1;
   const reviewRequest = runtime.capture();
   assert.deepStrictEqual(await coordinator.handleResponse(reviewRequest, 401), { action: 'auth-expired' });
@@ -351,8 +354,8 @@ async function main() {
     return new Promise(resolve => { releaseDirectResponse = resolve; });
   }).then(value => { directResponseConsumed = true; return value; });
   await Promise.resolve();
-  state.identity = reviewIdentity;
-  state.token = 'review-token';
+  state.identity = invalidIdentity;
+  state.token = 'invalid-token';
   state.generation += 1;
   releaseDirectResponse({ statusCode: 200, data: { success: true, secret: true } });
   await assert.rejects(delayedDirectResponse, error => error?.code === 'AUTH_SESSION_CHANGED');
@@ -372,8 +375,8 @@ async function main() {
   const documentBoundary = createSessionBoundOperation(runtime);
   const temporaryFiles = [];
   let openCalls = 0;
-  state.identity = reviewIdentity;
-  state.token = 'review-token';
+  state.identity = invalidIdentity;
+  state.token = 'invalid-token';
   state.generation += 1;
   await assert.rejects(
     openSessionBoundDocument(documentBoundary, {
@@ -397,8 +400,8 @@ async function main() {
     removeTemporaryFile: async filePath => { temporaryFiles.push(filePath); },
   });
   await Promise.resolve();
-  state.identity = reviewIdentity;
-  state.token = 'review-token';
+  state.identity = invalidIdentity;
+  state.token = 'invalid-token';
   state.generation += 1;
   releaseOpen({});
   await assert.rejects(delayedOpen, error => error?.code === 'AUTH_SESSION_CHANGED');
@@ -608,7 +611,7 @@ async function main() {
   assert.strictEqual(switchRuntime.isSameSession(beforeRotation), true, 'normal refresh A to B must not advance session generation');
   assert.strictEqual(switchRuntime.advanceIfIdentityChanges({ ...normalIdentity, authorization_revision: 'rev-2' }), false, 'same identity authorization refresh must not advance generation');
   assert.strictEqual(switchState.generation, 3);
-  assert.strictEqual(switchRuntime.advanceIfIdentityChanges(reviewIdentity), true, 'identity switch must advance generation');
+  assert.strictEqual(switchRuntime.advanceIfIdentityChanges(invalidIdentity), true, 'identity switch must advance generation');
   assert.strictEqual(switchState.generation, 4);
 
   const committed = new Map([['auth_token', 'old-token'], ['user_info', normalIdentity]]);
@@ -641,7 +644,7 @@ async function main() {
       role,
       user_type: role,
       account_state: 'formal',
-      token_use: 'miniapp-session',
+      token_use: 'miniapp-cloud',
       student_id: null,
       teacher_id: null,
     };

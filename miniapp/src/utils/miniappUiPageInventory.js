@@ -30,7 +30,7 @@ const pageInventory = [
     roleViews: ['super_admin', 'teacher', 'student', 'visitor'],
     surface: 'role-dashboard',
     visualStatus: 'optimized',
-    verificationStates: ['admin-dashboard', 'student-dashboard', 'empty-modules', 'visitor-account'],
+    verificationStates: ['super-admin-dashboard', 'student-dashboard', 'empty-modules', 'visitor-account'],
     realFeatureBasis: ['pullFromCloudBusinessProjection', 'createCloudBusinessProjectionRuntime', 'getMiniappRolePolicy', 'setBusinessCacheIdentity', 'cloud-scoped schedules/students/courses cache'],
     screenshotRequired: true,
     files: ['src/pages/index/index.tsx', 'src/pages/index/index.scss'],

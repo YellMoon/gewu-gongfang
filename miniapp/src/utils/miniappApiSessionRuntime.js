@@ -239,6 +239,9 @@ function createApiResponseCoordinator(dependencies) {
     if (dependencies.authenticationEntry) return { action: 'accept' };
     if (statusCode !== 401) return { action: 'accept' };
     if (authRetryUsed) return { action: 'auth-expired' };
+    if (!requestSession?.token || !requestSession?.identity || !requestSession?.identityKey) {
+      return { action: 'auth-expired' };
+    }
 
     const current = dependencies.sessionRuntime.capture();
     if (current.token && current.token !== requestSession.token) {
@@ -369,12 +372,10 @@ function clearAuthenticatedSession(dependencies, identities = []) {
 function validatedNormalSession(responseData) {
   const token = typeof responseData?.token === 'string' ? responseData.token.trim() : '';
   const user = responseData?.user;
-  const legacyReviewMarker = user?.token_use === 'review-demo'
-    || user?.is_review_demo === true
-    || Boolean(user?.review_demo_session_id);
-  const retiredUnrecognized = user?.account_state === 'unrecognized' || user?.token_use === 'unrecognized-student';
+  const unsupportedAccountState = user?.account_state && !['formal', 'visitor'].includes(user.account_state);
+  const unsupportedTokenUse = user?.token_use && !['miniapp-cloud', 'miniapp-visitor'].includes(user.token_use);
   const malformedVisitor = user?.account_state === 'visitor' && !isVisitorIdentity(user);
-  if (!token || !user || !user.id || legacyReviewMarker || retiredUnrecognized || malformedVisitor) {
+  if (!token || !user || !user.id || unsupportedAccountState || unsupportedTokenUse || malformedVisitor) {
     return null;
   }
   return { token, user };

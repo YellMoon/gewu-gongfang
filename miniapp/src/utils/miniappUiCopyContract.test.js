@@ -44,7 +44,7 @@ assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank
 for (const removedRoute of [
   'pages/admin/users/index',
   'pages/cloud-account-admin/index',
-  'pages/unrecognized-experience/index',
+  'pages/unsupported-experience/index',
 ]) {
   assert.ok(!appConfig.includes(removedRoute), `retired role-management surface must not remain routable: ${removedRoute}`);
 }

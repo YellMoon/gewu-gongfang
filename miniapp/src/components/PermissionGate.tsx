@@ -16,11 +16,6 @@ export default function PermissionGate(props: Props) {
   const { moduleId, action, children, fallback } = props;
   const user = getCurrentUser();
 
-  // 管理员永远有权限
-  if (user?.user_type === 'admin') {
-    return <>{children}</>;
-  }
-
   // 检查模块访问权限
   if (moduleId && !hasModuleAccess(moduleId)) {
     return <>{fallback || null}</>;

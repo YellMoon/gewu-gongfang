@@ -49,11 +49,11 @@ const questionBankSource = fs.readFileSync(
 );
 assert.ok(
   !questionBankSource.includes("../../components/UnrecognizedExperienceContent"),
-  'formal question-bank page bundle must not statically include the unrecognized experience implementation',
+  'formal question-bank page bundle must not statically include the unsupported experience implementation',
 );
 assert.ok(
-  !questionBankSource.includes('/pages/unrecognized-experience/index'),
-  'retired unrecognized question-bank access must not redirect to a deleted parallel experience page',
+  !questionBankSource.includes('/pages/unsupported-experience/index'),
+  'retired unsupported question-bank access must not redirect to a deleted parallel experience page',
 );
 
 console.log('miniapp page registration boundary checks passed');

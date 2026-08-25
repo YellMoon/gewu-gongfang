@@ -13,7 +13,7 @@ assert.deepStrictEqual(
   cloudSessionUser({ accountId: 'teacher-1', status: 'active', roles: ['teacher'] }),
   { id: 'teacher-1', cloud_account_id: 'teacher-1', role: 'teacher', user_type: 'teacher', account_state: 'formal', token_use: 'miniapp-cloud' },
 );
-assert.strictEqual(cloudSessionUser({ accountId: 'legacy-admin', status: 'active', roles: ['admin'] }), null, 'the retired admin role must not create a miniapp session');
+assert.strictEqual(cloudSessionUser({ accountId: 'legacy-operator', status: 'active', roles: ['operator'] }), null, 'the unsupported role must not create a miniapp session');
 assert.strictEqual(cloudSessionUser({ accountId: 'legacy-pending', status: 'pending_authorization', roles: [] }), null, 'a legacy pending account must not create a second non-formal identity');
 assert.strictEqual(cloudSessionUser({ accountId: 'bad-visitor', status: 'active', roles: [] }), null, 'a no-grant account must be presented as visitor, never as active pending');
 

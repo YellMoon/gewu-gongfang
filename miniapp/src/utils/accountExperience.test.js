@@ -17,5 +17,5 @@ assert.deepStrictEqual(experience.accountCapabilities(identity), experience.VISI
 assert.strictEqual(experience.accountExperiencePath(identity, 'applicationMine'), '/api/miniapp/role-applications/me');
 assert.strictEqual(experience.accountExperiencePath(identity, 'applicationSubmit'), '/api/miniapp/role-applications');
 assert.throws(() => experience.accountExperiencePath(identity, 'artifact', 'artifact-1'));
-assert.throws(() => experience.accountExperiencePath({ account_state: 'unrecognized' }, 'applicationMine'));
+assert.throws(() => experience.accountExperiencePath({ account_state: 'unsupported' }, 'applicationMine'));
 console.log('visitor role-application boundary checks passed');

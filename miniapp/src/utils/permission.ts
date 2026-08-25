@@ -34,7 +34,7 @@ export const allowedWriteTasks = [
   'paper-export-pdf',
 ];
 
-export const adminModules = [
+export const staffModules = [
   'scheduling',
   'question-bank',
   'assets',
@@ -56,7 +56,7 @@ export const studentWriteTasks = [
   'paper-export-pdf',
 ];
 
-export const teacherModules = adminModules.slice();
+export const teacherModules = staffModules.slice();
 
 export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'visitor';
 export type MiniappCapability =
@@ -97,9 +97,6 @@ export interface UserInfo {
   linkedStudentId?: string;
   linked_student_ids?: string[];
   linkedStudentIds?: string[];
-  is_review_demo?: boolean;
-  read_only?: boolean;
-  review_demo_session_id?: string;
   account_state?: 'formal' | 'visitor';
   token_use?: 'miniapp-session' | 'miniapp-visitor';
   identity_kind?: string;
@@ -219,7 +216,7 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
   if (user?.user_type === 'super_admin') {
     return {
       role: 'super_admin',
-      modules: adminModules,
+      modules: staffModules,
       readonlyScope: 'all',
       allowedWriteTasks,
       canReadAllSnapshots: true,

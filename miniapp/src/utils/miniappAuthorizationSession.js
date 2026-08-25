@@ -1,7 +1,4 @@
-const {
-  hasLegacyReviewMarker,
-} = require('./accountExperience');
-const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
+const { permissionIdentityKey, isRetiredIdentity } = require('./miniappAuthorizationRuntime');
 
 function roleOf(identity) {
   return identity && (identity.role || identity.user_type) || 'visitor';
@@ -63,7 +60,7 @@ function isActive(identity) {
     && !flagIsTrue(identity.disabled)
     && roleOf(identity) !== 'visitor');
   if (!active) return false;
-  return !hasLegacyReviewMarker(identity);
+  return !isRetiredIdentity(identity);
 }
 
 function normalizedUser(identity, localUser) {

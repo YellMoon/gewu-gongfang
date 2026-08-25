@@ -5,9 +5,9 @@ const { createAuthorizationSession } = require('./miniappAuthorizationSession');
 const { permissionIdentityKey, sanitizeCapabilitiesForIdentity } = require('./miniappAuthorizationRuntime');
 const { createPermissionFetchBoundary } = require('./miniappPermissionFetchRuntime');
 
-const unrecognized = {
-  id: 'unrecognized-1', role: 'student', user_type: 'student', account_state: 'unrecognized',
-  token_use: 'unrecognized-student', capabilities: [
+const unsupported = {
+  id: 'unsupported-1', role: 'student', user_type: 'student', account_state: 'unsupported',
+  token_use: 'unsupported-token', capabilities: [
     'experience:read', 'profile-application:read', 'profile-application:submit',
     'sample-questions:view',
   ],
@@ -53,11 +53,11 @@ async function runFetch(identity, remoteCapabilities) {
 }
 
 async function main() {
-  const experience = await runFetch(unrecognized, ['business:all', 'users:review']);
+  const experience = await runFetch(unsupported, ['business:all', 'users:review']);
   assert.deepStrictEqual(experience.result.capabilities, []);
   assert.deepStrictEqual(experience.memoryCache.capabilities, []);
   assert.deepStrictEqual(experience.permissionState, {
-    status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: [],
+    status: 'loaded', identityKey: permissionIdentityKey(unsupported), capabilities: [],
   });
   assert.strictEqual(experience.remoteCalls, 0, 'retired identity must not call the formal permission endpoint');
   assert.deepStrictEqual(experience.persistentWrites, [], 'retired identity must not retain a capability cache');
@@ -74,9 +74,9 @@ async function main() {
   assert.strictEqual(normal.remoteCalls, 1);
   assert.deepStrictEqual(normal.persistentWrites.filter(Boolean).at(-1).capabilities, normalCapabilities);
 
-  const legacyReview = { ...normalAdmin, id: 'review-demo:admin:legacy', is_review_demo: true };
-  assert.deepStrictEqual(sanitizeCapabilitiesForIdentity(legacyReview, normalCapabilities), []);
-  assert.strictEqual(permissionIdentityKey(legacyReview), '');
+  const invalidIdentity = { ...normalAdmin, id: 'invalid-identity', role: 'retired', user_type: 'retired', account_state: 'invalid', token_use: 'invalid-token' };
+  assert.deepStrictEqual(sanitizeCapabilitiesForIdentity(invalidIdentity, normalCapabilities), []);
+  assert.strictEqual(permissionIdentityKey(invalidIdentity), '');
   console.log('miniapp permission fetch runtime checks passed');
 }
 
