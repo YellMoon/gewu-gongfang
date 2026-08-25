@@ -23,6 +23,10 @@ assert.ok(
 );
 
 assert.ok(homePage.includes('isVisitorIdentity') && homePage.includes('AccountStatusBanner'), 'home must render a visitor shell before formal data loading');
+for (const retiredHostAuthorityCopy of ['\u7b49\u5f85\u4e3b\u673a\u53d1\u5e03', '\u672c\u5730\u53ef\u7528']) {
+  assert.ok(!homePage.includes(retiredHostAuthorityCopy), 'home must not present a retired host or local cache as the publishing authority');
+}
+assert.ok(homePage.includes("cloudConnection === 'connected'") && homePage.includes("cloudConnection === 'unavailable'"), 'home must distinguish available and unavailable cloud projections');
 assert.strictEqual(getMiniappHomeDisplayName({}), '\u5fae\u4fe1\u7528\u6237');
 assert.strictEqual(getMiniappHomeDisplayName({ name: '  ', nickname: ' \u5c0f\u683c ' }), '\u5c0f\u683c');
 assert.strictEqual(getMiniappHomeDisplayName({ name: '\u683c\u7269\u540c\u5b66', nickname: '\u5907\u7528\u540d' }), '\u683c\u7269\u540c\u5b66');

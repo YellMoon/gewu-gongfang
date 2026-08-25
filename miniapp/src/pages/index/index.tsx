@@ -75,6 +75,7 @@ export default function Index() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<any>(null);
+  const [cloudConnection, setCloudConnection] = useState<'checking' | 'connected' | 'unavailable'>('checking');
   const [access, setAccess] = useState<any>({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
   const [dashboard, setDashboard] = useState<DashboardData>({
     todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
@@ -91,6 +92,7 @@ export default function Index() {
     setModules([]);
     setLoading(true);
     setSnapshot(null);
+    setCloudConnection('checking');
     setAccess({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
     setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
     const session = captureTrustedAuthSession(authSessionRuntime);
@@ -107,6 +109,7 @@ export default function Index() {
       setAccess(nextAccess);
       setModules([{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]);
       setSnapshot(null);
+      setCloudConnection('unavailable');
       setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
       setLoading(false);
       return;
@@ -129,6 +132,7 @@ export default function Index() {
     if (nextAccess.modules.length === 0) {
       setModules([]);
       setSnapshot(null);
+      setCloudConnection('unavailable');
       setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
       setLoading(false);
       return;
@@ -141,10 +145,16 @@ export default function Index() {
   const loadSnapshot = async (currentUser: UserInfo, stillCurrent: () => boolean = () => true) => {
     try {
       const refreshed = await pullFromCloudBusinessProjection();
-      if (stillCurrent()) setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
+      if (stillCurrent()) {
+        setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
+        setCloudConnection(refreshed ? 'connected' : 'unavailable');
+      }
     } catch (error) {
       console.warn('[CLOUD_BUSINESS_PROJECTION_LOAD_FAILED]', error);
-      if (stillCurrent()) setSnapshot(null);
+      if (stillCurrent()) {
+        setSnapshot(null);
+        setCloudConnection('unavailable');
+      }
     }
   };
 
@@ -216,7 +226,7 @@ export default function Index() {
   };
 
   const formatSnapshotTime = (value?: string) => {
-    if (!value) return '等待主机发布';
+    if (!value) return '云端数据待载入';
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     const month = String(parsed.getMonth() + 1).padStart(2, '0');
@@ -349,7 +359,11 @@ export default function Index() {
           <View className="home-status-panel__divider" />
           <View className="home-status-panel__item">
             <Text className="home-status-panel__label">同步状态</Text>
-            <Text className="home-status-panel__value">{dashboard.pendingSync > 0 ? `${dashboard.pendingSync} 条待同步` : '本地可用'}</Text>
+            <Text className="home-status-panel__value">{cloudConnection === 'connected'
+              ? '\u4e91\u7aef\u5df2\u8fde\u63a5'
+              : cloudConnection === 'unavailable'
+                ? '\u6682\u672a\u8fde\u63a5\u4e91\u7aef'
+                : '\u6b63\u5728\u8fde\u63a5\u4e91\u7aef'}</Text>
           </View>
         </View>
       </View>

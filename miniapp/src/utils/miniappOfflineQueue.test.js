@@ -8,7 +8,8 @@ assert.ok(!sync.includes('addPendingChange'), 'miniapp sync facade must not enqu
 assert.ok(sync.includes('pullFromCloudBusinessProjection'), 'miniapp sync facade should refresh its scoped cloud business projection');
 assert.ok(sync.includes('miniappCloudBusinessApi.readBusinessProjection'), 'miniapp sync must not keep using the retired local-backend projection route');
 assert.ok(!sync.includes('/api/miniapp/projection'), 'miniapp sync must not route business reads through the retired local backend');
-assert.ok(sync.includes('MINIAPP_CORE_EDIT_REQUIRES_AUTHORITY_HOST'), 'legacy core edits must fail closed');
+assert.ok(sync.includes('MINIAPP_CORE_EDIT_REQUIRES_CLOUD_AUTHORITY'), 'legacy core edits must fail closed at the cloud authority boundary');
+assert.ok(!sync.includes('Authority host') && !sync.includes('authorized desktop host'), 'miniapp must not retain the retired desktop-host authority path');
 for (const mutation of ['updateLocalItem', 'addLocalItem', 'removeLocalItem']) {
   assert.ok(
     sync.includes(`export function ${mutation}`) && sync.includes('rejectLegacyCoreMutation();'),

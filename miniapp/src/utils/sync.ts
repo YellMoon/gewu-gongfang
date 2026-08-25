@@ -1,8 +1,5 @@
-import Taro from '@tarojs/taro';
-import { PendingChange, SyncTable } from '../types';
+import { SyncTable } from '../types';
 import {
-  getPendingChanges,
-  getLastSyncTimestamp,
   setLastSyncTimestamp,
   getCachedList,
   setCachedList,
@@ -12,7 +9,7 @@ import { miniappCloudBusinessApi } from './api';
 import { authSessionRuntime } from './authSession';
 import { createCloudBusinessProjectionRuntime } from './cloudBusinessProjection';
 
-type SyncCallback = (info: { type: 'confirm'; count: number; changes: PendingChange[] } | { type: 'done'; success: boolean; message: string }) => void;
+type SyncCallback = (info: { type: 'done'; success: boolean; message: string }) => void;
 
 let syncCallback: SyncCallback | null = null;
 
@@ -48,35 +45,14 @@ export async function pullFromCloudBusinessProjection(): Promise<boolean> {
   }
 }
 
-function notifyPendingAuthorityHost(pending: PendingChange[]): void {
-  syncCallback?.({ type: 'confirm', count: pending.length, changes: pending });
-  Taro.showModal({
-    title: 'Authority host required',
-    content: `${pending.length} pending core changes must be reviewed and submitted by the authorized desktop host.`,
-    showCancel: false,
-  });
-}
-
 export function initSyncManager(): void {
-  const pending = getPendingChanges();
-  if (pending.length > 0) notifyPendingAuthorityHost(pending);
   onNetworkChange((network) => {
     if (!network.isConnected) return;
-    const pendingNow = getPendingChanges();
-    if (pendingNow.length > 0) {
-      notifyPendingAuthorityHost(pendingNow);
-      return;
-    }
     void pullFromCloudBusinessProjection();
   });
 }
 
 export async function manualSync(): Promise<boolean> {
-  const pending = getPendingChanges();
-  if (pending.length > 0) {
-    notifyPendingAuthorityHost(pending);
-    return false;
-  }
   return pullFromCloudBusinessProjection();
 }
 
@@ -89,7 +65,7 @@ export function getLocalItem<T extends { id: string }>(table: SyncTable, id: str
 }
 
 function rejectLegacyCoreMutation(): never {
-  throw new Error('MINIAPP_CORE_EDIT_REQUIRES_AUTHORITY_HOST');
+  throw new Error('MINIAPP_CORE_EDIT_REQUIRES_CLOUD_AUTHORITY');
 }
 
 export function updateLocalItem<T extends { id: string }>(_table: SyncTable, _item: T): void {
@@ -108,7 +84,7 @@ export async function triggerSync(): Promise<{ success: boolean; message: string
   const success = await manualSync();
   return {
     success,
-    message: success ? 'CLOUD_BUSINESS_PROJECTION_REFRESHED' : 'AUTHORITY_HOST_REVIEW_REQUIRED',
+    message: success ? 'CLOUD_BUSINESS_PROJECTION_REFRESHED' : 'CLOUD_BUSINESS_PROJECTION_UNAVAILABLE',
   };
 }
 
