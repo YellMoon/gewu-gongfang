@@ -3,8 +3,9 @@
  * 增强版：从后端 API 获取真实权限数据
  */
 import Taro from '@tarojs/taro';
-import { moduleApi } from './api';
+import { miniappCloudBusinessApi } from './api';
 import { authSessionRuntime } from './authSession';
+import { cloudSessionUser } from '../pages/login/cloudSessionIdentityRuntime';
 import {
   canUserSubmitMiniappWrite,
   deriveAccess,
@@ -152,10 +153,13 @@ const authorizationSession = createAuthorizationSession({
     if (changed) authSessionRuntime.activate();
   },
   fetchRemote: async () => {
-    const response = await moduleApi.myPermissions();
+    const token = String(Taro.getStorageSync('auth_token') || '').trim();
+    const response = await miniappCloudBusinessApi.readAuthorization(token);
     if (!response.success || !response.data) throw new Error(response.error || 'AUTHORIZATION_REFRESH_FAILED');
     const payload = response.data as any;
-    return { identity: payload.identity, capabilities: payload.capabilities || [] };
+    const identity = cloudSessionUser(payload.identity);
+    if (!identity) throw new Error('AUTHORIZATION_REFRESH_REJECTED');
+    return { identity, capabilities: payload.capabilities || [] };
   },
   sanitizeCapabilities: sanitizeCapabilitiesForIdentity,
 });

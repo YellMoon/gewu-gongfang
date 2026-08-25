@@ -15,7 +15,12 @@ const application = fs.readFileSync('miniapp/src/pages/account-application/index
 assert.ok(permission.includes("'super_admin' | 'teacher' | 'student' | 'visitor'"));
 assert.ok(!permission.includes("'super_admin' | 'admin'"));
 assert.ok(!permission.includes("role: 'pending'"));
+assert.ok(!permission.includes('moduleApi'), 'miniapp authorization refresh must not call the retired local permission API');
+assert.ok(permission.includes('miniappCloudBusinessApi.readAuthorization'), 'miniapp authorization refresh must read the cloud authority context');
 assert.ok(api.includes("'/api/miniapp/role-applications'"));
+assert.ok(api.includes("'/api/miniapp/cloud-context'"));
+assert.ok(!api.includes("'/api/permissions/my'"));
+assert.ok(!api.includes("'/api/modules'"));
 assert.ok(!api.includes("'/api/miniapp/applications'"));
 assert.ok(!api.includes("'/api/miniapp/cloud-accounts'"));
 assert.ok(!api.includes("'/api/miniapp/business-profiles'"));

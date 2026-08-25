@@ -309,6 +309,17 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       throw businessAccessDenied();
     }
   }
+  function miniappCapabilities(context) {
+    if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
+    if (context.status === 'visitor' && context.roles.length === 0) {
+      return ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'];
+    }
+    if (context.status !== 'active') throw businessAccessDenied();
+    if (context.roles.includes('super_admin')) return ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'];
+    if (context.roles.includes('teacher')) return ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'];
+    if (context.roles.includes('student')) return ['question-bank:view'];
+    throw businessAccessDenied();
+  }
   // Core teaching records are desktop-only mutations.  Miniapp tickets may read
   // their scoped data and run explicitly limited task APIs, but never write these tables.
   async function desktopBusinessContext(request) {
@@ -663,6 +674,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.json({ ok: true, token: result.token, identity: result.identity });
     } catch (error) {
       if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_INVALID') return businessInputInvalid(response);
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    }
+  });
+  app.get('/api/miniapp/cloud-context', async (request, response) => {
+    try {
+      const identity = await miniappBusinessContext(request);
+      response.json({ ok: true, identity, capabilities: miniappCapabilities(identity) });
+    } catch (_) {
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });

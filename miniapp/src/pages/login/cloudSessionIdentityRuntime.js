@@ -8,6 +8,13 @@ const VISITOR_CAPABILITIES = Object.freeze([
 ]);
 const FORMAL_ROLES = new Set(['super_admin', 'teacher', 'student']);
 
+function profileId(identity, role) {
+  const profile = identity && identity.profile;
+  if (role === 'super_admin') return profile === null || profile === undefined ? null : null;
+  if (!profile || typeof profile !== 'object' || profile.type !== role || typeof profile.id !== 'string' || !profile.id.trim()) return null;
+  return profile.id.trim();
+}
+
 function cloudSessionUser(identity) {
   if (!identity || typeof identity !== 'object' || typeof identity.accountId !== 'string' || !identity.accountId
     || !Array.isArray(identity.roles) || !['active', 'visitor'].includes(identity.status)
@@ -17,6 +24,8 @@ function cloudSessionUser(identity) {
       : identity.roles.includes('student') ? 'student' : 'visitor';
   if (role === 'visitor' && identity.status !== 'visitor') return null;
   if (role !== 'visitor' && identity.status !== 'active') return null;
+  const scopedProfileId = profileId(identity, role);
+  if ((role === 'teacher' || role === 'student') && !scopedProfileId) return null;
   return Object.freeze(role === 'visitor'
     ? {
       id: identity.accountId,
@@ -36,6 +45,8 @@ function cloudSessionUser(identity) {
       user_type: role,
       account_state: 'formal',
       token_use: 'miniapp-cloud',
+      ...(role === 'teacher' ? { teacher_id: scopedProfileId } : {}),
+      ...(role === 'student' ? { student_id: scopedProfileId, linked_student_ids: [scopedProfileId] } : {}),
     });
 }
 

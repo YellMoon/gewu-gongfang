@@ -125,6 +125,16 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { loginCode: 'miniapp-login-proof', phoneCode: 'miniapp-proof' } });
   assert.strictEqual(miniappLogin.status, 200);
   assert.deepStrictEqual(miniappLogin.body, { ok: true, token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } });
+  const miniappContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-context', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
+  assert.strictEqual(miniappContext.status, 200);
+  assert.deepStrictEqual(miniappContext.body, {
+    ok: true,
+    identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] },
+    capabilities: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'],
+  });
+  const rejectedMiniappContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-context', { headers: { authorization: 'Bearer rejected-ticket.signature' } });
+  assert.strictEqual(rejectedMiniappContext.status, 403);
+  assert.deepStrictEqual(rejectedMiniappContext.body, { ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
   const roleApplications = {
     mine: async ({ token }) => {
       if (token !== 'visitor-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED' });

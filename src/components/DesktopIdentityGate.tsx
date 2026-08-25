@@ -54,12 +54,10 @@ function browserOnline(): boolean {
 
 function roleLabel(role?: string): string {
   return ({
-    super_admin: '超级管理员',
-    admin: '管理员',
-    teacher: '老师',
-    student: '学生',
-    parent: '家长',
-  } as Record<string, string>)[String(role || '')] || String(role || '未知角色');
+    super_admin: '\u8d85\u7ea7\u7ba1\u7406\u5458',
+    teacher: '\u6559\u5e08',
+    student: '\u5b66\u751f',
+  } as Record<string, string>)[String(role || '')] || '\u5f53\u524d\u8eab\u4efd';
 }
 
 function messageForError(error: any): string {

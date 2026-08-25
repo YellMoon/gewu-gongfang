@@ -44,6 +44,8 @@ assert.ok(!gateSource.includes('setDeviceName'), 'device naming must be derived 
 assert.ok(!gateSource.includes('deviceName'), 'the renderer must not request or submit a user-selected device name');
 assert.ok(!gateSource.includes('onlineVerificationMode') && !gateSource.includes('setOnlineVerificationMode'),
   'login methods must be direct actions instead of requiring a mode-switch click first');
+assert.ok(!/^\s*admin:/m.test(gateSource), 'desktop identity labels must not retain the retired ordinary-admin role');
+assert.ok(!/^\s*parent:/m.test(gateSource), 'a household relationship must not be rendered as a desktop role');
 assert.ok(!gateSource.includes('<Space.Compact'), 'login methods must not be rendered as a duplicate action switcher');
 assert.ok(gateSource.includes('onClick={beginRegistration} block'),
   'WeChat login must start directly from its single visible action');

@@ -13,19 +13,18 @@ const devConfig = fs.readFileSync('miniapp/config/dev.ts', 'utf-8');
 const stagingConfig = fs.readFileSync('miniapp/config/staging.ts', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
-assert.ok(api.includes('__API_BASE_URL__'), 'miniapp API should use build-time API base URL');
+assert.ok(!api.includes('__API_BASE_URL__'), 'miniapp must not retain the retired local-backend API base');
 assert.ok(api.includes('__CLOUD_BUSINESS_API_BASE_URL__'), 'miniapp cloud business API should use a build-time base URL');
 assert.ok(!api.includes('__REVIEW_API_BASE_URL__'), 'miniapp must not retain the removed review Gateway base URL');
 assert.ok(
-  api.includes("const path = '/api/auth/refresh';") && api.includes('url: `${getRequestBaseUrl(path)}${path}`'),
-  'token refresh should use the single Backend API base resolver',
+  !api.includes('/api/auth/refresh') && !api.includes('getRequestBaseUrl'),
+  'miniapp cloud tickets must not refresh through the retired Backend API resolver',
 );
 assert.ok(
   !api.includes('url: `${getRequestBaseUrl(request.path)}${request.path}`'),
   'retired experience artifact downloads must not remain in the miniapp API client',
 );
-assert.ok(!api.includes("DEFAULT_BASE_URL = 'http://39.106.172.132'"), 'miniapp default API should not be bare HTTP IP');
-assert.ok(api.includes('https://physicsedu.xyz/scheduling'), 'miniapp default API should use HTTPS legal domain');
+assert.ok(!api.includes("DEFAULT_BASE_URL = 'http://39.106.172.132'") && !api.includes('https://physicsedu.xyz/scheduling'), 'miniapp source must not retain a local-backend API default');
 assert.ok(indexConfig.includes('https://physicsedu.xyz/scheduling'), 'default Taro build config should use HTTPS legal domain unless overridden');
 assert.ok(!indexConfig.includes('http://localhost:3001/api'), 'default Taro build config should not produce localhost API in dist');
 assert.ok(prodConfig.includes('https://physicsedu.xyz/scheduling'), 'miniapp prod config should use HTTPS legal domain');
@@ -35,8 +34,7 @@ for (const [name, source] of [['index', indexConfig], ['dev', devConfig], ['stag
 }
 assert.ok(prodConfig.includes('https://physicsedu.xyz/cloud-business'), 'miniapp prod cloud business config should use the HTTPS authority endpoint');
 assert.ok(!indexConfig.includes('__REVIEW_API_BASE_URL__') && !prodConfig.includes('__REVIEW_API_BASE_URL__'), 'Taro config must not define the removed review Gateway base URL');
-assert.ok(!api.includes("api.get<any[]>('/scheduling/"), 'miniapp API paths should not duplicate the /scheduling reverse-proxy prefix');
-assert.ok(api.includes("api.get<any[]>('/api/students')"), 'miniapp business API should call backend /api routes under the /scheduling base URL');
+assert.ok(!api.includes("api.get<any[]>('/scheduling/") && !api.includes("api.get<any[]>('/api/students')"), 'miniapp core reads must not retain local business API routes');
 assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'miniapp WeChat login should use the cloud account client with its WeChat and phone proofs');
 assert.ok(!loginPage.includes("'/api/auth/wechat-login'"), 'miniapp WeChat login must not regress to the retired backend account endpoint');
 assert.ok(loginPage.includes('createNormalSessionCommitter'), 'miniapp login should commit the complete backend identity through the shared session boundary');
