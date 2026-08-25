@@ -3,11 +3,13 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { isStudentUser } from '../../utils/permission';
 import './index.scss';
 
 export default function StudentDetail() {
   const router = useRouter();
   const { id } = router.params;
+  const isStudent = isStudentUser();
   const [student, setStudent] = useState<Student | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -88,9 +90,9 @@ export default function StudentDetail() {
           <View className='info-row'><Text className='info-label'>电话</Text><Text className='info-value'>{student.phone || '-'}</Text></View>
           <View className='info-row'><Text className='info-label'>学校</Text><Text className='info-value'>{student.school || '-'}</Text></View>
           <View className='info-row'><Text className='info-label'>年级</Text><Text className='info-value'>{student.grade_current || '-'}</Text></View>
-          <View className='info-row'><Text className='info-label'>来源</Text><Text className='info-value'>{student.source_type === 1 ? '自有生源' : student.source_type === 2 ? '机构生源' : '-'}</Text></View>
-          <View className='info-row'><Text className='info-label'>备注</Text><Text className='info-value'>{student.notes || '-'}</Text></View>
-          <View className='info-row'><Text className='info-label'>创建时间</Text><Text className='info-value'>{formatDate(student.created_at)}</Text></View>
+          {!isStudent && <View className='info-row'><Text className='info-label'>来源</Text><Text className='info-value'>{student.source_type === 1 ? '自有生源' : student.source_type === 2 ? '机构生源' : '-'}</Text></View>}
+          {!isStudent && <View className='info-row'><Text className='info-label'>备注</Text><Text className='info-value'>{student.notes || '-'}</Text></View>}
+          {!isStudent && <View className='info-row'><Text className='info-label'>创建时间</Text><Text className='info-value'>{formatDate(student.created_at)}</Text></View>}
         </View>
       )}
 

@@ -6,6 +6,7 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Course, CourseType } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { isStudentUser } from '../../utils/permission';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import './index.scss';
 
@@ -13,6 +14,7 @@ const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3:
 const SOURCE_LABELS: Record<number, string> = { 1: '自有', 2: '机构', 3: '混合' };
 
 export default function Courses() {
+  const isStudent = isStudentUser();
   const [courses, setCourses] = useState<Course[]>([]);
   const [filter, setFilter] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function Courses() {
                     </View>
                     <View className="course-price">
                       <Text className="price-tuition">学费 ¥{c.price_tuition}/{c.billing_unit === 1 ? '时' : '次'}</Text>
-                      <Text className="price-teacher">师费 ¥{c.price_teacher}/{c.billing_unit === 1 ? '时' : '次'}</Text>
+                      {!isStudent && <Text className="price-teacher">师费 ¥{c.price_teacher}/{c.billing_unit === 1 ? '时' : '次'}</Text>}
                     </View>
                   </View>
                 ))}
