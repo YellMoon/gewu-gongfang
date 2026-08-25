@@ -19,6 +19,16 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim(
   ? __APP_VERSION__.trim()
   : '8.5.0'
 
+const ROLE_APPLICATION_LABELS: Record<string, string> = {
+  teacher: '\u6559\u5e08',
+  student: '\u5b66\u751f',
+  family_member: '\u5bb6\u5ead\u6210\u5458',
+}
+
+function roleApplicationLabel(requestedIdentity: unknown): string {
+  return ROLE_APPLICATION_LABELS[String(requestedIdentity || '')] || '\u8eab\u4efd'
+}
+
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')
   const isVisitor = isVisitorIdentity(currentIdentity)
@@ -137,7 +147,7 @@ export default function Settings() {
         </View>
         <View className='section'>
           <View className='setting-item' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
-            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u6559\u5e08\u6216\u5b66\u751f\u8eab\u4efd'}</Text></View>
+            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u8eab\u4efd\u7ed1\u5b9a'}</Text></View>
             <View className='item-right'><Text className='arrow'>{'\u203a'}</Text></View>
           </View>
         </View>
@@ -169,9 +179,10 @@ export default function Settings() {
             <View className='item-left'>
               <View className='item-icon info'>{'\u8eab'}</View>
               <View>
-                <Text className='item-label'>{application.requestedIdentity}</Text>
-                <Text className='value'>{application.bindingHint || '\u65b0\u5efa\u6863\u6848\u7533\u8bf7'}</Text>
-                <Input value={profileIds[application.applicationId] || ''} onInput={event => setProfileIds(current => ({ ...current, [application.applicationId]: event.detail.value }))} placeholder={'\u5173\u8054\u5df2\u6709\u6559\u5e08\u6216\u5b66\u751f\u6863\u6848\u7f16\u53f7'} />
+                <Text className='item-label'>{roleApplicationLabel(application.requestedIdentity)}</Text>
+                <Text className='value'>{application.bindingHint || (application.profileMode === 'new' ? '\u65b0\u5efa\u6863\u6848\u7533\u8bf7' : '\u5173\u8054\u5df2\u6709\u6863\u6848\u7533\u8bf7')}</Text>
+                {application.profileMode === 'new' ? <Text className='value'>{'\u5148\u521b\u5efa\u6863\u6848\uff0c\u518d\u586b\u5199\u6863\u6848\u7f16\u53f7\u5b8c\u6210\u5173\u8054'}</Text> : null}
+                <Input value={profileIds[application.applicationId] || ''} onInput={event => setProfileIds(current => ({ ...current, [application.applicationId]: event.detail.value }))} placeholder={application.profileMode === 'new' ? '\u5148\u521b\u5efa\u6863\u6848\u540e\u586b\u5199\u7f16\u53f7' : '\u586b\u5199\u5df2\u6709\u6559\u5e08\u6216\u5b66\u751f\u6863\u6848\u7f16\u53f7'} />
               </View>
             </View>
             <View className='item-right'>

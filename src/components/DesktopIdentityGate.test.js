@@ -89,8 +89,14 @@ assert.ok(gateSource.includes('if (registrationFlowRef.current === flowId) setPo
   'an obsolete WeChat poll must not clear the loading state of a later login flow');
 assert.ok(gateSource.includes('setPolling(false);\n    setBusy(true);'),
   'returning to password login must clear only the visible polling state immediately');
-assert.ok(gateSource.includes('离线身份租约已过期'));
+assert.ok(gateSource.includes(String.raw`\u79bb\u7ebf\u767b\u5f55\u5df2\u8fc7\u671f`));
 assert.ok(gateSource.includes('desktop-identity-runtime--offline'));
+assert.ok(!decodedGateSource.includes(String.fromCharCode(23457, 26680, 35774, 22791)) && !decodedGateSource.includes(String.fromCharCode(20027, 26426, 20889, 25805, 20316)),
+  'desktop offline copy must not expose retired device-approval or host-internal terminology');
+assert.ok(gateSource.includes(String.raw`\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7f16\u8f91\u672c\u5730\u8349\u7a3f`) && gateSource.includes(String.raw`\u8fde\u63a5\u7f51\u7edc\u540e\u7531\u4f60\u786e\u8ba4\u63d0\u4ea4`),
+  'desktop offline copy must state the actual draft and user-confirmed submission boundary');
+assert.ok(decodedGateSource.includes(String.fromCharCode(27491, 22312, 24674, 22797, 30331, 24405, 29366, 24577)),
+  'desktop session recovery must use familiar login language rather than internal cloud-session wording');
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline .desktop-identity-runtime-bar'));
 assert.ok(

@@ -37,6 +37,10 @@ assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 2115
 assert.ok(!settingsPage.includes('getPendingChanges') && !settingsPage.includes('clearPendingChanges'), 'miniapp settings must not expose retired core-business draft controls');
 assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
+assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must use the same inclusive role-application entry as the application page');
+assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 25945, 24072, 25110, 23398, 29983)), 'visitor settings must not omit household-member applications');
+assert.ok(settingsPage.includes("application.profileMode === 'new'"), 'role review must distinguish a new-profile request from an existing-profile binding');
+assert.ok(settingsPage.includes(String.fromCharCode(20808, 21019, 24314, 26723, 26696)), 'new-profile review must explain that a profile is created before it is linked');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
 assert.ok(questionBankPage.includes('disabled={Boolean(submitting) || selectedIds.length === 0}'), 'question-bank exports must reject an empty selection before a cloud task is created');
 assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank empty-selection actions must have a visible disabled state');

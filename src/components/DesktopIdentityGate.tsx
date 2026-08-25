@@ -621,7 +621,7 @@ const DesktopIdentityGate: React.FC = () => {
             type="warning"
             banner
             showIcon
-            message="当前为离线身份租约：可继续编辑本角色缓存，但不能同步、审核设备或执行主机写操作。"
+            message={'\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7f16\u8f91\u672c\u5730\u8349\u7a3f\uff0c\u8fde\u63a5\u7f51\u7edc\u540e\u7531\u4f60\u786e\u8ba4\u63d0\u4ea4\u4e91\u7aef\u3002'}
           />
         )}
         <div className="desktop-identity-runtime-bar">
@@ -662,7 +662,7 @@ const DesktopIdentityGate: React.FC = () => {
         <Space direction="vertical" size={16} className="desktop-identity-form">
           {gateState.kind === 'loading' && <Spin tip="正在检查本机身份…" />}
           {gateState.kind === 'upgrade-required' && (
-            <Alert type="warning" showIcon message="需要升级旧版桌面授权" description="旧版配对信息不会自动迁移，请重新通过微信核验本人手机号。" />
+            <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {[
             'registration-required', 'registration-active', 'registration-interrupted', 'upgrade-required',
@@ -671,16 +671,11 @@ const DesktopIdentityGate: React.FC = () => {
             && renderRegistration()}
           {locked && (
             <>
-              <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u53d7\u7cfb\u7edf\u4fdd\u62a4\u7684\u4e91\u7aef\u4f1a\u8bdd\u3002\u5982\u679c\u4f1a\u8bdd\u5931\u6548\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u4e91\u7aef\u8d26\u53f7\u91cd\u65b0\u6838\u9a8c\u3002'}</Paragraph>
+              <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u767b\u5f55\u72b6\u6001\u3002\u82e5\u5df2\u9000\u51fa\u6216\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u767b\u5f55\u3002'}</Paragraph>
               <Button type="primary" loading={busy} onClick={resume} block>{'\u6062\u590d\u4f1a\u8bdd'}</Button>
             </>
           )}          {gateState.kind === 'offline-blocked' && (
-            <Alert
-              type="error"
-              showIcon
-              message="离线身份租约已过期"
-              description={'\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u6838\u9a8c\u4e91\u7aef\u8d26\u53f7\u3002'}
-            />
+            <Alert type="error" showIcon message={'\u79bb\u7ebf\u767b\u5f55\u5df2\u8fc7\u671f'} description={'\u8bf7\u8fde\u63a5\u7f51\u7edc\u540e\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {error && <Alert type="error" showIcon message={error} />}
         </Space>

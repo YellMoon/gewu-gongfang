@@ -270,6 +270,13 @@ for (const state of [
   assert.ok(applicationEntry?.verificationStates.includes(state), `account application inventory missing ${state}`);
 }
 
+const settingsEntry = pageInventory.find(item => item.route === 'pages/settings/index');
+assert.ok(settingsEntry, 'settings must remain in the UI inventory');
+for (const retiredSettingsBasis of ['getApiBaseUrl', 'setApiBaseUrl', 'getPendingChanges', 'triggerSync']) {
+  assert.ok(!settingsEntry.realFeatureBasis.includes(retiredSettingsBasis), `settings inventory must not claim retired implementation control: ${retiredSettingsBasis}`);
+}
+assert.ok(settingsEntry.realFeatureBasis.includes('pullFromCloud'), 'settings inventory must trace its refresh action to the actual cloud projection refresh');
+
 const legacyClientSources = listSourceFiles(path.join(root, 'src'))
   .filter(file => !/accountExperience\.js$/.test(file) && !/miniappApiSessionRuntime\.js$/.test(file))
   .filter(file => /ReviewDemoBanner|reviewDemoApi|reviewExperience/.test(fs.readFileSync(file, 'utf8')))
