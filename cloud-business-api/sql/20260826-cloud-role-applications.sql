@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS cloud_role_applications_latest_idx
   ON business.cloud_role_applications (tenant_id, cloud_account_id, submitted_at DESC, application_id DESC);
 
 REVOKE ALL ON TABLE business.cloud_role_applications FROM PUBLIC;
-GRANT SELECT,INSERT,UPDATE ON TABLE business.cloud_role_applications TO gewu_cloud_writer;
+GRANT SELECT,INSERT,UPDATE ON TABLE business.cloud_role_applications TO vnext_pg17_writer;
 
 CREATE OR REPLACE FUNCTION business.vnext_review_cloud_role_application_v1(
   p_tenant_id text,p_reviewer_account_id text,p_application_id text,p_decision text,p_profile_id text,p_reviewed_at timestamptz

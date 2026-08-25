@@ -3,7 +3,13 @@ import pathlib
 import tempfile
 import unittest
 
-from apply_cloud_postgres_migrations import DEFAULT_MIGRATION_ROLE, DockerPsqlExecutor, apply_migrations, read_migrations
+from apply_cloud_postgres_migrations import (
+    DEFAULT_MIGRATION_ROLE,
+    DockerPsqlExecutor,
+    KNOWN_HISTORICAL_MIGRATION_HASHES,
+    apply_migrations,
+    read_migrations,
+)
 
 
 class FakeExecutor:
@@ -56,6 +62,17 @@ class CloudPostgresMigrationTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
                 apply_migrations(executor, rows)
         self.assertTrue(any("SET LOCAL ROLE vnext_pg17_business_owner" in call for call in executor.calls))
+
+    def test_skips_only_reviewed_historical_hashes(self):
+        name = "20260822-miniapp-cloud-accounts.sql"
+        historical_hash = next(iter(KNOWN_HISTORICAL_MIGRATION_HASHES[name]))
+        executor = FakeExecutor()
+        executor.applied[name] = historical_hash
+        rows = [{"name": name, "sql": "BEGIN;\nSELECT 1;\nCOMMIT;\n", "sha256": "f" * 64}]
+        self.assertEqual(apply_migrations(executor, rows), {"applied": [], "skipped": [name]})
+        executor.applied[name] = "e" * 64
+        with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
+            apply_migrations(executor, rows)
 
 
 if __name__ == "__main__":

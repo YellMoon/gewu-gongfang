@@ -11,6 +11,7 @@ assert.ok(sql.includes('binding_hint text NOT NULL'));
 assert.ok(sql.includes('CHECK (length(binding_hint) > 0)'));
 assert.ok(sql.includes('UNIQUE (tenant_id, cloud_account_id, idempotency_key)'));
 assert.ok(sql.includes('REVOKE ALL ON TABLE business.cloud_role_applications FROM PUBLIC'));
+assert.ok(sql.includes('GRANT SELECT,INSERT,UPDATE ON TABLE business.cloud_role_applications TO vnext_pg17_writer'));
 assert.ok(sql.includes('CREATE OR REPLACE FUNCTION business.vnext_review_cloud_role_application_v1'));
 assert.ok(sql.includes("p_decision NOT IN ('approved','rejected')"));
 assert.ok(sql.includes("role='super_admin' AND status='active'"));

@@ -17,6 +17,19 @@ IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 DOCKER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DEFAULT_MIGRATION_ROLE = "gewu_app"
 
+# These two migrations were applied to production before their source files
+# received later repository-only corrections. Their historical hashes are
+# retained here solely to keep the immutable ledger readable; do not add a
+# hash unless it is reproducible from a reviewed repository revision.
+KNOWN_HISTORICAL_MIGRATION_HASHES = {
+    "20260822-miniapp-cloud-accounts.sql": frozenset({
+        "86d324e5ee4941ad53e9c1232331a33ce8290e7710f9f840adccaeafdb30ff7c",
+    }),
+    "20260822-miniapp-cloud-role-profiles.sql": frozenset({
+        "8c62d8011d66b09eb0682227ef06e1fb2f77592c6480f3d53e10fac85722533c",
+    }),
+}
+
 
 def read_migrations(sql_root):
     root = pathlib.Path(sql_root)
@@ -35,6 +48,10 @@ def sql_literal(value):
     if not isinstance(value, str) or "\x00" in value:
         raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
     return "'" + value.replace("'", "''") + "'"
+
+
+def is_known_historical_hash(name, sha256):
+    return isinstance(name, str) and isinstance(sha256, str) and sha256 in KNOWN_HISTORICAL_MIGRATION_HASHES.get(name, ())
 
 
 def owner_sql(statement):
@@ -75,7 +92,7 @@ def apply_migrations(executor, migrations):
             "SELECT sha256 FROM business.cloud_schema_migrations WHERE name=" + sql_literal(migration["name"])
         )).strip()
         if existing:
-            if existing != migration["sha256"]:
+            if existing != migration["sha256"] and not is_known_historical_hash(migration["name"], existing):
                 raise RuntimeError("CLOUD_MIGRATION_HASH_MISMATCH")
             result["skipped"].append(migration["name"])
             continue
