@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 async function requestJson(origin, pathname, token) {
   const response = await fetch(`${origin}${pathname}`, {
@@ -38,13 +39,10 @@ db.prepare(`INSERT INTO users
   VALUES('legacy-applicant','13800138000','13800138000','Applicant',
     'pending','unrecognized',1,0,'pending',1,0,?,?)`).run(now, now);
 
-const { createMiniappIdentityService } = require('../services/miniappIdentityService');
-const token = createMiniappIdentityService({
-  db,
-  jwtSecret: process.env.JWT_SECRET,
-  now: () => new Date(now),
-  uuid: () => 'retired-miniapp-application-session',
-}).issueUnrecognizedToken(db.prepare("SELECT * FROM users WHERE id='legacy-applicant'").get()).token;
+const token = jwt.sign({
+  sub: 'legacy-applicant', sid: 'retired-miniapp-application-session', auth_version: 1,
+  token_use: 'unrecognized-student', iss: 'gewu-miniapp-auth', aud: 'gewu-miniapp-experience',
+}, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '1h' });
 
 const databaseModule = require('../database');
 databaseModule.getInstance = () => database;
@@ -56,8 +54,8 @@ const { createApp } = require('../app');
   const origin = `http://127.0.0.1:${server.address().port}`;
   try {
     const retired = await requestJson(origin, '/api/miniapp/applications', token);
-    assert.strictEqual(retired.status, 403);
-    assert.strictEqual(retired.body.code, 'MINIAPP_VISITOR_SESSION_REQUIRED');
+    assert.strictEqual(retired.status, 401);
+    assert.strictEqual(retired.body.code, 'TOKEN_INVALID');
     assert.strictEqual(
       db.prepare('SELECT COUNT(*) AS count FROM miniapp_role_applications').get().count,
       0,

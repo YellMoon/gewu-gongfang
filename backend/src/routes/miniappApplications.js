@@ -4,7 +4,7 @@ const { sendError } = require('../middleware/errorHandler');
 const { canReviewApplications } = require('../services/authorizationPolicy');
 const {
   FORMAL_TOKEN_USE,
-  UNRECOGNIZED_TOKEN_USE,
+  VISITOR_TOKEN_USE,
 } = require('../services/miniappIdentityService');
 const { createMiniappApplicationService } = require('../services/miniappApplicationService');
 const { createMiniappApplicationReviewService } = require('../services/miniappApplicationReviewService');
@@ -133,7 +133,7 @@ router.post('/:id/retry', requireReviewSession, (req, res) => {
 });
 
 function requireApplicationSession(req, res, next) {
-  if (req.authz?.tokenUse === UNRECOGNIZED_TOKEN_USE) return next();
+  if (req.authz?.tokenUse === VISITOR_TOKEN_USE) return next();
   if (req.authz?.tokenUse === FORMAL_TOKEN_USE) {
     const mine = applicationService().getMine(req.user.id);
     if (mine.state === 'approved_relogin_required') return next();

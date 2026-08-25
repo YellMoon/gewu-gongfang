@@ -8,7 +8,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireCoreReadAccess, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
-const { unrecognizedStudentGuard } = require('./middleware/unrecognizedStudentGuard');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
@@ -38,8 +37,6 @@ const {
   createMiniappAuthorityApplicationsRouter,
 } = require('./routes/miniappAuthorityApplications');
 const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
-const { createUnrecognizedExperienceRouter } = require('./routes/unrecognizedExperience');
-const { createUnrecognizedExperienceSandbox } = require('./services/unrecognizedExperienceSandbox');
 const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
 const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
 const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
@@ -52,16 +49,6 @@ const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
 const nonceStore = new Map();
 const idempotencyStore = new Map();
-let sharedUnrecognizedExperienceSandbox = null;
-
-function unrecognizedExperienceSandboxForApp(options = {}) {
-  if (options.unrecognizedExperienceSandbox) return options.unrecognizedExperienceSandbox;
-  if (!sharedUnrecognizedExperienceSandbox) {
-    sharedUnrecognizedExperienceSandbox = createUnrecognizedExperienceSandbox();
-  }
-  return sharedUnrecognizedExperienceSandbox;
-}
-
 function isWriteRequest(req) {
   return WRITE_METHODS.has(req.method);
 }
@@ -293,17 +280,6 @@ function createApp(options = {}) {
   app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
     credentials: true
-  }));
-
-  // Resolve an optional identity once at the API boundary so restricted
-  // unrecognized-student sessions cannot fall through to formal business APIs.
-  app.use('/api', optionalAuth, unrecognizedStudentGuard);
-
-  const unrecognizedExperienceSandbox = unrecognizedExperienceSandboxForApp(options);
-  app.locals.unrecognizedExperienceSandbox = unrecognizedExperienceSandbox;
-  app.use('/api/experience', authMiddleware, createUnrecognizedExperienceRouter({
-    ...(options.unrecognizedExperienceRouteOptions || {}),
-    sandbox: unrecognizedExperienceSandbox,
   }));
 
   // Body parsing

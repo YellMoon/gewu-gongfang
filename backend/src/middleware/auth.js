@@ -5,11 +5,9 @@ const jwt = require('jsonwebtoken');
 const { getInstance } = require('../database');
 const { roleForUser, scopeForUser } = require('../services/authorizationPolicy');
 const {
-  EXPERIENCE_AUDIENCE,
   FORMAL_AUDIENCE,
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
-  UNRECOGNIZED_TOKEN_USE,
   VISITOR_TOKEN_USE,
   createMiniappIdentityService,
 } = require('../services/miniappIdentityService');
@@ -59,9 +57,10 @@ function verifyToken(token) {
   if (decoded.token_use === FORMAL_TOKEN_USE && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== FORMAL_AUDIENCE)) {
     throw new Error('TOKEN_AUDIENCE_INVALID');
   }
-  if (decoded.token_use === UNRECOGNIZED_TOKEN_USE
-    && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== EXPERIENCE_AUDIENCE)) {
-    throw new Error('TOKEN_AUDIENCE_INVALID');
+  if (decoded.token_use === 'unrecognized-student') {
+    const error = new Error('LEGACY_MINIAPP_TOKEN_RELOGIN_REQUIRED');
+    error.code = 'LEGACY_MINIAPP_TOKEN_RELOGIN_REQUIRED';
+    throw error;
   }
   if (decoded.token_use === VISITOR_TOKEN_USE
     && (decoded.iss !== TOKEN_ISSUER || decoded.aud !== FORMAL_AUDIENCE)) {
@@ -194,7 +193,7 @@ function attachAuthorizationContext(req, tokenUser) {
   const database = getInstance().db;
   const miniappToken = tokenUser?.token_use === FORMAL_TOKEN_USE
     || tokenUser?.token_use === VISITOR_TOKEN_USE
-    || tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE;
+    ;
   const desktopToken = tokenUser?.token_use === 'desktop-session';
   let desktopContext = null;
   if (desktopToken) {
@@ -263,9 +262,7 @@ function attachAuthorizationContext(req, tokenUser) {
     authorizationRowVersion: desktopContext?.authorizationRowVersion || null,
     deviceKind: desktopContext?.deviceKind || null,
     identityKind: user?.identity_kind || null,
-    accountState: tokenUser?.token_use === UNRECOGNIZED_TOKEN_USE
-      ? 'unrecognized'
-      : tokenUser?.token_use === VISITOR_TOKEN_USE ? 'visitor' : 'formal',
+    accountState: tokenUser?.token_use === VISITOR_TOKEN_USE ? 'visitor' : 'formal',
     authorityId: tokenUser?.authority_id || null,
     runtimeNodeRole: process.env.GEWU_NODE_ROLE || 'desktop-client',
     deviceTrusted: desktopContext?.deviceTrusted || device?.trusted === 1,
@@ -381,7 +378,6 @@ function optionalAuth(req, res, next) {
       if (error?.code === 'REVIEW_TOKEN_NOT_ACCEPTED_BY_BACKEND'
         || tokenHint.token_use === FORMAL_TOKEN_USE
         || tokenHint.token_use === VISITOR_TOKEN_USE
-        || tokenHint.token_use === UNRECOGNIZED_TOKEN_USE
         || tokenHint.token_use === 'desktop-session'
         || tokenHint.token_use === 'desktop-relay-session') {
         return sendAuthError(res, 401, 'Invalid or expired authentication token', 'TOKEN_INVALID');

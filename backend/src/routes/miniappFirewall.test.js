@@ -1,6 +1,8 @@
 const assert = require('assert');
 const fs = require('fs');
 
+require('./legacyUnrecognizedRetirement.test');
+
 const app = fs.readFileSync('backend/src/app.js', 'utf-8');
 const authRoute = fs.readFileSync('backend/src/routes/auth.js', 'utf-8');
 const cloudRoute = fs.readFileSync('backend/src/routes/cloudRelay.js', 'utf-8');
@@ -35,8 +37,8 @@ assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"),
 assert.ok(cloudRoute.includes('filterSnapshotForUser'), 'backend cloud relay should filter snapshots by user role');
 assert.ok(cloudRoute.includes('requireMiniappTaskAccess'), 'backend cloud relay should enforce task permissions per route');
 assert.ok(gatewayAuth.includes('MINIAPP_AUTH_MOVED_TO_BACKEND'), 'legacy Gateway login must be a tombstone owned by the backend');
-assert.ok(app.includes("app.use('/api', optionalAuth, unrecognizedStudentGuard)"),
-  'restricted unrecognized sessions must be stopped before formal business routes');
+assert.ok(middleware.includes('LEGACY_MINIAPP_TOKEN_RELOGIN_REQUIRED'),
+  'retired unrecognized tokens must be rejected before they reach any business route');
 assert.ok(!gatewayAuth.includes('自动注册'), 'gateway login must not auto-register miniapp users');
 assert.ok(gatewaySchema.includes('login_enabled INTEGER DEFAULT 0'), 'gateway user schema should keep login disabled until explicitly enabled');
 assert.ok(packageJson.includes('backend/src/services/miniappAccessPolicy.test.js'), 'miniapp access policy test should run in npm test');

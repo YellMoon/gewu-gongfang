@@ -8,23 +8,15 @@ const {
 
 const TOKEN_ISSUER = 'gewu-miniapp-auth';
 const FORMAL_AUDIENCE = 'gewu-api';
-const EXPERIENCE_AUDIENCE = 'gewu-miniapp-experience';
 const FORMAL_TOKEN_USE = 'miniapp-session';
 const VISITOR_TOKEN_USE = 'miniapp-visitor';
 const MAINLAND_MOBILE_PATTERN = /^1[3-9]\d{9}$/;
-const UNRECOGNIZED_TOKEN_USE = 'unrecognized-student';
 const LOGIN_EVENT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 const VISITOR_CAPABILITIES = Object.freeze([
   'projection:read',
   'role-application:read',
   'role-application:submit',
   'question-preview:read',
-]);
-const UNRECOGNIZED_CAPABILITIES = Object.freeze([
-  'experience:read',
-  'profile-application:read',
-  'profile-application:submit',
-  'sample-questions:view',
 ]);
 
 function isValidMainlandMobile(value) {
@@ -88,16 +80,15 @@ function createMiniappIdentityService({
     (id, user_id, phone_normalized, identity_kind, result_code, session_id,
      miniapp_version, platform, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  const insertUnrecognizedUser = db.prepare(`INSERT INTO users
-    (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
-     role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'unrecognized', 1, 0, 'pending', 1, 0, ?, ?)`);
   const insertVisitorUser = db.prepare(`INSERT INTO users
     (id, wechat_openid, wechat_unionid, phone, phone_normalized, name, nickname, avatar_url,
      role, identity_kind, status, login_enabled, review_status, auth_version, deleted, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'visitor', 'visitor', 1, 1, 'approved', 1, 0, ?, ?)`);
   const insertAuthorityAccount = db.prepare(`INSERT INTO authority_accounts
     (user_id,authority_id,status,created_at,updated_at) VALUES (?,?,'active',?,?)`);
+  const activateVisitorAuthorityAccount = db.prepare(`INSERT INTO authority_accounts
+    (user_id,authority_id,status,created_at,updated_at) VALUES (?,?,'active',?,?)
+    ON CONFLICT(user_id) DO UPDATE SET status='active', updated_at=excluded.updated_at`);
 
   function timestamp() {
     return asIso(now());
@@ -196,26 +187,25 @@ function createMiniappIdentityService({
   function accountStateFor(user) {
     if (isFormal(user)) return 'formal';
     if (isVisitor(user)) return 'visitor';
-    return 'unrecognized';
+    return null;
   }
 
   function identityKind(user, accountState) {
     if (accountState === 'visitor') return 'visitor';
-    if (accountState === 'unrecognized') return 'unrecognized';
     const role = formalRole(user);
     if (role === 'student' && String(user?.identity_kind || '').trim() === 'parent') return 'parent';
-    return role || user.identity_kind || 'unrecognized';
+    return role || user.identity_kind || 'visitor';
   }
 
   function presentUser(user, accountState) {
     const role = accountState === 'formal'
       ? formalRole(user)
-      : accountState === 'visitor' ? 'visitor' : 'student';
+      : 'visitor';
     const membership = accountState === 'formal' ? membershipFor(user, role) : null;
     const member = isActiveMembership(membership);
     const tokenUse = accountState === 'formal'
       ? FORMAL_TOKEN_USE
-      : accountState === 'visitor' ? VISITOR_TOKEN_USE : UNRECOGNIZED_TOKEN_USE;
+      : VISITOR_TOKEN_USE;
     const authorityAccount = accountState === 'visitor' ? authorityAccountFor(user) : null;
     return {
       id: user.id,
@@ -233,7 +223,6 @@ function createMiniappIdentityService({
         authority_id: authorityAccount?.authority_id || null,
         capabilities: [...VISITOR_CAPABILITIES],
       } : {}),
-      ...(accountState === 'unrecognized' ? { capabilities: [...UNRECOGNIZED_CAPABILITIES] } : {}),
       student_id: accountState === 'formal' && role === 'student'
         ? formalSubjectId(user, role) : null,
       teacher_id: accountState === 'formal' && role === 'teacher'
@@ -277,12 +266,6 @@ function createMiniappIdentityService({
     return issueToken(user, sessionId, FORMAL_TOKEN_USE, FORMAL_AUDIENCE);
   }
 
-  function issueUnrecognizedToken(user, sessionId = uuid()) {
-    if (isDisabled(user)) throw serviceError('MINIAPP_LOGIN_DISABLED');
-    if (isFormal(user) || hasEnabledFormalState(user)) throw serviceError('FORMAL_IDENTITY_RELOGIN_REQUIRED');
-    return issueToken(user, sessionId, UNRECOGNIZED_TOKEN_USE, EXPERIENCE_AUDIENCE);
-  }
-
   function issueVisitorToken(user, sessionId = uuid()) {
     if (!isVisitor(user)) throw serviceError('MINIAPP_VISITOR_NOT_ELIGIBLE');
     return issueToken(user, sessionId, VISITOR_TOKEN_USE, FORMAL_AUDIENCE);
@@ -315,23 +298,6 @@ function createMiniappIdentityService({
     return { error: { code } };
   }
 
-  function createUnrecognizedUser(input, currentTime = timestamp()) {
-    const userId = uuid();
-    insertUnrecognizedUser.run(
-      userId,
-      input.openid,
-      input.unionid,
-      input.phone,
-      input.phone,
-      input.nickname || '\u4f53\u9a8c\u8d26\u53f7',
-      input.nickname,
-      input.avatarUrl,
-      currentTime,
-      currentTime,
-    );
-    return findById.get(userId);
-  }
-
   function createVisitorUser(input, currentTime = timestamp()) {
     const userId = uuid();
     insertVisitorUser.run(
@@ -355,24 +321,39 @@ function createMiniappIdentityService({
     return findById.get(userId);
   }
 
+  function repairLegacyVisitor(user, currentTime = timestamp()) {
+    if (String(user?.role || '') !== 'pending') return user;
+    db.prepare(`UPDATE users
+      SET role='visitor', identity_kind='visitor', status=1, login_enabled=1,
+          review_status='approved', updated_at=?
+      WHERE id=? AND role='pending'`)
+      .run(currentTime, user.id);
+    activateVisitorAuthorityAccount.run(
+      user.id,
+      authorityIdForNewVisitor(),
+      currentTime,
+      currentTime,
+    );
+    return findById.get(user.id);
+  }
+
   function loginOutcomeForUser(user, input) {
     if (user.review_status === 'approved' && isEnabled(user.login_enabled)
       && !isFormal(user) && !isVisitor(user)) {
       return conflictOutcome('FORMAL_IDENTITY_MAPPING_INVALID', user, input);
     }
     const accountState = accountStateFor(user);
+    if (!accountState) return conflictOutcome('VISITOR_ACCOUNT_REPAIR_REQUIRED', user, input);
     const sessionId = uuid();
     const issued = accountState === 'formal'
       ? issueFormalToken(user, sessionId)
-      : accountState === 'visitor'
-        ? issueVisitorToken(user, sessionId)
-        : issueUnrecognizedToken(user, sessionId);
+      : issueVisitorToken(user, sessionId);
     const loginEventId = writeEvent({
       user,
       phone: input.phone,
       resultCode: accountState === 'formal'
         ? 'FORMAL_LOGIN_SUCCESS'
-        : accountState === 'visitor' ? 'VISITOR_LOGIN_SUCCESS' : 'UNRECOGNIZED_LOGIN_SUCCESS',
+        : 'VISITOR_LOGIN_SUCCESS',
       sessionId,
       miniappVersion: input.miniappVersion,
       platform: input.platform,
@@ -418,7 +399,7 @@ function createMiniappIdentityService({
       phoneOwner = findById.get(phoneOwner.id);
     }
 
-    return loginOutcomeForUser(phoneOwner, input);
+    return loginOutcomeForUser(repairLegacyVisitor(phoneOwner, currentTime), input);
   });
 
   function normalizedLoginInput(input, phone, openid) {
@@ -519,12 +500,6 @@ function createMiniappIdentityService({
         teacher_id: role === 'teacher' ? formalSubjectId(user, role) : null,
       };
     }
-    if (claims.token_use === UNRECOGNIZED_TOKEN_USE) {
-      if (claims.aud !== EXPERIENCE_AUDIENCE || isFormal(user) || hasEnabledFormalState(user)) {
-        throw serviceError('UNRECOGNIZED_IDENTITY_NOT_ELIGIBLE');
-      }
-      return user;
-    }
     if (claims.token_use === VISITOR_TOKEN_USE) {
       if (claims.aud !== FORMAL_AUDIENCE || !isVisitor(user)) {
         throw serviceError('MINIAPP_VISITOR_NOT_ELIGIBLE');
@@ -551,7 +526,6 @@ function createMiniappIdentityService({
   return {
     expireLoginEvents,
     issueFormalToken,
-    issueUnrecognizedToken,
     issueVisitorToken,
     loginWithClaimedWechat,
     loginWithVerifiedWechat,
@@ -560,11 +534,9 @@ function createMiniappIdentityService({
 }
 
 module.exports = {
-  EXPERIENCE_AUDIENCE,
   FORMAL_AUDIENCE,
   FORMAL_TOKEN_USE,
   TOKEN_ISSUER,
-  UNRECOGNIZED_TOKEN_USE,
   VISITOR_TOKEN_USE,
   createMiniappIdentityService,
   isValidMainlandMobile,
