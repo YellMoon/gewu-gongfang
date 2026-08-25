@@ -64,7 +64,7 @@ export default function QuestionBankPage() {
     if (!response.success) {
       const forbidden = ['CLOUD_BUSINESS_ACCESS_DENIED', 'FORBIDDEN'].includes(String(response.code));
       setPreviewState(forbidden ? 'forbidden' : 'offline');
-      setPreviewMessage(forbidden ? '\u8bf7联系管理员确认题库权限' : '\u8bf7联网后重试');
+      setPreviewMessage(forbidden ? '\u8bf7\u8054\u7cfb\u6570\u636e\u8d1f\u8d23\u4eba\u786e\u8ba4\u9898\u5e93\u6743\u9650' : '\u8bf7\u8054\u7f51\u540e\u91cd\u8bd5');
       return;
     }
     const list = Array.isArray(response.data?.questions) ? response.data.questions : [];

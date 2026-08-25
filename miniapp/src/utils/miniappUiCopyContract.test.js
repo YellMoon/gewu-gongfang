@@ -10,6 +10,8 @@ const applicationPage = display(read('miniapp/src/pages/account-application/inde
 const applicationRuntime = display(read('miniapp/src/pages/account-application/applicationRuntime.js'));
 const accountBanner = display(read('miniapp/src/components/AccountStatusBanner.tsx'));
 const settingsPage = display(read('miniapp/src/pages/settings/index.tsx'));
+const questionBankPage = display(read('miniapp/src/pages/question-bank/index.tsx'));
+const questionBankStyles = read('miniapp/src/pages/question-bank/index.scss');
 const appConfig = read('miniapp/src/app.config.ts');
 
 const retiredTerms = [
@@ -35,6 +37,9 @@ assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 2115
 assert.ok(!settingsPage.includes('getPendingChanges') && !settingsPage.includes('clearPendingChanges'), 'miniapp settings must not expose retired core-business draft controls');
 assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
+assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
+assert.ok(questionBankPage.includes('disabled={Boolean(submitting) || selectedIds.length === 0}'), 'question-bank exports must reject an empty selection before a cloud task is created');
+assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank empty-selection actions must have a visible disabled state');
 
 for (const removedRoute of [
   'pages/admin/users/index',
