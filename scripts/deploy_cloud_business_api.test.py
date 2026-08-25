@@ -6,8 +6,9 @@ from deploy_cloud_business_api import (
     candidate_command,
     candidate_name,
     promotion_lock_acquire_command,
+    promotion_lock_heartbeat_command,
+    promotion_lock_recovery_claim_command,
     promotion_lock_release_command,
-    promotion_lock_stale_probe_command,
     reconcile_switch_failure_command,
     release_tag,
     rollback_command,
@@ -30,7 +31,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("sleep 1", command)
 
     def test_switch_command_keeps_a_rollback_container_and_recovers_on_health_failure(self):
-        command = switch_command("8.1.0-8c425eab")
+        command = switch_command("8.1.0-8c425eab", "a" * 32)
         self.assertIn("flock -x 9", command)
         self.assertIn("rollback-8.1.0-8c425eab", command)
         self.assertIn("127.0.0.1:3002:3002", command)
@@ -46,7 +47,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_promote_reuses_only_a_validated_candidate_tag(self):
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
-            switch_command("8.3.0-current;id")
+            switch_command("8.3.0-current;id", "a" * 32)
 
     def test_candidate_tag_must_match_the_checked_out_source(self):
         with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
@@ -57,7 +58,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
                 module.validated_release_tag("8.5.0-deadbee")
 
     def test_explicit_rollback_restores_the_preserved_container(self):
-        command = rollback_command("8.5.0-1101687f349d")
+        command = rollback_command("8.5.0-1101687f349d", "a" * 32)
         self.assertIn("rollback-8.5.0-1101687f349d", command)
         self.assertIn('docker rm -f "$current"', command)
         self.assertIn('docker rename "$rollback" "$current"', command)
@@ -65,7 +66,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("flock -x 9", command)
 
     def test_uncertain_switch_reconciliation_serializes_and_restores_if_needed(self):
-        command = reconcile_switch_failure_command("8.5.0-b195691c27e9")
+        command = reconcile_switch_failure_command("8.5.0-b195691c27e9", "a" * 32)
         self.assertIn("flock -x 9", command)
         self.assertIn('if docker container inspect "$rollback"', command)
         self.assertIn('docker rename "$rollback" "$current"', command)
@@ -85,20 +86,39 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         tag = "8.5.0-8a40b41050be"
         acquire = promotion_lock_acquire_command(operation_id, tag)
         release = promotion_lock_release_command(operation_id)
-        probe = promotion_lock_stale_probe_command(tag)
+        heartbeat = promotion_lock_heartbeat_command(operation_id, tag)
+        claim = promotion_lock_recovery_claim_command("b" * 32, tag)
+        self.assertIn(module.PROMOTION_GUARD_LOCK_PATH, acquire)
         self.assertIn('[ ! -s "$lock" ]', acquire)
         self.assertIn('flock -n "$lock" rm -f', acquire)
         self.assertIn('ln "$tmp" "$lock"', acquire)
         self.assertIn("$(date +%s)", acquire)
         self.assertIn(operation_id, acquire)
         self.assertIn(tag, acquire)
-        self.assertIn('test "$actual_owner" = "$owner"', release)
-        self.assertIn("age=$((now - created))", probe)
-        self.assertIn(str(module.PROMOTION_LOCK_STALE_SECONDS), probe)
+        self.assertIn('if [ "$actual_owner" = "$owner" ]', release)
+        self.assertIn('test "$actual_owner" = "$owner"', heartbeat)
+        self.assertIn("age=$((now - created))", claim)
+        self.assertIn('mv -f -- "$tmp" "$lock"', claim)
+        self.assertIn(str(module.PROMOTION_LOCK_STALE_SECONDS), claim)
+
+    def test_every_promoted_container_mutation_is_fenced_by_the_operation_owner(self):
+        operation_id = "d" * 32
+        tag = "8.5.0-ed202e9d5fb7"
+        for command in (
+            switch_command(tag, operation_id),
+            rollback_command(tag, operation_id),
+            reconcile_switch_failure_command(tag, operation_id),
+        ):
+            self.assertIn(module.PROMOTION_GUARD_LOCK_PATH, command)
+            self.assertIn('test "$actual_owner" = "$owner"', command)
+            self.assertIn('test "$actual_tag" = "$expected_tag"', command)
+            self.assertIn("$(date +%s)", command)
 
     def test_stale_lock_recovery_requires_explicit_mode_and_verification(self):
         stale = {"operationId": "c" * 32, "ageSeconds": 901}
-        with mock.patch.object(module, "read_stale_promotion_lock", return_value=stale), mock.patch.object(
+        with mock.patch.object(module.secrets, "token_hex", return_value="d" * 32), mock.patch.object(
+            module, "claim_stale_promotion_lock", return_value=stale
+        ) as claim, mock.patch.object(
             module, "reconcile_uncertain_switch"
         ) as reconcile, mock.patch.object(module, "verify_public_health") as verify, mock.patch.object(
             module, "verify_current_release_tag"
@@ -106,24 +126,32 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module, "release_promotion_lock"
         ) as release:
             result = module.recover_promotion_lock("8.5.0-8a40b41050be", "rollback")
-        reconcile.assert_called_once_with("8.5.0-8a40b41050be")
+        claim.assert_called_once_with("8.5.0-8a40b41050be", "d" * 32)
+        reconcile.assert_called_once_with("8.5.0-8a40b41050be", "d" * 32)
         verify.assert_not_called()
         verify_tag.assert_not_called()
-        release.assert_called_once_with("c" * 32)
+        release.assert_called_once_with("d" * 32)
         self.assertEqual(result["ageSeconds"], 901)
 
-        with mock.patch.object(module, "read_stale_promotion_lock", return_value=stale), mock.patch.object(
+        with mock.patch.object(module.secrets, "token_hex", return_value="d" * 32), mock.patch.object(
+            module, "claim_stale_promotion_lock", return_value=stale
+        ), mock.patch.object(
             module, "reconcile_uncertain_switch"
         ) as reconcile, mock.patch.object(module, "verify_public_health", return_value={"ok": True}) as verify, mock.patch.object(
             module, "verify_current_release_tag"
         ) as verify_tag, mock.patch.object(
-            module, "release_promotion_lock"
-        ) as release:
+            module, "heartbeat_promotion_lock"
+        ) as heartbeat, mock.patch.object(module.deploy, "require_release_manifest") as require_manifest, mock.patch.object(
+            module.deploy, "record_release_receipt"
+        ) as receipt, mock.patch.object(module, "release_promotion_lock") as release:
             module.recover_promotion_lock("8.5.0-8a40b41050be", "preserve")
         reconcile.assert_not_called()
         verify_tag.assert_called_once_with("8.5.0-8a40b41050be")
         verify.assert_called_once_with("8.5.0")
-        release.assert_called_once_with("c" * 32)
+        heartbeat.assert_called_once_with("d" * 32, "8.5.0-8a40b41050be")
+        require_manifest.assert_called_once_with("cloud_business")
+        receipt.assert_called_once()
+        release.assert_called_once_with("d" * 32)
 
     def test_complete_promotion_lifecycle_holds_one_operation_lock(self):
         health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
@@ -134,7 +162,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ) as promote:
             self.assertEqual(module.promote_validated_candidate("8.5.0-980f2c842eab", "8.5.0", "evidence"), health)
         acquire.assert_called_once_with("b" * 32, "8.5.0-980f2c842eab")
-        promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence")
+        promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence", "b" * 32)
         release.assert_called_once_with("b" * 32)
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
@@ -192,7 +220,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
-        ) as run, mock.patch.object(
+        ) as run, mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
             module, "verify_public_health", side_effect=RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
         ), mock.patch.object(module.deploy, "record_release_receipt") as record_receipt:
             with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_HEALTH_INVALID"):
@@ -212,7 +240,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
-        ) as run, mock.patch.object(
+        ) as run, mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
             module, "verify_public_health", return_value={"ok": True, "version": "8.5.0"}
         ), mock.patch.object(
             module.deploy, "record_release_receipt", side_effect=OSError("receipt write failed")

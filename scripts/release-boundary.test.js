@@ -29,11 +29,13 @@ assert.ok(deployCloudBusiness.includes('require_release_manifest("cloud_business
 assert.ok(deployCloudBusiness.includes('record_release_receipt("cloud_business"'), 'cloud business health success must write an exact-version receipt');
 assert.ok(deployCloudBusiness.includes('payload.get("version") != expected_version'), 'cloud business public health must match the exact release version');
 assert.ok(deployCloudBusiness.includes('validated_release_tag(args.tag)'), 'cloud business candidates must match the checked-out source revision');
-assert.ok(deployCloudBusiness.includes('rollback_promoted_release(tag)'), 'cloud business promotion failures must automatically restore the previous container');
-assert.ok(deployCloudBusiness.includes('reconcile_uncertain_switch(tag)'), 'cloud business switch transport failures must reconcile remote container state');
+assert.ok(deployCloudBusiness.includes('rollback_promoted_release(tag, operation_id)'), 'cloud business promotion failures must automatically restore the previous container under the same owner fence');
+assert.ok(deployCloudBusiness.includes('reconcile_uncertain_switch(tag, operation_id)'), 'cloud business switch transport failures must reconcile remote container state under the same owner fence');
 assert.ok(deployCloudBusiness.includes('flock -x 9'), 'cloud business switch and reconciliation must serialize on the remote host');
 assert.ok(deployCloudBusiness.includes('acquire_promotion_lock(operation_id, tag)'), 'cloud business promotion must acquire a transaction-wide owner lock');
 assert.ok(deployCloudBusiness.includes('recover_promotion_lock(tag, mode)'), 'cloud business promotion must provide controlled stale-lock recovery');
+assert.ok(deployCloudBusiness.includes('promotion_lock_recovery_claim_command'), 'stale-lock recovery must atomically replace the abandoned owner with a recovery owner');
+assert.ok(deployCloudBusiness.includes('heartbeat_promotion_lock(operation_id, tag)'), 'promotion must revalidate and refresh its owner fence around public verification and receipt recording');
 assert.ok(deployBackend.includes('manifest.get("commit") != current_source_commit()'), 'deployment manifests must match the checked-out source commit');
 
 console.log('release boundary checks passed');

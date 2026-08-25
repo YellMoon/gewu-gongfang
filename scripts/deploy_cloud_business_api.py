@@ -22,6 +22,7 @@ POSTGRES_CONTAINER = "gewu-postgres17"
 REMOTE_BUILD_ROOT = "/root/gewu-cloud-business-builds"
 SWITCH_LOCK_PATH = "/tmp/gewu-cloud-business-api-switch.lock"
 PROMOTION_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion.lock"
+PROMOTION_GUARD_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion-guard.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
 OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 PROMOTION_LOCK_STALE_SECONDS = 900
@@ -87,6 +88,7 @@ def promotion_lock_acquire_command(operation_id, tag):
     return (
         "set -eu; "
         f"owner='{operation_id}'; tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; tmp='{PROMOTION_LOCK_PATH}.{operation_id}.tmp'; "
+        f"exec 8>'{PROMOTION_GUARD_LOCK_PATH}'; flock -x 8; "
         "if [ -e \"$lock\" ] && [ ! -s \"$lock\" ]; then flock -n \"$lock\" rm -f -- \"$lock\" || true; fi; "
         "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s %s %s\\n' \"$owner\" \"$tag\" \"$(date +%s)\" > \"$tmp\"; "
         "if ! ln \"$tmp\" \"$lock\"; then exit 3; fi"
@@ -98,31 +100,64 @@ def promotion_lock_release_command(operation_id):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     return (
         "set -eu; "
-        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; "
+        f"owner='{operation_id}'; lock='{PROMOTION_LOCK_PATH}'; exec 8>'{PROMOTION_GUARD_LOCK_PATH}'; flock -x 8; "
         "if [ ! -e \"$lock\" ]; then exit 0; fi; "
-        "read -r actual_owner _ < \"$lock\"; test \"$actual_owner\" = \"$owner\"; rm -f -- \"$lock\""
+        "read -r actual_owner _ < \"$lock\"; if [ \"$actual_owner\" = \"$owner\" ]; then rm -f -- \"$lock\"; fi"
     )
 
 
-def promotion_lock_stale_probe_command(tag):
+def promotion_lock_recovery_claim_command(recovery_id, tag):
+    if not isinstance(recovery_id, str) or not OPERATION_ID_PATTERN.fullmatch(recovery_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     candidate_name(tag)
     return (
         "set -eu; "
-        f"expected_tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; stale='{PROMOTION_LOCK_STALE_SECONDS}'; "
+        f"recovery='{recovery_id}'; expected_tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; "
+        f"tmp='{PROMOTION_LOCK_PATH}.{recovery_id}.tmp'; stale='{PROMOTION_LOCK_STALE_SECONDS}'; "
+        f"exec 8>'{PROMOTION_GUARD_LOCK_PATH}'; flock -x 8; "
         "read -r owner actual_tag created extra < \"$lock\"; test -z \"${extra:-}\"; "
         "test \"$actual_tag\" = \"$expected_tag\"; now=$(date +%s); age=$((now - created)); test \"$age\" -ge \"$stale\"; "
-        "printf '%s %s\\n' \"$owner\" \"$age\""
+        "umask 077; trap 'rm -f -- \"$tmp\"' EXIT; printf '%s %s %s\\n' \"$recovery\" \"$expected_tag\" \"$now\" > \"$tmp\"; "
+        "mv -f -- \"$tmp\" \"$lock\"; printf '%s %s\\n' \"$owner\" \"$age\""
     )
 
 
-def switch_command(tag):
+def promotion_lock_heartbeat_command(operation_id, tag):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    candidate_name(tag)
+    return (
+        "set -eu; "
+        f"owner='{operation_id}'; expected_tag='{tag}'; lock='{PROMOTION_LOCK_PATH}'; "
+        f"exec 8>'{PROMOTION_GUARD_LOCK_PATH}'; flock -x 8; "
+        "read -r actual_owner actual_tag _ extra < \"$lock\"; test -z \"${extra:-}\"; "
+        "test \"$actual_owner\" = \"$owner\"; test \"$actual_tag\" = \"$expected_tag\"; "
+        "printf '%s %s %s\\n' \"$owner\" \"$expected_tag\" \"$(date +%s)\" > \"$lock\""
+    )
+
+
+def promotion_owner_guard(operation_id, tag):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    candidate_name(tag)
+    return (
+        f"owner='{operation_id}'; expected_tag='{tag}'; promotion_lock='{PROMOTION_LOCK_PATH}'; "
+        f"exec 8>'{PROMOTION_GUARD_LOCK_PATH}'; flock -x 8; "
+        "read -r actual_owner actual_tag _ extra < \"$promotion_lock\"; test -z \"${extra:-}\"; "
+        "test \"$actual_owner\" = \"$owner\"; test \"$actual_tag\" = \"$expected_tag\"; "
+        "printf '%s %s %s\\n' \"$owner\" \"$expected_tag\" \"$(date +%s)\" > \"$promotion_lock\"; "
+    )
+
+
+def switch_command(tag, operation_id):
     image = f"gewu-cloud-business-api:{tag}"
     candidate = candidate_name(tag)
     env_path = remote_env_path(tag)
     rollback = f"gewu-cloud-business-api-rollback-{tag}"
     return (
         "set -eu; "
-        f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; rollback='{rollback}'; env_path='{env_path}'; "
+        + promotion_owner_guard(operation_id, tag)
+        + f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; rollback='{rollback}'; env_path='{env_path}'; "
         f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
@@ -139,12 +174,13 @@ def switch_command(tag):
     )
 
 
-def rollback_command(tag):
+def rollback_command(tag, operation_id):
     candidate_name(tag)
     rollback = f"gewu-cloud-business-api-rollback-{tag}"
     return (
         "set -eu; "
-        f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
+        + promotion_owner_guard(operation_id, tag)
+        + f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
         f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "docker container inspect \"$rollback\" >/dev/null 2>&1; "
         "docker rm -f \"$current\"; "
@@ -154,12 +190,13 @@ def rollback_command(tag):
     )
 
 
-def reconcile_switch_failure_command(tag):
+def reconcile_switch_failure_command(tag, operation_id):
     candidate_name(tag)
     rollback = f"gewu-cloud-business-api-rollback-{tag}"
     return (
         "set -eu; "
-        f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
+        + promotion_owner_guard(operation_id, tag)
+        + f"current='{CURRENT_CONTAINER}'; rollback='{rollback}'; "
         f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "if docker container inspect \"$rollback\" >/dev/null 2>&1; then "
         "docker rm -f \"$current\" >/dev/null 2>&1 || true; "
@@ -243,10 +280,10 @@ def verify_public_health(expected_version):
     return payload
 
 
-def rollback_promoted_release(tag):
+def rollback_promoted_release(tag, operation_id):
     ssh = deploy.connect()
     try:
-        deploy.run(ssh, rollback_command(tag), timeout=120)
+        deploy.run(ssh, rollback_command(tag, operation_id), timeout=120)
     finally:
         ssh.close()
 
@@ -273,10 +310,10 @@ def acquire_promotion_lock(operation_id, tag):
         ssh.close()
 
 
-def read_stale_promotion_lock(tag):
+def claim_stale_promotion_lock(tag, recovery_id):
     ssh = deploy.connect()
     try:
-        output, _ = deploy.run(ssh, promotion_lock_stale_probe_command(tag), timeout=30)
+        output, _ = deploy.run(ssh, promotion_lock_recovery_claim_command(recovery_id, tag), timeout=30)
     finally:
         ssh.close()
     match = re.fullmatch(r"([0-9a-f]{32}) ([0-9]+)\s*", output)
@@ -298,23 +335,39 @@ def verify_current_release_tag(tag):
         ssh.close()
 
 
+def heartbeat_promotion_lock(operation_id, tag):
+    ssh = deploy.connect()
+    try:
+        deploy.run(ssh, promotion_lock_heartbeat_command(operation_id, tag), timeout=30)
+    finally:
+        ssh.close()
+
+
 def recover_promotion_lock(tag, mode):
     if mode not in ("rollback", "preserve"):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
-    stale = read_stale_promotion_lock(tag)
+    if mode == "preserve":
+        deploy.require_release_manifest("cloud_business")
+    recovery_id = secrets.token_hex(16)
+    stale = claim_stale_promotion_lock(tag, recovery_id)
     if mode == "rollback":
-        reconcile_uncertain_switch(tag)
+        reconcile_uncertain_switch(tag, recovery_id)
     else:
         verify_current_release_tag(tag)
         verify_public_health(tag.split("-", 1)[0])
-    release_promotion_lock(stale["operationId"])
+        heartbeat_promotion_lock(recovery_id, tag)
+        deploy.record_release_receipt(
+            "cloud_business",
+            f"recovered promoted cloud business release verified at version {tag.split('-', 1)[0]}",
+        )
+    release_promotion_lock(recovery_id)
     return {"tag": tag, "mode": mode, "ageSeconds": stale["ageSeconds"]}
 
 
-def reconcile_uncertain_switch(tag):
+def reconcile_uncertain_switch(tag, operation_id):
     ssh = deploy.connect()
     try:
-        deploy.run(ssh, reconcile_switch_failure_command(tag), timeout=180)
+        deploy.run(ssh, reconcile_switch_failure_command(tag, operation_id), timeout=180)
     finally:
         ssh.close()
 
@@ -323,33 +376,35 @@ def promote_validated_candidate(tag, version, evidence):
     operation_id = secrets.token_hex(16)
     acquire_promotion_lock(operation_id, tag)
     try:
-        return promote_candidate_under_lock(tag, version, evidence)
+        return promote_candidate_under_lock(tag, version, evidence, operation_id)
     finally:
         release_promotion_lock(operation_id)
 
 
-def promote_candidate_under_lock(tag, version, evidence):
+def promote_candidate_under_lock(tag, version, evidence, operation_id):
     ssh = deploy.connect()
     switch_error = None
     try:
-        deploy.run(ssh, switch_command(tag), timeout=120)
+        deploy.run(ssh, switch_command(tag, operation_id), timeout=120)
     except BaseException as error:
         switch_error = error
     finally:
         ssh.close()
     if switch_error is not None:
         try:
-            reconcile_uncertain_switch(tag)
+            reconcile_uncertain_switch(tag, operation_id)
         except BaseException as reconcile_error:
             raise RuntimeError("CLOUD_DOCKER_DEPLOY_ROLLBACK_FAILED") from reconcile_error
         raise switch_error
     try:
+        heartbeat_promotion_lock(operation_id, tag)
         health = verify_public_health(version)
+        heartbeat_promotion_lock(operation_id, tag)
         deploy.record_release_receipt("cloud_business", evidence)
         return health
     except BaseException as primary_error:
         try:
-            rollback_promoted_release(tag)
+            rollback_promoted_release(tag, operation_id)
         except BaseException as rollback_error:
             raise RuntimeError("CLOUD_DOCKER_DEPLOY_ROLLBACK_FAILED") from rollback_error
         raise primary_error
