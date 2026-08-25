@@ -17,10 +17,10 @@ export function resolveDesktopIdentityBaseUrl(config = {}, env = {}) {
 
 export function syncFailureMessage(code) {
   return ({
-    AUTHORIZATION_CONTEXT_REQUIRED: '当前设备尚未获得同步授权，请等待管理员批准。',
-    PAIRING_NOT_APPROVED: '当前设备仍在等待管理员批准。',
-    USER_NOT_APPROVED: '绑定账号当前不可用，请联系管理员。',
-    DEVICE_CREDENTIAL_REVOKED: '当前设备授权已被撤销，请重新申请。',
+    AUTHORIZATION_CONTEXT_REQUIRED: '当前登录会话未完成，请联网后重新登录。',
+    PAIRING_NOT_APPROVED: '此设备登录会话未完成，请重新登录。',
+    USER_NOT_APPROVED: '账号当前不可用，请重新登录或联系支持人员。',
+    DEVICE_CREDENTIAL_REVOKED: '此设备登录已失效，请重新登录。',
     CLOUD_UNREACHABLE: '暂时无法连接同步服务，本机更改已保留，请稍后重试。',
     NO_SYNC_TRANSPORT_AVAILABLE: '未找到可用同步通道，本机更改已保留。',
   })[code] || '同步未完成，本机更改已保留，请稍后重试。';

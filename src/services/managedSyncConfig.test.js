@@ -37,7 +37,8 @@ async function main() {
   assert.ok(!/single-user|SingleUser/i.test(fs.readFileSync('src/services/managedSyncConfig.mjs', 'utf8')),
     'managed identity routing must not retain a legacy single-user bypass');
   assert.ok(syncFailureMessage('CLOUD_UNREACHABLE').includes('无法连接'));
-  assert.ok(syncFailureMessage('AUTHORIZATION_CONTEXT_REQUIRED').includes('管理员批准'));
+  assert.ok(!syncFailureMessage('AUTHORIZATION_CONTEXT_REQUIRED').includes(String.fromCharCode(31649,29702,21592)), 'desktop sync failures must not instruct users to wait for manual device approval');
+  assert.ok(syncFailureMessage('AUTHORIZATION_CONTEXT_REQUIRED').includes(String.fromCharCode(30331,24405)), 'a missing desktop session must instruct the user to log in again');
   console.log('managed sync config tests passed');
 }
 main().catch(error => { console.error(error); process.exit(1); });
