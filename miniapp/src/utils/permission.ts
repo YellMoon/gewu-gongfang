@@ -98,7 +98,7 @@ export interface UserInfo {
   linked_student_ids?: string[];
   linkedStudentIds?: string[];
   account_state?: 'formal' | 'visitor';
-  token_use?: 'miniapp-session' | 'miniapp-visitor';
+  token_use?: 'miniapp-cloud' | 'miniapp-session' | 'miniapp-visitor';
   identity_kind?: string;
   authority_id?: string;
   capabilities?: MiniappCapability[];
