@@ -3,6 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../../utils/sync';
+import { isStudentUser } from '../../../utils/permission';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -16,6 +17,7 @@ const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3:
 
 export default function ScheduleDetail() {
   const router = useRouter();
+  const isStudent = isStudentUser();
   const { id } = router.params;
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
@@ -85,7 +87,7 @@ export default function ScheduleDetail() {
         </View>
       </View>
 
-      <View className="card sd-card-gap">
+      {!isStudent && <View className="card sd-card-gap">
         <Text className="sd-section-title">费用信息</Text>
         <View className="sd-cost-row">
           <Text className="sd-cost-label">课时费</Text>
@@ -96,7 +98,7 @@ export default function ScheduleDetail() {
           <Text className="sd-cost-value sd-cost-value--expense">¥{schedule.calculated_teacher_fee || 0}</Text>
         </View>
       </View>
-
+}
       <View className="card sd-card-gap">
         <Text className="sd-section-title">参与学生 ({students.length})</Text>
         {students.length === 0 ? (

@@ -15,6 +15,7 @@ const questionBankStyles = read('miniapp/src/pages/question-bank/index.scss');
 const homePage = display(read('miniapp/src/pages/index/index.tsx'));
 const forbiddenPage = display(read('miniapp/src/pages/forbidden/index.tsx'));
 const scheduleEditConfig = display(read('miniapp/src/pages/schedule/edit/index.config.ts'));
+const scheduleDetailPage = read('miniapp/src/pages/schedule/detail/index.tsx');
 const appConfig = read('miniapp/src/app.config.ts');
 
 const retiredTerms = [
@@ -53,6 +54,7 @@ assert.ok(forbiddenPage.includes('\u5f53\u524d\u8d26\u53f7\u6682\u4e0d\u80fd\u4f
 assert.ok(!homePage.includes('\u7ef4\u62a4\u5b66\u5458\u4e0e\u8bfe\u7a0b\u5173\u7cfb'), 'read-only miniapp shortcuts must not promise student maintenance');
 assert.ok(homePage.includes('\u5b66\u751f\u8d44\u6599') && homePage.includes('\u8bfe\u7a0b\u8d44\u6599'), 'read-only miniapp shortcuts must name the information they show');
 assert.ok(scheduleEditConfig.includes('\u6392\u8bfe\u8bf4\u660e'), 'the read-only scheduling boundary must not be titled as schedule creation');
+assert.ok(scheduleDetailPage.includes('isStudentUser') && scheduleDetailPage.includes('{!isStudent &&'), 'student schedule details must not expose staff-only fee information');
 
 for (const removedRoute of [
   'pages/admin/users/index',
