@@ -4,7 +4,7 @@ const {
 const { permissionIdentityKey } = require('./miniappAuthorizationRuntime');
 
 function roleOf(identity) {
-  return identity && (identity.role || identity.user_type) || 'pending';
+  return identity && (identity.role || identity.user_type) || 'visitor';
 }
 
 const NORMAL_SCOPE_ALIASES = [
@@ -61,7 +61,7 @@ function isActive(identity) {
     && !flagIsFalse(explicitActive)
     && !flagIsTrue(identity.deleted)
     && !flagIsTrue(identity.disabled)
-    && roleOf(identity) !== 'pending');
+    && roleOf(identity) !== 'visitor');
   if (!active) return false;
   return !hasLegacyReviewMarker(identity);
 }
@@ -117,7 +117,7 @@ function createAuthorizationSession(dependencies) {
         dependencies.clearBusinessCache();
         dependencies.clearPermissionCache();
       }
-      const user = normalizedUser(remoteIdentity || { id: localUser && localUser.id, role: 'pending', review_status: 'pending', status: 0, login_enabled: 0 }, localUser);
+      const user = normalizedUser(remoteIdentity || { id: localUser && localUser.id, role: 'visitor', review_status: 'rejected', status: 0, login_enabled: 0 }, localUser);
       dependencies.writeUser(user);
       if (active) {
         if ((changed || lostCapabilities) && capabilities.some(capability => capability.startsWith('business:'))) {

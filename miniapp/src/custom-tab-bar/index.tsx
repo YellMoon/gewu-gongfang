@@ -3,7 +3,6 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { fetchPermissions, getCurrentUser, getEffectiveMiniappAccess } from '../utils/permission';
 import { usesLimitedQuestionProjection } from '../utils/miniappAuthorizationRuntime';
-import { isUnrecognizedIdentity } from '../utils/accountExperience';
 import './index.scss';
 
 declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
@@ -28,21 +27,9 @@ const STUDENT_TABS: TabItem[] = [
   { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
-const EXPERIENCE_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
-  { pagePath: 'pages/question-bank/index', label: '题库', iconText: '题' },
-  { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
-];
-
 const VISITOR_TABS: TabItem[] = [
   { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
   { pagePath: 'pages/question-bank/index', label: '\u9898\u5e93', iconText: '\u9898' },
-  { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
-];
-
-const LIMITED_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
   { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
 ];
 
@@ -57,7 +44,7 @@ function getCurrentRoute() {
 }
 
 function getUserType() {
-  return 'pending';
+  return 'visitor';
 }
 
 export default function RoleTabBar() {
@@ -67,8 +54,8 @@ export default function RoleTabBar() {
 
   useDidShow(() => {
     setCurrentRoute(getCurrentRoute());
-    setUserType('pending');
-    setNavigationMode('limited');
+    setUserType('visitor');
+    setNavigationMode('visitor');
     const localAccess = getEffectiveMiniappAccess();
     if (localAccess.role === 'visitor' && localAccess.modules.length > 0) {
       setUserType('visitor');
@@ -78,31 +65,28 @@ export default function RoleTabBar() {
     void fetchPermissions().then(() => {
       const access = getEffectiveMiniappAccess();
       const currentUser = getCurrentUser();
-      if (!isUnrecognizedIdentity(currentUser)
-        && usesLimitedQuestionProjection(currentUser)
+      if (usesLimitedQuestionProjection(currentUser)
         && access.role !== 'visitor') {
         setUserType(access.role);
         setNavigationMode('preview');
         return;
       }
-      setUserType(access.modules.length > 0 ? access.role : 'pending');
+      setUserType(access.modules.length > 0 ? access.role : 'visitor');
       setNavigationMode(
         access.role === 'visitor'
           ? 'visitor'
-          : (access.experienceOnly ? 'unrecognized' : (access.modules.length > 0 ? 'formal' : 'limited')),
+          : (access.modules.length > 0 ? 'formal' : 'visitor'),
       );
     }).catch(() => {
-      setUserType('pending');
-      setNavigationMode('limited');
+      setUserType('visitor');
+      setNavigationMode('visitor');
     });
   });
 
   const tabs = useMemo(() => (
     navigationMode === 'visitor' || navigationMode === 'preview'
       ? VISITOR_TABS
-      : navigationMode === 'unrecognized'
-      ? EXPERIENCE_TABS
-      : (userType === 'pending' ? LIMITED_TABS : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS))
+      : (userType === 'student' ? STUDENT_TABS : ADMIN_TABS)
   ), [navigationMode, userType]);
 
   const isTabPage = tabs.some((item) => item.pagePath === currentRoute);

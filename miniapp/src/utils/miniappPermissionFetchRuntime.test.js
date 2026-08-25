@@ -21,7 +21,7 @@ const visitor = {
   ],
 };
 const normalAdmin = {
-  id: 'admin-1', role: 'admin', user_type: 'admin', review_status: 'approved',
+  id: 'super-admin-1', role: 'super_admin', user_type: 'super_admin', review_status: 'approved',
   status: 1, login_enabled: 1,
 };
 
@@ -54,13 +54,13 @@ async function runFetch(identity, remoteCapabilities) {
 
 async function main() {
   const experience = await runFetch(unrecognized, ['business:all', 'users:review']);
-  assert.deepStrictEqual(experience.result.capabilities, unrecognized.capabilities);
-  assert.deepStrictEqual(experience.memoryCache.capabilities, unrecognized.capabilities);
+  assert.deepStrictEqual(experience.result.capabilities, []);
+  assert.deepStrictEqual(experience.memoryCache.capabilities, []);
   assert.deepStrictEqual(experience.permissionState, {
-    status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: unrecognized.capabilities,
+    status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: [],
   });
-  assert.strictEqual(experience.remoteCalls, 0, 'unrecognized identity must not call the forbidden formal permission endpoint');
-  assert.deepStrictEqual(experience.persistentWrites, [], 'experience capabilities come from the signed identity and need no persistent formal cache');
+  assert.strictEqual(experience.remoteCalls, 0, 'retired identity must not call the formal permission endpoint');
+  assert.deepStrictEqual(experience.persistentWrites, [], 'retired identity must not retain a capability cache');
 
   const visitorAccess = await runFetch(visitor, ['business:all', 'users:review']);
   assert.deepStrictEqual(visitorAccess.result.capabilities, visitor.capabilities);

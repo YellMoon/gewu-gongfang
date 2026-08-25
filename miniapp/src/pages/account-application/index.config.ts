@@ -1,4 +1,4 @@
 export default definePageConfig({
-  navigationBarTitleText: '正式账号申请',
+  navigationBarTitleText: '申请身份',
   enablePullDownRefresh: false,
 });

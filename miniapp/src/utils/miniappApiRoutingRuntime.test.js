@@ -9,10 +9,6 @@ for (const path of [
   '/api/auth/wechat-login',
   '/api/auth/refresh',
   '/api/auth/me',
-  '/api/miniapp/applications/me',
-  '/api/miniapp/applications',
-  '/api/experience/questions',
-  '/api/experience/tasks',
   '/api/students',
 ]) {
   assert.strictEqual(

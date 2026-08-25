@@ -28,7 +28,6 @@ const SCREENSHOT_WAIT_MS = 1100;
 
 const capabilitiesByRole = Object.freeze({
   super_admin: ['business:all', 'users:review', 'applications:review', 'question-bank:view', 'question-bank:edit'],
-  admin: ['business:all', 'question-bank:view'],
   teacher: ['business:teacher-scope', 'question-bank:view'],
   student: ['question-bank:view'],
 });
@@ -61,7 +60,6 @@ function normalIdentity(role) {
 const identities = Object.freeze({
   guest: null,
   super_admin: normalIdentity('super_admin'),
-  admin: normalIdentity('admin'),
   teacher: normalIdentity('teacher'),
   student: normalIdentity('student'),
   visitor: {
@@ -70,17 +68,12 @@ const identities = Object.freeze({
     authority_id: 'fixture-authority',
     capabilities: ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'],
   },
-  unrecognized: {
-    id: 'fixture-unrecognized', name: '未识别学生', role: 'student', user_type: 'student',
-    account_state: 'unrecognized', token_use: 'unrecognized-student',
-    capabilities: ['experience:read', 'profile-application:read', 'profile-application:submit', 'sample-questions:view'],
-  },
 });
 
 function fixtureIdentityFromRequest(request) {
   const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
   const role = token.replace(/^fixture-/, '');
-  return identities[role] || identities.admin;
+  return identities[role] || identities.super_admin;
 }
 
 function fixtureResponse(request, scenario) {
@@ -96,7 +89,7 @@ function fixtureResponse(request, scenario) {
   if (scenario?.fixtureMode === 'question-forbidden' && pathname === '/api/business/miniapp-question-previews') {
     return { statusCode: 403, body: { ok: false, code: 'FORBIDDEN', error: 'fixture forbidden' } };
   }
-  if (scenario?.fixtureMode === 'application-offline' && pathname === '/api/miniapp/applications/me') {
+  if (scenario?.fixtureMode === 'application-offline' && pathname === '/api/miniapp/role-applications/me') {
     return { statusCode: 503, body: { success: false, error: 'fixture network unavailable' } };
   }
   if (/^\/api\/desktop-identity\/challenges\/[^/]+\/public$/.test(pathname)) {
@@ -116,17 +109,8 @@ function fixtureResponse(request, scenario) {
     return { statusCode: 200, body: { ok: true, projection } };
   }
   if (pathname === '/api/business/miniapp-question-previews') return { statusCode: 200, body: { ok: true, questions: [] } };
-  if (pathname === '/api/miniapp/cloud-accounts') return { statusCode: 200, body: { ok: true, accounts: [] } };
-  if (pathname === '/api/miniapp/business-profiles') return { statusCode: 200, body: { ok: true, profiles: [] } };
-  if (pathname === '/api/admin/users') {
-    const users = scenario?.fixtureMode === 'users-one' ? [{
-      id: 'fixture-pending-user', name: '待审核用户', phone: '138****0000', user_type: 'teacher',
-      review_status: 'pending', status: 1, login_enabled: 1, teacher_id: 'fixture-teacher',
-    }] : [];
-    return { statusCode: 200, body: { success: true, data: { users, total: users.length } } };
-  }
-  if (pathname === '/api/miniapp/applications/me') return { statusCode: 200, body: { success: true, data: { state: 'not_submitted', application: null } } };
-  if (pathname === '/api/experience/questions') return { statusCode: 200, body: { success: true, data: { questions: [] } } };
+  if (pathname === '/api/miniapp/role-applications/me') return { statusCode: 200, body: { ok: true, state: 'not_submitted', application: null } };
+  if (pathname === '/api/miniapp/role-applications/review/pending') return { statusCode: 200, body: { ok: true, applications: [] } };
   if (['/api/students', '/api/courses', '/api/schedules', '/api/teachers', '/api/payments', '/api/grades', '/api/modules'].includes(pathname)) return { statusCode: 200, body: { success: true, data: [] } };
   return { statusCode: 200, body: { success: true, data: {} } };
 }
@@ -158,11 +142,7 @@ function launchRoute(scenario) {
   return scenario.route;
 }
 
-function expectedRoute(scenario) {
-  return scenario.route === 'pages/question-bank/index' && scenario.identity === 'unrecognized'
-    ? 'pages/unrecognized-experience/index'
-    : scenario.route;
-}
+function expectedRoute(scenario) { return scenario.route; }
 
 async function setScenarioIdentity(miniProgram, role) {
   const identity = identities[role];
@@ -211,6 +191,7 @@ async function run() {
         port,
         timeout: 60000,
         trustProject: true,
+        ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
       });
     } else {
       const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();

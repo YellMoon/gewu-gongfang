@@ -105,7 +105,7 @@ function sessionContext(value, ticket) {
     || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
     || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
     || !Array.isArray(copy.roles) || copy.roles.length === 0 || copy.roles.length > 3
-    || copy.roles.some(role => !['super_admin', 'teacher', 'student', 'pending'].includes(role))
+    || copy.roles.some(role => !['super_admin', 'teacher'].includes(role))
     || new Set(copy.roles).size !== copy.roles.length
     || (copy.teacherId !== null && !text(copy.teacherId))
     || (copy.studentId !== null && !text(copy.studentId))) throw rejected();
@@ -114,8 +114,8 @@ function sessionContext(value, ticket) {
 
 function preferredLeaseRole(roles) {
   if (roles.includes('teacher')) return 'teacher';
-  if (roles.includes('student')) return 'student';
-  return roles[0] || null;
+  if (roles.includes('super_admin')) return 'super_admin';
+  return null;
 }
 
 function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
@@ -123,9 +123,8 @@ function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
   if (!activeRole) throw rejected();
   const scope = { kind: activeRole };
   if (activeRole === 'teacher' && !context.teacherId) throw rejected();
-  if (activeRole === 'student' && !context.studentId) throw rejected();
+  if (activeRole === 'super_admin' && (context.teacherId !== null || context.studentId !== null)) throw rejected();
   if (activeRole === 'teacher') scope.teacherId = context.teacherId;
-  if (activeRole === 'student') scope.studentId = context.studentId;
   const lease = {
     v: 1,
     id: `offline-lease-${ticket.sessionId}`,
@@ -136,7 +135,7 @@ function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
     eligibleRoles: Object.freeze(context.roles.slice()),
     activeRole,
     teacherId: activeRole === 'teacher' ? context.teacherId : null,
-    studentId: activeRole === 'student' ? context.studentId : null,
+    studentId: null,
     issuedAt: issuedAt.toISOString(),
     expiresAt: context.expiresAt,
     scope: Object.freeze(scope),

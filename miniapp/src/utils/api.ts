@@ -14,9 +14,6 @@ import { authSessionRuntime } from './authSession';
 import { createAuthRefreshRuntime, extractRefreshToken } from './miniappAuthRefreshRuntime';
 import { clearAuthenticatedSession, createApiResponseCoordinator } from './miniappApiSessionRuntime';
 import { selectApiBaseUrl } from './miniappApiRoutingRuntime';
-import {
-  accountExperiencePath,
-} from './accountExperience';
 
 const STORAGE_KEY_BASE_URL = 'scheduling_api_base_url';
 declare const __API_BASE_URL__: string | undefined;
@@ -255,6 +252,58 @@ export const miniappCloudAuthApi = {
 };
 
 export const miniappCloudBusinessApi = {
+  async readRoleApplication(token: string): Promise<ApiResponse<{ ok: true; state: string; application: any | null }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/miniapp/role-applications/me'), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true) return { success: true, data: response.data as { ok: true; state: string; application: any | null } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud role application request failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud role application request unavailable' };
+    }
+  },
+  async submitRoleApplication(token: string, request: { requestedIdentity: 'teacher' | 'student' | 'family_member'; profileMode: 'create' | 'existing'; bindingHint: string | null }, idempotencyKey: string): Promise<ApiResponse<{ ok: true; state: string; application: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/miniapp/role-applications'), method: 'POST', data: request,
+        header: { Authorization: `Bearer ${token}`, 'x-idempotency-key': idempotencyKey, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.application) return { success: true, data: response.data as { ok: true; state: string; application: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud role application submission failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud role application submission unavailable' };
+    }
+  },
+  async listSubmittedRoleApplications(token: string): Promise<ApiResponse<{ ok: true; applications: any[] }>> {
+    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl('/api/miniapp/role-applications/review/pending'), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.applications)) return { success: true, data: response.data as { ok: true; applications: any[] } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud role application review queue unavailable' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud role application review queue unavailable' };
+    }
+  },
+  async reviewRoleApplication(token: string, applicationId: string, decision: 'approved' | 'rejected', profileId: string | null): Promise<ApiResponse<{ ok: true; state: string; application: any }>> {
+    if (typeof token !== 'string' || !token.trim() || typeof applicationId !== 'string' || !applicationId.trim()) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/miniapp/role-applications/${encodeURIComponent(applicationId)}/review`), method: 'POST', data: { decision, profileId },
+        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.application) return { success: true, data: response.data as { ok: true; state: string; application: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud role application review failed' };
+    } catch (error: any) {
+      return { success: false, error: error?.errMsg || error?.message || 'Cloud role application review unavailable' };
+    }
+  },
   async readBusinessProjection(token: string): Promise<ApiResponse<{ ok: true; projection: any }>> {
     if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     try {
@@ -395,47 +444,6 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud schedule request unavailable' };
     }
   },
-  async listPendingAccounts(token: string): Promise<ApiResponse<{ ok: true; accounts: Array<{ accountId: string; status: 'pending_authorization'; createdAt: string }> }>> {
-    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
-    try {
-      const response = await Taro.request({
-        url: cloudBusinessUrl('/api/miniapp/cloud-accounts'), method: 'GET',
-        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
-      });
-      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.accounts)) return { success: true, data: response.data as { ok: true; accounts: Array<{ accountId: string; status: 'pending_authorization'; createdAt: string }> } };
-      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud account request failed' };
-    } catch (error: any) {
-      return { success: false, error: error?.errMsg || error?.message || 'Cloud account request unavailable' };
-    }
-  },
-  async listAssignableProfiles(token: string, type: 'teacher' | 'student'): Promise<ApiResponse<{ ok: true; profiles: Array<{ id: string; name: string }> }>> {
-    if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
-    try {
-      const response = await Taro.request({
-        url: cloudBusinessUrl(`/api/miniapp/business-profiles?type=${encodeURIComponent(type)}`), method: 'GET',
-        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
-      });
-      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.profiles)) return { success: true, data: response.data as { ok: true; profiles: Array<{ id: string; name: string }> } };
-      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud profile request failed' };
-    } catch (error: any) {
-      return { success: false, error: error?.errMsg || error?.message || 'Cloud profile request unavailable' };
-    }
-  },
-  async assignAccountRole(token: string, accountId: string, role: 'teacher' | 'student', profileId: string, studentRelationship: 'student' | 'guardian' | null): Promise<ApiResponse<{ ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } }>> {
-    if (typeof token !== 'string' || !token.trim() || typeof accountId !== 'string' || !accountId.trim() || typeof profileId !== 'string' || !profileId.trim()
-      || (role === 'student' && studentRelationship !== 'student' && studentRelationship !== 'guardian')
-      || (role !== 'student' && studentRelationship !== null)) return { success: false, error: 'Cloud session required' };
-    try {
-      const response = await Taro.request({
-        url: cloudBusinessUrl(`/api/miniapp/cloud-accounts/${encodeURIComponent(accountId)}/role`), method: 'PUT', data: { role, profileId, studentRelationship },
-        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
-      });
-      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.account) return { success: true, data: response.data as { ok: true; account: { accountId: string; status: 'active'; roles: string[]; profile: { type: string; id: string } } } };
-      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud account authorization failed' };
-    } catch (error: any) {
-      return { success: false, error: error?.errMsg || error?.message || 'Cloud account authorization unavailable' };
-    }
-  },
 };
 
 // ========== 认证 API ==========
@@ -478,36 +486,8 @@ export const cloudRelayApi = {
   cancelMiniappTask: (taskId: string) => api.post<any>(`/api/cloud/tasks/${taskId}/cancel`, {}),
 };
 
-function accountPath(operation: string, resourceId?: string): string {
-  const identity = Taro.getStorageSync('user_info');
-  return accountExperiencePath(identity, operation, resourceId);
-}
-
-export const applicationApi = {
-  mine: () => api.get<any>('/api/miniapp/applications/me'),
-  submit: (
-    request: { requestedRole: 'student' | 'teacher'; bindingHint?: string },
-    idempotencyKey: string,
-  ) =>
-    api.postWithHeaders<any>(
-      '/api/miniapp/applications',
-      request,
-      { 'x-idempotency-key': idempotencyKey },
-    ),
-};
-
 export const authorityProjectionApi = {
   readCurrent: () => api.get<any>('/api/miniapp/projection'),
-};
-
-export const experienceApi = {
-  questions: () => api.get<any>('/api/experience/questions'),
-  createTask: (taskType: string, payload: any) =>
-    api.post<any>(accountPath('createTask'), { taskType, payload }),
-  getTaskResult: (taskId: string) =>
-    api.get<any>(accountPath('taskResult', taskId)),
-  cancelTask: (taskId: string) =>
-    api.post<any>(accountPath('cancelTask', taskId), {}),
 };
 
 export const createMiniappTask = cloudRelayApi.createMiniappTask;

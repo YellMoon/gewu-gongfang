@@ -460,6 +460,30 @@ export function createDesktopIdentityClient({
     return Object.freeze({ ...pending, cloudPasswordEnrolled: true });
   }
 
+  async function registerTeacherForVerifiedRegistration({ pending, name, subject = null } = {}) {
+    if (!pending?.baseUrl || !pending?.verificationToken || pending?.status !== 'verified' || pending?.recovery === true) {
+      throw identityError('DESKTOP_TEACHER_REGISTRATION_CONTEXT_INVALID');
+    }
+    if (typeof name !== 'string' || name !== name.trim() || name.length === 0 || name.length > 128
+      || !(subject === null || (typeof subject === 'string' && subject === subject.trim() && subject.length > 0 && subject.length <= 128))) {
+      throw identityError('DESKTOP_TEACHER_REGISTRATION_INPUT_INVALID');
+    }
+    const registered = await request(fetchImpl, pending.baseUrl, '/api/desktop/teacher-self-registration', {
+      method: 'POST',
+      body: { verificationToken: pending.verificationToken, name, subject },
+    });
+    if (typeof registered?.teacherId !== 'string' || registered.teacherId.length === 0
+      || typeof registered?.updatedAt !== 'string' || !Number.isFinite(Date.parse(registered.updatedAt))
+      || typeof registered?.replayed !== 'boolean') {
+      throw identityError('DESKTOP_TEACHER_REGISTRATION_INVALID');
+    }
+    return Object.freeze({
+      teacherId: registered.teacherId,
+      updatedAt: registered.updatedAt,
+      replayed: registered.replayed,
+    });
+  }
+
   async function pollUnifiedOnlineRegistration(pending) {
     if (!pending?.baseUrl || !pending?.pairingId || !pending?.pairingSecret || !pending?.publicIdentity
       || !pending?.idempotencyKey) {
@@ -1045,6 +1069,7 @@ export function createDesktopIdentityClient({
     completeUnifiedOnlineRegistration,
     ensureOnlineSession,
     enrollPasswordForVerifiedRegistration,
+    registerTeacherForVerifiedRegistration,
     listCloudBusinessProjection,
     listCloudQuestions,
     listCloudSchedules,

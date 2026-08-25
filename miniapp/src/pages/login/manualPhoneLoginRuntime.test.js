@@ -7,7 +7,6 @@ const {
   homeForIdentity,
 } = require('./manualPhoneLoginRuntime');
 const {
-  UNRECOGNIZED_CAPABILITIES,
   VISITOR_CAPABILITIES,
 } = require('../../utils/accountExperience');
 
@@ -19,10 +18,10 @@ assert.strictEqual(
     user_type: 'student',
     account_state: 'unrecognized',
     token_use: 'unrecognized-student',
-    capabilities: [...UNRECOGNIZED_CAPABILITIES],
+    capabilities: [],
   }),
-  '/pages/unrecognized-experience/index',
-  'the exact unrecognized identity must enter the limited experience',
+  '/pages/index/index',
+  'retired unrecognized sessions must never enter a parallel experience page',
 );
 assert.strictEqual(
   homeForIdentity({

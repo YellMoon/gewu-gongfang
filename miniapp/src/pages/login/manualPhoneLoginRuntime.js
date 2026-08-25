@@ -1,13 +1,9 @@
-const { isUnrecognizedIdentity } = require('../../utils/accountExperience');
 const { normalizeManualPhone, validateManualPhone } = require('../../utils/manualPhone');
 
 const DEFAULT_FORMAL_HOME = '/pages/index/index';
-const DEFAULT_UNRECOGNIZED_HOME = '/pages/unrecognized-experience/index';
 
-function homeForIdentity(identity, routes = {}) {
-  return isUnrecognizedIdentity(identity)
-    ? routes.unrecognizedHome || DEFAULT_UNRECOGNIZED_HOME
-    : routes.formalHome || DEFAULT_FORMAL_HOME;
+function homeForIdentity(_identity, routes = {}) {
+  return routes.formalHome || DEFAULT_FORMAL_HOME;
 }
 
 function loginResultState(response = {}) {

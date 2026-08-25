@@ -78,6 +78,8 @@ const DesktopIdentityGate: React.FC = () => {
   const [cloudLoginName, setCloudLoginName] = useState('');
   const [cloudPassword, setCloudPassword] = useState('');
   const [cloudPasswordAgain, setCloudPasswordAgain] = useState('');
+  const [teacherRegistrationName, setTeacherRegistrationName] = useState('');
+  const [teacherRegistrationSubject, setTeacherRegistrationSubject] = useState('');
   const [busy, setBusy] = useState(false);
   const [polling, setPolling] = useState(false);
   const [runtimeSuspended, setRuntimeSuspended] = useState(false);
@@ -450,6 +452,28 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
+  const registerTeacherThenComplete = async () => {
+    const name = teacherRegistrationName.trim();
+    const subject = teacherRegistrationSubject.trim() || null;
+    if (!name) {
+      setError('\u8bf7\u586b\u5199\u6559\u5e08\u59d3\u540d\u3002');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await clientRef.current.registerTeacherForVerifiedRegistration({ pending, name, subject });
+      setTeacherRegistrationName('');
+      setTeacherRegistrationSubject('');
+    } catch (caught) {
+      setError(messageForError(caught));
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    await completeRegistration();
+  };
+
   const resume = async () => {
     setBusy(true);
     setError('');
@@ -563,6 +587,10 @@ const DesktopIdentityGate: React.FC = () => {
             </>
           )}
           <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u8fdb\u5165\u683c\u7269\u5de5\u574a'}</Button>
+          <Divider plain>{'\u8fd8\u6ca1\u6709\u6559\u5e08\u8eab\u4efd\uff1f'}</Divider>
+          <Input value={teacherRegistrationName} onChange={event => setTeacherRegistrationName(event.target.value)} placeholder={'\u6559\u5e08\u59d3\u540d'} maxLength={128} />
+          <Input value={teacherRegistrationSubject} onChange={event => setTeacherRegistrationSubject(event.target.value)} placeholder={'\u4efb\u6559\u5b66\u79d1\uff08\u53ef\u9009\uff09'} maxLength={128} />
+          <Button loading={busy} onClick={registerTeacherThenComplete} block>{'\u767b\u8bb0\u4e3a\u6559\u5e08\u5e76\u8fdb\u5165'}</Button>
         </>
       );
     }

@@ -20,21 +20,6 @@ const repository = {
     }
     return null;
   },
-  async listPending() {
-    return [...records.values()]
-      .filter(account => account.roles.length === 0)
-      .map(account => ({ accountId: account.accountId, status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }));
-  },
-  async assignRole({ accountId, role, profileId, studentRelationship }) {
-    for (const account of records.values()) {
-      if (account.accountId !== accountId || (account.roles.length > 0 && !account.roles.includes(role))) continue;
-      account.roles = [role];
-      if ((role === 'student' && !['student', 'guardian'].includes(studentRelationship)) || (role !== 'student' && studentRelationship !== null)) return null;
-      account.profile = role === 'teacher' || role === 'student' ? { type: role, id: profileId } : null;
-      return { ...account, roles: account.roles.slice(), profile: account.profile };
-    }
-    return null;
-  },
 };
 
 const service = createMiniappCloudAccountService({
@@ -61,35 +46,15 @@ const service = createMiniappCloudAccountService({
   assert.strictEqual(directWechat.identity.accountId, admin.identity.accountId);
 
   const ordinary = await service.login({ loginCode: 'new-login', phoneCode: 'new-proof' });
-  assert.equal(ordinary.identity.status, 'pending_authorization');
+  assert.equal(ordinary.identity.status, 'visitor');
   assert.deepStrictEqual(ordinary.identity.roles, []);
 
   const context = await service.context({ token: admin.token });
   assert.equal(context.accountId, admin.identity.accountId);
   assert.deepStrictEqual(context.roles, ['super_admin']);
 
-  assert.strictEqual(typeof service.pendingAccounts, 'function', 'the bootstrap super administrator must have a service boundary for pending cloud accounts');
-  assert.strictEqual(typeof service.assignRole, 'function', 'the bootstrap super administrator must have a service boundary for authorizing a pending cloud account');
-  assert.deepStrictEqual(
-    await service.pendingAccounts({ token: admin.token }),
-    [{ accountId: ordinary.identity.accountId, status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }],
-    'the bootstrap super administrator can see pending accounts without their phone number',
-  );
-  await assert.rejects(() => service.pendingAccounts({ token: ordinary.token }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
-  assert.deepStrictEqual(
-    await service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'teacher', profileId: 'teacher-1', studentRelationship: null }),
-    { accountId: ordinary.identity.accountId, status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-1' } },
-    'the bootstrap super administrator must bind an ordinary role to one migrated business profile',
-  );
-  assert.deepStrictEqual(await service.pendingAccounts({ token: admin.token }), []);
-  const guardian = await service.login({ loginCode: 'guardian-login', phoneCode: 'guardian-proof' });
-  assert.deepStrictEqual(
-    await service.assignRole({ token: admin.token, accountId: guardian.identity.accountId, role: 'student', profileId: 'student-1', studentRelationship: 'guardian' }),
-    { accountId: guardian.identity.accountId, status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } },
-    'a separately verified guardian account may receive the same student scope without sharing credentials',
-  );
-  await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'super_admin', profileId: 'admin-1', studentRelationship: null }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
-  await assert.rejects(() => service.assignRole({ token: admin.token, accountId: ordinary.identity.accountId, role: 'student', profileId: 'student-1', studentRelationship: null }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
+  assert.strictEqual(typeof service.pendingAccounts, 'undefined', 'visitor applications must replace a generic pending-account queue');
+  assert.strictEqual(typeof service.assignRole, 'undefined', 'a miniapp session must never directly grant a role');
 
   await assert.rejects(() => service.context({ token: 'legacy.jwt.token' }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');
   await assert.rejects(() => service.login({ loginCode: 'new-login', phoneCode: null }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED');

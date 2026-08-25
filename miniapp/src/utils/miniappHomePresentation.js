@@ -14,10 +14,9 @@ function getMiniappHomeRoleLabel(role) {
   const normalizedRole = cleanLabel(role);
   const labels = {
     super_admin: '\u8d85\u7ea7\u7ba1\u7406\u5458',
-    admin: '\u7ba1\u7406\u5458',
     teacher: '\u6559\u5e08',
     student: '\u5b66\u751f',
-    pending: '\u5f85\u5ba1\u6838',
+    visitor: '\u8bbf\u5ba2',
   };
   return labels[normalizedRole] || normalizedRole;
 }

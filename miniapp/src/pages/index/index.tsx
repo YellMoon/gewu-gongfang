@@ -6,7 +6,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
-import { accountSessionCleanupStorageKeys, isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
+import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils/accountExperience';
 import {
   clearPermissionCache,
   getMiniappRolePolicy,
@@ -30,8 +30,8 @@ interface UserInfo {
   nickname?: string;
   user_type: MiniappRole;
   avatar?: string;
-  account_state?: 'formal' | 'visitor' | 'unrecognized';
-  token_use?: 'miniapp-session' | 'miniapp-visitor' | 'unrecognized-student';
+  account_state?: 'formal' | 'visitor';
+  token_use?: 'miniapp-cloud' | 'miniapp-visitor';
   capabilities?: MiniappCapability[];
   membership?: { status?: string } | null;
 }
@@ -75,7 +75,7 @@ export default function Index() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<any>(null);
-  const [access, setAccess] = useState<any>({ role: 'pending', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
+  const [access, setAccess] = useState<any>({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
   const [dashboard, setDashboard] = useState<DashboardData>({
     todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
   });
@@ -91,7 +91,7 @@ export default function Index() {
     setModules([]);
     setLoading(true);
     setSnapshot(null);
-    setAccess({ role: 'pending', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
+    setAccess({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
     setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
     const session = captureTrustedAuthSession(authSessionRuntime);
     if (!session) {
@@ -101,16 +101,11 @@ export default function Index() {
 
     const savedUser = session.identity as UserInfo;
     setUser({ ...savedUser, name: getMiniappHomeDisplayName(savedUser) });
-    if (isUnrecognizedIdentity(savedUser) || isVisitorIdentity(savedUser)) {
+    if (isVisitorIdentity(savedUser)) {
       const policy = getMiniappRolePolicy(savedUser);
       const nextAccess = { ...policy, canReadUsers: false, canReviewUsers: false };
       setAccess(nextAccess);
-      setModules(isVisitorIdentity(savedUser)
-        ? [{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]
-        : [
-          { id: 'scheduling', name: '\u8bfe\u7a0b\u8868', description: '', icon: '' },
-          { id: 'question-bank', name: '\u793a\u4f8b\u9898', description: '', icon: '' },
-        ]);
+      setModules([{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]);
       setSnapshot(null);
       setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
       setLoading(false);
@@ -127,7 +122,7 @@ export default function Index() {
     const policy = getMiniappRolePolicy(verifiedUser);
     const nextAccess = {
       ...policy,
-      canReadUsers: policy.role === 'super_admin' || policy.role === 'admin',
+      canReadUsers: policy.role === 'super_admin',
       canReviewUsers: policy.role === 'super_admin',
     };
     setAccess(nextAccess);
@@ -144,7 +139,6 @@ export default function Index() {
   };
 
   const loadSnapshot = async (currentUser: UserInfo, stillCurrent: () => boolean = () => true) => {
-    if (currentUser.user_type === 'pending') return;
     try {
       const refreshed = await pullFromCloudBusinessProjection();
       if (stillCurrent()) setSnapshot(refreshed ? { created_at: new Date().toISOString() } : null);
@@ -181,7 +175,7 @@ export default function Index() {
       const schedules = getLocalData<Schedule>('schedules');
       const courses = getLocalData<Course>('courses');
       const currentUser = authenticatedUser || user;
-      if (!currentUser || currentUser.user_type === 'pending') {
+      if (!currentUser) {
         if (stillCurrent()) setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
         return;
       }
@@ -266,7 +260,7 @@ export default function Index() {
   };
 
   const isStudent = user?.user_type === 'student';
-  const showAdminShortcuts = access.modules.includes('scheduling') && !['student', 'pending'].includes(access.role);
+  const showAdminShortcuts = access.modules.includes('scheduling') && !['student', 'visitor'].includes(access.role);
   const roleLabel = user ? getMiniappHomeRoleLabel(user.user_type) : '未登录';
   const greeting = isStudent ? '学习面板' : '运营面板';
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
@@ -274,7 +268,6 @@ export default function Index() {
   const visitor = isVisitorIdentity(user);
   const limitedSubject = Boolean(user)
     && !visitor
-    && !isUnrecognizedIdentity(user)
     && ['student', 'teacher'].includes(user.user_type)
     && !businessCacheIdentityKey(user);
   const moduleActions = useMemo(() => (
@@ -337,11 +330,7 @@ export default function Index() {
             <Text className="home-hero__title">{greeting}</Text>
             <Text className="home-hero__subtitle">
               {user ? `${user.name}` : '登录后查看今日课程与授权数据。'}
-              {false && (
-                <View className="member-badge">
-                  <Text className="member-text">会员</Text>
-                </View>
-              )}
+
               {user ? '，今天先看课程、题库和数据快照。' : ''}
             </Text>
           </View>
@@ -438,24 +427,7 @@ export default function Index() {
         </View>
       )}
 
-      {!loading && access.canReadUsers && (
-        <View className="home-section">
-          <View className="home-section__header">
-            <Text className="home-section__title">权限管理</Text>
-            <Text className="home-section__meta">{access.canReviewUsers ? '\u5ba1\u6838\u4e0e\u5206\u7c7b' : '\u53ea\u8bfb\u67e5\u770b'}</Text>
-          </View>
-          <View className="home-admin-list">
-            <View className="home-admin-row" onClick={() => Taro.navigateTo({ url: '/pages/admin/users/index' })}>
-              <Text className="home-admin-row__mark">员</Text>
-              <View className="home-admin-row__body">
-                <Text className="home-admin-row__title">{'\u7528\u6237\u6743\u9650'}</Text>
-                <Text className="home-admin-row__desc">{access.canReviewUsers ? '\u5ba1\u6838\u7528\u6237\u7c7b\u578b\u4e0e\u8001\u5e08\u7ed1\u5b9a' : '\u67e5\u770b\u7528\u6237\u7c7b\u578b\u4e0e\u72b6\u6001'}</Text>
-              </View>
-              <Text className="home-admin-row__arrow">›</Text>
-            </View>
-          </View>
-        </View>
-      )}
+
     </View>
   );
 }

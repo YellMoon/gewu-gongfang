@@ -19,24 +19,33 @@ for (const state of [
 }
 
 assert.deepStrictEqual(buildRoleApplicationRequest({
-  requestedRole: 'student',
+  requestedIdentity: 'student', profileMode: 'existing',
   bindingHint: ' student-profile-1 ',
 }), {
-  requestedRole: 'student',
+  requestedIdentity: 'student', profileMode: 'existing',
   bindingHint: 'student-profile-1',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
-  requestedRole: 'teacher',
+  requestedIdentity: 'teacher', profileMode: 'create',
   bindingHint: '',
 }), {
-  requestedRole: 'teacher',
+  requestedIdentity: 'teacher', profileMode: 'create', bindingHint: null,
+});
+assert.deepStrictEqual(buildRoleApplicationRequest({
+  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
+}), {
+  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
 });
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedRole: 'admin' }),
-  /student or teacher/,
+  () => buildRoleApplicationRequest({ requestedIdentity: 'admin', profileMode: 'create' }),
+  /teacher, student, or family_member/,
 );
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedRole: 'student', bindingHint: 'x'.repeat(129) }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'create' }),
+  /existing/,
+);
+assert.throws(
+  () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', bindingHint: 'x'.repeat(129) }),
   /128/,
 );
 
@@ -50,6 +59,9 @@ lock.release('submit');
 assert.strictEqual(lock.tryAcquire('refresh'), true);
 
 const runtimeSource = require('fs').readFileSync(__dirname + '/applicationRuntime.js', 'utf8');
+const pageSource = require('fs').readFileSync(__dirname + '/index.tsx', 'utf8');
+assert.ok(pageSource.includes('`miniapp-role-${identityId}-${requestedIdentity}-${profileMode}-'), 'role application retries must use an identity-and-request scoped idempotency key');
+assert.ok(!pageSource.includes('${identityId}-${role}-'), 'role application idempotency keys must not reference an undefined role variable');
 for (const retiredTerm of [
   String.fromCharCode(25968, 25454, 20027, 26426),
   String.fromCharCode(26412, 22320, 20027, 26426),

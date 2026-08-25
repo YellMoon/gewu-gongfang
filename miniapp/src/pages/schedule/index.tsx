@@ -12,7 +12,7 @@ import {
 } from '../../utils/cloudBusinessProjection';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import AccountStatusBanner from '../../components/AccountStatusBanner';
-import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
+import { isVisitorIdentity } from '../../utils/accountExperience';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -28,9 +28,8 @@ interface ScheduleWithCourse extends Schedule {
 
 export default function SchedulePage() {
   const identity = Taro.getStorageSync('user_info');
-  const isUnrecognized = isUnrecognizedIdentity(identity);
   const isVisitor = isVisitorIdentity(identity);
-  const isLimitedIdentity = isUnrecognized || isVisitor || identity?.account_state === 'pending';
+  const isLimitedIdentity = isVisitor;
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDateKey, setCurrentDateKey] = useState(() => shanghaiDateKey(new Date()));
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
@@ -185,13 +184,7 @@ export default function SchedulePage() {
     <View className="schedule-page">
       <NetworkStatus onRetry={handleRefresh} />
 
-      {identity?.role === 'super_admin' ? (
-        <View className="view-toggle">
-          <View className="toggle-btn active" onClick={() => Taro.navigateTo({ url: '/pages/cloud-account-admin/index' })}>
-            <Text>{'\u65b0\u8d26\u53f7\u6388\u6743'}</Text>
-          </View>
-        </View>
-      ) : null}
+
 
       <View className="view-toggle">
         <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>

@@ -15,10 +15,8 @@ const {
 
 const capabilities = {
   super_admin: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'],
-  admin: ['business:all', 'question-bank:view', 'question-bank:edit'],
   teacher: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'],
   student: ['question-bank:view'],
-  pending: [],
 };
 
 for (const role of Object.keys(capabilities)) {
@@ -28,20 +26,19 @@ for (const role of Object.keys(capabilities)) {
   });
   assert.strictEqual(access.role, role);
   assert.strictEqual(access.canReviewUsers, role === 'super_admin');
-  assert.strictEqual(access.canReadUsers, role === 'super_admin' || role === 'admin');
-  assert.strictEqual(access.canEditQuestionBank, ['super_admin', 'admin', 'teacher'].includes(role));
+  assert.strictEqual(access.canReadUsers, role === 'super_admin');
+  assert.strictEqual(access.canEditQuestionBank, ['super_admin', 'teacher'].includes(role));
   assert.strictEqual(access.canDeleteCommittedQuestions, false);
-  if (role === 'pending') assert.deepStrictEqual(access.modules, []);
 }
 
-const admin = { id: 'admin-1', user_type: 'admin' };
-assert.deepStrictEqual(deriveAccess(admin, {
-  status: 'loaded', identityKey: permissionIdentityKey(admin), capabilities: [],
+const superAdmin = { id: 'super-admin-1', user_type: 'super_admin' };
+assert.deepStrictEqual(deriveAccess(superAdmin, {
+  status: 'loaded', identityKey: permissionIdentityKey(superAdmin), capabilities: [],
 }).modules, [], 'empty server capabilities must fail closed');
-assert.deepStrictEqual(deriveAccess(admin, { status: 'error', identityKey: permissionIdentityKey(admin), capabilities: [] }).modules, [], 'permission fetch failure must fail closed');
-assert.deepStrictEqual(deriveAccess(admin, { status: 'idle', identityKey: permissionIdentityKey(admin), capabilities: [] }).modules, [], 'permissions must remain closed before loading');
-assert.deepStrictEqual(deriveAccess(admin, {
-  status: 'loaded', identityKey: 'other-user:admin', capabilities: capabilities.admin,
+assert.deepStrictEqual(deriveAccess(superAdmin, { status: 'error', identityKey: permissionIdentityKey(superAdmin), capabilities: [] }).modules, [], 'permission fetch failure must fail closed');
+assert.deepStrictEqual(deriveAccess(superAdmin, { status: 'idle', identityKey: permissionIdentityKey(superAdmin), capabilities: [] }).modules, [], 'permissions must remain closed before loading');
+assert.deepStrictEqual(deriveAccess(superAdmin, {
+  status: 'loaded', identityKey: 'other-user:super-admin', capabilities: capabilities.super_admin,
 }).modules, [], 'cached capabilities from another identity must never be reused');
 
 const collections = {
@@ -53,8 +50,8 @@ const teacherScoped = scopeDashboardCollections({ id: 'teacher-user', user_type:
 assert.deepStrictEqual(teacherScoped.schedules.map(item => item.id), ['schedule-1']);
 assert.deepStrictEqual(teacherScoped.courses.map(item => item.id), ['course-1']);
 assert.deepStrictEqual(teacherScoped.students.map(item => item.id), ['student-1']);
-const pendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type: 'pending' }, collections);
-assert.deepStrictEqual(pendingScoped, { students: [], courses: [], schedules: [] }, 'pending users must not read business cache');
+const legacyPendingScoped = scopeDashboardCollections({ id: 'pending-user', user_type: 'pending' }, collections);
+assert.deepStrictEqual(legacyPendingScoped, { students: [], courses: [], schedules: [] }, 'legacy pending records must not read business cache');
 const unboundStudent = { id: 'student-1', user_type: 'student', student_id: null, studentId: '' };
 assert.strictEqual(usesLimitedQuestionProjection(unboundStudent), true);
 assert.strictEqual(
@@ -78,8 +75,8 @@ assert.deepStrictEqual(
 assert.ok(businessCacheIdentityKey({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }).includes('teacher-1'));
 assert.strictEqual(usesLimitedQuestionProjection({ id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1' }), false);
 assert.strictEqual(usesLimitedQuestionProjection({ id: 'visitor-user', user_type: 'visitor' }), true);
-assert.strictEqual(usesLimitedQuestionProjection({ id: 'admin-user', user_type: 'admin' }), false);
-assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'pending users must not have a business cache namespace');
+assert.strictEqual(usesLimitedQuestionProjection({ id: 'admin-user', user_type: 'admin' }), true, 'retired admin identities must never receive a business projection');
+assert.strictEqual(businessCacheIdentityKey({ id: 'pending-user', user_type: 'pending' }), '', 'legacy pending identities must not have a business cache namespace');
 const normalStudentScope = { id: 'student-user', user_type: 'student', tenant_id: 'tenant-a', student_id: 'student-a', linked_student_ids: ['student-c', 'student-b'], review_status: 'approved', status: 1, login_enabled: 1 };
 assert.strictEqual(usesLimitedQuestionProjection(normalStudentScope), true, 'students retain a read-only question preview even after their teaching profile is linked');
 const normalStudentAliasScope = { id: 'student-user', role: 'student', tenantId: 'tenant-a', studentId: 'student-a', linkedStudentIds: ['student-b', 'student-c', 'student-b'], reviewStatus: 'approved', status: true, loginEnabled: true };
@@ -115,29 +112,20 @@ assert.strictEqual(rejectedTaskWrite.written, false, 'a mounted old-scope task s
 assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a rejected old-scope write must leave the new tenant cache untouched');
 assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
 
-const unrecognized = {
-  id: 'unrecognized-1', user_type: 'student', role: 'student', account_state: 'unrecognized',
-  token_use: 'unrecognized-student', capabilities: [
-    'experience:read', 'profile-application:read', 'profile-application:submit',
-    'sample-questions:view',
-  ],
-};
-const unrecognizedAccess = deriveAccess(unrecognized, {
-  status: 'loaded', identityKey: permissionIdentityKey(unrecognized), capabilities: unrecognized.capabilities,
-});
-assert.deepStrictEqual(unrecognizedAccess.modules, UNRECOGNIZED_MODULES);
-assert.strictEqual(unrecognizedAccess.experienceOnly, true);
-assert.strictEqual(unrecognizedAccess.canReadUsers, false);
-assert.strictEqual(unrecognizedAccess.canReviewUsers, false);
-assert.strictEqual(unrecognizedAccess.canEditQuestionBank, false);
-assert.strictEqual(businessCacheIdentityKey(unrecognized), '', 'unrecognized identities must never open a formal business cache');
-assert.strictEqual(questionPaperTaskCacheKey(unrecognized), '', 'experience tasks stay in the isolated experience page');
-const unrecognizedPolicy = accountExperiencePolicy(unrecognized);
-assert.deepStrictEqual(unrecognizedPolicy.modules, UNRECOGNIZED_MODULES);
-assert.strictEqual(unrecognizedPolicy.experienceOnly, true);
-assert.strictEqual(unrecognizedPolicy.readonlyScope, 'account-experience');
-assert.deepStrictEqual(unrecognizedPolicy.allowedWriteTasks, []);
-assert.strictEqual(canUserSubmitMiniappWrite(unrecognized, 'asset-import', ['asset-import']), false);
+for (const legacyUser of [
+  { id: 'admin-1', user_type: 'admin' },
+  { id: 'pending-1', user_type: 'pending' },
+  { id: 'unrecognized-1', user_type: 'student', account_state: 'unrecognized', token_use: 'unrecognized-student' },
+]) {
+  const legacyAccess = deriveAccess(legacyUser, {
+    status: 'loaded', identityKey: permissionIdentityKey(legacyUser), capabilities: ['business:all'],
+  });
+  assert.strictEqual(legacyAccess.role, 'visitor', 'retired account categories must normalize to the only non-formal role');
+  assert.deepStrictEqual(legacyAccess.modules, [], 'retired account categories must fail closed until the user signs in again');
+  assert.strictEqual(businessCacheIdentityKey(legacyUser), '', 'retired account categories must never open a business cache');
+  assert.strictEqual(accountExperiencePolicy(legacyUser), null, 'retired account categories must not retain a parallel account experience');
+  assert.strictEqual(canUserSubmitMiniappWrite(legacyUser, 'asset-import', ['asset-import']), false);
+}
 
 const visitor = {
   id: 'visitor-1', user_type: 'visitor', role: 'visitor', identity_kind: 'visitor',
@@ -172,6 +160,6 @@ assert.deepStrictEqual(legacyAccess.capabilities, []);
 assert.strictEqual(permissionIdentityKey(legacyReview), '');
 assert.strictEqual(businessCacheIdentityKey(legacyReview), '');
 assert.deepStrictEqual(accountExperiencePolicy(legacyReview).allowedWriteTasks, []);
-assert.strictEqual(canUserSubmitMiniappWrite({ id: 'admin-1', user_type: 'admin' }, 'asset-import', ['asset-import']), true, 'normal write policy must remain unchanged');
+assert.strictEqual(canUserSubmitMiniappWrite({ id: 'teacher-1', user_type: 'teacher' }, 'asset-import', ['asset-import']), true, 'formal write policy must remain unchanged');
 
 console.log('miniapp authorization runtime checks passed');

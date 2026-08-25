@@ -3,6 +3,7 @@ import { defineConfig } from '@tarojs/cli';
 const appEnv = process.env.MINIAPP_APP_ENV || process.env.APP_ENV || 'prod';
 const apiBaseUrl = process.env.MINIAPP_API_BASE_URL || 'https://physicsedu.xyz/scheduling';
 const cloudBusinessApiBaseUrl = process.env.MINIAPP_CLOUD_BUSINESS_API_BASE_URL || 'https://physicsedu.xyz/cloud-business';
+const appVersion = process.env.MINIAPP_APP_VERSION || require('../package.json').version;
 
 const config = defineConfig({
   projectName: 'scheduling-miniapp',
@@ -22,7 +23,8 @@ const config = defineConfig({
   defineConstants: {
     __APP_ENV__: JSON.stringify(appEnv),
     __API_BASE_URL__: JSON.stringify(apiBaseUrl),
-    __CLOUD_BUSINESS_API_BASE_URL__: JSON.stringify(cloudBusinessApiBaseUrl)
+    __CLOUD_BUSINESS_API_BASE_URL__: JSON.stringify(cloudBusinessApiBaseUrl),
+    __APP_VERSION__: JSON.stringify(appVersion)
   },
   copy: {
     patterns: [],

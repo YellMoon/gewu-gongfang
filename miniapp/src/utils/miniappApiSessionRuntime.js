@@ -1,5 +1,5 @@
 const { businessCacheIdentityKey, permissionIdentityKey } = require('./miniappAuthorizationRuntime');
-const { isUnrecognizedIdentity, isVisitorIdentity } = require('./accountExperience');
+const { isVisitorIdentity } = require('./accountExperience');
 
 const AUTH_SESSION_GENERATION_KEY = 'auth_session_generation';
 const AUTH_SESSION_STATE_KEY = 'auth_session_state_v1';
@@ -168,7 +168,7 @@ function createAuthSessionRuntime(dependencies) {
       identity: authenticatedStateUsable && candidateIdentityKey ? identity : null,
       identityKey: authenticatedStateUsable ? candidateIdentityKey : '',
       experienceOnly: authenticatedStateUsable
-        && (isUnrecognizedIdentity(identity) || isVisitorIdentity(identity)),
+        && isVisitorIdentity(identity),
       trusted,
       invalidated: trusted ? invalidated : true,
     };
@@ -372,9 +372,9 @@ function validatedNormalSession(responseData) {
   const legacyReviewMarker = user?.token_use === 'review-demo'
     || user?.is_review_demo === true
     || Boolean(user?.review_demo_session_id);
-  const malformedUnrecognized = user?.account_state === 'unrecognized' && !isUnrecognizedIdentity(user);
+  const retiredUnrecognized = user?.account_state === 'unrecognized' || user?.token_use === 'unrecognized-student';
   const malformedVisitor = user?.account_state === 'visitor' && !isVisitorIdentity(user);
-  if (!token || !user || !user.id || legacyReviewMarker || malformedUnrecognized || malformedVisitor) {
+  if (!token || !user || !user.id || legacyReviewMarker || retiredUnrecognized || malformedVisitor) {
     return null;
   }
   return { token, user };

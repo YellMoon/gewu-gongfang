@@ -22,26 +22,26 @@ assert.ok(
   'miniapp home should use a product-grade hero, status panel, and action list structure'
 );
 
-assert.ok(homePage.includes('isUnrecognizedIdentity') && homePage.includes('AccountStatusBanner'), 'home must render a real unrecognized-account shell before formal data loading');
-assert.strictEqual(getMiniappHomeDisplayName({}), '微信用户');
-assert.strictEqual(getMiniappHomeDisplayName({ name: '  ', nickname: ' 小格 ' }), '小格');
-assert.strictEqual(getMiniappHomeDisplayName({ name: '格物同学', nickname: '备用名' }), '格物同学');
-assert.strictEqual(getMiniappHomeRoleLabel('super_admin'), '超级管理员');
-assert.strictEqual(getMiniappHomeRoleLabel('admin'), '管理员');
-assert.strictEqual(getMiniappHomeRoleLabel('teacher'), '教师');
-assert.strictEqual(getMiniappHomeRoleLabel('student'), '学生');
+assert.ok(homePage.includes('isVisitorIdentity') && homePage.includes('AccountStatusBanner'), 'home must render a visitor shell before formal data loading');
+assert.strictEqual(getMiniappHomeDisplayName({}), '\u5fae\u4fe1\u7528\u6237');
+assert.strictEqual(getMiniappHomeDisplayName({ name: '  ', nickname: ' \u5c0f\u683c ' }), '\u5c0f\u683c');
+assert.strictEqual(getMiniappHomeDisplayName({ name: '\u683c\u7269\u540c\u5b66', nickname: '\u5907\u7528\u540d' }), '\u683c\u7269\u540c\u5b66');
+assert.strictEqual(getMiniappHomeRoleLabel('super_admin'), '\u8d85\u7ea7\u7ba1\u7406\u5458');
+assert.strictEqual(getMiniappHomeRoleLabel('teacher'), '\u6559\u5e08');
+assert.strictEqual(getMiniappHomeRoleLabel('student'), '\u5b66\u751f');
+assert.strictEqual(getMiniappHomeRoleLabel('visitor'), '\u8bbf\u5ba2');
 assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
 assert.ok(homePage.includes('getMiniappHomeRoleLabel(user.user_type)'), 'home role pill must use the shared localized role label helper');
 assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
-assert.ok(accountStatusBanner.includes('当前为体验账号。提交真实资料并经管理员审核后，可使用相应正式功能。'));
+assert.ok(accountStatusBanner.includes('\u53ef\u63d0\u4ea4\u6559\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u8eab\u4efd\u7533\u8bf7\u3002'));
 assert.ok(membershipBadge.includes("membership?.status !== 'active'"), 'membership badge must be derived only from the server membership state');
-for (const forbiddenMarketingCopy of ['购买', '续费', '套餐', '会员价格', '会员权益']) {
+for (const forbiddenMarketingCopy of ['\u8d2d\u4e70', '\u7eed\u8d39', '\u5957\u9910', '\u4f1a\u5458\u4ef7\u683c', '\u4f1a\u5458\u6743\u76ca']) {
   assert.ok(!membershipBadge.includes(forbiddenMarketingCopy));
 }
 
 assert.ok(
-  !/[📅📝💰📊👨‍🎓📚📘👥✉️📦]/u.test(homePage),
+  !/[\u{1F4C5}\u{1F4DD}\u{1F4B0}\u{1F4CA}\u{1F468}\u{200D}\u{1F393}\u{1F4DA}\u{1F4D8}\u{1F465}\u{2709}\u{1F4E6}]/u.test(homePage),
   'miniapp home should not rely on emoji as primary navigation icons'
 );
 

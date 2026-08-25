@@ -43,7 +43,6 @@ export const adminModules = [
   'teachers',
   'payments',
   'stats',
-  'admin',
 ];
 
 export const studentModules = [
@@ -57,9 +56,9 @@ export const studentWriteTasks = [
   'paper-export-pdf',
 ];
 
-export const teacherModules = adminModules.filter(moduleId => moduleId !== 'admin');
+export const teacherModules = adminModules.slice();
 
-export type MiniappRole = 'super_admin' | 'admin' | 'teacher' | 'student' | 'visitor' | 'pending';
+export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'visitor';
 export type MiniappCapability =
   | 'users:review'
   | 'applications:review'
@@ -67,14 +66,10 @@ export type MiniappCapability =
   | 'business:teacher-scope'
   | 'question-bank:view'
   | 'question-bank:edit'
-  | 'experience:read'
   | 'projection:read'
   | 'role-application:read'
   | 'role-application:submit'
   | 'question-preview:read'
-  | 'profile-application:read'
-  | 'profile-application:submit'
-  | 'sample-questions:view'
 
 export function canMiniappWrite(target: string, user: Partial<UserInfo> | null = getCurrentUser()): boolean {
   return canUserSubmitMiniappWrite(user, target, allowedWriteTasks);
@@ -105,8 +100,8 @@ export interface UserInfo {
   is_review_demo?: boolean;
   read_only?: boolean;
   review_demo_session_id?: string;
-  account_state?: 'formal' | 'visitor' | 'unrecognized';
-  token_use?: 'miniapp-session' | 'miniapp-visitor' | 'unrecognized-student';
+  account_state?: 'formal' | 'visitor';
+  token_use?: 'miniapp-session' | 'miniapp-visitor';
   identity_kind?: string;
   authority_id?: string;
   capabilities?: MiniappCapability[];
@@ -200,14 +195,14 @@ export function getCurrentUser(): UserInfo | null {
  */
 export function getUserType(): string {
   const user = getCurrentUser();
-  return user?.user_type || 'pending';
+  return user?.user_type || 'visitor';
 }
 
 /**
  * 是否是管理员
  */
 export function isAdmin(): boolean {
-  return ['super_admin', 'admin'].includes(getUserType());
+  return getUserType() === 'super_admin';
 }
 
 export function isStudentUser(user: Partial<UserInfo> | null = getCurrentUser()): boolean {
@@ -232,12 +227,6 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
     };
   }
 
-  if (user?.user_type === 'admin') return {
-    role: 'admin', modules: adminModules, readonlyScope: 'all', allowedWriteTasks,
-    canReadAllSnapshots: true,
-    capabilities: ['business:all', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
-  };
-
   if (user?.user_type === 'teacher') return {
     role: 'teacher', modules: teacherModules, readonlyScope: 'teacher', allowedWriteTasks,
     canReadAllSnapshots: false,
@@ -257,7 +246,7 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
   }
 
   return {
-    role: 'pending',
+    role: 'visitor',
     modules: [],
     readonlyScope: 'none',
     allowedWriteTasks: [],

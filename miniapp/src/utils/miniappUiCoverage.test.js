@@ -194,14 +194,13 @@ for (const category of REQUIRED_COVERAGE_CATEGORIES) {
   assert.ok(runtimeCategories.has(category), `runtime screenshot matrix missing category ${category}`);
 }
 for (const [route, roles] of Object.entries({
-  'pages/index/index': ['super_admin', 'student', 'visitor', 'unrecognized-student'],
-  'pages/schedule/index': ['admin', 'student', 'unrecognized-student'],
-  'pages/schedule/detail/index': ['admin', 'student'],
-  'pages/schedule/edit/index': ['admin', 'student'],
-  'pages/student-detail/index': ['admin', 'student'],
-  'pages/question-bank/index': ['super_admin', 'student', 'unrecognized-student'],
-  'pages/settings/index': ['admin', 'student', 'unrecognized-student'],
-  'pages/admin/users/index': ['super_admin', 'admin'],
+  'pages/index/index': ['super_admin', 'student', 'visitor'],
+  'pages/schedule/index': ['student'],
+  'pages/schedule/detail/index': ['student'],
+  'pages/schedule/edit/index': ['student'],
+  'pages/student-detail/index': ['student'],
+  'pages/question-bank/index': ['super_admin', 'student'],
+  'pages/settings/index': ['student'],
 })) {
   const covered = new Set(runtimeScenarios.filter(item => item.route === route).map(item => item.roleView));
   roles.forEach(role => assert.ok(covered.has(role), `${route} runtime matrix missing ${role}`));
@@ -213,7 +212,7 @@ assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'gu
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('super-admin')), 'role spelling must use super_admin');
 
 const coveredRoles = new Set(pageInventory.flatMap((entry) => entry.roleViews));
-assert.ok(coveredRoles.has('admin'), 'miniapp UI inventory must cover admin UI');
+assert.ok(!coveredRoles.has('admin'), 'miniapp UI inventory must not retain the retired admin role');
 assert.ok(coveredRoles.has('student'), 'miniapp UI inventory must cover student UI');
 assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/guest UI');
 
@@ -249,14 +248,11 @@ assert.ok(!fs.existsSync(path.join(root, 'src/utils/reviewExperience.js')));
 
 const accountExperienceRoutes = [
   'pages/index/index',
-  'pages/schedule/index',
-  'pages/question-bank/index',
   'pages/settings/index',
-  'pages/unrecognized-experience/index',
 ];
 for (const route of accountExperienceRoutes) {
   const entry = pageInventory.find(item => item.route === route);
-  assert.ok(entry?.roleViews.includes('unrecognized-student'), `${route} must cover the real unrecognized identity`);
+  assert.ok(entry?.roleViews.includes('visitor'), `${route} must cover the canonical visitor identity`);
 }
 for (const entry of pageInventory) {
   assert.ok(!entry.roleViews.some(role => role.startsWith('review-')), `${entry.route} must not retain synthetic review roles`);

@@ -40,7 +40,7 @@ assert.ok(api.includes("api.get<any[]>('/api/students')"), 'miniapp business API
 assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'miniapp WeChat login should use the cloud account client with its WeChat and phone proofs');
 assert.ok(!loginPage.includes("'/api/auth/wechat-login'"), 'miniapp WeChat login must not regress to the retired backend account endpoint');
 assert.ok(loginPage.includes('createNormalSessionCommitter'), 'miniapp login should commit the complete backend identity through the shared session boundary');
-assert.ok(loginPage.includes("relaunch: () => Taro.reLaunch({ url: '/pages/schedule/index' })"), 'cloud login should enter the cloud-backed schedule page with reLaunch from the non-tab login page');
+assert.ok(loginPage.includes("relaunch: () => Taro.reLaunch({ url: '/pages/index/index' })"), 'cloud login should enter the role-aware home page with reLaunch from the non-tab login page');
 assert.ok(!loginPage.includes("Taro.switchTab({ url: '/pages/index/index' })"), 'login page should not use switchTab to enter home from the non-tab login page');
 assert.ok(!loginPage.includes('Taro.getNetworkType'), 'login page should not call Taro.getNetworkType before login because DevTools can throw WAServiceMainContext timeout');
 assert.ok(!api.includes('Taro.getNetworkType'), 'API client should rely on request failures instead of Taro.getNetworkType because DevTools can throw WAServiceMainContext timeout');
@@ -51,8 +51,9 @@ assert.ok(!appEntry.includes("redirectTo({ url: '/pages/login/index' })"), 'app 
 assert.ok(projectConfig.includes('"urlCheck": true'), 'miniapp project config should enable URL checks for release');
 assert.ok(projectConfig.includes('"uploadWithSourceMap": false'), 'miniapp project config should not upload source maps for release');
 assert.ok(projectConfig.includes('"useApiHook": false') && projectConfig.includes('"useApiHostProcess": false'), 'miniapp project config should avoid DevTools API hook host-process timeout noise');
-assert.ok(api.includes("'/api/miniapp/applications'"), 'account applications should use the Backend account API');
-assert.ok(api.includes("'/api/experience/questions'"), 'unrecognized samples should use the Backend experience API');
+assert.ok(api.includes("'/api/miniapp/role-applications'"), 'role applications should use the cloud authority API');
+assert.ok(!api.includes("'/api/miniapp/applications'"), 'retired Backend role application routes must stay absent');
+assert.ok(!api.includes("'/api/experience/questions'"), 'retired unrecognized experience routes must stay absent');
 assert.ok(!api.includes('reviewDemoApi') && !api.includes('/api/auth/review-demo'), 'removed review-demo client APIs must stay absent');
 assert.ok(packageJson.includes('miniapp/src/utils/miniappReleaseConfig.test.js'), 'miniapp release config test should run in npm test');
 

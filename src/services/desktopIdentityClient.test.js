@@ -180,6 +180,13 @@ async function main() {
       if (url === 'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1') {
         return { ok: true, json: async () => ({ ok: true, status: 'verified', verificationToken: 'verification-token-1', deviceChallenge: 'cloud-device-proof-1' }) };
       }
+      if (url === 'https://cloud.test/api/desktop/teacher-self-registration') {
+        assert.strictEqual(options.method, 'POST');
+        assert.deepStrictEqual(JSON.parse(options.body), {
+          verificationToken: 'verification-token-1', name: 'Cloud Teacher', subject: 'Math',
+        });
+        return { ok: true, json: async () => ({ ok: true, teacherId: 'teacher-cloud-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false }) };
+      }
       if (url === 'https://cloud.test/api/desktop/online-registration') {
         return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1', offlineLease: {
           id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',
@@ -362,6 +369,14 @@ async function main() {
   });
   assert.strictEqual(unifiedPending.qrValue, 'gewu://desktop-pairing?pairingId=pairing-cloud-1&secret=pairing-secret-1');
   const unifiedVerified = await unifiedCloudClient.pollUnifiedOnlineRegistration(unifiedPending);
+  const selfRegisteredTeacher = await unifiedCloudClient.registerTeacherForVerifiedRegistration({
+    pending: unifiedVerified,
+    name: 'Cloud Teacher',
+    subject: 'Math',
+  });
+  assert.deepStrictEqual(selfRegisteredTeacher, {
+    teacherId: 'teacher-cloud-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false,
+  });
   const unifiedCompleted = await unifiedCloudClient.completeUnifiedOnlineRegistration({
     pending: unifiedVerified,
     password: 'unified-local-password',
@@ -369,6 +384,7 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudRequests.map(entry => entry.url), [
     'https://cloud.test/api/desktop/pairing/start',
     'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1',
+    'https://cloud.test/api/desktop/teacher-self-registration',
     'https://cloud.test/api/desktop/online-registration',
     'https://cloud.test/api/desktop/session-context',
   ]);
@@ -376,6 +392,9 @@ async function main() {
     installationId: 'desktop-device-a1b2c3d4e5f60708', installationPublicKey: 'unified-public-key', idempotencyKey: 'unified-registration-1',
   });
   assert.deepStrictEqual(unifiedCloudRequests[2].body, {
+    verificationToken: 'verification-token-1', name: 'Cloud Teacher', subject: 'Math',
+  });
+  assert.deepStrictEqual(unifiedCloudRequests[3].body, {
     verificationToken: 'verification-token-1', installationId: 'desktop-device-a1b2c3d4e5f60708',
     installationPublicKey: 'unified-public-key', deviceProof: 'unified-device-proof', idempotencyKey: 'unified-registration-1',
   });

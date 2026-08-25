@@ -17,10 +17,7 @@ export default defineAppConfig({
     'pages/question-bank/index',
     'pages/assets/index',
     'pages/settings/index',
-    'pages/admin/users/index',
-    'pages/unrecognized-experience/index',
     'pages/account-application/index',
-    'pages/cloud-account-admin/index',
   ],
   window: {
     backgroundTextStyle: 'light',

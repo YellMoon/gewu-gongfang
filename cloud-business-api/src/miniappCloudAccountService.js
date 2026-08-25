@@ -56,7 +56,7 @@ function inspect(secret, token, now) {
 
 function identity(value) {
   const copy = exact(value, ['accountId', 'status', 'roles', 'profile']);
-  if (!text(copy.accountId) || !['active', 'disabled'].includes(copy.status) || !Array.isArray(copy.roles) || copy.roles.some(role => !['super_admin', 'admin', 'teacher', 'student'].includes(role)) || new Set(copy.roles).size !== copy.roles.length) throw rejected();
+  if (!text(copy.accountId) || !['active', 'disabled'].includes(copy.status) || !Array.isArray(copy.roles) || copy.roles.some(role => !['super_admin', 'teacher', 'student'].includes(role)) || new Set(copy.roles).size !== copy.roles.length) throw rejected();
   const ordinaryRoles = copy.roles.filter(role => role === 'teacher' || role === 'student');
   if (ordinaryRoles.length > 1 || (ordinaryRoles.length === 0 && copy.profile !== null)) throw rejected();
   if (ordinaryRoles.length === 1) {
@@ -69,17 +69,13 @@ function identity(value) {
 
 function publicIdentity(context) {
   if (context.status === 'disabled') throw rejected();
-  return Object.freeze({ accountId: context.accountId, status: context.roles.length === 0 ? 'pending_authorization' : 'active', roles: context.roles, profile: context.profile });
-}
-
-function role(value) {
-  return typeof value === 'string' && ['admin', 'teacher', 'student'].includes(value) ? value : null;
+  return Object.freeze({ accountId: context.accountId, status: context.roles.length === 0 ? 'visitor' : 'active', roles: context.roles, profile: context.profile });
 }
 
 function createMiniappCloudAccountService(config) {
   const settings = exact(config, ['now', 'bootstrapAdminAccountId', 'canonicalWechatIdentity', 'accountRepository', 'ticketSecret']);
   if (typeof settings.now !== 'function' || !text(settings.bootstrapAdminAccountId) || !settings.canonicalWechatIdentity || typeof settings.canonicalWechatIdentity.resolveOrBind !== 'function'
-    || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.listPending !== 'function' || typeof settings.accountRepository.assignRole !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
+    || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
   const currentNow = () => {
     const value = settings.now();
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw invalid();
@@ -125,39 +121,6 @@ function createMiniappCloudAccountService(config) {
     async context(input) {
       const request = exact(input, ['token']);
       return currentContext(request.token);
-    },
-    async pendingAccounts(input) {
-      const request = exact(input, ['token']);
-      const actor = await currentContext(request.token);
-      if (!actor.roles.includes('super_admin')) throw rejected();
-      let rows;
-      try {
-        rows = await settings.accountRepository.listPending();
-      } catch (_) {
-        throw rejected();
-      }
-      if (!Array.isArray(rows)) throw rejected();
-      return Object.freeze(rows.map(row => {
-        const copy = exact(row, ['accountId', 'status', 'createdAt']);
-        if (!text(copy.accountId) || copy.status !== 'pending_authorization' || typeof copy.createdAt !== 'string' || new Date(copy.createdAt).toISOString() !== copy.createdAt) throw rejected();
-        return Object.freeze(copy);
-      }));
-    },
-    async assignRole(input) {
-      const request = exact(input, ['token', 'accountId', 'role', 'profileId', 'studentRelationship']);
-      const actor = await currentContext(request.token);
-      const assignedRole = role(request.role);
-      if (!actor.roles.includes('super_admin') || !text(request.accountId) || !assignedRole || !text(request.profileId)
-        || (assignedRole === 'student' && !['student', 'guardian'].includes(request.studentRelationship))
-        || (assignedRole !== 'student' && request.studentRelationship !== null)) throw rejected();
-      let assigned;
-      try {
-        assigned = await settings.accountRepository.assignRole({ accountId: request.accountId, role: assignedRole, profileId: request.profileId, studentRelationship: request.studentRelationship });
-      } catch (_) {
-        throw rejected();
-      }
-      if (!assigned) throw rejected();
-      return publicIdentity(identity(assigned));
     },
   });
 }

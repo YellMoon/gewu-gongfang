@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -16,8 +16,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessRoomLifecycleMutations !== null && (typeof businessRoomLifecycleMutations.create !== 'function' || typeof businessRoomLifecycleMutations.update !== 'function' || typeof businessRoomLifecycleMutations.remove !== 'function')) throw new TypeError('businessRoomLifecycleMutations is invalid');
   if (businessCourseLifecycleMutations !== null && (typeof businessCourseLifecycleMutations.create !== 'function' || typeof businessCourseLifecycleMutations.update !== 'function' || typeof businessCourseLifecycleMutations.remove !== 'function')) throw new TypeError('businessCourseLifecycleMutations is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
+  if (desktopTeacherSelfRegistration && typeof desktopTeacherSelfRegistration.register !== 'function') throw new TypeError('desktopTeacherSelfRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
-  if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function' || typeof miniappCloudAccount.pendingAccounts !== 'function' || typeof miniappCloudAccount.assignRole !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
+  if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
+  if (miniappRoleApplications && (typeof miniappRoleApplications.mine !== 'function' || typeof miniappRoleApplications.submit !== 'function')) throw new TypeError('miniappRoleApplications is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
@@ -438,6 +440,18 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       identityFailure(response, error);
     }
   });
+  app.post('/api/desktop/teacher-self-registration', async (request, response) => {
+    if (!desktopTeacherSelfRegistration) return desktopUnavailable(response);
+    const body = exactBody(request.body, ['verificationToken', 'name', 'subject']);
+    if (!body) return response.status(400).json({ ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_INVALID' });
+    try {
+      const result = await desktopTeacherSelfRegistration.register(body);
+      response.status(201).json({ ok: true, ...result });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_DESKTOP_TEACHER_REGISTRATION_INVALID') return response.status(400).json({ ok: false, code: error.code });
+      response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REJECTED' });
+    }
+  });
   app.get('/api/desktop/question-bank/questions', async (request, response) => {
     if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
     const limit = request.query.limit === undefined ? 200 : Number(request.query.limit);
@@ -652,47 +666,53 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
-  app.get('/api/miniapp/cloud-accounts', async (request, response) => {
-    if (!miniappCloudAccount) return businessUnavailable(response);
+  app.get('/api/miniapp/role-applications/me', async (request, response) => {
+    if (!miniappRoleApplications) return businessUnavailable(response);
     const token = sessionToken(request);
     if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     try {
-      const accounts = await miniappCloudAccount.pendingAccounts({ token });
-      response.json({ ok: true, accounts });
-    } catch (_) {
+      const result = await miniappRoleApplications.mine({ token });
+      response.json({ ok: true, ...result });
+    } catch (error) {
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
-  app.get('/api/miniapp/business-profiles', async (request, response) => {
-    if (!miniappCloudAccount || !businessTenantId) return businessUnavailable(response);
+  app.post('/api/miniapp/role-applications', async (request, response) => {
+    if (!miniappRoleApplications) return businessUnavailable(response);
     const token = sessionToken(request);
-    const type = String(request.query.type || '').trim();
-    if (!token || !['teacher', 'student'].includes(type)) return businessInputInvalid(response);
+    const idempotencyKey = String(request.get('x-idempotency-key') || '').trim();
+    const body = exactBody(request.body, ['requestedIdentity', 'profileMode', 'bindingHint']);
+    if (!token || !idempotencyKey || !body) return businessInputInvalid(response);
     try {
-      const context = await miniappCloudAccount.context({ token });
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
-      const relation = type === 'teacher' ? 'business.teachers' : 'business.students';
-      const result = await query(
-        `SELECT id AS "id", name AS "name" FROM ${relation} WHERE tenant_id=$1 AND legacy_deleted=false ORDER BY name ASC,id ASC`,
-        [businessTenantId],
-      );
-      if (!result || !Array.isArray(result.rows) || result.rows.some(row => !row || typeof row.id !== 'string' || !row.id || typeof row.name !== 'string' || !row.name)) return businessUnavailable(response);
-      response.json({ ok: true, profiles: result.rows.map(row => ({ id: row.id, name: row.name })) });
+      const result = await miniappRoleApplications.submit({ token, idempotencyKey, ...body });
+      response.status(201).json({ ok: true, ...result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      businessUnavailable(response);
+      if (error && error.code === 'CLOUD_ROLE_APPLICATION_INVALID') return businessInputInvalid(response);
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
-  app.put('/api/miniapp/cloud-accounts/:accountId/role', async (request, response) => {
-    if (!miniappCloudAccount) return businessUnavailable(response);
+  app.get('/api/miniapp/role-applications/review/pending', async (request, response) => {
+    if (!miniappRoleApplications) return businessUnavailable(response);
     const token = sessionToken(request);
-    const accountId = String(request.params.accountId || '').trim();
-    const body = exactBody(request.body, ['role', 'profileId', 'studentRelationship']);
-    if (!token || !accountId || accountId.length > 512 || !body || typeof body.role !== 'string' || typeof body.profileId !== 'string' || (body.studentRelationship !== null && typeof body.studentRelationship !== 'string')) return response.status(400).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_INVALID' });
+    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     try {
-      const account = await miniappCloudAccount.assignRole({ token, accountId, role: body.role, profileId: body.profileId, studentRelationship: body.studentRelationship });
-      response.json({ ok: true, account });
-    } catch (_) {
+      const result = await miniappRoleApplications.listSubmitted({ token });
+      response.json({ ok: true, ...result });
+    } catch (error) {
+      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    }
+  });
+  app.post('/api/miniapp/role-applications/:applicationId/review', async (request, response) => {
+    if (!miniappRoleApplications) return businessUnavailable(response);
+    const token = sessionToken(request);
+    const applicationId = String(request.params.applicationId || '').trim();
+    const body = exactBody(request.body, ['decision', 'profileId']);
+    if (!token || !applicationId || !body) return businessInputInvalid(response);
+    try {
+      const result = await miniappRoleApplications.review({ token, applicationId, ...body });
+      response.json({ ok: true, ...result });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_ROLE_APPLICATION_INVALID') return businessInputInvalid(response);
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });

@@ -1,15 +1,15 @@
 const {
+  isRetiredIdentity,
   permissionIdentityKey,
   sanitizeCapabilitiesForIdentity,
 } = require('./miniappAuthorizationRuntime');
 const {
   accountCapabilities,
-  isUnrecognizedIdentity,
   isVisitorIdentity,
 } = require('./accountExperience');
 
 function emptyPermissionData(user) {
-  return { permissions: [], capabilities: [], user_type: user?.user_type || 'pending' };
+  return { permissions: [], capabilities: [], user_type: user?.user_type || 'visitor' };
 }
 
 function permissionData(user, capabilities) {
@@ -22,7 +22,7 @@ function permissionData(user, capabilities) {
       status: 1,
     })),
     capabilities,
-    user_type: user?.user_type || 'pending',
+    user_type: user?.user_type || 'visitor',
   };
 }
 
@@ -32,8 +32,8 @@ function createPermissionFetchBoundary(dependencies) {
     const localIdentityKey = permissionIdentityKey(localUser);
     dependencies.setMemoryCache(null);
     dependencies.setPermissionState({ status: 'idle', identityKey: localIdentityKey, capabilities: [] });
-    if (isUnrecognizedIdentity(localUser) || isVisitorIdentity(localUser)) {
-      const capabilities = accountCapabilities(localUser);
+    if (isRetiredIdentity(localUser) || isVisitorIdentity(localUser)) {
+      const capabilities = isRetiredIdentity(localUser) ? [] : accountCapabilities(localUser);
       const data = permissionData(localUser, capabilities);
       dependencies.setMemoryCache(data);
       dependencies.setPermissionState({ status: 'loaded', identityKey: localIdentityKey, capabilities });

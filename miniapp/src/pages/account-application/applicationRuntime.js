@@ -13,13 +13,13 @@ const APPLICATION_STATES = Object.freeze([
 ]);
 
 const STATE_COPY = Object.freeze({
-  loading: ['正在读取角色申请', '请稍候。'],
-  not_submitted: ['申请老师或学生角色', '申请将作为权威命令交由云端超级管理员审核。'],
-  invalid: ['申请内容需要调整', '只能申请老师或学生角色，请核对后重试。'],
-  submitting: ['正在提交权威命令', '请勿重复操作。'],
-  submitted: ['等待云端审核', '申请已经进入持久命令队列，断线后仍会继续处理。'],
-  rejected: ['角色申请已拒绝', '如需重新申请，请联系云端管理员确认原因。'],
-  approved: ['角色申请已批准', '重新登录后将读取云端签发的最新角色投影。'],
+  loading: ['正在读取申请状态', '请稍候。'],
+  not_submitted: ['申请教师或学生身份', '填写后由数据负责人审核并关联已有档案。'],
+  invalid: ['申请内容需要调整', '只能申请教师或学生角色，请核对后重试。'],
+  submitting: ['正在提交申请', '请勿重复操作。'],
+  submitted: ['等待数据负责人审核', '申请已提交；审核完成后会自动更新可用功能。'],
+  rejected: ['申请未通过', '如需重新申请，请联系数据负责人确认原因。'],
+  approved: ['申请已通过', '请重新登录以更新可用功能。'],
   offline: ['当前离线', '恢复网络后可读取或提交角色申请。'],
   network_error: ['暂时无法读取', '请检查网络后重试。'],
 });
@@ -31,15 +31,20 @@ function copyForApplicationState(state) {
 }
 
 function buildRoleApplicationRequest(input = {}) {
-  const requestedRole = String(input.requestedRole || '').trim();
-  if (!['student', 'teacher'].includes(requestedRole)) {
-    throw new Error('requested role must be student or teacher');
+  const requestedIdentity = String(input.requestedIdentity || '').trim();
+  if (!['teacher', 'student', 'family_member'].includes(requestedIdentity)) {
+    throw new Error('requested identity must be teacher, student, or family_member');
   }
+  const profileMode = String(input.profileMode || '').trim();
+  if (!['create', 'existing'].includes(profileMode)) throw new Error('profile mode must be create or existing');
+  if (requestedIdentity === 'family_member' && profileMode !== 'existing') throw new Error('family_member requires an existing student profile');
   const bindingHint = String(input.bindingHint || '').trim();
   if (bindingHint.length > 128) throw new Error('binding hint must not exceed 128 characters');
+  if (profileMode === 'existing' && !bindingHint) throw new Error('existing profile mode requires a binding hint');
   return {
-    requestedRole,
-    ...(bindingHint ? { bindingHint } : {}),
+    requestedIdentity,
+    profileMode,
+    bindingHint: bindingHint || null,
   };
 }
 

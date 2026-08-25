@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Taro from '@tarojs/taro';
 import { Button, Input, Picker, Text, View } from '@tarojs/components';
 import { isVisitorIdentity } from '../../utils/accountExperience';
-import { applicationApi } from '../../utils/api';
+import { miniappCloudBusinessApi } from '../../utils/api';
 import {
   buildRoleApplicationRequest,
   copyForApplicationState,
@@ -10,18 +10,24 @@ import {
 } from './applicationRuntime';
 import './index.scss';
 
-type RequestedRole = 'student' | 'teacher';
+type RequestedIdentity = 'student' | 'teacher' | 'family_member';
+type ProfileMode = 'create' | 'existing';
 
 const ROLE_OPTIONS = [
-  { value: 'student' as RequestedRole, label: '\u5b66\u751f' },
-  { value: 'teacher' as RequestedRole, label: '\u8001\u5e08' },
+  { value: 'student' as RequestedIdentity, label: '\u5b66\u751f' },
+  { value: 'teacher' as RequestedIdentity, label: '\u8001\u5e08' },
+  { value: 'family_member' as RequestedIdentity, label: '\u5bb6\u5ead\u6210\u5458' },
+];
+const PROFILE_MODE_OPTIONS = [
+  { value: 'create' as ProfileMode, label: '\u65b0\u5efa\u6863\u6848' },
+  { value: 'existing' as ProfileMode, label: '\u5173\u8054\u5df2\u6709\u6863\u6848' },
 ];
 
-function idempotencyKey(identityId: string, role: RequestedRole): string {
-  const storageKey = `authority_role_application_key:${identityId}:${role}`;
+function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode): string {
+  const storageKey = `cloud_role_application_key:${identityId}:${requestedIdentity}:${profileMode}`;
   const existing = String(Taro.getStorageSync(storageKey) || '').trim();
   if (existing) return existing;
-  const created = `miniapp-role-${identityId}-${role}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const created = `miniapp-role-${identityId}-${requestedIdentity}-${profileMode}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   Taro.setStorageSync(storageKey, created);
   return created;
 }
@@ -37,19 +43,22 @@ export default function AccountApplicationPage() {
   const [state, setState] = useState('loading');
   const [application, setApplication] = useState<any>(null);
   const [roleIndex, setRoleIndex] = useState(0);
+  const [profileModeIndex, setProfileModeIndex] = useState(0);
   const [bindingHint, setBindingHint] = useState('');
 
   const load = async () => {
     if (!operationLock.current.tryAcquire('refresh')) return;
     setState('loading');
     try {
-      const result = responseData(await applicationApi.mine());
+      const token = String(Taro.getStorageSync('auth_token') || '').trim();
+      const result = responseData(await miniappCloudBusinessApi.readRoleApplication(token));
       const nextApplication = result.application || null;
       setApplication(nextApplication);
       setState(result.state || 'not_submitted');
-      if (nextApplication?.requestedRole) {
-        setRoleIndex(nextApplication.requestedRole === 'teacher' ? 1 : 0);
+      if (nextApplication?.requestedIdentity) {
+        setRoleIndex(nextApplication.requestedIdentity === 'teacher' ? 1 : nextApplication.requestedIdentity === 'family_member' ? 2 : 0);
       }
+      if (nextApplication?.profileMode) setProfileModeIndex(nextApplication.profileMode === 'existing' ? 1 : 0);
       if (nextApplication?.bindingHint) setBindingHint(nextApplication.bindingHint);
     } catch (error: any) {
       const message = String(error?.message || '').toLowerCase();
@@ -70,19 +79,23 @@ export default function AccountApplicationPage() {
   const submit = async () => {
     if (!operationLock.current.tryAcquire('submit')) return;
     setState('submitting');
-    const requestedRole = ROLE_OPTIONS[roleIndex].value;
+    const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
+    const profileMode: ProfileMode = requestedIdentity === 'family_member' ? 'existing' : PROFILE_MODE_OPTIONS[profileModeIndex].value;
     try {
-      const request = buildRoleApplicationRequest({ requestedRole, bindingHint }) as {
-        requestedRole: RequestedRole;
-        bindingHint?: string;
+      const request = buildRoleApplicationRequest({ requestedIdentity, profileMode, bindingHint }) as {
+        requestedIdentity: RequestedIdentity;
+        profileMode: ProfileMode;
+        bindingHint: string | null;
       };
-      const result = responseData(await applicationApi.submit(
+      const token = String(Taro.getStorageSync('auth_token') || '').trim();
+      const result = responseData(await miniappCloudBusinessApi.submitRoleApplication(
+        token,
         request,
-        idempotencyKey(String(identity.id), requestedRole),
+        idempotencyKey(String(identity.id), requestedIdentity, profileMode),
       ));
       setApplication(result.application || null);
       setState(result.state || 'submitted');
-      Taro.showToast({ title: '\u89d2\u8272\u7533\u8bf7\u5df2\u8fdb\u5165\u4e3b\u673a\u961f\u5217', icon: 'success' });
+      Taro.showToast({ title: '\u89d2\u8272\u7533\u8bf7\u5df2\u63d0\u4ea4', icon: 'success' });
     } catch (error: any) {
       setState('invalid');
       Taro.showToast({ title: error?.message || '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5', icon: 'none' });
@@ -93,11 +106,13 @@ export default function AccountApplicationPage() {
 
   const copy = copyForApplicationState(state);
   const editable = ['not_submitted', 'invalid', 'rejected'].includes(state);
+  const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
+  const profileMode: ProfileMode = requestedIdentity === 'family_member' ? 'existing' : PROFILE_MODE_OPTIONS[profileModeIndex].value;
 
   return (
-    <View className='application-page'>
+      <View className='application-page'>
       <View className={`state-card state-${state}`}>
-        <Text className='state-kicker'>{'\u6570\u636e\u4e3b\u673a\u89d2\u8272\u6388\u6743'}</Text>
+        <Text className='state-kicker'>{'\u8d26\u53f7\u8eab\u4efd\u7533\u8bf7'}</Text>
         <Text className='state-title'>{copy.title}</Text>
         <Text className='state-description'>{copy.description}</Text>
         {application?.commandId
@@ -107,7 +122,7 @@ export default function AccountApplicationPage() {
 
       {editable ? (
         <View className='application-form'>
-          <Text className='section-title'>{'\u7533\u8bf7\u89d2\u8272'}</Text>
+          <Text className='section-title'>{'\u9009\u62e9\u8eab\u4efd'}</Text>
           <Picker
             mode='selector'
             range={ROLE_OPTIONS.map(option => option.label)}
@@ -119,16 +134,32 @@ export default function AccountApplicationPage() {
             </View>
           </Picker>
 
-          <View className='field'>
-            <Text className='label'>{'\u5df2\u6709\u6863\u6848\u7f16\u53f7\uff08\u9009\u586b\uff09'}</Text>
+          {requestedIdentity !== 'family_member' ? (
+            <>
+              <Text className='section-title'>{'\u6863\u6848\u65b9\u5f0f'}</Text>
+              <Picker
+                mode='selector'
+                range={PROFILE_MODE_OPTIONS.map(option => option.label)}
+                value={profileModeIndex}
+                onChange={event => setProfileModeIndex(Number(event.detail.value))}
+              >
+                <View className='picker-value'>
+                  {PROFILE_MODE_OPTIONS[profileModeIndex].label} <Text>{'\u203a'}</Text>
+                </View>
+              </Picker>
+            </>
+          ) : null}
+
+          {profileMode === 'existing' ? <View className='field'>
+            <Text className='label'>{'\u5df2\u6709\u6863\u6848\u4fe1\u606f'}</Text>
             <Input
               maxlength={128}
               value={bindingHint}
               onInput={event => setBindingHint(event.detail.value)}
-              placeholder={'\u5982\u5df2\u77e5\u8001\u5e08/\u5b66\u751f\u6863\u6848\u7f16\u53f7\uff0c\u53ef\u586b\u5199'}
+              placeholder={'\u8bf7\u586b\u5199\u5df2\u6709\u6863\u6848\u7684\u540d\u79f0\u6216\u7f16\u53f7'}
             />
-            <Text className='field-tip'>{'\u6863\u6848\u7ed1\u5b9a\u4e0d\u662f\u89d2\u8272\u7533\u8bf7\u524d\u7f6e\u6761\u4ef6\uff0c\u6700\u7ec8\u7531\u6570\u636e\u4e3b\u673a\u8d85\u7ea7\u7ba1\u7406\u5458\u786e\u8ba4\u3002'}</Text>
-          </View>
+            <Text className='field-tip'>{'\u4e91\u7aef\u4f1a\u6838\u5bf9\u4fe1\u606f\u540e\u5173\u8054\u6863\u6848\u3002'}</Text>
+          </View> : null}
 
           <Button
             className='primary-action'
@@ -136,7 +167,7 @@ export default function AccountApplicationPage() {
             loading={state === 'submitting'}
             onClick={() => void submit()}
           >
-            {'\u63d0\u4ea4\u89d2\u8272\u7533\u8bf7'}
+            {'\u63d0\u4ea4\u7533\u8bf7'}
           </Button>
         </View>
       ) : null}

@@ -5,7 +5,7 @@ import { miniappCloudBusinessApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
 import { createQuestionPaperTaskCacheRuntime, usesLimitedQuestionProjection } from '../../utils/miniappAuthorizationRuntime';
 import { storage } from '../../utils/storage';
-import { isUnrecognizedIdentity, isVisitorIdentity } from '../../utils/accountExperience';
+import { isVisitorIdentity } from '../../utils/accountExperience';
 // @ts-ignore CommonJS workflow module has no TypeScript declarations.
 import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
@@ -22,12 +22,8 @@ const statusCopy: Record<string, string> = { draft: '\u672c\u5730\u7ec4\u5377\u8
 
 export default function QuestionBankPage() {
   const identity = Taro.getStorageSync('user_info');
-  const isUnrecognized = isUnrecognizedIdentity(identity);
   const isVisitor = isVisitorIdentity(identity);
   const useLimitedProjection = usesLimitedQuestionProjection(identity);
-  useEffect(() => {
-    if (isUnrecognized) Taro.reLaunch({ url: '/pages/unrecognized-experience/index' });
-  }, [isUnrecognized]);
 
   const taskCacheRuntimeRef = useRef<any>(null);
   if (!taskCacheRuntimeRef.current) {
@@ -90,10 +86,9 @@ export default function QuestionBankPage() {
     persist(await Promise.all(tasks.map(refreshTask)));
   };
   useEffect(() => {
-    if (isUnrecognized) return;
     loadQuestions();
     if (!useLimitedProjection) refreshAll();
-  }, [isUnrecognized, useLimitedProjection]);
+  }, [useLimitedProjection]);
   useEffect(() => {
     const current = taskCacheRuntime.snapshot();
     if (current.scopeKey !== taskState.scopeKey) setTaskState(current);
@@ -158,7 +153,6 @@ export default function QuestionBankPage() {
   };
 
   const stateText = previewState === 'loading' ? '\u6b63\u5728\u52a0\u8f7d\u9898\u76ee' : previewState === 'empty' ? '\u4e91\u7aef\u6682\u65e0\u53ef\u7528\u9898\u76ee' : previewState === 'forbidden' ? '\u5f53\u524d\u8d26\u53f7\u65e0\u6743\u8bfb\u53d6\u9898\u5e93' : '\u79bb\u7ebf\u6216\u4e91\u7aef\u4e0d\u53ef\u8fbe';
-  if (isUnrecognized) return <View className='question-bank-page'><View className='preview-card'><Text className='preview-title'>{'\u6b63\u5728\u8fdb\u5165\u4f53\u9a8c\u9898\u5e93'}</Text></View></View>;
   if (useLimitedProjection) return <View className='question-bank-page'>
     <View className='hero-card'><Text className='hero-title'>{isVisitor ? '\u8bbf\u5ba2\u9898\u76ee\u9884\u89c8' : '\u9898\u76ee\u9884\u89c8'}</Text><Text className='hero-subtitle'>{'\u9898\u5e93\u6587\u5b57\u9884\u89c8\u7531\u4e91\u7aef\u6743\u5a01\u63d0\u4f9b'}</Text></View>
     <View className='preview-card'><View className='preview-header'><Text className='preview-title'>{'\u9898\u76ee\u9884\u89c8'}</Text><Button className='preview-refresh' onClick={loadQuestions}>{'\u5237\u65b0'}</Button></View>

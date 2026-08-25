@@ -47,7 +47,7 @@ async function initApp(startupSession: any, authSessionRuntime: any) {
   const [
     { fetchPermissions },
     { clearBusinessCache, setBusinessCacheIdentity },
-    { isUnrecognizedIdentity, isVisitorIdentity },
+    { isVisitorIdentity },
   ] = await Promise.all([
     import('./utils/permission'),
     import('./utils/storage'),
@@ -55,9 +55,7 @@ async function initApp(startupSession: any, authSessionRuntime: any) {
   ]);
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
-  const isLimitedIdentity = (identity: any) => (
-    isUnrecognizedIdentity(identity) || isVisitorIdentity(identity)
-  );
+  const isLimitedIdentity = (identity: any) => isVisitorIdentity(identity);
   if (isLimitedIdentity(startupSession.identity)) {
     clearBusinessCache();
     return;

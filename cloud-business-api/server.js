@@ -16,14 +16,18 @@ const { createBusinessRoomLifecycleMutations } = require('./src/businessRoomLife
 const { createBusinessCourseLifecycleMutations } = require('./src/businessCourseLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
+const { createMiniappRoleApplicationService } = require('./src/miniappRoleApplicationService');
 const { selectDesktopBusinessAccount, desktopSessionRoles } = require('./src/desktopBusinessAccountResolver');
 const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccountRepository');
+const { createMiniappRoleApplicationRepository } = require('./src/miniappRoleApplicationRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
 const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
+const { createDesktopTeacherSelfRegistrationService } = require('./src/desktopTeacherSelfRegistrationService');
+const { createDesktopTeacherSelfRegistrationRepository } = require('./src/desktopTeacherSelfRegistrationRepository');
 const { createDesktopRegistrationPgAdapter } = require('./src/desktopRegistrationPgAdapter');
 const { resolveRuntimeDatabaseUser } = require('./src/runtimeDatabaseRole');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
@@ -254,6 +258,13 @@ function createDesktopRegistrationFromEnvironment() {
     passwordIdentity: desktopPasswordIdentity,
     issueRegistrationTicket: input => registration.issueVerificationForVerifiedAccount(input),
   });
+  const desktopTeacherSelfRegistration = createDesktopTeacherSelfRegistrationService({
+    tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
+    inspectVerificationToken: token => registration.inspectVerificationToken(token),
+    registerTeacher: createDesktopTeacherSelfRegistrationRepository({
+      query: (text, values) => writerPool.query(text, values),
+    }).registerTeacher,
+  });
   const canonicalWechatIdentity = createCanonicalWechatIdentityService({
     wechatVerifier: createWechatIdentityVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
     contactHash: (type, value) => verificationEvidenceHash(process.env.CLOUD_IDENTITY_PHONE_PEPPER, `canonical-${type}`, value),
@@ -310,6 +321,7 @@ function createDesktopRegistrationFromEnvironment() {
   return {
     registration,
     desktopPasswordAuthentication,
+    desktopTeacherSelfRegistration,
     canonicalAccount,
     canonicalWechatIdentity,
     accountRepository,
@@ -345,6 +357,17 @@ function createMiniappCloudAccountFromEnvironment(desktopRuntime) {
 
 const desktopRuntime = createDesktopRegistrationFromEnvironment();
 const miniappCloudAccount = createMiniappCloudAccountFromEnvironment(desktopRuntime);
+const miniappRoleApplications = miniappCloudAccount
+  ? createMiniappRoleApplicationService({
+    now: () => new Date(),
+    randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
+    cloudAccount: miniappCloudAccount,
+    repository: createMiniappRoleApplicationRepository({
+      query: (text, values) => pool.query(text, values),
+      tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
+    }),
+  })
+  : null;
 const miniappArtifactDeliveries = createMiniappArtifactDeliveryRepository({
   query: (text, values) => pool.query(text, values),
 });
@@ -410,8 +433,10 @@ const app = createCloudBusinessApp({
   businessRoomLifecycleMutations: desktopRuntime?.businessRoomLifecycleMutations || null,
   businessCourseLifecycleMutations: desktopRuntime?.businessCourseLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
+  desktopTeacherSelfRegistration: desktopRuntime?.desktopTeacherSelfRegistration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
   miniappCloudAccount,
+  miniappRoleApplications,
   miniappArtifactDeliveries,
   personalAssetImports,
   storageAgent,

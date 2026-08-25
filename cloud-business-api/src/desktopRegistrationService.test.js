@@ -142,13 +142,10 @@ const service = createCloudDesktopRegistrationService({
   const pendingStarted = await pendingService.begin({ phoneCode: 'verified-phone-code' });
   const pendingTicket = pendingService.inspectVerificationToken(pendingStarted.verificationToken);
   const pendingProof = crypto.sign(null, Buffer.from(pendingTicket.challenge, 'utf8'), privateKey).toString('base64url');
-  const pendingRegistration = await pendingService.register({
+  await assert.rejects(() => pendingService.register({
     verificationToken: pendingStarted.verificationToken, installationId: 'installation-pending', installationPublicKey: publicKey, deviceProof: pendingProof, idempotencyKey: 'registration-pending',
-  });
-  assert.deepStrictEqual(pendingRegistration.offlineLease.eligibleRoles, ['pending']);
-  assert.strictEqual(pendingRegistration.offlineLease.activeRole, 'pending');
-  assert.deepStrictEqual(pendingRegistration.offlineLease.scope, { kind: 'pending' },
-    'a newly verified account without a role grant must register safely as pending rather than fail or gain teaching access');
+  }), error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
+  'a no-role account must not receive a desktop lease before teacher registration');
 
   console.log('cloud desktop registration service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

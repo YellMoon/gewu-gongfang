@@ -84,6 +84,28 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['enrollFromVerificationTicket', { verificationToken: 'already-verified-ticket', loginName: 'teacher.ticket', password: 'ticket scoped correct password' }],
     ['verify', { loginType: 'account_name', login: 'teacher.a', password: 'correct password' }],
   ]);
+  const teacherRegistrationCalls = [];
+  const desktopTeacherSelfRegistration = {
+    register: async input => {
+      teacherRegistrationCalls.push(input);
+      return { teacherId: 'teacher-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false };
+    },
+  };
+  const teacherRegistration = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, desktopTeacherSelfRegistration,
+  }), '/api/desktop/teacher-self-registration', {
+    method: 'POST', body: { verificationToken: 'ticket-1', name: 'Teacher One', subject: null },
+  });
+  assert.strictEqual(teacherRegistration.status, 201);
+  assert.deepStrictEqual(teacherRegistration.body, { ok: true, teacherId: 'teacher-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false });
+  assert.deepStrictEqual(teacherRegistrationCalls, [{ verificationToken: 'ticket-1', name: 'Teacher One', subject: null }]);
+  const malformedTeacherRegistration = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, desktopTeacherSelfRegistration,
+  }), '/api/desktop/teacher-self-registration', {
+    method: 'POST', body: { verificationToken: 'ticket-1', name: 'Teacher One' },
+  });
+  assert.strictEqual(malformedTeacherRegistration.status, 400);
+  assert.deepStrictEqual(malformedTeacherRegistration.body, { ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_INVALID' });
   const registration = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/online-registration', { method: 'POST', body: { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' } });
   assert.strictEqual(registration.status, 200);
   assert.deepStrictEqual(registration.body, { ok: true, receiptId: 'receipt-1', sessionId: 'session-1', replayed: false, sessionToken: 'eyJ2IjoxfQ.signature', offlineLease: { id: 'lease-1' } });
@@ -99,34 +121,53 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       if (input.token !== 'miniapp-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
       return { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] };
     },
-    pendingAccounts: async input => {
-      if (input.token !== 'miniapp-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
-      return [{ accountId: 'miniapp-account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }];
-    },
-    assignRole: async input => {
-      if (input.token !== 'miniapp-ticket.signature' || input.accountId !== 'miniapp-account-pending' || input.role !== 'teacher' || input.profileId !== 'teacher-1' || input.studentRelationship !== null) throw Object.assign(new Error('rejected'), { code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
-      return { accountId: input.accountId, status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: input.profileId } };
-    },
   };
   const miniappLogin = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-login', { method: 'POST', body: { loginCode: 'miniapp-login-proof', phoneCode: 'miniapp-proof' } });
   assert.strictEqual(miniappLogin.status, 200);
   assert.deepStrictEqual(miniappLogin.body, { ok: true, token: 'miniapp-ticket.signature', identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] } });
-  const pendingAccounts = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
-  assert.strictEqual(pendingAccounts.status, 200);
-  assert.deepStrictEqual(pendingAccounts.body, { ok: true, accounts: [{ accountId: 'miniapp-account-pending', status: 'pending_authorization', createdAt: '2026-08-22T08:00:00.000Z' }] });
-  const profileQueries = [];
-  const teacherProfiles = await request(createCloudBusinessApp({
-    query: async (text, values) => { profileQueries.push([text, values]); return { rows: [{ id: 'teacher-1', name: 'Teacher One' }] }; }, miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
-  }), '/api/miniapp/business-profiles?type=teacher', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
-  assert.strictEqual(teacherProfiles.status, 200);
-  assert.deepStrictEqual(teacherProfiles.body, { ok: true, profiles: [{ id: 'teacher-1', name: 'Teacher One' }] });
-  assert.deepStrictEqual(profileQueries[0][1], ['default']);
-  assert.ok(profileQueries[0][0].includes('FROM business.teachers') && profileQueries[0][0].includes('legacy_deleted=false'), 'profile choices must come from active migrated profiles only');
-  const assignedAccount = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
+  const roleApplications = {
+    mine: async ({ token }) => {
+      if (token !== 'visitor-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED' });
+      return { state: 'not_submitted', application: null };
+    },
+    submit: async input => {
+      assert.deepStrictEqual(input, {
+        token: 'visitor-ticket.signature', idempotencyKey: 'role-application-visitor-1',
+        requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1',
+      });
+      return { state: 'submitted', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' } };
+    },
+    listSubmitted: async ({ token }) => {
+      if (token !== 'super-admin-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED' });
+      return { applications: [{ applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' }] };
+    },
+    review: async input => {
+      assert.deepStrictEqual(input, { token: 'super-admin-ticket.signature', applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1' });
+      return { state: 'approved', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'approved', submittedAt: '2026-08-26T08:00:00.000Z', reviewedAt: '2026-08-26T08:05:00.000Z', reviewedByAccountId: 'super-admin-1', profileId: 'teacher-1' } };
+    },
+  };
+  const visitorApplications = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/me', { headers: { authorization: 'Bearer visitor-ticket.signature' } });
+  assert.strictEqual(visitorApplications.status, 200);
+  assert.deepStrictEqual(visitorApplications.body, { ok: true, state: 'not_submitted', application: null });
+  const submittedApplication = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications', {
+    method: 'POST', headers: { authorization: 'Bearer visitor-ticket.signature', 'x-idempotency-key': 'role-application-visitor-1' }, body: { requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1' },
+  });
+  assert.strictEqual(submittedApplication.status, 201);
+  assert.strictEqual(submittedApplication.body.ok, true);
+  const pendingApplications = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/review/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
+  assert.strictEqual(pendingApplications.status, 200);
+  assert.strictEqual(pendingApplications.body.applications.length, 1);
+  const reviewedApplication = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/role_application_0001/review', {
+    method: 'POST', headers: { authorization: 'Bearer super-admin-ticket.signature' }, body: { decision: 'approved', profileId: 'teacher-1' },
+  });
+  assert.strictEqual(reviewedApplication.status, 200);
+  assert.strictEqual(reviewedApplication.body.state, 'approved');
+  const retiredDirectGrant = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
     method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: { role: 'teacher', profileId: 'teacher-1', studentRelationship: null },
   });
-  assert.strictEqual(assignedAccount.status, 200);
-  assert.deepStrictEqual(assignedAccount.body, { ok: true, account: { accountId: 'miniapp-account-pending', status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-1' } } });
+  assert.strictEqual(retiredDirectGrant.status, 404, 'a miniapp session must not retain a direct role-grant route');
+  const retiredPendingQueue = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
+  assert.strictEqual(retiredPendingQueue.status, 404, 'a visitor must not be exposed as a pending-account queue entry');
   const miniappBusiness = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, businessTenantId: 'default',
   }), '/api/business/schedules', { headers: { authorization: 'Bearer miniapp-ticket.signature' } });
