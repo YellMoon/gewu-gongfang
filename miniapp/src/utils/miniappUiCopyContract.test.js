@@ -12,6 +12,9 @@ const accountBanner = display(read('miniapp/src/components/AccountStatusBanner.t
 const settingsPage = display(read('miniapp/src/pages/settings/index.tsx'));
 const questionBankPage = display(read('miniapp/src/pages/question-bank/index.tsx'));
 const questionBankStyles = read('miniapp/src/pages/question-bank/index.scss');
+const homePage = display(read('miniapp/src/pages/index/index.tsx'));
+const forbiddenPage = display(read('miniapp/src/pages/forbidden/index.tsx'));
+const scheduleEditConfig = display(read('miniapp/src/pages/schedule/edit/index.config.ts'));
 const appConfig = read('miniapp/src/app.config.ts');
 
 const retiredTerms = [
@@ -44,6 +47,12 @@ assert.ok(settingsPage.includes(String.fromCharCode(20808, 21019, 24314, 26723, 
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
 assert.ok(questionBankPage.includes('disabled={Boolean(submitting) || selectedIds.length === 0}'), 'question-bank exports must reject an empty selection before a cloud task is created');
 assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank empty-selection actions must have a visible disabled state');
+
+assert.ok(!forbiddenPage.includes('\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458'), 'the access boundary must not imply a retired ordinary-administrator role');
+assert.ok(forbiddenPage.includes('\u5f53\u524d\u8d26\u53f7\u6682\u4e0d\u80fd\u4f7f\u7528\u6b64\u529f\u80fd'), 'the access boundary must give the user a neutral, actionable explanation');
+assert.ok(!homePage.includes('\u7ef4\u62a4\u5b66\u5458\u4e0e\u8bfe\u7a0b\u5173\u7cfb'), 'read-only miniapp shortcuts must not promise student maintenance');
+assert.ok(homePage.includes('\u5b66\u751f\u8d44\u6599') && homePage.includes('\u8bfe\u7a0b\u8d44\u6599'), 'read-only miniapp shortcuts must name the information they show');
+assert.ok(scheduleEditConfig.includes('\u6392\u8bfe\u8bf4\u660e'), 'the read-only scheduling boundary must not be titled as schedule creation');
 
 for (const removedRoute of [
   'pages/admin/users/index',

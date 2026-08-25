@@ -55,11 +55,11 @@ const MODULE_CONFIG: Record<string, { mark: string; tone: string; pages: string;
   assets: { mark: '账', tone: 'amber', pages: '/pages/assets/index', action: '财务导入与统计' },
 };
 
-const ADMIN_SHORTCUTS = [
-  { mark: '生', label: '学生管理', desc: '维护学员与课程关系', url: '/pages/students/index' },
-  { mark: '课', label: '课程管理', desc: '课程、班型与收费', url: '/pages/courses/index' },
-  { mark: '缴', label: '缴费记录', desc: '付款与课消核对', url: '/pages/payments/index' },
-  { mark: '统', label: '数据统计', desc: '收入、课时和趋势', url: '/pages/stats/index' },
+const STAFF_SHORTCUTS = [
+  { mark: '生', label: '学生资料', desc: '查看学生与课程信息', url: '/pages/students/index' },
+  { mark: '课', label: '课程资料', desc: '查看课程、班型与收费', url: '/pages/courses/index' },
+  { mark: '缴', label: '缴费记录', desc: '查看付款与课消记录', url: '/pages/payments/index' },
+  { mark: '统', label: '数据统计', desc: '查看收入、课时和趋势', url: '/pages/stats/index' },
 ];
 
 const STUDENT_SHORTCUTS = [
@@ -268,9 +268,9 @@ export default function Index() {
   };
 
   const isStudent = user?.user_type === 'student';
-  const showAdminShortcuts = access.modules.includes('scheduling') && !['student', 'visitor'].includes(access.role);
+  const showStaffShortcuts = access.modules.includes('scheduling') && !['student', 'visitor'].includes(access.role);
   const roleLabel = user ? getMiniappHomeRoleLabel(user.user_type) : '未登录';
-  const greeting = isStudent ? '学习面板' : '运营面板';
+  const greeting = user?.user_type === "super_admin" ? "运营面板" : isStudent ? "学习面板" : "教学面板";
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
   const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';
   const visitor = isVisitorIdentity(user);
@@ -279,7 +279,7 @@ export default function Index() {
       .filter((mod) => MODULE_CONFIG[mod.id])
       .map((mod) => ({ ...mod, config: MODULE_CONFIG[mod.id] }))
   ), [modules]);
-  const shortcuts = showAdminShortcuts ? ADMIN_SHORTCUTS : STUDENT_SHORTCUTS;
+  const shortcuts = showStaffShortcuts ? STAFF_SHORTCUTS : STUDENT_SHORTCUTS;
 
   if (visitor && user) {
     return (
