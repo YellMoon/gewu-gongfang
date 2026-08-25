@@ -201,7 +201,7 @@ function desktopCommand(value) {
 
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles) || typeof value.accountId !== 'string' || !value.accountId.trim()) throw failure('CLOUD_QUESTION_ACCESS_DENIED');
-  if (!value.roles.includes('super_admin') && !value.roles.includes('admin') && !value.roles.includes('teacher')) throw failure('CLOUD_QUESTION_ACCESS_DENIED');
+  if (!value.roles.includes('super_admin') && !value.roles.includes('teacher')) throw failure('CLOUD_QUESTION_ACCESS_DENIED');
   return { accountId: value.accountId, roles: value.roles };
 }
 

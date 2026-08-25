@@ -16,7 +16,7 @@ const repository = createPersonalAssetImportRepository({
 async function main() {
   const receipt = await repository.import({
     tenantId: 'default',
-    actor: { accountId: 'admin-1', roles: ['admin'] },
+    actor: { accountId: 'super-admin-1', roles: ['super_admin'] },
     idempotencyKey: 'asset-import-1',
     records: [
       { date: '2026-08-01', type: 'income', amount: '88.50', category: 'Tuition', note: 'August' },
@@ -29,14 +29,18 @@ async function main() {
   assert.ok(queryCalls[0].text.includes('business.personal_asset_categories'), 'categories must be cloud-owned');
   assert.ok(queryCalls[0].text.includes('business.personal_asset_records'), 'records must be cloud-owned');
   assert.ok(queryCalls[0].text.includes('ON CONFLICT (tenant_id,account_id,idempotency_key)'), 'retries must be idempotent per account');
-  assert.deepStrictEqual(queryCalls[0].values.slice(0, 4), ['default', 'admin-1', 'asset-import-1', 'asset_import_12345678']);
+  assert.deepStrictEqual(queryCalls[0].values.slice(0, 4), ['default', 'super-admin-1', 'asset-import-1', 'asset_import_12345678']);
   await assert.rejects(
     () => repository.import({ tenantId: 'default', actor: { accountId: 'student-1', roles: ['student'] }, idempotencyKey: 'asset-import-2', records: [{ date: '2026-08-01', type: 'income', amount: 1, category: 'Tuition', note: '' }] }),
     /CLOUD_PERSONAL_ASSET_ACCESS_DENIED/,
   );
   await assert.rejects(
-    () => repository.import({ tenantId: 'default', actor: { accountId: 'admin-1', roles: ['admin'] }, idempotencyKey: 'asset-import-3', records: [{ date: 'not-a-date', type: 'income', amount: 1, category: 'Tuition', note: '' }] }),
+    () => repository.import({ tenantId: 'default', actor: { accountId: 'super-admin-1', roles: ['super_admin'] }, idempotencyKey: 'asset-import-3', records: [{ date: 'not-a-date', type: 'income', amount: 1, category: 'Tuition', note: '' }] }),
     /CLOUD_PERSONAL_ASSET_INPUT_INVALID/,
+  );
+  await assert.rejects(
+    () => repository.import({ tenantId: 'default', actor: { accountId: 'retired-admin-1', roles: ['admin'] }, idempotencyKey: 'asset-import-4', records: [{ date: '2026-08-03', type: 'income', amount: 1, category: 'Tuition', note: '' }] }),
+    /CLOUD_PERSONAL_ASSET_ACCESS_DENIED/,
   );
   console.log('cloud personal asset import repository checks passed');
 }

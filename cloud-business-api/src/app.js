@@ -330,7 +330,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function miniappProjectionScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
-    if (context.roles.includes('super_admin') || context.roles.includes('admin')) return { role: 'manager', profileId: null, accountId: context.accountId };
+    if (context.roles.includes('super_admin')) return { role: 'manager', profileId: null, accountId: context.accountId };
     const profile = context.profile && typeof context.profile === 'object' ? context.profile : null;
     if (context.roles.includes('teacher')) {
       const profileId = profile?.type === 'teacher' ? profile.id : context.teacherId;
@@ -525,7 +525,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!questionImportTasks || !storageAgentKeyFingerprint || !storageAgentPublicKey || businessTenantId === null) return businessUnavailable(response);
     try {
       const actor = await desktopQuestionContext(request);
-      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
       response.json({ ok: true, agentPublicKey: storageAgentPublicKey, agentKeyFingerprint: storageAgentKeyFingerprint });
     } catch (error) {
       questionImportFailure(response, error);
@@ -588,7 +588,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!encryptedStorageRelay || !storageAgentKeyFingerprint || !storageAgentPublicKey || businessTenantId === null) return businessUnavailable(response);
     try {
       const actor = await desktopQuestionContext(request);
-      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
       response.json({ ok: true, agentPublicKey: storageAgentPublicKey, agentKeyFingerprint: storageAgentKeyFingerprint });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
@@ -605,7 +605,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!body || !ciphertext || body.agentKeyFingerprint !== storageAgentKeyFingerprint) return businessInputInvalid(response);
     try {
       const actor = await desktopQuestionContext(request);
-      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
       const relay = await encryptedStorageRelay.create({
         tenantId: businessTenantId, actorAccountId: actor.accountId, questionId: body.questionId,
         assetId: body.assetId, taskId: body.taskId, objectId: body.objectId, objectVersion: body.objectVersion,
@@ -625,7 +625,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!/^task_[A-Za-z0-9_-]{8,128}$/.test(taskId)) return businessInputInvalid(response);
     try {
       const actor = await desktopQuestionContext(request);
-      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
       const result = await query(
         `SELECT task.task_id AS "taskId",asset.id AS "assetId",task.state AS "taskState",asset.state AS "assetState",receipt.verified_at AS "verifiedAt"
            FROM business.storage_object_tasks task
@@ -777,7 +777,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!body || !['paper-export-word', 'paper-export-pdf'].includes(body.taskType) || !idempotencyKey || idempotencyKey.length > 256) return businessInputInvalid(response);
     try {
       const actor = await miniappBusinessContext(request);
-      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
       const task = await paperExportTasks.create({
         tenantId: businessTenantId, actor, idempotencyKey, taskType: body.taskType, request: body.request,
       });

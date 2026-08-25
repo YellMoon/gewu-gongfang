@@ -48,7 +48,7 @@ function requestHash(value) {
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles)) throw failure('CLOUD_QUESTION_IMPORT_ACCESS_DENIED');
   const accountId = text(value.accountId, 512);
-  if (!value.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) throw failure('CLOUD_QUESTION_IMPORT_ACCESS_DENIED');
+  if (!value.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw failure('CLOUD_QUESTION_IMPORT_ACCESS_DENIED');
   return { accountId, roles: value.roles.slice() };
 }
 

@@ -27,7 +27,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   const miniappCloudAccount = {
     login: async () => { throw new Error('not used'); },
     context: async ({ token }) => {
-      if (token === 'miniapp-ticket.signature') return { accountId: 'miniapp-admin-1', status: 'active', roles: ['admin'], profile: null };
+      if (token === 'miniapp-ticket.signature') return { accountId: 'miniapp-super-admin-1', status: 'active', roles: ['super_admin'], profile: null };
       if (token === 'miniapp-student.signature') return { accountId: 'miniapp-student-1', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } };
       throw new Error('rejected');
     },
@@ -55,7 +55,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   const previews = await request(app, '/api/business/miniapp-question-previews', { headers });
   assert.strictEqual(previews.status, 200);
   assert.deepStrictEqual(previews.body, { ok: true, questions: [{ id: 'q-1', subject: 'physics', type: 'single_choice', stemPreview: 'Visible stem', status: 'published' }] });
-  assert.deepStrictEqual(questionCalls[0], { tenantId: 'default', actor: { accountId: 'miniapp-admin-1', status: 'active', roles: ['admin'], profile: null }, limit: 200 });
+  assert.deepStrictEqual(questionCalls[0], { tenantId: 'default', actor: { accountId: 'miniapp-super-admin-1', status: 'active', roles: ['super_admin'], profile: null }, limit: 200 });
 
   const studentPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-student.signature' } });
   assert.strictEqual(studentPreviews.status, 200);
@@ -67,7 +67,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   });
   assert.strictEqual(created.status, 202);
   assert.strictEqual(paperCalls.length, 1);
-  assert.strictEqual(paperCalls[0].actor.accountId, 'miniapp-admin-1');
+  assert.strictEqual(paperCalls[0].actor.accountId, 'miniapp-super-admin-1');
 
   const studentExport = await request(app, '/api/business/miniapp-paper-export-tasks', {
     method: 'POST', headers: { authorization: 'Bearer miniapp-student.signature', 'x-idempotency-key': 'miniapp-student-paper' },

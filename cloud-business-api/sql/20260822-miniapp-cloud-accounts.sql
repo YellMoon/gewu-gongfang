@@ -10,7 +10,7 @@ CREATE TABLE business.miniapp_cloud_accounts (
 
 CREATE TABLE business.miniapp_cloud_role_grants (
   account_id text NOT NULL REFERENCES business.miniapp_cloud_accounts(account_id),
-  role text NOT NULL CHECK (role IN ('super_admin','admin','teacher','student')),
+  role text NOT NULL CHECK (role IN ('super_admin','teacher','student')),
   status text NOT NULL CHECK (status IN ('active','revoked')),
   created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),

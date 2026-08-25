@@ -7,7 +7,7 @@ ALTER TABLE business.miniapp_cloud_role_grants
 ALTER TABLE business.miniapp_cloud_role_grants
   ADD CONSTRAINT miniapp_cloud_role_grants_profile_check CHECK (
     (role IN ('teacher','student') AND profile_type=role AND profile_id IS NOT NULL AND profile_id=btrim(profile_id) AND profile_id <> '')
-    OR (role IN ('super_admin','admin') AND profile_type IS NULL AND profile_id IS NULL)
+    OR (role='super_admin' AND profile_type IS NULL AND profile_id IS NULL)
   );
 
 CREATE UNIQUE INDEX miniapp_cloud_one_active_role

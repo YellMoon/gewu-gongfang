@@ -22,7 +22,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   const miniappCloudAccount = {
     login: async () => { throw new Error('not used'); },
     context: async ({ token }) => {
-      if (token === 'miniapp-ticket.signature') return { accountId: 'account-1', status: 'active', roles: ['admin'], profile: null };
+      if (token === 'miniapp-ticket.signature') return { accountId: 'account-1', status: 'active', roles: ['super_admin'], profile: null };
       throw new Error('rejected');
     },
     pendingAccounts: async () => [],

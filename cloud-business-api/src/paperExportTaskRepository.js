@@ -36,7 +36,7 @@ function requestHash(value) {
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles)) throw failure('CLOUD_PAPER_EXPORT_ACCESS_DENIED');
   const accountId = text(value.accountId, 512);
-  if (!value.roles.some(role => ['super_admin', 'admin', 'teacher'].includes(role))) {
+  if (!value.roles.some(role => ['super_admin', 'teacher'].includes(role))) {
     throw failure('CLOUD_PAPER_EXPORT_ACCESS_DENIED');
   }
   return { accountId, roles: value.roles.slice() };

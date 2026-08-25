@@ -44,7 +44,7 @@ function amount(value) {
 
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles) || typeof value.accountId !== 'string' || !value.accountId.trim()) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
-  if (!value.roles.some(role => ['super_admin', 'admin'].includes(role))) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
+  if (!value.roles.includes('super_admin')) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
   return { accountId: text(value.accountId, 512) };
 }
 
