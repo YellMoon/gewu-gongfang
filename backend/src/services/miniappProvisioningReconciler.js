@@ -190,10 +190,19 @@ function createMiniappProvisioningReconciler({
   }
 
   function pendingIdentity(user) {
-    return active(user)
-      && (user.role === 'pending' || !user.role)
+    if (!active(user) || user.student_id || user.teacher_id) return false;
+
+    // The canonical login service creates an active visitor session immediately
+    // after verified WeChat + phone login.  It remains unbound until a reviewed
+    // application assigns a teacher or student profile, so it is safe to
+    // promote through this reconciler even though login_enabled is already on.
+    if (user.role === 'visitor' && user.identity_kind === 'visitor') return true;
+
+    // Retain recovery support for records produced before visitor became the
+    // canonical unbound identity.  These records were intentionally unable to
+    // log in until the application was provisioned.
+    return (user.role === 'pending' || !user.role)
       && (user.identity_kind === 'unrecognized' || !user.identity_kind)
-      && !user.student_id && !user.teacher_id
       && user.review_status !== 'approved' && !enabled(user.login_enabled);
   }
 

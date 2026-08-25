@@ -22,6 +22,8 @@ assert.ok(source.includes('containsRetiredBindingReviewLoginFlow'),
   'release checks must reject the retired binding-review login flow in source and built output');
 assert.ok(source.includes('containsRetiredWechatBindingReviewUi'),
   'release checks must reject the retired administrator binding-review UI');
+assert.ok(source.includes('retired ordinary-administrator page must stay deleted'),
+  'release checks must keep the retired ordinary-administrator page removed');
 assert.strictEqual(containsRetiredBindingReviewLoginFlow('WECHAT_BINDING_REVIEW_REQUIRED'), true);
 assert.strictEqual(containsRetiredBindingReviewLoginFlow("{ kind: 'pending-binding' }"), true);
 assert.strictEqual(containsRetiredBindingReviewLoginFlow('PHONE_WECHAT_BINDING_CONFLICT'), false);
@@ -32,7 +34,10 @@ assert.doesNotThrow(() => checkRetiredBindingReviewUi());
 assert.strictEqual(containsRemovedReviewClientFlow("identity.token_use === 'review-demo'"), false,
   'legacy-identity rejection markers are security cleanup, not a client login flow');
 assert.strictEqual(containsRemovedReviewClientFlow("reviewDemoApi.login('/api/auth/review-demo')"), true);
-assert.deepStrictEqual(parseProdApiBase(prodSource), { apiBaseUrl: 'https://physicsedu.xyz/scheduling' });
+assert.deepStrictEqual(parseProdApiBase(prodSource), {
+  apiBaseUrl: 'https://physicsedu.xyz/scheduling',
+  cloudBusinessApiBaseUrl: 'https://physicsedu.xyz/cloud-business',
+});
 assert.throws(
   () => parseProdApiBase(prodSource.replaceAll("'https://physicsedu.xyz/scheduling'", "'http://wrong.example.test'")),
   /production miniapp API must use https/,

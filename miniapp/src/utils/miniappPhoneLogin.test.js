@@ -20,7 +20,7 @@ assert.ok(!loginPage.includes('WECHAT_BINDING_REVIEW_REQUIRED') && !loginPage.in
 assert.ok(!loginPage.includes('authApi.reviewDemo'), 'legacy review-code login must be absent');
 assert.ok(!loginPage.includes('reviewCode') && !loginPage.includes('reviewRole'), 'login page must not expose review-code or synthetic-role state');
 assert.ok(apiClient.includes('code?: number | string'), 'API responses should preserve string denial codes');
-assert.ok(apiClient.includes('res.data?.code'), '403 responses should preserve the backend denial code');
+assert.ok(apiClient.includes('(response.data as any)?.code'), 'cloud-login denials should preserve the backend denial code');
 assert.ok(apiClient.includes("'/api/miniapp/cloud-login'"), 'cloud login must run without an old session bearer token');
 assert.ok(apiClient.includes('phoneCode: string | null'), 'the cloud API facade must permit no phone code only for an already-bound identity');
 assert.ok(loginInventory?.verificationStates.includes('wechat-phone-proof'), 'login UI inventory should cover the new cloud phone proof');

@@ -5,6 +5,7 @@ const path = require('path');
 
 const EXPECTED_APPID = 'wx3d570539bbe6ba1b';
 const DEFAULT_API_BASE_URL = 'https://physicsedu.xyz/scheduling';
+const DEFAULT_CLOUD_BUSINESS_API_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 const rootDir = process.cwd();
 const miniappDir = path.join(rootDir, 'miniapp');
 
@@ -30,10 +31,13 @@ function extractDefineFallback(source, constantName) {
 }
 function parseProdApiBase(prodSource) {
   const apiBaseUrl = extractDefineFallback(prodSource, '__API_BASE_URL__');
+  const cloudBusinessApiBaseUrl = extractDefineFallback(prodSource, '__CLOUD_BUSINESS_API_BASE_URL__');
   assertHttpsEndpoint(apiBaseUrl, 'production miniapp API');
+  assertHttpsEndpoint(cloudBusinessApiBaseUrl, 'production cloud business API');
   if (apiBaseUrl !== DEFAULT_API_BASE_URL) fail(`production miniapp API should be ${DEFAULT_API_BASE_URL}`);
+  if (cloudBusinessApiBaseUrl !== DEFAULT_CLOUD_BUSINESS_API_BASE_URL) fail(`production cloud business API should be ${DEFAULT_CLOUD_BUSINESS_API_BASE_URL}`);
   if (String(prodSource).includes('__REVIEW_API_BASE_URL__')) fail('removed review Gateway base must stay absent');
-  return { apiBaseUrl };
+  return { apiBaseUrl, cloudBusinessApiBaseUrl };
 }
 function containsRemovedReviewClientFlow(source) {
   return /reviewDemoApi|\/api\/auth\/review-demo|REVIEW_API_BASE_URL/.test(String(source || ''));
@@ -55,18 +59,18 @@ function checkBuiltDist() {
   if (!Array.isArray(appConfig.pages) || !appConfig.pages.includes('pages/account-application/index')) {
     fail('miniapp/dist/app.json should include pages/account-application/index');
   }
+  if (appConfig.pages.includes('pages/admin/users/index')) fail('retired ordinary-administrator page must stay absent from the built miniapp');
   if (!fs.existsSync(path.join(miniappDir, 'dist', 'app.js'))) fail('miniapp/dist/app.js missing; build the miniapp first');
   const common = readText(path.join(miniappDir, 'dist', 'common.js'), 'miniapp/dist/common.js');
   const loginPage = readText(path.join(miniappDir, 'dist', 'pages', 'login', 'index.js'), 'miniapp/dist/pages/login/index.js');
   const loginStyles = readText(path.join(miniappDir, 'dist', 'pages', 'login', 'index.wxss'), 'miniapp/dist/pages/login/index.wxss');
-  const adminUsersPage = readText(path.join(miniappDir, 'dist', 'pages', 'admin', 'users', 'index.js'), 'miniapp/dist/pages/admin/users/index.js');
-  const adminUsersStyles = readText(path.join(miniappDir, 'dist', 'pages', 'admin', 'users', 'index.wxss'), 'miniapp/dist/pages/admin/users/index.wxss');
-  if (!common.includes(JSON.stringify(DEFAULT_API_BASE_URL))) fail('miniapp/dist/common.js should contain the Backend base');
+  if (fs.existsSync(path.join(miniappDir, 'dist', 'pages', 'admin', 'users', 'index.js'))) fail('retired ordinary-administrator page must not be emitted into miniapp/dist');
+  if (!common.includes(JSON.stringify(DEFAULT_CLOUD_BUSINESS_API_BASE_URL))) fail('miniapp/dist/common.js should contain the cloud business authority base');
   if (containsRemovedReviewClientFlow(common)) fail('built miniapp must not contain the removed review-demo client flow');
   if (containsRetiredBindingReviewLoginFlow(`${common}\n${loginPage}\n${loginStyles}`)) {
     fail('built miniapp must not contain the retired binding-review login flow');
   }
-  if (containsRetiredWechatBindingReviewUi(`${common}\n${adminUsersPage}\n${adminUsersStyles}`)) {
+  if (containsRetiredWechatBindingReviewUi(common)) {
     fail('built miniapp must not contain the retired administrator binding-review UI');
   }
 }
@@ -80,9 +84,9 @@ function checkLoginContract() {
 }
 function checkRetiredBindingReviewUi() {
   const apiSource = readText(path.join(miniappDir, 'src', 'utils', 'api.ts'), 'miniapp API client');
-  const adminUsersSource = readText(path.join(miniappDir, 'src', 'pages', 'admin', 'users', 'index.tsx'), 'miniapp administrator users page');
   const inventorySource = readText(path.join(miniappDir, 'src', 'utils', 'miniappUiPageInventory.js'), 'miniapp UI inventory');
-  if (containsRetiredWechatBindingReviewUi(`${apiSource}\n${adminUsersSource}\n${inventorySource}`)) {
+  if (fs.existsSync(path.join(miniappDir, 'src', 'pages', 'admin', 'users', 'index.tsx'))) fail('retired ordinary-administrator page must stay deleted');
+  if (containsRetiredWechatBindingReviewUi(`${apiSource}\n${inventorySource}`)) {
     fail('miniapp source must not contain the retired administrator binding-review UI');
   }
 }
@@ -90,8 +94,9 @@ function checkApiConfig() {
   const apiSource = readText(path.join(miniappDir, 'src', 'utils', 'api.ts'), 'miniapp/src/utils/api.ts');
   const prodSource = readText(path.join(miniappDir, 'config', 'prod.ts'), 'miniapp/config/prod.ts');
   parseProdApiBase(prodSource);
-  if (!apiSource.includes(DEFAULT_API_BASE_URL)) fail(`miniapp API default should include ${DEFAULT_API_BASE_URL}`);
-  if (/__REVIEW_API_BASE_URL__|reviewDemoApi|\/api\/auth\/review-demo/.test(apiSource)) fail('miniapp API must use only the Backend account flow');
+  if (!apiSource.includes(DEFAULT_CLOUD_BUSINESS_API_BASE_URL)) fail(`miniapp API default should include ${DEFAULT_CLOUD_BUSINESS_API_BASE_URL}`);
+  if (apiSource.includes('__API_BASE_URL__')) fail('miniapp API must not retain the retired local-backend API base');
+  if (/__REVIEW_API_BASE_URL__|reviewDemoApi|\/api\/auth\/review-demo/.test(apiSource)) fail('miniapp API must use only the cloud business account flow');
   if (apiSource.includes('http://39.106.172.132')) fail('miniapp API must not default to a bare HTTP IP');
 }
 function main() {

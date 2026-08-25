@@ -173,7 +173,7 @@ try {
     openid: 'wx-parent',
     phone: '13800138501',
   });
-  assert.strictEqual(oldParentLogin.user.account_state, 'unrecognized');
+  assert.strictEqual(oldParentLogin.user.account_state, 'visitor');
 
   const studentReconciliation = reconciler.reconcileCompletedTask('student-task');
   assert.deepStrictEqual({

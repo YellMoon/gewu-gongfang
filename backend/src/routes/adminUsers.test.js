@@ -84,11 +84,10 @@ async function request(server, method, url, auth, body, headers = {}) {
       assert.strictEqual(unbound.body.identity.subject_scope, 'none');
       assert.strictEqual(unbound.body.identity.subject_binding, 'unbound');
     }
-    const operatorQuestionRead = await request(base, 'GET', '/api/question-bank/questions', token('active-operator'));
-    assert.strictEqual(operatorQuestionRead.status, 200, 'a persisted active operator must pass the real authenticated question-bank read chain');
-    const operatorQuestionWrite = await request(base, 'POST', '/api/question-bank/questions', token('active-operator'), {});
-    assert.notStrictEqual(operatorQuestionWrite.status, 401);
-    assert.notStrictEqual(operatorQuestionWrite.status, 403, 'a persisted active operator must reach the question-bank write handler');
+    const retiredQuestionRead = await request(base, 'GET', '/api/question-bank/questions', token('active-operator'));
+    assert.strictEqual(retiredQuestionRead.status, 404, 'the retired local question-bank endpoint must not become a second read authority');
+    const retiredQuestionWrite = await request(base, 'POST', '/api/question-bank/questions', token('active-operator'), {});
+    assert.strictEqual(retiredQuestionWrite.status, 404, 'the retired local question-bank endpoint must not become a write authority');
 
     const superToken = token('miniapp-admin-13732250653');
     const reviewed = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'admin' });
