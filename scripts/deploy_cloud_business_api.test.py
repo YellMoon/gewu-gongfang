@@ -116,7 +116,10 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_stale_lock_recovery_requires_explicit_mode_and_verification(self):
         stale = {"operationId": "c" * 32, "ageSeconds": 901}
+        pending_manifest = {"targets": {"cloud_business": {"status": "pending"}}}
         with mock.patch.object(module.secrets, "token_hex", return_value="d" * 32), mock.patch.object(
+            module, "validated_release_tag", return_value="8.5.0-8a40b41050be"
+        ), mock.patch.object(
             module, "claim_stale_promotion_lock", return_value=stale
         ) as claim, mock.patch.object(
             module, "reconcile_uncertain_switch"
@@ -134,6 +137,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertEqual(result["ageSeconds"], 901)
 
         with mock.patch.object(module.secrets, "token_hex", return_value="d" * 32), mock.patch.object(
+            module, "validated_release_tag", return_value="8.5.0-8a40b41050be"
+        ), mock.patch.object(
             module, "claim_stale_promotion_lock", return_value=stale
         ), mock.patch.object(
             module, "reconcile_uncertain_switch"
@@ -141,17 +146,51 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module, "verify_current_release_tag"
         ) as verify_tag, mock.patch.object(
             module, "heartbeat_promotion_lock"
-        ) as heartbeat, mock.patch.object(module.deploy, "require_release_manifest") as require_manifest, mock.patch.object(
-            module.deploy, "record_release_receipt"
+        ) as heartbeat, mock.patch.object(
+            module.deploy, "require_release_manifest", return_value=pending_manifest
+        ) as require_manifest, mock.patch.object(module.deploy, "record_release_receipt"
         ) as receipt, mock.patch.object(module, "release_promotion_lock") as release:
             module.recover_promotion_lock("8.5.0-8a40b41050be", "preserve")
         reconcile.assert_not_called()
         verify_tag.assert_called_once_with("8.5.0-8a40b41050be")
         verify.assert_called_once_with("8.5.0")
         heartbeat.assert_called_once_with("d" * 32, "8.5.0-8a40b41050be")
-        require_manifest.assert_called_once_with("cloud_business")
+        require_manifest.assert_called_once_with("cloud_business", allowed_statuses=("pending", "verified"))
         receipt.assert_called_once()
         release.assert_called_once_with("d" * 32)
+
+    def test_preserve_recovery_rejects_a_stale_tag_from_another_commit_before_claim(self):
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="fb899bbdd414"
+        ), mock.patch.object(module, "claim_stale_promotion_lock") as claim:
+            with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
+                module.recover_promotion_lock("8.5.0-deadbee", "preserve")
+        claim.assert_not_called()
+
+    def test_preserve_recovery_accepts_an_existing_verified_receipt_and_only_unlocks(self):
+        tag = "8.5.0-fb899bbdd414"
+        manifest = {
+            "targets": {
+                "cloud_business": {
+                    "status": "verified",
+                    "receipt": {"version": "8.5.0", "verifiedAt": "2026-08-25T00:00:00Z", "evidence": "ok"},
+                }
+            }
+        }
+        stale = {"operationId": "c" * 32, "ageSeconds": 901}
+        with mock.patch.object(module, "validated_release_tag", return_value=tag), mock.patch.object(
+            module.secrets, "token_hex", return_value="d" * 32
+        ), mock.patch.object(module.deploy, "require_release_manifest", return_value=manifest), mock.patch.object(
+            module, "claim_stale_promotion_lock", return_value=stale
+        ), mock.patch.object(module, "verify_current_release_tag"), mock.patch.object(
+            module, "verify_public_health", return_value={"ok": True}
+        ), mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
+            module.deploy, "record_release_receipt"
+        ) as receipt, mock.patch.object(module, "release_promotion_lock") as release:
+            result = module.recover_promotion_lock(tag, "preserve")
+        receipt.assert_not_called()
+        release.assert_called_once_with("d" * 32)
+        self.assertEqual(result["ageSeconds"], 901)
 
     def test_complete_promotion_lifecycle_holds_one_operation_lock(self):
         health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
@@ -164,6 +203,24 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         acquire.assert_called_once_with("b" * 32, "8.5.0-980f2c842eab")
         promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence", "b" * 32)
         release.assert_called_once_with("b" * 32)
+
+    def test_successful_promotion_revalidates_owner_before_health_and_receipt_in_order(self):
+        tag = "8.5.0-fb899bbdd414"
+        operation_id = "e" * 32
+        events = []
+        ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
+            module.deploy, "run", side_effect=lambda *_args, **_kwargs: events.append("switch") or ("", "")
+        ), mock.patch.object(
+            module, "heartbeat_promotion_lock", side_effect=lambda *_args: events.append("heartbeat")
+        ) as heartbeat, mock.patch.object(
+            module, "verify_public_health", side_effect=lambda *_args: events.append("health") or {"ok": True}
+        ), mock.patch.object(
+            module.deploy, "record_release_receipt", side_effect=lambda *_args: events.append("receipt")
+        ):
+            module.promote_candidate_under_lock(tag, "8.5.0", "evidence", operation_id)
+        self.assertEqual(events, ["switch", "heartbeat", "health", "heartbeat", "receipt"])
+        self.assertEqual(heartbeat.call_args_list, [mock.call(operation_id, tag), mock.call(operation_id, tag)])
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:

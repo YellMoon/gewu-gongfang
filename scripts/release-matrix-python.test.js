@@ -37,6 +37,26 @@ try {
   const recorded = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.strictEqual(recorded.targets.cloud_business.status, 'verified');
   assert.strictEqual(recorded.targets.cloud_business.receipt.version, rootPackage.version);
+  const verifiedRecoveryProbe = spawnSync('python', ['-c', [
+    'import scripts.deploy as deploy',
+    "manifest = deploy.require_release_manifest('cloud_business', allowed_statuses=('pending', 'verified'))",
+    'print(manifest["targets"]["cloud_business"]["status"])',
+  ].join('\n')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: manifestPath },
+    encoding: 'utf8',
+  });
+  assert.strictEqual(verifiedRecoveryProbe.status, 0, verifiedRecoveryProbe.stderr || 'verified recovery gate must pass');
+  assert.strictEqual(verifiedRecoveryProbe.stdout.trim(), 'verified');
+  const duplicatePendingProbe = spawnSync('python', ['-c', [
+    'import scripts.deploy as deploy',
+    "deploy.require_release_manifest('cloud_business')",
+  ].join('\n')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: manifestPath },
+    encoding: 'utf8',
+  });
+  assert.notStrictEqual(duplicatePendingProbe.status, 0, 'normal deploy must still reject an already verified target');
   assert.throws(
     () => matrix.recordReceipt(recorded, { target: 'cloud_business', version: rootPackage.version, evidence: 'duplicate' }),
     /already has a verified receipt/i,

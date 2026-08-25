@@ -126,10 +126,13 @@ def current_source_commit():
     return commit
 
 
-def require_release_manifest(target):
+def require_release_manifest(target, allowed_statuses=("pending",)):
     """Fail closed unless this deployment belongs to the one prepared release."""
     if target not in RELEASE_MATRIX_TARGETS:
         raise SystemExit(f"Unknown unified release target: {target}")
+    if (not isinstance(allowed_statuses, tuple) or not allowed_statuses
+            or any(status not in ("pending", "verified") for status in allowed_statuses)):
+        raise SystemExit("Unified release target status policy is invalid")
     if not RELEASE_MATRIX_PATH.is_file():
         raise SystemExit(f"Unified release manifest is required before deploy: {RELEASE_MATRIX_PATH}")
     try:
@@ -157,8 +160,14 @@ def require_release_manifest(target):
     if stale:
         raise SystemExit(f"Unified source version mismatch: {', '.join(stale)}; expected {expected_version}")
     target_state = (manifest.get("targets") or {}).get(target)
-    if not isinstance(target_state, dict) or target_state.get("status") != "pending":
-        raise SystemExit(f"Unified release target {target} is not pending")
+    if not isinstance(target_state, dict) or target_state.get("status") not in allowed_statuses:
+        raise SystemExit(f"Unified release target {target} is not in an allowed state")
+    if target_state.get("status") == "verified":
+        receipt = target_state.get("receipt")
+        if (not isinstance(receipt, dict) or receipt.get("version") != expected_version
+                or not isinstance(receipt.get("verifiedAt"), str) or not receipt.get("verifiedAt")
+                or not isinstance(receipt.get("evidence"), str) or not receipt.get("evidence")):
+            raise SystemExit(f"Unified release target {target} has an invalid verified receipt")
     return manifest
 
 

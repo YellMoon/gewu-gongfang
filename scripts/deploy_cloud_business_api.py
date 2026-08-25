@@ -346,8 +346,10 @@ def heartbeat_promotion_lock(operation_id, tag):
 def recover_promotion_lock(tag, mode):
     if mode not in ("rollback", "preserve"):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    manifest = None
     if mode == "preserve":
-        deploy.require_release_manifest("cloud_business")
+        tag = validated_release_tag(tag)
+        manifest = deploy.require_release_manifest("cloud_business", allowed_statuses=("pending", "verified"))
     recovery_id = secrets.token_hex(16)
     stale = claim_stale_promotion_lock(tag, recovery_id)
     if mode == "rollback":
@@ -356,10 +358,11 @@ def recover_promotion_lock(tag, mode):
         verify_current_release_tag(tag)
         verify_public_health(tag.split("-", 1)[0])
         heartbeat_promotion_lock(recovery_id, tag)
-        deploy.record_release_receipt(
-            "cloud_business",
-            f"recovered promoted cloud business release verified at version {tag.split('-', 1)[0]}",
-        )
+        if manifest["targets"]["cloud_business"]["status"] == "pending":
+            deploy.record_release_receipt(
+                "cloud_business",
+                f"recovered promoted cloud business release verified at version {tag.split('-', 1)[0]}",
+            )
     release_promotion_lock(recovery_id)
     return {"tag": tag, "mode": mode, "ageSeconds": stale["ageSeconds"]}
 
