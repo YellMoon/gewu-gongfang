@@ -40,8 +40,8 @@ for (const role of ['student', 'teacher']) {
 }
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
 assert.ok(
-  appSource.includes("app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter)"),
-  'the raw question-bank router must be mounted behind the subject-bound read guard',
+  !appSource.includes("app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter)"),
+  'the retired local question-bank router must not remain reachable from the desktop backend',
 );
 
 console.log('question bank read access checks passed');

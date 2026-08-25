@@ -9,7 +9,8 @@ const workbench = fs.readFileSync('src/pages/TodayWorkbench.tsx', 'utf8');
 const globalStyles = fs.readFileSync('src/index.css', 'utf8');
 const database = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
 const schema = fs.readFileSync('backend/src/schema.sql', 'utf8');
-const routes = fs.readFileSync('backend/src/routes/questionBank.js', 'utf8');
+const legacyRoutePath = 'backend/src/routes/questionBank.js';
+const cloudQuestionAuthority = fs.readFileSync('cloud-business-api/src/questionAuthorityService.js', 'utf8');
 
 for (const method of [
   'createTaxonomySystem', 'updateTaxonomySystem', 'deleteTaxonomySystem',
@@ -51,10 +52,12 @@ assert.ok(
 assert.ok(localSystemDelete.includes("status: 'pending'"), 'local deletion audit must not claim success before the destructive save completes');
 assert.ok(localSystemDelete.includes("appendTaxonomyDeletionAudit(backupId, 'success'"), 'local deletion audit must record successful completion');
 assert.ok(localSystemDelete.includes("appendTaxonomyDeletionAudit(backupId, 'failed'"), 'local deletion audit must record a failed local transaction');
-assert.ok(routes.includes("router.get('/taxonomies/:systemId/deletion-impact'"));
-assert.ok(routes.includes("router.get('/taxonomies/:systemId/nodes/:nodeId/deletion-impact'"));
-assert.ok(routes.includes("router.get('/taxonomy-deletion-backups'"));
-assert.ok(routes.includes("router.post('/taxonomy-deletion-backups/:backupId/restore'"));
+assert.ok(!fs.existsSync(legacyRoutePath),
+  'the retired local taxonomy router must not remain available beside the cloud authority');
+assert.ok(cloudQuestionAuthority.includes('executeTaxonomyCommand'),
+  'taxonomy changes must be adjudicated by the cloud question authority');
+assert.ok(cloudQuestionAuthority.includes('vnext_delete_question_taxonomy_system_v1'));
+assert.ok(cloudQuestionAuthority.includes('vnext_delete_question_taxonomy_node_v1'));
 for (const table of ['taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_nodes', 'taxonomy_deletion_backups']) {
   assert.ok(schema.includes(`CREATE TABLE IF NOT EXISTS ${table}`));
 }

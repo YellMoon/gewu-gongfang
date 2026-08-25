@@ -7,14 +7,13 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireQuestionBankReadAccess, requireWriteAccess } = require('./middleware/auth');
+const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
 const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
 const HostWebSocketClient = require('./websocket/client');
 
 const authRouter = require('./routes/auth');
-const questionBankRouter = require('./routes/questionBank');
 const opsRouter = require('./routes/ops');
 const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
@@ -358,7 +357,6 @@ function createApp(options = {}) {
   }));
   app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
 
-  app.use('/api/question-bank', optionalAuth, requireQuestionBankReadAccess, requireWriteAccess, questionBankRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
 
   // 閿欒澶勭悊
