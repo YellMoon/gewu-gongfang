@@ -16,7 +16,6 @@ import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, regis
 import { createQuestionRichDocument } from '../types/questionRichContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
-import { getApiBase } from '../utils/apiBase';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import {
   cacheQuestionTrees,
@@ -27,11 +26,9 @@ import {
 } from '../services/questionLocalStore';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
-const { deleteQuestionViaApi } = require('../services/questionDeleteApi');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 
 const Select = AutoCloseSelect as typeof AntSelect;
-const API_BASE = getApiBase('/api/question-bank');
 const QUESTION_PAGE_SIZE = 10;
 const { Text } = Typography;
 
@@ -194,16 +191,6 @@ const QuestionBankEdit: React.FC = () => {
 
   const loadTrash = useCallback(async () => {
     const db = (window as any).dbService;
-    try {
-      const res = await fetch(`${API_BASE}/questions-trash`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setTrashQuestions(data.data.map(normalizeQuestion));
-        return;
-      }
-    } catch (_err) {
-      // use local fallback below
-    }
     setTrashQuestions(db?.getDeletedQuestions?.()?.map(normalizeQuestion) || []);
   }, []);
 
@@ -342,13 +329,8 @@ const QuestionBankEdit: React.FC = () => {
     if (!presentation.enabled) { message.warning(presentation.reason); return; }
     const db = (window as any).dbService;
     let deleted = false;
-    if (question.storage_state === 'host_committed') {
-      try {
-        const session = readDesktopAuthorizationSession();
-        deleted = (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${question.id}`, {
-          token: session.authorization.replace(/^Bearer\s+/i, ''), deviceId: session.authContext.deviceId,
-        })).ok;
-      } catch (_error) { deleted = false; }
+    if (question.storage_state !== 'local_draft') {
+      deleted = Boolean(db?.deleteCloudCachedQuestion?.(question.id));
     } else {
       const session = readDesktopAuthorizationSession();
       deleted = Boolean(db?.deleteQuestion?.(question.id, await verifyNativeQuestionDraft(question.id, session)));
@@ -393,8 +375,8 @@ const QuestionBankEdit: React.FC = () => {
     const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
     const settled = await Promise.allSettled(ids.map(async id => {
       const question = questions.find(item => item.id === id);
-      const ok = question?.storage_state === 'host_committed'
-        ? (await deleteQuestionViaApi(fetch, `${API_BASE}/questions/${id}`, session)).ok
+      const ok = question?.storage_state !== 'local_draft'
+        ? Boolean(db?.deleteCloudCachedQuestion?.(id))
         : Boolean(db?.deleteQuestion?.(id, await verifyNativeQuestionDraft(id, readDesktopAuthorizationSession())));
       if (!ok) throw new Error('DELETE_FAILED');
       if (question?.storage_state === 'local_draft') await removeQuestionLocalRecord(id, deleteContext);
@@ -415,13 +397,7 @@ const QuestionBankEdit: React.FC = () => {
 
   const restoreQuestion = async (question: Question) => {
     const db = (window as any).dbService;
-    try {
-      const res = await fetch(`${API_BASE}/questions/${question.id}/restore`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || '恢复失败');
-    } catch (_err) {
-      db?.restoreQuestion?.(question.id);
-    }
+    db?.restoreQuestion?.(question.id);
     message.success('试题已恢复');
     loadTrash();
     loadData();
@@ -447,15 +423,7 @@ const QuestionBankEdit: React.FC = () => {
         region: values.region ?? q.region ?? '',
         school: values.school ?? q.school ?? '',
       };
-      try {
-        await fetch(`${API_BASE}/questions/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } catch (_err) {
-        db?.updateQuestion?.(id, { ...payload, knowledge_ids: payload.knowledge_point_ids, model_ids: payload.model_point_ids });
-      }
+      db?.updateQuestion?.(id, { ...payload, knowledge_ids: payload.knowledge_point_ids, model_ids: payload.model_point_ids });
     }
     message.success(`已更新 ${selectedRowKeys.length} 道试题标注`);
     setSelectedRowKeys([]);

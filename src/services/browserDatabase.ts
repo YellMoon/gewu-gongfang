@@ -2726,7 +2726,7 @@ class BrowserDatabaseService {
   deleteQuestion(id: string, nativeVerified = false): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
-    if (this.data.questions[idx].storage_state === 'host_committed') return false;
+    if (this.data.questions[idx].storage_state === 'host_committed') return this.deleteCloudCachedQuestion(id);
     if (nativeVerified !== true) return false;
     let userId = '';
     try {
@@ -2754,7 +2754,7 @@ class BrowserDatabaseService {
 
   deleteCloudCachedQuestion(id: string): boolean {
     const idx = this.data.questions.findIndex(q => q.id === id);
-    if (idx === -1 || this.data.questions[idx].storage_state !== 'cloud_cached') return false;
+    if (idx === -1 || !['cloud_cached', 'host_committed'].includes(this.data.questions[idx].storage_state || '')) return false;
     this.data.questions[idx] = this.normalizeQuestionRecord({
       ...this.data.questions[idx],
       deleted: true,
