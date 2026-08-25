@@ -30,13 +30,22 @@ assert.deepStrictEqual(buildRoleApplicationRequest({
 }), {
   requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
 });
+assert.deepStrictEqual(buildRoleApplicationRequest({
+  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: 'New Teacher',
+}), {
+  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: 'New Teacher',
+});
+assert.throws(
+  () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'new', bindingHint: 'family member' }),
+  /family_member.*existing/,
+);
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'operator', profileMode: 'existing', bindingHint: 'profile-1' }),
   /teacher, student, or family_member/,
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'teacher', profileMode: 'create', bindingHint: '' }),
-  /existing/,
+  /existing or new/,
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', bindingHint: 'x'.repeat(129) }),
@@ -62,5 +71,6 @@ for (const retiredTerm of [
 ]) {
   assert.ok(!runtimeSource.includes(retiredTerm), `miniapp role flow must not retain retired authority wording: ${retiredTerm}`);
 }
+assert.ok(runtimeSource.includes('family_member'), 'application copy must include the family-member binding path');
 
 console.log('account application runtime checks passed');

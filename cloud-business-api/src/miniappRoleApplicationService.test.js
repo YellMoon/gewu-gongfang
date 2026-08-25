@@ -73,8 +73,18 @@ const service = createMiniappRoleApplicationService({
     requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', submittedAt: '2026-08-26T08:00:00.000Z',
   }]);
 
+  const newProfileApplication = await service.submit({
+    token: 'visitor-ticket', idempotencyKey: 'role-application-new-teacher-1', requestedIdentity: 'teacher', profileMode: 'new', bindingHint: 'New teacher profile',
+  });
+  assert.strictEqual(newProfileApplication.application.profileMode, 'new');
+  assert.strictEqual(calls.at(-1)[1].profileMode, 'new');
+
   await assert.rejects(
     () => service.submit({ token: 'visitor-ticket', idempotencyKey: 'role-application-family-1', requestedIdentity: 'family_member', profileMode: 'create', bindingHint: '' }),
+    error => error.code === 'CLOUD_ROLE_APPLICATION_INVALID',
+  );
+  await assert.rejects(
+    () => service.submit({ token: 'visitor-ticket', idempotencyKey: 'role-application-family-new-1', requestedIdentity: 'family_member', profileMode: 'new', bindingHint: 'family member' }),
     error => error.code === 'CLOUD_ROLE_APPLICATION_INVALID',
   );
   await assert.rejects(
@@ -86,7 +96,7 @@ const service = createMiniappRoleApplicationService({
     error => error.code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED',
   );
   const pending = await service.listSubmitted({ token: 'super-admin-ticket' });
-  assert.strictEqual(pending.applications.length, 1);
+  assert.strictEqual(pending.applications.length, 2);
   const reviewed = await service.review({
     token: 'super-admin-ticket', applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1',
   });

@@ -21,7 +21,7 @@ function record(row) {
   const bindingHint = row.bindingHint === null ? null : (typeof row.bindingHint === 'string' ? row.bindingHint : undefined);
   const status = text(row.status, 16);
   if (!applicationId || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
-    || profileMode !== 'existing' || bindingHint === undefined || !bindingHint
+    || !['existing', 'new'].includes(profileMode) || (requestedIdentity === 'family_member' && profileMode !== 'existing') || bindingHint === undefined || !bindingHint
     || !['submitted', 'approved', 'rejected'].includes(status)) throw invalid();
   const base = { applicationId, requestedIdentity, profileMode, bindingHint, status, submittedAt: instant(row.submittedAt) };
   if (Object.hasOwn(row, 'reviewedAt')) {
@@ -60,7 +60,8 @@ function createMiniappRoleApplicationRepository({ query, tenantId }) {
     const bindingHint = input?.bindingHint === null ? null : (typeof input?.bindingHint === 'string' && input.bindingHint.length <= 128 ? input.bindingHint : undefined);
     const submittedAt = typeof input?.submittedAt === 'string' && Number.isFinite(Date.parse(input.submittedAt)) ? input.submittedAt : null;
     if (!accountId || !applicationId || !idempotencyKey || !['teacher', 'student', 'family_member'].includes(requestedIdentity)
-      || profileMode !== 'existing' || bindingHint === undefined || !bindingHint || !submittedAt) throw invalid();
+      || !['existing', 'new'].includes(profileMode) || (requestedIdentity === 'family_member' && profileMode !== 'existing')
+      || bindingHint === undefined || !bindingHint || !submittedAt) throw invalid();
     const result = await query(
       `SELECT application_id AS "applicationId",requested_identity AS "requestedIdentity",profile_mode AS "profileMode",binding_hint AS "bindingHint",status,submitted_at AS "submittedAt"
          FROM business.vnext_submit_cloud_role_application_v2($1,$2,$3,$4,$5,$6,$7,$8)`,

@@ -28,7 +28,8 @@ assert.ok(login.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'));
 assert.ok(application.includes('miniappCloudBusinessApi.readRoleApplication'));
 assert.ok(application.includes('miniappCloudBusinessApi.submitRoleApplication'));
 assert.ok(application.includes("'family_member'"));
-assert.ok(application.includes("const profileMode: ProfileMode = 'existing'"));
+assert.ok(application.includes("type ProfileMode = 'existing' | 'new'"));
+assert.ok(application.includes("requestedIdentity === 'family_member'"));
 assert.ok(!application.includes("profileMode: 'create'"));
 
 console.log('miniapp role access policy checks passed');
