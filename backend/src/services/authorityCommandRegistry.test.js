@@ -18,10 +18,6 @@ const roleApplicationService = {
     calls.push({ kind: 'role-reject', input });
     return { applicationId: input.applicationId, status: 'rejected' };
   },
-  grantAdmin(input) {
-    calls.push({ kind: 'role-admin-grant', input });
-    return { userId: input.userId, role: 'admin' };
-  },
 };
 const personalAssetAccountService = {
   create(input) {
@@ -124,23 +120,7 @@ assert.deepStrictEqual(calls.find(call => call.kind === 'role-approve').input, {
   },
   applicationId: 'application-1',
 }, 'a review command is only executed by the authority-host runtime');
-const directAdminGrant = handlers['role-admin.grant.v1']({
-  authorityId: 'authority-1',
-  payload: { userId: 'existing-user-1' },
-}, {
-  scope: { kind: 'super_admin', userId: 'super-1', authorityId: 'authority-1' },
-});
-assert.deepStrictEqual(directAdminGrant, { userId: 'existing-user-1', role: 'admin' });
-assert.deepStrictEqual(calls.find(call => call.kind === 'role-admin-grant').input, {
-  actor: {
-    userId: 'super-1',
-    roles: ['super_admin'],
-    authorityId: 'authority-1',
-    isAuthorityHost: true,
-  },
-  authorityId: 'authority-1',
-  userId: 'existing-user-1',
-}, 'a direct administrator grant must only be executed by the authority-host runtime');
+assert.strictEqual(handlers['role-admin.grant.v1'], undefined, 'retired ordinary-admin grants must not have a command handler');
 
 const asset = handlers['personal-asset-account.create.v1']({
   authorityId: 'authority-1',
@@ -155,8 +135,7 @@ assert.strictEqual(policy({ type: 'schedule.update.v1', scope: { kind: 'student'
 assert.strictEqual(policy({ type: 'role-application.submit.v1', scope: visitorAuthorization.scope }), true);
 assert.strictEqual(policy({ type: 'role-application.review.v1', scope: { kind: 'admin' } }), false);
 assert.strictEqual(policy({ type: 'role-application.review.v1', scope: { kind: 'super_admin' } }), true);
-assert.strictEqual(policy({ type: 'role-admin.grant.v1', scope: { kind: 'admin' } }), false);
-assert.strictEqual(policy({ type: 'role-admin.grant.v1', scope: { kind: 'super_admin' } }), true);
+assert.strictEqual(policy({ type: 'role-admin.grant.v1', scope: { kind: 'super_admin' } }), false);
 assert.strictEqual(policy({ type: 'personal-asset-account.create.v1', scope: { kind: 'student' } }), true);
 assert.strictEqual(policy({ type: 'legacy.raw-sync.v1', scope: adminAuthorization.scope }), false);
 

@@ -5,7 +5,8 @@ import {
 
 export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
-const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
+const DESKTOP_ROLE_SET = new Set(['visitor', 'super_admin', 'teacher', 'student']);
+const PRIVILEGED_ROLES = new Set(['super_admin']);
 
 function identityError(code, cause) {
   const error = new Error(code);
@@ -27,7 +28,7 @@ function dateValue(value) {
 
 function uniqueRoles(value) {
   return Array.isArray(value)
-    ? [...new Set(value.map(role => String(role || '').trim()).filter(Boolean))]
+    ? [...new Set(value.map(role => String(role || '').trim()).filter(role => DESKTOP_ROLE_SET.has(role)))]
     : [];
 }
 
@@ -36,7 +37,6 @@ export function preferredActiveRole(eligibleRoles, requestedRole) {
   if (requestedRole && roles.includes(requestedRole)) return requestedRole;
   if (roles.includes('teacher')) return 'teacher';
   if (roles.includes('student')) return 'student';
-  if (roles.includes('parent')) return 'parent';
   return roles[0] || null;
 }
 
@@ -48,7 +48,7 @@ export function partitionKeyForIdentity(identity = {}) {
   if (activeRole === 'teacher') {
     subjectId = String(identity.teacherId || identity.teacher_id || '').trim() || 'unbound';
   }
-  if (activeRole === 'student' || activeRole === 'parent') {
+  if (activeRole === 'student') {
     subjectId = String(identity.studentId || identity.student_id || '').trim() || 'unbound';
   }
   return `${userId}:${activeRole}:${subjectId}`;
@@ -104,7 +104,7 @@ function validOfflineLease(vaultStatus, now) {
   }
   if (lease.activeRole === 'teacher'
     && String(lease.teacherId || '') !== String(vaultStatus.teacherId || '')) return null;
-  if ((lease.activeRole === 'student' || lease.activeRole === 'parent')
+  if (lease.activeRole === 'student'
     && String(lease.studentId || '') !== String(vaultStatus.studentId || '')) return null;
   return lease;
 }

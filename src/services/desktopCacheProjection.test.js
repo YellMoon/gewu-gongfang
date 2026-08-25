@@ -85,6 +85,8 @@ const assert = require('assert');
   assert.deepStrictEqual(admin.students.map(row => row.id), ['student-self', 'student-other']);
   assert.notStrictEqual(admin.students, source.students);
   assert.notStrictEqual(admin.students[0], source.students[0]);
+  const retiredAdmin = projectDesktopCacheForIdentity(source, { activeRole: 'admin' });
+  assert.deepStrictEqual(retiredAdmin.students, [], 'retired ordinary-admin sessions must not receive the full desktop cache');
 
   const student = projectDesktopCacheForIdentity(source, {
     userId: 'student-human',

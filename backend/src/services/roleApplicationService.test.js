@@ -171,41 +171,6 @@ assert.equal(
   0
 );
 
-assert.throws(
-  () => service.grantAdmin({
-    actor: { userId: 'super-1', roles: ['super_admin'] },
-    authorityId: 'authority-1',
-    userId: 'admin-1',
-  }),
-  error => error.code === 'ROLE_ADMIN_HOST_GRANT_REQUIRED',
-  'admin grant cannot be issued outside the authority host'
-);
-const adminGrant = service.grantAdmin({
-  actor: { userId: 'super-1', roles: ['super_admin'], authorityId: 'authority-1', isAuthorityHost: true },
-  authorityId: 'authority-1',
-  userId: 'admin-1',
-});
-assert.equal(adminGrant.role, 'admin');
-assert.equal(adminGrant.subjectId, null);
-assert.deepStrictEqual(
-  db.prepare(`SELECT actor_user_id,target_user_id,action,after_json
-    FROM authorization_audit_log WHERE action='authority_role_admin_granted'`).get(),
-  {
-    actor_user_id: 'super-1',
-    target_user_id: 'admin-1',
-    action: 'authority_role_admin_granted',
-    after_json: JSON.stringify({ authorityId: 'authority-1', role: 'admin', bindingId: adminGrant.bindingId }),
-  },
-  'a host-superadmin direct grant must leave a durable audit record',
-);
-assert.equal(
-  service.grantAdmin({
-    actor: { userId: 'super-1', roles: ['super_admin'], authorityId: 'authority-1', isAuthorityHost: true },
-    authorityId: 'authority-1',
-    userId: 'admin-1',
-  }).bindingId,
-  adminGrant.bindingId,
-  'host-superadmin direct admin grant is idempotent'
-);
+assert.strictEqual(service.grantAdmin, undefined, 'retired ordinary-admin grants must not be exposed by the role application service');
 
 console.log('roleApplicationService tests passed');

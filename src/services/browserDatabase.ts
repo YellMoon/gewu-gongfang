@@ -571,7 +571,7 @@ class BrowserDatabaseService {
       const existingRaw = migrateLegacyStorageValue(
         localStorage,
         BUSINESS_DATA_SAFETY_BACKUP_KEY,
-        { allowRoles: ['super_admin', 'admin'] }
+        { allowRoles: ['super_admin'] }
       );
       const existing = JSON.parse(existingRaw || '[]');
       const backups = Array.isArray(existing) ? existing : [];

@@ -324,7 +324,7 @@ class DefaultSyncStorage implements SyncStorage {
       const val = migrateLegacyStorageValue(localStorage, 'sync_engine_' + key, {
         allowRoles: ['sync_device_id', 'sync_client_id'].includes(key)
           ? 'all' as any
-          : ['super_admin', 'admin'],
+          : ['super_admin'],
       });
       return val ? JSON.parse(val) : null;
     } catch {

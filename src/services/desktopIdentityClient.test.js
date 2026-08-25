@@ -10,11 +10,14 @@ async function main() {
     canStartBusinessRuntime,
     createDesktopIdentityClient,
     partitionKeyForIdentity,
+    preferredActiveRole,
     resolveDesktopGateState,
   } = await import('./desktopIdentityClient.mjs');
   assert.ok(!source.includes('desktopSessionRelayClient'));
   assert.ok(!source.includes('exchangeDesktopSessionThroughRelay'));
   assert.ok(!source.includes('ensureHostSyncSession'));
+  assert.strictEqual(preferredActiveRole(['admin']), null, 'retired ordinary-admin roles must never become an active desktop role');
+  assert.strictEqual(preferredActiveRole(['parent']), null, 'family members bind to a student and do not become a separate desktop role');
 
   assert.deepStrictEqual(resolveDesktopGateState({ vaultStatus: { state: 'empty' } }), {
     kind: 'registration-required',

@@ -106,7 +106,7 @@ function commonReferences(source, courses, schedules, students) {
 
 export function projectDesktopCacheForIdentity(source = {}, identity = {}) {
   const activeRole = String(identity.activeRole || '').trim();
-  if (activeRole === 'super_admin' || activeRole === 'admin') return clone(source);
+  if (activeRole === 'super_admin') return clone(source);
   const projected = emptyProjection(source);
 
   if (activeRole === 'teacher') {
@@ -143,7 +143,7 @@ export function projectDesktopCacheForIdentity(source = {}, identity = {}) {
     };
   }
 
-  if (activeRole === 'student' || activeRole === 'parent') {
+  if (activeRole === 'student') {
     const studentId = String(identity.studentId || '').trim();
     if (!studentId) return projected;
     const allowedStudentIds = new Set([studentId]);

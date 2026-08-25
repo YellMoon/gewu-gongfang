@@ -272,42 +272,40 @@ async function main() {
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
 
-  const pendingVault = createDesktopIdentityVault({
-    filePath: path.join(workspace, 'pending-desktop-identity-v2.bin'),
+  const legacyRoleVault = createDesktopIdentityVault({
+    filePath: path.join(workspace, 'legacy-role-desktop-identity-v2.bin'),
     safeStorage,
     offlineLeasePublicKey,
     now: () => new Date(clock),
   });
-  const pendingIdentity = pendingVault.beginUnifiedOnlineRegistration({
-    deviceName: 'Pending account desktop',
+  const legacyIdentity = legacyRoleVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Legacy role desktop',
   });
-  const pendingAuthorization = approvedAuthorization(pendingIdentity);
-  pendingAuthorization.id = 'authorization-pending-device';
-  const pendingProfile = {
-    userId: pendingAuthorization.userId,
-    user: { id: pendingAuthorization.userId, name: 'Pending account' },
-    eligibleRoles: ['pending'],
-    activeRole: 'pending',
+  const legacyAuthorization = approvedAuthorization(legacyIdentity);
+  legacyAuthorization.id = 'authorization-legacy-role-device';
+  const legacyProfile = {
+    userId: legacyAuthorization.userId,
+    user: { id: legacyAuthorization.userId, name: 'Legacy role account' },
+    eligibleRoles: ['admin'],
+    activeRole: 'admin',
     teacherId: null,
     studentId: null,
   };
-  const pendingLease = offlineLease();
-  pendingLease.id = 'lease-pending-device';
-  pendingLease.deviceId = pendingIdentity.deviceId;
-  pendingLease.authorizationId = pendingAuthorization.id;
-  pendingLease.eligibleRoles = ['pending'];
-  pendingLease.activeRole = 'pending';
-  pendingLease.teacherId = null;
-  pendingLease.studentId = null;
-  pendingLease.scope = { kind: 'pending' };
-  const pendingCompleted = pendingVault.completeRegistration({
-    password: 'pending-local-password',
-    authorization: pendingAuthorization,
-    profile: pendingProfile,
-    offlineLease: signOfflineLease(pendingLease),
-  });
-  assert.strictEqual(pendingCompleted.activeRole, 'pending');
-  assert.deepStrictEqual(pendingCompleted.eligibleRoles, ['pending']);
+  const legacyLease = offlineLease();
+  legacyLease.id = 'lease-legacy-role-device';
+  legacyLease.deviceId = legacyIdentity.deviceId;
+  legacyLease.authorizationId = legacyAuthorization.id;
+  legacyLease.eligibleRoles = ['admin'];
+  legacyLease.activeRole = 'admin';
+  legacyLease.teacherId = null;
+  legacyLease.studentId = null;
+  legacyLease.scope = { kind: 'admin' };
+  assert.throws(() => legacyRoleVault.completeRegistration({
+    password: 'legacy-local-password',
+    authorization: legacyAuthorization,
+    profile: legacyProfile,
+    offlineLease: signOfflineLease(legacyLease),
+  }), error => error?.code === 'DESKTOP_IDENTITY_PROFILE_INVALID');
   const authoritySocketHandshake = vault.signAuthorityHttpRequest({
     method: 'GET',
     path: '/ws/authority',

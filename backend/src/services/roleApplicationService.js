@@ -248,42 +248,8 @@ function createRoleApplicationService({
     return Object.freeze(rows.map(rowApplication));
   }
 
-  const grantAdminTransaction = db.transaction(({ actor, authorityId, userId }) => {
-    const authority = requiredText(authorityId, 'ROLE_APPLICATION_AUTHORITY_REQUIRED');
-    const user = requiredText(userId, 'ROLE_APPLICATION_USER_REQUIRED');
-    const reviewer = requireHostSuperAdmin(actor, authority, {
-      forbiddenCode: 'ROLE_ADMIN_GRANT_FORBIDDEN',
-      hostCode: 'ROLE_ADMIN_HOST_GRANT_REQUIRED',
-    });
-    const account = findAccount.get(authority, user);
-    if (!account || account.status !== 'active') throw roleApplicationError('ROLE_ADMIN_ACCOUNT_INACTIVE', 403);
-    const active = findActiveGrant.get(authority, user, 'admin');
-    if (active) return rowGrant(active);
-    if (!insertAuthorizationAudit) {
-      throw roleApplicationError('ROLE_APPLICATION_AUDIT_TABLE_REQUIRED', 500);
-    }
-    const timestamp = currentTime();
-    const bindingId = requiredText(createId('role-binding'), 'ROLE_BINDING_ID_INVALID');
-    db.prepare(`INSERT INTO authority_role_bindings
-      (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
-      VALUES(?,?,?,'admin',NULL,NULL,'active',1,?,?,?,NULL)`)
-      .run(bindingId, authority, user, reviewer, timestamp, timestamp);
-    const grant = rowGrant(findActiveGrant.get(authority, user, 'admin'));
-    insertAuthorizationAudit.run(
-      requiredText(createId('authorization-audit'), 'ROLE_APPLICATION_AUDIT_ID_INVALID'),
-      reviewer,
-      user,
-      'authority_role_admin_granted',
-      JSON.stringify({ authorityId: authority, role: 'visitor' }),
-      JSON.stringify({ authorityId: authority, role: 'admin', bindingId: grant.bindingId }),
-      timestamp,
-    );
-    return grant;
-  });
-
   return Object.freeze({
     approve: input => approveTransaction(input || {}),
-    grantAdmin: input => grantAdminTransaction(input || {}),
     list,
     reject: input => rejectTransaction(input || {}),
     submit,

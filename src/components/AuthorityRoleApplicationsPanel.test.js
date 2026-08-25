@@ -9,13 +9,13 @@ assert.ok(source.includes("projection.role !== 'super_admin'"), 'ordinary admini
 assert.ok(source.includes('roleReviewApplications(projection)'), 'review rows must come from the scoped runtime boundary');
 assert.ok(source.includes("type=\"primary\"") && source.includes('queueDecision'), 'review controls must create decisions');
 assert.ok(source.includes('appendDraft(buildRoleReviewDraft'), 'review must first append an encrypted typed draft');
-assert.ok(source.includes('buildAdminGrantDraft'), 'the host role-review workbench must expose a separate direct administrator grant draft');
-assert.ok(source.includes('existingUserId'), 'a direct administrator grant must require an explicit existing immutable user id');
+assert.ok(!source.includes('buildAdminGrantDraft'), 'retired ordinary-admin grants must not be offered in the role review workbench');
+assert.ok(!source.includes('existingUserId'), 'retired ordinary-admin grant inputs must not be rendered');
 assert.ok(!source.includes('confirmAndSubmit('), 'a review button must not silently submit without the shared confirmation step');
 assert.ok(source.includes('<AuthorityOutboxPanel compact focus=\"pending\" />'), 'the explicit confirmation queue must be visible beside review');
 assert.ok(
-  page.includes('snapshot?.host?.runtimeMatchesActiveEpoch && <AuthorityRoleApplicationsPanel />'),
-  'role review must mount only after the local host has an active authority context'
+  page.includes('snapshot?.access?.canReview && <Card'),
+  'role review must mount only for a cloud-approved reviewer'
 );
 
 console.log('authority role applications panel checks passed');

@@ -53,7 +53,7 @@ function filteredChanges(input, allowed) {
 }
 
 function isAuthorityAdmin(scope = {}) {
-  return scope.kind === 'admin' || scope.kind === 'super_admin';
+  return scope.kind === 'super_admin';
 }
 
 function createAuthorityCommandPolicy() {
@@ -63,13 +63,12 @@ function createAuthorityCommandPolicy() {
       return ['visitor', 'student', 'teacher'].includes(scope?.kind);
     }
     if (type === 'role-application.review.v1') return scope?.kind === 'super_admin';
-    if (type === 'role-admin.grant.v1') return scope?.kind === 'super_admin';
     if (type === 'personal-asset-account.create.v1'
       || type === 'personal-asset-account.update.v1') {
-      return ['visitor', 'student', 'teacher', 'admin', 'super_admin'].includes(scope?.kind);
+      return ['visitor', 'student', 'teacher', 'super_admin'].includes(scope?.kind);
     }
     if (type === 'projection.read.v1') {
-      return ['visitor', 'student', 'teacher', 'admin', 'super_admin'].includes(scope?.kind);
+      return ['visitor', 'student', 'teacher', 'super_admin'].includes(scope?.kind);
     }
     return false;
   };
@@ -123,20 +122,6 @@ function createAuthorityCommandHandlers({
       return decision === 'approve'
         ? roleApplicationService.approve(input)
         : roleApplicationService.reject(input);
-    };
-    handlers['role-admin.grant.v1'] = (envelope, authorization = {}) => {
-      const userId = String(envelope?.payload?.userId || '').trim();
-      if (!userId) throw registryError('AUTHORITY_COMMAND_PAYLOAD_INVALID', 400);
-      return roleApplicationService.grantAdmin({
-        actor: {
-          userId: authorization.scope?.userId,
-          roles: [authorization.scope?.kind],
-          authorityId: envelope.authorityId || authorization.scope?.authorityId,
-          isAuthorityHost: true,
-        },
-        authorityId: envelope.authorityId,
-        userId,
-      });
     };
   }
   if (personalAssetAccountService) {

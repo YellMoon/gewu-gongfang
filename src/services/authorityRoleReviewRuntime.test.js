@@ -2,7 +2,6 @@ const assert = require('assert');
 
 (async () => {
   const {
-    buildAdminGrantDraft,
     buildRoleReviewDraft,
     roleReviewApplications,
   } = await import('./authorityRoleReviewRuntime.mjs');
@@ -50,18 +49,6 @@ const assert = require('assert');
     { applicationId: 'application-1', decision: 'reject' },
   );
   assert.deepStrictEqual(
-    buildAdminGrantDraft('existing-user-1'),
-    {
-      type: 'role-admin.grant.v1',
-      payload: { userId: 'existing-user-1' },
-      preview: {
-        title: '\u6388\u4e88\u7ba1\u7406\u5458\u89d2\u8272',
-        summary: 'existing-user-1',
-      },
-    },
-    'direct administrator grants must be explicit host commands for an existing immutable user id',
-  );
-  assert.deepStrictEqual(
     roleReviewApplications({ ...projection, role: 'admin' }),
     [],
     'ordinary admins must never receive the host role-review workbench',
@@ -81,10 +68,6 @@ const assert = require('assert');
   assert.throws(
     () => buildRoleReviewDraft(projection.payload.roleApplications[1], 'approve'),
     error => error.code === 'AUTHORITY_ROLE_APPLICATION_NOT_PENDING',
-  );
-  assert.throws(
-    () => buildAdminGrantDraft(''),
-    error => error.code === 'AUTHORITY_ROLE_APPLICATION_USER_INVALID',
   );
 
   console.log('authority role review runtime tests passed');
