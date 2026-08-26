@@ -62,6 +62,12 @@ const identities = Object.freeze({
   super_admin: normalIdentity('super_admin'),
   teacher: normalIdentity('teacher'),
   student: normalIdentity('student'),
+  guardian: {
+    ...normalIdentity('student'),
+    id: 'fixture-guardian',
+    name: '家庭成员验收账号',
+    student_relationship: 'guardian',
+  },
   visitor: {
     id: 'fixture-visitor', name: '访客验收账号', role: 'visitor', user_type: 'visitor',
     identity_kind: 'visitor', account_state: 'visitor', token_use: 'miniapp-visitor',
@@ -225,6 +231,7 @@ async function run() {
         scenarioId: scenario.id,
         route: sourceRoute,
         expectedRoute: expected,
+        identity: scenario.identity,
         actualRoute: actual,
         role: scenario.roleView,
         state: scenario.state,
