@@ -74,7 +74,7 @@ export default function Index() {
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<any>(null);
   const [cloudConnection, setCloudConnection] = useState<'checking' | 'connected' | 'unavailable'>('checking');
-  const [access, setAccess] = useState<any>({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
+  const [access, setAccess] = useState<any>({ role: 'visitor', modules: [], capabilities: [] });
   const [dashboard, setDashboard] = useState<DashboardData>({
     todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
   });
@@ -91,7 +91,7 @@ export default function Index() {
     setLoading(true);
     setSnapshot(null);
     setCloudConnection('checking');
-    setAccess({ role: 'visitor', modules: [], capabilities: [], canReadUsers: false, canReviewUsers: false });
+    setAccess({ role: 'visitor', modules: [], capabilities: [] });
     setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
     const session = captureTrustedAuthSession(authSessionRuntime);
     if (!session) {
@@ -103,7 +103,7 @@ export default function Index() {
     setUser({ ...savedUser, name: getMiniappHomeDisplayName(savedUser) });
     if (isVisitorIdentity(savedUser)) {
       const policy = getMiniappRolePolicy(savedUser);
-      const nextAccess = { ...policy, canReadUsers: false, canReviewUsers: false };
+      const nextAccess = policy;
       setAccess(nextAccess);
       setModules([{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]);
       setSnapshot(null);
@@ -121,11 +121,7 @@ export default function Index() {
     const verifiedUser = verifiedSession.identity as UserInfo;
     setUser({ ...verifiedUser, name: getMiniappHomeDisplayName(verifiedUser) });
     const policy = getMiniappRolePolicy(verifiedUser);
-    const nextAccess = {
-      ...policy,
-      canReadUsers: policy.role === 'super_admin',
-      canReviewUsers: policy.role === 'super_admin',
-    };
+    const nextAccess = policy;
     setAccess(nextAccess);
     if (nextAccess.modules.length === 0) {
       setModules([]);

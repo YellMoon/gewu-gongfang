@@ -16,7 +16,7 @@ function identity(overrides = {}) {
     clearBusinessCache: () => events.push(['clear-business']),
     setBusinessCacheIdentity: user => events.push(['set-business', user.teacher_id]),
     writeUser: user => events.push(['write-user', user.teacher_id, user.user_type]),
-    fetchRemote: async () => ({ identity: identity(), capabilities: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'] }),
+    fetchRemote: async () => ({ identity: identity(), capabilities: ['business:teacher-scope', 'question-bank:view'] }),
   });
   const refreshed = await session.refresh({ id: 'user-1', user_type: 'teacher', teacher_id: 'teacher-1' }, { force: true });
   assert.strictEqual(session.getFetchCount(), 1, 'cold start must request the server even when a fresh persistent cache exists');

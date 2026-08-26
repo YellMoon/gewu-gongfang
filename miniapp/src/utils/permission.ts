@@ -61,12 +61,9 @@ export const teacherModules = staffModules.slice();
 
 export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'visitor';
 export type MiniappCapability =
-  | 'users:review'
-  | 'applications:review'
   | 'business:all'
   | 'business:teacher-scope'
   | 'question-bank:view'
-  | 'question-bank:edit'
   | 'projection:read'
   | 'role-application:read'
   | 'role-application:submit'
@@ -224,14 +221,14 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
       readonlyScope: 'all',
       allowedWriteTasks,
       canReadAllSnapshots: true,
-      capabilities: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
+      capabilities: ['business:all', 'question-bank:view'] as MiniappCapability[],
     };
   }
 
   if (user?.user_type === 'teacher') return {
     role: 'teacher', modules: teacherModules, readonlyScope: 'teacher', allowedWriteTasks,
     canReadAllSnapshots: false,
-    capabilities: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'] as MiniappCapability[],
+    capabilities: ['business:teacher-scope', 'question-bank:view'] as MiniappCapability[],
   };
 
   if (user?.user_type === 'student') {
@@ -272,9 +269,7 @@ export async function fetchPermissions(): Promise<PermissionData> {
 export function hasModulePermission(moduleId: string, action: string = 'view'): boolean {
   const access = getEffectiveMiniappAccess();
   const roleCapabilities = access.capabilities as MiniappCapability[];
-  if (moduleId === 'question-bank') {
-    return roleCapabilities.includes(action === 'view' ? 'question-bank:view' : 'question-bank:edit');
-  }
+  if (moduleId === 'question-bank') return action === 'view' && roleCapabilities.includes('question-bank:view');
   return access.modules.includes(moduleId) && action === 'view';
 }
 

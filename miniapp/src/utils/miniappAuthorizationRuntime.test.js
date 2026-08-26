@@ -14,8 +14,8 @@ const {
 } = require('./miniappAuthorizationRuntime');
 
 const capabilities = {
-  super_admin: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'],
-  teacher: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'],
+  super_admin: ['business:all', 'question-bank:view'],
+  teacher: ['business:teacher-scope', 'question-bank:view'],
   student: ['question-bank:view'],
 };
 
@@ -25,9 +25,9 @@ for (const role of Object.keys(capabilities)) {
     status: 'loaded', identityKey: permissionIdentityKey(user), capabilities: capabilities[role],
   });
   assert.strictEqual(access.role, role);
-  assert.strictEqual(access.canReviewUsers, role === 'super_admin');
-  assert.strictEqual(access.canReadUsers, role === 'super_admin');
-  assert.strictEqual(access.canEditQuestionBank, ['super_admin', 'teacher'].includes(role));
+  assert.strictEqual(Object.hasOwn(access, 'canReviewUsers'), false, 'miniapp access must not expose a role-approval capability');
+  assert.strictEqual(Object.hasOwn(access, 'canReadUsers'), false, 'miniapp access must not expose a user-management capability');
+  assert.strictEqual(Object.hasOwn(access, 'canEditQuestionBank'), false, 'miniapp access must not expose direct question editing');
   assert.strictEqual(access.canDeleteCommittedQuestions, false);
 }
 
@@ -140,8 +140,8 @@ const visitorAccess = deriveAccess(visitor, {
 assert.strictEqual(visitorAccess.role, 'visitor');
 assert.deepStrictEqual(visitorAccess.modules, VISITOR_MODULES);
 assert.strictEqual(visitorAccess.experienceOnly, true);
-assert.strictEqual(visitorAccess.canReadUsers, false);
-assert.strictEqual(visitorAccess.canEditQuestionBank, false);
+assert.strictEqual(Object.hasOwn(visitorAccess, 'canReadUsers'), false);
+assert.strictEqual(Object.hasOwn(visitorAccess, 'canEditQuestionBank'), false);
 assert.strictEqual(businessCacheIdentityKey(visitor), '', 'visitor must never open a raw business cache');
 assert.ok(permissionIdentityKey(visitor).startsWith('visitor:visitor-1:authority-1'));
 const visitorPolicy = accountExperiencePolicy(visitor);

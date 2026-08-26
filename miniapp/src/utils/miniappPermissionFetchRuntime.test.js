@@ -53,7 +53,7 @@ async function runFetch(identity, remoteCapabilities) {
 }
 
 async function main() {
-  const experience = await runFetch(unsupported, ['business:all', 'users:review']);
+  const experience = await runFetch(unsupported, ['business:all', 'question-bank:view']);
   assert.deepStrictEqual(experience.result.capabilities, []);
   assert.deepStrictEqual(experience.memoryCache.capabilities, []);
   assert.deepStrictEqual(experience.permissionState, {
@@ -62,13 +62,13 @@ async function main() {
   assert.strictEqual(experience.remoteCalls, 0, 'retired identity must not call the formal permission endpoint');
   assert.deepStrictEqual(experience.persistentWrites, [], 'retired identity must not retain a capability cache');
 
-  const visitorAccess = await runFetch(visitor, ['business:all', 'users:review']);
+  const visitorAccess = await runFetch(visitor, ['business:all', 'question-bank:view']);
   assert.deepStrictEqual(visitorAccess.result.capabilities, visitor.capabilities);
   assert.deepStrictEqual(visitorAccess.memoryCache.capabilities, visitor.capabilities);
   assert.strictEqual(visitorAccess.remoteCalls, 0, 'visitor identity must not call the legacy formal permission endpoint');
   assert.deepStrictEqual(visitorAccess.persistentWrites, [], 'visitor capabilities come from the signed visitor session');
 
-  const normalCapabilities = ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'];
+  const normalCapabilities = ['business:all', 'question-bank:view'];
   const normal = await runFetch(normalAdmin, normalCapabilities);
   assert.deepStrictEqual(normal.result.capabilities, normalCapabilities);
   assert.strictEqual(normal.remoteCalls, 1);

@@ -130,7 +130,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(miniappContext.body, {
     ok: true,
     identity: { accountId: 'miniapp-account-1', status: 'active', roles: ['super_admin'] },
-    capabilities: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'],
+    capabilities: ['business:all', 'question-bank:view'],
   });
   const rejectedMiniappContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-context', { headers: { authorization: 'Bearer rejected-ticket.signature' } });
   assert.strictEqual(rejectedMiniappContext.status, 403);

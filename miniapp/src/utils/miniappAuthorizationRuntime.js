@@ -177,9 +177,6 @@ function deriveAccess(user, permissionState) {
     modules,
     capabilities,
     permissionStatus: loadedForIdentity ? 'loaded' : (permissionState && permissionState.status === 'error' ? 'error' : 'idle'),
-    canReadUsers: !experienceOnly && capabilities.includes('business:all') && role === 'super_admin',
-    canReviewUsers: !experienceOnly && capabilities.includes('users:review') && role === 'super_admin',
-    canEditQuestionBank: !experienceOnly && capabilities.includes('question-bank:edit'),
     canDeleteCommittedQuestions: false,
   };
 }
@@ -194,8 +191,6 @@ function accountExperiencePolicy(user) {
       allowedWriteTasks: [],
       canReadAllSnapshots: false,
       capabilities: accountCapabilities(user),
-      canReviewUsers: false,
-      canEditQuestionBank: false,
       experienceOnly: true,
     };
   }

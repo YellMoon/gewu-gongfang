@@ -316,8 +316,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       return ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'];
     }
     if (context.status !== 'active') throw businessAccessDenied();
-    if (context.roles.includes('super_admin')) return ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'];
-    if (context.roles.includes('teacher')) return ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'];
+    if (context.roles.includes('super_admin')) return ['business:all', 'question-bank:view'];
+    if (context.roles.includes('teacher')) return ['business:teacher-scope', 'question-bank:view'];
     if (context.roles.includes('student')) return ['question-bank:view'];
     throw businessAccessDenied();
   }

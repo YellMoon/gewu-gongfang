@@ -27,7 +27,7 @@ const FIXTURE_BASE = `http://127.0.0.1:${FIXTURE_PORT}`;
 const SCREENSHOT_WAIT_MS = 1100;
 
 const capabilitiesByRole = Object.freeze({
-  super_admin: ['business:all', 'users:review', 'applications:review', 'question-bank:view', 'question-bank:edit'],
+  super_admin: ['business:all', 'question-bank:view'],
   teacher: ['business:teacher-scope', 'question-bank:view'],
   student: ['question-bank:view'],
 });
