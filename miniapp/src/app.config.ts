@@ -14,6 +14,7 @@ export default defineAppConfig({
     'pages/payments/index',
     'pages/stats/index',
     'pages/question-bank/index',
+    'pages/question-paper/index',
     'pages/assets/index',
     'pages/settings/index',
     'pages/account-application/index',
@@ -32,36 +33,10 @@ export default defineAppConfig({
     backgroundColor: '#fffdf8',
     borderStyle: 'white',
     list: [
-      {
-        pagePath: 'pages/index/index',
-        text: '首页',
-        iconPath: 'assets/tabbar/home.png',
-        selectedIconPath: 'assets/tabbar/home-active.png',
-      },
-      {
-        pagePath: 'pages/schedule/index',
-        text: '课程表',
-        iconPath: 'assets/tabbar/schedule.png',
-        selectedIconPath: 'assets/tabbar/schedule-active.png',
-      },
-      {
-        pagePath: 'pages/students/index',
-        text: '学员',
-        iconPath: 'assets/tabbar/students.png',
-        selectedIconPath: 'assets/tabbar/students-active.png',
-      },
-      {
-        pagePath: 'pages/assets/index',
-        text: '财务',
-        iconPath: 'assets/tabbar/assets.png',
-        selectedIconPath: 'assets/tabbar/assets-active.png',
-      },
-      {
-        pagePath: 'pages/settings/index',
-        text: '设置',
-        iconPath: 'assets/tabbar/settings.png',
-        selectedIconPath: 'assets/tabbar/settings-active.png',
-      },
+      { pagePath: 'pages/index/index', text: '首页', iconPath: 'assets/tabbar/home.png', selectedIconPath: 'assets/tabbar/home-active.png' },
+      { pagePath: 'pages/schedule/index', text: '课程表', iconPath: 'assets/tabbar/schedule.png', selectedIconPath: 'assets/tabbar/schedule-active.png' },
+      { pagePath: 'pages/question-bank/index', text: '题库' },
+      { pagePath: 'pages/settings/index', text: '我的', iconPath: 'assets/tabbar/settings.png', selectedIconPath: 'assets/tabbar/settings-active.png' },
     ],
   },
 });

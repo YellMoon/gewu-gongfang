@@ -226,11 +226,16 @@ function questionListRow(row) {
   if (row.analysis !== null && row.analysis !== undefined && typeof row.analysis !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
   if (row.rich_content !== null && row.rich_content !== undefined && !plainObject(row.rich_content)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
   if (typeof row.has_formula !== 'boolean') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  if (row.source !== null && row.source !== undefined && typeof row.source !== 'string') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  if (row.knowledgeLabels !== null && row.knowledgeLabels !== undefined && !Array.isArray(row.knowledgeLabels)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+  const knowledgeLabels = Array.isArray(row.knowledgeLabels)
+    ? row.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [];
   return {
     id: row.id, subject: row.subject, type: row.type, difficulty: Number(row.difficulty), status: row.status,
     content: row.content, options: row.options, answer: row.answer ?? null, analysis: row.analysis ?? null,
     rich_content: row.rich_content ?? null, knowledge_point_ids: knowledgePointIds, model_point_ids: modelPointIds,
     taxonomy_ids: taxonomyIds, has_formula: row.has_formula, version: Number(row.version),
+    source: row.source ?? '', knowledgeLabels,
   };
 }
 
@@ -302,8 +307,15 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       actor(request.actor);
       if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 1000) throw failure('CLOUD_QUESTION_INPUT_INVALID');
       const result = await query(
-        `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.status,c.stem AS content,c.options_json AS options,
-                c.answer,c.explanation AS analysis,c.rich_content_json AS rich_content,q.taxonomy_json AS taxonomy,q.has_formula,c.version
+        `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem AS content,c.options_json AS options,
+                c.answer,c.explanation AS analysis,c.rich_content_json AS rich_content,q.taxonomy_json AS taxonomy,q.has_formula,c.version,
+                COALESCE((
+                  SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
+                  FROM business.question_taxonomy_nodes n
+                  JOIN jsonb_each(CASE WHEN jsonb_typeof(q.taxonomy_json->'taxonomyIds')='object' THEN q.taxonomy_json->'taxonomyIds' ELSE '{}'::jsonb END) systems(system_id,node_ids) ON true
+                  JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(systems.node_ids)='array' THEN systems.node_ids ELSE '[]'::jsonb END) selected(node_id) ON true
+                  WHERE n.tenant_id=q.tenant_id AND n.deleted=false AND n.system_id=systems.system_id AND n.id=selected.node_id
+                ), '[]'::jsonb) AS "knowledgeLabels"
            FROM business.questions q
            JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
           WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false

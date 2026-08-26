@@ -752,23 +752,47 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
     try {
       const actor = await miniappBusinessContext(request);
-      if (Array.isArray(actor.roles) && actor.roles.includes('student')) {
+      const limitedQuestionBrowse = actor.status === 'visitor'
+        || (Array.isArray(actor.roles) && actor.roles.includes('student'));
+      if (limitedQuestionBrowse) {
+        const questionLimit = actor.status === 'visitor' ? 20 : 200;
         const result = await query(
-          `SELECT q.id,q.subject,q.question_type AS type,q.status,c.stem AS "stemPreview"
+          `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem,c.answer,c.explanation,c.options_json AS options,
+                  COALESCE((
+                    SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
+                    FROM business.question_taxonomy_nodes n
+                    JOIN jsonb_each(CASE WHEN jsonb_typeof(q.taxonomy_json->'taxonomyIds')='object' THEN q.taxonomy_json->'taxonomyIds' ELSE '{}'::jsonb END) systems(system_id,node_ids) ON true
+                    JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(systems.node_ids)='array' THEN systems.node_ids ELSE '[]'::jsonb END) selected(node_id) ON true
+                    WHERE n.tenant_id=q.tenant_id AND n.deleted=false AND n.system_id=systems.system_id AND n.id=selected.node_id
+                  ), '[]'::jsonb) AS "knowledgeLabels"
              FROM business.questions q
              JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
             WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false
-            ORDER BY c.updated_at DESC,q.id ASC LIMIT 200`,
-          [businessTenantId],
+            ORDER BY c.updated_at DESC,q.id ASC LIMIT $2`,
+          [businessTenantId, questionLimit],
         );
         if (!result || !Array.isArray(result.rows)) return businessUnavailable(response);
         return response.json({ ok: true, questions: result.rows.map(question => ({
-          id: question.id, subject: question.subject, type: question.type, stemPreview: String(question.stemPreview || '').slice(0, 240), status: question.status,
+          id: question.id, subject: question.subject, type: question.type, stemPreview: String(question.stem || ''),
+          answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
+          explanation: question.explanation === null || question.explanation === undefined ? '' : String(question.explanation),
+          options: Array.isArray(question.options) ? question.options : [],
+          difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
+          source: typeof question.source === 'string' ? question.source : '',
+          knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
+          status: question.status,
         })) });
       }
       const questions = await questionAuthority.list({ tenantId: businessTenantId, actor, limit: 200 });
       response.json({ ok: true, questions: questions.map(question => ({
-        id: question.id, subject: question.subject, type: question.type, stemPreview: question.content.slice(0, 240), status: question.status,
+        id: question.id, subject: question.subject, type: question.type, stemPreview: question.content.slice(0, 240),
+        answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
+        explanation: question.analysis === null || question.analysis === undefined ? '' : String(question.analysis),
+        options: Array.isArray(question.options) ? question.options : [],
+        difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
+        source: typeof question.source === 'string' ? question.source : '',
+        knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
+        status: question.status,
       })) });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });

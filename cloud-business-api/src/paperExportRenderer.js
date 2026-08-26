@@ -16,23 +16,38 @@ function request(value) {
     || !['word', 'pdf'].includes(value.format) || typeof value.title !== 'string' || !value.title.trim()) {
     throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
   }
-  return { format: value.format, title: value.title.trim(), answerPosition: value.answerPosition || 'end' };
+  const layout = value.layout && typeof value.layout === 'object' && !Array.isArray(value.layout) && Array.isArray(value.layout.items)
+    ? value.layout : null;
+  return { format: value.format, title: value.title.trim(), answerPosition: value.answerPosition || 'end', layout };
 }
 
-function questions(value) {
+function questions(value, layout) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 200) throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
   return value.map((item, index) => {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string' || typeof item.stem !== 'string') {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
-    return { number: index + 1, stem: stripMarkup(item.stem), answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation) };
+    const layoutItem = layout?.items?.[index];
+    if (layoutItem && (layoutItem.id !== item.id || typeof layoutItem.sectionTitle !== 'string' || !Number.isSafeInteger(layoutItem.score))) {
+      throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
+    }
+    return {
+      number: index + 1, stem: stripMarkup(item.stem), answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
+      sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
+    };
   });
 }
 
 function bodyRows(items, answerPosition) {
   const rows = [new Paragraph({ children: [new TextRun({ text: 'Questions', bold: true })] })];
+  let previousSection = '';
   for (const item of items) {
-    rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem })] }));
+    if (item.sectionTitle && item.sectionTitle !== previousSection) {
+      rows.push(new Paragraph({ children: [new TextRun({ text: item.sectionTitle, bold: true })] }));
+      previousSection = item.sectionTitle;
+    }
+    const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+    rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem + score })] }));
     if (answerPosition === 'after' && item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: 'Answer: ' + item.answer })] }));
   }
   if (answerPosition !== 'after') {
@@ -59,7 +74,15 @@ function pdfBytes(input, items) {
     document.on('end', () => resolve(Buffer.concat(chunks)));
     document.fontSize(18).text(input.title);
     document.moveDown();
-    for (const item of items) document.fontSize(11).text(String(item.number) + '. ' + item.stem).moveDown(0.5);
+    let previousSection = '';
+    for (const item of items) {
+      if (item.sectionTitle && item.sectionTitle !== previousSection) {
+        document.fontSize(13).text(item.sectionTitle).moveDown(0.25);
+        previousSection = item.sectionTitle;
+      }
+      const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+      document.fontSize(11).text(String(item.number) + '. ' + item.stem + score).moveDown(0.5);
+    }
     if (input.answerPosition === 'after') {
       document.moveDown().fontSize(13).text('Answers');
       for (const item of items) if (item.answer) document.fontSize(10).text(String(item.number) + '. ' + item.answer);
@@ -70,7 +93,7 @@ function pdfBytes(input, items) {
 
 async function renderPaperExport(input) {
   const current = request(input);
-  const items = questions(input.snapshot);
+  const items = questions(input.snapshot, current.layout);
   const bytes = current.format === 'word' ? await wordBytes(current, items) : await pdfBytes(current, items);
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }

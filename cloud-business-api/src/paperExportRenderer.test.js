@@ -4,7 +4,7 @@ const assert = require('assert');
 const { renderPaperExport } = require('./paperExportRenderer');
 
 (async () => {
-  const input = { title: 'Paper', answerPosition: 'end', snapshot: [{ id: 'q1', stem: 'What is 1 + 1?', answer: '2', explanation: '' }] };
+  const input = { title: 'Paper', answerPosition: 'end', layout: { items: [{ id: 'q1', sectionTitle: 'Part one', score: 3 }] }, snapshot: [{ id: 'q1', stem: 'What is 1 + 1?', answer: '2', explanation: '' }] };
   const word = await renderPaperExport({ ...input, format: 'word' });
   assert.strictEqual(word.extension, 'docx');
   assert.ok(word.bytes.subarray(0, 2).equals(Buffer.from('PK')));

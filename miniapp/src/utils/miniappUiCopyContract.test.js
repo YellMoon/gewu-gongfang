@@ -12,7 +12,9 @@ const accountBanner = display(read('miniapp/src/components/AccountStatusBanner.t
 const settingsPage = display(read('miniapp/src/pages/settings/index.tsx'));
 const questionBankPage = display(read('miniapp/src/pages/question-bank/index.tsx'));
 const questionBankStyles = read('miniapp/src/pages/question-bank/index.scss');
+const questionPaperPage = display(read('miniapp/src/pages/question-paper/index.tsx'));
 const homePage = display(read('miniapp/src/pages/index/index.tsx'));
+const schedulePage = display(read('miniapp/src/pages/schedule/index.tsx'));
 const forbiddenPage = display(read('miniapp/src/pages/forbidden/index.tsx'));
 const scheduleEditConfig = display(read('miniapp/src/pages/schedule/edit/index.config.ts'));
 const scheduleDetailPage = read('miniapp/src/pages/schedule/detail/index.tsx');
@@ -63,8 +65,13 @@ assert.ok(!applicationRuntime.includes('\u6559\u5e08\u7aef') && !applicationPage
 assert.ok(applicationPage.includes('\u5ba1\u6838') && homePage.includes('\u5ba1\u6838'), 'visitor role-application copy must explain the review boundary without inventing a reviewer role');
 assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered miniapp action must not fall back to a fictional unfinished module');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
-assert.ok(questionBankPage.includes("disabled={Boolean(submitting) || previewState !== 'ready' || selectedIds.length === 0}"), 'question-bank exports must reject an empty selection and remain disabled while cloud preview access is unavailable');
-assert.ok(questionBankStyles.includes('.action-button:disabled'), 'question-bank empty-selection actions must have a visible disabled state');
+assert.ok(questionPaperPage.includes("disabled={!items.length || Boolean(submitting)}"), 'paper exports must reject an empty selection and remain disabled while an export is in progress');
+assert.ok(questionPaperPage.includes('sectionTitle') && questionPaperPage.includes('score'), 'paper editor must retain section and score edits before exporting');
+assert.ok(questionBankStyles.includes('.basket-toggle'), 'question cards must expose a clear basket operation for eligible identities');
+assert.ok(!questionBankPage.includes('访客题库浏览') && !questionBankPage.includes('题库文字内容由云端权威提供'), 'question-bank must not expose identity labels or implementation explanations as user-facing content');
+assert.ok(!questionBankPage.includes('可浏览的题目'), 'question-bank must not describe its browsing allowance as permanent page copy');
+assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请关联身份'), 'the schedule empty state must give a neutral next step without labeling the account as a visitor');
+assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
 
 assert.ok(!forbiddenPage.includes('\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458'), 'the access boundary must not imply a retired ordinary-administrator role');
 assert.ok(forbiddenPage.includes('\u5f53\u524d\u8d26\u53f7\u6682\u4e0d\u80fd\u4f7f\u7528\u6b64\u529f\u80fd'), 'the access boundary must give the user a neutral, actionable explanation');

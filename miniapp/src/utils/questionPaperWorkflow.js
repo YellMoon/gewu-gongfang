@@ -6,7 +6,7 @@ function createTaskDraft(input, options = {}) {
   const idempotencyKey = (options.idFactory || (() => `${Date.now()}-${Math.random().toString(36).slice(2)}`))();
   return { localId: `draft-${idempotencyKey}`, confirmed: false, createdAt: options.now || Date.now(), status: 'draft', phase: 'draft', progress: 0,
     request: { protocolVersion: 3, taskType: input.taskType, idempotencyKey,
-      payload: { questionIds: [...input.questionIds], title: input.title, answerPosition: input.answerPosition, formulaMode: input.formulaMode } } };
+      payload: { questionIds: [...input.questionIds], title: input.title, answerPosition: input.answerPosition, formulaMode: input.formulaMode, ...(input.layout ? { layout: input.layout } : {}) } } };
 }
 function confirmTaskDraft(draft, task) { return { ...draft, confirmed: true, taskId: task.id, status: task.status, phase: task.phase || 'queued', progress: Number(task.progress || 0), resultExpiresAt: task.result_expires_at || null }; }
 function canCancel(task) { return task.confirmed && ['queued', 'processing'].includes(task.status); }

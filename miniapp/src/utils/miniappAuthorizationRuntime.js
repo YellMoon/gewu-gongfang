@@ -6,7 +6,7 @@ const {
 const STAFF_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats'];
 const TEACHER_MODULES = STAFF_MODULES.slice();
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
-const VISITOR_MODULES = ['question-bank', 'settings'];
+const VISITOR_MODULES = ['scheduling', 'question-bank', 'settings'];
 const VALID_ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
 
 function isRetiredIdentity(user) {
@@ -110,6 +110,14 @@ function questionPaperTaskCacheKey(user) {
   return scope ? `question_paper_tasks_v2_${encodeURIComponent(scope)}` : '';
 }
 
+function questionBasketCacheKey(user) {
+  if (isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
+  const role = roleOf(user);
+  if (!['super_admin', 'teacher'].includes(role)) return '';
+  const scope = businessCacheIdentityKey(user);
+  return scope ? `question_basket_v1_${encodeURIComponent(scope)}` : '';
+}
+
 function usesLimitedQuestionProjection(user) {
   const role = roleOf(user);
   if (role === 'visitor') return true;
@@ -142,6 +150,36 @@ function createQuestionPaperTaskCacheRuntime(dependencies) {
     const nextTasks = Array.isArray(tasks) ? tasks.slice() : [];
     dependencies.write(beforeWrite.scopeKey, nextTasks);
     current = { scopeKey: beforeWrite.scopeKey, tasks: nextTasks };
+    return { written: true, snapshot: readSnapshot() };
+  }
+
+  return { replace, snapshot: readSnapshot };
+}
+
+function createQuestionBasketRuntime(dependencies) {
+  let current = { scopeKey: null, ids: [] };
+
+  function readSnapshot() {
+    const scopeKey = questionBasketCacheKey(dependencies.readIdentity());
+    if (scopeKey !== current.scopeKey) {
+      let ids = [];
+      if (scopeKey) {
+        try {
+          const stored = dependencies.read(scopeKey);
+          ids = Array.isArray(stored) ? Array.from(new Set(stored.filter(item => typeof item === 'string' && item.trim()))) : [];
+        } catch (_error) { ids = []; }
+      }
+      current = { scopeKey, ids };
+    }
+    return { scopeKey: current.scopeKey || '', ids: current.ids.slice() };
+  }
+
+  function replace(ids, expectedScopeKey) {
+    const beforeWrite = readSnapshot();
+    if (!beforeWrite.scopeKey || beforeWrite.scopeKey !== expectedScopeKey) return { written: false, snapshot: beforeWrite };
+    const nextIds = Array.from(new Set((Array.isArray(ids) ? ids : []).filter(item => typeof item === 'string' && item.trim())));
+    dependencies.write(beforeWrite.scopeKey, nextIds);
+    current = { scopeKey: beforeWrite.scopeKey, ids: nextIds };
     return { written: true, snapshot: readSnapshot() };
   }
 
@@ -202,7 +240,8 @@ function canUserSubmitMiniappWrite(user, target, allowedTargets) {
   if (isRetiredIdentity(user) || role === 'visitor' || isVisitorIdentity(user)) return false;
   if (!Array.isArray(allowedTargets) || !allowedTargets.includes(target)) return false;
   if (target === 'asset-import') return role === 'super_admin' || role === 'teacher';
-  return target === 'question-paper' || target === 'paper-export-word' || target === 'paper-export-pdf';
+  return ['question-paper', 'paper-export-word', 'paper-export-pdf'].includes(target)
+    && (role === 'super_admin' || role === 'teacher');
 }
 
 function relatedStudentIds(items) {
@@ -260,7 +299,9 @@ module.exports = {
   sanitizeCapabilitiesForIdentity,
   studentSubjectIds,
   businessCacheIdentityKey,
+  createQuestionBasketRuntime,
   createQuestionPaperTaskCacheRuntime,
+  questionBasketCacheKey,
   questionPaperTaskCacheKey,
   usesLimitedQuestionProjection,
   deriveAccess,

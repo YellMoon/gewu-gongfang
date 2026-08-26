@@ -7,12 +7,13 @@ const { startFixtureServer } = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
 const TEST_PORT = 3020;
 
-function request(pathname, token, port = TEST_PORT) {
+function request(pathname, token, port = TEST_PORT, method = 'GET') {
   return new Promise((resolve, reject) => {
     const request = http.request({
       hostname: '127.0.0.1',
       port,
       path: pathname,
+      method,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }, response => {
       let body = '';
@@ -53,6 +54,30 @@ function request(pathname, token, port = TEST_PORT) {
     assert.deepStrictEqual(visitorResponse.body.identity.roles, []);
     assert.strictEqual(visitorResponse.body.identity.status, 'visitor');
     assert.strictEqual(cloudSessionUser(visitorResponse.body.identity)?.user_type, 'visitor');
+
+    const visitorQuestions = await request('/api/business/miniapp-question-previews', 'fixture-visitor');
+    assert.strictEqual(visitorQuestions.statusCode, 200);
+    assert.strictEqual(visitorQuestions.body.questions.length, 1);
+    assert.deepStrictEqual(visitorQuestions.body.questions[0], {
+      id: 'fixture-question-1',
+      subject: 'physics',
+      type: 'single_choice',
+      stemPreview: 'Which force changes an object velocity?',
+      options: ['A. Balanced force', 'B. Net force'],
+      answer: 'B. Net force',
+      explanation: 'A non-zero net force changes velocity.',
+      difficulty: 2,
+      source: '2026 city mock',
+      knowledgeLabels: ['Dynamics'],
+      status: 'published',
+    });
+
+    const exportTask = await request('/api/business/miniapp-paper-export-tasks', 'fixture-paper-teacher', TEST_PORT, 'POST');
+    assert.strictEqual(exportTask.statusCode, 202);
+    assert.deepStrictEqual(exportTask.body.task, {
+      taskId: 'paper_task_fixture', status: 'completed', phase: 'completed', progress: 100,
+      requestHash: 'f'.repeat(64), createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z',
+    });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

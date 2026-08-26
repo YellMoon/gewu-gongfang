@@ -2,6 +2,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { fetchPermissions, getEffectiveMiniappAccess } from '../utils/permission';
+import { resolveTabBarState } from './roleTabBarRuntime';
 import './index.scss';
 
 declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
@@ -12,25 +13,16 @@ type TabItem = {
   iconText: string;
 };
 
-const STAFF_TABS: TabItem[] = [
+const PRIMARY_TABS: TabItem[] = [
   { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
   { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
-  { pagePath: 'pages/students/index', label: '学员', iconText: '生' },
-  { pagePath: 'pages/assets/index', label: '财务', iconText: '账' },
+  { pagePath: 'pages/question-bank/index', label: '题库', iconText: '题' },
   { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
 ];
 
-const STUDENT_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '首页', iconText: '首' },
-  { pagePath: 'pages/schedule/index', label: '课程表', iconText: '课' },
-  { pagePath: 'pages/settings/index', label: '我的', iconText: '我' },
-];
-
-const VISITOR_TABS: TabItem[] = [
-  { pagePath: 'pages/index/index', label: '\u9996\u9875', iconText: '\u9996' },
-  { pagePath: 'pages/question-bank/index', label: '\u9898\u5e93', iconText: '\u9898' },
-  { pagePath: 'pages/settings/index', label: '\u6211\u7684', iconText: '\u6211' },
-];
+const STAFF_TABS: TabItem[] = PRIMARY_TABS;
+const STUDENT_TABS: TabItem[] = PRIMARY_TABS;
+const VISITOR_TABS: TabItem[] = PRIMARY_TABS;
 
 function getCurrentRoute() {
   if (typeof window !== 'undefined') {
@@ -42,36 +34,29 @@ function getCurrentRoute() {
   return current?.route || 'pages/index/index';
 }
 
-function getUserType() {
-  return 'visitor';
-}
-
 export default function RoleTabBar() {
   const [currentRoute, setCurrentRoute] = useState(getCurrentRoute());
-  const [userType, setUserType] = useState(getUserType());
-  const [navigationMode, setNavigationMode] = useState('limited');
+  const initialState = resolveTabBarState(getEffectiveMiniappAccess());
+  const [userType, setUserType] = useState(initialState.userType);
+  const [navigationMode, setNavigationMode] = useState(initialState.navigationMode);
+
+  const applyAccess = (access: { role: any; modules: any[] }) => {
+    const next = resolveTabBarState(access);
+    setUserType(next.userType);
+    setNavigationMode(next.navigationMode);
+  };
 
   useDidShow(() => {
     setCurrentRoute(getCurrentRoute());
-    setUserType('visitor');
-    setNavigationMode('visitor');
     const localAccess = getEffectiveMiniappAccess();
-    if (localAccess.role === 'visitor' && localAccess.modules.length > 0) {
-      setUserType('visitor');
-      setNavigationMode('visitor');
+    applyAccess(localAccess);
+    if (localAccess.role === 'visitor' || localAccess.modules.length === 0) {
       return;
     }
     void fetchPermissions().then(() => {
-      const access = getEffectiveMiniappAccess();
-      setUserType(access.modules.length > 0 ? access.role : 'visitor');
-      setNavigationMode(
-        access.role === 'visitor'
-          ? 'visitor'
-          : (access.modules.length > 0 ? 'formal' : 'visitor'),
-      );
+      applyAccess(getEffectiveMiniappAccess());
     }).catch(() => {
-      setUserType('visitor');
-      setNavigationMode('visitor');
+      applyAccess({ role: 'visitor', modules: [] });
     });
   });
 
@@ -85,10 +70,6 @@ export default function RoleTabBar() {
 
   const handleSwitch = (item: TabItem) => {
     if (item.pagePath === currentRoute) return;
-    if (item.pagePath === 'pages/question-bank/index') {
-      Taro.navigateTo({ url: `/${item.pagePath}` });
-      return;
-    }
     Taro.switchTab({ url: `/${item.pagePath}` });
   };
 

@@ -11,7 +11,6 @@ import {
   shanghaiDateParts,
 } from '../../utils/cloudBusinessProjection';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
-import AccountStatusBanner from '../../components/AccountStatusBanner';
 import { isVisitorIdentity } from '../../utils/accountExperience';
 import './index.scss';
 
@@ -174,8 +173,12 @@ export default function SchedulePage() {
   if (isLimitedIdentity) {
     return (
       <View className='schedule-page'>
-        <AccountStatusBanner />
-        <EmptyState icon={'\u8bfe'} text={'\u5f53\u524d\u8d26\u53f7\u6682\u65e0\u5df2\u6388\u6743\u7684\u8bfe\u7a0b\u6295\u5f71'} />
+        <EmptyState
+          icon={'\u8bfe'}
+          text={'\u6682\u65e0\u8bfe\u7a0b\u5b89\u6392'}
+          actionText={'\u7533\u8bf7\u5173\u8054\u8eab\u4efd'}
+          onAction={() => Taro.navigateTo({ url: '/pages/account-application/index' })}
+        />
       </View>
     );
   }

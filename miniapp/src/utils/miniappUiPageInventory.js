@@ -156,6 +156,18 @@ const pageInventory = [
     files: ['src/pages/question-bank/index.tsx', 'src/pages/question-bank/index.scss'],
   },
   {
+    route: 'pages/question-paper/index',
+    title: '\u7ec4\u5377\u7f16\u8f91',
+    registered: true,
+    roleViews: ['super_admin', 'teacher'],
+    surface: 'limited-write-paper-editor',
+    visualStatus: 'optimized',
+    verificationStates: ['paper-editor-empty', 'paper-editor-selected', 'task-actions', 'task-result'],
+    realFeatureBasis: ['createQuestionBasketRuntime', 'questionPaperWorkflow.createTaskDraft(layout)', 'miniappCloudBusinessApi.createPaperExportTask', 'miniappCloudBusinessApi.requestPaperExportDelivery', 'miniappCloudBusinessApi.downloadPaperExportDelivery'],
+    screenshotRequired: true,
+    files: ['src/pages/question-paper/index.tsx', 'src/pages/question-paper/index.scss'],
+  },
+  {
     route: 'pages/assets/index',
     title: '财务资产',
     registered: true,

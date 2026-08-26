@@ -107,9 +107,9 @@ export const miniappCloudBusinessApi = {
         header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
       });
       if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && Array.isArray((response.data as any)?.questions)) return { success: true, data: response.data as { ok: true; questions: any[] } };
-      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud question preview request failed' };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || '\u9898\u5e93\u6d4f\u89c8\u670d\u52a1\u6682\u4e0d\u53ef\u7528' };
     } catch (error: any) {
-      return { success: false, error: error?.errMsg || error?.message || 'Cloud question preview request unavailable' };
+      return { success: false, error: error?.errMsg || error?.message || '\u9898\u5e93\u6d4f\u89c8\u670d\u52a1\u6682\u4e0d\u53ef\u7528' };
     }
   },
   async createPaperExportTask(token: string, taskType: 'paper-export-word' | 'paper-export-pdf', request: any, idempotencyKey: string): Promise<ApiResponse<{ ok: true; task: any }>> {

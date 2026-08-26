@@ -8,6 +8,8 @@ const {
   accountExperiencePolicy,
   scopeDashboardCollections,
   businessCacheIdentityKey,
+  questionBasketCacheKey,
+  createQuestionBasketRuntime,
   questionPaperTaskCacheKey,
   usesLimitedQuestionProjection,
   createQuestionPaperTaskCacheRuntime,
@@ -89,8 +91,11 @@ for (const changedScope of [
   assert.notStrictEqual(businessCacheIdentityKey(normalStudentScope), businessCacheIdentityKey(changedScope), 'tenant, student binding, and account-state changes must receive a new business cache namespace');
 }
 assert.strictEqual(typeof questionPaperTaskCacheKey, 'function', 'question-paper task history must have a normal scope-aware cache-key helper');
+assert.strictEqual(typeof questionBasketCacheKey, 'function', 'question selection must have a normal scope-aware basket key helper');
 assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, tenant_id: 'tenant-b' }), 'normal task history must not cross tenant scope');
 assert.notStrictEqual(questionPaperTaskCacheKey(normalStudentScope), questionPaperTaskCacheKey({ ...normalStudentScope, linked_student_ids: ['student-z'] }), 'normal task history must not cross student bindings');
+const teacherBasketScope = { id: 'teacher-basket-user', user_type: 'teacher', teacher_id: 'teacher-basket-1', tenant_id: 'tenant-a' };
+assert.notStrictEqual(questionBasketCacheKey(teacherBasketScope), questionBasketCacheKey({ ...teacherBasketScope, tenant_id: 'tenant-b' }), 'question basket must not cross tenant scope');
 assert.strictEqual(typeof createQuestionPaperTaskCacheRuntime, 'function', 'mounted question-bank state needs an atomic scope-aware cache runtime');
 const taskStores = new Map();
 let currentTaskIdentity = normalStudentScope;
@@ -111,6 +116,25 @@ const rejectedTaskWrite = taskCacheRuntime.replace([{ localId: 'stale-task-a' }]
 assert.strictEqual(rejectedTaskWrite.written, false, 'a mounted old-scope task snapshot must never be written into the newly current scope');
 assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a rejected old-scope write must leave the new tenant cache untouched');
 assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
+
+const basketStores = new Map();
+let currentBasketIdentity = { id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1', tenant_id: 'tenant-a' };
+const initialBasketKey = questionBasketCacheKey(currentBasketIdentity);
+const nextBasketIdentity = { ...currentBasketIdentity, tenant_id: 'tenant-b' };
+const nextBasketKey = questionBasketCacheKey(nextBasketIdentity);
+basketStores.set(initialBasketKey, ['question-a']);
+basketStores.set(nextBasketKey, ['question-b']);
+const basketRuntime = createQuestionBasketRuntime({
+  readIdentity: () => currentBasketIdentity,
+  read: key => basketStores.get(key) || [],
+  write: (key, ids) => basketStores.set(key, ids),
+});
+const initialBasketSnapshot = basketRuntime.snapshot();
+assert.deepStrictEqual(initialBasketSnapshot.ids, ['question-a']);
+currentBasketIdentity = nextBasketIdentity;
+const rejectedBasketWrite = basketRuntime.replace(['stale-question-a'], initialBasketSnapshot.scopeKey);
+assert.strictEqual(rejectedBasketWrite.written, false, 'a mounted old-scope basket must not be written into the new tenant scope');
+assert.deepStrictEqual(rejectedBasketWrite.snapshot, { scopeKey: nextBasketKey, ids: ['question-b'] }, 'scope switch must atomically reload the new basket namespace');
 
 for (const legacyUser of [
   { id: 'retired-1', user_type: 'retired' },
@@ -162,6 +186,6 @@ assert.strictEqual(businessCacheIdentityKey(invalidIdentity), '');
 assert.strictEqual(accountExperiencePolicy(invalidIdentity), null);
 assert.strictEqual(canUserSubmitMiniappWrite({ id: 'teacher-1', user_type: 'teacher' }, 'asset-import', ['asset-import']), true, 'formal write policy must remain unchanged');
 assert.strictEqual(canUserSubmitMiniappWrite({ id: 'student-1', user_type: 'student' }, 'asset-import', ['asset-import']), false, 'students must not be offered a personal-asset import that cloud policy rejects');
-assert.strictEqual(canUserSubmitMiniappWrite({ id: 'student-1', user_type: 'student' }, 'paper-export-pdf', ['paper-export-pdf']), true, 'students retain the limited question-paper export task');
+assert.strictEqual(canUserSubmitMiniappWrite({ id: 'student-1', user_type: 'student' }, 'paper-export-pdf', ['paper-export-pdf']), false, 'students must not be offered an export task that cloud policy rejects');
 
 console.log('miniapp authorization runtime checks passed');

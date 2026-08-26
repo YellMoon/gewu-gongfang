@@ -40,13 +40,17 @@ function buildRoleApplicationRequest(input = {}) {
   if (requestedIdentity === 'family_member' && profileMode !== 'existing') {
     throw new Error('family_member requires existing profile mode');
   }
-  const bindingHint = String(input.bindingHint || '').trim();
-  if (bindingHint.length > 128) throw new Error('binding hint must not exceed 128 characters');
-  if (!bindingHint) throw new Error('existing profile mode requires a binding hint');
+  const profileName = String(input.profileName || '').trim();
+  const contactPhone = String(input.contactPhone || '').replace(/[\s-]/g, '');
+  if (!profileName || profileName.length > 64) throw new Error('profile name is required and must not exceed 64 characters');
+  if (!/^1[3-9]\d{9}$/.test(contactPhone)) throw new Error('a valid mainland China mobile phone is required');
   return {
     requestedIdentity,
     profileMode,
-    bindingHint: bindingHint || null,
+    // The cloud repository currently records a single review note. Keep the
+    // storage detail private to the client while requiring human-recognizable
+    // information instead of an internal profile identifier.
+    bindingHint: `\u59d3\u540d\uff1a${profileName}\uff1b\u624b\u673a\u53f7\uff1a${contactPhone}`,
   };
 }
 

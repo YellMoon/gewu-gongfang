@@ -44,7 +44,8 @@ export default function AccountApplicationPage() {
   const [application, setApplication] = useState<any>(null);
   const [roleIndex, setRoleIndex] = useState(0);
   const [profileModeIndex, setProfileModeIndex] = useState(0);
-  const [bindingHint, setBindingHint] = useState('');
+  const [profileName, setProfileName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
 
   const load = async () => {
     if (!operationLock.current.tryAcquire('refresh')) return;
@@ -59,7 +60,6 @@ export default function AccountApplicationPage() {
         setRoleIndex(nextApplication.requestedIdentity === 'teacher' ? 1 : nextApplication.requestedIdentity === 'family_member' ? 2 : 0);
       }
       if (nextApplication?.profileMode === 'new') setProfileModeIndex(1);
-      if (nextApplication?.bindingHint) setBindingHint(nextApplication.bindingHint);
     } catch (error: any) {
       const message = String(error?.message || '').toLowerCase();
       setState(message.includes('network') || message.includes('\u7f51\u7edc') ? 'offline' : 'network_error');
@@ -84,7 +84,7 @@ export default function AccountApplicationPage() {
       ? 'existing' as ProfileMode
       : PROFILE_MODE_OPTIONS[profileModeIndex].value;
     try {
-      const request = buildRoleApplicationRequest({ requestedIdentity, profileMode, bindingHint }) as {
+      const request = buildRoleApplicationRequest({ requestedIdentity, profileMode, profileName, contactPhone }) as {
         requestedIdentity: RequestedIdentity;
         profileMode: ProfileMode;
         bindingHint: string;
@@ -112,6 +112,12 @@ export default function AccountApplicationPage() {
   const profileMode = requestedIdentity === 'family_member'
     ? 'existing' as ProfileMode
     : PROFILE_MODE_OPTIONS[profileModeIndex].value;
+  const nameLabel = requestedIdentity === 'family_member'
+    ? '\u5b66\u751f\u59d3\u540d'
+    : (profileMode === 'new' ? '\u65b0\u6863\u6848\u59d3\u540d' : '\u5173\u8054\u5bf9\u8c61\u59d3\u540d');
+  const phoneLabel = requestedIdentity === 'family_member'
+    ? '\u5b66\u751f\u6216\u76d1\u62a4\u4eba\u624b\u673a\u53f7'
+    : (profileMode === 'new' ? '\u65b0\u6863\u6848\u5e38\u7528\u624b\u673a\u53f7' : '\u5173\u8054\u5bf9\u8c61\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7');
 
   return (
       <View className='application-page'>
@@ -152,14 +158,24 @@ export default function AccountApplicationPage() {
           ) : null}
 
           <View className='field'>
-            <Text className='label'>{profileMode === 'new' ? '\u65b0\u6863\u6848\u4fe1\u606f' : '\u5df2\u6709\u6863\u6848\u4fe1\u606f'}</Text>
+            <Text className='label'>{nameLabel}</Text>
             <Input
-              maxlength={128}
-              value={bindingHint}
-              onInput={event => setBindingHint(event.detail.value)}
-              placeholder={profileMode === 'new' ? '\u8bf7\u586b\u5199\u59d3\u540d\u548c\u5907\u6ce8\u4fe1\u606f' : '\u8bf7\u586b\u5199\u5df2\u6709\u6863\u6848\u7684\u540d\u79f0\u6216\u7f16\u53f7'}
+              maxlength={64}
+              value={profileName}
+              onInput={event => setProfileName(event.detail.value)}
+              placeholder={requestedIdentity === 'family_member' ? '\u8bf7\u586b\u5199\u5b66\u751f\u7684\u771f\u5b9e\u59d3\u540d' : '\u8bf7\u586b\u5199\u771f\u5b9e\u59d3\u540d'}
             />
-            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u4fe1\u606f\u5e76\u5173\u8054\u6863\u6848\u3002'}</Text>
+          </View>
+          <View className='field'>
+            <Text className='label'>{phoneLabel}</Text>
+            <Input
+              type='number'
+              maxlength={11}
+              value={contactPhone}
+              onInput={event => setContactPhone(event.detail.value)}
+              placeholder='\u8bf7\u8f93\u5165 11 \u4f4d\u624b\u673a\u53f7'
+            />
+            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u4e0e\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7\uff0c\u4e0d\u9700\u8981\u8f93\u5165\u7cfb\u7edf\u7f16\u53f7\u3002'}</Text>
           </View>
 
           <Button

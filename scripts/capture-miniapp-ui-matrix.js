@@ -100,6 +100,10 @@ const identities = Object.freeze({
   guest: null,
   super_admin: normalIdentity('super_admin'),
   teacher: normalIdentity('teacher'),
+  'paper-teacher': {
+    ...normalIdentity('teacher'),
+    accountId: 'fixture-paper-teacher', id: 'fixture-paper-teacher', name: '组卷验收教师',
+  },
   student: normalIdentity('student'),
   guardian: {
     ...normalIdentity('student'),
@@ -155,7 +159,34 @@ function fixtureResponse(request, scenario) {
     for (const table of ['students', 'studentContacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'assetRecords', 'assetCategories']) projection[table] = [];
     return { statusCode: 200, body: { ok: true, projection } };
   }
-  if (pathname === '/api/business/miniapp-question-previews') return { statusCode: 200, body: { ok: true, questions: [] } };
+  if (pathname === '/api/business/miniapp-question-previews') {
+    const questions = identity?.status === 'visitor' || identity?.accountId === 'fixture-paper-teacher' ? [{
+      id: 'fixture-question-1',
+      subject: 'physics',
+      type: 'single_choice',
+      stemPreview: 'Which force changes an object velocity?',
+      options: ['A. Balanced force', 'B. Net force'],
+      answer: 'B. Net force',
+      explanation: 'A non-zero net force changes velocity.',
+      difficulty: 2,
+      source: '2026 city mock',
+      knowledgeLabels: ['Dynamics'],
+      status: 'published',
+    }] : [];
+    return { statusCode: 200, body: { ok: true, questions } };
+  }
+  if (pathname === '/api/business/miniapp-paper-export-tasks' && request.method === 'POST') {
+    return { statusCode: 202, body: { ok: true, task: { taskId: 'paper_task_fixture', status: 'completed', phase: 'completed', progress: 100, requestHash: 'f'.repeat(64), createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z' } } };
+  }
+  if (/^\/api\/business\/miniapp-paper-export-tasks\/paper_task_fixture$/.test(pathname)) {
+    return { statusCode: 200, body: { ok: true, task: { taskId: 'paper_task_fixture', status: 'completed', phase: 'completed', progress: 100, requestHash: 'f'.repeat(64), createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z' } } };
+  }
+  if (/^\/api\/business\/miniapp-paper-export-tasks\/paper_task_fixture\/delivery$/.test(pathname) && request.method === 'POST') {
+    return { statusCode: 200, body: { ok: true, delivery: { deliveryId: 'delivery_fixture', status: 'ready', artifactId: 'paper_artifact_fixture', fileName: 'fixture-paper.pdf', mimeType: 'application/pdf', expiresAt: '2026-08-27T00:15:00.000Z' } } };
+  }
+  if (pathname === '/api/business/miniapp-artifact-deliveries/delivery_fixture/download') {
+    return { statusCode: 200, bytes: Buffer.from('%PDF-1.4\n% fixture paper\n', 'utf8'), contentType: 'application/pdf' };
+  }
   if (pathname === '/api/miniapp/role-applications/me') return { statusCode: 200, body: { ok: true, state: 'not_submitted', application: null } };
   if (['/api/students', '/api/courses', '/api/schedules', '/api/teachers', '/api/payments', '/api/grades', '/api/modules'].includes(pathname)) return { statusCode: 200, body: { success: true, data: [] } };
   return { statusCode: 200, body: { success: true, data: {} } };
@@ -168,8 +199,8 @@ function startFixtureServer(port = FIXTURE_PORT) {
   const server = http.createServer((request, response) => {
     requests.push({ scenarioId: activeScenario?.id || '', method: request.method, path: String(request.url || '').replace(/([?&])_t=\d+/g, '$1_t=[timestamp]') });
     const fixture = fixtureResponse(request, activeScenario);
-    response.writeHead(fixture.statusCode, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
-    response.end(JSON.stringify(fixture.body));
+    response.writeHead(fixture.statusCode, { 'Content-Type': fixture.contentType || 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+    response.end(Buffer.isBuffer(fixture.bytes) ? fixture.bytes : JSON.stringify(fixture.body));
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);

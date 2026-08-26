@@ -42,8 +42,26 @@ function actor(value) {
   return { accountId, roles: value.roles.slice() };
 }
 
+function paperLayout(value, questionIds) {
+  if (value === undefined) return null;
+  if (!plainObject(value) || Reflect.ownKeys(value).length !== 1 || !Array.isArray(value.items)
+    || value.items.length !== questionIds.length) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+  const items = value.items.map(item => {
+    if (!plainObject(item) || Reflect.ownKeys(item).length !== 3
+      || typeof item.id !== 'string' || typeof item.sectionTitle !== 'string'
+      || !Number.isSafeInteger(item.score)) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+    const id = text(item.id, 128);
+    const sectionTitle = item.sectionTitle.trim();
+    if (!sectionTitle || sectionTitle.length > 128 || item.score < 0 || item.score > 1000) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+    return { id, sectionTitle, score: item.score };
+  });
+  if (items.some((item, index) => item.id !== questionIds[index])) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+  return { items };
+}
+
 function request(value) {
-  if (!plainObject(value) || Reflect.ownKeys(value).length !== 5
+  if (!plainObject(value) || ![5, 6].includes(Reflect.ownKeys(value).length)
+    || Reflect.ownKeys(value).some(key => !['questionIds', 'title', 'subject', 'answerPosition', 'formulaMode', 'layout'].includes(key))
     || !['questionIds', 'title', 'subject', 'answerPosition', 'formulaMode'].every(key => Object.hasOwn(value, key))) {
     throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
   }
@@ -56,7 +74,8 @@ function request(value) {
     || !['word-native', 'eq-field', 'mathtype-compatible', 'latex-vector'].includes(value.formulaMode)) {
     throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
   }
-  return { questionIds, title, subject, answerPosition: value.answerPosition, formulaMode: value.formulaMode };
+  const layout = paperLayout(value.layout, questionIds);
+  return { questionIds, title, subject, answerPosition: value.answerPosition, formulaMode: value.formulaMode, ...(layout ? { layout } : {}) };
 }
 
 function taskRow(row, replayed = false) {
@@ -87,7 +106,7 @@ const selectedSql = [
   'c.stem AS "stem",c.answer AS "answer",c.explanation AS "explanation",c.options_json AS "options",',
   'c.rich_content_json AS "richContent",q.has_formula AS "hasFormula",c.content_hash AS "contentHash",c.version AS "version"',
   'FROM business.questions q JOIN business.question_contents c ON c.tenant_id=q.tenant_id AND c.question_id=q.id',
-  'WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false AND q.id=ANY($2::text[]) ORDER BY q.id ASC',
+  'WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false AND q.id=ANY($2::text[]) ORDER BY array_position($2::text[],q.id)',
 ].join(' ');
 const insertSql = [
   'INSERT INTO business.paper_export_tasks',

@@ -5,10 +5,11 @@ const selection = workflow.toggleOrderedSelection([], 'q2');
 assert.deepStrictEqual(workflow.toggleOrderedSelection(selection, 'q1'), ['q2', 'q1']);
 assert.deepStrictEqual(workflow.toggleOrderedSelection(['q2', 'q1'], 'q2'), ['q1']);
 
-const draft = workflow.createTaskDraft({ taskType: 'paper-export-pdf', questionIds: ['q2', 'q1'], title: 'Paper', answerPosition: 'after', formulaMode: 'latex-vector' }, { now: 100, idFactory: () => 'idem-1' });
+const layout = { items: [{ id: 'q2', sectionTitle: 'Part one', score: 3 }, { id: 'q1', sectionTitle: 'Part two', score: 6 }] };
+const draft = workflow.createTaskDraft({ taskType: 'paper-export-pdf', questionIds: ['q2', 'q1'], title: 'Paper', answerPosition: 'after', formulaMode: 'latex-vector', layout }, { now: 100, idFactory: () => 'idem-1' });
 assert.deepStrictEqual(draft.request, {
   protocolVersion: 3, taskType: 'paper-export-pdf', idempotencyKey: 'idem-1',
-  payload: { questionIds: ['q2', 'q1'], title: 'Paper', answerPosition: 'after', formulaMode: 'latex-vector' },
+  payload: { questionIds: ['q2', 'q1'], title: 'Paper', answerPosition: 'after', formulaMode: 'latex-vector', layout },
 });
 assert.strictEqual(draft.confirmed, false, 'network submission starts as a local draft');
 const confirmed = workflow.confirmTaskDraft(draft, { id: 'task-1', status: 'queued', phase: 'queued', progress: 0 });

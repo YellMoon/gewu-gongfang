@@ -20,36 +20,40 @@ for (const state of [
 
 assert.deepStrictEqual(buildRoleApplicationRequest({
   requestedIdentity: 'student', profileMode: 'existing',
-  bindingHint: ' student-profile-1 ',
+  profileName: ' \u5f20\u4e09 ', contactPhone: '138 0013-8000',
 }), {
   requestedIdentity: 'student', profileMode: 'existing',
-  bindingHint: 'student-profile-1',
+  bindingHint: '\u59d3\u540d\uff1a\u5f20\u4e09\uff1b\u624b\u673a\u53f7\uff1a13800138000',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
-  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
+  requestedIdentity: 'family_member', profileMode: 'existing', profileName: '\u674e\u56db', contactPhone: '13900139000',
 }), {
-  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: 'student-profile-1',
+  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: '\u59d3\u540d\uff1a\u674e\u56db\uff1b\u624b\u673a\u53f7\uff1a13900139000',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
-  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: 'New Teacher',
+  requestedIdentity: 'teacher', profileMode: 'new', profileName: '\u738b\u4e94', contactPhone: '13700137000',
 }), {
-  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: 'New Teacher',
+  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: '\u59d3\u540d\uff1a\u738b\u4e94\uff1b\u624b\u673a\u53f7\uff1a13700137000',
 });
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'new', bindingHint: 'family member' }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'new', profileName: '\u674e\u56db', contactPhone: '13900139000' }),
   /family_member.*existing/,
 );
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'operator', profileMode: 'existing', bindingHint: 'profile-1' }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'operator', profileMode: 'existing', profileName: '\u5f20\u4e09', contactPhone: '13800138000' }),
   /teacher, student, or family_member/,
 );
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'teacher', profileMode: 'create', bindingHint: '' }),
+  () => buildRoleApplicationRequest({ requestedIdentity: 'teacher', profileMode: 'create', profileName: '\u5f20\u4e09', contactPhone: '13800138000' }),
   /existing or new/,
 );
 assert.throws(
-  () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', bindingHint: 'x'.repeat(129) }),
-  /128/,
+  () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', profileName: 'x'.repeat(65), contactPhone: '13800138000' }),
+  /64/,
+);
+assert.throws(
+  () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', profileName: '\u5f20\u4e09', contactPhone: '12345' }),
+  /mobile phone/,
 );
 
 const lock = createApplicationOperationLock();
