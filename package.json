@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.6.0",
+  "version": "8.6.1",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
@@ -48,7 +48,7 @@
     "verify:cloud-business-release": "python scripts/verify_cloud_business_release.py",
     "verify:real-cloud-business-acceptance": "python scripts/run_real_cloud_business_acceptance.py",
     "test:release-matrix": "node scripts/no-hardcoded-deploy-credentials.test.js && node scripts/release-matrix.test.js && node scripts/release-matrix-python.test.js && node scripts/release-boundary.test.js && node scripts/check-question-import-release.test.js && node scripts/nginx-scheduling.test.js && node scripts/real-cloud-business-acceptance.test.js && node scripts/verify_ecs_ws.test.js && node scripts/vnext-migration/cloudControlPlaneM21Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM22Upgrade.test.js && python scripts/run_real_cloud_business_acceptance.test.py && python scripts/apply_cloud_postgres_migrations.test.py && python scripts/apply_cloud_control_plane_m20.test.py && python scripts/apply_cloud_control_plane_m21.test.py && python scripts/apply_cloud_control_plane_m22.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/verify_cloud_business_release.test.py && python scripts/miniapp_fixed_egress.test.py && python scripts/repair_production_tls.test.py",
-    "test": "npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node backend/src/runtimePort.test.js",
+    "test": "npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node backend/src/runtimePort.test.js && node scripts/deployEnv.test.js",
     "test:formula-export": "python -m unittest discover modules/question-bank/export/tests -v",
     "test:paper-export-desktop": "node src/services/paperExportTaskClient.test.js && node src/services/paperExportTaskUi.test.js && node src/services/desktopQuestionImportClient.test.js",
     "test:rich-content": "node src/services/questionRichContent.test.js && node src/constants/questionTypes.test.js && node src/components/richQuestionEditorState.test.js && node src/utils/sanitizeHtml.test.js && node src/components/richQuestionEditorRoundTrip.test.js && node src/components/question-editor/questionStructureOperations.test.js && node src/components/question-editor/questionEditorSession.test.js && node src/services/questionValidation.test.js",

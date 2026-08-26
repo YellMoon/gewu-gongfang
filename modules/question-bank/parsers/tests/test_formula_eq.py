@@ -66,6 +66,22 @@ class EqFormulaTests(unittest.TestCase):
                 self.assertEqual(result.status, "complete")
                 self.assertEqual(result.canonical_latex, expected)
 
+    def test_converts_known_overlay_forms_without_generalizing_unknown_overlaps(self):
+        cases = {
+            r"EQ \o(v,\s\up2(-))": r"\vec{v}",
+            r"EQ \o\al(2,0)": r"{}^{2}_{0}",
+            r"EQ \o\al(2,2)": r"{}^{2}_{2}",
+        }
+        for instruction, expected in cases.items():
+            with self.subTest(instruction=instruction):
+                result = convert_eq_to_latex(instruction)
+                self.assertEqual(result.status, "complete")
+                self.assertEqual(result.canonical_latex, expected)
+
+        unknown = convert_eq_to_latex(r"EQ \o(a,b,c)")
+        self.assertEqual(unknown.status, "failed")
+        self.assertIn("unsupported EQ overlay", unknown.warnings[0])
+
     def test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction(self):
         result = convert_eq_to_latex(r"EQ \unknown(secret)", visible_result="rendered equation")
         self.assertEqual(result.status, "preview_only")
