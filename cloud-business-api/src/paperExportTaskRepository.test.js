@@ -43,6 +43,7 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
   assert.ok(calls[1][0].includes('FROM business.questions'));
   assert.ok(calls[1][0].includes('array_position'), 'question snapshots must preserve the order selected in the paper editor');
   assert.ok(calls[1][0].includes('business.question_assets') && calls[1][0].includes("asset.state='verified'"), 'paper snapshots must freeze only verified question media descriptors');
+  assert.ok(calls[1][0].includes("asset.mime_type IN ('image/png','image/jpeg','image/jpg')"), 'paper snapshots must not misclassify OLE or opaque binary objects as exportable images');
   assert.ok(calls[2][0].includes('INSERT INTO business.paper_export_tasks'));
   const deferred = await repository.defer({ taskId: 'paper-task-1' });
   assert.strictEqual(deferred.phase, 'media_pending');

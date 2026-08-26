@@ -105,7 +105,7 @@ const selectedSql = [
   'SELECT q.id AS "id",q.subject AS "subject",q.question_type AS "questionType",q.difficulty AS "difficulty",',
   'c.stem AS "stem",c.answer AS "answer",c.explanation AS "explanation",c.options_json AS "options",',
   'c.rich_content_json AS "richContent",q.has_formula AS "hasFormula",c.content_hash AS "contentHash",c.version AS "version",',
-  "COALESCE((SELECT jsonb_agg(jsonb_build_object('assetKey',asset.content_hash,'fileName',asset.file_name,'mimeType',asset.mime_type) ORDER BY asset.created_at,asset.id) FROM business.question_assets asset WHERE asset.tenant_id=q.tenant_id AND asset.question_id=q.id AND asset.deleted=false AND asset.state='verified' AND asset.asset_type='image'),'[]'::jsonb) AS assets",
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('assetKey',asset.content_hash,'fileName',asset.file_name,'mimeType',asset.mime_type) ORDER BY asset.created_at,asset.id) FROM business.question_assets asset WHERE asset.tenant_id=q.tenant_id AND asset.question_id=q.id AND asset.deleted=false AND asset.state='verified' AND asset.asset_type='image' AND asset.mime_type IN ('image/png','image/jpeg','image/jpg')),'[]'::jsonb) AS assets",
   'FROM business.questions q JOIN business.question_contents c ON c.tenant_id=q.tenant_id AND c.question_id=q.id',
   'WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false AND q.id=ANY($2::text[]) ORDER BY array_position($2::text[],q.id)',
 ].join(' ');
