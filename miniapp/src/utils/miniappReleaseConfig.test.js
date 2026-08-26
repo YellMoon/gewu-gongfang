@@ -25,10 +25,8 @@ assert.ok(
   'retired experience artifact downloads must not remain in the miniapp API client',
 );
 assert.ok(!api.includes("DEFAULT_BASE_URL = 'http://39.106.172.132'") && !api.includes('https://physicsedu.xyz/scheduling'), 'miniapp source must not retain a local-backend API default');
-assert.ok(indexConfig.includes('https://physicsedu.xyz/scheduling'), 'default Taro build config should use HTTPS legal domain unless overridden');
-assert.ok(!indexConfig.includes('http://localhost:3001/api'), 'default Taro build config should not produce localhost API in dist');
-assert.ok(prodConfig.includes('https://physicsedu.xyz/scheduling'), 'miniapp prod config should use HTTPS legal domain');
 for (const [name, source] of [['index', indexConfig], ['dev', devConfig], ['staging', stagingConfig], ['prod', prodConfig]]) {
+  assert.ok(!source.includes('MINIAPP_API_BASE_URL') && !source.includes('__API_BASE_URL__'), `${name} config must not emit the retired scheduling API base`);
   assert.ok(source.includes('MINIAPP_CLOUD_BUSINESS_API_BASE_URL'), `${name} config should accept the isolated cloud business API base URL`);
   assert.ok(source.includes('__CLOUD_BUSINESS_API_BASE_URL__'), `${name} config should define the isolated cloud business API base URL`);
 }

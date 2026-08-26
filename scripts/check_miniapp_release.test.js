@@ -34,17 +34,14 @@ assert.doesNotThrow(() => checkRetiredBindingReviewUi());
 assert.strictEqual(containsRemovedReviewClientFlow("identity.token_use === 'review-demo'"), false,
   'legacy-identity rejection markers are security cleanup, not a client login flow');
 assert.strictEqual(containsRemovedReviewClientFlow("reviewDemoApi.login('/api/auth/review-demo')"), true);
-assert.deepStrictEqual(parseProdApiBase(prodSource), {
-  apiBaseUrl: 'https://physicsedu.xyz/scheduling',
-  cloudBusinessApiBaseUrl: 'https://physicsedu.xyz/cloud-business',
-});
+assert.deepStrictEqual(parseProdApiBase(prodSource), { cloudBusinessApiBaseUrl: 'https://physicsedu.xyz/cloud-business' });
 assert.throws(
-  () => parseProdApiBase(prodSource.replaceAll("'https://physicsedu.xyz/scheduling'", "'http://wrong.example.test'")),
-  /production miniapp API must use https/,
+  () => parseProdApiBase(prodSource.replaceAll("'https://physicsedu.xyz/cloud-business'", "'http://wrong.example.test'")),
+  /production cloud business API must use https/,
 );
 assert.throws(
-  () => parseProdApiBase(prodSource.replaceAll("'https://physicsedu.xyz/scheduling'", "'https://wrong.example.test'")),
-  /production miniapp API should be https:\/\/physicsedu\.xyz\/scheduling/,
+  () => parseProdApiBase(prodSource.replaceAll("'https://physicsedu.xyz/cloud-business'", "'https://wrong.example.test'")),
+  /production cloud business API should be https:\/\/physicsedu\.xyz\/cloud-business/,
 );
 assert.throws(
   () => parseProdApiBase(`${prodSource}\n__REVIEW_API_BASE_URL__: JSON.stringify(process.env.REVIEW || 'https://physicsedu.xyz')`),

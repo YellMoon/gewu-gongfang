@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 
 const EXPECTED_APPID = 'wx3d570539bbe6ba1b';
-const DEFAULT_API_BASE_URL = 'https://physicsedu.xyz/scheduling';
 const DEFAULT_CLOUD_BUSINESS_API_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 const rootDir = process.cwd();
 const miniappDir = path.join(rootDir, 'miniapp');
@@ -30,14 +29,12 @@ function extractDefineFallback(source, constantName) {
   return match[2];
 }
 function parseProdApiBase(prodSource) {
-  const apiBaseUrl = extractDefineFallback(prodSource, '__API_BASE_URL__');
   const cloudBusinessApiBaseUrl = extractDefineFallback(prodSource, '__CLOUD_BUSINESS_API_BASE_URL__');
-  assertHttpsEndpoint(apiBaseUrl, 'production miniapp API');
   assertHttpsEndpoint(cloudBusinessApiBaseUrl, 'production cloud business API');
-  if (apiBaseUrl !== DEFAULT_API_BASE_URL) fail(`production miniapp API should be ${DEFAULT_API_BASE_URL}`);
   if (cloudBusinessApiBaseUrl !== DEFAULT_CLOUD_BUSINESS_API_BASE_URL) fail(`production cloud business API should be ${DEFAULT_CLOUD_BUSINESS_API_BASE_URL}`);
+  if (String(prodSource).includes('__API_BASE_URL__') || String(prodSource).includes('MINIAPP_API_BASE_URL')) fail('retired scheduling API base must stay absent');
   if (String(prodSource).includes('__REVIEW_API_BASE_URL__')) fail('removed review Gateway base must stay absent');
-  return { apiBaseUrl, cloudBusinessApiBaseUrl };
+  return { cloudBusinessApiBaseUrl };
 }
 function containsRemovedReviewClientFlow(source) {
   return /reviewDemoApi|\/api\/auth\/review-demo|REVIEW_API_BASE_URL/.test(String(source || ''));
