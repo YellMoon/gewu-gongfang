@@ -19,7 +19,7 @@ interface ApiResponse<T = any> {
 }
 
 export const miniappCloudAuthApi = {
-  async login(loginCode: string, phoneCode: string | null): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
+  async login(loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; token: string; identity: any }>> {
     try {
       const response = await Taro.request({
         url: cloudBusinessUrl('/api/miniapp/cloud-login'),

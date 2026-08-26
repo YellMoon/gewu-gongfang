@@ -8,7 +8,8 @@ const loginInventory = pageInventory.find(entry => entry.route === 'pages/login/
 
 assert.strictEqual((loginPage.match(/openType="getPhoneNumber"/g) || []).length, 1, 'login page must use the official one-time phone proof');
 assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'login must use the dedicated cloud account client with both official identity proofs');
-assert.ok(loginPage.includes('handleCloudLogin(null)'), 'an already-bound official WeChat identity must be allowed to log in without collecting the phone proof again');
+assert.strictEqual((loginPage.match(/className="wx-login-btn"/g) || []).length, 1, 'login page must expose one clear WeChat login action');
+assert.ok(!loginPage.includes('handleCloudLogin(null)'), 'every WeChat login must obtain a current official phone proof');
 assert.ok(loginPage.includes('Taro.login()'), 'login must obtain the official WeChat identity code before calling cloud login');
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');
 assert.ok(!loginPage.includes('/api/auth/wechat-login'), 'login must not call the old account endpoint');
@@ -22,7 +23,7 @@ assert.ok(!loginPage.includes('reviewCode') && !loginPage.includes('reviewRole')
 assert.ok(apiClient.includes('code?: number | string'), 'API responses should preserve string denial codes');
 assert.ok(apiClient.includes('(response.data as any)?.code'), 'cloud-login denials should preserve the backend denial code');
 assert.ok(apiClient.includes("'/api/miniapp/cloud-login'"), 'cloud login must run without an old session bearer token');
-assert.ok(apiClient.includes('phoneCode: string | null'), 'the cloud API facade must permit no phone code only for an already-bound identity');
+assert.ok(apiClient.includes('phoneCode: string'), 'the cloud API facade must require an official phone proof for every login');
 assert.ok(loginInventory?.verificationStates.includes('wechat-phone-proof'), 'login UI inventory should cover the new cloud phone proof');
 assert.ok(loginInventory?.verificationStates.includes('visitor-session'), 'login UI inventory should cover a new visitor that can submit a role application');
 assert.ok(loginInventory?.realFeatureBasis.includes('POST /api/miniapp/cloud-login'), 'login inventory must identify the cloud account boundary');

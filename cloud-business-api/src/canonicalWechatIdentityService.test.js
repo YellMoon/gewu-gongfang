@@ -21,11 +21,15 @@ const service = createCanonicalWechatIdentityService({
 });
 
 (async () => {
-  const known = await service.resolveOrBind({ loginCode: 'known', phoneCode: null });
+  const known = await service.resolveOrBind({ loginCode: 'known', phoneCode: 'known-phone' });
   assert.deepStrictEqual(known, { authorityId: 'authority-1', accountId: 'account-known', phoneHmac: hash('e'), provisioned: false, bound: false });
 
   await assert.rejects(
-    () => service.resolveOrBind({ loginCode: 'first', phoneCode: null }),
+    () => service.resolveOrBind({ loginCode: 'known', phoneCode: null }),
+    error => error && error.code === 'CLOUD_CANONICAL_WECHAT_IDENTITY_REJECTED',
+  );
+  await assert.rejects(
+    () => service.resolveOrBind({ loginCode: 'known', phoneCode: 'phone-proof' }),
     error => error && error.code === 'CLOUD_CANONICAL_WECHAT_IDENTITY_REJECTED',
   );
 
