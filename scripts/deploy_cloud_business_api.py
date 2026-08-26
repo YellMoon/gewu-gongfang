@@ -247,6 +247,12 @@ def upload_source(ssh, tag):
                 remote_parent = posixpath.dirname(remote_path)
                 deploy.run(ssh, f"mkdir -p '{remote_parent}'")
                 sftp.put(str(local_path), remote_path)
+        font = ROOT / "backend" / "assets" / "fonts" / "NotoSansCJKsc-Regular.otf"
+        if not font.is_file():
+            raise failure("CLOUD_DOCKER_DEPLOY_FONT_MISSING")
+        font_target = posixpath.join(build_dir, "backend", "assets", "fonts", font.name)
+        deploy.run(ssh, f"mkdir -p '{posixpath.dirname(font_target)}'")
+        sftp.put(str(font), font_target)
     finally:
         sftp.close()
     return build_dir

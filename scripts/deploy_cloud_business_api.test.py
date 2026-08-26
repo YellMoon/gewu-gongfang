@@ -66,6 +66,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("test -d '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
         self.assertIn("test ! -L '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
         self.assertIn("elif test ! -e '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'; then mkdir -p", command)
+        uploaded = [call.args[1] for call in ssh.open_sftp.return_value.put.call_args_list]
+        self.assertTrue(any(path.endswith('/backend/assets/fonts/NotoSansCJKsc-Regular.otf') for path in uploaded))
 
     def test_explicit_rollback_restores_the_preserved_container(self):
         command = rollback_command("8.5.0-1101687f349d", "a" * 32)
