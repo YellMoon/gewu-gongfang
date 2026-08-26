@@ -66,6 +66,10 @@ const capabilitiesByRole = Object.freeze({
 
 function normalIdentity(role) {
   const identity = {
+    accountId: `fixture-${role}`,
+    roles: [role],
+    status: 'active',
+    profile: null,
     id: `fixture-${role}`,
     name: role === 'student' ? '学生验收账号' : role === 'teacher' ? '教师验收账号' : '管理验收账号',
     role,
@@ -74,17 +78,20 @@ function normalIdentity(role) {
     account_state: 'formal',
     tenant_id: 'fixture-tenant',
     review_status: 'approved',
-    status: 1,
     login_enabled: 1,
     active: true,
     deleted: false,
     disabled: false,
     capabilities: capabilitiesByRole[role] || [],
   };
-  if (role === 'teacher') identity.teacher_id = 'fixture-teacher';
+  if (role === 'teacher') {
+    identity.teacher_id = 'fixture-teacher';
+    identity.profile = { type: 'teacher', id: 'fixture-teacher' };
+  }
   if (role === 'student') {
     identity.student_id = 'fixture-student';
     identity.linked_student_ids = ['fixture-student'];
+    identity.profile = { type: 'student', id: 'fixture-student' };
   }
   return identity;
 }
@@ -101,6 +108,7 @@ const identities = Object.freeze({
     student_relationship: 'guardian',
   },
   visitor: {
+    accountId: 'fixture-visitor', roles: [], status: 'visitor', profile: null,
     id: 'fixture-visitor', name: '访客验收账号', role: 'visitor', user_type: 'visitor',
     identity_kind: 'visitor', account_state: 'visitor', token_use: 'miniapp-visitor',
     authority_id: 'fixture-authority',
@@ -152,7 +160,8 @@ function fixtureResponse(request, scenario) {
   return { statusCode: 200, body: { success: true, data: {} } };
 }
 
-function startFixtureServer() {
+function startFixtureServer(port = FIXTURE_PORT) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('fixture server port is invalid');
   const requests = [];
   let activeScenario = null;
   const server = http.createServer((request, response) => {
@@ -163,7 +172,7 @@ function startFixtureServer() {
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(FIXTURE_PORT, '127.0.0.1', () => resolve({
+    server.listen(port, '127.0.0.1', () => resolve({
       server, requests, setScenario: scenario => { activeScenario = scenario; },
     }));
   });
@@ -343,7 +352,23 @@ async function run() {
   console.log(`[miniapp-ui] evidence: ${OUTPUT}`);
 }
 
-run().catch(error => {
-  console.error(error && (error.stack || error.message || error));
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  if (process.env.MINIAPP_UI_FIXTURE_SERVER === '1') {
+    startFixtureServer().then(({ server }) => {
+      console.log(`[miniapp-ui] fixture server listening at ${FIXTURE_BASE}`);
+      const close = () => server.close(() => process.exit(0));
+      process.once('SIGINT', close);
+      process.once('SIGTERM', close);
+    }).catch(error => {
+      console.error(error && (error.stack || error.message || error));
+      process.exitCode = 1;
+    });
+  } else {
+    run().catch(error => {
+      console.error(error && (error.stack || error.message || error));
+      process.exitCode = 1;
+    });
+  }
+}
+
+module.exports = { startFixtureServer, fixtureResponse };
