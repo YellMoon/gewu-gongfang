@@ -66,14 +66,20 @@ class EqFormulaTests(unittest.TestCase):
                 self.assertEqual(result.status, "complete")
                 self.assertEqual(result.canonical_latex, expected)
 
-    def test_safe_vector_overlay_and_unsupported_overlays(self):
-        vector = convert_eq_to_latex(r"EQ \o(v,\s\up2(-))")
-        self.assertEqual(vector.status, "complete")
-        self.assertEqual(vector.canonical_latex, r"\vec{v}")
+    def test_safe_overline_overlay_and_unsupported_overlays(self):
+        overline = convert_eq_to_latex(r"EQ \o(v,\s\up2(-))")
+        self.assertEqual(overline.status, "complete")
+        self.assertEqual(overline.canonical_latex, r"\bar{v}")
+        raised_overline = convert_eq_to_latex(r"EQ \o(v,\s\up6(-))")
+        self.assertEqual(raised_overline.status, "complete")
+        self.assertEqual(raised_overline.canonical_latex, r"\bar{v}")
 
         for instruction in (
             r"EQ \o\al(2,0)",
             r"EQ \o\al(2,2)",
+            r"EQ \o(v,\s\up0(-))",
+            r"EQ \o(v,\s\up4(-))",
+            r"EQ \o(v,\s\up2(=))",
         ):
             with self.subTest(instruction=instruction):
                 result = convert_eq_to_latex(instruction)

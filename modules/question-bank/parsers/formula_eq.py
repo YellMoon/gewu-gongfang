@@ -250,10 +250,14 @@ def _convert_expression(expression: str) -> str:
             if switch:
                 overlay_start += len(switch.group(0))
             group, next_index = _balanced_group(expression, overlay_start)
-            vector = re.fullmatch(r"\s*([A-Za-z])\s*,\s*\\s\\up\d*\(\s*[-－]\s*\)\s*", group)
-            if switch or not vector:
+            # Preserve only the two observed Word vertical offsets for an
+            # explicit horizontal bar.  This retains the rendered mark without
+            # asserting that it is a vector arrow or accepting arbitrary EQ
+            # overlays as mathematical syntax.
+            overline = re.fullmatch(r"\s*([A-Za-z])\s*,\s*\\s\\up(?:2|6)\(\s*[-－]\s*\)\s*", group)
+            if switch or not overline:
                 raise ValueError("unsupported EQ overlay")
-            output.append(r"\vec{%s}" % vector.group(1))
+            output.append(r"\bar{%s}" % overline.group(1))
         else:
             raise ValueError("unsupported EQ command: \\" + command)
         index = next_index
