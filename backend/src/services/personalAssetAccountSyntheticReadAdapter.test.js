@@ -55,10 +55,10 @@ assert.deepStrictEqual(adapter.list({
 }).map(row => row.accountId), [
   'synthetic-account-alpha-earlier', 'synthetic-account-alpha', 'synthetic-account-alpha-z',
 ]);
-assert.deepStrictEqual(adapter.list({
+assert.throws(() => adapter.list({
   actor: { id: 'synthetic-admin', role: 'admin' },
   authorityId: 'synthetic-authority', ownerUserId: 'synthetic-owner-beta',
-}).map(row => row.accountId), ['synthetic-account-beta']);
+}), error => error.code === 'ASSET_ACCOUNT_FORBIDDEN');
 assert.throws(() => adapter.list({
   actor: { userId: 'synthetic-owner-alpha', roles: ['student'] },
   authorityId: 'synthetic-authority', ownerUserId: 'synthetic-owner-beta',

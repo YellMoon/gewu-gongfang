@@ -340,7 +340,7 @@ router.post('/tasks', requireMiniappTaskAccess, (req, res) => {
       createdBy: req.user?.id || 'miniapp',
       tenantId: req.tenantId || req.user?.tenant_id || req.user?.tenantId || 'default',
       actorRole,
-      allowDraft: ['super_admin', 'admin'].includes(actorRole),
+      allowDraft: actorRole === 'super_admin',
       targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
       idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
     });

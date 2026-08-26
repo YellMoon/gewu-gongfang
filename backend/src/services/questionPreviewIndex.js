@@ -8,7 +8,7 @@ function safeHostBaseUrl(value) { try { const url = new URL(String(value || ''))
 function hasBoundSubject(user = {}, role = roleForUser(user)) {
   if (role === 'student') return Boolean(user.student_id || user.studentId || user.linked_student_id || user.linkedStudentId || (Array.isArray(user.linked_student_ids) && user.linked_student_ids.length) || (Array.isArray(user.linkedStudentIds) && user.linkedStudentIds.length));
   if (role === 'teacher') return Boolean(user.teacher_id || user.teacherId);
-  return ['admin', 'super_admin'].includes(role);
+  return role === 'super_admin';
 }
 function buildQuestionPreviewIndex(snapshot, user = {}) {
   const payload = snapshot?.payload || {};
@@ -17,7 +17,7 @@ function buildQuestionPreviewIndex(snapshot, user = {}) {
   const tenantId = tenantForUser(user); const role = roleForUser(user);
   let questions = (published || (Array.isArray(payload.questions) ? payload.questions : []))
     .filter(question => String(question.tenant_id || question.tenantId || 'default') === tenantId)
-    .filter(question => ['admin', 'super_admin'].includes(role) || statusOf(question) === 'host_committed')
+    .filter(question => role === 'super_admin' || statusOf(question) === 'host_committed')
     .map(question => {
       const content = contents.get(String(question.id)) || {};
       return { id: String(question.id), type: String(question.type || 'unknown'), stemPreview: cleanPreview(question.stemPreview || question.stem || question.content || content.stem || content.content || ''), status: statusOf(question) };

@@ -200,7 +200,7 @@ function createSyntheticPersonalAssetAccountListAdapter(value) {
       const authorityId = requiredText(input.authorityId, 'ASSET_ACCOUNT_AUTHORITY_REQUIRED');
       const ownerUserId = Object.hasOwn(input, 'ownerUserId')
         ? requiredText(input.ownerUserId, inputCode) : currentActor.id;
-      if (ownerUserId !== currentActor.id && !currentActor.roles.some(role => role === 'admin' || role === 'super_admin')) {
+      if (ownerUserId !== currentActor.id && !currentActor.roles.some(role => role === 'super_admin')) {
         throw syntheticError('ASSET_ACCOUNT_FORBIDDEN', 403);
       }
       const rows = state.rows

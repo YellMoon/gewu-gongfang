@@ -45,9 +45,11 @@ for (const [name, service] of [['backend', backend], ['gateway', gateway]]) {
   assert.strictEqual(unboundStudentJson.questions.length, 10, `${name}: serialized empty bindings remain unbound`);
   assert.strictEqual(unboundTeacher.questions.length, 10, `${name}: unbound teacher gets only the limited preview`);
   assert.ok(!JSON.stringify(unboundStudent).includes('must-not-leak'));
-  const admin = service.buildQuestionPreviewIndex(snapshot, { id: 'admin-a', role: 'admin', tenantId: 'tenant-a' });
-  assert.deepStrictEqual(admin.questions.map(item => item.id), ['q-admin-draft', 'q-a'], `${name}: admin sees same-tenant draft and committed questions`);
-  assert.deepStrictEqual([admin.snapshotId, admin.version], ['snap-1', 'v1']);
+  const retiredAdmin = service.buildQuestionPreviewIndex(snapshot, { id: 'admin-a', role: 'admin', tenantId: 'tenant-a' });
+  assert.deepStrictEqual(retiredAdmin.questions.map(item => item.id), ['q-a'], `${name}: retired admin must not retain draft visibility`);
+  const superAdmin = service.buildQuestionPreviewIndex(snapshot, { id: 'super-admin-a', role: 'super_admin', tenantId: 'tenant-a' });
+  assert.deepStrictEqual(superAdmin.questions.map(item => item.id), ['q-admin-draft', 'q-a'], `${name}: only super admin sees same-tenant draft and committed questions`);
+  assert.deepStrictEqual([superAdmin.snapshotId, superAdmin.version], ['snap-1', 'v1']);
 }
 
 assert.strictEqual(

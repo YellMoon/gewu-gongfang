@@ -35,6 +35,10 @@ assert.ok(!app.includes("app.use('/api/payments'"), 'local payments CRUD must no
 assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'cloud relay should enforce miniapp task permissions inside the route');
 assert.ok(cloudRoute.includes('filterSnapshotForUser'), 'backend cloud relay should filter snapshots by user role');
 assert.ok(cloudRoute.includes('requireMiniappTaskAccess'), 'backend cloud relay should enforce task permissions per route');
+assert.ok(cloudRoute.includes("allowDraft: actorRole === 'super_admin'"),
+  'only super admin may create a draft task');
+assert.ok(!cloudRoute.includes("['super_admin', 'admin'].includes(actorRole)"),
+  'retired admin must not retain draft task privileges');
 assert.ok(gatewayAuth.includes('MINIAPP_AUTH_MOVED_TO_BACKEND'), 'legacy Gateway login must be a tombstone owned by the backend');
 assert.ok(middleware.includes('LEGACY_MINIAPP_TOKEN_RELOGIN_REQUIRED'),
   'retired unrecognized tokens must be rejected before they reach any business route');
