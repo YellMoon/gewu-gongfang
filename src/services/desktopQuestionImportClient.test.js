@@ -38,6 +38,16 @@ async function main() {
     }),
     'real Word imports must accept a safe Unicode file name',
   );
+  await assert.doesNotReject(
+    client.createFromWord({
+      sourceType: 'exam',
+      sourceFileName: '2026届浙江宁波市高三第二学期高考与选考模拟考试（二模）物理试卷.docx',
+      sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      bytes: new Uint8Array(Buffer.from('raw-document-payload')),
+      metadata: { subject: 'physics' },
+    }),
+    'the selected exam Word file name must pass the same safe Unicode validation',
+  );
 
   const assetCalls = [];
   const assetClient = createDesktopQuestionImportClient({ cloudBusinessIdentityBaseUrl: 'https://cloud.example/cloud-business' }, {
