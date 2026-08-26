@@ -73,5 +73,8 @@ for (const retiredTerm of [
   assert.ok(!runtimeSource.includes(retiredTerm), `miniapp role flow must not retain retired authority wording: ${retiredTerm}`);
 }
 assert.ok(runtimeSource.includes('family_member'), 'application copy must include the family-member binding path');
+const submittedCopy = copyForApplicationState('submitted');
+assert.ok(submittedCopy.title.includes('等待审核'), 'submitted applications must describe a neutral review state');
+assert.ok(!submittedCopy.description.includes('教师端'), 'submitted applications must not imply that a teacher reviews role applications');
 
 console.log('account application runtime checks passed');

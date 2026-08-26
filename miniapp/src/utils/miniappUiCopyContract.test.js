@@ -48,7 +48,7 @@ for (const source of [applicationConfig, applicationPage, applicationRuntime, ac
 assert.ok(applicationConfig.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'the visitor application page must use an accurate title');
 assert.ok(applicationRuntime.includes(String.fromCharCode(25945, 24072, 12289, 23398, 29983, 25110, 23478, 24237, 25104, 21592)), 'the visitor action must describe every selectable identity');
 assert.ok(applicationPage.includes(String.fromCharCode(25552, 20132, 30003, 35831)), 'the primary visitor action must stay clear and short');
-assert.ok(applicationRuntime.includes(String.fromCharCode(25945, 24072, 31471)), 'application status must explain that confirmation occurs in the teacher desktop client');
+assert.ok(applicationRuntime.includes(String.fromCharCode(31561, 24453, 23457, 26680)), 'application status must explain the neutral review state');
 
 assert.ok(!settingsPage.includes('getApiBaseUrl') && !settingsPage.includes('setApiBaseUrl'), 'end users must not edit the service endpoint');
 assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 21153, 22120, 22336)) && !settingsPage.includes(String.fromCharCode(26381, 21153, 22120, 32622)), 'settings must not leak implementation configuration');
@@ -59,8 +59,8 @@ assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221))
 assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 25945, 24072, 25110, 23398, 29983)), 'visitor settings must not omit household-member applications');
 assert.ok(!settingsPage.includes('reviewRoleApplication') && !settingsPage.includes('listSubmittedRoleApplications'), 'miniapp settings must not expose role-approval operations');
 assert.ok(!settingsPage.includes(String.fromCharCode(36523, 20221, 30003, 35831, 22788, 29702)), 'miniapp settings must not expose the role-application approval queue');
-assert.ok(!applicationRuntime.includes('\u6570\u636e\u8d1f\u8d23\u4eba') && !applicationPage.includes('\u6570\u636e\u8d1f\u8d23\u4eba') && !homePage.includes('\u6570\u636e\u8d1f\u8d23\u4eba'), 'role-application copy must name the teacher desktop boundary instead of an undefined reviewer');
-assert.ok(applicationRuntime.includes('\u6559\u5e08\u7aef') && applicationPage.includes('\u6559\u5e08\u7aef') && homePage.includes('\u6559\u5e08\u7aef'), 'role-application copy must consistently identify the teacher desktop boundary');
+assert.ok(!applicationRuntime.includes('\u6559\u5e08\u7aef') && !applicationPage.includes('\u6559\u5e08\u7aef') && !homePage.includes('\u6559\u5e08\u7aef'), 'visitor role-application copy must not imply that teachers approve identities');
+assert.ok(applicationPage.includes('\u5ba1\u6838') && homePage.includes('\u5ba1\u6838'), 'visitor role-application copy must explain the review boundary without inventing a reviewer role');
 assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered miniapp action must not fall back to a fictional unfinished module');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
 assert.ok(questionBankPage.includes("disabled={Boolean(submitting) || previewState !== 'ready' || selectedIds.length === 0}"), 'question-bank exports must reject an empty selection and remain disabled while cloud preview access is unavailable');

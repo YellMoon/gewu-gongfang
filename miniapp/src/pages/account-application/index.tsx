@@ -159,7 +159,7 @@ export default function AccountApplicationPage() {
               onInput={event => setBindingHint(event.detail.value)}
               placeholder={profileMode === 'new' ? '\u8bf7\u586b\u5199\u59d3\u540d\u548c\u5907\u6ce8\u4fe1\u606f' : '\u8bf7\u586b\u5199\u5df2\u6709\u6863\u6848\u7684\u540d\u79f0\u6216\u7f16\u53f7'}
             />
-            <Text className='field-tip'>{profileMode === 'new' ? '\u6559\u5e08\u7aef\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u6559\u5e08\u7aef\u4f1a\u6838\u5bf9\u4fe1\u606f\u540e\u5173\u8054\u6863\u6848\u3002'}</Text>
+            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u4fe1\u606f\u5e76\u5173\u8054\u6863\u6848\u3002'}</Text>
           </View>
 
           <Button
