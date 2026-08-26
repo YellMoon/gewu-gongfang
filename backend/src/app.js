@@ -20,10 +20,6 @@ const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
 const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
-const {
-  createMiniappAuthorityApplicationsRouter,
-} = require('./routes/miniappAuthorityApplications');
-const miniappWechatBindingsRouter = require('./routes/miniappWechatBindings');
 const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
 const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
 const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
@@ -351,12 +347,6 @@ function createApp(options = {}) {
     db: database,
     projectionStore: authorityProjectionStore,
   }));
-  app.use('/api/miniapp/applications', authMiddleware, createMiniappAuthorityApplicationsRouter({
-    db: database,
-    executeCommand: envelope => authorityCloudRuntime.execute(envelope),
-  }));
-  app.use('/api/miniapp/wechat-bindings', authMiddleware, miniappWechatBindingsRouter);
-
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
 
   // 閿欒澶勭悊
