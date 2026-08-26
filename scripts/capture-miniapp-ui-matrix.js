@@ -138,8 +138,8 @@ function fixtureResponse(request, scenario) {
       expiresAt: new Date(Date.now() + 3600000).toISOString(), rowVersion: 1,
     } } } };
   }
-  if (pathname === '/api/permissions/my') {
-    return { statusCode: 200, body: { success: true, data: { identity, capabilities: capabilitiesByRole[identity?.role] || identity?.capabilities || [] } } };
+  if (pathname === '/api/miniapp/cloud-context') {
+    return { statusCode: 200, body: { ok: true, identity, capabilities: capabilitiesByRole[identity?.role] || identity?.capabilities || [] } };
   }
   if (pathname === '/api/business/miniapp-projection') {
     const projection = {};

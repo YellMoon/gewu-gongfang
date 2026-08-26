@@ -35,6 +35,11 @@ assert.ok(
   !captureRuntimeSource.includes('/api/miniapp/role-applications/review/pending'),
   'the runtime fixture must not preserve a retired miniapp role-approval endpoint',
 );
+assert.ok(
+  captureRuntimeSource.includes("pathname === '/api/miniapp/cloud-context'")
+    && captureRuntimeSource.includes('identity, capabilities: capabilitiesByRole'),
+  'the runtime fixture must answer the same cloud authorization contract used by the home page and role tab bar',
+);
 const pagesMatch = appConfig.match(/pages:\s*\[([\s\S]*?)\]/);
 assert.ok(pagesMatch, 'app.config.ts should define pages');
 
