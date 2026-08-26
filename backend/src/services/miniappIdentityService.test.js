@@ -37,7 +37,7 @@ try {
   db.prepare(`INSERT INTO users
     (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
      review_status, auth_version, deleted, created_at, updated_at)
-    VALUES ('formal-admin', '13800138001', '13800138001', 'Formal Admin', 'admin', 'admin',
+    VALUES ('formal-admin', '13800138001', '13800138001', 'Formal Super Admin', 'super_admin', 'super_admin',
       1, 1, 'approved', 3, 0, ?, ?)`
   ).run(now, now);
   db.prepare(`INSERT INTO teachers
@@ -65,7 +65,7 @@ try {
   db.prepare(`INSERT INTO users
     (id, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
      review_status, auth_version, deleted, created_at, updated_at)
-    VALUES ('manual-existing', '13800138005', '13800138005', 'Manual Existing', 'admin', 'admin',
+    VALUES ('manual-existing', '13800138005', '13800138005', 'Manual Super Admin', 'super_admin', 'super_admin',
       1, 1, 'approved', 7, 0, ?, ?)`
   ).run(now, now);
   db.prepare(`INSERT INTO authority_accounts
@@ -77,11 +77,11 @@ try {
   db.prepare(`INSERT INTO authority_role_bindings
     (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
      grant_version, granted_by, created_at, updated_at) VALUES
-    ('binding-formal-admin', 'authority-miniapp-test', 'formal-admin', 'admin', NULL, NULL,
+    ('binding-formal-admin', 'authority-miniapp-test', 'formal-admin', 'super_admin', NULL, NULL,
       'active', 1, 'host-super-admin', ?, ?),
     ('binding-formal-teacher', 'authority-miniapp-test', 'formal-teacher', 'teacher', 'teacher',
       'teacher-formal-record', 'active', 1, 'host-super-admin', ?, ?),
-    ('binding-manual-existing', 'authority-miniapp-test', 'manual-existing', 'admin', NULL, NULL,
+    ('binding-manual-existing', 'authority-miniapp-test', 'manual-existing', 'super_admin', NULL, NULL,
       'active', 1, 'host-super-admin', ?, ?)`)
     .run(now, now, now, now, now, now);
   db.prepare(`INSERT INTO students
@@ -233,7 +233,7 @@ try {
     phone: '13800138005',
   });
   assert.strictEqual(manualExisting.user.id, 'manual-existing');
-  assert.strictEqual(manualExisting.user.role, 'admin');
+  assert.strictEqual(manualExisting.user.role, 'super_admin');
   assert.strictEqual(manualExisting.user.account_state, 'formal');
   assert.strictEqual(
     db.prepare('SELECT COUNT(*) count FROM miniapp_wechat_binding_requests WHERE target_user_id=?').get('manual-existing').count,
@@ -262,7 +262,7 @@ try {
     miniappVersion: '5.15.0',
     platform: 'ios',
   });
-  assert.strictEqual(formal.user.role, 'admin');
+  assert.strictEqual(formal.user.role, 'super_admin');
   assert.strictEqual(formal.user.account_state, 'formal');
   assert.strictEqual(formal.user.membership, null);
   assert.strictEqual(formal.claims.token_use, 'miniapp-session');

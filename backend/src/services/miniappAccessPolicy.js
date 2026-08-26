@@ -11,7 +11,7 @@ function isStudentUser(user) {
 }
 
 function isAdminUser(user) {
-  return ['super_admin', 'admin', 'operator'].includes(roleOf(user));
+  return roleOf(user) === 'super_admin';
 }
 
 function parseArray(value) {

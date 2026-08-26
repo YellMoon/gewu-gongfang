@@ -41,24 +41,24 @@ assert.strictEqual(
   'enabled linked students should be allowed'
 );
 
-const adminPayload = buildMiniappLoginUser({
-  id: 'admin-1',
-  role: 'admin',
-  nickname: 'Admin',
+const superAdminPayload = buildMiniappLoginUser({
+  id: 'super-admin-1',
+  role: 'super_admin',
+  nickname: 'Super Admin',
   avatar_url: 'https://example.com/a.png',
   phone: '13800000000',
   login_enabled: 1,
 });
 
-assert.deepStrictEqual(adminPayload, {
-  id: 'admin-1',
-  name: 'Admin',
-  nickname: 'Admin',
+assert.deepStrictEqual(superAdminPayload, {
+  id: 'super-admin-1',
+  name: 'Super Admin',
+  nickname: 'Super Admin',
   avatar: 'https://example.com/a.png',
   avatarUrl: 'https://example.com/a.png',
   phone: '13800000000',
-  role: 'admin',
-  user_type: 'admin',
+  role: 'super_admin',
+  user_type: 'super_admin',
   student_id: null,
   linked_student_ids: [],
 });

@@ -73,7 +73,7 @@ async function refreshToken(baseUrl, token) {
     (id, wechat_openid, phone, phone_normalized, name, role, identity_kind, status, login_enabled,
      review_status, auth_version, deleted, created_at, updated_at)
     VALUES ('manual-known-http', NULL, '13800138005', '13800138005', 'Manual Known HTTP',
-      'admin', 'admin', 1, 1, 'approved', 1, 0, ?, ?)`).run(seededAt, seededAt);
+      'super_admin', 'super_admin', 1, 1, 'approved', 1, 0, ?, ?)`).run(seededAt, seededAt);
   getInstance().db.prepare(`INSERT INTO authority_accounts
     (user_id, authority_id, status, created_at, updated_at)
     VALUES ('manual-known-http', 'authority-miniapp-http', 'active', ?, ?)`)
@@ -82,7 +82,7 @@ async function refreshToken(baseUrl, token) {
     (binding_id, authority_id, user_id, role, subject_type, subject_id, status,
      grant_version, granted_by, created_at, updated_at)
     VALUES ('binding-manual-known-http', 'authority-miniapp-http', 'manual-known-http',
-      'admin', NULL, NULL, 'active', 1, 'test', ?, ?)`)
+      'super_admin', NULL, NULL, 'active', 1, 'test', ?, ?)`)
     .run(seededAt, seededAt);
   const server = app.listen(0);
 
@@ -120,7 +120,7 @@ async function refreshToken(baseUrl, token) {
 
     const known = await postJson(baseUrl, { code: 'login-code-known', phone: '13800138005', miniappVersion: '7.0.1', platform: 'wechat' });
     assert.strictEqual(known.status, 200);
-    assert.strictEqual(known.body.data.user.role, 'admin');
+    assert.strictEqual(known.body.data.user.role, 'super_admin');
     assert.strictEqual(known.body.data.user.account_state, 'formal');
     assert.strictEqual(phoneApiCalls, 0);
     assert.strictEqual(

@@ -93,11 +93,11 @@ assert.strictEqual(filtered.payload.schedules[0].calculated_tuition, undefined, 
 assert.strictEqual(filtered.payload.schedules[0].student_pricings, undefined, 'schedule pricing should be redacted');
 assert.strictEqual(filtered.payload.teachers[0].hourly_rate, undefined, 'teacher rate should be redacted');
 
-const adminSnapshot = filterSnapshotForUser(snapshot, { id: 'admin-1', role: 'admin' });
-assert.strictEqual(adminSnapshot.payload.payments.length, 1, 'admin snapshot should keep finance data');
-assert.strictEqual(adminSnapshot.payload.courses.length, 2, 'admin snapshot should keep all courses');
 const superAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'super-1', role: 'super_admin' });
-assert.deepStrictEqual(superAdminSnapshot, adminSnapshot, 'super admin should retain the existing admin snapshot scope');
+assert.strictEqual(superAdminSnapshot.payload.payments.length, 1, 'super admin snapshot should keep finance data');
+assert.strictEqual(superAdminSnapshot.payload.courses.length, 2, 'super admin snapshot should keep all courses');
+const retiredAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'retired-admin', role: 'admin' });
+assert.deepStrictEqual(retiredAdminSnapshot.payload, {}, 'ordinary-admin roles must not receive a business snapshot');
 const pendingSnapshot = filterSnapshotForUser(snapshot, { id: 'pending-1', role: 'pending' });
 assert.deepStrictEqual(pendingSnapshot.payload, {}, 'pending users must fail closed');
 const visitorSnapshot = filterSnapshotForUser(snapshot, { id: 'visitor-1', role: 'visitor' });
@@ -108,8 +108,8 @@ assert.deepStrictEqual(visitorSnapshot.payload.assetCategories.map(item => item.
 assert.deepStrictEqual(visitorSnapshot.payload.assets.map(item => item.id), ['account-own']);
 assert.strictEqual(visitorSnapshot.payload.questionPreviews.length, 10);
 assert.strictEqual(visitorSnapshot.payload.questionPreviews[0].answer, undefined);
-const invitedAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'invited-admin', role: 'admin', review_status: 'invited', status: 1, login_enabled: 1 });
-assert.deepStrictEqual(invitedAdminSnapshot.payload, {}, 'unapproved persisted admin must not receive a full snapshot');
+const invitedSuperAdminSnapshot = filterSnapshotForUser(snapshot, { id: 'invited-super-admin', role: 'super_admin', review_status: 'invited', status: 1, login_enabled: 1 });
+assert.deepStrictEqual(invitedSuperAdminSnapshot.payload, {}, 'unapproved persisted super admin must not receive a full snapshot');
 const collisionSnapshot = filterSnapshotForUser({
   id: 'collision-snapshot',
   payload: {
@@ -132,7 +132,7 @@ assert.strictEqual(collisionSnapshot.payload.questionPreviews[0].answer, undefin
 assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: 'student-subject-1' }, 'question-paper'), true);
 assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: null }, 'question-paper'), false, 'an unbound miniapp account must not submit subject-owned tasks');
 assert.strictEqual(isAllowedMiniappTaskForUser({ user_type: 'student', student_id: 'student-subject-1' }, 'asset-import'), false);
-assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'admin' }, 'asset-import'), true);
+assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'admin' }, 'asset-import'), false);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'super_admin' }, 'asset-import'), true);
 assert.strictEqual(isAllowedMiniappTaskForUser({ role: 'teacher' }, 'asset-import'), false);
 assert.strictEqual(isAllowedMiniappTaskForUser(null, 'question-paper'), false);

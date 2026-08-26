@@ -122,7 +122,7 @@ function createMiniappIdentityService({
   function membershipFor(user, role = formalRole(user)) {
     const subjectType = role === 'student' ? 'student'
       : role === 'teacher' ? 'teacher'
-        : role === 'admin' || role === 'super_admin' ? 'user' : null;
+        : role === 'super_admin' ? 'user' : null;
     const subjectId = formalSubjectId(user, role);
     if (!subjectType || !subjectId) return null;
     return findMembership.get(subjectType, subjectId) || null;
@@ -148,7 +148,7 @@ function createMiniappIdentityService({
       if (canonicalGrant?.role === role && !subjectId) return true;
       return Boolean(subjectId && (teacherExists.get(subjectId) || reconciledMembership));
     }
-    return role === 'admin' || role === 'super_admin';
+    return role === 'super_admin';
   }
 
   function isFormal(user) {
