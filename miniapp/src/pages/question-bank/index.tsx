@@ -31,6 +31,12 @@ function questionAssetKeys(value: unknown): string[] {
   return Array.from(source.matchAll(QUESTION_ASSET_REF)).map(match => match[1]);
 }
 
+function questionAssetRequests(question: QuestionPreview): Array<{ questionId: string; assetKey: string }> {
+  return Array.from(new Set([
+    ...questionAssetKeys(question.stemPreview), ...questionAssetKeys(question.options), ...questionAssetKeys(question.answer), ...questionAssetKeys(question.explanation), ...questionAssetKeys(question.richContent),
+  ])).map(assetKey => ({ questionId: question.id, assetKey }));
+}
+
 function miniRichNodes(value: string, paths: Record<string, string>) {
   return String(value || '').replace(QUESTION_ASSET_REF, (_ref, assetKey) => paths[assetKey] || '');
 }
@@ -100,13 +106,11 @@ export default function QuestionBankPage() {
     const list: QuestionPreview[] = Array.isArray(response.data?.questions) ? response.data.questions as QuestionPreview[] : [];
     setQuestions(list);
     setPreviewState(list.length ? 'ready' : 'empty');
-    const assetKeys = Array.from(new Set(list.flatMap((question: QuestionPreview) => [
-      ...questionAssetKeys(question.stemPreview), ...questionAssetKeys(question.options), ...questionAssetKeys(question.answer), ...questionAssetKeys(question.explanation), ...questionAssetKeys(question.richContent),
-    ])));
-    if (!assetKeys.length) return;
+    const requests = Array.from(new Map(list.flatMap(questionAssetRequests).map(item => [item.questionId + ':' + item.assetKey, item])).values());
+    if (!requests.length) return;
     const token = sessionToken();
-    const loaded = await Promise.all(assetKeys.map(async assetKey => {
-      const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, assetKey);
+    const loaded = await Promise.all(requests.map(async ({ questionId, assetKey }) => {
+      const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, questionId, assetKey);
       const delivery = prepared.data?.delivery;
       if (!prepared.success || !delivery || delivery.status !== 'ready') return null;
       const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, delivery.deliveryId);
@@ -114,7 +118,7 @@ export default function QuestionBankPage() {
     }));
     const next = Object.fromEntries(loaded.filter(Boolean) as Array<readonly [string, string]>);
     if (Object.keys(next).length) setAssetPaths(current => ({ ...current, ...next }));
-    if (Object.keys(next).length < assetKeys.length && assetRetryRef.current < 5) {
+    if (Object.keys(next).length < requests.length && assetRetryRef.current < 5) {
       assetRetryRef.current += 1;
       setTimeout(() => { void loadQuestions(); }, 1500);
     }

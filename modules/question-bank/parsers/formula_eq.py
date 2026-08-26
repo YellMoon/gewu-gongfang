@@ -160,27 +160,6 @@ def _bracket_expression(expression: str, start: int) -> tuple[str, int]:
     return r"\left%s%s\right%s" % (latex_left, body, latex_right), next_index
 
 
-def _overlay_expression(expression: str, start: int) -> tuple[str, int]:
-    index = start
-    aligned = expression[index:index + 3].lower() == r"\al"
-    if aligned:
-        index += 3
-    group, next_index = _balanced_group(expression, index)
-    args = _split_arguments(group)
-    if aligned:
-        if len(args) != 2:
-            raise ValueError("invalid EQ aligned overlay argument count")
-        upper, lower = (_convert_expression(item) for item in args)
-        return r"{}^{%s}_{%s}" % (upper, lower), next_index
-    if len(args) != 2:
-        raise ValueError("unsupported EQ overlay argument count")
-    base = _convert_expression(args[0])
-    accent = re.fullmatch(r"\\s\\up\d+\(([\-\uff0d\u2014])\)", args[1].strip(), flags=re.I)
-    if accent:
-        return r"\vec{%s}" % base, next_index
-    raise ValueError("unsupported EQ overlay")
-
-
 def _convert_expression(expression: str) -> str:
     expression = expression.strip()
     integral = _convert_integral(expression)
@@ -221,9 +200,6 @@ def _convert_expression(expression: str) -> str:
             output.append(converted)
         elif command == "b":
             converted, next_index = _bracket_expression(expression, argument_start)
-            output.append(converted)
-        elif command == "o":
-            converted, next_index = _overlay_expression(expression, argument_start)
             output.append(converted)
         elif command in {"f", "r"}:
             group, next_index = _balanced_group(expression, argument_start)

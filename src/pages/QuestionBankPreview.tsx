@@ -19,7 +19,7 @@ const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCr
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { QUESTION_TYPES, normalizeQuestionType } from '../constants/questionTypes';
 import { splitSearchTerms } from '../utils/highlightText';
-import { toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
+import { setQuestionBasket, toggleQuestionBasket, useQuestionBasketIds } from '../components/QuestionBasket';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
 import QuestionRenderer, { createKaTeXPhysicsOptions } from '../components/QuestionRenderer';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
@@ -34,8 +34,6 @@ import {
   getCachedQuestionTree,
   queryQuestionPage,
 } from '../services/questionLocalStore';
-import katex from 'katex';
-import { applyPhysicsNotationToHTML } from '../utils/physicsNotation';
 import './QuestionBankPreview.css';
 
 const legacyTaxonomyUiEnabled = () => false;
@@ -43,46 +41,6 @@ const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 // utf-8
 const QUESTION_PAGE_SIZE = 10;
-
-const KATEX_EXPORT_CSS = `
-.katex{font:normal 1em "KaTeX_Main","Times New Roman",serif;line-height:1.08;text-rendering:auto}
-.katex .base{position:relative;white-space:nowrap;width:min-content;display:inline-block}
-.katex .strut,.katex .mspace{display:inline-block}
-.katex .vlist-t{border-collapse:collapse;display:inline-table;table-layout:fixed}
-.katex .vlist-r{display:table-row}
-.katex .vlist{display:table-cell;position:relative;vertical-align:bottom}
-.katex .vlist>span{display:block;height:0;position:relative}
-.katex .vlist>span>span{display:inline-block}
-.katex .mfrac>span>span{text-align:center}
-.katex .mfrac .frac-line{border-bottom-style:solid;display:inline-block;width:100%;min-height:1px}
-.katex .sqrt>.root{margin-left:.2777777778em;margin-right:-.5555555556em}
-.katex .mathit,.katex .mathnormal{font-family:"KaTeX_Math","Times New Roman",serif;font-style:italic}
-.katex .mathrm,.katex .mainrm{font-family:"KaTeX_Main","Times New Roman",serif;font-style:normal}
-`;
-
-function renderContentForExport(content: string): string {
-  if (!content) return '';
-  const re = /\$\$([\s\S]*?)\$\$/g;
-  let result = '';
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    if (m.index > last) {
-      result += applyPhysicsNotationToHTML(content.slice(last, m.index));
-    }
-    try {
-      const rendered = katex.renderToString(m[1], createKaTeXPhysicsOptions(true));
-      result += `<div class="katex-display">${rendered}</div>`;
-    } catch {
-      result += `<div class="katex-display"><span class="katex"><span class="katex-html"><span class="base"><span class="mord">${m[1]}</span></span></span></span></div>`;
-    }
-    last = m.index + m[0].length;
-  }
-  if (last < content.length) {
-    result += applyPhysicsNotationToHTML(content.slice(last));
-  }
-  return result;
-}
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
@@ -762,116 +720,16 @@ const QuestionBankPreview: React.FC = () => {
     loadData();
   };
 
-  // 批量组卷并导出为 Word
+  // Move the chosen questions into the shared basket. The editor owns cloud export.
   const handleBatchGroupExam = () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请先勾选需要组卷的题目');
       return;
     }
-
-    const selectedQs = questions.filter(q => selectedRowKeys.includes(q.id));
-
-    // 生成 Word 文档内容（HTML 格式，.doc 可打开）
-    const htmlContent = generateExamWord(selectedQs);
-    downloadAsWord(htmlContent, `组卷_${new Date().toISOString().slice(0, 10)}.doc`);
-    message.success(`已导出 ${selectedQs.length} 题到 Word 文件`);
-  };
-
-  // 生成试卷 Word HTML
-  const generateExamWord = (items: Question[]): string => {
-    const typeLabels: Record<string, string> = {
-      '单选题': '一、单选题',
-      '多选题': '二、多选题',
-      '实验题': '三、实验题',
-      '解答题': '四、解答题',
-      '判断题': '五、判断题',
-    };
-
-    // 按题型分组
-    const groups: Record<string, Question[]> = {};
-    items.forEach(q => {
-      const t = normalizeQuestionType(q.type);
-      if (!groups[t]) groups[t] = [];
-      groups[t].push(q);
-    });
-
-    let html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'>`;
-    html += `<head><meta charset="UTF-8"><style>
-      body { font-family: 'Times New Roman', '宋体', SimSun, serif; font-size: 12pt; padding: 40px; line-height: 1.8; }
-      i, em { font-style: italic; }
-      .q-stem i, .q-opt i { font-family: 'Times New Roman', serif; font-style: italic; }
-      h1 { text-align: center; font-size: 18pt; margin-bottom: 20px; }
-      .section-title { font-weight: bold; font-size: 14pt; margin: 20px 0 10px 0; }
-      .question { margin-bottom: 20px; }
-      .q-stem { margin-bottom: 4px; }
-      .q-stem img { max-width: 100%; max-height: 280px; margin: 6px 0; }
-      .q-options { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 8px 0 0 12px; }
-      .q-options.cols-4 .q-opt { width: calc(25% - 18px); }
-      .q-options.cols-2 .q-opt { width: calc(50% - 12px); }
-      .q-opt { min-width: 80px; }
-      .q-analysis { font-size: 10pt; color: #888; margin-top: 6px; }
-      hr { border: none; border-top: 1px dashed #ccc; margin: 20px 0; }
-      .answer-key { margin-top: 30px; border-top: 2px solid #000; padding-top: 10px; }
-      .answer-key .section-title { font-size: 12pt; }
-      table { border-collapse: collapse; width: 100%; }
-      td { padding: 4px 8px; }
-      ${KATEX_EXPORT_CSS}
-    </style></head><body>`;
-
-    html += `<h1>物理试卷</h1>`;
-    html += `<p style="text-align:center;color:#666;font-size:10pt">组卷日期：${new Date().toLocaleDateString('zh-CN')}</p>`;
-    html += `<hr/>`;
-
-    let qNum = 1;
-    const answerKeys: { num: number; content: string; answer: string }[] = [];
-
-    Object.entries(typeLabels).forEach(([type, label]) => {
-      if (!groups[type]) return;
-      html += `<div class="section-title">${label}</div>`;
-      groups[type].forEach(q => {
-        html += `<div class="question">`;
-        // 图片嵌入在题干 HTML 中保持真实位置，不再单独提取
-        html += `<div class="q-stem"><b>${qNum}.</b> ${renderContentForExport(q.content || '')}</div>`;
-
-        if (q.options && q.options.length > 0) {
-          const optCount = q.options.length;
-          const optCols = optCount === 4 ? 4 : optCount === 3 ? 3 : 2;
-          html += `<div class="q-options cols-${optCols}">`;
-          q.options.forEach((opt: string) => {
-            html += `<div class="q-opt">${opt}</div>`;
-          });
-          html += `</div>`;
-        }
-        if (q.analysis) {
-          html += `<div class="q-analysis">【解析】${q.analysis}</div>`;
-        }
-        html += `</div>`;
-        answerKeys.push({ num: qNum, content: (q.content || '').replace(/<[^>]+>/g, '').substring(0, 40), answer: q.answer });
-        qNum++;
-      });
-    });
-
-    // 答案区域
-    html += `<div class="answer-key"><div class="section-title">参考答案</div>`;
-    html += `<table><tr><td style="width:40px"><b>题号</b></td><td><b>答案</b></td></tr>`;
-    answerKeys.forEach(ak => {
-      html += `<tr><td>${ak.num}</td><td>${ak.answer}</td></tr>`;
-    });
-    html += `</table></div>`;
-
-    html += `</body></html>`;
-    return html;
-  };
-
-  // 下载为 Word 文件（实际为 HTML，保存为 .doc 扩展名）
-  const downloadAsWord = (html: string, filename: string) => {
-    const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+    const selected = Array.from(new Set(selectedRowKeys));
+    setQuestionBasket(selected);
+    localStorage.setItem('question_basket_selected', JSON.stringify(selected));
+    window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-paper' }));
   };
 
   const difficultyColor = (d: number) => {

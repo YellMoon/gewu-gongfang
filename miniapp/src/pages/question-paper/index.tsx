@@ -13,7 +13,7 @@ type PaperAction = 'paper-export-word' | 'paper-export-pdf';
 interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; richContent?: any; status: string; }
 interface PaperItem {
   id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number;
-  answer?: string; explanation?: string; options?: any[]; source?: string; knowledgeLabels?: string[];
+  answer?: string; explanation?: string; options?: any[]; source?: string; knowledgeLabels?: string[]; richContent?: any;
 }
 interface PaperTask { localId: string; confirmed: boolean; taskId?: string; status: string; phase: string; progress: number; request: any; error?: string; resultExpiresAt?: string | null; }
 interface PaperDraft { title: string; answerPosition: 'end' | 'after'; formulaMode: string; items: Array<{ id: string; sectionTitle: string; score: number }>; }
@@ -29,6 +29,9 @@ function sectionFor(type: string) {
 function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
 const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
 function questionAssetKeys(value: unknown): string[] { return Array.from((typeof value === 'string' ? value : JSON.stringify(value || {})).matchAll(QUESTION_ASSET_REF)).map(match => match[1]); }
+function questionAssetRequests(item: PaperItem): Array<{ questionId: string; assetKey: string }> { return Array.from(new Set([
+  ...questionAssetKeys(item.stemPreview), ...questionAssetKeys(item.options), ...questionAssetKeys(item.answer), ...questionAssetKeys(item.explanation), ...questionAssetKeys(item.richContent),
+])).map(assetKey => ({ questionId: item.id, assetKey })); }
 function miniRichNodes(value: string, paths: Record<string, string>) { return String(value || '').replace(QUESTION_ASSET_REF, (_ref, assetKey) => paths[assetKey] || ''); }
 function formatQuestionOption(option: any, index: number) {
   if (typeof option === 'string') return option;
@@ -42,7 +45,7 @@ function defaultItems(questions: QuestionPreview[], ids: string[]): PaperItem[] 
   return ids.map(id => byId.get(id)).filter(Boolean).map(question => ({
     id: question!.id, subject: question!.subject, type: question!.type, stemPreview: question!.stemPreview,
     answer: question!.answer, explanation: question!.explanation, options: question!.options,
-    source: question!.source, knowledgeLabels: question!.knowledgeLabels,
+    source: question!.source, knowledgeLabels: question!.knowledgeLabels, richContent: question!.richContent,
     sectionTitle: sectionFor(question!.type), score: scoreFor(question!.type),
   }));
 }
@@ -107,13 +110,11 @@ export default function QuestionPaperPage() {
     if (saved && typeof saved.title === 'string' && saved.title.trim()) setTitle(saved.title);
     if (saved?.answerPosition === 'after' || saved?.answerPosition === 'end') setAnswerPosition(saved.answerPosition);
     if (formulaOptions.some(option => option.value === saved?.formulaMode)) setFormulaMode(saved!.formulaMode);
-    const assetKeys = Array.from(new Set(nextItems.flatMap(item => [
-      ...questionAssetKeys(item.stemPreview), ...questionAssetKeys(item.options), ...questionAssetKeys(item.answer), ...questionAssetKeys(item.explanation),
-    ])));
+    const requests = Array.from(new Map(nextItems.flatMap(questionAssetRequests).map(item => [item.questionId + ':' + item.assetKey, item])).values());
     const token = authSessionRuntime.capture().token;
-    if (assetKeys.length && token) {
-      const loaded = await Promise.all(assetKeys.map(async assetKey => {
-        const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, assetKey);
+    if (requests.length && token) {
+      const loaded = await Promise.all(requests.map(async ({ questionId, assetKey }) => {
+        const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, questionId, assetKey);
         const delivery = prepared.data?.delivery;
         if (!prepared.success || !delivery || delivery.status !== 'ready') return null;
         const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, delivery.deliveryId);
@@ -121,7 +122,7 @@ export default function QuestionPaperPage() {
       }));
       const next = Object.fromEntries(loaded.filter(Boolean) as Array<readonly [string, string]>);
       if (Object.keys(next).length) setAssetPaths(current => ({ ...current, ...next }));
-      if (Object.keys(next).length < assetKeys.length && assetRetryRef.current < 5) {
+      if (Object.keys(next).length < requests.length && assetRetryRef.current < 5) {
         assetRetryRef.current += 1;
         setTimeout(() => { void reload(); }, 1500);
       }

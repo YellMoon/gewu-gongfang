@@ -112,11 +112,11 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || '\u9898\u5e93\u6d4f\u89c8\u670d\u52a1\u6682\u4e0d\u53ef\u7528' };
     }
   },
-  async requestQuestionAssetDelivery(token: string, assetKey: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
-    if (typeof token !== 'string' || !token.trim() || !/^[0-9a-f]{64}$/.test(String(assetKey || ''))) return { success: false, error: 'Cloud session required' };
+  async requestQuestionAssetDelivery(token: string, questionId: string, assetKey: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
+    if (typeof token !== 'string' || !token.trim() || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(String(questionId || '')) || !/^[0-9a-f]{64}$/.test(String(assetKey || ''))) return { success: false, error: 'Cloud session required' };
     try {
       const response = await Taro.request({
-        url: cloudBusinessUrl(`/api/business/miniapp-question-assets/${encodeURIComponent(assetKey)}/delivery`), method: 'POST', data: {},
+        url: cloudBusinessUrl(`/api/business/miniapp-question-assets/${encodeURIComponent(assetKey)}/delivery`), method: 'POST', data: { questionId },
         header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
       });
       if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.delivery) return { success: true, data: response.data as { ok: true; delivery: any } };

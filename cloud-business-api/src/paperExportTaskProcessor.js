@@ -18,6 +18,7 @@ function createPaperExportTaskProcessor({ tasks, render, archiveArtifact } = {})
           format: task.format,
           title: task.request.title,
           answerPosition: task.request.answerPosition,
+          formulaMode: task.request.formulaMode,
           layout: task.request.layout || null,
           snapshot: task.snapshot,
         });

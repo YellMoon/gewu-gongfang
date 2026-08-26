@@ -32,7 +32,7 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-27T00:00:00.000Z', appliedBy: 
       const repository = createQuestionAssetDeliveryRepository({
         query: (text, values) => facade.query(text, values), randomId: () => '12345678', randomToken: () => 'lease-token-with-sufficient-length', now: () => new Date('2026-08-27T00:00:00.000Z'),
       });
-      const requested = await repository.request({ tenantId: 'tenant-1', accountId: 'student-1', assetKey: HASH });
+      const requested = await repository.request({ tenantId: 'tenant-1', accountId: 'student-1', questionId: 'question-asset-demo', assetKey: HASH });
       assert.strictEqual(requested.status, 'queued');
       const leased = await repository.lease({ agentId: 'storage-agent-1' });
       assert.strictEqual(leased.objectId, 'obj_import_media_demo_0');
@@ -43,7 +43,7 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-27T00:00:00.000Z', appliedBy: 
       assert.deepStrictEqual(downloaded.bytes, bytes);
       await assert.rejects(() => repository.download({ tenantId: 'tenant-1', accountId: 'other-account', deliveryId: leased.deliveryId }), error => error?.code === 'QUESTION_ASSET_DELIVERY_NOT_READY');
       await facade.query("UPDATE business.questions SET status='archived' WHERE id='question-asset-demo'");
-      await assert.rejects(() => repository.request({ tenantId: 'tenant-1', accountId: 'student-2', assetKey: HASH }), error => error?.code === 'QUESTION_ASSET_DELIVERY_NOT_FOUND');
+      await assert.rejects(() => repository.request({ tenantId: 'tenant-1', accountId: 'student-2', questionId: 'question-asset-demo', assetKey: HASH }), error => error?.code === 'QUESTION_ASSET_DELIVERY_NOT_FOUND');
     });
   } finally {
     await runtime.disposeHandle(handle).catch(() => {});

@@ -66,21 +66,22 @@ class EqFormulaTests(unittest.TestCase):
                 self.assertEqual(result.status, "complete")
                 self.assertEqual(result.canonical_latex, expected)
 
-    def test_converts_known_overlay_forms_without_generalizing_unknown_overlaps(self):
-        cases = {
-            r"EQ \o(v,\s\up2(-))": r"\vec{v}",
-            r"EQ \o\al(2,0)": r"{}^{2}_{0}",
-            r"EQ \o\al(2,2)": r"{}^{2}_{2}",
-        }
-        for instruction, expected in cases.items():
+    def test_overlay_fields_are_not_silently_reinterpreted_as_latex(self):
+        for instruction in (
+            r"EQ \o(v,\s\up2(-))",
+            r"EQ \o\al(2,0)",
+            r"EQ \o\al(2,2)",
+        ):
             with self.subTest(instruction=instruction):
                 result = convert_eq_to_latex(instruction)
-                self.assertEqual(result.status, "complete")
-                self.assertEqual(result.canonical_latex, expected)
+                self.assertEqual(result.status, "failed")
+                self.assertIsNone(result.canonical_latex)
+                self.assertIn("unsupported EQ command: \\o", result.warnings[0])
 
-        unknown = convert_eq_to_latex(r"EQ \o(a,b,c)")
-        self.assertEqual(unknown.status, "failed")
-        self.assertIn("unsupported EQ overlay", unknown.warnings[0])
+        preview = convert_eq_to_latex(r"EQ \o(a,b,c)", visible_result="rendered overlay")
+        self.assertEqual(preview.status, "preview_only")
+        self.assertIsNone(preview.canonical_latex)
+        self.assertEqual(preview.visible_text, "rendered overlay")
 
     def test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction(self):
         result = convert_eq_to_latex(r"EQ \unknown(secret)", visible_result="rendered equation")

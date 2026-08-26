@@ -846,10 +846,28 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
   app.post('/api/business/miniapp-question-assets/:assetKey/delivery', async (request, response) => {
-    if (!questionAssetDeliveries || businessTenantId === null || !exactBody(request.body, [])) return businessUnavailable(response);
+    const body = exactBody(request.body, ['questionId']);
+    if (!questionAssetDeliveries || !questionAuthority || businessTenantId === null || !body) return businessUnavailable(response);
     try {
       const actor = await miniappBusinessContext(request);
-      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, assetKey: String(request.params.assetKey || '') });
+      const questionId = String(body.questionId || '');
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(questionId)) return businessInputInvalid(response);
+      const limitedQuestionBrowse = actor.status === 'visitor'
+        || (Array.isArray(actor.roles) && actor.roles.includes('student'));
+      let allowed = false;
+      if (limitedQuestionBrowse) {
+        const questionLimit = actor.status === 'visitor' ? 20 : 200;
+        const result = await query(
+          "WITH visible AS (SELECT q.id FROM business.questions q JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false ORDER BY c.updated_at DESC,q.id ASC LIMIT $2) SELECT id FROM visible WHERE id=$3",
+          [businessTenantId, questionLimit, questionId],
+        );
+        allowed = Array.isArray(result?.rows) && result.rows.length === 1;
+      } else {
+        const visible = await questionAuthority.list({ tenantId: businessTenantId, actor, limit: 200 });
+        allowed = Array.isArray(visible) && visible.some(question => question?.id === questionId && question?.status === 'published');
+      }
+      if (!allowed) throw businessAccessDenied();
+      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, questionId, assetKey: String(request.params.assetKey || '') });
       response.status(delivery.status === 'ready' ? 200 : 202).json({ ok: true, delivery });
     } catch (error) {
       if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });

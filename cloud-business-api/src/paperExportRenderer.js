@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph, TextRun } = require('docx');
 
@@ -7,8 +9,37 @@ function failure(code) {
   return Object.assign(new Error(code), { code });
 }
 
+function pdfFontPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'assets', 'fonts', 'NotoSansCJKsc-Regular.otf'),
+    path.join(__dirname, '..', '..', 'backend', 'assets', 'fonts', 'NotoSansCJKsc-Regular.otf'),
+  ];
+  return candidates.find(candidate => fs.existsSync(candidate)) || null;
+}
+
 function stripMarkup(value) {
   return String(value || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+function structuredText(value, formulaMode = 'word-native', seen = new Set()) {
+  if (typeof value === 'string') return stripMarkup(value);
+  if (value === null || value === undefined || typeof value !== 'object' || seen.has(value)) return '';
+  seen.add(value);
+  if (Array.isArray(value)) return value.map(item => structuredText(item, formulaMode, seen)).filter(Boolean).join('\n');
+  const formula = formulaMode === 'word-native'
+    ? value.visibleText || value.visible_text || value.canonicalLatex || value.canonical_latex || value.latex
+    : value.canonicalLatex || value.canonical_latex || value.latex || value.visibleText || value.visible_text;
+  if (typeof formula === 'string' && formula.trim() && /formula|math|equation/i.test(String(value.type || value.kind || ''))) return formula.trim();
+  const fields = ['text', 'content', 'stem', 'options', 'answer', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula'];
+  return fields.map(field => structuredText(value[field], formulaMode, seen)).filter(Boolean).join('\n');
+}
+
+function optionText(value, index, formulaMode) {
+  if (typeof value === 'string') return structuredText(value, formulaMode);
+  if (!value || typeof value !== 'object') return '';
+  const label = structuredText(value.label || value.key || value.value || String.fromCharCode(65 + index), formulaMode);
+  const content = structuredText(value.content || value.text || value.title, formulaMode);
+  return content ? label + '. ' + content : label;
 }
 
 function request(value) {
@@ -18,10 +49,11 @@ function request(value) {
   }
   const layout = value.layout && typeof value.layout === 'object' && !Array.isArray(value.layout) && Array.isArray(value.layout.items)
     ? value.layout : null;
-  return { format: value.format, title: value.title.trim(), answerPosition: value.answerPosition || 'end', layout };
+  const formulaMode = ['word-native', 'eq-field', 'mathtype-compatible', 'latex-vector'].includes(value.formulaMode) ? value.formulaMode : 'word-native';
+  return { format: value.format, title: value.title.trim(), answerPosition: value.answerPosition || 'end', formulaMode, layout };
 }
 
-function questions(value, layout) {
+function questions(value, layout, formulaMode) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 200) throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
   return value.map((item, index) => {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string' || typeof item.stem !== 'string') {
@@ -31,11 +63,22 @@ function questions(value, layout) {
     if (layoutItem && (layoutItem.id !== item.id || typeof layoutItem.sectionTitle !== 'string' || !Number.isSafeInteger(layoutItem.score))) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
+    const stem = stripMarkup(item.stem);
+    const richContent = structuredText(item.richContent, formulaMode);
     return {
-      number: index + 1, stem: stripMarkup(item.stem), answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
+      number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
+      options: Array.isArray(item.options) ? item.options.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
+      answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
       sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
     };
   });
+}
+
+function answerRows(item, prefix = '') {
+  const rows = [];
+  if (item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + 'Answer: ' + item.answer })] }));
+  if (item.explanation) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + 'Explanation: ' + item.explanation })] }));
+  return rows;
 }
 
 function bodyRows(items, answerPosition) {
@@ -48,11 +91,12 @@ function bodyRows(items, answerPosition) {
     }
     const score = item.score === null ? '' : ' (' + item.score + ' pts)';
     rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem + score })] }));
-    if (answerPosition === 'after' && item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: 'Answer: ' + item.answer })] }));
+    for (const option of item.options) rows.push(new Paragraph({ children: [new TextRun({ text: option })] }));
+    if (answerPosition === 'after') rows.push(...answerRows(item));
   }
   if (answerPosition !== 'after') {
     rows.push(new Paragraph({ children: [new TextRun({ text: 'Answers', bold: true })] }));
-    for (const item of items) if (item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.answer })] }));
+    for (const item of items) rows.push(...answerRows(item, String(item.number) + '. '));
   }
   return rows;
 }
@@ -67,11 +111,14 @@ async function wordBytes(input, items) {
 
 function pdfBytes(input, items) {
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: 'A4', margin: 48 });
+    const document = new PDFDocument({ size: 'A4', margin: 48, compress: false });
+    const font = pdfFontPath();
+    if (!font) return reject(failure('CLOUD_PAPER_RENDER_FONT_UNAVAILABLE'));
     const chunks = [];
     document.on('data', chunk => chunks.push(Buffer.from(chunk)));
     document.on('error', reject);
     document.on('end', () => resolve(Buffer.concat(chunks)));
+    document.font(font);
     document.fontSize(18).text(input.title);
     document.moveDown();
     let previousSection = '';
@@ -82,10 +129,18 @@ function pdfBytes(input, items) {
       }
       const score = item.score === null ? '' : ' (' + item.score + ' pts)';
       document.fontSize(11).text(String(item.number) + '. ' + item.stem + score).moveDown(0.5);
+      for (const option of item.options) document.fontSize(10).text(option).moveDown(0.25);
+      if (input.answerPosition === 'after') {
+        if (item.answer) document.fontSize(10).text('Answer: ' + item.answer);
+        if (item.explanation) document.fontSize(10).text('Explanation: ' + item.explanation);
+      }
     }
-    if (input.answerPosition === 'after') {
+    if (input.answerPosition !== 'after') {
       document.moveDown().fontSize(13).text('Answers');
-      for (const item of items) if (item.answer) document.fontSize(10).text(String(item.number) + '. ' + item.answer);
+      for (const item of items) {
+        if (item.answer) document.fontSize(10).text(String(item.number) + '. Answer: ' + item.answer);
+        if (item.explanation) document.fontSize(10).text(String(item.number) + '. Explanation: ' + item.explanation);
+      }
     }
     document.end();
   });
@@ -93,7 +148,7 @@ function pdfBytes(input, items) {
 
 async function renderPaperExport(input) {
   const current = request(input);
-  const items = questions(input.snapshot, current.layout);
+  const items = questions(input.snapshot, current.layout, current.formulaMode);
   const bytes = current.format === 'word' ? await wordBytes(current, items) : await pdfBytes(current, items);
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }

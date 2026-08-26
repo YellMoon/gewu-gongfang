@@ -49,6 +49,7 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
     || !Number.isSafeInteger(leaseSeconds) || leaseSeconds < 30 || leaseSeconds > ttlSeconds) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
   const tenant = value => text(value, /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
   const account = value => text(value, /^.{1,512}$/);
+  const question = value => text(value, /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
   const assetKey = value => text(value, /^[0-9a-f]{64}$/);
   const delivery = value => text(value, /^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/);
   const agent = value => text(value, /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/);
@@ -59,17 +60,17 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
   }
   return Object.freeze({
     async request(input) {
-      if (!input || typeof input !== 'object' || Array.isArray(input) || Reflect.ownKeys(input).length !== 3) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
+      if (!input || typeof input !== 'object' || Array.isArray(input) || ![3, 4].includes(Reflect.ownKeys(input).length)) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       const expiresAt = future(ttlSeconds);
       const deliveryId = `question_asset_delivery_${String(randomId()).replace(/[^A-Za-z0-9_-]/g, '')}`;
       if (!/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(deliveryId)) throw failure('QUESTION_ASSET_DELIVERY_UNAVAILABLE');
       const result = await query([
         'WITH purged AS (DELETE FROM business.question_asset_deliveries WHERE expires_at<=transaction_timestamp()),',
-        "asset AS (SELECT asset.id AS \"assetId\",asset.storage_object_id AS \"objectId\",asset.storage_object_version AS \"objectVersion\",asset.content_hash AS \"expectedSha256\",asset.size_bytes AS \"expectedBytes\",COALESCE(NULLIF(asset.file_name,''),'question-asset') AS \"fileName\",asset.mime_type AS \"mimeType\" FROM business.question_assets asset JOIN business.questions question ON question.tenant_id=asset.tenant_id AND question.id=asset.question_id WHERE asset.tenant_id=$1 AND asset.content_hash=$3 AND asset.state='verified' AND asset.deleted=false AND question.status='published' AND question.deleted=false ORDER BY asset.created_at DESC,asset.id DESC LIMIT 1),",
+        "asset AS (SELECT asset.id AS \"assetId\",asset.storage_object_id AS \"objectId\",asset.storage_object_version AS \"objectVersion\",asset.content_hash AS \"expectedSha256\",asset.size_bytes AS \"expectedBytes\",COALESCE(NULLIF(asset.file_name,''),'question-asset') AS \"fileName\",asset.mime_type AS \"mimeType\" FROM business.question_assets asset JOIN business.questions question ON question.tenant_id=asset.tenant_id AND question.id=asset.question_id WHERE asset.tenant_id=$1 AND asset.content_hash=$3 AND ($4::text IS NULL OR asset.question_id=$4) AND asset.state='verified' AND asset.deleted=false AND question.status='published' AND question.deleted=false ORDER BY asset.created_at DESC,asset.id DESC LIMIT 1),",
         "existing AS (SELECT delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND expected_sha256=$3 AND expires_at>transaction_timestamp() AND status IN ('queued','leased','ready') ORDER BY created_at DESC LIMIT 1),",
-        "created AS (INSERT INTO business.question_asset_deliveries(delivery_id,asset_id,tenant_id,account_id,object_id,object_version,expected_sha256,expected_bytes,file_name,mime_type,status,expires_at) SELECT $4,asset.\"assetId\",$1,$2,asset.\"objectId\",asset.\"objectVersion\",asset.\"expectedSha256\",asset.\"expectedBytes\",asset.\"fileName\",asset.\"mimeType\",'queued',$5::timestamptz FROM asset WHERE NOT EXISTS (SELECT 1 FROM existing) RETURNING delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\")",
+        "created AS (INSERT INTO business.question_asset_deliveries(delivery_id,asset_id,tenant_id,account_id,object_id,object_version,expected_sha256,expected_bytes,file_name,mime_type,status,expires_at) SELECT $5,asset.\"assetId\",$1,$2,asset.\"objectId\",asset.\"objectVersion\",asset.\"expectedSha256\",asset.\"expectedBytes\",asset.\"fileName\",asset.\"mimeType\",'queued',$6::timestamptz FROM asset WHERE NOT EXISTS (SELECT 1 FROM existing) RETURNING delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\")",
         'SELECT * FROM existing UNION ALL SELECT * FROM created',
-      ].join(' '), [tenant(input.tenantId), account(input.accountId), assetKey(input.assetKey), deliveryId, expiresAt.toISOString()]);
+      ].join(' '), [tenant(input.tenantId), account(input.accountId), assetKey(input.assetKey), input.questionId === undefined ? null : question(input.questionId), deliveryId, expiresAt.toISOString()]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_FOUND');
       return output(result.rows[0]);
     },

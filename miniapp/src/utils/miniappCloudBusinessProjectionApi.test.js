@@ -11,7 +11,8 @@ assert.match(source, /cloudBusinessUrl\('\/api\/business\/miniapp-projection'\)/
 assert.match(source, /response\.data as \{ ok: true; projection: any \}/, 'miniapp must retain the cloud projection response shape');
 assert.match(source, /async listQuestionPreviews\(token: string\)/, 'miniapp question previews must use the cloud business API');
 assert.match(source, /cloudBusinessUrl\('\/api\/business\/miniapp-question-previews'\)/, 'question previews must not use the retired generic API');
-assert.match(source, /async requestQuestionAssetDelivery\(token: string, assetKey: string\)/, 'miniapp question media must request a short-lived cloud delivery');
+assert.match(source, /async requestQuestionAssetDelivery\(token: string, questionId: string, assetKey: string\)/, 'miniapp question media must request a short-lived delivery bound to the visible question');
+assert.match(source, /data: \{ questionId \}/, 'miniapp asset deliveries must name the visible question');
 assert.match(source, /miniapp-question-assets\/\$\{encodeURIComponent\(assetKey\)\}\/delivery/, 'question media delivery must stay bound to the immutable asset key');
 assert.match(source, /async downloadQuestionAssetDelivery\(token: string, deliveryId: string\)/, 'miniapp question media must download only a prepared delivery');
 assert.match(source, /async createPaperExportTask\(token: string, taskType: 'paper-export-word' \| 'paper-export-pdf'/, 'miniapp may submit only the two cloud export task types');
