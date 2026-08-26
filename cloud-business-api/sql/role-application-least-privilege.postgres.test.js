@@ -18,10 +18,14 @@ const NEW_PROFILE_MODE_SQL = fs.readFileSync(path.join(__dirname, '20260826-zzz-
       await facade.query('CREATE SCHEMA business');
       await facade.query('GRANT USAGE ON SCHEMA business TO vnext_pg17_writer');
       await facade.query("CREATE TABLE business.miniapp_cloud_role_grants (account_id text NOT NULL,role text NOT NULL,status text NOT NULL,profile_type text NULL,profile_id text NULL,student_relationship text NULL,updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),PRIMARY KEY(account_id,role))");
+      await facade.query('CREATE TABLE business.teachers (id text NOT NULL,tenant_id text NOT NULL,legacy_deleted boolean NOT NULL DEFAULT false,PRIMARY KEY(id,tenant_id))');
+      await facade.query('CREATE TABLE business.students (id text NOT NULL,tenant_id text NOT NULL,legacy_deleted boolean NOT NULL DEFAULT false,PRIMARY KEY(id,tenant_id))');
       await facade.query(BASE_SQL);
       await facade.query(LEAST_PRIVILEGE_SQL);
       await facade.query(NEW_PROFILE_MODE_SQL);
       await facade.query("INSERT INTO business.miniapp_cloud_role_grants(account_id,role,status,profile_type,profile_id) VALUES ('account-super-admin','super_admin','active',NULL,NULL)");
+      await facade.query("INSERT INTO business.teachers(id,tenant_id) VALUES ('teacher-1','tenant-1'),('teacher-other-tenant','tenant-other')");
+      await facade.query("INSERT INTO business.students(id,tenant_id) VALUES ('student-1','tenant-1')");
     });
 
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
@@ -49,6 +53,14 @@ const NEW_PROFILE_MODE_SQL = fs.readFileSync(path.join(__dirname, '20260826-zzz-
       );
       const latest = await facade.query("SELECT * FROM business.vnext_read_latest_cloud_role_application_v2('tenant-1','account-visitor')");
       assert.strictEqual(latest.rows[0].application_id, 'application-1');
+      await assert.rejects(
+        () => facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v2('tenant-1','account-super-admin','application-1','approved','student-1',transaction_timestamp())"),
+        error => error && error.code === 'P0001',
+      );
+      await assert.rejects(
+        () => facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v2('tenant-1','account-super-admin','application-1','approved','teacher-other-tenant',transaction_timestamp())"),
+        error => error && error.code === 'P0001',
+      );
       const reviewed = await facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v2('tenant-1','account-super-admin','application-1','approved','teacher-1',transaction_timestamp())");
       assert.strictEqual(reviewed.rows[0].status, 'approved');
     });
