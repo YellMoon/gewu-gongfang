@@ -21,7 +21,7 @@ export default defineAppConfig({
   window: {
     backgroundTextStyle: 'light',
     navigationBarBackgroundColor: '#1f6f68',
-    navigationBarTitleText: '教育综合服务平台',
+    navigationBarTitleText: '格物工坊',
     navigationBarTextStyle: 'white',
     backgroundColor: '#f7f4ee',
   },
