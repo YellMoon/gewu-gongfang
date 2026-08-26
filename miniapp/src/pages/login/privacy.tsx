@@ -30,7 +30,7 @@ export default function PrivacyPage() {
         <Text className="privacy-section-title">{'\u4e94\u3001\u6307\u5f15\u66f4\u65b0'}</Text>
         <Text className="privacy-section-text">{'\u672c\u6307\u5f15\u66f4\u65b0\u540e\u4f1a\u5728\u5c0f\u7a0b\u5e8f\u5185\u516c\u5e03\uff1b\u91cd\u5927\u53d8\u5316\u4f1a\u5728\u767b\u5f55\u6216\u76f8\u5173\u529f\u80fd\u5165\u53e3\u660e\u786e\u63d0\u793a\u3002'}</Text>
       </View>
-      <Text className="privacy-update-note">{'\u672c\u6307\u5f15\u751f\u6548\u65e5\u671f\uff1a2026\u5e747\u670821\u65e5'}</Text>
+      <Text className="privacy-update-note">{'\u672c\u6307\u5f15\u751f\u6548\u65e5\u671f\uff1a2026\u5e748\u670826\u65e5'}</Text>
     </View>
   </View>;
 }

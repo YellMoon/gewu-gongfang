@@ -25,6 +25,7 @@ const assetsConfig = display(read('miniapp/src/pages/assets/index.config.ts'));
 const appConfig = read('miniapp/src/app.config.ts');
 const appSource = read('miniapp/src/app.tsx');
 const privacyPage = display(read('miniapp/src/pages/login/privacy.tsx'));
+const privacyConfig = read('miniapp/src/pages/login/privacy.config.ts');
 
 assert.ok(
   appSource.includes("'pages/login/privacy'"),
@@ -81,6 +82,8 @@ assert.ok(appSource.includes("import('./utils/miniappRouteAccess')") && appSourc
 assert.ok(appConfig.includes("navigationBarTitleText: '格物工坊'"), 'the miniapp shell must use the product name rather than a generic management-system title');
 assert.ok(privacyPage.includes('微信登录凭证') && privacyPage.includes('经授权的手机号') && privacyPage.includes('身份申请资料'), 'privacy guidance must describe the actual sign-in and application data');
 assert.ok(!privacyPage.includes('昵称、头像') && !privacyPage.includes('设备型号'), 'privacy guidance must not claim collection that the miniapp does not perform');
+assert.ok(privacyConfig.includes("navigationStyle: 'custom'"), 'privacy guidance must use its own safe-area-aware header instead of stacking a second global navigation bar');
+assert.ok(privacyPage.includes('本指引生效日期：2026年8月26日'), 'privacy guidance must show its current effective date');
 
 for (const removedRoute of [
   'pages/admin/users/index',
