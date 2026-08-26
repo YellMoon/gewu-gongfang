@@ -28,6 +28,8 @@ const appConfig = read('miniapp/src/app.config.ts');
 const appSource = read('miniapp/src/app.tsx');
 const privacyPage = display(read('miniapp/src/pages/login/privacy.tsx'));
 const privacyConfig = read('miniapp/src/pages/login/privacy.config.ts');
+const desktopNavigation = read('src/navigation/appNavigation.tsx');
+const desktopQuestionBank = read('src/pages/QuestionBankPreview.tsx');
 
 assert.ok(
   appSource.includes("'pages/login/privacy'"),
@@ -64,6 +66,9 @@ assert.ok(!settingsPage.includes(String.fromCharCode(36523, 20221, 30003, 35831,
 assert.ok(!applicationRuntime.includes('\u6559\u5e08\u7aef') && !applicationPage.includes('\u6559\u5e08\u7aef') && !homePage.includes('\u6559\u5e08\u7aef'), 'visitor role-application copy must not imply that teachers approve identities');
 assert.ok(applicationPage.includes('\u5ba1\u6838') && homePage.includes('\u5ba1\u6838'), 'visitor role-application copy must explain the review boundary without inventing a reviewer role');
 assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered miniapp action must not fall back to a fictional unfinished module');
+assert.ok(!homePage.includes(String.fromCharCode(39064, 24211, 32452, 21367)), 'the miniapp entry must name the question bank rather than turn it into a grouping feature');
+assert.ok(!desktopNavigation.includes(String.fromCharCode(26816, 32034, 21644, 39044, 35272, 39064, 24211, 20869, 23481)), 'desktop navigation must not describe question-bank access as a preview');
+assert.ok(!desktopQuestionBank.includes(String.fromCharCode(39064, 30446, 39044, 35272)), 'desktop question dialogs must use a direct viewing label rather than preview');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
 assert.ok(questionPaperPage.includes("disabled={!items.length || Boolean(submitting)}"), 'paper exports must reject an empty selection and remain disabled while an export is in progress');
 assert.ok(questionPaperPage.includes('sectionTitle') && questionPaperPage.includes('score'), 'paper editor must retain section and score edits before exporting');

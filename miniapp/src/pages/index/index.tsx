@@ -54,7 +54,7 @@ interface DashboardData {
 
 const MODULE_CONFIG: Record<string, { mark: string; tone: string; pages: string; action: string }> = {
   scheduling: { mark: '课', tone: 'teal', pages: '/pages/schedule/index', action: '查看课程安排' },
-  'question-bank': { mark: '题', tone: 'indigo', pages: '/pages/question-bank/index', action: '组卷与导出' },
+  'question-bank': { mark: '题', tone: 'indigo', pages: '/pages/question-bank/index', action: '查看题库' },
   assets: { mark: '账', tone: 'amber', pages: '/pages/assets/index', action: '财务导入与统计' },
 };
 
@@ -67,7 +67,7 @@ const STAFF_SHORTCUTS = [
 
 const STUDENT_SHORTCUTS = [
   { mark: '表', label: '我的课表', desc: '查看本人相关课程', url: '/pages/schedule/index' },
-  { mark: '卷', label: '题库组卷', desc: '选题、组卷和导出', url: '/pages/question-bank/index' },
+  { mark: '卷', label: '题库', desc: '查看题目与解析', url: '/pages/question-bank/index' },
 ];
 
 export default function Index() {

@@ -145,7 +145,7 @@ const pageInventory = [
   },
   {
     route: 'pages/question-bank/index',
-    title: '题库组卷与导出',
+    title: '题库与导出',
     registered: true,
     roleViews: ['super_admin', 'teacher', 'student', 'visitor'],
     surface: 'limited-write-task',

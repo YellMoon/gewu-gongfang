@@ -1176,7 +1176,7 @@ const QuestionBankPreview: React.FC = () => {
 
       {/* Preview Modal */}
       <Modal
-        title={<span><EyeOutlined /> 题目预览</span>}
+        title={<span><EyeOutlined /> 查看题目</span>}
         open={!!previewQuestion}
         onCancel={() => setPreviewQuestion(null)}
         footer={<Button onClick={() => setPreviewQuestion(null)}>关闭</Button>}
