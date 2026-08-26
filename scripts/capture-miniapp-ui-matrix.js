@@ -103,8 +103,9 @@ const identities = Object.freeze({
   student: normalIdentity('student'),
   guardian: {
     ...normalIdentity('student'),
-    id: 'fixture-guardian',
+    accountId: 'fixture-guardian', id: 'fixture-guardian',
     name: '家庭成员验收账号',
+    profile: { type: 'student', id: 'fixture-student', relationship: 'guardian' },
     student_relationship: 'guardian',
   },
   visitor: {

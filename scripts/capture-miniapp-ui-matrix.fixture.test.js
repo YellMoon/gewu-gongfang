@@ -38,6 +38,21 @@ function request(pathname, token, port = TEST_PORT) {
     assert.strictEqual(response.body.identity.profile.id, 'fixture-teacher');
     assert.ok(response.body.capabilities.includes('business:teacher-scope'));
     assert.strictEqual(cloudSessionUser(response.body.identity)?.user_type, 'teacher');
+
+    const guardianResponse = await request('/api/miniapp/cloud-context', 'fixture-guardian');
+    assert.strictEqual(guardianResponse.statusCode, 200);
+    assert.strictEqual(guardianResponse.body.identity.accountId, 'fixture-guardian');
+    assert.deepStrictEqual(guardianResponse.body.identity.roles, ['student']);
+    assert.strictEqual(guardianResponse.body.identity.profile.relationship, 'guardian');
+    const guardian = cloudSessionUser(guardianResponse.body.identity);
+    assert.strictEqual(guardian?.identity_kind, 'family_member');
+    assert.strictEqual(guardian?.student_relationship, 'guardian');
+
+    const visitorResponse = await request('/api/miniapp/cloud-context', 'fixture-visitor');
+    assert.strictEqual(visitorResponse.statusCode, 200);
+    assert.deepStrictEqual(visitorResponse.body.identity.roles, []);
+    assert.strictEqual(visitorResponse.body.identity.status, 'visitor');
+    assert.strictEqual(cloudSessionUser(visitorResponse.body.identity)?.user_type, 'visitor');
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
