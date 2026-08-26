@@ -203,6 +203,12 @@ for (const entry of pageInventory) {
     runtimeScenarios.filter(item => item.route === entry.route).map(item => item.id).sort(),
     `${entry.route} runtime scenario links must be exact`,
   );
+  const runtimeRoles = new Set(runtimeScenarios
+    .filter(item => item.route === entry.route)
+    .map(item => item.roleView));
+  for (const role of entry.roleViews) {
+    assert.ok(runtimeRoles.has(role), `${entry.route} runtime matrix missing declared ${role} view`);
+  }
 }
 const runtimeCategories = new Set(runtimeScenarios.flatMap(item => item.categories));
 for (const category of REQUIRED_COVERAGE_CATEGORIES) {
