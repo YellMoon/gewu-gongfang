@@ -1,4 +1,4 @@
-const ROLE_SET = new Set(['visitor', 'student', 'teacher', 'admin', 'super_admin']);
+const ROLE_SET = new Set(['visitor', 'student', 'teacher', 'super_admin']);
 
 function authorityError(code) {
   const error = new Error(code);

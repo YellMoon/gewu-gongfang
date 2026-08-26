@@ -8,7 +8,7 @@ assert.deepStrictEqual(
 
 assert.throws(
   () => resolveActingScope({ userId: 'u1', actingRole: 'admin', grants: [] }),
-  error => error && error.code === 'ACTING_ROLE_NOT_GRANTED'
+  error => error && error.code === 'ACTING_ROLE_INVALID'
 );
 
 assert.deepStrictEqual(

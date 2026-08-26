@@ -1,5 +1,5 @@
-const ADMIN_ROLES = new Set(['admin', 'super_admin']);
-const USER_ROLES = new Set(['visitor', 'student', 'teacher', 'admin', 'super_admin']);
+const ADMIN_ROLES = new Set(['super_admin']);
+const USER_ROLES = new Set(['visitor', 'student', 'teacher', 'super_admin']);
 
 const ENTITY_SPECS = Object.freeze({
   student: {

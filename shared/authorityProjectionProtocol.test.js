@@ -48,5 +48,9 @@ assert.throws(
   }),
   error => error.code === 'AUTHORITY_PROJECTION_SIGNATURE_INVALID'
 );
+assert.throws(
+  () => createSignedAuthorityProjection({ ...input, role: 'admin', privateKey: keyPair.privateKey }),
+  error => error.code === 'AUTHORITY_PROJECTION_ROLE_INVALID'
+);
 
 console.log('authorityProjectionProtocol tests passed');

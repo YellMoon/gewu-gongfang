@@ -83,11 +83,11 @@ const handlers = createAuthorityBusinessMutationHandlers({
   questionStorageService,
   personalAssetRecordService,
 });
-const admin = {
+const superAdmin = {
   authorityId: 'authority-1',
   hostEpochId: 'epoch-1',
   hostDeviceId: 'host-device',
-  scope: { kind: 'admin', userId: 'admin-1', authorityId: 'authority-1' },
+  scope: { kind: 'super_admin', userId: 'admin-1', authorityId: 'authority-1' },
 };
 const teacher = {
   authorityId: 'authority-1',
@@ -104,7 +104,7 @@ const teacher = {
 assert.throws(
   () => handlers['student.create.v1']({
     authorityId: 'authority-1',
-    actor: { userId: 'admin-1', deviceId: 'desktop-1', role: 'admin' },
+    actor: { userId: 'admin-1', deviceId: 'desktop-1', role: 'super_admin' },
     payload: {
       record: {
         id: 'student-draft-1',
@@ -113,13 +113,13 @@ assert.throws(
         tenant_id: 'forbidden',
       },
     },
-  }, admin),
+  }, superAdmin),
   error => error?.code === 'AUTHORITY_COMMAND_FIELD_FORBIDDEN',
 );
 
 const created = handlers['student.create.v1']({
   authorityId: 'authority-1',
-  actor: { userId: 'admin-1', deviceId: 'desktop-1', role: 'admin' },
+  actor: { userId: 'admin-1', deviceId: 'desktop-1', role: 'super_admin' },
   payload: {
     record: {
       id: 'student-draft-1',
@@ -128,7 +128,7 @@ const created = handlers['student.create.v1']({
       balance_money: 0,
     },
   },
-}, admin);
+}, superAdmin);
 assert.strictEqual(created.id, 'student-draft-1');
 assert.deepStrictEqual(calls.find(call => call.kind === 'student-create'), {
   kind: 'student-create',
@@ -148,7 +148,7 @@ assert.throws(
       expectedVersion: 'stale',
       changes: { notes: 'must not apply' },
     },
-  }, admin),
+  }, superAdmin),
   error => error?.code === 'AUTHORITY_COMMAND_VERSION_CONFLICT',
 );
 handlers['student.update.v1']({
@@ -157,7 +157,7 @@ handlers['student.update.v1']({
     expectedVersion: 'v1',
     changes: { notes: 'host checked' },
   },
-}, admin);
+}, superAdmin);
 assert.strictEqual(rows.students.get('student-draft-1').notes, 'host checked');
 
 handlers['schedule.update.v1']({
@@ -197,7 +197,7 @@ assert.strictEqual(JSON.stringify(assetCall.input).includes('owner_user_id'), fa
 const createdQuestion = handlers['question.create.v1']({
   authorityId: 'authority-1',
   commandId: 'command-question-create',
-  actor: { userId: 'admin-1', deviceId: 'ordinary-device', role: 'admin' },
+  actor: { userId: 'admin-1', deviceId: 'ordinary-device', role: 'super_admin' },
   payload: {
     record: {
       id: 'question-new',
@@ -206,7 +206,7 @@ const createdQuestion = handlers['question.create.v1']({
       answer: '2',
     },
   },
-}, admin);
+}, superAdmin);
 assert.strictEqual(createdQuestion.storageState, 'host_committed');
 assert.strictEqual(
   calls.find(call => call.kind === 'question-storage-commit').id,
@@ -216,9 +216,9 @@ assert.strictEqual(
 handlers['question.delete.v1']({
   authorityId: 'authority-1',
   commandId: 'command-question-delete',
-  actor: { userId: 'admin-1', deviceId: 'ordinary-device', role: 'admin' },
+  actor: { userId: 'admin-1', deviceId: 'ordinary-device', role: 'super_admin' },
   payload: { id: 'question-1' },
-}, admin);
+}, superAdmin);
 assert.strictEqual(calls.some(call => call.kind === 'question-storage-delete'), true);
 
 assert.strictEqual(
@@ -245,7 +245,7 @@ assert.strictEqual(
 assert.strictEqual(
   isAuthorityBusinessCommandAllowed({
     type: 'legacy.raw-sync.v1',
-    scope: admin.scope,
+    scope: superAdmin.scope,
   }),
   false,
 );

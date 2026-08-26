@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { stableJson } = require('./authorityProtocol');
 
 const AUTHORITY_PROJECTION_PROTOCOL = 'gewu.authority-projection.v1';
-const ROLE_SET = new Set(['visitor', 'student', 'teacher', 'admin', 'super_admin']);
+const ROLE_SET = new Set(['visitor', 'student', 'teacher', 'super_admin']);
 
 function projectionError(code) {
   return Object.assign(new Error(code), { code });
