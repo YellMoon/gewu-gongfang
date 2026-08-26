@@ -202,7 +202,23 @@ async function resetScenarioPage(miniProgram, scenarioId) {
     wx.setStorageSync('scheduling_api_base_url', fixtureBase);
   }, FIXTURE_BASE);
   await reLaunchPage(miniProgram, `/pages/login/index?fixtureReset=${encodeURIComponent(scenarioId)}`);
-  await wait(150);
+  // Let the app's unauthenticated startup fallback settle before writing the
+  // next fixture session. Otherwise that stale fallback can redirect the next
+  // authenticated scenario back to the login page.
+  await wait(850);
+}
+
+async function launchScenarioPage(miniProgram, scenario) {
+  if (scenario.interaction === 'tap-privacy-link') {
+    await wait(500);
+    const loginPage = await miniProgram.currentPage();
+    const privacyLink = await loginPage?.$('.privacy-link');
+    assert.ok(privacyLink, 'privacy acceptance could not find the login-page privacy guidance link');
+    await privacyLink.tap();
+    await wait(350);
+    return miniProgram.currentPage();
+  }
+  return reLaunchPage(miniProgram, `/${launchRoute(scenario)}`);
 }
 
 async function run() {
@@ -252,7 +268,7 @@ async function run() {
       setScenario(scenario);
       await resetScenarioPage(miniProgram, scenario.id);
       await setScenarioIdentity(miniProgram, scenario.identity);
-      const page = await reLaunchPage(miniProgram, `/${launchRoute(scenario)}`);
+      const page = await launchScenarioPage(miniProgram, scenario);
       await page.waitFor(SCREENSHOT_WAIT_MS);
       const current = await miniProgram.currentPage();
       const sourceRoute = scenario.route;
@@ -273,6 +289,7 @@ async function run() {
         state: scenario.state,
         categories: scenario.categories,
         fixtureMode: scenario.fixtureMode,
+        interaction: scenario.interaction || '',
         routeMatched: actual === expected,
         expectedText: scenario.expectedText,
         textMatched,

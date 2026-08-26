@@ -229,6 +229,11 @@ for (const [route, roles] of Object.entries({
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-offline'), 'runtime matrix must capture an offline state');
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-forbidden'), 'runtime matrix must capture a permission-denied state');
 assert.ok(runtimeScenarios.some(item => item.state === 'miniapp-readonly-boundary'), 'runtime matrix must capture the limited-write boundary');
+assert.strictEqual(
+  runtimeScenarios.find(item => item.id === 'privacy-guest')?.interaction,
+  'tap-privacy-link',
+  'privacy acceptance must tap the login-page guidance link rather than treating privacy content as a cold-start route',
+);
 const guardianScenarios = runtimeScenarios.filter(item => item.identity === 'guardian');
 assert.ok(guardianScenarios.length >= 5, 'runtime matrix must separately exercise the household-member fixture across its student-scoped pages');
 assert.ok(guardianScenarios.every(item => item.roleView === 'student'), 'a household member is a student-scope relationship, not a separate runtime role');
