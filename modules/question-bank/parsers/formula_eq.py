@@ -15,6 +15,7 @@ class EqField:
     visible_result: str
     start_index: int
     end_index: int
+    conversion_instruction: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,13 +29,34 @@ class EqConversion:
 @dataclass
 class _FieldFrame:
     start_index: int
-    instructions: list[str]
+    instructions: list[WordToken]
     result: list[str]
     separated: bool = False
 
 
 def _clean_instruction(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _conversion_instruction(tokens: Iterable[WordToken]) -> str:
+    """Keep Word run-level scripts when rebuilding an EQ instruction."""
+    fragments: list[str] = []
+    for token in tokens:
+        text = token.text or ""
+        if not text:
+            continue
+        if token.style.vert_align == "subscript":
+            fragments.append(r"\s\do2(" + text + ")")
+        elif token.style.vert_align == "superscript":
+            fragments.append(r"\s\up2(" + text + ")")
+        else:
+            fragments.append(text)
+    return _clean_instruction("".join(fragments))
+
+
+def _is_layout_overlay(instruction: str) -> bool:
+    """An aligned overlay nested in another EQ field is positioning metadata."""
+    return bool(re.match(r"(?i)^EQ\s+\\o\\al(?:\s|\(|$)", instruction))
 
 
 def collect_eq_fields(tokens: Iterable[WordToken]) -> list[EqField]:
@@ -54,16 +76,22 @@ def collect_eq_fields(tokens: Iterable[WordToken]) -> list[EqField]:
             continue
         frame = stack[-1]
         if token.kind == "field_instruction" and not frame.separated:
-            frame.instructions.append(token.text or "")
+            frame.instructions.append(token)
         elif token.kind == "field_separate":
             frame.separated = True
         elif token.kind == "text" and frame.separated:
             frame.result.append(token.text or "")
         elif token.kind == "field_end":
             completed = stack.pop()
-            instruction = _clean_instruction("".join(completed.instructions))
-            if re.match(r"(?i)^EQ(?:\s|$)", instruction):
-                fields.append(EqField(instruction, "".join(completed.result).strip(), completed.start_index, index))
+            instruction = _clean_instruction("".join(item.text or "" for item in completed.instructions))
+            if re.match(r"(?i)^EQ(?:\s|$)", instruction) and not (stack and _is_layout_overlay(instruction)):
+                fields.append(EqField(
+                    instruction,
+                    "".join(completed.result).strip(),
+                    completed.start_index,
+                    index,
+                    _conversion_instruction(completed.instructions),
+                ))
     return fields
 
 
@@ -166,7 +194,11 @@ def _convert_expression(expression: str) -> str:
     if integral is not None:
         return integral
 
-    script_pattern = re.compile(r"(?P<base>[^\\(),\s]+)\\s\\(?P<direction>up|do)(?:\d+)?\((?P<script>[^()]*)\)", re.I)
+    script_pattern = re.compile(
+        r"(?P<base>(?:\([^()]*\)|（[^（）]*）|[^\\(),\s]+))"
+        r"\\s\\(?P<direction>up|do)(?:\d+)?\((?P<script>[^()]*)\)",
+        re.I,
+    )
     while True:
         match = script_pattern.search(expression)
         if not match:
@@ -212,6 +244,16 @@ def _convert_expression(expression: str) -> str:
                 output.append(r"\sqrt[%s]{%s}" % (_convert_expression(args[0]), _convert_expression(args[1])))
             else:
                 raise ValueError("invalid EQ command argument count")
+        elif command == "o":
+            overlay_start = argument_start
+            switch = re.match(r"\\(?:ac|al|ar|ad)", expression[overlay_start:], re.I)
+            if switch:
+                overlay_start += len(switch.group(0))
+            group, next_index = _balanced_group(expression, overlay_start)
+            vector = re.fullmatch(r"\s*([A-Za-z])\s*,\s*\\s\\up\d*\(\s*[-－]\s*\)\s*", group)
+            if switch or not vector:
+                raise ValueError("unsupported EQ overlay")
+            output.append(r"\vec{%s}" % vector.group(1))
         else:
             raise ValueError("unsupported EQ command: \\" + command)
         index = next_index

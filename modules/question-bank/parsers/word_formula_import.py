@@ -98,7 +98,7 @@ def _import_row(archive: zipfile.ZipFile, row: WordParagraph) -> ImportedFormula
             )
 
     for field in collect_eq_fields(row.tokens):
-        conversion = convert_eq_to_latex(field.instruction, field.visible_result)
+        conversion = convert_eq_to_latex(field.conversion_instruction or field.instruction, field.visible_result)
         candidates.append(
             (
                 field.start_index,
