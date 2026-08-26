@@ -9,6 +9,8 @@ assert.ok(source.includes("desktopQuestionImportClient.mjs") && source.includes(
   'the import page must use the cloud task client for source intake and draft preparation');
 assert.ok(source.includes('createFromWord') && source.includes('prepareDrafts') && source.includes('createNativeQuestionDraft'),
   'the import page must create cloud import tasks then create only native local drafts after explicit confirmation');
+assert.ok(source.includes('formatCloudImportValidationCode') && source.includes('formula_needs_review'),
+  'cloud parser warnings must be shown as user-facing import review guidance');
 assert.ok(!source.includes('/parse-word') && !source.includes('/imports/check') && !source.includes('/commit`'),
   'the retired parser and direct legacy import endpoints must not remain in the active import page');
 assert.ok(!source.includes('prepareQuestionAssetsForStorage') && !source.includes('reconcileQuestionLocalStore'),

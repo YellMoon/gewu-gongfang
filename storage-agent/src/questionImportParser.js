@@ -111,7 +111,12 @@ function validationFor(candidate) {
   const stem = typeof candidate.stem === 'string' ? candidate.stem.trim() : '';
   if (!stem) return { status: 'rejected', codes: ['missing_stem'] };
   const answer = typeof candidate.answer === 'string' ? candidate.answer.trim() : '';
-  return answer ? { status: 'accepted', codes: [] } : { status: 'warning', codes: ['missing_answer'] };
+  const codes = answer ? [] : ['missing_answer'];
+  if (Array.isArray(candidate.formulas) && candidate.formulas.some(formula => formula && typeof formula === 'object'
+    && ['approximate', 'preview_only', 'failed'].includes(formula.conversion_status))) {
+    codes.push('formula_needs_review');
+  }
+  return codes.length ? { status: 'warning', codes } : { status: 'accepted', codes };
 }
 
 function executePython({ pythonBin, parserPath, filePath, sourceType }) {

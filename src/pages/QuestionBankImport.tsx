@@ -78,6 +78,15 @@ function toSchoolYear(year?: string): string {
   return `${start}-${start + 1}`;
 }
 
+function formatCloudImportValidationCode(code: string): string {
+  const messages: Record<string, string> = {
+    missing_stem: "未识别到题干，请核对原件",
+    missing_answer: "未识别到答案，请核对原件",
+    formula_needs_review: "部分公式未能完整转换，请核对后再提交",
+  };
+  return messages[code] || "导入项需要核对：" + code;
+}
+
 function getSchoolYearOptions() {
   const current = new Date().getFullYear();
   return Array.from({ length: 12 }, (_, i) => {
@@ -775,7 +784,7 @@ const QuestionBankImport: React.FC = () => {
         const codes = Array.isArray(remote?.validation?.codes) ? remote.validation.codes : [];
         const remoteStatus = remote?.validation?.status;
         const status = remoteStatus === 'rejected' ? 'failed' : remoteStatus === 'warning' ? 'warning' : row.status;
-        return { ...row, status, issues: codes.length ? codes.map((code: string) => ({ level: status, message: code })) : row.issues } as ImportValidationRow;
+        return { ...row, status, issues: codes.length ? codes.map((code: string) => ({ level: status, message: formatCloudImportValidationCode(code) })) : row.issues } as ImportValidationRow;
       });
       const summary = rows.reduce<ImportValidationSummary>((acc, row) => {
         acc[row.status] += 1; acc.total += 1; return acc;

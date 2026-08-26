@@ -41,6 +41,17 @@ async function main() {
     assert.ok(!JSON.stringify(parsed.candidates).includes('data:image/png'), 'cloud candidates must never receive media bytes');
     assert.ok(temporaryPath.startsWith(path.join(root, '.gewu-storage-agent', 'parser-')));
     assert.ok(!fs.existsSync(path.dirname(temporaryPath)), 'the transient parser directory must be removed after parsing');
+    const reviewParser = createQuestionImportParser({
+      nasRoot: root,
+      parserPath,
+      pythonBin: 'python3',
+      execute: async () => JSON.stringify({ success: true, questions: [{
+        id: 'parser-review-id', stem: 'Question', answer: 'Answer', options: [], assets: [],
+        formulas: [{ conversion_status: 'failed' }],
+      }] }),
+    });
+    const review = await reviewParser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') });
+    assert.deepStrictEqual(review.candidates[0].validation, { status: 'warning', codes: ['formula_needs_review'] });
     await assert.rejects(
       () => parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture'), extra: true }),
       /QUESTION_IMPORT_PARSE_INPUT_INVALID/
