@@ -9,8 +9,8 @@ const REVIEW_DOC_PATH = path.join(ROOT_DIR, 'docs', 'miniapp-review-guide.md');
 function buildDefaultReviewInfo() {
   return {
     version: require(path.join(ROOT_DIR, 'package.json')).version,
-    versionDesc: '登录页由用户手填手机号并与已有资料核对；未建档号码会自动创建游客账号，只能查看前十道脱敏题目并提交学生或教师身份申请。已有档案首次绑定当前微信需超级管理员审核。',
-    testRemark: '点击“验证手机号并登录”后手填审核员本人的手机号。未建档号码会自动创建游客账号：只能查看前十道脱敏题目、体验 Word/PDF 导出和提交身份申请；不会读取或修改正式教务数据。',
+    versionDesc: '支持已绑定微信直接登录；首次登录需授权微信手机号，新账号自动创建为访客，可预览云端题目并提交教师、学生或家庭成员身份申请。',
+    testRemark: '审核员可用已绑定微信直接登录，或在首次登录时授权微信手机号。新账号以访客身份进入，只能预览云端题目并提交身份申请，不会读取或修改正式教务数据。',
     orderCenterPath: '',
     expeditedAudit: false,
     privacyCollection: true,
@@ -19,18 +19,19 @@ function buildDefaultReviewInfo() {
 
 function validateReviewGuide(doc) {
   const required = [
-    '验证手机号并登录',
-    '手填手机号',
-    '游客',
+    '微信手机号',
+    '已绑定微信直接登录',
+    '首次登录',
+    '访客',
     '自动创建',
     '不需要体验码',
-    '前十道脱敏题目',
-    'Word/PDF',
+    '云端题目预览',
+    '家庭成员',
     '身份申请',
     '不会读取或修改正式业务数据',
     '180 天',
     '脱敏',
-    'https://physicsedu.xyz/scheduling',
+    'https://physicsedu.xyz/cloud-business',
     '被驳回',
     '审核通过',
     '发布线上版',
@@ -41,18 +42,15 @@ function validateReviewGuide(doc) {
   for (const removed of ['<review experience code>', 'MINIAPP_REVIEW_EXPERIENCE_CODE', '独立的“审核体验”入口']) {
     if (doc.includes(removed)) errors.push(`review guide retains removed review-demo contract: ${removed}`);
   }
-  for (const retired of [
-    String.fromCodePoint(0x6388, 0x6743, 0x5ba1, 0x6838, 0x5458, 0x672c, 0x4eba, 0x7684, 0x5fae, 0x4fe1, 0x624b, 0x673a, 0x53f7),
-    String.fromCodePoint(0x5141, 0x8bb8, 0x5fae, 0x4fe1, 0x63d0, 0x4f9b, 0x624b, 0x673a, 0x53f7),
-  ]) {
-    if (doc.includes(retired)) errors.push('review guide retains retired automatic-phone contract');
+  for (const retired of ['手填手机号', '前十道脱敏题目', '体验 Word/PDF 导出', '本地数据主机']) {
+    if (doc.includes(retired)) errors.push(`review guide retains retired contract: ${retired}`);
   }
   return { ok: errors.length === 0, errors };
 }
 
 function validateReviewInfo(info) {
   const errors = [];
-  const forbiddenCopy = ['体验码', '审核体验入口', '管理员体验', 'Gateway'];
+  const forbiddenCopy = ['体验码', '审核体验入口', '管理员体验', 'Gateway', '手填手机号', '前十道脱敏题目', 'Word/PDF 导出'];
   const fields = [
     ['versionDesc', info.versionDesc],
     ['testRemark', info.testRemark],
@@ -66,7 +64,7 @@ function validateReviewInfo(info) {
     }
   }
 
-  if (!info.testRemark?.includes('验证手机号并登录')) errors.push('testRemark must explain verified-phone login');
+  if (!info.testRemark?.includes('微信手机号')) errors.push('testRemark must explain WeChat phone authorization');
   if (!info.testRemark?.includes('不会读取或修改正式教务数据')) errors.push('testRemark must explain formal-data isolation');
   if (info.orderCenterPath) errors.push('orderCenterPath should stay empty unless transaction/order center is implemented');
   if (info.expeditedAudit !== false) errors.push('expeditedAudit should default to false');
