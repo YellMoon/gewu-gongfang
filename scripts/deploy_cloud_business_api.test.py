@@ -214,7 +214,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence", "b" * 32)
         release.assert_called_once_with("b" * 32)
 
-    def test_successful_promotion_revalidates_owner_before_health_and_receipt_in_order(self):
+    def test_successful_promotion_revalidates_the_promoted_container_before_health_and_receipt_in_order(self):
         tag = "8.5.0-fb899bbdd414"
         operation_id = "e" * 32
         events = []
@@ -224,13 +224,16 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(
             module, "heartbeat_promotion_lock", side_effect=lambda *_args: events.append("heartbeat")
         ) as heartbeat, mock.patch.object(
+            module, "verify_current_release_tag", side_effect=lambda *_args: events.append("tag")
+        ) as verify_tag, mock.patch.object(
             module, "verify_public_health", side_effect=lambda *_args: events.append("health") or {"ok": True}
         ), mock.patch.object(
             module.deploy, "record_release_receipt", side_effect=lambda *_args: events.append("receipt")
         ):
             module.promote_candidate_under_lock(tag, "8.5.0", "evidence", operation_id)
-        self.assertEqual(events, ["switch", "heartbeat", "health", "heartbeat", "receipt"])
-        self.assertEqual(heartbeat.call_args_list, [mock.call(operation_id, tag), mock.call(operation_id, tag)])
+        self.assertEqual(events, ["switch", "heartbeat", "tag", "heartbeat", "health", "heartbeat", "receipt"])
+        self.assertEqual(heartbeat.call_args_list, [mock.call(operation_id, tag), mock.call(operation_id, tag), mock.call(operation_id, tag)])
+        verify_tag.assert_called_once_with(tag)
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:

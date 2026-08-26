@@ -405,6 +405,8 @@ def promote_candidate_under_lock(tag, version, evidence, operation_id):
         raise switch_error
     try:
         heartbeat_promotion_lock(operation_id, tag)
+        verify_current_release_tag(tag)
+        heartbeat_promotion_lock(operation_id, tag)
         health = verify_public_health(version)
         heartbeat_promotion_lock(operation_id, tag)
         deploy.record_release_receipt("cloud_business", evidence)
