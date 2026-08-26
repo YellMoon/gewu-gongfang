@@ -104,7 +104,8 @@ const existingSql = [
 const selectedSql = [
   'SELECT q.id AS "id",q.subject AS "subject",q.question_type AS "questionType",q.difficulty AS "difficulty",',
   'c.stem AS "stem",c.answer AS "answer",c.explanation AS "explanation",c.options_json AS "options",',
-  'c.rich_content_json AS "richContent",q.has_formula AS "hasFormula",c.content_hash AS "contentHash",c.version AS "version"',
+  'c.rich_content_json AS "richContent",q.has_formula AS "hasFormula",c.content_hash AS "contentHash",c.version AS "version",',
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('assetKey',asset.content_hash,'fileName',asset.file_name,'mimeType',asset.mime_type) ORDER BY asset.created_at,asset.id) FROM business.question_assets asset WHERE asset.tenant_id=q.tenant_id AND asset.question_id=q.id AND asset.deleted=false AND asset.state='verified' AND asset.asset_type='image'),'[]'::jsonb) AS assets",
   'FROM business.questions q JOIN business.question_contents c ON c.tenant_id=q.tenant_id AND c.question_id=q.id',
   'WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false AND q.id=ANY($2::text[]) ORDER BY array_position($2::text[],q.id)',
 ].join(' ');
@@ -120,15 +121,21 @@ const taskSql = [
 ].join(' ');
 const cancelSql = [
   "UPDATE business.paper_export_tasks SET status='cancelled',phase='cancelled',updated_at=transaction_timestamp()",
-  "WHERE tenant_id=$1 AND account_id=$2 AND task_id=$3 AND status='queued'",
+  "WHERE tenant_id=$1 AND account_id=$2 AND task_id=$3 AND (status='queued' OR (status='processing' AND phase='media_pending'))",
+  'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+].join(' ');
+const deferSql = [
+  'UPDATE business.paper_export_tasks',
+  "SET phase='media_pending',progress=20,updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND status='processing' AND phase='rendering'",
   'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
 ].join(' ');
 const claimSql = [
   'WITH candidate AS (',
-  "SELECT task_id FROM business.paper_export_tasks WHERE status='queued' ORDER BY created_at,task_id FOR UPDATE SKIP LOCKED LIMIT 1",
+  "SELECT task_id FROM business.paper_export_tasks WHERE status='queued' OR (status='processing' AND phase='media_pending' AND updated_at<=transaction_timestamp()-interval '5 seconds') ORDER BY created_at,task_id FOR UPDATE SKIP LOCKED LIMIT 1",
   '), claimed AS (',
   "UPDATE business.paper_export_tasks task SET status='processing',phase='rendering',progress=10,updated_at=transaction_timestamp()",
-  "FROM candidate WHERE task.task_id=candidate.task_id AND task.status='queued'",
+  "FROM candidate WHERE task.task_id=candidate.task_id AND (task.status='queued' OR (task.status='processing' AND task.phase='media_pending'))",
   'RETURNING task.task_id AS "taskId",task.tenant_id AS "tenantId",task.account_id AS "accountId",task.task_type AS "taskType",task.request_json AS "request",task.question_snapshot_json AS "snapshot"',
   ') SELECT * FROM claimed',
 ].join(' ');
@@ -192,6 +199,12 @@ function createPaperExportTaskRepository({ query, randomId = () => crypto.random
       const result = await query(cancelSql, [text(input.tenantId, 128), actor(input.actor).accountId, text(input.taskId, 160)]);
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
       if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_NOT_CANCELLABLE');
+      return taskRow(result.rows[0]);
+    },
+    async defer(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 1 || !Object.hasOwn(input, 'taskId')) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(deferSql, [text(input.taskId, 160)]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
       return taskRow(result.rows[0]);
     },
     async claimNext() {

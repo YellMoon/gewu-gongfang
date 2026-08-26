@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
-const { Document, Packer, Paragraph, TextRun } = require('docx');
+const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -42,6 +42,20 @@ function optionText(value, index, formulaMode) {
   return content ? label + '. ' + content : label;
 }
 
+function questionAssets(value) {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
+  return value.map(asset => {
+    if (!asset || typeof asset !== 'object' || Array.isArray(asset)
+      || typeof asset.assetKey !== 'string' || !/^[0-9a-f]{64}$/.test(asset.assetKey)
+      || typeof asset.fileName !== 'string' || !asset.fileName.trim() || asset.fileName.length > 512
+      || typeof asset.mimeType !== 'string' || !/^image\/(?:png|jpe?g)$/i.test(asset.mimeType)) {
+      throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+    }
+    return { assetKey: asset.assetKey, fileName: asset.fileName, mimeType: asset.mimeType.toLowerCase() };
+  });
+}
+
 function request(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || !['word', 'pdf'].includes(value.format) || typeof value.title !== 'string' || !value.title.trim()) {
@@ -66,12 +80,26 @@ function questions(value, layout, formulaMode) {
     const stem = stripMarkup(item.stem);
     const richContent = structuredText(item.richContent, formulaMode);
     return {
-      number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
+      id: item.id, number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
       options: Array.isArray(item.options) ? item.options.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
       answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
       sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
+      assets: questionAssets(item.assets),
     };
   });
+}
+
+async function hydrateMedia(items, resolveQuestionAsset) {
+  if (!items.some(item => item.assets.length)) return items;
+  if (typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
+  return Promise.all(items.map(async item => ({
+    ...item,
+    media: await Promise.all(item.assets.map(async asset => {
+      const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
+      if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      return { ...asset, bytes: Buffer.from(bytes) };
+    })),
+  })));
 }
 
 function answerRows(item, prefix = '') {
@@ -92,6 +120,13 @@ function bodyRows(items, answerPosition) {
     const score = item.score === null ? '' : ' (' + item.score + ' pts)';
     rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem + score })] }));
     for (const option of item.options) rows.push(new Paragraph({ children: [new TextRun({ text: option })] }));
+    for (const media of item.media || []) {
+      rows.push(new Paragraph({ children: [new ImageRun({
+        data: media.bytes,
+        type: media.mimeType === 'image/png' ? 'png' : 'jpg',
+        transformation: { width: 420, height: 280 },
+      })] }));
+    }
     if (answerPosition === 'after') rows.push(...answerRows(item));
   }
   if (answerPosition !== 'after') {
@@ -130,6 +165,13 @@ function pdfBytes(input, items) {
       const score = item.score === null ? '' : ' (' + item.score + ' pts)';
       document.fontSize(11).text(String(item.number) + '. ' + item.stem + score).moveDown(0.5);
       for (const option of item.options) document.fontSize(10).text(option).moveDown(0.25);
+      for (const media of item.media || []) {
+        try {
+          document.image(media.bytes, { fit: [480, 360] }).moveDown(0.5);
+        } catch (_) {
+          throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+        }
+      }
       if (input.answerPosition === 'after') {
         if (item.answer) document.fontSize(10).text('Answer: ' + item.answer);
         if (item.explanation) document.fontSize(10).text('Explanation: ' + item.explanation);
@@ -146,9 +188,9 @@ function pdfBytes(input, items) {
   });
 }
 
-async function renderPaperExport(input) {
+async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   const current = request(input);
-  const items = questions(input.snapshot, current.layout, current.formulaMode);
+  const items = await hydrateMedia(questions(input.snapshot, current.layout, current.formulaMode), resolveQuestionAsset);
   const bytes = current.format === 'word' ? await wordBytes(current, items) : await pdfBytes(current, items);
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }

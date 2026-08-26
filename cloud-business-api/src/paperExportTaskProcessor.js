@@ -4,9 +4,10 @@ function failure(code) {
   return Object.assign(new Error(code), { code });
 }
 
-function createPaperExportTaskProcessor({ tasks, render, archiveArtifact } = {}) {
+function createPaperExportTaskProcessor({ tasks, render, archiveArtifact, mediaResolver } = {}) {
   if (!tasks || typeof tasks.claimNext !== 'function' || typeof tasks.complete !== 'function' || typeof tasks.fail !== 'function'
-    || typeof render !== 'function' || typeof archiveArtifact !== 'function') {
+    || typeof tasks.defer !== 'function' || typeof render !== 'function' || typeof archiveArtifact !== 'function'
+    || (mediaResolver !== undefined && typeof mediaResolver !== 'function')) {
     throw failure('CLOUD_PAPER_PROCESSOR_CONFIG_INVALID');
   }
   return Object.freeze({
@@ -21,6 +22,10 @@ function createPaperExportTaskProcessor({ tasks, render, archiveArtifact } = {})
           formulaMode: task.request.formulaMode,
           layout: task.request.layout || null,
           snapshot: task.snapshot,
+        }, {
+          resolveQuestionAsset: mediaResolver
+            ? descriptor => mediaResolver({ tenantId: task.tenantId, accountId: task.accountId, ...descriptor })
+            : undefined,
         });
         const artifact = await archiveArtifact({
           taskId: task.taskId,
@@ -34,6 +39,10 @@ function createPaperExportTaskProcessor({ tasks, render, archiveArtifact } = {})
         await tasks.complete({ taskId: task.taskId, artifact });
         return Object.freeze({ state: 'archived', taskId: task.taskId, artifactId: artifact.artifactId });
       } catch (error) {
+        if (error?.code === 'CLOUD_PAPER_EXPORT_MEDIA_PENDING') {
+          await tasks.defer({ taskId: task.taskId });
+          return Object.freeze({ state: 'media_pending', taskId: task.taskId });
+        }
         await tasks.fail({ taskId: task.taskId, code: String(error?.code || 'CLOUD_PAPER_RENDER_FAILED') });
         return Object.freeze({ state: 'failed', taskId: task.taskId, code: String(error?.code || 'CLOUD_PAPER_RENDER_FAILED') });
       }

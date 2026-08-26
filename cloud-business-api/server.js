@@ -36,6 +36,7 @@ const { createQuestionImportTaskRepository } = require('./src/questionImportTask
 const { createPaperExportTaskRepository } = require('./src/paperExportTaskRepository');
 const { createPaperExportArtifactRepository } = require('./src/paperExportArtifactRepository');
 const { createPaperExportTaskProcessor } = require('./src/paperExportTaskProcessor');
+const { createPaperExportMediaResolver } = require('./src/paperExportMediaResolver');
 const { createPaperExportWorkerRuntime } = require('./src/paperExportWorkerRuntime');
 const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
@@ -376,6 +377,7 @@ const miniappArtifactDeliveries = createMiniappArtifactDeliveryRepository({
 const questionAssetDeliveries = createQuestionAssetDeliveryRepository({
   query: (text, values) => pool.query(text, values),
 });
+const paperExportMediaResolver = createPaperExportMediaResolver({ questionAssetDeliveries });
 const storageAgent = createStorageAgentRuntimeFromEnvironment({
   env: process.env,
   query: (text, values) => pool.query(text, values),
@@ -411,6 +413,7 @@ const paperExportWorker = process.env.CLOUD_PAPER_EXPORT_WORKER_ENABLED === '1' 
     processor: createPaperExportTaskProcessor({
       tasks: paperExportTasks,
       render: renderPaperExport,
+      mediaResolver: paperExportMediaResolver,
       archiveArtifact: input => paperExportArtifactRepository.archive(input),
     }),
     log: message => console.error(message),
