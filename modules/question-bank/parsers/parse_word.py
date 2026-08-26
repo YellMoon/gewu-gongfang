@@ -21,6 +21,13 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 
+# The embedded desktop Python runtime uses an isolated ``._pth`` file and does
+# not automatically put the script directory on ``sys.path``.  Keep parser
+# siblings importable in that runtime as well as in a normal Python install.
+PARSER_DIR = os.path.dirname(os.path.abspath(__file__))
+if PARSER_DIR not in sys.path:
+    sys.path.insert(0, PARSER_DIR)
+
 from formula_omml import convert_omml_to_latex
 from word_formula_import import import_part_formulas
 from word_content import read_word_part
