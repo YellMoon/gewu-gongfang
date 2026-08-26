@@ -12,9 +12,9 @@ const TOKEN_USE = 'desktop-session';
 const MAX_SESSION_MS = 14 * 24 * 60 * 60 * 1000;
 const RECENT_ELEVATION_MS = 15 * 60 * 1000;
 const ELEVATION_PROOF_MAX_AGE_MS = 2 * 60 * 1000;
-const PRIVILEGED_ROLES = new Set(['super_admin', 'admin']);
-const ROLE_DISPLAY_ORDER = Object.freeze(['super_admin', 'admin', 'teacher', 'student']);
-const DEFAULT_ACTIVE_ROLE_ORDER = Object.freeze(['teacher', 'student', 'admin', 'super_admin']);
+const PRIVILEGED_ROLES = new Set(['super_admin']);
+const ROLE_DISPLAY_ORDER = Object.freeze(['super_admin', 'teacher', 'student']);
+const DEFAULT_ACTIVE_ROLE_ORDER = Object.freeze(['teacher', 'student', 'super_admin']);
 
 function serviceError(code) {
   const error = new Error(code);

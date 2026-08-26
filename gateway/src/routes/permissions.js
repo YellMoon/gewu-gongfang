@@ -59,7 +59,7 @@ function linkedStudentIds(req, role) {
 }
 
 function subjectScope(role, teacherId, studentIds) {
-  if (['super_admin', 'admin'].includes(role)) return 'all';
+  if (role === 'super_admin') return 'all';
   if (role === 'teacher' && teacherId) return 'teacher';
   if (role === 'student' && studentIds.length > 0) return 'student';
   return 'none';
@@ -131,7 +131,7 @@ router.get('/my', enforceTenantScope, (req, res) => {
     disabled,
     authorization_revision: req.user?.updated_at || req.user?.reviewed_at || null,
   };
-  return res.json({ permissions, capabilities, identity, user_type: role, is_admin: ['super_admin', 'admin'].includes(role) });
+  return res.json({ permissions, capabilities, identity, user_type: role, is_admin: role === 'super_admin' });
   /* legacy grant query retained below for rollback only
   const db = getDb();
 

@@ -255,10 +255,8 @@ const { createApp } = require('../app');
       '/api/miniapp/projection?userId=visitor-http&role=visitor',
       { headers: { authorization: `Bearer ${adminToken}` } },
     );
-    assert.strictEqual(formalProjection.status, 200, JSON.stringify(formalProjection.body));
-    assert.deepStrictEqual(formalProjection.body.projection, signedAdminProjection);
-    assert.strictEqual(formalProjection.body.projection.userId, 'admin-http');
-    assert.strictEqual(formalProjection.body.projection.role, 'admin');
+    assert.strictEqual(formalProjection.status, 403, JSON.stringify(formalProjection.body));
+    assert.strictEqual(formalProjection.body.code, 'MINIAPP_AUTHORITY_PROJECTION_SESSION_REQUIRED');
 
     db.prepare(`UPDATE authority_scoped_projections
       SET document_json=json_set(document_json,'$.payload.questionPreviews[0].title','tampered')

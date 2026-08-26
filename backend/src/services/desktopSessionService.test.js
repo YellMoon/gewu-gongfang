@@ -249,8 +249,8 @@ const legacyWithoutAuthoritySession = service.issueSession({
   userId: legacyOnlyUserId,
   deviceId: 'device-legacy-only',
 });
-assert.strictEqual(legacyWithoutAuthoritySession.session.activeRole, 'admin');
-assert.deepStrictEqual(legacyWithoutAuthoritySession.session.eligibleRoles, ['admin']);
+assert.strictEqual(legacyWithoutAuthoritySession.session.activeRole, 'visitor');
+assert.deepStrictEqual(legacyWithoutAuthoritySession.session.eligibleRoles, ['visitor']);
 
 const bootstrapHostSession = service.issueSession({
   userId: bootstrapSuperUserId,

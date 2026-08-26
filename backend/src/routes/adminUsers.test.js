@@ -61,8 +61,7 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.strictEqual(ordinary.body.code, 'SUPER_ADMIN_REQUIRED');
 
     const list = await request(base, 'GET', '/api/admin/users', token('ordinary-admin'));
-    assert.strictEqual(list.status, 200);
-    assert.ok(list.body.users.some(user => user.id === 'pending-user'));
+    assert.strictEqual(list.status, 403, 'retired ordinary-admin identities must not list user accounts');
 
     const pending = await request(base, 'GET', '/api/permissions/my', token('pending-user'));
     assert.deepStrictEqual(pending.body.capabilities, []);
@@ -90,9 +89,9 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.strictEqual(retiredQuestionWrite.status, 404, 'the retired local question-bank endpoint must not become a write authority');
 
     const superToken = token('miniapp-admin-13732250653');
-    const reviewed = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'admin' });
-    assert.strictEqual(reviewed.status, 200);
-    assert.strictEqual(reviewed.body.user.role, 'admin');
+    const retiredRoleReview = await request(base, 'PATCH', '/api/admin/users/pending-user/review', superToken, { role: 'teacher' });
+    assert.strictEqual(retiredRoleReview.status, 410);
+    assert.strictEqual(retiredRoleReview.body.code, 'LEGACY_USER_REVIEW_RETIRED');
     const ordinaryDisable = await request(base, 'PATCH', '/api/admin/users/approved-teacher/disable', token('ordinary-admin'));
     assert.strictEqual(ordinaryDisable.status, 403);
     assert.strictEqual(ordinaryDisable.body.code, 'SUPER_ADMIN_REQUIRED');
@@ -105,9 +104,9 @@ async function request(server, method, url, auth, body, headers = {}) {
     assert.strictEqual(immutableDisable.body.code, 'SUPER_ADMIN_IMMUTABLE');
     assert.strictEqual((await request(base, 'PATCH', '/api/admin/users/missing-user/disable', superToken)).status, 404);
     const permissions = await request(base, 'GET', '/api/permissions/my', token('ordinary-admin'), null, { 'x-node-role': 'primary-host', 'x-client-type': 'desktop' });
-    assert.ok(permissions.body.capabilities.includes('business:all'));
-    assert.ok(!permissions.body.capabilities.includes('users:review'));
-    assert.ok(!permissions.body.capabilities.includes('question-bank:delete-committed'), 'a forged host header cannot elevate a desktop admin');
+    assert.strictEqual(permissions.status, 200, 'a retired identity may receive only the fail-closed permission response');
+    assert.deepStrictEqual(permissions.body.capabilities, []);
+    assert.strictEqual(permissions.body.user_type, 'pending');
     db.registerSyncDevice('known-trusted-host', {
       deviceName: 'Known host',
       trusted: true,
@@ -115,7 +114,8 @@ async function request(server, method, url, auth, body, headers = {}) {
       ownerUserId: 'ordinary-admin',
     });
     const replayedDevice = await request(base, 'GET', '/api/permissions/my', token('ordinary-admin'), null, { 'x-device-id': 'known-trusted-host', 'x-client-type': 'desktop' });
-    assert.ok(!replayedDevice.body.capabilities.includes('question-bank:delete-committed'), 'knowing a trusted device id is not authentication');
+    assert.strictEqual(replayedDevice.status, 200, 'knowing a trusted device id must not reactivate a retired role');
+    assert.deepStrictEqual(replayedDevice.body.capabilities, []);
     const legacyDeviceToken = jwt.sign(
       { id: 'ordinary-admin', device_id: 'known-trusted-host' },
       process.env.JWT_SECRET
@@ -133,7 +133,6 @@ async function request(server, method, url, auth, body, headers = {}) {
       { 'x-device-id': 'known-trusted-host' }
     );
     assert.strictEqual(retiredSync.status, 404, 'raw legacy sync endpoint must be removed after authority cutover');
-    assert.ok(list.body.users.every(user => !('wechat_openid' in user) && !('wechat_unionid' in user)), 'admin list must not leak identity provider secrets');
   } finally {
     await new Promise(resolve => listener.close(resolve));
     db.close();

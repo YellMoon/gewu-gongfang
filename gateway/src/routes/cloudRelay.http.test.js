@@ -155,10 +155,10 @@ const pairingRouter = require('./desktopPairing');
   assert.strictEqual((await call('/tasks/task1/complete', { method: 'POST', headers: { 'x-gewu-host-token': 'test-host-secret' }, body: '{}' })).status, 410);
   const approved = id => JSON.stringify({ id, user_type: 'student', student_id: id, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   const approvedUnbound = id => JSON.stringify({ id, user_type: 'student', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
-  const admin = id => JSON.stringify({ id, user_type: 'admin', tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
+  const superAdmin = id => JSON.stringify({ id, phone: '13732250653', user_type: 'super_admin', is_super_admin_identity: 1, tenant_id: 'tenant-a', review_status: 'approved', status: 1, login_enabled: 1 });
   assert.strictEqual(
     (await call(`/tasks/${submittedPairingBody.request.id}/result`, {
-      headers: { 'x-test-user': admin('pairing-admin') },
+      headers: { 'x-test-user': superAdmin('pairing-super-admin') },
     })).status,
     404,
     'generic task result API must not expose desktop pairing results'
@@ -176,8 +176,8 @@ const pairingRouter = require('./desktopPairing');
   assert.deepStrictEqual([studentPreviewBody.hostAvailable, studentPreviewBody.targetHostDeviceId], [true, 'host1']);
   assert.strictEqual(studentPreviewBody.hostBaseUrl, 'https://host.example/base');
   assert.ok(!JSON.stringify(studentPreviewBody).includes('secret'));
-  const adminPreview = await call('/snapshots/questions', { headers: { 'x-test-user': admin('admin1') } });
-  assert.deepStrictEqual((await adminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
+  const superAdminPreview = await call('/snapshots/questions', { headers: { 'x-test-user': superAdmin('miniapp-admin-13732250653') } });
+  assert.deepStrictEqual((await superAdminPreview.json()).questions.map(item => item.id), ['q-draft', 'q-visible']);
   const teacher = id => JSON.stringify({ id, user_type:'teacher', teacher_id:'t1', review_status:'approved', status:1, login_enabled:1 });
   const desktopAuthz = (id, deviceId, overrides={}) => JSON.stringify({
     userId:id,deviceId,activeRole:'teacher',role:'teacher',teacherId:'t1',studentId:null,

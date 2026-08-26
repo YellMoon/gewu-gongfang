@@ -54,7 +54,7 @@ async function request(base, method, route, authz, body) {
     assert.strictEqual((await request(base, 'POST', '/question-bank/questions', { ...active, role: 'teacher' }, {})).status, 403);
     const boundTeacherWrite = await request(base, 'POST', '/question-bank/questions', { ...active, role: 'teacher', teacherId: 'teacher-1' }, {});
     assert.notStrictEqual(boundTeacherWrite.status, 403, 'a bound teacher must reach the real module write handler');
-    assert.strictEqual((await request(base, 'GET', '/question-bank/questions', { ...active, role: 'admin' })).status, 200);
+    assert.strictEqual((await request(base, 'GET', '/question-bank/questions', { ...active, role: 'admin' })).status, 403);
     console.log('gateway dynamic question-bank subject HTTP checks passed');
   } finally {
     await new Promise(resolve => server.close(resolve));

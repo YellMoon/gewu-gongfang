@@ -6,7 +6,7 @@
 const { getDb } = require('../db/database');
 
 function isAdminUser(user) {
-  return ['super_admin', 'admin'].includes(user?.user_type);
+  return user?.user_type === 'super_admin';
 }
 
 function readTenant(req) {
@@ -48,7 +48,7 @@ function requirePermission(module, action) {
   return (req, res, next) => {
     const { effectiveCapabilities } = require('../services/authorizationPolicy');
     const capabilities = effectiveCapabilities(req.authz || {});
-    if (['super_admin', 'admin'].includes(req.authz?.role)) return next();
+    if (req.authz?.role === 'super_admin') return next();
     if (module === 'question-bank' && capabilities.includes(`question-bank:${action}`)) return next();
     return res.status(403).json({ error: 'FORBIDDEN', module, action, user_type: req.authz?.role || 'pending' });
     /* legacy grant checks retained for rollback only

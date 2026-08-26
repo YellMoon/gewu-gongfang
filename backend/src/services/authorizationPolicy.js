@@ -1,6 +1,6 @@
 const SUPER_ADMIN_PHONE = '13732250653';
 const CANONICAL_SUPER_ADMIN_ID = 'miniapp-admin-13732250653';
-const ROLES = Object.freeze(['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
+const ROLES = Object.freeze(['super_admin', 'teacher', 'student', 'visitor', 'pending']);
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/\D/g, '');
@@ -96,7 +96,7 @@ function scopeForUser(user) {
   const teacherId = user.teacher_id || user.teacherId;
   const studentId = user.student_id || user.studentId;
 
-  if (role === 'super_admin' || role === 'admin') return { kind: 'all' };
+  if (role === 'super_admin') return { kind: 'all' };
   if (role === 'visitor' && user.id != null && String(user.id).trim()) {
     return { kind: 'visitor', userId: String(user.id).trim() };
   }
@@ -118,12 +118,12 @@ function effectiveCapabilities(authz = {}, { gateway = false } = {}) {
   if (role === 'student' && !(authz.student_id || authz.studentId)) return [];
   const capabilities = [];
   if (role === 'super_admin') capabilities.push('users:review');
-  if ((['super_admin', 'admin'].includes(role) && authz.userApproved === true)
+  if ((role === 'super_admin' && authz.userApproved === true)
     || canReviewApplications(authz)) capabilities.push('applications:review');
-  if (role === 'super_admin' || role === 'admin') capabilities.push('business:all');
+  if (role === 'super_admin') capabilities.push('business:all');
   if (role === 'teacher') capabilities.push('business:teacher-scope');
-  if (['super_admin', 'admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
-  if (['super_admin', 'admin', 'teacher'].includes(role)) capabilities.push('question-bank:edit');
+  if (['super_admin', 'teacher', 'student'].includes(role)) capabilities.push('question-bank:view');
+  if (['super_admin', 'teacher'].includes(role)) capabilities.push('question-bank:edit');
   if (!gateway && authz.isPrimaryHost === true && authz.tokenUse === 'desktop-session'
     && authz.deviceId && authz.deviceId === authz.tokenDeviceId && authz.userApproved === true) {
     capabilities.push('question-bank:delete-committed');

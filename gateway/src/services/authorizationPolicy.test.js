@@ -7,7 +7,7 @@ assert.strictEqual(canReviewUsers({ ...canonical, id: 'forged', is_super_admin_i
 assert.strictEqual(canReviewUsers({ ...canonical, user_type: 'admin' }), false);
 
 assert.deepStrictEqual(effectiveCapabilities({ role: 'pending' }), []);
-for (const role of ['admin', 'teacher', 'student']) {
+for (const role of ['teacher', 'student']) {
   assert.strictEqual(roleForUser({ user_type: role, review_status: 'pending', status: 1, login_enabled: 1 }), 'pending');
   assert.deepStrictEqual(effectiveCapabilities({ role, reviewStatus: 'pending', status: 1, loginEnabled: 1 }), [], `${role} pending review has no capabilities`);
   assert.deepStrictEqual(effectiveCapabilities({ role, reviewStatus: 'approved', status: 0, loginEnabled: 1 }), [], `${role} inactive has no capabilities`);
@@ -20,11 +20,8 @@ assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher', teach
 ]);
 assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'student', studentId: null }), [], 'an approved miniapp account may be unbound and must receive no raw business capabilities');
 assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'teacher', teacherId: null }), [], 'an approved teacher role without a local subject must fail closed');
-assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin' }), [
-  'business:all', 'question-bank:view', 'question-bank:edit',
-]);
-assert.ok(!effectiveCapabilities({ ...active, role: 'admin' }).some(capability => capability.startsWith('review-demo:')));
-assert.ok(!effectiveCapabilities({ ...active, role: 'admin', isPrimaryHost: true, clientType: 'desktop' }).includes('users:review'));
+assert.strictEqual(roleForUser({ ...active, user_type: 'admin' }), 'pending');
+assert.deepStrictEqual(effectiveCapabilities({ ...active, role: 'admin' }), [], 'retired ordinary-admin identities must never receive gateway capabilities');
 assert.ok(!effectiveCapabilities({ ...active, role: 'super_admin', isPrimaryHost: true, clientType: 'desktop' }).includes('question-bank:delete-committed'), 'gateway never grants host-only deletion');
 
 console.log('gateway authorization policy tests passed');

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const ASSERTION_VERSION = 2;
 const MAX_ASSERTION_LIFETIME_MS = 8 * 60 * 60 * 1000;
-const ACTIVE_ROLES = new Set(['super_admin', 'admin', 'teacher', 'student']);
+const ACTIVE_ROLES = new Set(['super_admin', 'teacher', 'student']);
 
 function fail(code) {
   const error = new Error(code);

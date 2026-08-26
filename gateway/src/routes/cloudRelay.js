@@ -285,7 +285,7 @@ const studentTaskTypes = new Set(['question-paper', 'paper-export-word', 'paper-
 
 function allowedTasksForUser(user) {
   if (user?.user_type === 'student' && getLinkedStudentIds(user).length > 0) return studentTaskTypes;
-  if (['super_admin', 'admin'].includes(user?.user_type)) return adminTaskTypes;
+  if (user?.user_type === 'super_admin') return adminTaskTypes;
   return new Set();
 }
 
@@ -367,7 +367,7 @@ function filterSnapshotForUser(snapshot, user) {
       kind: 'teacher', teacherId: user.teacher_id || user.teacherId, userId: user.id || user.user_id || user.userId,
     }) };
   }
-  if (['super_admin', 'admin'].includes(role)) return snapshot;
+  if (role === 'super_admin') return snapshot;
   if (role === 'student') {
     return { ...snapshot, payload: scopeBusinessSnapshot(snapshot.payload || {}, {
       kind: 'student', studentIds: getLinkedStudentIds(user), userId: user.id,
@@ -455,7 +455,7 @@ router.post('/tasks', requireApprovedSnapshotUser, (req, res) => {
       createdBy: req.user.id,
       tenantId: req.user.tenant_id || req.user.tenantId || 'default',
       actorRole,
-      allowDraft: ['super_admin', 'admin'].includes(actorRole),
+      allowDraft: actorRole === 'super_admin',
       targetHostDeviceId: targetHostForTask(db, req.body.targetHostDeviceId || req.body.target_host_device_id),
       idempotencyKey: req.headers['x-idempotency-key'] || req.body.idempotencyKey || req.body.idempotency_key,
     });
@@ -509,7 +509,7 @@ router.post('/tasks/:id/cancel', requireApprovedSnapshotUser, (req, res) => {
     const role = roleForUser(req.user);
     const task = taskService.cancelV2Task(getDb(), req.params.id, {
       actorUserId: req.user.id,
-      isAdmin: ['super_admin', 'admin'].includes(role),
+      isAdmin: role === 'super_admin',
     });
     return res.json({ success: true, task });
   } catch (error) { return taskRouteError(res, error); }
@@ -549,7 +549,7 @@ router.get('/tasks/:id/state', requireHostToken, (req, res) => {
 
 router.get('/tasks/:id/result', requireApprovedSnapshotUser, (req, res) => {
   const db = getDb();
-  const isAdmin = ['super_admin', 'admin'].includes(roleForUser(req.user));
+  const isAdmin = roleForUser(req.user) === 'super_admin';
   const row = isAdmin
     ? db.prepare('SELECT * FROM miniapp_tasks WHERE id = ?').get(String(req.params.id))
     : db.prepare('SELECT * FROM miniapp_tasks WHERE id = ? AND CAST(created_by AS TEXT) = ?').get(String(req.params.id), String(req.user.id));

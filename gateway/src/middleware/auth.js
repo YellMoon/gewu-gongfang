@@ -10,6 +10,7 @@ const JWT_SECRET = process.env.JWT_SECRET || null;
 function verifyToken(token){if(!JWT_SECRET)throw new Error('JWT_SECRET_REQUIRED');const decoded=jwt.verify(token,JWT_SECRET,{algorithms:['HS256']});if(decoded.token_use==='desktop-session'&&(decoded.iss!=='gewu-auth'||decoded.aud!=='gewu-api'))throw new Error('TOKEN_AUDIENCE_INVALID');return decoded;}
 
 const EXPERIENCE_ONLY_TOKEN_USES = new Set(['review-demo', 'unrecognized-student']);
+const ACTIVE_GATEWAY_ROLES = new Set(['super_admin', 'teacher', 'student']);
 
 function rejectExperienceOnlyToken(token, res) {
   const tokenUse = jwt.decode(token)?.token_use;
@@ -33,7 +34,7 @@ function attachPersisted(req, decoded) {
     const authVersion = Number(decoded.auth_version);
     const credentialVersion = Number(decoded.credential_version);
     const headerDeviceId = String(req.headers['x-device-id'] || '').trim();
-    if (!sessionId || !deviceId || !activeRole || !eligibleRoles.includes(activeRole)
+    if (!sessionId || !deviceId || !activeRole || !ACTIVE_GATEWAY_ROLES.has(activeRole) || !eligibleRoles.includes(activeRole)
       || !Number.isSafeInteger(authVersion) || authVersion < 1
       || !Number.isSafeInteger(credentialVersion) || credentialVersion < 1
       || Number(persisted.auth_version || 1) !== authVersion
@@ -72,8 +73,10 @@ function attachPersisted(req, decoded) {
     };
     return true;
   }
+  const activeRole = roleForUser(persisted);
+  if (!ACTIVE_GATEWAY_ROLES.has(activeRole)) return false;
   req.user = persisted;
-  req.authz = { userId: persisted.id, phone: persisted.phone || null, role: roleForUser(persisted),
+  req.authz = { userId: persisted.id, phone: persisted.phone || null, role: activeRole,
     tenantId: persisted.tenant_id || persisted.tenantId || 'default',
     teacherId: persisted.teacher_id || null, studentId: persisted.student_id || null,
     reviewStatus: persisted.review_status, status: persisted.status, loginEnabled: persisted.login_enabled,

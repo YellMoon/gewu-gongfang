@@ -16,7 +16,7 @@ const {
 
 assert.strictEqual(SUPER_ADMIN_PHONE, '13732250653');
 assert.strictEqual(CANONICAL_SUPER_ADMIN_ID, 'miniapp-admin-13732250653');
-assert.deepStrictEqual(ROLES, ['super_admin', 'admin', 'operator', 'teacher', 'student', 'visitor', 'pending']);
+assert.deepStrictEqual(ROLES, ['super_admin', 'teacher', 'student', 'visitor', 'pending']);
 assert.strictEqual(normalizePhone('137 3225 0653'), '13732250653');
 
 assert.strictEqual(
@@ -25,11 +25,11 @@ assert.strictEqual(
   'the fixed phone must always be promoted server-side'
 );
 assert.strictEqual(roleForUser({ user_type: 'teacher' }), 'teacher');
-assert.strictEqual(roleForUser({ user_type: 'operator' }), 'operator');
+assert.strictEqual(roleForUser({ user_type: 'operator' }), 'pending');
 assert.strictEqual(roleForUser({
   id: 'operator-1', role: 'operator', status: 1, login_enabled: 1,
   review_status: 'approved', deleted: 0,
-}), 'operator');
+}), 'pending');
 assert.strictEqual(roleForUser({
   id: 'visitor-1', role: 'visitor', status: 1, login_enabled: 1,
   review_status: 'approved', deleted: 0,
@@ -175,7 +175,7 @@ assert.deepStrictEqual(
   { kind: 'visitor', userId: 'visitor-1' },
 );
 assert.deepStrictEqual(scopeForUser(null), { kind: 'none' });
-assert.deepStrictEqual(scopeForUser({ role: 'admin' }), { kind: 'all' });
+assert.deepStrictEqual(scopeForUser({ role: 'admin' }), { kind: 'none' });
 assert.deepStrictEqual(
   scopeForUser({ user_type: 'student', student_id: 'student-1' }),
   { kind: 'student', studentId: 'student-1' }

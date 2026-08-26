@@ -20,11 +20,11 @@ assert.ok(route.includes("router.post('/tasks/:id/complete'"), 'cloud relay shou
 assert.ok(!route.includes('taskService.completeLegacyTask') && route.includes('taskService.completeV2Task'), 'cloud relay should store terminal state only through the V2 task service');
 assert.ok(route.includes('allowedTasksForUser'), 'cloud relay should apply role-specific task permissions');
 assert.ok(route.includes("user?.user_type === 'student'"), 'cloud relay should distinguish student task permissions');
-assert.ok(route.includes("['super_admin', 'admin'].includes(user?.user_type)"), 'cloud relay should grant super admin the existing admin task permissions');
+assert.ok(route.includes("user?.user_type === 'super_admin'"), 'cloud relay should grant privileged task permissions only to the super administrator');
 assert.ok(route.includes('adminTaskTypes'), 'asset import should be limited to administrator task permissions');
 assert.ok(authRoute.includes('MINIAPP_AUTH_MOVED_TO_BACKEND'), 'gateway must not issue miniapp identities after Backend ownership moved');
 assert.ok(!authRoute.includes('resolveWechatIdentity') && !authRoute.includes('resolveWechatPhoneNumber'), 'gateway must not retain a second WeChat identity resolver');
-assert.ok(permissionMiddleware.includes("['super_admin', 'admin']"), 'gateway permissions should treat only super admin and admin as administrators');
+assert.ok(permissionMiddleware.includes("req.authz?.role === 'super_admin'"), 'gateway permissions should treat only the super administrator as privileged');
 assert.ok(app.includes("require('./routes/cloudRelay')"), 'gateway app should mount cloud relay');
 
 const teacherSnapshot = filterSnapshotForUser({ payload: {

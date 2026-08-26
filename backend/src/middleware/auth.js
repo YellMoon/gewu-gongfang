@@ -97,7 +97,7 @@ function attachRelayedDesktopAuthorizationContext(req, tokenUser) {
     error.code = 'DESKTOP_RELAY_SESSION_SCOPE_INVALID';
     throw error;
   }
-  const allowedRoles = new Set(['super_admin', 'admin', 'teacher', 'student']);
+  const allowedRoles = new Set(['super_admin', 'teacher', 'student']);
   const userId = String(tokenUser.sub || '').trim();
   const sessionId = String(tokenUser.sid || '').trim();
   const deviceId = String(tokenUser.device_id || '').trim();
@@ -315,7 +315,7 @@ function authMiddleware(req, res, next) {
   if (isDevAuthBypassed()) {
     req.user = {
       id: 'dev-user',
-      role: 'admin',
+      role: 'super_admin',
       tenantId: req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default',
     };
     applyAuthenticatedTenant(req, res);
@@ -351,7 +351,7 @@ function optionalAuth(req, res, next) {
   if (isDevAuthBypassed()) {
     req.user = {
       id: 'dev-user',
-      role: 'admin',
+      role: 'super_admin',
       tenantId: req.requestedTenantId || process.env.DEFAULT_TENANT_ID || 'default',
     };
     applyAuthenticatedTenant(req, res);
@@ -394,14 +394,14 @@ function requireWriteAccess(req, res, next) {
   if (isDevAuthBypassed()) {
     req.user = req.user || {
       id: 'dev-user',
-      role: 'admin',
+      role: 'super_admin',
       tenantId: req.tenantId || process.env.DEFAULT_TENANT_ID || 'default',
     };
     return next();
   }
   if (!req.user) return sendAuthError(res, 401, '未登录', 'UNAUTHORIZED');
 
-  const allowedRoles = (process.env.WRITE_ROLES || 'super_admin,admin,operator,teacher')
+  const allowedRoles = (process.env.WRITE_ROLES || 'super_admin,teacher')
     .split(',')
     .map(role => role.trim())
     .filter(Boolean);
@@ -420,7 +420,7 @@ function requireCoreReadAccess(req, res, next) {
   if (!req.user) return sendAuthError(res, 401, 'Authentication required', 'UNAUTHORIZED');
 
   const role = req.user.role || req.user.user_type;
-  const allowedRoles = (process.env.CORE_READ_ROLES || 'admin,operator')
+  const allowedRoles = (process.env.CORE_READ_ROLES || 'super_admin,teacher,student')
     .split(',')
     .map(item => item.trim())
     .filter(Boolean);
@@ -435,7 +435,7 @@ function requireQuestionBankReadAccess(req, res, next) {
   if (isDevAuthBypassed()) return next();
   if (!req.user) return sendAuthError(res, 401, 'Authentication required', 'UNAUTHORIZED');
   const role = req.authz?.role || req.user?.role || req.user?.user_type;
-  if (['super_admin', 'admin', 'operator'].includes(role)) return next();
+  if (role === 'super_admin') return next();
   const scope = scopeForUser({
     role,
     teacherId: req.authz?.teacherId || req.user?.teacher_id || req.user?.teacherId,
