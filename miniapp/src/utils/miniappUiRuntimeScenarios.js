@@ -41,7 +41,7 @@ const runtimeScenarios = Object.freeze([
   scenario('question-student-empty', 'pages/question-bank/index', 'student', 'student', 'preview-empty', '云端暂无可用题目', ['student-path', 'empty'], 'question-empty'),
   scenario('question-student-offline', 'pages/question-bank/index', 'student', 'student', 'preview-offline', '离线或云端不可达', ['student-path', 'offline'], 'question-offline'),
   scenario('question-student-forbidden', 'pages/question-bank/index', 'student', 'student', 'preview-forbidden', '题库权限', ['student-path', 'permission-denied'], 'question-forbidden'),
-  scenario('question-visitor-preview', 'pages/question-bank/index', 'visitor', 'visitor', 'visitor-preview', '题目预览', ['visitor', 'limited-write']),
+  scenario('question-visitor-preview', 'pages/question-bank/index', 'visitor', 'visitor', 'visitor-preview', '题目预览', ['visitor']),
   scenario('assets-super-admin-import', 'pages/assets/index', 'super_admin', 'super_admin', 'import-task', '导入财务数据', ['super-admin-path', 'limited-write']),
   scenario('settings-super-admin-online', 'pages/settings/index', 'super_admin', 'super_admin', 'online', '网络已连接', ['super-admin-path']),
   scenario('settings-super-admin-role-review', 'pages/settings/index', 'super_admin', 'super_admin', 'role-application-review', '身份申请处理', ['super-admin-path', 'limited-write'], 'role-applications'),

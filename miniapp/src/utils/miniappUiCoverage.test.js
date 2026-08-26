@@ -208,6 +208,8 @@ for (const [route, roles] of Object.entries({
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-offline'), 'runtime matrix must capture an offline state');
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-forbidden'), 'runtime matrix must capture a permission-denied state');
 assert.ok(runtimeScenarios.some(item => item.state === 'miniapp-readonly-boundary'), 'runtime matrix must capture the limited-write boundary');
+assert.ok(!pageInventory.find(entry => entry.route === 'pages/schedule/index')?.roleViews.includes('visitor'), 'visitor access must not be represented as a schedule-page audit path');
+assert.ok(!runtimeScenarios.find(item => item.id === 'question-visitor-preview')?.categories.includes('limited-write'), 'visitor question preview must not be mislabeled as a write capability');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'guardian access is a student relationship, not a parent role');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('super-admin')), 'role spelling must use super_admin');
 
