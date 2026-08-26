@@ -13,6 +13,8 @@ assert.ok(!source.includes("getApiBase('/api/question-bank')") && !source.includ
   'question preview must not depend on an embedded host or removable-disk storage status');
 assert.ok(source.includes("new CustomEvent('navigate-page', { detail: 'question-bank-paper' })"),
   'batch selection must enter the shared paper editor');
+assert.ok(source.includes('onToggleBasket={() => toggleQuestionBasket(q.id)}'),
+  'every desktop question card must offer a direct add-or-remove basket action');
 assert.ok(!source.includes('downloadAsWord(') && !source.includes('generateExamWord('),
   'question preview must not bypass the cloud export task with a browser-local Word file');
 

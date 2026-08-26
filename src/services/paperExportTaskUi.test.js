@@ -3,7 +3,7 @@ const fs = require('fs');
 
 (async () => {
   const { getPaperExportTaskPresentation } = await import('./paperExportTaskPresentation.mjs');
-  const phases = ['queued', 'cloud_unavailable', 'claimed', 'snapshotting', 'rendering', 'validating', 'publishing', 'storage_pending', 'completed', 'failed', 'cancelled', 'timed_out'];
+  const phases = ['queued', 'cloud_unavailable', 'claimed', 'snapshotting', 'rendering', 'media_pending', 'validating', 'publishing', 'storage_pending', 'completed', 'failed', 'cancelled', 'timed_out'];
   for (const phase of phases) {
     const task = phase === 'cloud_unavailable'
       ? { status: 'draft', phase: 'draft', errorCode: 'CLOUD_TASK_UNAVAILABLE' }
