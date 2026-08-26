@@ -48,6 +48,17 @@ async function main() {
     }),
     'the selected exam Word file name must pass the same safe Unicode validation',
   );
+  await assert.rejects(
+    client.createFromWord({
+      sourceType: 'exam',
+      sourceFileName: '题库/越界试卷.docx',
+      sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      bytes: new Uint8Array(Buffer.from('raw-document-payload')),
+      metadata: { subject: 'physics' },
+    }),
+    /QUESTION_IMPORT_CLIENT_INPUT_INVALID/,
+    'Unicode support must not permit a path separator in the source file name',
+  );
 
   const assetCalls = [];
   const assetClient = createDesktopQuestionImportClient({ cloudBusinessIdentityBaseUrl: 'https://cloud.example/cloud-business' }, {
