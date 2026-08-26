@@ -20,6 +20,7 @@ assert.match(source, /pages\/question-paper\/index/, 'the basket entry must open
 assert.match(paperSource, /miniappCloudBusinessApi\.createPaperExportTask/, 'Word and PDF tasks must use the limited cloud export route');
 assert.match(paperSource, /miniappCloudBusinessApi\.requestPaperExportDelivery/, 'completed exports must request the NAS-backed delivery through cloud');
 assert.match(paperSource, /miniappCloudBusinessApi\.downloadPaperExportDelivery/, 'downloads must use the scoped cloud delivery route');
+assert.match(paperSource, /miniappCloudBusinessApi\.cancelPaperExportTask/, 'queued cloud exports must expose cancellation just as the desktop editor does');
 assert.match(paperSource, /sectionTitle/, 'the paper editor must keep desktop-equivalent section grouping');
 assert.match(paperSource, /score/, 'the paper editor must keep desktop-equivalent question scores');
 assert.match(paperSource, /moveItem/, 'the paper editor must support question ordering');

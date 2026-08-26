@@ -65,6 +65,7 @@ export default function QuestionPaperPage() {
   const [formulaMode, setFormulaMode] = useState('word-native');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<PaperAction | null>(null);
+  const [taskBusyId, setTaskBusyId] = useState('');
   const identity = Taro.getStorageSync('user_info');
   const canBuildPaper = canUserSubmitMiniappWrite(identity, 'question-paper', ['question-paper']);
   const editorKey = basketState.scopeKey ? 'question_paper_editor_v1_' + encodeURIComponent(basketState.scopeKey) : '';
@@ -172,6 +173,19 @@ export default function QuestionPaperPage() {
     }));
     persistTask(next);
   };
+  const cancelTask = async (task: PaperTask) => {
+    if (!task.confirmed || !task.taskId || taskBusyId) return;
+    setTaskBusyId(task.localId);
+    try {
+      const response: any = await miniappCloudBusinessApi.cancelPaperExportTask(authSessionRuntime.capture().token, task.taskId);
+      const cloud = response.data?.task;
+      if (!response.success || !cloud) throw new Error(response.error || String.fromCharCode(26242, 26102, 26080, 27861, 21462, 28040, 23548, 20986));
+      persistTask(taskState.tasks.map(current => current.localId === task.localId ? {
+        ...current, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), error: '',
+      } : current));
+    } catch (error: any) { Taro.showToast({ title: error?.message || String.fromCharCode(21462, 28040, 22833, 36133, 65292, 35831, 31245, 21518, 37325, 35797), icon: 'none' }); }
+    finally { setTaskBusyId(''); }
+  };
   const download = async (task: PaperTask) => {
     if (!task.taskId) return;
     try {
@@ -198,6 +212,6 @@ export default function QuestionPaperPage() {
       <Text className='paper-stem'>{item.stemPreview}</Text><View className='paper-edit-row'><Input className='section-input' value={item.sectionTitle} onInput={event => updateItem(item.id, { sectionTitle: event.detail.value })} /><Input className='score-input' type='number' value={String(item.score)} onInput={event => updateItem(item.id, { score: Math.max(0, Number(event.detail.value) || 0) })} /><Text>{'分'}</Text></View>
     </View>)}</ScrollView>}
     <View className='paper-export-actions'><Button className='paper-export-pdf' loading={submitting === 'paper-export-pdf'} disabled={!items.length || Boolean(submitting)} onClick={() => submit('paper-export-pdf')}>{'导出 PDF'}</Button><Button className='paper-export-word' loading={submitting === 'paper-export-word'} disabled={!items.length || Boolean(submitting)} onClick={() => submit('paper-export-word')}>{'导出 Word'}</Button></View>
-    <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'导出记录'}</Text><Button className='preview-refresh' onClick={refreshTasks}>{'刷新'}</Button></View>{taskState.tasks.length ? taskState.tasks.map(task => <View key={task.localId} className='task-item'><Text>{task.request.payload.title}</Text><Text>{statusText[task.status] || task.status}</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{task.status === 'completed' ? <Button size='mini' onClick={() => download(task)}>{'下载'}</Button> : null}{(task.status === 'failed' || task.status === 'cancelled' || task.status === 'draft') ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'重试'}</Button> : null}</View></View>) : <Text className='result-text'>{'暂无导出记录'}</Text>}</View>
+    <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'导出记录'}</Text><Button className='preview-refresh' onClick={refreshTasks}>{'刷新'}</Button></View>{taskState.tasks.length ? taskState.tasks.map(task => <View key={task.localId} className='task-item'><Text>{task.request.payload.title}</Text><Text>{statusText[task.status] || task.status}</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{['queued', 'processing'].includes(task.status) && task.confirmed ? <Button size='mini' loading={taskBusyId === task.localId} onClick={() => cancelTask(task)}>{String.fromCharCode(21462, 28040)}</Button> : null}{task.status === 'completed' ? <Button size='mini' onClick={() => download(task)}>{'下载'}</Button> : null}{(task.status === 'failed' || task.status === 'cancelled' || task.status === 'draft') ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'重试'}</Button> : null}</View></View>) : <Text className='result-text'>{'暂无导出记录'}</Text>}</View>
   </View>;
 }

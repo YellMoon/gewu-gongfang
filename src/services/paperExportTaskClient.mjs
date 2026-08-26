@@ -100,6 +100,7 @@ async function submitDraft(config, draft, deps) {
         payload: {
           questionIds: [...draft.request.questionIds], answerPosition: cloudAnswerPosition(draft.request.answerPosition),
           formulaMode: draft.request.formulaMode, title: draft.request.title, subject: draft.request.subject || '',
+          ...(draft.request.layout ? { layout: { items: draft.request.layout.items.map(item => ({ id: item.id, sectionTitle: item.sectionTitle, score: item.score })) } } : {}),
         },
       }),
     });

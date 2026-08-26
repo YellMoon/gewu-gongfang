@@ -26,6 +26,7 @@ function memoryStorage(seed = {}) {
   const input = {
     title: 'Midterm', subject: 'Physics', format: 'pdf', formulaMode: 'word-native',
     answerPosition: 'after-each', questionIds: ['q3', 'q1', 'q2'],
+    layout: { items: [{ id: 'q3', sectionTitle: 'Part one', score: 3 }, { id: 'q1', sectionTitle: 'Part two', score: 6 }, { id: 'q2', sectionTitle: 'Part two', score: 6 }] },
   };
   const config = {
     cloudBaseUrl: 'https://cloud.example.com/api', cloudBusinessIdentityBaseUrl: 'https://cloud-business.example.com', deviceId: 'desktop-2',
@@ -51,7 +52,7 @@ function memoryStorage(seed = {}) {
   assert.strictEqual(accepted.accepted, true);
   assert.deepStrictEqual(JSON.parse(calls[0].init.body), {
     taskType: 'paper-export-pdf',
-    payload: { questionIds: ['q3', 'q1', 'q2'], answerPosition: 'after', formulaMode: 'word-native', title: 'Midterm', subject: 'Physics' },
+    payload: { questionIds: ['q3', 'q1', 'q2'], answerPosition: 'after', formulaMode: 'word-native', title: 'Midterm', subject: 'Physics', layout: { items: [{ id: 'q3', sectionTitle: 'Part one', score: 3 }, { id: 'q1', sectionTitle: 'Part two', score: 6 }, { id: 'q2', sectionTitle: 'Part two', score: 6 }] } },
   }, 'cloud submission must preserve editor order and all export choices while cloud freezes the authoritative question snapshot');
   assert.strictEqual(calls[0].url, 'https://cloud-business.example.com/api/desktop/paper-export-tasks');
   assert.strictEqual(calls[0].init.headers.Authorization, 'Bearer jwt-token');

@@ -252,6 +252,7 @@ const QuestionBankPaper: React.FC = () => {
       const submitted = await submitPaperExportTask(runtimeConfig, {
         title, format, formulaMode, questionIds: items.map(item => item.question.id),
         answerPosition, subject: items[0]?.question.subject || '',
+        layout: { items: items.map(item => ({ id: item.question.id, sectionTitle: item.sectionTitle, score: item.score })) },
       });
       setPaperTasks(loadPaperExportTasks());
       window.requestAnimationFrame(() => document.getElementById(`paper-task-${submitted.task.localId}`)?.focus());

@@ -21,6 +21,7 @@ export interface PaperExportInput {
   questionIds: string[];
   answerPosition: AnswerPosition;
   subject?: string;
+  layout?: { items: Array<{ id: string; sectionTitle: string; score: number }> };
 }
 
 export interface PaperExportTaskRecord {
