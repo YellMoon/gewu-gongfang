@@ -203,8 +203,11 @@ function accountExperiencePolicy(user) {
 }
 
 function canUserSubmitMiniappWrite(user, target, allowedTargets) {
-  if (isRetiredIdentity(user) || roleOf(user) === 'visitor' || isVisitorIdentity(user)) return false;
-  return Array.isArray(allowedTargets) && allowedTargets.includes(target);
+  const role = roleOf(user);
+  if (isRetiredIdentity(user) || role === 'visitor' || isVisitorIdentity(user)) return false;
+  if (!Array.isArray(allowedTargets) || !allowedTargets.includes(target)) return false;
+  if (target === 'asset-import') return role === 'super_admin' || role === 'teacher';
+  return target === 'question-paper' || target === 'paper-export-word' || target === 'paper-export-pdf';
 }
 
 function relatedStudentIds(items) {

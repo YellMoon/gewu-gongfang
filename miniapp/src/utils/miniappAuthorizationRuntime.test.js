@@ -161,5 +161,7 @@ assert.strictEqual(permissionIdentityKey(invalidIdentity), '');
 assert.strictEqual(businessCacheIdentityKey(invalidIdentity), '');
 assert.strictEqual(accountExperiencePolicy(invalidIdentity), null);
 assert.strictEqual(canUserSubmitMiniappWrite({ id: 'teacher-1', user_type: 'teacher' }, 'asset-import', ['asset-import']), true, 'formal write policy must remain unchanged');
+assert.strictEqual(canUserSubmitMiniappWrite({ id: 'student-1', user_type: 'student' }, 'asset-import', ['asset-import']), false, 'students must not be offered a personal-asset import that cloud policy rejects');
+assert.strictEqual(canUserSubmitMiniappWrite({ id: 'student-1', user_type: 'student' }, 'paper-export-pdf', ['paper-export-pdf']), true, 'students retain the limited question-paper export task');
 
 console.log('miniapp authorization runtime checks passed');
