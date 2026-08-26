@@ -25,6 +25,11 @@ const assetsConfig = display(read('miniapp/src/pages/assets/index.config.ts'));
 const appConfig = read('miniapp/src/app.config.ts');
 const appSource = read('miniapp/src/app.tsx');
 
+assert.ok(
+  appSource.includes("'pages/login/privacy'"),
+  'privacy guidance must remain directly available before sign-in',
+);
+
 const retiredTerms = [
   String.fromCharCode(27491, 24335, 36134, 21495),
   String.fromCharCode(25968, 25454, 20027, 26426),

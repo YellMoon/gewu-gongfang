@@ -23,6 +23,7 @@ App = function App({ children }: PropsWithChildren<any>) {
 
 const UNAUTHENTICATED_ENTRY_PAGES = new Set([
   'pages/login/index',
+  'pages/login/privacy',
 ]);
 
 export function isUnauthenticatedEntryPage(path?: string): boolean {
