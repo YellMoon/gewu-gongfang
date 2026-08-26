@@ -34,7 +34,7 @@ const OPTIONAL_ENV = [
   'QUESTION_BANK_VOLUME',
 ];
 
-const EXPECTED_API_BASE = 'https://physicsedu.xyz/scheduling';
+const EXPECTED_API_BASE = 'https://physicsedu.xyz/cloud-business';
 const PROJECT_CONFIG_PATH = 'miniapp/project.config.json';
 const PROD_CONFIG_PATH = 'miniapp/config/prod.ts';
 const IDENTITY_EVIDENCE_CHECKS = Object.freeze([

@@ -28,7 +28,7 @@ assert.ok(
 );
 
 assert.ok(source.includes('miniapp/project.config.json'), 'deploy readiness should check miniapp project config');
-assert.ok(source.includes('https://physicsedu.xyz/scheduling'), 'deploy readiness should check production miniapp API');
+assert.ok(source.includes('https://physicsedu.xyz/cloud-business'), 'deploy readiness should check the cloud business authority API');
 assert.ok(source.includes('npm run miniapp:release-check'), 'deploy readiness should mention miniapp release check command');
 assert.ok(source.includes("require('dotenv')"), 'deploy readiness should load environment files itself');
 assert.ok(source.includes('.env.local'), 'deploy readiness should load the project .env.local file');
