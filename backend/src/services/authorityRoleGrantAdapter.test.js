@@ -60,6 +60,10 @@ db.prepare(`INSERT INTO authority_role_bindings
   (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
   VALUES(?,?,?,?,?,?,?,1,?,?,?,NULL)`)
   .run('legacy-grant', 'authority-1', 'immutable-user-1', 'admin', null, null, 'revoked', 'host-super-1', now, now);
+db.prepare(`INSERT INTO authority_role_bindings
+  (binding_id,authority_id,user_id,role,subject_type,subject_id,status,grant_version,granted_by,created_at,updated_at,revoked_at)
+  VALUES(?,?,?,?,?,?,?,1,?,?,?,NULL)`)
+  .run('legacy-active-grant', 'authority-1', 'immutable-user-1', 'admin', null, null, 'active', 'legacy', now, now);
 
 const grants = listCanonicalAuthorityRoleGrants(db, {
   authorityId: 'authority-1',
@@ -68,7 +72,7 @@ const grants = listCanonicalAuthorityRoleGrants(db, {
 assert.deepStrictEqual(
   grants.map(grant => [grant.role, grant.subjectId]),
   [['teacher', 'teacher-profile-1'], ['student', 'student-profile-1']],
-  'canonical authority grants must be additive and must not read revoked or legacy grants'
+  'canonical authority grants must be additive and must never reactivate a legacy ordinary-admin binding'
 );
 assert.deepStrictEqual(
   resolveCanonicalAuthorityRoleContext(db, { authorityId: 'authority-1', userId: 'immutable-user-1' }).roles,

@@ -67,13 +67,13 @@ router.get('/my', (req, res) => {
       user_type: role,
       active_role: role,
       eligible_roles: eligibleRoles,
-      is_admin: ['super_admin', 'admin'].includes(role),
+      is_admin: role === 'super_admin',
     },
     permissions, capabilities, identity,
     user_type: role,
     active_role: role,
     eligible_roles: eligibleRoles,
-    is_admin: ['super_admin', 'admin'].includes(role),
+    is_admin: role === 'super_admin',
   });
 });
 

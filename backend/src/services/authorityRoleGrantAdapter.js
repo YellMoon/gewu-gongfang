@@ -1,4 +1,4 @@
-const FORMAL_ROLE_ORDER = Object.freeze(['teacher', 'student', 'admin', 'super_admin']);
+const FORMAL_ROLE_ORDER = Object.freeze(['teacher', 'student', 'super_admin']);
 const FORMAL_ROLE_SET = new Set(FORMAL_ROLE_ORDER);
 
 function authorityRoleError(code) {
@@ -47,7 +47,7 @@ function assertCanonicalGrantRows(rows) {
       && ((hasSubjectType !== hasSubjectId) || (hasSubjectType && grant.subjectType !== grant.role))) {
       throw authorityRoleError('AUTHORITY_ROLE_BINDING_AMBIGUOUS');
     }
-    if ((grant.role === 'admin' || grant.role === 'super_admin') && (hasSubjectType || hasSubjectId)) {
+    if (grant.role === 'super_admin' && (hasSubjectType || hasSubjectId)) {
       throw authorityRoleError('AUTHORITY_ROLE_BINDING_AMBIGUOUS');
     }
   }
@@ -62,8 +62,7 @@ function listCanonicalAuthorityRoleGrants(db, { authorityId, userId } = {}) {
     ORDER BY CASE role
       WHEN 'teacher' THEN 1
       WHEN 'student' THEN 2
-      WHEN 'admin' THEN 3
-      WHEN 'super_admin' THEN 4
+      WHEN 'super_admin' THEN 3
       ELSE 99 END, binding_id`).all(authority, user);
   const grants = rows
     .map(mapGrant)

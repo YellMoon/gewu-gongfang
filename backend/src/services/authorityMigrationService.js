@@ -54,7 +54,7 @@ function roleSubject(role, source = {}) {
 function legacyRoleInputs(db, user) {
   const inputs = new Map();
   function add(role, source) {
-    if (!['teacher', 'student', 'admin', 'super_admin'].includes(role)) return;
+    if (!['teacher', 'student', 'super_admin'].includes(role)) return;
     const next = roleSubject(role, source);
     const existing = inputs.get(role);
     if (existing && (existing.subjectType !== next.subjectType || existing.subjectId !== next.subjectId)) {

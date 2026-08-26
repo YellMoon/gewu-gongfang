@@ -6,7 +6,7 @@ const {
   VISITOR_TOKEN_USE,
 } = require('../services/miniappIdentityService');
 
-const FORMAL_ROLES = new Set(['student', 'teacher', 'admin', 'super_admin']);
+const FORMAL_ROLES = new Set(['student', 'teacher', 'super_admin']);
 
 function errorResponse(res, statusCode, code) {
   return res.status(statusCode).json({ success: false, code, error: code });

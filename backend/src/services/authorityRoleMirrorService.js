@@ -70,7 +70,7 @@ function createAuthorityRoleMirrorService({ db } = {}) {
       }
       text(grant.bindingId, 'AUTHORITY_ROLE_GRANT_MIRROR_ID_INVALID');
       text(grant.userId, 'AUTHORITY_ROLE_GRANT_MIRROR_USER_INVALID');
-      if (!['student', 'teacher', 'admin', 'super_admin'].includes(grant.role)
+      if (!['student', 'teacher', 'super_admin'].includes(grant.role)
         || !['active', 'revoked', 'pending'].includes(grant.status)
         || !Number.isSafeInteger(Number(grant.grantVersion))
         || Number(grant.grantVersion) < 1) {
