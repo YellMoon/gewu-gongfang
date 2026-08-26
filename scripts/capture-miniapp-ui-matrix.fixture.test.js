@@ -26,6 +26,23 @@ function request(pathname, token, port = TEST_PORT, method = 'GET') {
   });
 }
 
+function requestBytes(pathname, token, port = TEST_PORT) {
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: '127.0.0.1',
+      port,
+      path: pathname,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      response.on('end', () => resolve({ statusCode: response.statusCode, body: Buffer.concat(chunks) }));
+    });
+    request.once('error', reject);
+    request.end();
+  });
+}
+
 (async () => {
   assert.strictEqual(typeof startFixtureServer, 'function', 'fixture server must be reusable outside the legacy automator runner');
   const { server } = await startFixtureServer(TEST_PORT);
@@ -78,6 +95,15 @@ function request(pathname, token, port = TEST_PORT, method = 'GET') {
       taskId: 'paper_task_fixture', status: 'completed', phase: 'completed', progress: 100,
       requestHash: 'f'.repeat(64), createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:00.000Z',
     });
+
+    const delivery = await request('/api/business/miniapp-paper-export-tasks/paper_task_fixture/delivery', 'fixture-paper-teacher', TEST_PORT, 'POST');
+    assert.strictEqual(delivery.statusCode, 200);
+    assert.strictEqual(delivery.body.delivery.status, 'ready');
+    assert.strictEqual(delivery.body.delivery.deliveryId, 'delivery_fixture');
+
+    const downloaded = await requestBytes('/api/business/miniapp-artifact-deliveries/delivery_fixture/download', 'fixture-paper-teacher');
+    assert.strictEqual(downloaded.statusCode, 200);
+    assert.strictEqual(downloaded.body.toString('utf8'), '%PDF-1.4\n% fixture paper\n');
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
