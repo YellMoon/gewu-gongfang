@@ -283,11 +283,12 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_public_health_failure_rolls_back_and_skips_receipt(self):
         switch_ssh = mock.Mock()
+        tag_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
         with mock.patch.object(module, "acquire_promotion_lock", return_value=mock.Mock()), mock.patch.object(
             module, "release_promotion_lock"
         ), mock.patch.object(
-            module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
+            module.deploy, "connect", side_effect=[switch_ssh, tag_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
         ) as run, mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
@@ -295,19 +296,21 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(module.deploy, "record_release_receipt") as record_receipt:
             with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_HEALTH_INVALID"):
                 module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
-        self.assertEqual(run.call_count, 2)
-        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[1].args[1])
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[2].args[1])
         record_receipt.assert_not_called()
         switch_ssh.close.assert_called_once()
+        tag_ssh.close.assert_called_once()
         rollback_ssh.close.assert_called_once()
 
     def test_receipt_failure_rolls_back_the_switched_release(self):
         switch_ssh = mock.Mock()
+        tag_ssh = mock.Mock()
         rollback_ssh = mock.Mock()
         with mock.patch.object(module, "acquire_promotion_lock", return_value=mock.Mock()), mock.patch.object(
             module, "release_promotion_lock"
         ), mock.patch.object(
-            module.deploy, "connect", side_effect=[switch_ssh, rollback_ssh]
+            module.deploy, "connect", side_effect=[switch_ssh, tag_ssh, rollback_ssh]
         ), mock.patch.object(
             module.deploy, "run"
         ) as run, mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
@@ -317,8 +320,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(OSError, "receipt write failed"):
                 module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
-        self.assertEqual(run.call_count, 2)
-        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[1].args[1])
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[2].args[1])
+        tag_ssh.close.assert_called_once()
 
     def test_switch_transport_failure_reconnects_and_reconciles_before_returning_failure(self):
         switch_ssh = mock.Mock()
