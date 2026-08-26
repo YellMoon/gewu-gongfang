@@ -200,7 +200,7 @@ const QuestionPreviewCard: React.FC<{
               icon={<ShoppingCartOutlined />}
               onClick={onToggleBasket}
             >
-              {inBasket ? '已加入试题篮' : '加入试题篮'}
+              {inBasket ? String.fromCharCode(31227, 20986, 35797, 39064, 34013) : '加入试题篮'}
             </Button>
           )}
         </Space>

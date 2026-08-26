@@ -22,6 +22,9 @@ const answerOptions = [{ value: 'end', label: '答案统一置后' }, { value: '
 const formulaOptions = [{ value: 'word-native', label: 'Word 原生公式' }, { value: 'eq-field', label: 'EQ 域公式' }, { value: 'mathtype-compatible', label: 'MathType 兼容' }, { value: 'latex-vector', label: 'LaTeX 矢量公式' }];
 const statusText: Record<string, string> = { draft: '本地草稿', queued: '云端排队中', processing: '处理中', completed: '已完成', failed: '失败', cancelled: '已取消' };
 
+for (const option of answerOptions) option.label = String.fromCharCode(31572, 26696, 20301, 32622, 65306) + option.label;
+for (const option of formulaOptions) option.label = String.fromCharCode(20844, 24335, 26041, 24335, 65306) + option.label;
+
 function sectionFor(type: string) {
   const sections: Record<string, string> = { single_choice: '一、单选题', multiple_choice: '二、多选题', true_false: '三、判断题', fill_blank: '四、填空题', calculation: '五、计算题', experiment: '六、实验题', essay: '七、简答题' };
   return sections[type] || '综合题';

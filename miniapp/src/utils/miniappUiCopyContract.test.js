@@ -67,6 +67,7 @@ assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered mini
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
 assert.ok(questionPaperPage.includes("disabled={!items.length || Boolean(submitting)}"), 'paper exports must reject an empty selection and remain disabled while an export is in progress');
 assert.ok(questionPaperPage.includes('sectionTitle') && questionPaperPage.includes('score'), 'paper editor must retain section and score edits before exporting');
+assert.ok(questionPaperPage.includes('String.fromCharCode(31572, 26696, 20301, 32622, 65306)') && questionPaperPage.includes('String.fromCharCode(20844, 24335, 26041, 24335, 65306)'), 'paper editor must visibly name its answer-position and formula-mode selectors');
 assert.ok(questionBankStyles.includes('.basket-toggle'), 'question cards must expose a clear basket operation for eligible identities');
 assert.ok(!questionBankPage.includes('访客题库浏览') && !questionBankPage.includes('题库文字内容由云端权威提供'), 'question-bank must not expose identity labels or implementation explanations as user-facing content');
 assert.ok(!questionBankPage.includes('可浏览的题目'), 'question-bank must not describe its browsing allowance as permanent page copy');
