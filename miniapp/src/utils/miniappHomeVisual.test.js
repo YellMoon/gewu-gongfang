@@ -43,7 +43,17 @@ assert.strictEqual(getMiniappHomeRoleLabel({ user_type: 'student', identity_kind
 assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
 assert.ok(homePage.includes('getMiniappHomeRoleLabel(user)'), 'home role pill must use the shared localized role label helper with the family-member relationship');
-assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
+assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(confirmedUser)'), 'home state must never retain an absent identity name');
+assert.match(
+  homePage,
+  /const handleModuleClick[\s\S]*?\}, \[access\.modules\]\);/,
+  'home module cards must read the current role permissions when tapped, not the empty permissions captured during first render',
+);
+assert.ok(
+  homePage.includes('await fetchPermissions()') &&
+    homePage.includes('getEffectiveMiniappAccess(confirmedUser)'),
+  'home and the role tab bar must derive access from the same refreshed cloud authorization state',
+);
 assert.ok(homePage.includes("isStudent ? '已关联课程' : '今日收入'"), 'student and guardian home metrics must replace financial cards with their own course count');
 assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-indigo\">"), 'student and guardian views must not render monthly revenue');
 assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-amber\">"), 'student and guardian views must not render the institution-wide student total');

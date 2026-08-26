@@ -9,6 +9,8 @@ import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../util
 import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils/accountExperience';
 import {
   clearPermissionCache,
+  fetchPermissions,
+  getEffectiveMiniappAccess,
   getMiniappRolePolicy,
   MiniappCapability,
   MiniappRole,
@@ -119,10 +121,16 @@ export default function Index() {
       Taro.redirectTo({ url: '/pages/login/index' });
       return;
     }
-    const verifiedUser = verifiedSession.identity as UserInfo;
-    setUser({ ...verifiedUser, name: getMiniappHomeDisplayName(verifiedUser) });
-    const policy = getMiniappRolePolicy(verifiedUser);
-    const nextAccess = policy;
+    await fetchPermissions();
+    if (!stillCurrent()) return;
+    const confirmedSession = captureTrustedAuthSession(authSessionRuntime);
+    if (!confirmedSession) {
+      Taro.redirectTo({ url: '/pages/login/index' });
+      return;
+    }
+    const confirmedUser = confirmedSession.identity as UserInfo;
+    setUser({ ...confirmedUser, name: getMiniappHomeDisplayName(confirmedUser) });
+    const nextAccess = getEffectiveMiniappAccess(confirmedUser);
     setAccess(nextAccess);
     if (nextAccess.modules.length === 0) {
       setModules([]);
@@ -132,9 +140,9 @@ export default function Index() {
       setLoading(false);
       return;
     }
-    await loadSnapshot(verifiedUser, stillCurrent);
+    await loadSnapshot(confirmedUser, stillCurrent);
     if (!stillCurrent()) return;
-    await Promise.all([loadModules(nextAccess, stillCurrent), loadDashboard(verifiedUser, stillCurrent)]);
+    await Promise.all([loadModules(nextAccess, stillCurrent), loadDashboard(confirmedUser, stillCurrent)]);
   };
 
   const loadSnapshot = async (currentUser: UserInfo, stillCurrent: () => boolean = () => true) => {
@@ -243,7 +251,7 @@ export default function Index() {
       return;
     }
     Taro.navigateTo({ url: config.pages });
-  }, []);
+  }, [access.modules]);
 
   const handleLogout = () => {
     Taro.showModal({
