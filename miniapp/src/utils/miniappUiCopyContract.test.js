@@ -66,6 +66,7 @@ assert.ok(!forbiddenPage.includes('\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458'), 'the 
 assert.ok(forbiddenPage.includes('\u5f53\u524d\u8d26\u53f7\u6682\u4e0d\u80fd\u4f7f\u7528\u6b64\u529f\u80fd'), 'the access boundary must give the user a neutral, actionable explanation');
 assert.ok(!homePage.includes('\u7ef4\u62a4\u5b66\u5458\u4e0e\u8bfe\u7a0b\u5173\u7cfb'), 'read-only miniapp shortcuts must not promise student maintenance');
 assert.ok(homePage.includes('\u5b66\u751f\u8d44\u6599') && homePage.includes('\u8bfe\u7a0b\u8d44\u6599'), 'read-only miniapp shortcuts must name the information they show');
+assert.ok(!homePage.includes('\u6301\u4e45\u547d\u4ee4'), 'visitor role applications must not expose an implementation term as user-facing copy');
 assert.ok(scheduleEditConfig.includes('\u6392\u8bfe\u8bf4\u660e'), 'the read-only scheduling boundary must not be titled as schedule creation');
 assert.ok(scheduleDetailPage.includes('isStudentUser') && scheduleDetailPage.includes('{!isStudent &&'), 'student schedule details must not expose staff-only fee information');
 assert.ok(studentDetailPage.includes('const isStudent = isStudentUser();'), 'student detail must identify a student/guardian view');
