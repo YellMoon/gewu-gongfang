@@ -110,7 +110,6 @@ function fixtureResponse(request, scenario) {
   }
   if (pathname === '/api/business/miniapp-question-previews') return { statusCode: 200, body: { ok: true, questions: [] } };
   if (pathname === '/api/miniapp/role-applications/me') return { statusCode: 200, body: { ok: true, state: 'not_submitted', application: null } };
-  if (pathname === '/api/miniapp/role-applications/review/pending') return { statusCode: 200, body: { ok: true, applications: [] } };
   if (['/api/students', '/api/courses', '/api/schedules', '/api/teachers', '/api/payments', '/api/grades', '/api/modules'].includes(pathname)) return { statusCode: 200, body: { success: true, data: [] } };
   return { statusCode: 200, body: { success: true, data: {} } };
 }

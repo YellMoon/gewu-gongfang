@@ -20,6 +20,10 @@ assert.ok(
     && captureRuntimeSource.includes('trustProject: true'),
   'miniapp runtime capture must be able to launch a fresh DevTools automation instance for the current dist',
 );
+assert.ok(
+  !captureRuntimeSource.includes('/api/miniapp/role-applications/review/pending'),
+  'the runtime fixture must not preserve a retired miniapp role-approval endpoint',
+);
 const pagesMatch = appConfig.match(/pages:\s*\[([\s\S]*?)\]/);
 assert.ok(pagesMatch, 'app.config.ts should define pages');
 
