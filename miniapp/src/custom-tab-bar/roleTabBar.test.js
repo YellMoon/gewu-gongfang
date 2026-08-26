@@ -25,6 +25,7 @@ for (const iconPath of iconPaths) {
   assert.ok(fs.existsSync(`miniapp/src/${iconPath}`), `tabBar icon asset should exist: ${iconPath}`);
 }
 assert.ok(tabBar.includes("userType === 'student'"), 'custom tabBar should switch by student role');
+assert.ok(!tabBar.includes('usesLimitedQuestionProjection'), 'read-only question previews must not downgrade a student into the visitor tab shell');
 assert.ok(tabBar.includes("navigationMode === 'visitor'"), 'custom tabBar should select the visitor shell without formal permission fetch');
 assert.ok(tabBar.includes('switchTab'), 'custom tabBar should navigate with switchTab');
 assert.ok(tabBar.includes('isTabPage'), 'custom tabBar should render only on real tab pages');
