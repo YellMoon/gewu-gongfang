@@ -228,6 +228,13 @@ assert.ok(guardianScenarios.length >= 5, 'runtime matrix must separately exercis
 assert.ok(guardianScenarios.every(item => item.roleView === 'student'), 'a household member is a student-scope relationship, not a separate runtime role');
 const teacherScenarios = runtimeScenarios.filter(item => item.roleView === 'teacher');
 assert.ok(teacherScenarios.some(item => item.route === 'pages/index/index' && item.categories.includes('teacher-path')), 'runtime matrix must separately exercise the teacher dashboard');
+assert.ok(teacherScenarios.length > 0 && teacherScenarios.every(item => (
+  item.categories.includes('teacher-path') && !item.categories.includes('super-admin-path')
+)), 'teacher scenarios must be credited only to the teacher path, never the super-admin path');
+const superAdminScenarios = runtimeScenarios.filter(item => item.roleView === 'super_admin');
+assert.ok(superAdminScenarios.length > 0 && superAdminScenarios.every(item => (
+  item.categories.includes('super-admin-path') && !item.categories.includes('teacher-path')
+)), 'super-admin scenarios must remain distinct from the teacher path');
 assert.ok(!pageInventory.find(entry => entry.route === 'pages/schedule/index')?.roleViews.includes('visitor'), 'visitor access must not be represented as a schedule-page audit path');
 assert.ok(!runtimeScenarios.find(item => item.id === 'question-visitor-preview')?.categories.includes('limited-write'), 'visitor question preview must not be mislabeled as a write capability');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'guardian access is a student relationship, not a parent role');
