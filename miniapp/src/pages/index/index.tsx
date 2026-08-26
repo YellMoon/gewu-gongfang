@@ -46,6 +46,7 @@ interface DashboardData {
   todayRevenue: number;
   monthRevenue: number;
   totalStudents: number;
+  courseCount: number;
   pendingSync: number;
 }
 
@@ -76,7 +77,7 @@ export default function Index() {
   const [cloudConnection, setCloudConnection] = useState<'checking' | 'connected' | 'unavailable'>('checking');
   const [access, setAccess] = useState<any>({ role: 'visitor', modules: [], capabilities: [] });
   const [dashboard, setDashboard] = useState<DashboardData>({
-    todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0,
+    todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, courseCount: 0, pendingSync: 0,
   });
 
   useDidShow(() => {
@@ -92,7 +93,7 @@ export default function Index() {
     setSnapshot(null);
     setCloudConnection('checking');
     setAccess({ role: 'visitor', modules: [], capabilities: [] });
-    setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+    setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, courseCount: 0, pendingSync: 0 });
     const session = captureTrustedAuthSession(authSessionRuntime);
     if (!session) {
       Taro.redirectTo({ url: '/pages/login/index' });
@@ -108,7 +109,7 @@ export default function Index() {
       setModules([{ id: 'question-bank', name: '\u9898\u76ee\u9884\u89c8', description: '', icon: '' }]);
       setSnapshot(null);
       setCloudConnection('unavailable');
-      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, courseCount: 0, pendingSync: 0 });
       setLoading(false);
       return;
     }
@@ -127,7 +128,7 @@ export default function Index() {
       setModules([]);
       setSnapshot(null);
       setCloudConnection('unavailable');
-      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+      setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, courseCount: 0, pendingSync: 0 });
       setLoading(false);
       return;
     }
@@ -180,7 +181,7 @@ export default function Index() {
       const courses = getLocalData<Course>('courses');
       const currentUser = authenticatedUser || user;
       if (!currentUser) {
-        if (stillCurrent()) setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, pendingSync: 0 });
+        if (stillCurrent()) setDashboard({ todayClasses: 0, todayRevenue: 0, monthRevenue: 0, totalStudents: 0, courseCount: 0, pendingSync: 0 });
         return;
       }
       const rolePolicy = getMiniappRolePolicy(currentUser);
@@ -207,6 +208,7 @@ export default function Index() {
         todayRevenue,
         monthRevenue,
         totalStudents: scopedStudents.length,
+        courseCount: courses.length,
         pendingSync: 0,
       });
     } catch (err) {
@@ -363,20 +365,20 @@ export default function Index() {
           </View>
         </View>
         <View className="home-metric-card tone-green">
-          <Text className="home-metric-card__label">今日收入</Text>
-          <Text className="home-metric-card__value">{formatMoney(dashboard.todayRevenue)}</Text>
+          <Text className="home-metric-card__label">{isStudent ? '已关联课程' : '今日收入'}</Text>
+          <Text className="home-metric-card__value">{isStudent ? dashboard.courseCount : formatMoney(dashboard.todayRevenue)}</Text>
         </View>
-        <View className="home-metric-card tone-indigo">
+        {!isStudent && <View className="home-metric-card tone-indigo">
           <Text className="home-metric-card__label">本月收入</Text>
           <Text className="home-metric-card__value">{formatMoney(dashboard.monthRevenue)}</Text>
-        </View>
-        <View className="home-metric-card tone-amber">
+        </View>}
+        {!isStudent && <View className="home-metric-card tone-amber">
           <Text className="home-metric-card__label">学生总数</Text>
           <View className="home-metric-card__value-row">
             <Text className="home-metric-card__value">{dashboard.totalStudents}</Text>
             <Text className="home-metric-card__suffix">人</Text>
           </View>
-        </View>
+        </View>}
       </View>
 
       <View className="home-section">

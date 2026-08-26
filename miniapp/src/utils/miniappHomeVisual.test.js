@@ -43,6 +43,9 @@ assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
 assert.ok(homePage.includes('getMiniappHomeRoleLabel(user.user_type)'), 'home role pill must use the shared localized role label helper');
 assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
+assert.ok(homePage.includes("isStudent ? '已关联课程' : '今日收入'"), 'student and guardian home metrics must replace financial cards with their own course count');
+assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-indigo\">"), 'student and guardian views must not render monthly revenue');
+assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-amber\">"), 'student and guardian views must not render the institution-wide student total');
 assert.ok(accountStatusBanner.includes('\u53ef\u63d0\u4ea4\u6559\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u8eab\u4efd\u7533\u8bf7\u3002'));
 assert.ok(membershipBadge.includes("membership?.status !== 'active'"), 'membership badge must be derived only from the server membership state');
 for (const forbiddenMarketingCopy of ['\u8d2d\u4e70', '\u7eed\u8d39', '\u5957\u9910', '\u4f1a\u5458\u4ef7\u683c', '\u4f1a\u5458\u6743\u76ca']) {
