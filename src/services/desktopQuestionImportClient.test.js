@@ -28,6 +28,17 @@ async function main() {
   assert.ok(!calls[1].options.body.includes('raw-document-payload'), 'plaintext Word bytes must not be sent to cloud');
   assert.strictEqual(body.relay.expiresAt, '2026-08-23T00:15:00.000Z');
 
+  await assert.doesNotReject(
+    client.createFromWord({
+      sourceType: 'lecture',
+      sourceFileName: '2026届高三复习讲义-专题01-运动学.docx',
+      sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      bytes: new Uint8Array(Buffer.from('raw-document-payload')),
+      metadata: { subject: 'physics' },
+    }),
+    'real Word imports must accept a safe Unicode file name',
+  );
+
   const assetCalls = [];
   const assetClient = createDesktopQuestionImportClient({ cloudBusinessIdentityBaseUrl: 'https://cloud.example/cloud-business' }, {
     idFactory: () => '87654321', now: () => new Date('2026-08-23T00:00:00.000Z'),

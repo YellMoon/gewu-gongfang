@@ -6,6 +6,15 @@ function failure(code, status = 0) {
 }
 
 function trimSlash(value) { return String(value || '').replace(/\/+$/, ''); }
+function safeWordFileName(value) {
+  return typeof value === 'string'
+    && value === value.trim()
+    && value.length > 5
+    && value.length <= 512
+    && !/[\\/\u0000\r\n]/.test(value)
+    && /^[\p{L}\p{N}]/u.test(value)
+    && /\.(?:doc|docx)$/iu.test(value);
+}
 function exact(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype
     || Reflect.ownKeys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
@@ -78,7 +87,7 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
     async createFromWord(input) {
       if (typeof seal !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');
       const requestInput = exact(input, ['sourceType', 'sourceFileName', 'sourceMimeType', 'bytes', 'metadata']);
-      if (!['lecture', 'exam'].includes(requestInput.sourceType) || typeof requestInput.sourceFileName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,507}\.(?:doc|docx)$/iu.test(requestInput.sourceFileName)
+      if (!['lecture', 'exam'].includes(requestInput.sourceType) || !safeWordFileName(requestInput.sourceFileName)
         || !['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(requestInput.sourceMimeType)
         || !(requestInput.bytes instanceof Uint8Array) || !requestInput.bytes.byteLength || requestInput.bytes.byteLength > (64 * 1024 * 1024)
         || !requestInput.metadata || typeof requestInput.metadata !== 'object' || Array.isArray(requestInput.metadata)) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
