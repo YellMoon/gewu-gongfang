@@ -65,6 +65,7 @@ const runtimeSource = require('fs').readFileSync(__dirname + '/applicationRuntim
 const pageSource = require('fs').readFileSync(__dirname + '/index.tsx', 'utf8');
 assert.ok(pageSource.includes('`miniapp-role-${identityId}-${requestedIdentity}-${profileMode}-'), 'role application retries must use an identity-and-request scoped idempotency key');
 assert.ok(!pageSource.includes('${identityId}-${role}-'), 'role application idempotency keys must not reference an undefined role variable');
+assert.ok(!pageSource.includes('commandId'), 'role application UI must not expose a retired command identifier that the cloud contract does not return');
 for (const retiredTerm of [
   String.fromCharCode(25968, 25454, 20027, 26426),
   String.fromCharCode(26412, 22320, 20027, 26426),

@@ -119,9 +119,6 @@ export default function AccountApplicationPage() {
         <Text className='state-kicker'>{'\u8d26\u53f7\u8eab\u4efd\u7533\u8bf7'}</Text>
         <Text className='state-title'>{copy.title}</Text>
         <Text className='state-description'>{copy.description}</Text>
-        {application?.commandId
-          ? <Text className='task-reference'>{'\u547d\u4ee4\u7f16\u53f7\uff1a'}{application.commandId}</Text>
-          : null}
       </View>
 
       {editable ? (
