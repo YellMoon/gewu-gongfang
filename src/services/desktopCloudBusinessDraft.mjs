@@ -386,6 +386,10 @@ export function createDesktopCloudBusinessDraftAdapter({
         return cloudClient.createCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
           gradeId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...gradeInput(createRecord),
         }));
+      case 'grade.update.v1':
+        return cloudClient.updateCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+          gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...gradeInput(updateRecord),
+        }));
       case 'grade.delete.v1':
         return cloudClient.deleteCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
           gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
@@ -393,6 +397,10 @@ export function createDesktopCloudBusinessDraftAdapter({
       case 'personal-asset-category.create.v1':
         return cloudClient.createCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
           categoryId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetCategoryInput(createRecord),
+        }));
+      case 'personal-asset-category.update.v1':
+        return cloudClient.updateCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+          categoryId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...personalAssetCategoryInput(updateRecord),
         }));
       case 'personal-asset-category.delete.v1':
         return cloudClient.deleteCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {

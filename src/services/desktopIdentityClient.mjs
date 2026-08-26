@@ -1084,6 +1084,8 @@ export function createDesktopIdentityClient({
     updateCloudInstitution,
     updateCloudPayment: paymentMutations.update,
     updateCloudConsumption: consumptionMutations.update,
+    updateCloudGrade: gradeMutations.update,
+    updateCloudPersonalAssetCategory: assetCategoryMutations.update,
     updateCloudPersonalAssetRecord: assetRecordMutations.update,
     updateCloudRoom,
     updateCloudSchool,
