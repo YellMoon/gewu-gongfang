@@ -2,6 +2,7 @@
 
 const REQUIRED_COVERAGE_CATEGORIES = Object.freeze([
   'super-admin-path',
+  'teacher-path',
   'student-path',
   'empty',
   'offline',
@@ -19,6 +20,7 @@ const runtimeScenarios = Object.freeze([
   scenario('login-guest', 'pages/login/index', 'guest', 'guest', 'cloud-login', '首次登录', ['guest']),
   scenario('privacy-guest', 'pages/login/privacy', 'guest', 'guest', 'privacy-content', '隐私保护指引', ['guest']),
   scenario('home-super-admin', 'pages/index/index', 'super_admin', 'super_admin', 'super-admin-dashboard', '运营面板', ['super-admin-path']),
+  scenario('home-teacher', 'pages/index/index', 'teacher', 'teacher', 'teacher-dashboard', String.fromCharCode(25945, 23398, 38754, 26495), ['teacher-path']),
   scenario('home-student', 'pages/index/index', 'student', 'student', 'student-dashboard', '学习面板', ['student-path']),
   scenario('home-guardian', 'pages/index/index', 'student', 'guardian', 'student-dashboard', '学习面板', ['student-path']),
   scenario('home-visitor', 'pages/index/index', 'visitor', 'visitor', 'empty-modules', '访客', ['visitor']),

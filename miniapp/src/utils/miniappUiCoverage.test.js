@@ -198,7 +198,7 @@ for (const category of REQUIRED_COVERAGE_CATEGORIES) {
   assert.ok(runtimeCategories.has(category), `runtime screenshot matrix missing category ${category}`);
 }
 for (const [route, roles] of Object.entries({
-  'pages/index/index': ['super_admin', 'student', 'visitor'],
+  'pages/index/index': ['super_admin', 'teacher', 'student', 'visitor'],
   'pages/schedule/index': ['student'],
   'pages/schedule/detail/index': ['student'],
   'pages/schedule/edit/index': ['student'],
@@ -215,6 +215,8 @@ assert.ok(runtimeScenarios.some(item => item.state === 'miniapp-readonly-boundar
 const guardianScenarios = runtimeScenarios.filter(item => item.identity === 'guardian');
 assert.ok(guardianScenarios.length >= 5, 'runtime matrix must separately exercise the household-member fixture across its student-scoped pages');
 assert.ok(guardianScenarios.every(item => item.roleView === 'student'), 'a household member is a student-scope relationship, not a separate runtime role');
+const teacherScenarios = runtimeScenarios.filter(item => item.roleView === 'teacher');
+assert.ok(teacherScenarios.some(item => item.route === 'pages/index/index' && item.categories.includes('teacher-path')), 'runtime matrix must separately exercise the teacher dashboard');
 assert.ok(!pageInventory.find(entry => entry.route === 'pages/schedule/index')?.roleViews.includes('visitor'), 'visitor access must not be represented as a schedule-page audit path');
 assert.ok(!runtimeScenarios.find(item => item.id === 'question-visitor-preview')?.categories.includes('limited-write'), 'visitor question preview must not be mislabeled as a write capability');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'guardian access is a student relationship, not a parent role');
