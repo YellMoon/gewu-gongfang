@@ -173,7 +173,7 @@ export default function AccountApplicationPage() {
               maxlength={11}
               value={contactPhone}
               onInput={event => setContactPhone(event.detail.value)}
-              placeholder='\u8bf7\u8f93\u5165 11 \u4f4d\u624b\u673a\u53f7'
+              placeholder='请输入 11 位手机号'
             />
             <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u4e0e\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7\uff0c\u4e0d\u9700\u8981\u8f93\u5165\u7cfb\u7edf\u7f16\u53f7\u3002'}</Text>
           </View>
