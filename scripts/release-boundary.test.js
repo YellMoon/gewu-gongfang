@@ -37,5 +37,6 @@ assert.ok(deployCloudBusiness.includes('recover_promotion_lock(tag, mode)'), 'cl
 assert.ok(deployCloudBusiness.includes('promotion_lock_recovery_claim_command'), 'stale-lock recovery must atomically replace the abandoned owner with a recovery owner');
 assert.ok(deployCloudBusiness.includes('heartbeat_promotion_lock(operation_id, tag)'), 'promotion must revalidate and refresh its owner fence around public verification and receipt recording');
 assert.ok(deployBackend.includes('manifest.get("commit") != current_source_commit()'), 'deployment manifests must match the checked-out source commit');
+assert.ok(deployBackend.includes('f"release-matrix-{read_root_version()}"'), 'Python deployment gates must select the same versioned release manifest as the Node release workflow');
 
 console.log('release boundary checks passed');

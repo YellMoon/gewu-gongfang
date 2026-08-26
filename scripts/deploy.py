@@ -104,7 +104,10 @@ def read_root_version():
         return ""
 
 
-RELEASE_MATRIX_PATH = Path(os.getenv("GEWU_RELEASE_MANIFEST_PATH", PROJECT_ROOT / "output" / "release-matrix" / "active.json"))
+RELEASE_MATRIX_PATH = Path(os.getenv(
+    "GEWU_RELEASE_MANIFEST_PATH",
+    PROJECT_ROOT / "output" / f"release-matrix-{read_root_version()}" / "active.json",
+))
 RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
 RELEASE_MATRIX_TARGETS = ("desktop", "cloud_business", "storage_proxy", "miniapp")
 
