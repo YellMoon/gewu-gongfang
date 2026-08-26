@@ -1,8 +1,8 @@
 const { roleForUser } = require('./authorizationPolicy');
 
-const GRANT_ROLES = Object.freeze(['super_admin', 'admin', 'teacher', 'student']);
-const ROLE_DISPLAY_ORDER = Object.freeze(['super_admin', 'admin', 'teacher', 'student']);
-const DEFAULT_ACTIVE_ROLE_ORDER = Object.freeze(['teacher', 'student', 'admin', 'super_admin']);
+const GRANT_ROLES = Object.freeze(['super_admin', 'teacher', 'student']);
+const ROLE_DISPLAY_ORDER = Object.freeze(['super_admin', 'teacher', 'student']);
+const DEFAULT_ACTIVE_ROLE_ORDER = Object.freeze(['teacher', 'student', 'super_admin']);
 
 function roleGrantError(code) {
   const error = new Error(code);
@@ -87,8 +87,13 @@ function storeGrant(db, user, desired, now) {
 function ensureCompatibilityRoleGrants(db, options = {}) {
   if (!db || !tableExists(db, 'user_role_grants')) throw roleGrantError('USER_ROLE_GRANTS_TABLE_REQUIRED');
   const now = options.now || new Date().toISOString();
-  const counts = { inserted: 0, reactivated: 0, unchanged: 0 };
+  const counts = { inserted: 0, reactivated: 0, unchanged: 0, retired: 0 };
   const migrate = db.transaction(function () {
+    // `admin` was a legacy transport role, never a product role. Preserve its
+    // audit row but remove any live authority before deriving current grants.
+    counts.retired += db.prepare(`UPDATE user_role_grants
+      SET status='revoked', revoked_at=COALESCE(revoked_at, ?), updated_at=?
+      WHERE role='admin' AND status='active'`).run(now, now).changes;
     const users = db.prepare('SELECT * FROM users WHERE deleted=0 ORDER BY id').all();
     for (const user of users) {
       for (const desired of desiredRolesForUser(db, user)) {

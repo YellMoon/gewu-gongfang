@@ -1,6 +1,7 @@
 const assert = require('assert');
 const Database = require('better-sqlite3');
 const {
+  GRANT_ROLES,
   assertActiveRole,
   ensureCompatibilityRoleGrants,
   listUserRoleGrants,
@@ -51,6 +52,7 @@ function createDb() {
 const now = '2026-07-17T00:00:00.000Z';
 const canonicalId = 'miniapp-admin-13732250653';
 const db = createDb();
+assert.deepStrictEqual(GRANT_ROLES, ['super_admin', 'teacher', 'student'], 'ordinary administrators are not a product role');
 db.prepare('INSERT INTO teachers (id, phone, deleted) VALUES (?, ?, 0)')
   .run('teacher-self', '13732250653');
 db.prepare(`INSERT INTO users
@@ -61,11 +63,11 @@ db.prepare(`INSERT INTO users
 
 assert.deepStrictEqual(
   ensureCompatibilityRoleGrants(db, { now }),
-  { inserted: 2, reactivated: 0, unchanged: 0 }
+  { inserted: 2, reactivated: 0, unchanged: 0, retired: 0 }
 );
 assert.deepStrictEqual(
   ensureCompatibilityRoleGrants(db, { now }),
-  { inserted: 0, reactivated: 0, unchanged: 2 },
+  { inserted: 0, reactivated: 0, unchanged: 2, retired: 0 },
   'compatibility migration must be idempotent'
 );
 
@@ -111,7 +113,7 @@ db.prepare(`INSERT INTO users
   VALUES ('review-demo:sample', '13000000000', 'student', 1, 1, 'approved', 0, NULL)`).run();
 assert.deepStrictEqual(
   ensureCompatibilityRoleGrants(db, { now }),
-  { inserted: 0, reactivated: 0, unchanged: 2 },
+  { inserted: 0, reactivated: 0, unchanged: 2, retired: 0 },
   'synthetic review-demo identities must not receive formal role grants'
 );
 assert.deepStrictEqual(listUserRoleGrants(db, 'review-demo:sample'), []);
@@ -140,13 +142,35 @@ db.prepare(`UPDATE user_role_grants
   WHERE user_id=? AND role='teacher'`).run(now, now, canonicalId);
 assert.deepStrictEqual(
   ensureCompatibilityRoleGrants(db, { now }),
-  { inserted: 0, reactivated: 0, unchanged: 2 },
+  { inserted: 0, reactivated: 0, unchanged: 2, retired: 0 },
   'compatibility startup must preserve an explicit role revocation'
 );
 assert.deepStrictEqual(
   db.prepare('SELECT status, revoked_at FROM user_role_grants WHERE user_id=? AND role=?')
     .get(canonicalId, 'teacher'),
   { status: 'revoked', revoked_at: now }
+);
+
+db.prepare(`INSERT INTO users
+  (id, phone, role, status, login_enabled, review_status, deleted)
+  VALUES ('retired-admin-user', '13000000003', 'admin', 1, 1, 'approved', 0)`).run();
+db.prepare(`INSERT INTO user_role_grants
+  (user_id, role, subject_type, subject_id, status, source, granted_by, created_at, updated_at, revoked_at)
+  VALUES ('retired-admin-user', 'admin', NULL, NULL, 'active', 'legacy', NULL, ?, ?, NULL)`)
+  .run(now, now);
+assert.deepStrictEqual(
+  ensureCompatibilityRoleGrants(db, { now }),
+  { inserted: 0, reactivated: 0, unchanged: 2, retired: 1 },
+  'a legacy ordinary-admin grant must be revoked instead of remaining silently active'
+);
+assert.deepStrictEqual(listUserRoleGrants(db, 'retired-admin-user'), []);
+assert.deepStrictEqual(
+  listUserRoleGrants(db, 'retired-admin-user', { includeInactive: true }).map(grant => [grant.role, grant.status]),
+  [['admin', 'revoked']]
+);
+assert.throws(
+  function () { resolveUserRoleContext(db, 'retired-admin-user', 'admin'); },
+  function (error) { return error && error.code === 'ACTIVE_ROLE_NOT_GRANTED'; }
 );
 
 db.close();
