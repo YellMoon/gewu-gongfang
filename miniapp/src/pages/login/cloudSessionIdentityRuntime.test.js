@@ -17,6 +17,10 @@ assert.deepStrictEqual(
   cloudSessionUser({ accountId: 'student-1', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-profile-1' } }),
   { id: 'student-1', cloud_account_id: 'student-1', role: 'student', user_type: 'student', account_state: 'formal', token_use: 'miniapp-cloud', student_id: 'student-profile-1', linked_student_ids: ['student-profile-1'] },
 );
+assert.deepStrictEqual(
+  cloudSessionUser({ accountId: 'guardian-1', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-profile-1', relationship: 'guardian' } }),
+  { id: 'guardian-1', cloud_account_id: 'guardian-1', role: 'student', user_type: 'student', identity_kind: 'family_member', student_relationship: 'guardian', account_state: 'formal', token_use: 'miniapp-cloud', student_id: 'student-profile-1', linked_student_ids: ['student-profile-1'] },
+);
 assert.strictEqual(cloudSessionUser({ accountId: 'teacher-unbound', status: 'active', roles: ['teacher'], profile: null }), null, 'a cloud teacher identity without its scoped profile must fail closed');
 assert.strictEqual(cloudSessionUser({ accountId: 'legacy-operator', status: 'active', roles: ['operator'] }), null, 'the unsupported role must not create a miniapp session');
 assert.strictEqual(cloudSessionUser({ accountId: 'legacy-pending', status: 'pending_authorization', roles: [] }), null, 'a legacy pending account must not create a second non-formal identity');

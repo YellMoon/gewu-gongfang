@@ -25,6 +25,7 @@ const query = async (text, values) => {
   const phoneContext = await repository.readContextByPhoneHmac({ phoneHmac: 'b'.repeat(64) });
   assert.deepStrictEqual(phoneContext, { accountId: 'account-1', status: 'active', roles: ['super_admin'], profile: null });
   assert.ok(calls.some(([text, values]) => text.includes('WHERE a.phone_hmac=$1') && values[0] === 'b'.repeat(64)));
+  assert.ok(calls.every(([text]) => text.includes('student_relationship') && text.includes('"studentRelationship"')));
   assert.strictEqual(typeof repository.listPending, 'undefined', 'a visitor is not a pending-account queue entry');
   assert.strictEqual(typeof repository.assignRole, 'undefined', 'direct miniapp role grants must not exist');
   assert.throws(() => createMiniappCloudAccountRepository({ query }), error => error.code === 'CLOUD_MINIAPP_IDENTITY_INVALID');

@@ -49,6 +49,10 @@ const service = createMiniappCloudAccountService({
   assert.equal(ordinary.identity.status, 'visitor');
   assert.deepStrictEqual(ordinary.identity.roles, []);
 
+  records.set('canonical-guardian', { accountId: 'canonical-guardian', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } });
+  const guardian = await service.login({ loginCode: 'guardian-login', phoneCode: 'guardian-proof' });
+  assert.deepStrictEqual(guardian.identity.profile, { type: 'student', id: 'student-1', relationship: 'guardian' });
+
   const context = await service.context({ token: admin.token });
   assert.equal(context.accountId, admin.identity.accountId);
   assert.deepStrictEqual(context.roles, ['super_admin']);

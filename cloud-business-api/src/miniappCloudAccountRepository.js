@@ -24,7 +24,12 @@ function accountRow(row) {
   if (ordinary.length > 1 || (ordinary.length === 0 && (row.profileType !== null || row.profileId !== null))) throw invalid();
   if (ordinary.length === 1) {
     if (row.profileType !== ordinary[0] || typeof row.profileId !== 'string' || !row.profileId) throw invalid();
-    return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: { type: row.profileType, id: row.profileId } };
+    const relationship = row.studentRelationship === 'student' || row.studentRelationship === 'guardian'
+      ? row.studentRelationship : null;
+    return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: {
+      type: row.profileType, id: row.profileId,
+      ...(ordinary[0] === 'student' && relationship ? { relationship } : {}),
+    } };
   }
   return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: null };
 }
@@ -49,7 +54,8 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
          SELECT s.account_id AS "accountId",s.status AS "status",
            COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
            MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
-           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId",
+           MAX(g.student_relationship) FILTER (WHERE g.status='active') AS "studentRelationship"
          FROM selected s
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=s.account_id
          GROUP BY s.account_id,s.status`,
@@ -64,7 +70,8 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
         `SELECT a.account_id AS "accountId",a.status AS "status",
            COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
            MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
-           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId",
+           MAX(g.student_relationship) FILTER (WHERE g.status='active') AS "studentRelationship"
          FROM business.miniapp_cloud_accounts a
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          WHERE a.account_id=$1
@@ -80,7 +87,8 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
         `SELECT a.account_id AS "accountId",a.status AS "status",
            COALESCE(array_agg(g.role ORDER BY g.role) FILTER (WHERE g.status='active'), ARRAY[]::text[]) AS "roles",
            MAX(g.profile_type) FILTER (WHERE g.status='active') AS "profileType",
-           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId"
+           MAX(g.profile_id) FILTER (WHERE g.status='active') AS "profileId",
+           MAX(g.student_relationship) FILTER (WHERE g.status='active') AS "studentRelationship"
          FROM business.miniapp_cloud_accounts a
          LEFT JOIN business.miniapp_cloud_role_grants g ON g.account_id=a.account_id
          WHERE a.phone_hmac=$1

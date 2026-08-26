@@ -43,6 +43,8 @@ function cloudSessionUser(identity) {
       cloud_account_id: identity.accountId,
       role,
       user_type: role,
+      ...(role === 'student' && identity.profile?.relationship === 'guardian'
+        ? { identity_kind: 'family_member', student_relationship: 'guardian' } : {}),
       account_state: 'formal',
       token_use: 'miniapp-cloud',
       ...(role === 'teacher' ? { teacher_id: scopedProfileId } : {}),

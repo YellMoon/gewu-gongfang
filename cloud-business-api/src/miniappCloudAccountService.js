@@ -60,8 +60,15 @@ function identity(value) {
   const ordinaryRoles = copy.roles.filter(role => role === 'teacher' || role === 'student');
   if (ordinaryRoles.length > 1 || (ordinaryRoles.length === 0 && copy.profile !== null)) throw rejected();
   if (ordinaryRoles.length === 1) {
-    const profile = exact(copy.profile, ['type', 'id']);
+    if (!copy.profile || typeof copy.profile !== 'object' || Array.isArray(copy.profile)) throw rejected();
+    const profileKeys = Reflect.ownKeys(copy.profile);
+    if (!profileKeys.every(key => key === 'type' || key === 'id' || key === 'relationship') || !profileKeys.includes('type') || !profileKeys.includes('id')) throw rejected();
+    const profile = { type: copy.profile.type, id: copy.profile.id };
     if (profile.type !== ordinaryRoles[0] || !text(profile.id)) throw rejected();
+    if (Object.hasOwn(copy.profile, 'relationship')) {
+      if (ordinaryRoles[0] !== 'student' || !['student', 'guardian'].includes(copy.profile.relationship)) throw rejected();
+      profile.relationship = copy.profile.relationship;
+    }
     return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: Object.freeze(profile) });
   }
   return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: null });

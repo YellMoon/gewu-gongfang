@@ -269,6 +269,7 @@ export default function Index() {
   const showStaffShortcuts = access.modules.includes('scheduling') && !['student', 'visitor'].includes(access.role);
   const roleLabel = user ? getMiniappHomeRoleLabel(user.user_type) : '未登录';
   const greeting = user?.user_type === "super_admin" ? "运营面板" : isStudent ? "学习面板" : "教学面板";
+  const visibleRoleLabel = user ? getMiniappHomeRoleLabel(user) : roleLabel;
   const snapshotLabel = formatSnapshotTime(snapshot?.created_at);
   const userDisplayName = user ? getMiniappHomeDisplayName(user) : '';
   const visitor = isVisitorIdentity(user);
@@ -315,7 +316,7 @@ export default function Index() {
         <View className="home-hero__topline">
           <Text className="home-brand">格物工坊</Text>
           <View className="home-role-pill">
-            <Text className="home-role-pill__text">{roleLabel}</Text>
+            <Text className="home-role-pill__text">{visibleRoleLabel}</Text>
           </View>
         </View>
 

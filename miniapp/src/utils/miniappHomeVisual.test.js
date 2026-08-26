@@ -39,9 +39,10 @@ assert.strictEqual(getMiniappHomeRoleLabel('super_admin'), '\u8d85\u7ea7\u7ba1\u
 assert.strictEqual(getMiniappHomeRoleLabel('teacher'), '\u6559\u5e08');
 assert.strictEqual(getMiniappHomeRoleLabel('student'), '\u5b66\u751f');
 assert.strictEqual(getMiniappHomeRoleLabel('visitor'), '\u8bbf\u5ba2');
+assert.strictEqual(getMiniappHomeRoleLabel({ user_type: 'student', identity_kind: 'family_member', student_relationship: 'guardian' }), '家庭成员');
 assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
-assert.ok(homePage.includes('getMiniappHomeRoleLabel(user.user_type)'), 'home role pill must use the shared localized role label helper');
+assert.ok(homePage.includes('getMiniappHomeRoleLabel(user)'), 'home role pill must use the shared localized role label helper with the family-member relationship');
 assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(verifiedUser)'), 'home state must never retain an absent identity name');
 assert.ok(homePage.includes("isStudent ? '已关联课程' : '今日收入'"), 'student and guardian home metrics must replace financial cards with their own course count');
 assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-indigo\">"), 'student and guardian views must not render monthly revenue');
