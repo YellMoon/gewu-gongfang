@@ -26,6 +26,8 @@ assert.match(paperSource, /miniappCloudBusinessApi\.downloadPaperExportDelivery/
 assert.match(paperSource, /miniappCloudBusinessApi\.cancelPaperExportTask/, 'queued cloud exports must expose cancellation just as the desktop editor does');
 assert.match(paperSource, /sectionTitle/, 'the paper editor must keep desktop-equivalent section grouping');
 assert.match(paperSource, /sectionOptions/, 'the paper editor must offer the same reusable section choices as the desktop editor');
+assert.match(paperSource, /typeStats/, 'the paper editor must expose the desktop-equivalent question-type summary');
+assert.match(paperSource, /difficultyStats/, 'the paper editor must expose the desktop-equivalent difficulty summary');
 assert.match(paperSource, /自定义分组/, 'the paper editor must make creating a custom section explicit instead of relying on an unlabeled field');
 assert.match(paperSource, /score/, 'the paper editor must keep desktop-equivalent question scores');
 assert.match(paperSource, /moveItem/, 'the paper editor must support question ordering');

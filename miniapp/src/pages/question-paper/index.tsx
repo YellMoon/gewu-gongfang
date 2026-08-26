@@ -13,7 +13,7 @@ type PaperAction = 'paper-export-word' | 'paper-export-pdf';
 interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; richContent?: any; status: string; }
 interface PaperItem {
   id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number;
-  answer?: string; explanation?: string; options?: any[]; source?: string; knowledgeLabels?: string[]; richContent?: any;
+  answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; richContent?: any;
 }
 interface PaperTask { localId: string; confirmed: boolean; taskId?: string; status: string; phase: string; progress: number; request: any; error?: string; resultExpiresAt?: string | null; }
 interface PaperDraft { title: string; answerPosition: 'end' | 'after'; formulaMode: string; items: Array<{ id: string; sectionTitle: string; score: number }>; }
@@ -30,6 +30,14 @@ function sectionFor(type: string) {
   return sections[type] || '综合题';
 }
 function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
+function questionTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    single_choice: String.fromCharCode(21333, 36873, 39064), multiple_choice: String.fromCharCode(22810, 36873, 39064),
+    true_false: String.fromCharCode(21028, 26029, 39064), fill_blank: String.fromCharCode(22635, 31354, 39064),
+    essay: String.fromCharCode(31616, 31572, 39064), calculation: String.fromCharCode(35745, 31639, 39064), experiment: String.fromCharCode(23454, 39564, 39064),
+  };
+  return labels[type] || type;
+}
 const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
 function questionAssetKeys(value: unknown): string[] { return Array.from((typeof value === 'string' ? value : JSON.stringify(value || {})).matchAll(QUESTION_ASSET_REF)).map(match => match[1]); }
 function questionAssetRequests(item: PaperItem): Array<{ questionId: string; assetKey: string }> { return Array.from(new Set([
@@ -48,7 +56,7 @@ function defaultItems(questions: QuestionPreview[], ids: string[]): PaperItem[] 
   return ids.map(id => byId.get(id)).filter(Boolean).map(question => ({
     id: question!.id, subject: question!.subject, type: question!.type, stemPreview: question!.stemPreview,
     answer: question!.answer, explanation: question!.explanation, options: question!.options,
-    source: question!.source, knowledgeLabels: question!.knowledgeLabels, richContent: question!.richContent,
+    difficulty: question!.difficulty, source: question!.source, knowledgeLabels: question!.knowledgeLabels, richContent: question!.richContent,
     sectionTitle: sectionFor(question!.type), score: scoreFor(question!.type),
   }));
 }
@@ -145,6 +153,10 @@ export default function QuestionPaperPage() {
   }, [editorKey, loading, title, answerPosition, formulaMode, items]);
 
   const totalScore = useMemo(() => items.reduce((total, item) => total + item.score, 0), [items]);
+  const typeStats = useMemo(() => Array.from(items.reduce((result, item) => result.set(item.type, (result.get(item.type) || 0) + 1), new Map<string, number>()).entries()), [items]);
+  const difficultyStats = useMemo(() => Array.from(items.filter(item => Number.isFinite(item.difficulty)).reduce((result, item) => {
+    const level = Number(item.difficulty); return result.set(level, (result.get(level) || 0) + 1);
+  }, new Map<number, number>()).entries()).sort(([left], [right]) => left - right), [items]);
   const groups = useMemo(() => {
     const result: Array<{ title: string; count: number }> = [];
     for (const item of items) {
@@ -244,7 +256,8 @@ export default function QuestionPaperPage() {
   };
 
   if (!canBuildPaper) return <View className='question-paper-page access-boundary'><Text>{'关联教师身份后可选题组卷和导出。'}</Text><Button onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>{'去申请'}</Button></View>;
-  return <View className='question-paper-page'>
+  const distributionSummary = items.length ? <View className='paper-summary paper-distribution'>{typeStats.map(([type, count]) => <Text key={type}>{questionTypeLabel(type) + ' ' + count + ' ' + String.fromCharCode(39064)}</Text>)}{difficultyStats.map(([level, count]) => <Text key={String(level)}>{String.fromCharCode(38590, 24230) + level + ' ' + count + ' ' + String.fromCharCode(39064)}</Text>)}</View> : null;
+  return <View className='question-paper-page'>{distributionSummary}
     <View className='paper-form'><Text className='field-label'>{'试卷名称'}</Text><Input className='field-input' value={title} onInput={event => setTitle(event.detail.value)} />
       <Picker mode='selector' range={answerOptions.map(option => option.label)} value={answerOptions.findIndex(option => option.value === answerPosition)} onChange={event => setAnswerPosition(answerOptions[Number(event.detail.value)].value as 'end' | 'after')}><View className='picker-row'>{answerOptions.find(option => option.value === answerPosition)?.label}</View></Picker>
       <Picker mode='selector' range={formulaOptions.map(option => option.label)} value={formulaOptions.findIndex(option => option.value === formulaMode)} onChange={event => setFormulaMode(formulaOptions[Number(event.detail.value)].value)}><View className='picker-row'>{formulaOptions.find(option => option.value === formulaMode)?.label}</View></Picker>
