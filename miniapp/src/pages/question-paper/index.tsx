@@ -11,7 +11,10 @@ import './index.scss';
 
 type PaperAction = 'paper-export-word' | 'paper-export-pdf';
 interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; status: string; }
-interface PaperItem { id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number; }
+interface PaperItem {
+  id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number;
+  answer?: string; explanation?: string; options?: any[]; source?: string; knowledgeLabels?: string[];
+}
 interface PaperTask { localId: string; confirmed: boolean; taskId?: string; status: string; phase: string; progress: number; request: any; error?: string; resultExpiresAt?: string | null; }
 interface PaperDraft { title: string; answerPosition: 'end' | 'after'; formulaMode: string; items: Array<{ id: string; sectionTitle: string; score: number }>; }
 
@@ -24,10 +27,19 @@ function sectionFor(type: string) {
   return sections[type] || '综合题';
 }
 function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
+function formatQuestionOption(option: any, index: number) {
+  if (typeof option === 'string') return option;
+  if (!option || typeof option !== 'object') return '';
+  const label = String(option.label || option.key || option.value || String.fromCharCode(65 + index)).trim();
+  const content = String(option.content || option.text || option.title || '').trim();
+  return content ? label + String.fromCharCode(12290) + content : '';
+}
 function defaultItems(questions: QuestionPreview[], ids: string[]): PaperItem[] {
   const byId = new Map(questions.map(question => [question.id, question]));
   return ids.map(id => byId.get(id)).filter(Boolean).map(question => ({
     id: question!.id, subject: question!.subject, type: question!.type, stemPreview: question!.stemPreview,
+    answer: question!.answer, explanation: question!.explanation, options: question!.options,
+    source: question!.source, knowledgeLabels: question!.knowledgeLabels,
     sectionTitle: sectionFor(question!.type), score: scoreFor(question!.type),
   }));
 }
@@ -113,6 +125,10 @@ export default function QuestionPaperPage() {
     }
     return result;
   }, [items]);
+  const sectionOptions = useMemo(() => Array.from(new Set([
+    ...Object.values({ single_choice: sectionFor('single_choice'), multiple_choice: sectionFor('multiple_choice'), true_false: sectionFor('true_false'), fill_blank: sectionFor('fill_blank'), calculation: sectionFor('calculation'), experiment: sectionFor('experiment'), essay: sectionFor('essay'), other: sectionFor('other') }),
+    ...items.map(item => item.sectionTitle).filter(Boolean),
+  ])), [items]);
   const updateItem = (id: string, patch: Partial<PaperItem>) => setItems(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
   const moveItem = (index: number, offset: number) => setItems(current => {
     const nextIndex = index + offset;
@@ -209,8 +225,12 @@ export default function QuestionPaperPage() {
     <View className='paper-tools'><Button className='compact-button' onClick={regroup} disabled={loading || !items.length}>{'按题型分组'}</Button><Button className='compact-button' onClick={reload}>{'刷新题目'}</Button></View>
     {loading ? <View className='paper-empty'><Text>{'正在加载已选题目'}</Text></View> : !items.length ? <View className='paper-empty'><Text>{'试题篮中暂无题目'}</Text><Button onClick={() => Taro.navigateBack()}>{'返回题库选题'}</Button></View> : <ScrollView className='paper-item-list' scrollY>{items.map((item, index) => <View key={item.id} className='paper-item'>
       <View className='paper-item-head'><Text>{String(index + 1) + '. ' + item.subject}</Text><View className='paper-order-actions'><Button size='mini' disabled={index === 0} onClick={() => moveItem(index, -1)}>{'上移'}</Button><Button size='mini' disabled={index === items.length - 1} onClick={() => moveItem(index, 1)}>{'下移'}</Button><Button size='mini' onClick={() => removeItem(item.id)}>{'移除'}</Button></View></View>
-      <Text className='paper-stem'>{item.stemPreview}</Text><View className='paper-edit-row'><Input className='section-input' value={item.sectionTitle} onInput={event => updateItem(item.id, { sectionTitle: event.detail.value })} /><Input className='score-input' type='number' value={String(item.score)} onInput={event => updateItem(item.id, { score: Math.max(0, Number(event.detail.value) || 0) })} /><Text>{'分'}</Text></View>
+      <Text className='paper-stem'>{item.stemPreview}</Text>{Array.isArray(item.options) && item.options.map((option, optionIndex) => { const content = formatQuestionOption(option, optionIndex); return content ? <Text key={String(optionIndex)} className='paper-option'>{content}</Text> : null; })}
+      {(item.source || (item.knowledgeLabels || []).length) ? <View className='paper-question-tags'>{item.source ? <Text>{'\u6765\u6e90\uff1a' + item.source}</Text> : null}{(item.knowledgeLabels || []).map(label => <Text key={label}>{label}</Text>)}</View> : null}
+      {answerPosition === 'after' ? <View className='paper-answer'><Text>{'\u7b54\u6848\uff1a' + (item.answer || '\u6682\u65e0')}</Text>{item.explanation ? <Text>{'\u89e3\u6790\uff1a' + item.explanation}</Text> : null}</View> : null}
+      <View className='paper-edit-row'><Picker mode='selector' range={sectionOptions} value={Math.max(0, sectionOptions.indexOf(item.sectionTitle))} onChange={event => updateItem(item.id, { sectionTitle: sectionOptions[Number(event.detail.value)] })}><View className='section-picker'>{item.sectionTitle || '\u9009\u62e9\u5206\u7ec4'}</View></Picker><Input className='section-input' placeholder={'\u81ea\u5b9a\u4e49\u5206\u7ec4'} onInput={event => { const value = event.detail.value.trim(); if (value) updateItem(item.id, { sectionTitle: value }); }} /><Input className='score-input' type='number' value={String(item.score)} onInput={event => updateItem(item.id, { score: Math.max(0, Number(event.detail.value) || 0) })} /><Text>{'\u5206'}</Text></View>
     </View>)}</ScrollView>}
+    {answerPosition === 'end' && items.length ? <View className='paper-answers'><Text className='answer-title'>{'\u53c2\u8003\u7b54\u6848\u4e0e\u89e3\u6790'}</Text>{items.map((item, index) => <View key={item.id} className='paper-answer'><Text>{String(index + 1) + '. \u7b54\u6848\uff1a' + (item.answer || '\u6682\u65e0')}</Text>{item.explanation ? <Text>{'\u89e3\u6790\uff1a' + item.explanation}</Text> : null}</View>)}</View> : null}
     <View className='paper-export-actions'><Button className='paper-export-pdf' loading={submitting === 'paper-export-pdf'} disabled={!items.length || Boolean(submitting)} onClick={() => submit('paper-export-pdf')}>{'导出 PDF'}</Button><Button className='paper-export-word' loading={submitting === 'paper-export-word'} disabled={!items.length || Boolean(submitting)} onClick={() => submit('paper-export-word')}>{'导出 Word'}</Button></View>
     <View className='result-card'><View className='preview-header'><Text className='preview-title'>{'导出记录'}</Text><Button className='preview-refresh' onClick={refreshTasks}>{'刷新'}</Button></View>{taskState.tasks.length ? taskState.tasks.map(task => <View key={task.localId} className='task-item'><Text>{task.request.payload.title}</Text><Text>{statusText[task.status] || task.status}</Text>{task.error ? <Text className='task-error'>{task.error}</Text> : null}<View className='task-actions'>{['queued', 'processing'].includes(task.status) && task.confirmed ? <Button size='mini' loading={taskBusyId === task.localId} onClick={() => cancelTask(task)}>{String.fromCharCode(21462, 28040)}</Button> : null}{task.status === 'completed' ? <Button size='mini' onClick={() => download(task)}>{'下载'}</Button> : null}{(task.status === 'failed' || task.status === 'cancelled' || task.status === 'draft') ? <Button size='mini' onClick={() => submit(task.request.taskType, task)}>{'重试'}</Button> : null}</View></View>) : <Text className='result-text'>{'暂无导出记录'}</Text>}</View>
   </View>;
