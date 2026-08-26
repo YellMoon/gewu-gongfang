@@ -21,6 +21,17 @@ assert.ok(
   'miniapp runtime capture must be able to launch a fresh DevTools automation instance for the current dist',
 );
 assert.ok(
+  captureRuntimeSource.includes('async function connectAutomation(wsEndpoint)')
+    && captureRuntimeSource.includes("Tool.getInfo")
+    && captureRuntimeSource.includes('toolInfo?.version'),
+  'runtime capture must accept the current DevTools tool-info shape when the legacy SDKVersion field is unavailable',
+);
+assert.ok(
+  captureRuntimeSource.includes('async function reLaunchPage(miniProgram, route)')
+    && captureRuntimeSource.includes("wx.reLaunch({ url: nextRoute })"),
+  'runtime capture must issue fixture route changes through the supported App.callFunction bridge',
+);
+assert.ok(
   !captureRuntimeSource.includes('/api/miniapp/role-applications/review/pending'),
   'the runtime fixture must not preserve a retired miniapp role-approval endpoint',
 );

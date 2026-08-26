@@ -10,6 +10,9 @@ const { REQUIRED_COVERAGE_CATEGORIES, runtimeScenarios } = require('../miniapp/s
 
 const ROOT = path.resolve(__dirname, '..');
 const automator = require(path.join(ROOT, 'miniapp', 'node_modules', 'miniprogram-automator'));
+const automatorRuntime = path.join(ROOT, 'miniapp', 'node_modules', 'miniprogram-automator', 'out');
+const AutomationConnection = require(path.join(automatorRuntime, 'Connection')).default;
+const AutomationMiniProgram = require(path.join(automatorRuntime, 'MiniProgram')).default;
 const VERSION = require('../package.json').version;
 const scenarioIdFilter = new Set(String(process.env.MINIAPP_UI_SCENARIO_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const focusedRun = scenarioIdFilter.size > 0;
@@ -25,6 +28,35 @@ const OUTPUT = process.env.MINIAPP_UI_OUTPUT_DIR
 const FIXTURE_PORT = 3019;
 const FIXTURE_BASE = `http://127.0.0.1:${FIXTURE_PORT}`;
 const SCREENSHOT_WAIT_MS = 1100;
+
+const wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+async function connectAutomation(wsEndpoint) {
+  const connection = await AutomationConnection.create(wsEndpoint);
+  const miniProgram = new AutomationMiniProgram(connection);
+  try {
+    await miniProgram.checkVersion();
+  } catch (legacyVersionError) {
+    // DevTools 2.02 exposes { version } instead of the old { SDKVersion }.
+    // Keep the version guard for older tools, while accepting the current
+    // automation protocol only when it provides a concrete version identifier.
+    const toolInfo = await miniProgram.send('Tool.getInfo');
+    if (!toolInfo?.version) {
+      miniProgram.disconnect();
+      throw legacyVersionError;
+    }
+  }
+  return miniProgram;
+}
+
+async function reLaunchPage(miniProgram, route) {
+  await miniProgram.evaluate(function requestReLaunch(nextRoute) {
+    wx.reLaunch({ url: nextRoute });
+    return true;
+  }, route);
+  await wait(200);
+  return miniProgram.currentPage();
+}
 
 const capabilitiesByRole = Object.freeze({
   super_admin: ['business:all', 'question-bank:view'],
@@ -169,8 +201,8 @@ async function resetScenarioPage(miniProgram, scenarioId) {
     wx.clearStorageSync();
     wx.setStorageSync('scheduling_api_base_url', fixtureBase);
   }, FIXTURE_BASE);
-  const resetPage = await miniProgram.reLaunch(`/pages/login/index?fixtureReset=${encodeURIComponent(scenarioId)}`);
-  await resetPage.waitFor(150);
+  await reLaunchPage(miniProgram, `/pages/login/index?fixtureReset=${encodeURIComponent(scenarioId)}`);
+  await wait(150);
 }
 
 async function run() {
@@ -191,16 +223,20 @@ async function run() {
     if (process.env.MINIAPP_AUTOMATION_LAUNCH === '1') {
       const port = Number(process.env.MINIAPP_AUTOMATION_PORT || 9520);
       assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'miniapp automation port is invalid');
-      miniProgram = await automator.launch({
-        projectPath: path.join(ROOT, 'miniapp', 'dist'),
-        port,
-        timeout: 60000,
-        trustProject: true,
-        ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
-      });
+      try {
+        miniProgram = await automator.launch({
+          projectPath: path.join(ROOT, 'miniapp', 'dist'),
+          port,
+          timeout: 60000,
+          trustProject: true,
+          ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
+        });
+      } catch (launchError) {
+        miniProgram = await connectAutomation(`ws://127.0.0.1:${port}`);
+      }
     } else {
       const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();
-      miniProgram = await automator.connect({ wsEndpoint });
+      miniProgram = await connectAutomation(wsEndpoint);
     }
   } catch (error) {
     await new Promise(resolve => server.close(resolve));
@@ -216,7 +252,7 @@ async function run() {
       setScenario(scenario);
       await resetScenarioPage(miniProgram, scenario.id);
       await setScenarioIdentity(miniProgram, scenario.identity);
-      const page = await miniProgram.reLaunch(`/${launchRoute(scenario)}`);
+      const page = await reLaunchPage(miniProgram, `/${launchRoute(scenario)}`);
       await page.waitFor(SCREENSHOT_WAIT_MS);
       const current = await miniProgram.currentPage();
       const sourceRoute = scenario.route;
