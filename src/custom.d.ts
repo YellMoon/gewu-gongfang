@@ -161,6 +161,14 @@ interface Window {
       conflict?: { code?: string } | null;
       [key: string]: any;
     }>>;
+    listRoleApplications(input: { sessionToken: string }): Promise<Array<{
+      applicationId: string;
+      requestedIdentity: 'teacher' | 'student' | 'family_member';
+      profileMode: 'existing' | 'new';
+      bindingHint: string;
+      status: 'submitted';
+      submittedAt: string;
+    }>>;
     readProjection(input?: { minSourceVersion?: number }): Promise<{
       protocol: 'gewu.authority-projection.v1';
       authorityId: string;
@@ -174,6 +182,7 @@ interface Window {
     }>;
     submit(id: string, input?: { sessionToken: string }): Promise<any>;
     confirmAndSubmit(id: string, input?: { sessionToken: string }): Promise<any>;
+    reviewRoleApplication(applicationId: string, review: { decision: 'approved' | 'rejected'; profileId: string | null }, input: { sessionToken: string }): Promise<any>;
   };
   primaryHostRuntime?: {
     restart(): Promise<any>;

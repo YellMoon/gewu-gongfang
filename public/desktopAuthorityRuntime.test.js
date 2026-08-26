@@ -183,6 +183,17 @@ async function withTimeout(promise, timeoutMs, message) {
         });
         return response(200, { ok: true, school: { id: 'school-runtime-1', updatedAt: '2026-08-24T00:00:02.000Z' } });
       }
+      if (url === 'https://business.example/api/desktop/role-applications/pending') {
+        assert.strictEqual(options.method, 'GET');
+        assert.strictEqual(options.headers.authorization, 'Bearer desktop-session-token');
+        return response(200, { ok: true, applications: [{ applicationId: 'role-runtime-1', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'Teacher runtime', status: 'submitted', submittedAt: '2026-08-26T00:00:00.000Z' }] });
+      }
+      if (url === 'https://business.example/api/desktop/role-applications/role-runtime-1/review') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.authorization, 'Bearer desktop-session-token');
+        assert.deepStrictEqual(JSON.parse(options.body), { decision: 'approved', profileId: 'teacher-runtime-1' });
+        return response(200, { ok: true, state: 'approved', application: { applicationId: 'role-runtime-1', status: 'approved' } });
+      }
       if (url === 'http://host.lan/api/authority/projections/current') {
         return response(503, { error: { code: 'HOST_TEMPORARILY_UNAVAILABLE' } });
       }
@@ -448,6 +459,18 @@ async function withTimeout(promise, timeoutMs, message) {
     'school drafts must never use the legacy authority command relay');
   assert.ok(!Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8').includes('desktop-session-token'),
     'the business session token must not be persisted in the encrypted outbox payload');
+  await assert.rejects(
+    () => runtime.listRoleApplications(),
+    error => error?.code === 'DESKTOP_CLOUD_SESSION_REQUIRED',
+  );
+  const pendingRoleApplications = await runtime.listRoleApplications({ sessionToken: 'desktop-session-token' });
+  assert.strictEqual(pendingRoleApplications.length, 1);
+  const reviewedRoleApplication = await runtime.reviewRoleApplication('role-runtime-1', {
+    decision: 'approved', profileId: 'teacher-runtime-1',
+  }, { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(reviewedRoleApplication.state, 'approved');
+  assert.ok(!Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8').includes('desktop-session-token'),
+    'desktop role review must not persist its session token');
   assert.strictEqual(runtime.confirmAndExecuteLocal, undefined,
     'a unified desktop must not expose a local authority execution path');
   assert.strictEqual(runtime.submitLocal, undefined,
@@ -503,6 +526,8 @@ async function withTimeout(promise, timeoutMs, message) {
     'desktop-authority:get',
     'desktop-authority:list',
     'desktop-authority:read-projection',
+    'desktop-authority:list-role-applications',
+    'desktop-authority:review-role-application',
     'desktop-authority:submit',
     'desktop-authority:confirm-and-submit',
   ]) {

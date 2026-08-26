@@ -52,32 +52,34 @@ function createMiniappRoleApplicationService(config) {
     return { state: applicationState(application), application };
   }
 
-  async function reviewer(token) {
-    const value = text(token, 8192);
-    if (!value) throw denied();
-    const context = await settings.cloudAccount.context({ token: value });
-    if (!context || !text(context.accountId, 512) || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw denied();
-    return { accountId: context.accountId };
+  function desktopReviewer(actor) {
+    if (!actor || typeof actor !== 'object' || Array.isArray(actor)
+      || !text(actor.accountId, 512) || !Array.isArray(actor.roles)
+      || !actor.roles.includes('super_admin')) throw denied();
+    return { accountId: actor.accountId };
   }
 
-  async function listSubmitted({ token }) {
-    await reviewer(token);
+  async function reviewApplication({ actor, applicationId, decision, profileId }) {
+    const normalizedApplicationId = text(applicationId, 128);
+    const normalizedDecision = text(decision, 16);
+    const normalizedProfileId = profileId === null ? null : text(profileId, 128);
+    if (!normalizedApplicationId || !['approved', 'rejected'].includes(normalizedDecision)
+      || (normalizedDecision === 'approved' && !normalizedProfileId) || (normalizedDecision === 'rejected' && profileId !== null)) throw invalid();
+    const reviewedAt = asIsoDate(settings.now());
+    const application = await settings.repository.review({
+      applicationId: normalizedApplicationId, decision: normalizedDecision, profileId: normalizedProfileId,
+      reviewedAt, reviewerAccountId: actor.accountId,
+    });
+    return { state: applicationState(application), application };
+  }
+
+  async function listSubmittedForDesktop({ actor }) {
+    desktopReviewer(actor);
     return { applications: await settings.repository.listSubmitted() };
   }
 
-  async function review(input) {
-    const value = exact(input, ['token', 'applicationId', 'decision', 'profileId']);
-    const actor = await reviewer(value.token);
-    const applicationId = text(value.applicationId, 128);
-    const decision = text(value.decision, 16);
-    const profileId = value.profileId === null ? null : text(value.profileId, 128);
-    if (!applicationId || !['approved', 'rejected'].includes(decision)
-      || (decision === 'approved' && !profileId) || (decision === 'rejected' && value.profileId !== null)) throw invalid();
-    const reviewedAt = asIsoDate(settings.now());
-    const application = await settings.repository.review({
-      applicationId, decision, profileId, reviewedAt, reviewerAccountId: actor.accountId,
-    });
-    return { state: applicationState(application), application };
+  async function reviewForDesktop({ actor, applicationId, decision, profileId }) {
+    return reviewApplication({ actor: desktopReviewer(actor), applicationId, decision, profileId });
   }
 
   async function submit(input) {
@@ -105,7 +107,7 @@ function createMiniappRoleApplicationService(config) {
     return { state: applicationState(application), application };
   }
 
-  return Object.freeze({ mine, submit, listSubmitted, review });
+  return Object.freeze({ mine, submit, listSubmittedForDesktop, reviewForDesktop });
 }
 
 module.exports = Object.freeze({ createMiniappRoleApplicationService });

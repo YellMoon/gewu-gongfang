@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { View, Text, Input } from '@tarojs/components'
+import { View, Text } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { authSessionRuntime } from '../../utils/authSession'
@@ -8,7 +8,6 @@ import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils
 import { isOnline, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { pullFromCloud } from '../../utils/sync'
-import { miniappCloudBusinessApi } from '../../utils/api'
 import AccountStatusBanner from '../../components/AccountStatusBanner'
 import MembershipBadge from '../../components/MembershipBadge'
 import './index.scss'
@@ -19,16 +18,6 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim(
   ? __APP_VERSION__.trim()
   : '8.5.0'
 
-const ROLE_APPLICATION_LABELS: Record<string, string> = {
-  teacher: '\u6559\u5e08',
-  student: '\u5b66\u751f',
-  family_member: '\u5bb6\u5ead\u6210\u5458',
-}
-
-function roleApplicationLabel(requestedIdentity: unknown): string {
-  return ROLE_APPLICATION_LABELS[String(requestedIdentity || '')] || '\u8eab\u4efd'
-}
-
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')
   const isVisitor = isVisitorIdentity(currentIdentity)
@@ -36,14 +25,9 @@ export default function Settings() {
   const [online, setOnline] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [lastSync, setLastSync] = useState(0)
-  const [roleApplications, setRoleApplications] = useState<any[]>([])
-  const [profileIds, setProfileIds] = useState<Record<string, string>>({})
-  const [reviewingApplicationId, setReviewingApplicationId] = useState('')
-  const canReviewRoleApplications = currentIdentity?.user_type === 'super_admin'
 
   useEffect(() => {
     refreshStatus()
-    void loadRoleApplications()
     const handleNetworkStatusChange = (res: { isConnected: boolean }) => {
       setOnline(res.isConnected)
       refreshStatus()
@@ -55,33 +39,6 @@ export default function Settings() {
   const refreshStatus = () => {
     setOnline(isOnline())
     setLastSync(getLastSyncTimestamp())
-  }
-
-  const loadRoleApplications = async () => {
-    if (!canReviewRoleApplications) return
-    const token = String(Taro.getStorageSync('auth_token') || '').trim()
-    const response: any = await miniappCloudBusinessApi.listSubmittedRoleApplications(token)
-    if (response.success) setRoleApplications(response.data?.applications || [])
-  }
-
-  const reviewRoleApplication = async (application: any, decision: 'approved' | 'rejected') => {
-    const profileId = decision === 'approved' ? String(profileIds[application.applicationId] || '').trim() : null
-    if (decision === 'approved' && !profileId) {
-      Taro.showToast({ title: '\u8bf7\u586b\u5199\u5df2\u6709\u6863\u6848\u7f16\u53f7', icon: 'none' })
-      return
-    }
-    setReviewingApplicationId(application.applicationId)
-    try {
-      const token = String(Taro.getStorageSync('auth_token') || '').trim()
-      const response: any = await miniappCloudBusinessApi.reviewRoleApplication(token, application.applicationId, decision, profileId)
-      if (!response.success) throw new Error(response.error || 'review failed')
-      await loadRoleApplications()
-      Taro.showToast({ title: decision === 'approved' ? '\u5df2\u5173\u8054\u8eab\u4efd' : '\u5df2\u9a73\u56de\u7533\u8bf7', icon: 'success' })
-    } catch (error: any) {
-      Taro.showToast({ title: error?.message || '\u5904\u7406\u5931\u8d25', icon: 'none' })
-    } finally {
-      setReviewingApplicationId('')
-    }
   }
 
   const handleRefresh = async () => {
@@ -171,27 +128,6 @@ export default function Settings() {
           </View>
         </View>
       </View>
-
-      {canReviewRoleApplications ? <View className='section'>
-        <View className='section-title'>{'\u8eab\u4efd\u7533\u8bf7\u5904\u7406'}</View>
-        {roleApplications.length === 0 ? <Text className='value'>{'\u6682\u65e0\u5f85\u5904\u7406\u7533\u8bf7'}</Text> : roleApplications.map(application => (
-          <View className='setting-item' key={application.applicationId}>
-            <View className='item-left'>
-              <View className='item-icon info'>{'\u8eab'}</View>
-              <View>
-                <Text className='item-label'>{roleApplicationLabel(application.requestedIdentity)}</Text>
-                <Text className='value'>{application.bindingHint || (application.profileMode === 'new' ? '\u65b0\u5efa\u6863\u6848\u7533\u8bf7' : '\u5173\u8054\u5df2\u6709\u6863\u6848\u7533\u8bf7')}</Text>
-                {application.profileMode === 'new' ? <Text className='value'>{'\u5148\u521b\u5efa\u6863\u6848\uff0c\u518d\u586b\u5199\u6863\u6848\u7f16\u53f7\u5b8c\u6210\u5173\u8054'}</Text> : null}
-                <Input value={profileIds[application.applicationId] || ''} onInput={event => setProfileIds(current => ({ ...current, [application.applicationId]: event.detail.value }))} placeholder={application.profileMode === 'new' ? '\u5148\u521b\u5efa\u6863\u6848\u540e\u586b\u5199\u7f16\u53f7' : '\u586b\u5199\u5df2\u6709\u6559\u5e08\u6216\u5b66\u751f\u6863\u6848\u7f16\u53f7'} />
-              </View>
-            </View>
-            <View className='item-right'>
-              <Text className='arrow' onClick={() => void reviewRoleApplication(application, 'approved')}>{reviewingApplicationId === application.applicationId ? '\u5904\u7406\u4e2d' : '\u901a\u8fc7'}</Text>
-              <Text className='arrow' onClick={() => void reviewRoleApplication(application, 'rejected')}>{'\u9a73\u56de'}</Text>
-            </View>
-          </View>
-        ))}
-      </View> : null}
 
       <View className={`sync-status ${online ? 'online' : 'offline'}`}>
         <Text>{online ? '\u7f51\u7edc\u5df2\u8fde\u63a5' : '\u5f53\u524d\u79bb\u7ebf'}</Text>

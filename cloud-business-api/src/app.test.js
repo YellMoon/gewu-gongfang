@@ -147,13 +147,13 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       });
       return { state: 'submitted', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' } };
     },
-    listSubmitted: async ({ token }) => {
-      if (token !== 'super-admin-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED' });
+    listSubmittedForDesktop: async ({ actor }) => {
+      assert.deepStrictEqual(actor, { accountId: 'desktop-super-admin-1', roles: ['super_admin'] });
       return { applications: [{ applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' }] };
     },
-    review: async input => {
-      assert.deepStrictEqual(input, { token: 'super-admin-ticket.signature', applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1' });
-      return { state: 'approved', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'approved', submittedAt: '2026-08-26T08:00:00.000Z', reviewedAt: '2026-08-26T08:05:00.000Z', reviewedByAccountId: 'super-admin-1', profileId: 'teacher-1' } };
+    reviewForDesktop: async input => {
+      assert.deepStrictEqual(input, { actor: { accountId: 'desktop-super-admin-1', roles: ['super_admin'] }, applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1' });
+      return { state: 'approved', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'approved', submittedAt: '2026-08-26T08:00:00.000Z', reviewedAt: '2026-08-26T08:05:00.000Z', reviewedByAccountId: 'desktop-super-admin-1', profileId: 'teacher-1' } };
     },
   };
   const visitorApplications = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/me', { headers: { authorization: 'Bearer visitor-ticket.signature' } });
@@ -164,14 +164,30 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(submittedApplication.status, 201);
   assert.strictEqual(submittedApplication.body.ok, true);
-  const pendingApplications = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/review/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
-  assert.strictEqual(pendingApplications.status, 200);
-  assert.strictEqual(pendingApplications.body.applications.length, 1);
-  const reviewedApplication = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/role_application_0001/review', {
+  const retiredMiniappReviewQueue = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/review/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
+  assert.strictEqual(retiredMiniappReviewQueue.status, 404, 'a miniapp must not read the role approval queue');
+  const retiredMiniappReview = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/role_application_0001/review', {
     method: 'POST', headers: { authorization: 'Bearer super-admin-ticket.signature' }, body: { decision: 'approved', profileId: 'teacher-1' },
   });
-  assert.strictEqual(reviewedApplication.status, 200);
-  assert.strictEqual(reviewedApplication.body.state, 'approved');
+  assert.strictEqual(retiredMiniappReview.status, 404, 'a miniapp must not approve a role application');
+  const desktopRoleSession = {
+    begin: async () => null,
+    register: async () => null,
+    sessionContext: async ({ sessionToken }) => {
+      if (sessionToken !== 'desktop-super-admin-ticket.signature') throw Object.assign(new Error('rejected'), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      return { accountId: 'desktop-super-admin-1', roles: ['super_admin'] };
+    },
+  };
+  const desktopPendingApplications = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications, desktopRegistration: desktopRoleSession }), '/api/desktop/role-applications/pending', { headers: { authorization: 'Bearer desktop-super-admin-ticket.signature' } });
+  assert.strictEqual(desktopPendingApplications.status, 200);
+  assert.strictEqual(desktopPendingApplications.body.applications.length, 1);
+  const desktopReviewedApplication = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications, desktopRegistration: desktopRoleSession }), '/api/desktop/role-applications/role_application_0001/review', {
+    method: 'POST', headers: { authorization: 'Bearer desktop-super-admin-ticket.signature' }, body: { decision: 'approved', profileId: 'teacher-1' },
+  });
+  assert.strictEqual(desktopReviewedApplication.status, 200);
+  assert.strictEqual(desktopReviewedApplication.body.state, 'approved');
+  const miniappCannotUseDesktopReview = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications, desktopRegistration: desktopRoleSession }), '/api/desktop/role-applications/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
+  assert.strictEqual(miniappCannotUseDesktopReview.status, 403);
   const retiredDirectGrant = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
     method: 'PUT', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: { role: 'teacher', profileId: 'teacher-1', studentRelationship: null },
   });

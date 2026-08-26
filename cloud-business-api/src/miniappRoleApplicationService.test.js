@@ -5,7 +5,7 @@ const { createMiniappRoleApplicationService } = require('./miniappRoleApplicatio
 
 const calls = [];
 const applications = [];
-const service = createMiniappRoleApplicationService({
+  const service = createMiniappRoleApplicationService({
   now: () => new Date('2026-08-26T08:00:00.000Z'),
   randomId: () => 'role_application_0001',
   cloudAccount: {
@@ -57,6 +57,7 @@ const service = createMiniappRoleApplicationService({
     profileMode: 'existing',
     bindingHint: 'teacher profile 1',
   });
+  assert.ok(!Object.hasOwn(service, 'listSubmitted') && !Object.hasOwn(service, 'review'), 'miniapp role application service must not expose approval operations');
   assert.deepStrictEqual(submitted, {
     state: 'submitted',
     application: {
@@ -95,19 +96,20 @@ const service = createMiniappRoleApplicationService({
     () => service.submit({ token: 'teacher-ticket', idempotencyKey: 'role-application-formal-1', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher-profile-1' }),
     error => error.code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED',
   );
-  const pending = await service.listSubmitted({ token: 'super-admin-ticket' });
-  assert.strictEqual(pending.applications.length, 2);
-  const reviewed = await service.review({
-    token: 'super-admin-ticket', applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1',
+  const desktopPending = await service.listSubmittedForDesktop({ actor: { accountId: 'account-super-admin', roles: ['super_admin'] } });
+  assert.strictEqual(desktopPending.applications.length, 2, 'desktop super-admin review must use its own verified session, not a miniapp ticket');
+  await assert.rejects(
+    () => service.listSubmittedForDesktop({ actor: { accountId: 'account-teacher', roles: ['teacher'] } }),
+    error => error.code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED',
+  );
+  const desktopReviewed = await service.reviewForDesktop({
+    actor: { accountId: 'account-super-admin', roles: ['super_admin'] },
+    applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1',
   });
-  assert.strictEqual(reviewed.state, 'approved');
+  assert.strictEqual(desktopReviewed.state, 'approved');
   assert.deepStrictEqual(calls.at(-1), ['review', {
     applicationId: 'role_application_0001', decision: 'approved', profileId: 'teacher-1',
     reviewedAt: '2026-08-26T08:00:00.000Z', reviewerAccountId: 'account-super-admin',
   }]);
-  await assert.rejects(
-    () => service.review({ token: 'visitor-ticket', applicationId: 'role_application_0001', decision: 'rejected', profileId: null }),
-    error => error.code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED',
-  );
   console.log('miniapp role application service checks passed');
 })();

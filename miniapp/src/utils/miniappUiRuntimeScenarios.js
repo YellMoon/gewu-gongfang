@@ -44,7 +44,6 @@ const runtimeScenarios = Object.freeze([
   scenario('question-visitor-preview', 'pages/question-bank/index', 'visitor', 'visitor', 'visitor-preview', '题目预览', ['visitor']),
   scenario('assets-super-admin-import', 'pages/assets/index', 'super_admin', 'super_admin', 'import-task', '导入财务数据', ['super-admin-path', 'limited-write']),
   scenario('settings-super-admin-online', 'pages/settings/index', 'super_admin', 'super_admin', 'online', '网络已连接', ['super-admin-path']),
-  scenario('settings-super-admin-role-review', 'pages/settings/index', 'super_admin', 'super_admin', 'role-application-review', '身份申请处理', ['super-admin-path', 'limited-write'], 'role-applications'),
   scenario('settings-student-online', 'pages/settings/index', 'student', 'student', 'online', '网络已连接', ['student-path']),
   scenario('settings-visitor', 'pages/settings/index', 'visitor', 'visitor', 'visitor-account-application', '申请身份绑定', ['visitor']),
   scenario('forbidden-student', 'pages/forbidden/index', 'student', 'student', 'blocked-module', '暂无权限访问此功能', ['student-path', 'permission-denied']),

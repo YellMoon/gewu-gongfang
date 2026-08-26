@@ -19,7 +19,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (desktopTeacherSelfRegistration && typeof desktopTeacherSelfRegistration.register !== 'function') throw new TypeError('desktopTeacherSelfRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
-  if (miniappRoleApplications && (typeof miniappRoleApplications.mine !== 'function' || typeof miniappRoleApplications.submit !== 'function')) throw new TypeError('miniappRoleApplications is invalid');
+  if (miniappRoleApplications && (typeof miniappRoleApplications.mine !== 'function' || typeof miniappRoleApplications.submit !== 'function'
+    || typeof miniappRoleApplications.listSubmittedForDesktop !== 'function' || typeof miniappRoleApplications.reviewForDesktop !== 'function')) throw new TypeError('miniappRoleApplications is invalid');
   if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
@@ -710,29 +711,28 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
     }
   });
-  app.get('/api/miniapp/role-applications/review/pending', async (request, response) => {
-    if (!miniappRoleApplications) return businessUnavailable(response);
-    const token = sessionToken(request);
-    if (!token) return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+  app.get('/api/desktop/role-applications/pending', async (request, response) => {
+    if (!miniappRoleApplications || !desktopRegistration) return businessUnavailable(response);
     try {
-      const result = await miniappRoleApplications.listSubmitted({ token });
+      const result = await miniappRoleApplications.listSubmittedForDesktop({ actor: await desktopQuestionContext(request) });
       response.json({ ok: true, ...result });
-    } catch (error) {
-      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+    } catch (_) {
+      response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
     }
   });
-  app.post('/api/miniapp/role-applications/:applicationId/review', async (request, response) => {
-    if (!miniappRoleApplications) return businessUnavailable(response);
-    const token = sessionToken(request);
+  app.post('/api/desktop/role-applications/:applicationId/review', async (request, response) => {
+    if (!miniappRoleApplications || !desktopRegistration) return businessUnavailable(response);
     const applicationId = String(request.params.applicationId || '').trim();
     const body = exactBody(request.body, ['decision', 'profileId']);
-    if (!token || !applicationId || !body) return businessInputInvalid(response);
+    if (!applicationId || !body) return businessInputInvalid(response);
     try {
-      const result = await miniappRoleApplications.review({ token, applicationId, ...body });
+      const result = await miniappRoleApplications.reviewForDesktop({
+        actor: await desktopQuestionContext(request), applicationId, ...body,
+      });
       response.json({ ok: true, ...result });
     } catch (error) {
       if (error && error.code === 'CLOUD_ROLE_APPLICATION_INVALID') return businessInputInvalid(response);
-      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
     }
   });
   app.get('/api/business/miniapp-projection', async (request, response) => {

@@ -470,6 +470,41 @@ function createDesktopAuthorityRuntime({
     throw lastError || runtimeError('AUTHORITY_PROJECTION_UNAVAILABLE');
   }
 
+  function cloudBusinessUrl(pathname) {
+    const base = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
+    if (!base) throw runtimeError('CLOUD_ROLE_APPLICATION_AUTHORITY_UNAVAILABLE');
+    return `${base}${pathname}`;
+  }
+
+  async function listRoleApplications(input) {
+    assertOnlineSubmission();
+    const token = cloudSessionToken(input);
+    const body = await requestJson(cloudBusinessUrl('/api/desktop/role-applications/pending'), {
+      method: 'GET', headers: { authorization: `Bearer ${token}` },
+    });
+    if (!body?.ok || !Array.isArray(body.applications)) throw runtimeError('CLOUD_ROLE_APPLICATION_RESPONSE_INVALID');
+    return JSON.parse(JSON.stringify(body.applications));
+  }
+
+  async function reviewRoleApplication(applicationId, review, input) {
+    assertOnlineSubmission();
+    const id = String(applicationId || '').trim();
+    const decision = String(review?.decision || '').trim();
+    const profileId = review?.profileId === null ? null : String(review?.profileId || '').trim();
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(id) || !['approved', 'rejected'].includes(decision)
+      || (decision === 'approved' && !profileId) || (decision === 'rejected' && review?.profileId !== null)) {
+      throw runtimeError('CLOUD_ROLE_APPLICATION_INPUT_INVALID');
+    }
+    const token = cloudSessionToken(input);
+    const body = await requestJson(cloudBusinessUrl(`/api/desktop/role-applications/${encodeURIComponent(id)}/review`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ decision, profileId }),
+    });
+    if (!body?.ok || typeof body.application !== 'object' || !body.application) throw runtimeError('CLOUD_ROLE_APPLICATION_RESPONSE_INVALID');
+    return JSON.parse(JSON.stringify({ state: body.state, application: body.application }));
+  }
+
   return Object.freeze({
     appendDraft: async input => {
       assertLocalDraftSession();
@@ -486,7 +521,9 @@ function createDesktopAuthorityRuntime({
     },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
+    listRoleApplications,
     readProjection,
+    reviewRoleApplication,
     submit: async (id, input) => {
       assertOnlineSubmission();
       const client = await getClient();
