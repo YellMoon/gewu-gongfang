@@ -26,10 +26,11 @@ import {
   StopOutlined,
   RedoOutlined,
   DownloadOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import type { Question } from '../types';
 import { normalizeQuestionType } from '../constants/questionTypes';
-import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY } from '../components/QuestionBasket';
+import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY, setQuestionBasket } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionRenderer from '../components/QuestionRenderer';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
@@ -238,6 +239,18 @@ const QuestionBankPaper: React.FC = () => {
 
   const move = (index: number, offset: number) => {
     setItems(prev => moveItem(prev, index, offset));
+  };
+
+  const removeItem = (uid: string) => {
+    const target = items.find(item => item.uid === uid);
+    if (!target) return;
+    const currentBasketIds: string[] = (window as any).dbService?.getQuestionBasketIds?.()
+      || JSON.parse(localStorage.getItem(QUESTION_BASKET_STORAGE_KEY) || '[]');
+    setQuestionBasket(currentBasketIds.filter(id => id !== target.question.id));
+    const selectedIds: string[] = JSON.parse(localStorage.getItem(QUESTION_BASKET_SELECTED_STORAGE_KEY) || '[]');
+    localStorage.setItem(QUESTION_BASKET_SELECTED_STORAGE_KEY, JSON.stringify(selectedIds.filter(id => id !== target.question.id)));
+    setItems(prev => prev.filter(item => item.uid !== uid));
+    messageApi.success(String.fromCharCode(24050, 31227, 39064, 30446));
   };
 
   const applyAutoGroup = () => {
@@ -469,6 +482,7 @@ const QuestionBankPaper: React.FC = () => {
                   <Space direction="vertical">
                     <Button icon={<ArrowUpOutlined />} onClick={() => move(row.index, -1)} disabled={row.index === 0} />
                     <Button icon={<ArrowDownOutlined />} onClick={() => move(row.index, 1)} disabled={row.index === items.length - 1} />
+                    <Button danger icon={<DeleteOutlined />} onClick={() => removeItem(row.uid)}>{String.fromCharCode(31227, 38500)}</Button>
                     <Button icon={<PlusOutlined />} onClick={() => updateItem(row.uid, { sectionTitle: '综合题' })}>综合</Button>
                   </Space>
                 </div>
