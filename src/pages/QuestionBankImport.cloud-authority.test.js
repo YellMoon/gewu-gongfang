@@ -11,6 +11,9 @@ assert.ok(source.includes('createFromWord') && source.includes('prepareDrafts') 
   'the import page must create cloud import tasks then create only native local drafts after explicit confirmation');
 assert.ok(source.includes('formatCloudImportValidationCode') && source.includes('formula_needs_review'),
   'cloud parser warnings must be shown as user-facing import review guidance');
+assert.ok(source.includes('import_task_id: prepared.taskId') && source.includes('import_item_id: item.itemId')
+  && source.includes('import_item_index: item.itemIndex') && source.includes('import_content_hash: item.contentHash'),
+  'prepared native drafts must retain only immutable cloud import binding metadata, never media bytes');
 assert.ok(!source.includes('/parse-word') && !source.includes('/imports/check') && !source.includes('/commit`'),
   'the retired parser and direct legacy import endpoints must not remain in the active import page');
 assert.ok(!source.includes('prepareQuestionAssetsForStorage') && !source.includes('reconcileQuestionLocalStore'),

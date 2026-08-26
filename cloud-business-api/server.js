@@ -40,6 +40,7 @@ const { createPaperExportWorkerRuntime } = require('./src/paperExportWorkerRunti
 const { renderPaperExport } = require('./src/paperExportRenderer');
 const { createEncryptedStorageRelayRepository } = require('./src/encryptedStorageRelayRepository');
 const { createMiniappArtifactDeliveryRepository } = require('./src/miniappArtifactDeliveryRepository');
+const { createQuestionAssetDeliveryRepository } = require('./src/questionAssetDeliveryRepository');
 const { createPersonalAssetImportRepository } = require('./src/personalAssetImportRepository');
 const { BOOTSTRAP_SUPER_ADMIN_PHONE, resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
@@ -372,10 +373,14 @@ const miniappRoleApplications = miniappCloudAccount
 const miniappArtifactDeliveries = createMiniappArtifactDeliveryRepository({
   query: (text, values) => pool.query(text, values),
 });
+const questionAssetDeliveries = createQuestionAssetDeliveryRepository({
+  query: (text, values) => pool.query(text, values),
+});
 const storageAgent = createStorageAgentRuntimeFromEnvironment({
   env: process.env,
   query: (text, values) => pool.query(text, values),
   artifactDeliveries: miniappArtifactDeliveries,
+  questionAssetDeliveries,
 });
 const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
@@ -439,6 +444,7 @@ const app = createCloudBusinessApp({
   miniappCloudAccount,
   miniappRoleApplications,
   miniappArtifactDeliveries,
+  questionAssetDeliveries,
   personalAssetImports,
   storageAgent,
   questionAuthority,

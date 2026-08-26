@@ -89,6 +89,7 @@ const COLLECTIONS = Object.freeze({
       'rich_content', 'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids',
       'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school',
       'edit_status', 'has_image', 'has_formula',
+      'import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash',
     ],
   },
   taxonomy_systems: {

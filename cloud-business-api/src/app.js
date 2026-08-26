@@ -2,7 +2,7 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -26,6 +26,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
   if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
   if (miniappArtifactDeliveries && (typeof miniappArtifactDeliveries.request !== 'function' || typeof miniappArtifactDeliveries.status !== 'function' || typeof miniappArtifactDeliveries.download !== 'function')) throw new TypeError('miniappArtifactDeliveries is invalid');
+  if (questionAssetDeliveries && (typeof questionAssetDeliveries.request !== 'function' || typeof questionAssetDeliveries.status !== 'function' || typeof questionAssetDeliveries.download !== 'function')) throw new TypeError('questionAssetDeliveries is invalid');
   if (personalAssetImports && typeof personalAssetImports.import !== 'function') throw new TypeError('personalAssetImports is invalid');
   if (questionImportTasks && (typeof questionImportTasks.create !== 'function' || typeof questionImportTasks.read !== 'function' || typeof questionImportTasks.prepareDrafts !== 'function' || typeof questionImportTasks.completeSourceAndStoreCandidates !== 'function')) throw new TypeError('questionImportTasks is invalid');
   if (encryptedStorageRelay && typeof encryptedStorageRelay.create !== 'function') throw new TypeError('encryptedStorageRelay is invalid');
@@ -38,6 +39,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   app.use('/api/desktop/question-imports', express.json({ limit: '90mb' }));
   app.use('/api/storage-agent/question-imports', express.json({ limit: '90mb' }));
   app.use('/api/storage-agent/artifact-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
+  app.use('/api/storage-agent/question-asset-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.get('/api/health', async (_request, response) => {
     try {
@@ -657,6 +659,48 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       businessUnavailable(response);
     }
   });
+  app.post('/api/desktop/question-bank/assets/:assetKey/delivery', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null || !exactBody(request.body, [])) return businessUnavailable(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, assetKey: String(request.params.assetKey || '') });
+      response.status(delivery.status === 'ready' ? 200 : 202).json({ ok: true, delivery });
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
+  app.get('/api/desktop/question-bank/asset-deliveries/:deliveryId', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      const delivery = await questionAssetDeliveries.status({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      response.json({ ok: true, delivery });
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
+  app.get('/api/desktop/question-bank/asset-deliveries/:deliveryId/download', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
+      const asset = await questionAssetDeliveries.download({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      response.set('Cache-Control', 'no-store');
+      response.set('Content-Type', asset.mimeType);
+      response.set('Content-Length', String(asset.bytes.length));
+      response.send(asset.bytes);
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_READY'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
   app.get('/api/desktop/session-context', async (request, response) => {
     if (!desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') return desktopUnavailable(response);
     const token = sessionToken(request);
@@ -757,7 +801,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (limitedQuestionBrowse) {
         const questionLimit = actor.status === 'visitor' ? 20 : 200;
         const result = await query(
-          `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem,c.answer,c.explanation,c.options_json AS options,
+          `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem,c.answer,c.explanation,c.options_json AS options,c.rich_content_json AS "richContent",
                   COALESCE((
                     SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
                     FROM business.question_taxonomy_nodes n
@@ -777,6 +821,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
           answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
           explanation: question.explanation === null || question.explanation === undefined ? '' : String(question.explanation),
           options: Array.isArray(question.options) ? question.options : [],
+          richContent: question.richContent && typeof question.richContent === 'object' ? question.richContent : null,
           difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
           source: typeof question.source === 'string' ? question.source : '',
           knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
@@ -789,6 +834,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
         explanation: question.analysis === null || question.analysis === undefined ? '' : String(question.analysis),
         options: Array.isArray(question.options) ? question.options : [],
+        richContent: question.rich_content && typeof question.rich_content === 'object' ? question.rich_content : null,
         difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
         source: typeof question.source === 'string' ? question.source : '',
         knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
@@ -796,6 +842,45 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       })) });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
+  });
+  app.post('/api/business/miniapp-question-assets/:assetKey/delivery', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null || !exactBody(request.body, [])) return businessUnavailable(response);
+    try {
+      const actor = await miniappBusinessContext(request);
+      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, assetKey: String(request.params.assetKey || '') });
+      response.status(delivery.status === 'ready' ? 200 : 202).json({ ok: true, delivery });
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
+  app.get('/api/business/miniapp-question-asset-deliveries/:deliveryId', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const actor = await miniappBusinessContext(request);
+      const delivery = await questionAssetDeliveries.status({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      response.json({ ok: true, delivery });
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
+      businessUnavailable(response);
+    }
+  });
+  app.get('/api/business/miniapp-question-asset-deliveries/:deliveryId/download', async (request, response) => {
+    if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const actor = await miniappBusinessContext(request);
+      const asset = await questionAssetDeliveries.download({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      response.set('Cache-Control', 'no-store');
+      response.set('Content-Type', asset.mimeType);
+      response.set('Content-Length', String(asset.bytes.length));
+      response.send(asset.bytes);
+    } catch (error) {
+      if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_READY'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error && error.code === 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') return businessInputInvalid(response);
       businessUnavailable(response);
     }
   });
@@ -1497,6 +1582,31 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!token || !agentId || !leaseToken || !Buffer.isBuffer(request.body) || request.body.length < 1 || request.body.length > (64 * 1024 * 1024)) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     try {
       const delivery = await storageAgent.uploadArtifactDelivery({ agentId, token, deliveryId: String(request.params.deliveryId || ''), leaseToken, bytes: request.body });
+      response.json({ ok: true, delivery });
+    } catch (error) {
+      storageAgentFailure(response, error);
+    }
+  });
+  app.post('/api/storage-agent/question-asset-deliveries/lease', async (request, response) => {
+    if (!storageAgent || typeof storageAgent.leaseQuestionAssetDelivery !== 'function') return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const body = exactBody(request.body, ['agentId']);
+    const token = storageAgentToken(request);
+    if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const delivery = await storageAgent.leaseQuestionAssetDelivery({ agentId: body.agentId, token });
+      response.json({ ok: true, delivery });
+    } catch (error) {
+      storageAgentFailure(response, error);
+    }
+  });
+  app.post('/api/storage-agent/question-asset-deliveries/:deliveryId/upload', async (request, response) => {
+    if (!storageAgent || typeof storageAgent.uploadQuestionAssetDelivery !== 'function') return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const token = storageAgentToken(request);
+    const agentId = String(request.get('x-gewu-storage-agent-id') || '');
+    const leaseToken = String(request.get('x-gewu-storage-agent-lease-token') || '');
+    if (!token || !agentId || !leaseToken || !Buffer.isBuffer(request.body) || request.body.length < 1 || request.body.length > (64 * 1024 * 1024)) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const delivery = await storageAgent.uploadQuestionAssetDelivery({ agentId, token, deliveryId: String(request.params.deliveryId || ''), leaseToken, bytes: request.body });
       response.json({ ok: true, delivery });
     } catch (error) {
       storageAgentFailure(response, error);

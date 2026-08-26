@@ -112,6 +112,39 @@ export const miniappCloudBusinessApi = {
       return { success: false, error: error?.errMsg || error?.message || '\u9898\u5e93\u6d4f\u89c8\u670d\u52a1\u6682\u4e0d\u53ef\u7528' };
     }
   },
+  async requestQuestionAssetDelivery(token: string, assetKey: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
+    if (typeof token !== 'string' || !token.trim() || !/^[0-9a-f]{64}$/.test(String(assetKey || ''))) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-question-assets/${encodeURIComponent(assetKey)}/delivery`), method: 'POST', data: {},
+        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.delivery) return { success: true, data: response.data as { ok: true; delivery: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud question asset request failed' };
+    } catch (error: any) { return { success: false, error: error?.errMsg || error?.message || 'Cloud question asset request unavailable' }; }
+  },
+  async readQuestionAssetDelivery(token: string, deliveryId: string): Promise<ApiResponse<{ ok: true; delivery: any }>> {
+    if (typeof token !== 'string' || !token.trim() || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(String(deliveryId || ''))) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.request({
+        url: cloudBusinessUrl(`/api/business/miniapp-question-asset-deliveries/${encodeURIComponent(deliveryId)}`), method: 'GET',
+        header: { Authorization: `Bearer ${token}`, 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, timeout: REQUEST_TIMEOUT, dataType: 'json',
+      });
+      if (response.statusCode >= 200 && response.statusCode < 300 && (response.data as any)?.ok === true && (response.data as any)?.delivery) return { success: true, data: response.data as { ok: true; delivery: any } };
+      return { success: false, code: (response.data as any)?.code, error: (response.data as any)?.error || 'Cloud question asset status failed' };
+    } catch (error: any) { return { success: false, error: error?.errMsg || error?.message || 'Cloud question asset status unavailable' }; }
+  },
+  async downloadQuestionAssetDelivery(token: string, deliveryId: string): Promise<ApiResponse<{ tempFilePath: string }>> {
+    if (typeof token !== 'string' || !token.trim() || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(String(deliveryId || ''))) return { success: false, error: 'Cloud session required' };
+    try {
+      const response = await Taro.downloadFile({
+        url: cloudBusinessUrl(`/api/business/miniapp-question-asset-deliveries/${encodeURIComponent(deliveryId)}/download`),
+        header: { Authorization: `Bearer ${token}` }, timeout: REQUEST_TIMEOUT,
+      });
+      if (response.statusCode === 200 && typeof response.tempFilePath === 'string' && response.tempFilePath) return { success: true, data: { tempFilePath: response.tempFilePath } };
+      return { success: false, error: `Cloud question asset download failed (${response.statusCode})` };
+    } catch (error: any) { return { success: false, error: error?.errMsg || error?.message || 'Cloud question asset download unavailable' }; }
+  },
   async createPaperExportTask(token: string, taskType: 'paper-export-word' | 'paper-export-pdf', request: any, idempotencyKey: string): Promise<ApiResponse<{ ok: true; task: any }>> {
     if (typeof token !== 'string' || !token.trim() || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) return { success: false, error: 'Cloud session required' };
     try {

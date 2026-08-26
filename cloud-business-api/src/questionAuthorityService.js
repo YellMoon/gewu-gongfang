@@ -59,7 +59,34 @@ const LEGACY_QUESTION_FIELDS = new Set([
   'content', 'stem', 'options', 'answer', 'analysis', 'explanation', 'rich_content',
   'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids', 'source', 'year', 'grade',
   'semester', 'exam_type', 'region', 'school', 'edit_status', 'has_image', 'has_formula',
+  'import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash',
 ]);
+
+function importBinding(value) {
+  const binding = exact(value, ['taskId', 'itemId', 'itemIndex', 'contentHash']);
+  const taskId = text(binding.taskId, { max: 160 });
+  const itemId = text(binding.itemId, { max: 160 });
+  if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)
+    || !/^question_import_item_[A-Za-z0-9_-]{1,128}$/.test(itemId)
+    || !Number.isSafeInteger(binding.itemIndex) || binding.itemIndex < 0
+    || typeof binding.contentHash !== 'string' || !/^[0-9a-f]{64}$/.test(binding.contentHash)) {
+    throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  }
+  return { taskId, itemId, itemIndex: binding.itemIndex, contentHash: binding.contentHash };
+}
+
+function legacyImportBinding(record) {
+  const fields = ['import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash'];
+  const present = fields.some(field => Object.hasOwn(record, field) && record[field] !== undefined);
+  if (!present) return null;
+  if (!fields.every(field => Object.hasOwn(record, field))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return importBinding({
+    taskId: record.import_task_id,
+    itemId: record.import_item_id,
+    itemIndex: record.import_item_index,
+    contentHash: record.import_content_hash,
+  });
+}
 
 function optionalLegacyText(value, max = 1048576) {
   if (value === undefined || value === null || value === '') return null;
@@ -144,6 +171,7 @@ function legacyQuestion(record) {
       taxonomyIds: taxonomyMap(record.taxonomy_ids),
     },
     hasFormula: Boolean(record.has_formula),
+    importBinding: legacyImportBinding(record),
   };
 }
 
@@ -329,7 +357,11 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const request = exact(input, ['tenantId', 'actor', 'question']);
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
-      const question = exact(request.question, ['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula']);
+      if (!plainObject(request.question)
+        || Reflect.ownKeys(request.question).some(key => !['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula', 'importBinding'].includes(key))) {
+        throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      }
+      const question = request.question;
       const id = text(question.id, { max: 128 });
       const subject = text(question.subject, { max: 128 });
       const questionType = text(question.questionType, { max: 128 });
@@ -341,7 +373,68 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const richContent = json(question.richContent, { nullable: true });
       const taxonomy = json(question.taxonomy);
       const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
-      const result = await currentQuery(
+      const binding = question.importBinding === undefined || question.importBinding === null ? null : importBinding(question.importBinding);
+      const result = await currentQuery(binding ?
+        `WITH import_item AS (
+           SELECT item.import_task_id,item.item_index,item.candidate_json
+             FROM business.question_import_tasks task
+             JOIN business.question_import_items item ON item.import_task_id=task.task_id
+            WHERE task.task_id=$15 AND task.tenant_id=$2 AND task.account_id=$6 AND task.status='drafts_prepared'
+              AND item.item_id=$16 AND item.item_index=$17 AND item.content_hash=$18 AND item.status='draft_prepared'
+         ), all_media AS (
+           SELECT media.media_id
+             FROM import_item item
+             JOIN business.question_import_media_objects media
+               ON media.import_task_id=item.import_task_id AND media.item_index=item.item_index
+         ), verified_media AS (
+           SELECT DISTINCT ON (media.media_id)
+             media.media_id,media.asset_index,media.object_id,media.object_version,media.expected_sha256,media.expected_bytes,media.mime_type,asset.value AS asset
+             FROM import_item item
+             JOIN business.question_import_media_objects media
+               ON media.import_task_id=item.import_task_id AND media.item_index=item.item_index
+             JOIN business.storage_task_receipts receipt ON receipt.task_id=media.storage_task_id
+             JOIN LATERAL jsonb_array_elements(COALESCE(item.candidate_json->'assets','[]'::jsonb)) asset(value)
+               ON (asset.value->>'assetIndex') ~ '^[0-9]+$' AND (asset.value->>'assetIndex')::integer=media.asset_index
+            WHERE media.storage_state='verified'
+              AND asset.value->>'contentHash'=media.expected_sha256
+              AND asset.value->>'mimeType'=media.mime_type
+              AND (asset.value->>'sizeBytes') ~ '^[0-9]+$'
+              AND (asset.value->>'sizeBytes')::bigint=media.expected_bytes
+         ), binding_complete AS (
+           SELECT item.import_task_id,item.item_index
+             FROM import_item item
+            WHERE (SELECT count(*) FROM all_media)=(SELECT count(*) FROM verified_media)
+         ), inserted_question AS (
+           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula)
+           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8 FROM binding_complete
+           RETURNING id,status
+         ), inserted_content AS (
+           INSERT INTO business.question_contents (question_id,tenant_id,stem,answer,explanation,options_json,rich_content_json,content_hash)
+           SELECT $1,$2,$9,$10,$11,$12::jsonb,$13::jsonb,$14 FROM inserted_question
+           RETURNING version,content_hash AS "contentHash"
+         ), inserted_assets AS (
+           INSERT INTO business.question_assets (id,tenant_id,question_id,asset_type,file_name,mime_type,size_bytes,storage_object_id,storage_object_version,content_hash,state)
+           SELECT concat('question_asset_import_',$1,'_',media.asset_index),$2,$1,
+             COALESCE(NULLIF(media.asset->>'assetType',''),'image'),NULLIF(media.asset->>'fileName',''),media.mime_type,media.expected_bytes,
+             media.object_id,media.object_version,media.expected_sha256,'verified'
+             FROM inserted_question question CROSS JOIN verified_media media
+           RETURNING id
+         ), submitted_item AS (
+           UPDATE business.question_import_items item SET status='submitted',updated_at=transaction_timestamp()
+             FROM inserted_question question
+            WHERE item.import_task_id=$15 AND item.item_id=$16 AND item.item_index=$17 AND item.content_hash=$18 AND item.status='draft_prepared'
+           RETURNING item.item_id
+         ), submitted_task AS (
+           UPDATE business.question_import_tasks task SET status='submitted',phase='submitted',updated_at=transaction_timestamp()
+            WHERE task.task_id=$15 AND EXISTS (SELECT 1 FROM submitted_item)
+              AND NOT EXISTS (
+                SELECT 1 FROM business.question_import_items pending
+                 WHERE pending.import_task_id=task.task_id AND pending.item_id<>$16
+                   AND pending.status IN ('accepted','warning','draft_prepared')
+              )
+           RETURNING task.task_id
+         ) SELECT q.id,q.status,c.version,c."contentHash" FROM inserted_question q CROSS JOIN inserted_content c CROSS JOIN submitted_item`
+        :
         `WITH inserted_question AS (
            INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula)
            VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
@@ -351,7 +444,8 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
            SELECT $1,$2,$9,$10,$11,$12::jsonb,$13::jsonb,$14 FROM inserted_question
            RETURNING version,content_hash AS "contentHash"
          ) SELECT q.id,q.status,c.version,c."contentHash" FROM inserted_question q CROSS JOIN inserted_content c`,
-        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash],
+        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash,
+          ...(binding ? [binding.taskId, binding.itemId, binding.itemIndex, binding.contentHash] : [])],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
       return questionRow(result.rows[0]);

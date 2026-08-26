@@ -62,17 +62,17 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
 
   const previews = await request(app, '/api/business/miniapp-question-previews', { headers });
   assert.strictEqual(previews.status, 200);
-  assert.deepStrictEqual(previews.body, { ok: true, questions: [{ id: 'q-1', subject: 'physics', type: 'single_choice', stemPreview: 'Visible stem', answer: 'A', explanation: 'Why A', options: ['A. force'], difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
+  assert.deepStrictEqual(previews.body, { ok: true, questions: [{ id: 'q-1', subject: 'physics', type: 'single_choice', stemPreview: 'Visible stem', answer: 'A', explanation: 'Why A', options: ['A. force'], richContent: null, difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
   assert.deepStrictEqual(questionCalls[0], { tenantId: 'default', actor: { accountId: 'miniapp-super-admin-1', status: 'active', roles: ['super_admin'], profile: null }, limit: 200 });
 
   const studentPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-student.signature' } });
   assert.strictEqual(studentPreviews.status, 200);
-  assert.deepStrictEqual(studentPreviews.body, { ok: true, questions: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', answer: 'A', explanation: 'Published explanation', options: [], difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
+  assert.deepStrictEqual(studentPreviews.body, { ok: true, questions: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', answer: 'A', explanation: 'Published explanation', options: [], richContent: null, difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
   assert.deepStrictEqual(browseQueries.at(-1), ['default', 200], 'student browsing retains the formal question limit');
 
   const visitorBrowse = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-visitor.signature' } });
   assert.strictEqual(visitorBrowse.status, 200);
-  assert.deepStrictEqual(visitorBrowse.body, { ok: true, questions: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', answer: 'A', explanation: 'Published explanation', options: [], difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
+  assert.deepStrictEqual(visitorBrowse.body, { ok: true, questions: [{ id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem', answer: 'A', explanation: 'Published explanation', options: [], richContent: null, difficulty: 2, source: '2026 city mock', knowledgeLabels: ['Dynamics'], status: 'published' }] });
   assert.deepStrictEqual(browseQueries.at(-1), ['default', 20], 'visitor browsing is limited by question count while retaining answer and explanation');
 
   const created = await request(app, '/api/business/miniapp-paper-export-tasks', {

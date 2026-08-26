@@ -68,8 +68,16 @@ export async function getQuestionAssetDataUrl(keyOrRef: string): Promise<string>
     request.onsuccess = () => resolve(request.result as StoredAsset | undefined);
     request.onerror = () => reject(request.error);
   });
-  if (result?.dataUrl) dataUrlCache.set(key, result.dataUrl);
-  return result?.dataUrl || '';
+  if (result?.dataUrl) {
+    dataUrlCache.set(key, result.dataUrl);
+    return result.dataUrl;
+  }
+  const resolver = (globalThis as any).window?.desktopIdentitySessionProvider?.readCloudQuestionAsset;
+  if (typeof resolver !== 'function') return '';
+  const dataUrl = await resolver(key);
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return '';
+  await storeQuestionAsset(key, dataUrl);
+  return dataUrl;
 }
 
 export async function prepareQuestionAssetsForStorage<T extends Record<string, any>>(question: T): Promise<T> {

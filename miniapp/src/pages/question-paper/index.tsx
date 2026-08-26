@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Input, Button, Picker, ScrollView } from '@tarojs/components';
+import { View, Text, Input, Button, Picker, ScrollView, RichText } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { miniappCloudBusinessApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
@@ -10,7 +10,7 @@ import * as workflow from '../../utils/questionPaperWorkflow';
 import './index.scss';
 
 type PaperAction = 'paper-export-word' | 'paper-export-pdf';
-interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; status: string; }
+interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; source?: string; knowledgeLabels?: string[]; richContent?: any; status: string; }
 interface PaperItem {
   id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number;
   answer?: string; explanation?: string; options?: any[]; source?: string; knowledgeLabels?: string[];
@@ -27,6 +27,9 @@ function sectionFor(type: string) {
   return sections[type] || '综合题';
 }
 function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
+const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
+function questionAssetKeys(value: unknown): string[] { return Array.from((typeof value === 'string' ? value : JSON.stringify(value || {})).matchAll(QUESTION_ASSET_REF)).map(match => match[1]); }
+function miniRichNodes(value: string, paths: Record<string, string>) { return String(value || '').replace(QUESTION_ASSET_REF, (_ref, assetKey) => paths[assetKey] || ''); }
 function formatQuestionOption(option: any, index: number) {
   if (typeof option === 'string') return option;
   if (!option || typeof option !== 'object') return '';
@@ -55,6 +58,7 @@ function restoreItems(questions: QuestionPreview[], ids: string[], saved: PaperD
 
 export default function QuestionPaperPage() {
   const basketRuntimeRef = useRef<any>(null);
+  const assetRetryRef = useRef(0);
   if (!basketRuntimeRef.current) basketRuntimeRef.current = createQuestionBasketRuntime({
     readIdentity: () => Taro.getStorageSync('user_info'),
     read: (key: string) => storage.get<string[]>(key),
@@ -78,6 +82,7 @@ export default function QuestionPaperPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<PaperAction | null>(null);
   const [taskBusyId, setTaskBusyId] = useState('');
+  const [assetPaths, setAssetPaths] = useState<Record<string, string>>({});
   const identity = Taro.getStorageSync('user_info');
   const canBuildPaper = canUserSubmitMiniappWrite(identity, 'question-paper', ['question-paper']);
   const editorKey = basketState.scopeKey ? 'question_paper_editor_v1_' + encodeURIComponent(basketState.scopeKey) : '';
@@ -102,6 +107,25 @@ export default function QuestionPaperPage() {
     if (saved && typeof saved.title === 'string' && saved.title.trim()) setTitle(saved.title);
     if (saved?.answerPosition === 'after' || saved?.answerPosition === 'end') setAnswerPosition(saved.answerPosition);
     if (formulaOptions.some(option => option.value === saved?.formulaMode)) setFormulaMode(saved!.formulaMode);
+    const assetKeys = Array.from(new Set(nextItems.flatMap(item => [
+      ...questionAssetKeys(item.stemPreview), ...questionAssetKeys(item.options), ...questionAssetKeys(item.answer), ...questionAssetKeys(item.explanation),
+    ])));
+    const token = authSessionRuntime.capture().token;
+    if (assetKeys.length && token) {
+      const loaded = await Promise.all(assetKeys.map(async assetKey => {
+        const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, assetKey);
+        const delivery = prepared.data?.delivery;
+        if (!prepared.success || !delivery || delivery.status !== 'ready') return null;
+        const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, delivery.deliveryId);
+        return downloaded.success && downloaded.data?.tempFilePath ? [assetKey, downloaded.data.tempFilePath] as const : null;
+      }));
+      const next = Object.fromEntries(loaded.filter(Boolean) as Array<readonly [string, string]>);
+      if (Object.keys(next).length) setAssetPaths(current => ({ ...current, ...next }));
+      if (Object.keys(next).length < assetKeys.length && assetRetryRef.current < 5) {
+        assetRetryRef.current += 1;
+        setTimeout(() => { void reload(); }, 1500);
+      }
+    }
     setLoading(false);
   };
   useEffect(() => { reload(); }, []);
@@ -225,7 +249,7 @@ export default function QuestionPaperPage() {
     <View className='paper-tools'><Button className='compact-button' onClick={regroup} disabled={loading || !items.length}>{'按题型分组'}</Button><Button className='compact-button' onClick={reload}>{'刷新题目'}</Button></View>
     {loading ? <View className='paper-empty'><Text>{'正在加载已选题目'}</Text></View> : !items.length ? <View className='paper-empty'><Text>{'试题篮中暂无题目'}</Text><Button onClick={() => Taro.navigateBack()}>{'返回题库选题'}</Button></View> : <ScrollView className='paper-item-list' scrollY>{items.map((item, index) => <View key={item.id} className='paper-item'>
       <View className='paper-item-head'><Text>{String(index + 1) + '. ' + item.subject}</Text><View className='paper-order-actions'><Button size='mini' disabled={index === 0} onClick={() => moveItem(index, -1)}>{'上移'}</Button><Button size='mini' disabled={index === items.length - 1} onClick={() => moveItem(index, 1)}>{'下移'}</Button><Button size='mini' onClick={() => removeItem(item.id)}>{'移除'}</Button></View></View>
-      <Text className='paper-stem'>{item.stemPreview}</Text>{Array.isArray(item.options) && item.options.map((option, optionIndex) => { const content = formatQuestionOption(option, optionIndex); return content ? <Text key={String(optionIndex)} className='paper-option'>{content}</Text> : null; })}
+      <RichText className='paper-stem' nodes={miniRichNodes(item.stemPreview, assetPaths)} />{Array.isArray(item.options) && item.options.map((option, optionIndex) => { const content = formatQuestionOption(option, optionIndex); return content ? <RichText key={String(optionIndex)} className='paper-option' nodes={miniRichNodes(content, assetPaths)} /> : null; })}
       {(item.source || (item.knowledgeLabels || []).length) ? <View className='paper-question-tags'>{item.source ? <Text>{'\u6765\u6e90\uff1a' + item.source}</Text> : null}{(item.knowledgeLabels || []).map(label => <Text key={label}>{label}</Text>)}</View> : null}
       {answerPosition === 'after' ? <View className='paper-answer'><Text>{'\u7b54\u6848\uff1a' + (item.answer || '\u6682\u65e0')}</Text>{item.explanation ? <Text>{'\u89e3\u6790\uff1a' + item.explanation}</Text> : null}</View> : null}
       <View className='paper-edit-row'><Picker mode='selector' range={sectionOptions} value={Math.max(0, sectionOptions.indexOf(item.sectionTitle))} onChange={event => updateItem(item.id, { sectionTitle: sectionOptions[Number(event.detail.value)] })}><View className='section-picker'>{item.sectionTitle || '\u9009\u62e9\u5206\u7ec4'}</View></Picker><Input className='section-input' placeholder={'\u81ea\u5b9a\u4e49\u5206\u7ec4'} onInput={event => { const value = event.detail.value.trim(); if (value) updateItem(item.id, { sectionTitle: value }); }} /><Input className='score-input' type='number' value={String(item.score)} onInput={event => updateItem(item.id, { score: Math.max(0, Number(event.detail.value) || 0) })} /><Text>{'\u5206'}</Text></View>

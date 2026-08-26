@@ -20,6 +20,7 @@ export const RichAssetImage: React.FC<RichAssetImageProps> = ({ src, assetKey, a
     displaySrc: '',
     failed: false,
   });
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     if (!persisted) return undefined;
@@ -29,10 +30,13 @@ export const RichAssetImage: React.FC<RichAssetImageProps> = ({ src, assetKey, a
         if (alive) setResolution({ source, displaySrc, failed: false });
       })
       .catch(() => {
-        if (alive) setResolution({ source, displaySrc: '', failed: true });
+        if (!alive) return;
+        const pending = retry < 5;
+        setResolution({ source, displaySrc: '', failed: !pending });
+        if (pending) window.setTimeout(() => { if (alive) setRetry(value => value + 1); }, 1000);
       });
     return () => { alive = false; };
-  }, [persisted, source]);
+  }, [persisted, source, retry]);
 
   if (!persisted) return source ? <img {...imageProps} src={source} alt={alt} /> : null;
   if (resolution.source === source && resolution.displaySrc) {

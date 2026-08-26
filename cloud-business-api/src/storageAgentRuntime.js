@@ -3,7 +3,7 @@
 const { createStorageAgentService } = require('./storageAgentService');
 const { createStorageTaskRepository } = require('./storageTaskRepository');
 
-function createStorageAgentRuntimeFromEnvironment({ env = process.env, query, artifactDeliveries = null, randomToken, randomId, now } = {}) {
+function createStorageAgentRuntimeFromEnvironment({ env = process.env, query, artifactDeliveries = null, questionAssetDeliveries = null, randomToken, randomId, now } = {}) {
   if (!env || typeof env !== 'object' || typeof query !== 'function') return null;
   const agentId = env.CLOUD_STORAGE_AGENT_ID;
   const token = env.CLOUD_STORAGE_AGENT_TOKEN;
@@ -14,6 +14,7 @@ function createStorageAgentRuntimeFromEnvironment({ env = process.env, query, ar
       token,
       repository: createStorageTaskRepository({ query, randomToken, randomId, now }),
       artifactDeliveries,
+      questionAssetDeliveries,
     });
   } catch (_) {
     return null;

@@ -191,6 +191,15 @@ const DesktopIdentityGate: React.FC = () => {
               currentSession,
             });
           },
+          readCloudQuestionAsset: async (assetKey: string) => {
+            const currentSession = onlineSessionRef.current;
+            if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            return client.readCloudQuestionAsset({
+              baseUrl: identityBaseUrl,
+              currentSession,
+              assetKey,
+            });
+          },
           updateCloudSchedule: async (input: any) => {
             const currentSession = onlineSessionRef.current;
             if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');

@@ -111,6 +111,39 @@ async function main() {
   assert.strictEqual(calls.filter(call => call[0].includes('INSERT INTO business.questions')).length, 2,
     'the initial direct-create test and one command create are the only question inserts');
 
+  const importedCommandPayload = {
+    record: {
+      id: 'question-imported-1', subject: 'physics', type: 'single_choice', difficulty: 3,
+      content: 'Imported cloud text', options: [], answer: 'A', analysis: '',
+      knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
+      import_task_id: 'question_import_task_demo',
+      import_item_id: 'question_import_item_demo_0',
+      import_item_index: 0,
+      import_content_hash: 'd'.repeat(64),
+    },
+  };
+  const importedCommandHash = crypto.createHash('sha256')
+    .update(stableJson({ type: 'question.create.v1', payload: importedCommandPayload }), 'utf8').digest('hex');
+  const importedReceipt = await service.submitDesktopDraft({
+    tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+    command: {
+      commandId: 'question-imported-command-1', payloadHash: importedCommandHash,
+      type: 'question.create.v1', payload: importedCommandPayload,
+    },
+  });
+  assert.strictEqual(importedReceipt.status, 'committed');
+  const importedWrite = calls.find(call => call[0].includes('question_import_media_objects'));
+  assert.ok(importedWrite, 'an imported draft must bind the NAS objects inside the cloud question transaction');
+  assert.ok(importedWrite[0].includes('storage_task_receipts') && importedWrite[0].includes('business.question_assets'),
+    'only NAS-receipted media may become cloud question assets');
+  assert.ok(importedWrite[0].includes("task.status='drafts_prepared'") && importedWrite[0].includes("item.status='draft_prepared'"),
+    'the binding must accept only the user-confirmed import item');
+  assert.ok(importedWrite[0].includes("SET status='submitted'") && importedWrite[0].includes("phase='submitted'"),
+    'a bound import item must become non-reusable in the same transaction');
+  assert.deepStrictEqual(importedWrite[1].slice(-4), [
+    'question_import_task_demo', 'question_import_item_demo_0', 0, 'd'.repeat(64),
+  ]);
+
   let taxonomySequence = 0;
   async function submitTaxonomy(type, payload) {
     taxonomySequence += 1;

@@ -18,6 +18,10 @@ async function main() {
       lease: async input => { calls.push(['lease-delivery', input]); return { deliveryId: 'delivery_12345678' }; },
       upload: async input => { calls.push(['upload-delivery', input]); return { deliveryId: input.deliveryId, status: 'ready' }; },
     },
+    questionAssetDeliveries: {
+      lease: async input => { calls.push(['lease-question-asset-delivery', input]); return { deliveryId: 'question_asset_delivery_12345678' }; },
+      upload: async input => { calls.push(['upload-question-asset-delivery', input]); return { deliveryId: input.deliveryId, status: 'ready' }; },
+    },
   });
   assert.deepStrictEqual(
     await service.download({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }),
@@ -44,12 +48,22 @@ async function main() {
     await service.uploadArtifactDelivery({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length', deliveryId: 'delivery_12345678', leaseToken: 'lease-token-test-value', bytes: Buffer.from('artifact-bytes') }),
     { deliveryId: 'delivery_12345678', status: 'ready' },
   );
+  assert.deepStrictEqual(
+    await service.leaseQuestionAssetDelivery({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length' }),
+    { deliveryId: 'question_asset_delivery_12345678' },
+  );
+  assert.deepStrictEqual(
+    await service.uploadQuestionAssetDelivery({ agentId: 'storage-agent-1', token: 'storage-agent-test-token-with-sufficient-length', deliveryId: 'question_asset_delivery_12345678', leaseToken: 'lease-token-test-value', bytes: Buffer.from('image-bytes') }),
+    { deliveryId: 'question_asset_delivery_12345678', status: 'ready' },
+  );
   assert.deepStrictEqual(calls, [
     ['download', { agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }],
     ['lease', { agentId: 'storage-agent-1' }],
     ['complete', { agentId: 'storage-agent-1', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
     ['lease-delivery', { agentId: 'storage-agent-1' }],
     ['upload-delivery', { agentId: 'storage-agent-1', deliveryId: 'delivery_12345678', leaseToken: 'lease-token-test-value', bytes: Buffer.from('artifact-bytes') }],
+    ['lease-question-asset-delivery', { agentId: 'storage-agent-1' }],
+    ['upload-question-asset-delivery', { agentId: 'storage-agent-1', deliveryId: 'question_asset_delivery_12345678', leaseToken: 'lease-token-test-value', bytes: Buffer.from('image-bytes') }],
   ]);
   await assert.rejects(
     () => service.authorize({ agentId: 'other-agent', token: 'storage-agent-test-token-with-sufficient-length' }),

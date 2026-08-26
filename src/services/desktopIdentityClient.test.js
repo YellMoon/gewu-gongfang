@@ -229,6 +229,15 @@ async function main() {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text' }] }) };
       }
+      if (url === `https://cloud.test/api/desktop/question-bank/assets/${'a'.repeat(64)}/delivery`) {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, json: async () => ({ ok: true, delivery: { deliveryId: 'question_asset_delivery_12345678', status: 'ready', mimeType: 'image/png' } }) };
+      }
+      if (url === 'https://cloud.test/api/desktop/question-bank/asset-deliveries/question_asset_delivery_12345678/download') {
+        assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
+        return { ok: true, arrayBuffer: async () => Uint8Array.from([137, 80, 78, 71]).buffer };
+      }
       if (url === 'https://cloud.test/api/business/schedules/schedule-cloud-1') {
         if (options.method === 'DELETE') {
           assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
@@ -508,6 +517,11 @@ async function main() {
   });
   assert.deepStrictEqual(cloudQuestions, [{ id: 'question-cloud-1', content: 'Cloud question text' }]);
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/desktop/question-bank/questions?limit=200');
+  const cloudQuestionAsset = await unifiedCloudClient.readCloudQuestionAsset({
+    baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, assetKey: 'a'.repeat(64),
+  });
+  assert.strictEqual(cloudQuestionAsset, 'data:image/png;base64,iVBORw==');
+  assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/desktop/question-bank/asset-deliveries/question_asset_delivery_12345678/download');
   const updatedCloudSchedule = await unifiedCloudClient.updateCloudSchedule({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1',
     expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',

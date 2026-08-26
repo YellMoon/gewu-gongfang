@@ -117,6 +117,28 @@ const assert = require('assert');
   });
   assert.strictEqual(JSON.stringify(asset).includes('full_card_number'), false);
 
+  const importedQuestion = createAuthorityDraftFromLocalMutation({
+    collection: 'questions',
+    action: 'create',
+    recordId: 'question-imported-1',
+    value: {
+      subject: 'physics', type: 'single_choice', content: 'Imported question', options: [], answer: 'A', analysis: '',
+      import_task_id: 'question_import_task_demo',
+      import_item_id: 'question_import_item_demo_0',
+      import_item_index: 0,
+      import_content_hash: 'a'.repeat(64),
+      assets: [{ data_url: 'data:image/png;base64,forbidden' }],
+    },
+  });
+  assert.deepStrictEqual(importedQuestion.payload.record, {
+    id: 'question-imported-1', subject: 'physics', type: 'single_choice', content: 'Imported question', options: [], answer: 'A', analysis: '',
+    import_task_id: 'question_import_task_demo',
+    import_item_id: 'question_import_item_demo_0',
+    import_item_index: 0,
+    import_content_hash: 'a'.repeat(64),
+  });
+  assert.strictEqual(JSON.stringify(importedQuestion).includes('data:image'), false);
+
   assert.throws(
     () => createAuthorityDraftFromLocalMutation({
       collection: 'users',

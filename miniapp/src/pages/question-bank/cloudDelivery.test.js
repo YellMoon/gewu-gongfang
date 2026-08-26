@@ -16,6 +16,8 @@ assert.match(source, /expandedQuestionId === question\.id/, 'only a selected que
 assert.match(source, /expanded \? <View className='question-preview-answer'>/, 'answers must be conditional on the selected question drawer');
 assert.match(source, /question\.source/, 'question cards must show the cloud-provided source label');
 assert.match(source, /question\.knowledgeLabels/, 'question cards must show cloud-resolved knowledge labels');
+assert.match(source, /requestQuestionAssetDelivery/, 'question cards must fetch NAS-backed media only through the cloud delivery boundary');
+assert.match(source, /<RichText/, 'question cards must render resolved rich-media content instead of raw asset references');
 assert.match(source, /createQuestionBasketRuntime/, 'question selection must use a scoped basket rather than an unscoped local array');
 assert.match(source, /pages\/question-paper\/index/, 'the basket entry must open the dedicated paper editor');
 assert.match(paperSource, /miniappCloudBusinessApi\.createPaperExportTask/, 'Word and PDF tasks must use the limited cloud export route');
@@ -31,6 +33,8 @@ assert.match(paperSource, /item\.options/, 'the paper editor must retain the sel
 assert.match(paperSource, /answerPosition === 'after'/, 'the paper editor must render answers immediately after questions when that option is selected');
 assert.match(paperSource, /参考答案与解析/, 'the paper editor must render the desktop-equivalent answer sheet when answers are placed at the end');
 assert.match(paperSource, /knowledgeLabels/, 'the paper editor must retain the selected question knowledge labels');
+assert.match(paperSource, /requestQuestionAssetDelivery/, 'the paper editor must fetch the same cloud-backed media as the question bank');
+assert.match(paperSource, /<RichText/, 'the paper editor must render resolved question media');
 assert.match(paperSource, /layout/, 'the edited layout must be submitted with the cloud export task');
 for (const retired of ['authorityProjectionApi', 'createPaperTaskV2', 'getMiniappTaskResult', 'cancelMiniappTask', 'readQuestionPreview', 'hostBaseUrl', 'targetHostDeviceId']) {
   assert.ok(!source.includes(retired) && !paperSource.includes(retired), `question workflow must not retain the retired host-dependent ${retired}`);

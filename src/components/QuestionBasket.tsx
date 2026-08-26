@@ -1,16 +1,14 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, Checkbox, Drawer, Empty, Modal, Space, Tag, message } from 'antd';
 import { useRef } from 'react';
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
   DeleteOutlined,
-  FileWordOutlined,
   ShoppingCartOutlined,
 } from '@ant-design/icons';
 import type { Question } from '../types';
 import { normalizeQuestionType } from '../constants/questionTypes';
-import { downloadPaperDocx } from '../services/docxExporter';
 import './QuestionBasket.css';
 
 export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
@@ -160,32 +158,6 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
     setIds(next);
   };
 
-  const exportWord = async () => {
-    if (questions.length === 0) {
-      message.warning('请先加入试题');
-      return;
-    }
-    const targetIds = selectedIds.length > 0 ? selectedIds : ids;
-    const exportItems = targetIds
-      .map(id => questions.find(question => question.id === id))
-      .filter((question): question is Question => !!question)
-      .map((question, index) => ({
-        id: question.id,
-        number: index + 1,
-        sectionTitle: normalizeQuestionType(question.type),
-        score: Number((question as any).score || 5),
-        question,
-      }));
-    await downloadPaperDocx({
-      title: `试题篮组卷_${new Date().toISOString().slice(0, 10)}`,
-      questions: exportItems,
-      answerPosition: 'separate',
-      includeSource: true,
-      includeAnswerArea: true,
-    });
-    message.success(`已导出 ${exportItems.length} 题到 Word`);
-  };
-
   const goPaper = () => {
     const targetIds = selectedIds.length > 0 ? selectedIds : ids;
     localStorage.setItem(QUESTION_BASKET_SELECTED_STORAGE_KEY, JSON.stringify(targetIds));
@@ -270,7 +242,6 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
             <Space>
               <Button danger icon={<DeleteOutlined />} onClick={removeSelected} disabled={selectedIds.length === 0}>删除</Button>
               <Button onClick={clearAll} disabled={ids.length === 0}>清空</Button>
-              <Button icon={<FileWordOutlined />} onClick={exportWord} disabled={ids.length === 0}>导出 Word</Button>
               <Button type="primary" onClick={goPaper} disabled={ids.length === 0}>去组卷</Button>
             </Space>
           </div>

@@ -219,6 +219,16 @@ async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, tok
   return responseData(response);
 }
 
+function dataUrlFromBytes(bytes, mimeType) {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = '';
+  for (let offset = 0; offset < view.length; offset += 8192) {
+    binary += String.fromCharCode(...view.subarray(offset, Math.min(offset + 8192, view.length)));
+  }
+  if (typeof btoa !== 'function') throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_RESPONSE_INVALID');
+  return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
 function defaultSessionStore() {
   return {
     save: value => saveDesktopAuthorizationSession(value),
@@ -688,6 +698,26 @@ export function createDesktopIdentityClient({
     return data.questions;
   }
 
+  async function readCloudQuestionAsset({ baseUrl, currentSession, assetKey } = {}) {
+    if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
+    const normalizedAssetKey = String(assetKey || '').trim();
+    if (!/^[0-9a-f]{64}$/.test(normalizedAssetKey)) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_INPUT_INVALID');
+    const delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/assets/${encodeURIComponent(normalizedAssetKey)}/delivery`, {
+      method: 'POST', body: {}, token: currentSession.token,
+    })).delivery;
+    if (!delivery || typeof delivery.deliveryId !== 'string' || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(delivery.deliveryId)
+      || delivery.status !== 'ready' || typeof delivery.mimeType !== 'string' || !delivery.mimeType) {
+      throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_PENDING');
+    }
+    const response = await fetchImpl(`${normalizedBaseUrl(baseUrl)}/api/desktop/question-bank/asset-deliveries/${encodeURIComponent(delivery.deliveryId)}/download`, {
+      headers: { Accept: delivery.mimeType, Authorization: `Bearer ${currentSession.token}` },
+    });
+    if (!response?.ok || typeof response.arrayBuffer !== 'function') throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_UNAVAILABLE');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_RESPONSE_INVALID');
+    return dataUrlFromBytes(bytes, delivery.mimeType);
+  }
+
   async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes, pricings } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -1071,6 +1101,7 @@ export function createDesktopIdentityClient({
     enrollPasswordForVerifiedRegistration,
     registerTeacherForVerifiedRegistration,
     listCloudBusinessProjection,
+    readCloudQuestionAsset,
     listCloudQuestions,
     listCloudSchedules,
     lock,

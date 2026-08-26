@@ -394,6 +394,12 @@ export interface Question {
   analysis?: string;
   formulas?: Array<string | Record<string, any>>; // 公式
   assets?: any[];
+  // Immutable cloud import binding.  These references contain no media bytes;
+  // the cloud command consumes them only to attach NAS-verified objects.
+  import_task_id?: string;
+  import_item_id?: string;
+  import_item_index?: number;
+  import_content_hash?: string;
   rich_content?: import('./questionRichContent').QuestionRichDocument | null;
   tags?: string[];                 // 标签
   source?: string;                 // 来源

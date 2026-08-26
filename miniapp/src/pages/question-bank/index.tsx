@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Input, Button, ScrollView } from '@tarojs/components';
+import { View, Text, Input, Button, ScrollView, RichText } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { miniappCloudBusinessApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
@@ -20,7 +20,19 @@ interface QuestionPreview {
   difficulty?: number;
   source?: string;
   knowledgeLabels?: string[];
+  richContent?: any;
   status: string;
+}
+
+const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
+
+function questionAssetKeys(value: unknown): string[] {
+  const source = typeof value === 'string' ? value : JSON.stringify(value || {});
+  return Array.from(source.matchAll(QUESTION_ASSET_REF)).map(match => match[1]);
+}
+
+function miniRichNodes(value: string, paths: Record<string, string>) {
+  return String(value || '').replace(QUESTION_ASSET_REF, (_ref, assetKey) => paths[assetKey] || '');
 }
 
 function formatQuestionOption(option: any, index: number) {
@@ -40,6 +52,7 @@ function questionTypeLabel(type: string) {
 
 export default function QuestionBankPage() {
   const basketRuntimeRef = useRef<any>(null);
+  const assetRetryRef = useRef(0);
   if (!basketRuntimeRef.current) {
     basketRuntimeRef.current = createQuestionBasketRuntime({
       readIdentity: () => Taro.getStorageSync('user_info'),
@@ -54,6 +67,7 @@ export default function QuestionBankPage() {
   const [searchText, setSearchText] = useState('');
   const [previewState, setPreviewState] = useState<PreviewState>('loading');
   const [previewMessage, setPreviewMessage] = useState('');
+  const [assetPaths, setAssetPaths] = useState<Record<string, string>>({});
 
   const identity = Taro.getStorageSync('user_info');
   const canBuildPaper = canUserSubmitMiniappWrite(identity, 'question-paper', ['question-paper']);
@@ -83,9 +97,27 @@ export default function QuestionBankPage() {
       setPreviewMessage(forbidden ? '请联系数据负责人确认题库权限' : '请联网后重试');
       return;
     }
-    const list = Array.isArray(response.data?.questions) ? response.data.questions : [];
+    const list: QuestionPreview[] = Array.isArray(response.data?.questions) ? response.data.questions as QuestionPreview[] : [];
     setQuestions(list);
     setPreviewState(list.length ? 'ready' : 'empty');
+    const assetKeys = Array.from(new Set(list.flatMap((question: QuestionPreview) => [
+      ...questionAssetKeys(question.stemPreview), ...questionAssetKeys(question.options), ...questionAssetKeys(question.answer), ...questionAssetKeys(question.explanation), ...questionAssetKeys(question.richContent),
+    ])));
+    if (!assetKeys.length) return;
+    const token = sessionToken();
+    const loaded = await Promise.all(assetKeys.map(async assetKey => {
+      const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, assetKey);
+      const delivery = prepared.data?.delivery;
+      if (!prepared.success || !delivery || delivery.status !== 'ready') return null;
+      const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, delivery.deliveryId);
+      return downloaded.success && downloaded.data?.tempFilePath ? [assetKey, downloaded.data.tempFilePath] as const : null;
+    }));
+    const next = Object.fromEntries(loaded.filter(Boolean) as Array<readonly [string, string]>);
+    if (Object.keys(next).length) setAssetPaths(current => ({ ...current, ...next }));
+    if (Object.keys(next).length < assetKeys.length && assetRetryRef.current < 5) {
+      assetRetryRef.current += 1;
+      setTimeout(() => { void loadQuestions(); }, 1500);
+    }
   };
   useEffect(() => { loadQuestions(); }, []);
   useEffect(() => {
@@ -143,10 +175,10 @@ export default function QuestionBankPage() {
         const inBasket = basketState.ids.includes(question.id);
         return <View key={question.id} className={'question-preview-item ' + (inBasket ? 'selected' : '')} onClick={() => setExpandedQuestionId(expanded ? null : question.id)}>
           <View className='question-preview-meta'><Text>{question.subject}</Text><Text>{questionTypeLabel(question.type)}</Text>{question.difficulty ? <Text>{'难度 ' + question.difficulty}</Text> : null}</View>
-          <Text className='question-preview-stem'>{question.stemPreview}</Text>
+          <RichText className='question-preview-stem' nodes={miniRichNodes(question.stemPreview, assetPaths)} />
           {Array.isArray(question.options) && question.options.map((option, index) => {
             const content = formatQuestionOption(option, index);
-            return content ? <Text key={String(index)} className='question-preview-stem option-line'>{content}</Text> : null;
+            return content ? <RichText key={String(index)} className='question-preview-stem option-line' nodes={miniRichNodes(content, assetPaths)} /> : null;
           })}
           {(question.source || (question.knowledgeLabels || []).length) ? <View className='question-detail-tags'>
             {question.source ? <Text>{'来源：' + question.source}</Text> : null}

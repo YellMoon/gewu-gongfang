@@ -29,5 +29,22 @@ const { createStorageWorker } = require('./worker');
     ['read', { objectId: 'obj_paper_12345678', version: 1, sha256: expectedSha256, bytes: bytes.length }],
     ['upload', { deliveryId: 'delivery_12345678', leaseToken: 'lease-token-with-sufficient-length', bytes }],
   ]);
+  const assetEvents = [];
+  const assetWorker = createStorageWorker({
+    agentPrivateKey: 'unused-by-question-asset-delivery-branch',
+    questionImportParser: { parse: async () => { throw new Error('not used'); } },
+    objectStore: { putVerified: async () => { throw new Error('not used'); }, readVerified: async descriptor => { assetEvents.push(['read', descriptor]); return Buffer.from(bytes); } },
+    client: {
+      lease: async () => null, download: async () => { throw new Error('not used'); }, complete: async () => { throw new Error('not used'); }, reportSourceCandidates: async () => { throw new Error('not used'); },
+      leaseArtifactDelivery: async () => null, uploadArtifactDelivery: async () => { throw new Error('not used'); },
+      leaseQuestionAssetDelivery: async () => ({ deliveryId: 'question_asset_delivery_12345678', assetId: 'question_asset_import_question_1_0', objectId: 'obj_import_media_12345678', objectVersion: 1, expectedSha256, expectedBytes: bytes.length, mimeType: 'image/png', leaseToken: 'lease-token-with-sufficient-length', leaseExpiresAt: '2026-08-23T00:15:00.000Z' }),
+      uploadQuestionAssetDelivery: async input => { assetEvents.push(['upload', input]); return { deliveryId: input.deliveryId, status: 'ready' }; },
+    },
+  });
+  assert.deepStrictEqual(await assetWorker.runOnce(), { state: 'question_asset_delivery_uploaded', deliveryId: 'question_asset_delivery_12345678' });
+  assert.deepStrictEqual(assetEvents, [
+    ['read', { objectId: 'obj_import_media_12345678', version: 1, sha256: expectedSha256, bytes: bytes.length }],
+    ['upload', { deliveryId: 'question_asset_delivery_12345678', leaseToken: 'lease-token-with-sufficient-length', bytes }],
+  ]);
   console.log('storage artifact delivery worker checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

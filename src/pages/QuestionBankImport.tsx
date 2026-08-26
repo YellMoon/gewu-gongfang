@@ -816,7 +816,11 @@ const QuestionBankImport: React.FC = () => {
         await createNativeQuestionDraft(db, {
           ...localCandidate, subject: localCandidate.subject || '\u7269\u7406', type: questionTypeFromParser(localCandidate.question_types),
           content: localCandidate.stem || localCandidate.content || '', analysis: localCandidate.analysis || localCandidate.explanation || '',
-          assets, importTaskId: prepared.taskId,
+          assets,
+          import_task_id: prepared.taskId,
+          import_item_id: item.itemId,
+          import_item_index: item.itemIndex,
+          import_content_hash: item.contentHash,
         });
         created++;
       }

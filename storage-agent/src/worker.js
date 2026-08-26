@@ -24,15 +24,26 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
     async runOnce() {
       const task = await client.lease();
       if (task === null) {
-        if (typeof client.leaseArtifactDelivery !== 'function' || typeof client.uploadArtifactDelivery !== 'function') return Object.freeze({ state: 'idle' });
-        const delivery = await client.leaseArtifactDelivery();
+        if (typeof client.leaseArtifactDelivery === 'function' && typeof client.uploadArtifactDelivery === 'function') {
+          const delivery = await client.leaseArtifactDelivery();
+          if (delivery !== null) {
+            const bytes = await objectStore.readVerified({
+              objectId: delivery.objectId, version: delivery.objectVersion, sha256: delivery.expectedSha256, bytes: delivery.expectedBytes,
+            });
+            assertExpected(delivery, bytes);
+            await client.uploadArtifactDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes });
+            return Object.freeze({ state: 'delivery_uploaded', deliveryId: delivery.deliveryId });
+          }
+        }
+        if (typeof client.leaseQuestionAssetDelivery !== 'function' || typeof client.uploadQuestionAssetDelivery !== 'function') return Object.freeze({ state: 'idle' });
+        const delivery = await client.leaseQuestionAssetDelivery();
         if (delivery === null) return Object.freeze({ state: 'idle' });
         const bytes = await objectStore.readVerified({
           objectId: delivery.objectId, version: delivery.objectVersion, sha256: delivery.expectedSha256, bytes: delivery.expectedBytes,
         });
         assertExpected(delivery, bytes);
-        await client.uploadArtifactDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes });
-        return Object.freeze({ state: 'delivery_uploaded', deliveryId: delivery.deliveryId });
+        await client.uploadQuestionAssetDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes });
+        return Object.freeze({ state: 'question_asset_delivery_uploaded', deliveryId: delivery.deliveryId });
       }
       if (task.kind === 'question_import_media') {
         const sourceBytes = await objectStore.readVerified({

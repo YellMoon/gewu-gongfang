@@ -41,6 +41,18 @@ function validArtifactDelivery(value) {
     && typeof value.leaseToken === 'string' && value.leaseToken.length >= 16 && typeof value.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(value.leaseExpiresAt));
 }
 
+function validQuestionAssetDelivery(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
+    && /^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(value.deliveryId || '') && value.status === 'leased'
+    && /^question_asset_[A-Za-z0-9_-]{1,128}$/.test(value.assetId || '')
+    && /^obj_[A-Za-z0-9_-]{1,128}$/.test(value.objectId || '') && Number.isSafeInteger(value.objectVersion) && value.objectVersion > 0
+    && /^[0-9a-f]{64}$/.test(value.expectedSha256 || '') && Number.isSafeInteger(value.expectedBytes) && value.expectedBytes > 0 && value.expectedBytes <= (64 * 1024 * 1024)
+    && typeof value.fileName === 'string' && value.fileName.length > 0 && value.fileName.length <= 512
+    && typeof value.mimeType === 'string' && value.mimeType.length > 0 && value.mimeType.length <= 255
+    && typeof value.expiresAt === 'string' && Number.isFinite(Date.parse(value.expiresAt))
+    && typeof value.leaseToken === 'string' && value.leaseToken.length >= 16 && typeof value.leaseExpiresAt === 'string' && Number.isFinite(Date.parse(value.leaseExpiresAt));
+}
+
 function validSource(source) {
   return Boolean(source) && typeof source === 'object' && !Array.isArray(source) && Object.getPrototypeOf(source) === Object.prototype
     && typeof source.objectId === 'string' && /^obj_[A-Za-z0-9_-]{1,128}$/.test(source.objectId)
@@ -132,6 +144,21 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       if (!/^delivery_[A-Za-z0-9_-]{8,128}$/.test(request.deliveryId || '') || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16
         || !Buffer.isBuffer(request.bytes) || request.bytes.length < 1 || request.bytes.length > (64 * 1024 * 1024)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       const response = exact(await postBytes(`/api/storage-agent/artifact-deliveries/${encodeURIComponent(request.deliveryId)}/upload`, request.bytes, {
+        'x-gewu-storage-agent-id': agentId, 'x-gewu-storage-agent-lease-token': request.leaseToken,
+      }), ['ok', 'delivery']);
+      if (response.ok !== true || !response.delivery || response.delivery.deliveryId !== request.deliveryId || response.delivery.status !== 'ready') throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.delivery;
+    },
+    async leaseQuestionAssetDelivery() {
+      const response = exact(await post('/api/storage-agent/question-asset-deliveries/lease', { agentId }), ['ok', 'delivery']);
+      if (response.ok !== true || (response.delivery !== null && !validQuestionAssetDelivery(response.delivery))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.delivery;
+    },
+    async uploadQuestionAssetDelivery(input) {
+      const request = exact(input, ['deliveryId', 'leaseToken', 'bytes']);
+      if (!/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(request.deliveryId || '') || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16
+        || !Buffer.isBuffer(request.bytes) || request.bytes.length < 1 || request.bytes.length > (64 * 1024 * 1024)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      const response = exact(await postBytes(`/api/storage-agent/question-asset-deliveries/${encodeURIComponent(request.deliveryId)}/upload`, request.bytes, {
         'x-gewu-storage-agent-id': agentId, 'x-gewu-storage-agent-lease-token': request.leaseToken,
       }), ['ok', 'delivery']);
       if (response.ok !== true || !response.delivery || response.delivery.deliveryId !== request.deliveryId || response.delivery.status !== 'ready') throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
