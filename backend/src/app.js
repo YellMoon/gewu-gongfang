@@ -24,9 +24,6 @@ const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
 const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
 const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
 const { createAuthorityCloudRuntime } = require('./services/authorityCloudRuntime');
-const {
-  createMiniappAuthorityProjectionHandler,
-} = require('./routes/miniappAuthorityProjection');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -343,10 +340,6 @@ function createApp(options = {}) {
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);
-  app.get('/api/miniapp/projection', authMiddleware, createMiniappAuthorityProjectionHandler({
-    db: database,
-    projectionStore: authorityProjectionStore,
-  }));
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
 
   // 閿欒澶勭悊
