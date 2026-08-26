@@ -23,6 +23,7 @@ const coursesPage = read('miniapp/src/pages/courses/index.tsx');
 const teachersConfig = display(read('miniapp/src/pages/teachers/index.config.ts'));
 const assetsConfig = display(read('miniapp/src/pages/assets/index.config.ts'));
 const appConfig = read('miniapp/src/app.config.ts');
+const appSource = read('miniapp/src/app.tsx');
 
 const retiredTerms = [
   String.fromCharCode(27491, 24335, 36134, 21495),
@@ -66,6 +67,7 @@ assert.strictEqual((studentDetailPage.match(/\{!isStudent && <View className='in
 assert.ok(coursesPage.includes('{!isStudent && <Text className="price-teacher">'), 'student course views must not render a null or internal teacher-fee amount');
 assert.ok(studentsConfig.includes('\u5b66\u751f\u8d44\u6599') && coursesConfig.includes('\u8bfe\u7a0b\u8d44\u6599') && teachersConfig.includes('\u6559\u5e08\u8d44\u6599'), 'read-only miniapp titles must describe records instead of management');
 assert.ok(assetsConfig.includes('\u4e2a\u4eba\u8d44\u4ea7'), 'the limited-write asset page must identify personal assets');
+assert.ok(appSource.includes("import('./utils/miniappRouteAccess')") && appSource.includes("Taro.reLaunch({ url: '/pages/forbidden/index' })"), 'authenticated deep links must enforce the same module boundary as the role-aware home page');
 
 for (const removedRoute of [
   'pages/admin/users/index',

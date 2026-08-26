@@ -40,24 +40,29 @@ async function initializeAuthenticatedApp(launchOptions: any = {}) {
     Taro.reLaunch({ url: '/pages/login/index' });
     return;
   }
-  await initApp(session, authSessionRuntime);
+  await initApp(session, authSessionRuntime, launchOptions.path);
 }
 
-async function initApp(startupSession: any, authSessionRuntime: any) {
+async function initApp(startupSession: any, authSessionRuntime: any, launchPath = '') {
   const [
-    { fetchPermissions },
+    { fetchPermissions, getEffectiveMiniappAccess },
     { clearBusinessCache, setBusinessCacheIdentity },
     { isVisitorIdentity },
+    { canOpenMiniappRoute },
   ] = await Promise.all([
     import('./utils/permission'),
     import('./utils/storage'),
     import('./utils/accountExperience'),
+    import('./utils/miniappRouteAccess'),
   ]);
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
   const isLimitedIdentity = (identity: any) => isVisitorIdentity(identity);
   if (isLimitedIdentity(startupSession.identity)) {
     clearBusinessCache();
+    if (!canOpenMiniappRoute(launchPath, getEffectiveMiniappAccess(startupSession.identity))) {
+      Taro.reLaunch({ url: '/pages/forbidden/index' });
+    }
     return;
   }
   setBusinessCacheIdentity(startupSession.identity);
@@ -70,6 +75,9 @@ async function initApp(startupSession: any, authSessionRuntime: any) {
 
   if (!authSessionRuntime.isSameSession(startupSession)) return;
   if (isLimitedIdentity(startupSession.identity)) return;
+  if (!canOpenMiniappRoute(launchPath, getEffectiveMiniappAccess(startupSession.identity))) {
+    Taro.reLaunch({ url: '/pages/forbidden/index' });
+  }
 }
 
 export default App;
