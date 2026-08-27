@@ -86,6 +86,11 @@ function taskForSubmission(task, taskId) {
   return { task, pending, alreadySubmittedCount: task.items.length - pending.length };
 }
 
+function commandsForPreparedTask({ task, taskId, subject = '物理' } = {}) {
+  const work = taskForSubmission(task, taskId);
+  return { ...work, commands: work.pending.map(item => questionCommand({ taskId, item, subject })) };
+}
+
 async function submitPreparedTask({ fetchImpl, sessionToken, deviceId, baseUrl, taskId, subject = '物理' } = {}) {
   if (typeof fetchImpl !== 'function' || typeof sessionToken !== 'string' || !sessionToken || typeof deviceId !== 'string' || !deviceId
     || typeof baseUrl !== 'string' || !/^https:\/\/[A-Za-z0-9.-]+(?:\/[^?#]*)?$/u.test(baseUrl) || typeof taskId !== 'string') {
@@ -93,9 +98,8 @@ async function submitPreparedTask({ fetchImpl, sessionToken, deviceId, baseUrl, 
   }
   const taskUrl = `${baseUrl.replace(/\/$/, '')}/api/desktop/question-imports/${encodeURIComponent(taskId)}`;
   const initial = await request(fetchImpl, sessionToken, deviceId, taskUrl);
-  const work = taskForSubmission(initial.task, taskId);
-  for (const item of work.pending) {
-    const command = questionCommand({ taskId, item, subject });
+  const work = commandsForPreparedTask({ task: initial.task, taskId, subject });
+  for (const command of work.commands) {
     await request(fetchImpl, sessionToken, deviceId, `${baseUrl.replace(/\/$/, '')}/api/desktop/question-bank/commands`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command),
     });
@@ -140,7 +144,7 @@ async function runFromEnvironment(env = process.env) {
   }
 }
 
-module.exports = Object.freeze({ questionTypeFromCandidate, recordFromPreparedItem, questionCommand, taskForSubmission, submitPreparedTask, assertMediaVerified, runFromEnvironment });
+module.exports = Object.freeze({ questionTypeFromCandidate, recordFromPreparedItem, questionCommand, taskForSubmission, commandsForPreparedTask, submitPreparedTask, assertMediaVerified, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))

@@ -36,6 +36,8 @@ async function main() {
   assert.strictEqual(command.type, 'question.create.v1');
   assert.strictEqual(command.commandId, `question-import-${CONTENT_HASH.slice(0, 48)}`);
   assert.strictEqual(command.payloadHash, crypto.createHash('sha256').update(stableJson({ type: command.type, payload: command.payload }), 'utf8').digest('hex'));
+  const prepared = subject.commandsForPreparedTask({ task: preparedTask(), taskId: TASK_ID });
+  assert.strictEqual(prepared.commands.length, 1, 'all records must be normalized before the first cloud command is sent');
 
   const calls = [];
   let reads = 0;
