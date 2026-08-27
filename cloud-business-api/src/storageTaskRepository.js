@@ -130,7 +130,7 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
               AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()) OR (import_relay.expires_at > transaction_timestamp())
                 OR (import_media.media_id IS NOT NULL AND media_source.import_task_id IS NOT NULL))
-            ORDER BY task.created_at ASC,task.task_id ASC
+            ORDER BY CASE WHEN import_source.import_task_id IS NOT NULL THEN 0 ELSE 1 END,task.created_at ASC,task.task_id ASC
             FOR UPDATE OF task SKIP LOCKED
             LIMIT 1
          ), leased AS (
