@@ -63,6 +63,13 @@ const { renderPaperExport } = require('./paperExportRenderer');
     assert.ok(richXml.includes(expected), `formal rich content must retain ${expected}`);
   }
   assert.ok(!richXml.includes('E=mc^{2}'), 'formal rich content formulas must not degrade into raw LaTeX');
+  const answerHeadingIndex = richXml.indexOf('\u53c2\u8003\u7b54\u6848');
+  assert.ok(answerHeadingIndex > 0, 'end-position export must contain an answer heading');
+  assert.strictEqual((richXml.slice(0, answerHeadingIndex).match(/<w:drawing>/g) || []).length, 3,
+    'only stem, option and subquestion formulas may appear before the answer heading');
+  const richAnswerIndex = richXml.indexOf('Structured answer');
+  assert.ok(richAnswerIndex < richXml.indexOf('<w:drawing>', richAnswerIndex),
+    'an answer formula must retain its position after its answer text instead of moving into the question body');
   const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
   assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
   console.log('paper export renderer checks passed');

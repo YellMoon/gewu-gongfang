@@ -79,6 +79,75 @@ function richTextOrFallback(value, fallback, formulaMode) {
   return structuredText(value, formulaMode) || stripMarkup(fallback);
 }
 
+const paperLabels = Object.freeze({
+  questions: String.fromCharCode(35797, 39064),
+  answerSheet: String.fromCharCode(21442, 32771, 31572, 26696),
+  answer: String.fromCharCode(31572, 26696, 65306),
+  analysis: String.fromCharCode(35299, 26512, 65306),
+});
+
+function canonicalFormula(value) {
+  if (!isFormula(value)) return '';
+  const attrs = value.attrs && typeof value.attrs === 'object' && !Array.isArray(value.attrs) ? value.attrs : {};
+  return String(value.canonicalLatex || value.canonical_latex || value.latex || attrs.canonicalLatex || attrs.canonical_latex || attrs.latex || '').trim();
+}
+
+function richTokens(value, seen = new Set(), tokens = []) {
+  if (value === null || value === undefined || seen.has(value)) return tokens;
+  if (typeof value === 'string') {
+    const text = stripMarkup(value);
+    if (text) tokens.push({ kind: 'text', text });
+    return tokens;
+  }
+  if (typeof value !== 'object') return tokens;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) richTokens(item, seen, tokens);
+    return tokens;
+  }
+  const latex = canonicalFormula(value);
+  if (latex) {
+    tokens.push({ kind: 'formula', latex });
+    return tokens;
+  }
+  if (value.type === 'text' && typeof value.text === 'string') {
+    const text = stripMarkup(value.text);
+    if (text) tokens.push({ kind: 'text', text });
+    return tokens;
+  }
+  for (const field of ['content', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'blocks']) richTokens(value[field], seen, tokens);
+  return tokens;
+}
+
+function tokensOrFallback(value, fallback) {
+  const tokens = richTokens(value);
+  return tokens.length ? tokens : richTokens(fallback);
+}
+
+function prefixedTokens(prefix, tokens) {
+  const result = tokens.map(token => ({ ...token }));
+  const firstText = result.find(token => token.kind === 'text');
+  if (firstText) firstText.text = prefix + firstText.text;
+  else if (prefix) result.unshift({ kind: 'text', text: prefix });
+  return result;
+}
+
+function suffixedTokens(tokens, suffix) {
+  const result = tokens.map(token => ({ ...token }));
+  const textTokens = result.filter(token => token.kind === 'text');
+  if (textTokens.length) textTokens[textTokens.length - 1].text += suffix;
+  else if (suffix) result.push({ kind: 'text', text: suffix });
+  return result;
+}
+
+function optionTokens(value, index) {
+  if (typeof value === 'string') return prefixedTokens('', tokensOrFallback(value, ''));
+  if (!value || typeof value !== 'object') return [];
+  const label = structuredText(value.label || value.key || value.value || String.fromCharCode(65 + index));
+  const tokens = tokensOrFallback(value.content ?? value.text ?? value.title, '');
+  return prefixedTokens(label ? label + '. ' : '', tokens);
+}
+
 function formulaSvg(latex) {
   try {
     const adaptor = liteAdaptor();
@@ -139,47 +208,54 @@ function questions(value, layout, formulaMode) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
     const sections = richSections(item.richContent);
-    const stem = stripMarkup(item.stem);
-    const richContent = structuredText(richStem(item.richContent), formulaMode);
+    const stemTokens = sections
+      ? tokensOrFallback(sections.stem, item.stem)
+      : richTokens(item.stem).concat(richTokens(item.richContent));
     const sourceOptions = Array.isArray(sections?.options) && sections.options.length ? sections.options : item.options;
     const subQuestions = Array.isArray(sections?.subQuestions) ? sections.subQuestions.map((subQuestion, subQuestionIndex) => ({
       label: structuredText(subQuestion?.label || `(${subQuestionIndex + 1})`, formulaMode),
-      content: structuredText(subQuestion?.content, formulaMode),
-      answer: structuredText(subQuestion?.answer, formulaMode),
-    })).filter(subQuestion => subQuestion.label || subQuestion.content || subQuestion.answer) : [];
-    const formulae = Array.from(new Set([
-      ...collectFormulae(item.richContent),
-      ...collectFormulae(item.options),
-    ]));
+      contentTokens: tokensOrFallback(subQuestion?.content, ''),
+      answerTokens: tokensOrFallback(subQuestion?.answer, ''),
+    })).filter(subQuestion => subQuestion.label || subQuestion.contentTokens.length || subQuestion.answerTokens.length) : [];
     return {
-      id: item.id, number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
-      options: Array.isArray(sourceOptions) ? sourceOptions.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
+      id: item.id, number: index + 1, stemTokens,
+      options: Array.isArray(sourceOptions) ? sourceOptions.map((option, optionIndex) => optionTokens(option, optionIndex)).filter(tokens => tokens.length) : [],
       subQuestions,
-      answer: richTextOrFallback(sections?.answer, item.answer, formulaMode),
-      explanation: richTextOrFallback(sections?.analysis, item.explanation, formulaMode),
+      answerTokens: tokensOrFallback(sections?.answer, item.answer),
+      explanationTokens: tokensOrFallback(sections?.analysis, item.explanation),
       sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
       assets: questionAssets(item.assets),
-      formulae,
     };
   });
 }
 
 async function hydrateMedia(items, resolveQuestionAsset) {
   if (items.some(item => item.assets.length) && typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
+  const hydrateTokens = async tokens => Promise.all(tokens.map(async token => {
+    if (token.kind !== 'formula') return token;
+    const bytes = formulaSvg(token.latex);
+    try {
+      return { ...token, media: { kind: 'formula', bytes, fallbackBytes: await sharp(bytes).png().toBuffer() } };
+    } catch (_) {
+      throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
+    }
+  }));
   return Promise.all(items.map(async item => ({
     ...item,
     media: await Promise.all(item.assets.map(async asset => {
       const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
       if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
       return { ...asset, bytes: Buffer.from(bytes), kind: 'image' };
-    })).then(async media => media.concat(await Promise.all(item.formulae.map(async latex => {
-      const bytes = formulaSvg(latex);
-      try {
-        return { kind: 'formula', bytes, fallbackBytes: await sharp(bytes).png().toBuffer() };
-      } catch (_) {
-        throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
-      }
-    })))),
+    })),
+    stemTokens: await hydrateTokens(item.stemTokens),
+    options: await Promise.all(item.options.map(hydrateTokens)),
+    subQuestions: await Promise.all(item.subQuestions.map(async subQuestion => ({
+      ...subQuestion,
+      contentTokens: await hydrateTokens(subQuestion.contentTokens),
+      answerTokens: await hydrateTokens(subQuestion.answerTokens),
+    }))),
+    answerTokens: await hydrateTokens(item.answerTokens),
+    explanationTokens: await hydrateTokens(item.explanationTokens),
   })));
 }
 
@@ -226,10 +302,64 @@ function bodyRows(items, answerPosition) {
   return rows;
 }
 
+function wordMediaRow(media) {
+  return new Paragraph({ children: [new ImageRun({
+    data: media.bytes,
+    type: media.kind === 'formula' ? 'svg' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
+    ...(media.kind === 'formula' ? { fallback: { data: media.fallbackBytes, type: 'png' } } : {}),
+    transformation: media.kind === 'formula' ? { width: 240, height: 72 } : { width: 420, height: 280 },
+  })] });
+}
+
+function appendWordTokens(rows, tokens, prefix = '') {
+  let nextPrefix = prefix;
+  for (const token of tokens || []) {
+    if (token.kind === 'text') {
+      rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix + token.text })] }));
+      nextPrefix = '';
+    } else if (token.kind === 'formula' && token.media) {
+      if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
+      nextPrefix = '';
+      rows.push(wordMediaRow(token.media));
+    }
+  }
+  if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
+}
+
+function orderedAnswerRows(item, prefix = '') {
+  const rows = [];
+  for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
+  appendWordTokens(rows, item.answerTokens, prefix + paperLabels.answer);
+  appendWordTokens(rows, item.explanationTokens, prefix + paperLabels.analysis);
+  return rows;
+}
+
+function orderedBodyRows(items, answerPosition) {
+  const rows = [new Paragraph({ children: [new TextRun({ text: paperLabels.questions, bold: true })] })];
+  let previousSection = '';
+  for (const item of items) {
+    if (item.sectionTitle && item.sectionTitle !== previousSection) {
+      rows.push(new Paragraph({ children: [new TextRun({ text: item.sectionTitle, bold: true })] }));
+      previousSection = item.sectionTitle;
+    }
+    const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+    appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ');
+    for (const tokens of item.options) appendWordTokens(rows, tokens);
+    for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
+    for (const media of item.media || []) rows.push(wordMediaRow(media));
+    if (answerPosition === 'after') rows.push(...orderedAnswerRows(item));
+  }
+  if (answerPosition !== 'after') {
+    rows.push(new Paragraph({ children: [new TextRun({ text: paperLabels.answerSheet, bold: true })] }));
+    for (const item of items) rows.push(...orderedAnswerRows(item, String(item.number) + '. '));
+  }
+  return rows;
+}
+
 async function wordBytes(input, items) {
   const document = new Document({ sections: [{ children: [
     new Paragraph({ children: [new TextRun({ text: input.title, bold: true, size: 32 })] }),
-    ...bodyRows(items, input.answerPosition),
+    ...orderedBodyRows(items, input.answerPosition),
   ] }] });
   return Buffer.from(await Packer.toBuffer(document));
 }
@@ -283,10 +413,75 @@ function pdfBytes(input, items) {
   });
 }
 
+function drawPdfMedia(document, media) {
+  try {
+    if (media.kind === 'formula') {
+      SVGtoPDF(document, media.bytes.toString('utf8'), document.x, document.y, { width: 280 });
+      document.moveDown(2);
+    } else document.image(media.bytes, { fit: [480, 360] }).moveDown(0.5);
+  } catch (_) {
+    throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+  }
+}
+
+function drawPdfTokens(document, tokens, prefix = '', size = 10) {
+  let nextPrefix = prefix;
+  for (const token of tokens || []) {
+    if (token.kind === 'text') {
+      document.fontSize(size).text(nextPrefix + token.text).moveDown(0.25);
+      nextPrefix = '';
+    } else if (token.kind === 'formula' && token.media) {
+      if (nextPrefix) document.fontSize(size).text(nextPrefix).moveDown(0.25);
+      nextPrefix = '';
+      drawPdfMedia(document, token.media);
+    }
+  }
+  if (nextPrefix) document.fontSize(size).text(nextPrefix).moveDown(0.25);
+}
+
+function drawPdfAnswers(document, item, prefix = '') {
+  for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
+  drawPdfTokens(document, item.answerTokens, prefix + paperLabels.answer);
+  drawPdfTokens(document, item.explanationTokens, prefix + paperLabels.analysis);
+}
+
+function orderedPdfBytes(input, items) {
+  return new Promise((resolve, reject) => {
+    const document = new PDFDocument({ size: 'A4', margin: 48, compress: false });
+    const font = pdfFontPath();
+    if (!font) return reject(failure('CLOUD_PAPER_RENDER_FONT_UNAVAILABLE'));
+    const chunks = [];
+    document.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    document.on('error', reject);
+    document.on('end', () => resolve(Buffer.concat(chunks)));
+    document.font(font);
+    document.fontSize(18).text(input.title);
+    document.moveDown();
+    let previousSection = '';
+    for (const item of items) {
+      if (item.sectionTitle && item.sectionTitle !== previousSection) {
+        document.fontSize(13).text(item.sectionTitle).moveDown(0.25);
+        previousSection = item.sectionTitle;
+      }
+      const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+      drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', 11);
+      for (const tokens of item.options) drawPdfTokens(document, tokens);
+      for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.contentTokens, subQuestion.label);
+      for (const media of item.media || []) drawPdfMedia(document, media);
+      if (input.answerPosition === 'after') drawPdfAnswers(document, item);
+    }
+    if (input.answerPosition !== 'after') {
+      document.moveDown().fontSize(13).text(paperLabels.answerSheet);
+      for (const item of items) drawPdfAnswers(document, item, String(item.number) + '. ');
+    }
+    document.end();
+  });
+}
+
 async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   const current = request(input);
   const items = await hydrateMedia(questions(input.snapshot, current.layout, current.formulaMode), resolveQuestionAsset);
-  const bytes = current.format === 'word' ? await wordBytes(current, items) : await pdfBytes(current, items);
+  const bytes = current.format === 'word' ? await wordBytes(current, items) : await orderedPdfBytes(current, items);
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 

@@ -11,6 +11,15 @@ function indirectObject(text, objectNumber, generation, start) {
   return end < 0 ? null : text.slice(start, end + 'endobj'.length);
 }
 
+function dictionaryObject(value, objectNumber, generation) {
+  const marker = `${objectNumber} ${generation} obj`;
+  if (!value || !value.startsWith(marker)) return null;
+  const body = value.slice(marker.length, -'endobj'.length).trim();
+  if (!body.startsWith('<<')) return null;
+  const end = body.indexOf('>>');
+  return end < 0 ? null : body.slice(0, end + 2);
+}
+
 function parseXref(text, offset) {
   const lines = text.slice(offset).split(/\r?\n/);
   if (lines.shift() !== 'xref') return null;
@@ -45,7 +54,8 @@ function assertPageTree(text, xref, root) {
     if (!entry || entry.generation !== ref.generation || entry.offset < 0 || entry.offset >= text.length) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     const marker = `${ref.objectNumber} ${ref.generation} obj`;
     if (!text.startsWith(marker, entry.offset)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
-    const object = indirectObject(text, ref.objectNumber, ref.generation, entry.offset);
+    const rawObject = indirectObject(text, ref.objectNumber, ref.generation, entry.offset);
+    const object = dictionaryObject(rawObject, ref.objectNumber, ref.generation);
     if (!object) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     return object;
   };
