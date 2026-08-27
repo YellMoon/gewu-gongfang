@@ -38,7 +38,7 @@ import {
   cancelPaperExportTask, downloadPaperExportTask, loadPaperExportTasks, refreshPaperExportTask,
   refreshPendingPaperExportTasks, retryPaperExportTask, submitPaperExportTask,
 } from '../services/paperExportTaskService';
-import type { AnswerPosition, FormulaExportMode, PaperArtifactFormat, PaperExportTaskRecord } from '../services/paperExportTaskService';
+import type { AnswerPosition, PaperArtifactFormat, PaperExportTaskRecord } from '../services/paperExportTaskService';
 import { getPaperExportTaskPresentation } from '../services/paperExportTaskPresentation.mjs';
 import './QuestionBankPaper.css';
 
@@ -151,7 +151,7 @@ const QuestionBankPaper: React.FC = () => {
   const [items, setItems] = useState<PaperQuestion[]>([]);
   const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('end');
   const [includeDraft, setIncludeDraft] = useState(true);
-  const [formulaMode, setFormulaMode] = useState<FormulaExportMode>('word-native');
+  const formulaMode = 'latex-vector' as const;
   const [exportingFormat, setExportingFormat] = useState<PaperArtifactFormat | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [runtimeConfigError, setRuntimeConfigError] = useState('');
@@ -320,12 +320,7 @@ const QuestionBankPaper: React.FC = () => {
         }
         extra={
           <Space wrap>
-            <Select<FormulaExportMode> value={formulaMode} onChange={setFormulaMode} style={{ width: 210 }} options={[
-              { value: 'word-native', label: String.fromCharCode(87, 111, 114, 100, 32, 33258, 24102, 20844, 24335) },
-              { value: 'eq-field', label: String.fromCharCode(69, 81, 32, 22495, 20844, 24335) },
-              { value: 'mathtype-compatible', label: String.fromCharCode(77, 97, 116, 104, 84, 121, 112, 101, 32, 20860, 23481, 30690, 37327) },
-              { value: 'latex-vector', label: String.fromCharCode(76, 97, 84, 101, 88, 32, 30690, 37327, 20844, 24335) },
-            ]} />
+            <Typography.Text type="secondary">{String.fromCharCode(20844, 24335, 65306, 30690, 37327, 25490, 29256)}</Typography.Text>
             <Checkbox checked={includeDraft} onChange={e => setIncludeDraft(e.target.checked)}>
               包含草稿/待审核题
             </Checkbox>

@@ -74,6 +74,26 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_FOUND');
       return output(result.rows[0]);
     },
+    async requestForPaperExport(input) {
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Reflect.ownKeys(input).length !== 5) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
+      const expiresAt = future(ttlSeconds);
+      const deliveryId = `question_asset_delivery_${String(randomId()).replace(/[^A-Za-z0-9_-]/g, '')}`;
+      if (!/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(deliveryId)) throw failure('QUESTION_ASSET_DELIVERY_UNAVAILABLE');
+      const tenantId = tenant(input.tenantId);
+      const accountId = account(input.accountId);
+      const taskId = text(input.taskId, /^paper_task_[A-Za-z0-9_-]{1,128}$/);
+      const questionId = question(input.questionId);
+      const expectedSha256 = assetKey(input.assetKey);
+      const result = await query([
+        'WITH purged AS (DELETE FROM business.question_asset_deliveries WHERE expires_at<=transaction_timestamp()),',
+        "asset AS (SELECT asset.id AS \"assetId\",asset.storage_object_id AS \"objectId\",asset.storage_object_version AS \"objectVersion\",asset.content_hash AS \"expectedSha256\",asset.size_bytes AS \"expectedBytes\",COALESCE(NULLIF(asset.file_name,''),'question-asset') AS \"fileName\",asset.mime_type AS \"mimeType\" FROM business.question_assets asset JOIN business.questions question ON question.tenant_id=asset.tenant_id AND question.id=asset.question_id JOIN business.paper_export_tasks task ON task.tenant_id=asset.tenant_id AND task.account_id=$2 AND task.task_id=$5 AND task.status='processing' WHERE asset.tenant_id=$1 AND asset.content_hash=$3 AND asset.question_id=$4 AND asset.state='verified' AND asset.deleted=false AND question.deleted=false AND task.question_snapshot_json @> jsonb_build_array(jsonb_build_object('id',$4,'assets',jsonb_build_array(jsonb_build_object('assetKey',$3)))) ORDER BY asset.created_at DESC,asset.id DESC LIMIT 1),",
+        "existing AS (SELECT delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND expected_sha256=$3 AND expires_at>transaction_timestamp() AND status IN ('queued','leased','ready') ORDER BY created_at DESC LIMIT 1),",
+        "created AS (INSERT INTO business.question_asset_deliveries(delivery_id,asset_id,tenant_id,account_id,object_id,object_version,expected_sha256,expected_bytes,file_name,mime_type,status,expires_at) SELECT $6,asset.\"assetId\",$1,$2,asset.\"objectId\",asset.\"objectVersion\",asset.\"expectedSha256\",asset.\"expectedBytes\",asset.\"fileName\",asset.\"mimeType\",'queued',$7::timestamptz FROM asset WHERE NOT EXISTS (SELECT 1 FROM existing) RETURNING delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\")",
+        'SELECT * FROM existing UNION ALL SELECT * FROM created',
+      ].join(' '), [tenantId, accountId, expectedSha256, questionId, taskId, deliveryId, expiresAt.toISOString()]);
+      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_FOUND');
+      return output(result.rows[0]);
+    },
     async lease(input) {
       if (!input || typeof input !== 'object' || Array.isArray(input) || Reflect.ownKeys(input).length !== 1) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       const leaseToken = String(randomToken());

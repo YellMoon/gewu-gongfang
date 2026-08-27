@@ -92,7 +92,7 @@ export default function QuestionPaperPage() {
   const [items, setItems] = useState<PaperItem[]>([]);
   const [title, setTitle] = useState('练习试卷');
   const [answerPosition, setAnswerPosition] = useState<'end' | 'after'>('end');
-  const [formulaMode, setFormulaMode] = useState('word-native');
+  const formulaMode = 'latex-vector';
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<PaperAction | null>(null);
   const [taskBusyId, setTaskBusyId] = useState('');
@@ -120,7 +120,6 @@ export default function QuestionPaperPage() {
     setItems(nextItems);
     if (saved && typeof saved.title === 'string' && saved.title.trim()) setTitle(saved.title);
     if (saved?.answerPosition === 'after' || saved?.answerPosition === 'end') setAnswerPosition(saved.answerPosition);
-    if (formulaOptions.some(option => option.value === saved?.formulaMode)) setFormulaMode(saved!.formulaMode);
     const requests = Array.from(new Map(nextItems.flatMap(questionAssetRequests).map(item => [item.questionId + ':' + item.assetKey, item])).values());
     const token = authSessionRuntime.capture().token;
     if (requests.length && token) {
@@ -202,7 +201,7 @@ export default function QuestionPaperPage() {
     }
     const draft: PaperTask = workflow.createTaskDraft({
       taskType, questionIds, title: currentTitle, answerPosition: retry?.request?.payload?.answerPosition || answerPosition,
-      formulaMode: retry?.request?.payload?.formulaMode || formulaMode, layout,
+      formulaMode, layout,
     }, { idFactory: () => String(Date.now()) + '-' + Math.random().toString(36).slice(2) });
     setSubmitting(taskType);
     try {
@@ -260,7 +259,7 @@ export default function QuestionPaperPage() {
   return <View className='question-paper-page'>{distributionSummary}
     <View className='paper-form'><Text className='field-label'>{'试卷名称'}</Text><Input className='field-input' value={title} onInput={event => setTitle(event.detail.value)} />
       <Picker mode='selector' range={answerOptions.map(option => option.label)} value={answerOptions.findIndex(option => option.value === answerPosition)} onChange={event => setAnswerPosition(answerOptions[Number(event.detail.value)].value as 'end' | 'after')}><View className='picker-row'>{answerOptions.find(option => option.value === answerPosition)?.label}</View></Picker>
-      <Picker mode='selector' range={formulaOptions.map(option => option.label)} value={formulaOptions.findIndex(option => option.value === formulaMode)} onChange={event => setFormulaMode(formulaOptions[Number(event.detail.value)].value)}><View className='picker-row'>{formulaOptions.find(option => option.value === formulaMode)?.label}</View></Picker>
+      <View className='picker-row'>{String.fromCharCode(20844, 24335, 65306, 30690, 37327, 25490, 29256)}</View>
     </View>
     <View className='paper-summary'><Text>{'题目 ' + items.length + ' 题'}</Text><Text>{'总分 ' + totalScore + ' 分'}</Text>{groups.map(group => <Text key={group.title}>{group.title + ' ' + group.count + ' 题'}</Text>)}</View>
     <View className='paper-tools'><Button className='compact-button' onClick={regroup} disabled={loading || !items.length}>{'按题型分组'}</Button><Button className='compact-button' onClick={reload}>{'刷新题目'}</Button></View>

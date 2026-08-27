@@ -24,7 +24,7 @@ function createPaperExportTaskProcessor({ tasks, render, archiveArtifact, mediaR
           snapshot: task.snapshot,
         }, {
           resolveQuestionAsset: mediaResolver
-            ? descriptor => mediaResolver({ tenantId: task.tenantId, accountId: task.accountId, ...descriptor })
+            ? descriptor => mediaResolver({ tenantId: task.tenantId, accountId: task.accountId, taskId: task.taskId, ...descriptor })
             : undefined,
         });
         const artifact = await archiveArtifact({

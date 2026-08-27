@@ -29,6 +29,7 @@ const { createPaperExportTaskProcessor } = require('./paperExportTaskProcessor')
   });
   assert.deepStrictEqual(await processor.runOnce(), { state: 'archived', taskId: 'paper_task_1', artifactId: 'paper_artifact_1' });
   assert.deepStrictEqual(events.map(row => row[0]), ['render', 'media', 'archive', 'complete']);
+  assert.deepStrictEqual(events[1][1], { tenantId: 'default', accountId: 'account-1', taskId: 'paper_task_1', questionId: 'q1', assetKey: 'a'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png' }, 'media delivery must be bound to the persisted export task, not the public question route');
   assert.deepStrictEqual(events[0][1].layout, { items: [{ id: 'q1', sectionTitle: 'Part one', score: 3 }] }, 'paper layout must reach the cloud renderer together with the selected snapshot');
   const idle = createPaperExportTaskProcessor({
     tasks: { claimNext: async () => null, complete: async () => {}, fail: async () => {}, defer: async () => {} },

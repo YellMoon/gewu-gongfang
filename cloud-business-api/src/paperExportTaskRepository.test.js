@@ -13,7 +13,7 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
       if (text.includes('FROM business.paper_export_tasks')) return { rows: [] };
       if (text.includes('FROM business.questions')) {
         return { rows: values[1][0] === 'question-1' ? [
-          { id: 'question-1', subject: 'physics', questionType: 'single', difficulty: 2, stem: 's1', answer: 'a1', explanation: null, options: [], richContent: null, hasFormula: false, contentHash: 'a'.repeat(64), version: 1, assets: [{ assetKey: 'b'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png' }] },
+          { id: 'question-1', subject: 'physics', questionType: 'single', difficulty: 2, stem: 's1', answer: 'a1', explanation: null, options: [], richContent: null, hasFormula: false, contentHash: 'a'.repeat(64), version: 1, assets: [{ assetKey: 'b'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png', assetType: 'image' }, { assetKey: 'c'.repeat(64), fileName: 'formula.svg', mimeType: 'image/png', assetType: 'formula_preview' }] },
         ] : [] };
       }
       if (text.includes('INSERT INTO business.paper_export_tasks')) {
@@ -43,6 +43,7 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
   assert.ok(calls[1][0].includes('FROM business.questions'));
   assert.ok(calls[1][0].includes('array_position'), 'question snapshots must preserve the order selected in the paper editor');
   assert.ok(calls[1][0].includes('business.question_assets') && calls[1][0].includes("asset.state='verified'"), 'paper snapshots must freeze only verified question media descriptors');
+  assert.ok(calls[1][0].includes("asset.asset_type IN ('image','formula_preview')"), 'formula preview media must be frozen with the selected paper instead of being silently omitted');
   assert.ok(calls[1][0].includes("asset.mime_type IN ('image/png','image/jpeg','image/jpg')"), 'paper snapshots must not misclassify OLE or opaque binary objects as exportable images');
   assert.ok(calls[2][0].includes('INSERT INTO business.paper_export_tasks'));
   const deferred = await repository.defer({ taskId: 'paper-task-1' });

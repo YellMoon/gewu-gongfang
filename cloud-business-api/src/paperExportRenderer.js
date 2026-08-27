@@ -3,7 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const SVGtoPDF = require('svg-to-pdfkit');
+const sharp = require('sharp');
 const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
+const { mathjax } = require('mathjax-full/js/mathjax.js');
+const { TeX } = require('mathjax-full/js/input/tex.js');
+const { SVG } = require('mathjax-full/js/output/svg.js');
+const { liteAdaptor } = require('mathjax-full/js/adaptors/liteAdaptor.js');
+const { RegisterHTMLHandler } = require('mathjax-full/js/handlers/html.js');
+const { AllPackages } = require('mathjax-full/js/input/tex/AllPackages.js');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -21,17 +29,50 @@ function stripMarkup(value) {
   return String(value || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
 }
 
+function isFormula(value) {
+  return Boolean(value && typeof value === 'object' && /formula|math|equation/i.test(String(value.type || value.kind || '')));
+}
+
 function structuredText(value, formulaMode = 'word-native', seen = new Set()) {
   if (typeof value === 'string') return stripMarkup(value);
   if (value === null || value === undefined || typeof value !== 'object' || seen.has(value)) return '';
   seen.add(value);
   if (Array.isArray(value)) return value.map(item => structuredText(item, formulaMode, seen)).filter(Boolean).join('\n');
-  const formula = formulaMode === 'word-native'
-    ? value.visibleText || value.visible_text || value.canonicalLatex || value.canonical_latex || value.latex
-    : value.canonicalLatex || value.canonical_latex || value.latex || value.visibleText || value.visible_text;
-  if (typeof formula === 'string' && formula.trim() && /formula|math|equation/i.test(String(value.type || value.kind || ''))) return formula.trim();
+  if (isFormula(value)) return '';
   const fields = ['text', 'content', 'stem', 'options', 'answer', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula'];
   return fields.map(field => structuredText(value[field], formulaMode, seen)).filter(Boolean).join('\n');
+}
+
+function collectFormulae(value, seen = new Set(), rows = []) {
+  if (value === null || value === undefined || typeof value !== 'object' || seen.has(value)) return rows;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) collectFormulae(item, seen, rows);
+    return rows;
+  }
+  if (isFormula(value)) {
+    const latex = value.canonicalLatex || value.canonical_latex || value.latex;
+    if (typeof latex === 'string' && latex.trim()) rows.push(latex.trim());
+    return rows;
+  }
+  for (const field of ['text', 'content', 'stem', 'options', 'answer', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula']) {
+    collectFormulae(value[field], seen, rows);
+  }
+  return rows;
+}
+
+function formulaSvg(latex) {
+  try {
+    const adaptor = liteAdaptor();
+    RegisterHTMLHandler(adaptor);
+    const tex = new TeX({ packages: AllPackages });
+    const svg = new SVG({ fontCache: 'none' });
+    const document = mathjax.document('', { InputJax: tex, OutputJax: svg });
+    const container = document.convert(latex, { display: true });
+    return Buffer.from(adaptor.outerHTML(adaptor.firstChild(container)), 'utf8');
+  } catch (_) {
+    throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
+  }
 }
 
 function optionText(value, index, formulaMode) {
@@ -52,7 +93,9 @@ function questionAssets(value) {
       || typeof asset.mimeType !== 'string' || !/^image\/(?:png|jpe?g)$/i.test(asset.mimeType)) {
       throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
     }
-    return { assetKey: asset.assetKey, fileName: asset.fileName, mimeType: asset.mimeType.toLowerCase() };
+    const assetType = asset.assetType === undefined ? 'image' : asset.assetType;
+    if (!['image', 'formula_preview'].includes(assetType)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+    return { assetKey: asset.assetKey, fileName: asset.fileName, mimeType: asset.mimeType.toLowerCase(), assetType };
   });
 }
 
@@ -79,26 +122,37 @@ function questions(value, layout, formulaMode) {
     }
     const stem = stripMarkup(item.stem);
     const richContent = structuredText(item.richContent, formulaMode);
+    const formulae = Array.from(new Set([
+      ...collectFormulae(item.richContent),
+      ...collectFormulae(item.options),
+    ]));
     return {
       id: item.id, number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
       options: Array.isArray(item.options) ? item.options.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
       answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
       sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
       assets: questionAssets(item.assets),
+      formulae,
     };
   });
 }
 
 async function hydrateMedia(items, resolveQuestionAsset) {
-  if (!items.some(item => item.assets.length)) return items;
-  if (typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
+  if (items.some(item => item.assets.length) && typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
   return Promise.all(items.map(async item => ({
     ...item,
     media: await Promise.all(item.assets.map(async asset => {
       const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
       if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
-      return { ...asset, bytes: Buffer.from(bytes) };
-    })),
+      return { ...asset, bytes: Buffer.from(bytes), kind: 'image' };
+    })).then(async media => media.concat(await Promise.all(item.formulae.map(async latex => {
+      const bytes = formulaSvg(latex);
+      try {
+        return { kind: 'formula', bytes, fallbackBytes: await sharp(bytes).png().toBuffer() };
+      } catch (_) {
+        throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
+      }
+    })))),
   })));
 }
 
@@ -123,8 +177,9 @@ function bodyRows(items, answerPosition) {
     for (const media of item.media || []) {
       rows.push(new Paragraph({ children: [new ImageRun({
         data: media.bytes,
-        type: media.mimeType === 'image/png' ? 'png' : 'jpg',
-        transformation: { width: 420, height: 280 },
+        type: media.kind === 'formula' ? 'svg' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
+        ...(media.kind === 'formula' ? { fallback: { data: media.fallbackBytes, type: 'png' } } : {}),
+        transformation: media.kind === 'formula' ? { width: 240, height: 72 } : { width: 420, height: 280 },
       })] }));
     }
     if (answerPosition === 'after') rows.push(...answerRows(item));
@@ -167,7 +222,10 @@ function pdfBytes(input, items) {
       for (const option of item.options) document.fontSize(10).text(option).moveDown(0.25);
       for (const media of item.media || []) {
         try {
-          document.image(media.bytes, { fit: [480, 360] }).moveDown(0.5);
+          if (media.kind === 'formula') {
+            SVGtoPDF(document, media.bytes.toString('utf8'), document.x, document.y, { width: 280 });
+            document.moveDown(4);
+          } else document.image(media.bytes, { fit: [480, 360] }).moveDown(0.5);
         } catch (_) {
           throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
         }
