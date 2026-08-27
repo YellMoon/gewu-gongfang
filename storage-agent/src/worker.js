@@ -16,10 +16,59 @@ function assertExpected(task, bytes) {
     || crypto.createHash('sha256').update(bytes).digest('hex') !== task.expectedSha256) throw failure('STORAGE_WORKER_BYTES_MISMATCH');
 }
 
+function sourceDescriptor(task) {
+  if (task.kind === 'question_import_source') {
+    return {
+      objectId: task.objectId, objectVersion: task.objectVersion, sha256: task.expectedSha256, bytes: task.expectedBytes,
+      sourceType: task.sourceType, sourceFileName: task.sourceFileName,
+    };
+  }
+  return task.source;
+}
+
+function sourceCacheKey(source) {
+  return [source.objectId, source.objectVersion, source.sha256, source.bytes, source.sourceType, source.sourceFileName].join(':');
+}
+
+function parsedMediaBytes(parsed) {
+  if (!parsed || !Array.isArray(parsed.mediaBytes)) return null;
+  let total = 0;
+  for (const assets of parsed.mediaBytes) {
+    if (!Array.isArray(assets)) return null;
+    for (const bytes of assets) {
+      if (!Buffer.isBuffer(bytes)) return null;
+      total += bytes.length;
+      if (!Number.isSafeInteger(total)) return null;
+    }
+  }
+  return total;
+}
+
 function createStorageWorker({ client, objectStore, agentPrivateKey, questionImportParser } = {}) {
   if (!client || typeof client.lease !== 'function' || typeof client.download !== 'function' || typeof client.complete !== 'function'
     || typeof client.reportSourceCandidates !== 'function' || !objectStore || typeof objectStore.putVerified !== 'function' || typeof objectStore.readVerified !== 'function'
     || !questionImportParser || typeof questionImportParser.parse !== 'function' || typeof agentPrivateKey !== 'string' || !agentPrivateKey) throw failure('STORAGE_WORKER_CONFIG_INVALID');
+  const parsedSourceCache = new Map();
+  const maxCachedSourceMediaBytes = 128 * 1024 * 1024;
+
+  async function parseImportSource(source, bytes = null) {
+    const key = sourceCacheKey(source);
+    const cached = parsedSourceCache.get(key);
+    if (cached) return cached;
+    const sourceBytes = bytes || await objectStore.readVerified({
+      objectId: source.objectId, version: source.objectVersion, sha256: source.sha256, bytes: source.bytes,
+    });
+    const parsed = await questionImportParser.parse({
+      sourceType: source.sourceType, sourceFileName: source.sourceFileName, bytes: sourceBytes,
+    });
+    const mediaBytes = parsedMediaBytes(parsed);
+    if (mediaBytes !== null && mediaBytes <= maxCachedSourceMediaBytes) {
+      parsedSourceCache.clear();
+      parsedSourceCache.set(key, parsed);
+    }
+    return parsed;
+  }
+
   return Object.freeze({
     async runOnce() {
       const task = await client.lease();
@@ -46,12 +95,7 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
         return Object.freeze({ state: 'question_asset_delivery_uploaded', deliveryId: delivery.deliveryId });
       }
       if (task.kind === 'question_import_media') {
-        const sourceBytes = await objectStore.readVerified({
-          objectId: task.source.objectId, version: task.source.objectVersion, sha256: task.source.sha256, bytes: task.source.bytes,
-        });
-        const parsed = await questionImportParser.parse({
-          sourceType: task.source.sourceType, sourceFileName: task.source.sourceFileName, bytes: sourceBytes,
-        });
+        const parsed = await parseImportSource(sourceDescriptor(task));
         const bytes = parsed?.mediaBytes?.[task.itemIndex]?.[task.assetIndex];
         assertExpected(task, bytes);
         await objectStore.putVerified(descriptorFor(task), bytes);
@@ -70,7 +114,7 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
       assertExpected(task, bytes);
       await objectStore.putVerified(descriptorFor(task), bytes);
       if (task.kind === 'question_import_source') {
-        const parsed = await questionImportParser.parse({ sourceType: task.sourceType, sourceFileName: task.sourceFileName, bytes });
+        const parsed = await parseImportSource(sourceDescriptor(task), bytes);
         await client.reportSourceCandidates({
           taskId: task.importTaskId, leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
           candidates: parsed.candidates,

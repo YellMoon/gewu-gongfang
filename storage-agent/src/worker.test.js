@@ -93,7 +93,8 @@ async function main() {
   assert.deepStrictEqual(await worker.runOnce(), { state: 'verified', taskId: 'task_12345678' });
   assert.deepStrictEqual(await worker.runOnce(), { state: 'candidates_ready', taskId: 'task_source_12345678', importTaskId: 'question_import_task_1' });
   assert.deepStrictEqual(await worker.runOnce(), { state: 'verified', taskId: 'task_media_12345678' });
-  assert.deepStrictEqual(events, ['lease', 'lease', 'download', 'putVerified', 'complete', 'lease', 'download', 'putVerified', 'parse', 'reportSourceCandidates', 'lease', 'readVerified', 'parse', 'putVerified', 'complete']);
+  assert.deepStrictEqual(events, ['lease', 'lease', 'download', 'putVerified', 'complete', 'lease', 'download', 'putVerified', 'parse', 'reportSourceCandidates', 'lease', 'putVerified', 'complete'],
+    'derived media must reuse the just-verified source parse instead of parsing the same Word file again');
 
   const rejectedEvents = [];
   const tamperedWorker = createStorageWorker({
