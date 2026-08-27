@@ -174,11 +174,13 @@ async function teachingLoopCreatesReadsConflictsAndCleans() {
   assert.deepStrictEqual([...created], []);
   const deletes = calls.filter(call => call.method === 'DELETE').map(call => call.path);
   assert.deepStrictEqual(deletes.map(path => path.split('/').at(-2)), ['schedules', 'courses', 'students', 'teachers', 'rooms', 'schools', 'institutions']);
+  assert.strictEqual(calls.filter(call => call.method === 'GET' && call.path.endsWith('/desktop-projection')).length, 3, 'course updates must refresh dependent schedule versions before cleanup');
 }
 
 async function forceCleanupQualifiesTheFunctionOutputColumn() {
   const appCalls = [];
   const writerCalls = [];
+  const ownerCalls = [];
   const appPool = {
     async query(sql) {
       appCalls.push(sql);
@@ -194,11 +196,20 @@ async function forceCleanupQualifiesTheFunctionOutputColumn() {
       writerCalls.push([sql, values]);
       return { rows: [{ id: 'codex-e2e-8.7.4-clean-teacher' }] };
     },
+    async connect() {
+      return {
+        async query(sql, values) { ownerCalls.push([sql, values]); return { rows: [] }; },
+        release() {},
+      };
+    },
   };
   assert.strictEqual(await forceCleanup(appPool, writerPool, 'default', 'codex-e2e-8.7.4-clean'), true);
   assert.strictEqual(writerCalls.length, 1);
   assert.match(writerCalls[0][0], /SELECT removed\.id AS id FROM business\.vnext_soft_delete_teacher\([^)]*\) AS removed/);
   assert.deepStrictEqual(writerCalls[0][1], ['default', 'codex-e2e-8.7.4-clean-teacher', '2030-01-01T00:00:00.000Z']);
+  assert.deepStrictEqual(ownerCalls.filter(([sql]) => sql === 'SET LOCAL ROLE vnext_pg17_business_owner').length, 2);
+  assert.match(ownerCalls.find(([sql]) => sql.includes('business.schedule_student_overrides'))[0], /DELETE FROM business\.schedule_student_overrides WHERE tenant_id=\$1 AND \(schedule_id=\$2 OR schedule_id LIKE \$3\)/);
+  assert.match(ownerCalls.find(([sql]) => sql.includes('business.course_student_pricings'))[0], /DELETE FROM business\.course_student_pricings WHERE tenant_id=\$1 AND \(course_id=\$2 OR course_id LIKE \$3\)/);
   assert.ok(appCalls.some(sql => sql.includes('business.institutions')));
 }
 

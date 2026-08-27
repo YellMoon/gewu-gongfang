@@ -63,14 +63,14 @@ def execute_command():
 def grant_owner_command():
     return (
         f"docker exec {POSTGRES_CONTAINER} psql -U gewu_app -d gewu_cloud -v ON_ERROR_STOP=1 "
-        "-c 'GRANT vnext_pg17_owner TO vnext_pg17_writer'"
+        "-c 'GRANT vnext_pg17_owner, vnext_pg17_business_owner TO vnext_pg17_writer'"
     )
 
 
 def revoke_owner_command():
     return (
         f"docker exec {POSTGRES_CONTAINER} psql -U gewu_app -d gewu_cloud -v ON_ERROR_STOP=1 "
-        "-c 'REVOKE vnext_pg17_owner FROM vnext_pg17_writer'"
+        "-c 'REVOKE vnext_pg17_owner, vnext_pg17_business_owner FROM vnext_pg17_writer'"
     )
 
 

@@ -268,10 +268,11 @@ function institutionFromProjection(payload, marker) {
 
 function observedTimestamp(record) {
   const value = record?.updatedAt || record?.updated_at;
-  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) {
+  const instant = typeof value === 'string' ? new Date(value) : null;
+  if (!(instant instanceof Date) || !Number.isFinite(instant.getTime())) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_TIMESTAMP_INVALID');
   }
-  return value;
+  return instant.toISOString();
 }
 
 function requireResponse(actual, status, code) {
@@ -471,7 +472,7 @@ async function runTeachingLoopAcceptance({
     for (const operation of [...created].reverse()) {
       const response = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/${operation.resource}/${encodeURIComponent(operation.id)}`, {
         method: 'DELETE', body: { expectedUpdatedAt: operation.updatedAt },
-      }), 200, 'REAL_CLOUD_TEACHING_LOOP_CLEANUP_FAILED');
+      }), 200, `REAL_CLOUD_TEACHING_LOOP_CLEANUP_${operation.resource.toUpperCase()}_FAILED`);
       observedTimestamp(response.body?.[operation.key]);
     }
     if (created.length) {
@@ -856,6 +857,10 @@ async function forceCleanup(appPool, writerPool, tenantId, marker) {
     ['rooms', 'vnext_soft_delete_room'], ['schools', 'vnext_soft_delete_school'],
     ['institutions', 'vnext_soft_delete_institution'],
   ];
+  const dependentRecords = [
+    ['schedule_student_overrides', 'schedule_id'],
+    ['course_student_pricings', 'course_id'],
+  ];
   for (const [table, deleteFunction] of resources) {
     const found = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_LOOKUP_FAILED', () => appPool.query(
       `SELECT id,to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
@@ -875,6 +880,30 @@ async function forceCleanup(appPool, writerPool, tenantId, marker) {
   for (const [table] of resources) {
     const after = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_VERIFY_FAILED', () => appPool.query(
       `SELECT count(*)::int AS count FROM business.${table} WHERE tenant_id=$1 AND legacy_deleted=false AND (id=$2 OR id LIKE $3)`,
+      [tenantId, marker, `${marker}-%`],
+    ));
+    if (after.rows[0]?.count !== 0) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
+  }
+  for (const [table, foreignKey] of dependentRecords) {
+    await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_DELETE_FAILED', async () => {
+      const client = await writerPool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE vnext_pg17_business_owner');
+        await client.query(
+          `DELETE FROM business.${table} WHERE tenant_id=$1 AND (${foreignKey}=$2 OR ${foreignKey} LIKE $3)`,
+          [tenantId, marker, `${marker}-%`],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
+    const after = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_VERIFY_FAILED', () => appPool.query(
+      `SELECT count(*)::int AS count FROM business.${table} WHERE tenant_id=$1 AND (${foreignKey}=$2 OR ${foreignKey} LIKE $3)`,
       [tenantId, marker, `${marker}-%`],
     ));
     if (after.rows[0]?.count !== 0) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
