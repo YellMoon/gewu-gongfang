@@ -12,6 +12,17 @@ const { renderPaperExport } = require('./paperExportRenderer');
     { id: 'q1', stem: '<p>First stem</p>', answer: 'A', explanation: 'First explanation', options: [{ label: 'A', content: 'first option' }, { label: 'B', content: 'second option' }], richContent: { blocks: [{ type: 'formula', canonicalLatex: 'x^{2}' }] }, assets: [{ assetKey: 'a'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png', assetType: 'image' }, { assetKey: 'b'.repeat(64), fileName: 'formula-preview.png', mimeType: 'image/png', assetType: 'formula_preview' }] },
     { id: 'q2', stem: 'Second stem', answer: 'B', explanation: 'Second explanation', options: ['B. another option'], richContent: null },
   ];
+  const productionRichContent = {
+    version: 1,
+    type: 'question-document',
+    sections: {
+      stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured stem ' }, { type: 'formulaBlock', attrs: { id: 'formula-stem', canonicalLatex: 'E=mc^{2}', displayMode: 'block' } }] }] },
+      options: [{ id: 'option-a', label: 'A', isCorrect: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-option', canonicalLatex: '\\frac{1}{2}', displayMode: 'inline' } }] }] } }],
+      subQuestions: [{ id: 'sub-1', label: '（1）', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formulaBlock', attrs: { id: 'formula-sub', canonicalLatex: 'a^{2}+b^{2}=c^{2}', displayMode: 'block' } }] }] }, answer: { type: 'doc', content: [] } }],
+      answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-answer', canonicalLatex: 'x=1', displayMode: 'inline' } }] }] },
+      analysis: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-analysis', canonicalLatex: 'v=at', displayMode: 'inline' } }] }] },
+    },
+  };
   const layout = { items: [{ id: 'q1', sectionTitle: 'Part one', score: 3 }, { id: 'q2', sectionTitle: 'Part one', score: 6 }] };
   const input = { title: 'Paper', answerPosition: 'end', layout, snapshot, formulaMode: 'latex-vector' };
   const resolveQuestionAsset = async input => {
@@ -41,5 +52,15 @@ const { renderPaperExport } = require('./paperExportRenderer');
   const after = await renderPaperExport({ ...input, format: 'pdf', answerPosition: 'after' }, { resolveQuestionAsset });
   assert.ok(after.bytes.subarray(0, 5).equals(Buffer.from('%PDF-')) && after.bytes.includes(Buffer.from('NotoSansCJKsc-Regular')),
     'after-position PDF must be rendered through the same CJK-capable renderer');
+  const richWord = await renderPaperExport({
+    format: 'word', title: 'Structured formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
+    snapshot: [{ id: 'q-rich', stem: 'Fallback stem', answer: 'A', explanation: 'Explanation', richContent: productionRichContent }],
+  });
+  const richArchive = await JSZip.loadAsync(richWord.bytes);
+  const richXml = await richArchive.file('word/document.xml').async('string');
+  assert.ok(richXml.includes('Structured stem'), 'formal rich content text must remain in the exported paper');
+  assert.ok(!richXml.includes('E=mc^{2}'), 'formal rich content formulas must not degrade into raw LaTeX');
+  const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
+  assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
   console.log('paper export renderer checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -39,7 +39,7 @@ function structuredText(value, formulaMode = 'word-native', seen = new Set()) {
   seen.add(value);
   if (Array.isArray(value)) return value.map(item => structuredText(item, formulaMode, seen)).filter(Boolean).join('\n');
   if (isFormula(value)) return '';
-  const fields = ['text', 'content', 'stem', 'options', 'answer', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula'];
+  const fields = ['text', 'content', 'stem', 'options', 'subQuestions', 'answer', 'analysis', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula'];
   return fields.map(field => structuredText(value[field], formulaMode, seen)).filter(Boolean).join('\n');
 }
 
@@ -51,14 +51,22 @@ function collectFormulae(value, seen = new Set(), rows = []) {
     return rows;
   }
   if (isFormula(value)) {
-    const latex = value.canonicalLatex || value.canonical_latex || value.latex;
+    const attrs = value.attrs && typeof value.attrs === 'object' && !Array.isArray(value.attrs) ? value.attrs : {};
+    const latex = value.canonicalLatex || value.canonical_latex || value.latex || attrs.canonicalLatex || attrs.canonical_latex || attrs.latex;
     if (typeof latex === 'string' && latex.trim()) rows.push(latex.trim());
     return rows;
   }
-  for (const field of ['text', 'content', 'stem', 'options', 'answer', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula']) {
+  for (const field of ['text', 'content', 'sections', 'stem', 'options', 'subQuestions', 'answer', 'analysis', 'explanation', 'blocks', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'formula']) {
     collectFormulae(value[field], seen, rows);
   }
   return rows;
+}
+
+function richStem(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const sections = value.sections;
+  if (!sections || typeof sections !== 'object' || Array.isArray(sections)) return value;
+  return sections.stem || null;
 }
 
 function formulaSvg(latex) {
@@ -121,7 +129,7 @@ function questions(value, layout, formulaMode) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
     const stem = stripMarkup(item.stem);
-    const richContent = structuredText(item.richContent, formulaMode);
+    const richContent = structuredText(richStem(item.richContent), formulaMode);
     const formulae = Array.from(new Set([
       ...collectFormulae(item.richContent),
       ...collectFormulae(item.options),
