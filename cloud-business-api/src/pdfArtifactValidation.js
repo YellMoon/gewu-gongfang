@@ -58,6 +58,14 @@ function sameReference(left, right) {
   return Boolean(left && right && left.objectNumber === right.objectNumber && left.generation === right.generation);
 }
 
+function mediaBox(value) {
+  const found = /\/MediaBox\s*\[\s*([-+]?\d*\.?\d+)\s+([-+]?\d*\.?\d+)\s+([-+]?\d*\.?\d+)\s+([-+]?\d*\.?\d+)\s*\]/.exec(value);
+  if (!found) return null;
+  const coordinates = found.slice(1).map(Number);
+  if (!coordinates.every(Number.isFinite) || coordinates[2] <= coordinates[0] || coordinates[3] <= coordinates[1]) return null;
+  return coordinates;
+}
+
 function assertPageTree(text, xref, root) {
   const load = ref => {
     const entry = xref.entries.get(ref.objectNumber);
@@ -74,13 +82,15 @@ function assertPageTree(text, xref, root) {
   const pages = reference(catalog, 'Pages');
   if (!pages) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
   const seen = new Set();
-  const walk = (ref, parent) => {
+  const walk = (ref, parent, inheritedMediaBox) => {
     const key = `${ref.objectNumber}:${ref.generation}`;
     if (seen.has(key)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     seen.add(key);
     const object = load(ref);
+    const currentMediaBox = mediaBox(object) || inheritedMediaBox;
     if (/\/Type\s*\/Page\b/.test(object)) {
       if (!parent || !sameReference(reference(object, 'Parent'), parent)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
+      if (!currentMediaBox) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
       return 1;
     }
     if (!/\/Type\s*\/Pages\b/.test(object)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
@@ -90,7 +100,7 @@ function assertPageTree(text, xref, root) {
     if (!kids) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     const refs = Array.from(kids[1].matchAll(/(\d+)\s+(\d+)\s+R\b/g), match => ({ objectNumber: Number(match[1]), generation: Number(match[2]) }));
     if (!refs.length) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
-    const pages = refs.reduce((total, child) => total + walk(child, ref), 0);
+    const pages = refs.reduce((total, child) => total + walk(child, ref, currentMediaBox), 0);
     if (pages !== count) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     return pages;
   };

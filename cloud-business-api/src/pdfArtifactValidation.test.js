@@ -47,6 +47,21 @@ const { renderPaperExport } = require('./paperExportRenderer');
     error => error.code === 'CLOUD_PAPER_ARTIFACT_PDF_INVALID',
     'a dictionary-shaped tree without a page count or page parent must be rejected',
   );
+  const noMediaBoxObjects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Count 1 /Kids [3 0 R] >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n',
+  ];
+  let noMediaBoxPdf = '%PDF-1.4\n';
+  const noMediaBoxOffsets = [0];
+  for (const object of noMediaBoxObjects) { noMediaBoxOffsets.push(Buffer.byteLength(noMediaBoxPdf, 'latin1')); noMediaBoxPdf += object; }
+  const noMediaBoxXrefOffset = Buffer.byteLength(noMediaBoxPdf, 'latin1');
+  noMediaBoxPdf += `xref\n0 4\n0000000000 65535 f \n${noMediaBoxOffsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Root 1 0 R >>\nstartxref\n${noMediaBoxXrefOffset}\n%%EOF\n`;
+  assert.throws(
+    () => assertPdfArtifact(Buffer.from(noMediaBoxPdf, 'latin1')),
+    error => error.code === 'CLOUD_PAPER_ARTIFACT_PDF_INVALID',
+    'a complete-looking page tree without an effective MediaBox must be rejected',
+  );
   const rendered = await renderPaperExport({
     format: 'pdf', title: 'PDF artifact validation', answerPosition: 'end', formulaMode: 'word-native',
     snapshot: [{ id: 'q1', stem: 'Question', options: ['A. choice'], answer: 'A', explanation: 'Explanation' }],
