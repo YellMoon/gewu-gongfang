@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { sealForAgent } = require('../../shared/encryptedNasRelay');
+const { assertPdfArtifact } = require('./pdfArtifactValidation');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -27,6 +28,7 @@ function createPaperExportArtifactRepository({ query, agentPublicKey, randomId =
       const mimeType = text(input.mimeType, 255);
       const bytes = Buffer.isBuffer(input.bytes) ? Buffer.from(input.bytes) : null;
       if (!format || !bytes || bytes.length < 1 || bytes.length > 64 * 1024 * 1024) throw failure('CLOUD_PAPER_ARTIFACT_INPUT_INVALID');
+      if (format === 'pdf') assertPdfArtifact(bytes);
       const suffix = String(randomId()).replace(/[^A-Za-z0-9_-]/g, '');
       const artifactId = 'paper_artifact_' + suffix;
       const storageTaskId = 'task_' + suffix;
