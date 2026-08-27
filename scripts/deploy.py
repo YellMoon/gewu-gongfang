@@ -328,11 +328,20 @@ def configure_host_key_verification(ssh):
 
 def connect():
     require_remote_env()
-    ssh = paramiko.SSHClient()
-    configure_host_key_verification(ssh)
-    print(f"Connecting {HOST}:{PORT} env={APP_ENV} remote={REMOTE_DIR}")
-    ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, key_filename=KEY_PATH, timeout=10)
-    return ssh
+    last_error = None
+    for attempt in range(3):
+        ssh = paramiko.SSHClient()
+        configure_host_key_verification(ssh)
+        print(f"Connecting {HOST}:{PORT} env={APP_ENV} remote={REMOTE_DIR} attempt={attempt + 1}/3")
+        try:
+            ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, key_filename=KEY_PATH, timeout=10)
+            return ssh
+        except (OSError, paramiko.SSHException) as error:
+            last_error = error
+            ssh.close()
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    raise last_error
 
 
 def upload_backend(ssh):
