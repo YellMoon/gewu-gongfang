@@ -69,6 +69,16 @@ function richStem(value) {
   return sections.stem || null;
 }
 
+function richSections(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const sections = value.sections;
+  return sections && typeof sections === 'object' && !Array.isArray(sections) ? sections : null;
+}
+
+function richTextOrFallback(value, fallback, formulaMode) {
+  return structuredText(value, formulaMode) || stripMarkup(fallback);
+}
+
 function formulaSvg(latex) {
   try {
     const adaptor = liteAdaptor();
@@ -128,16 +138,25 @@ function questions(value, layout, formulaMode) {
     if (layoutItem && (layoutItem.id !== item.id || typeof layoutItem.sectionTitle !== 'string' || !Number.isSafeInteger(layoutItem.score))) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
+    const sections = richSections(item.richContent);
     const stem = stripMarkup(item.stem);
     const richContent = structuredText(richStem(item.richContent), formulaMode);
+    const sourceOptions = Array.isArray(sections?.options) && sections.options.length ? sections.options : item.options;
+    const subQuestions = Array.isArray(sections?.subQuestions) ? sections.subQuestions.map((subQuestion, subQuestionIndex) => ({
+      label: structuredText(subQuestion?.label || `(${subQuestionIndex + 1})`, formulaMode),
+      content: structuredText(subQuestion?.content, formulaMode),
+      answer: structuredText(subQuestion?.answer, formulaMode),
+    })).filter(subQuestion => subQuestion.label || subQuestion.content || subQuestion.answer) : [];
     const formulae = Array.from(new Set([
       ...collectFormulae(item.richContent),
       ...collectFormulae(item.options),
     ]));
     return {
       id: item.id, number: index + 1, stem: richContent && !richContent.includes(stem) ? [stem, richContent].filter(Boolean).join('\n') : stem || richContent,
-      options: Array.isArray(item.options) ? item.options.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
-      answer: stripMarkup(item.answer), explanation: stripMarkup(item.explanation),
+      options: Array.isArray(sourceOptions) ? sourceOptions.map((option, optionIndex) => optionText(option, optionIndex, formulaMode)).filter(Boolean) : [],
+      subQuestions,
+      answer: richTextOrFallback(sections?.answer, item.answer, formulaMode),
+      explanation: richTextOrFallback(sections?.analysis, item.explanation, formulaMode),
       sectionTitle: layoutItem?.sectionTitle || '', score: layoutItem?.score ?? null,
       assets: questionAssets(item.assets),
       formulae,
@@ -164,8 +183,15 @@ async function hydrateMedia(items, resolveQuestionAsset) {
   })));
 }
 
+function subQuestionAnswerLines(item, prefix = '') {
+  const answerLabel = String.fromCharCode(31572, 26696, 65306);
+  return (item.subQuestions || []).filter(subQuestion => subQuestion.answer)
+    .map(subQuestion => prefix + subQuestion.label + answerLabel + subQuestion.answer);
+}
+
 function answerRows(item, prefix = '') {
   const rows = [];
+  for (const line of subQuestionAnswerLines(item, prefix)) rows.push(new Paragraph({ children: [new TextRun({ text: line })] }));
   if (item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + '答案：' + item.answer })] }));
   if (item.explanation) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + '解析：' + item.explanation })] }));
   return rows;
@@ -182,6 +208,7 @@ function bodyRows(items, answerPosition) {
     const score = item.score === null ? '' : ' (' + item.score + ' pts)';
     rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem + score })] }));
     for (const option of item.options) rows.push(new Paragraph({ children: [new TextRun({ text: option })] }));
+    for (const subQuestion of item.subQuestions || []) rows.push(new Paragraph({ children: [new TextRun({ text: subQuestion.label + subQuestion.content })] }));
     for (const media of item.media || []) {
       rows.push(new Paragraph({ children: [new ImageRun({
         data: media.bytes,
@@ -228,6 +255,7 @@ function pdfBytes(input, items) {
       const score = item.score === null ? '' : ' (' + item.score + ' pts)';
       document.fontSize(11).text(String(item.number) + '. ' + item.stem + score).moveDown(0.5);
       for (const option of item.options) document.fontSize(10).text(option).moveDown(0.25);
+      for (const subQuestion of item.subQuestions || []) document.fontSize(10).text(subQuestion.label + subQuestion.content).moveDown(0.25);
       for (const media of item.media || []) {
         try {
           if (media.kind === 'formula') {
@@ -239,6 +267,7 @@ function pdfBytes(input, items) {
         }
       }
       if (input.answerPosition === 'after') {
+        for (const line of subQuestionAnswerLines(item)) document.fontSize(10).text(line);
         if (item.answer) document.fontSize(10).text('答案：' + item.answer);
         if (item.explanation) document.fontSize(10).text('解析：' + item.explanation);
       }

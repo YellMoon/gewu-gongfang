@@ -17,10 +17,10 @@ const { renderPaperExport } = require('./paperExportRenderer');
     type: 'question-document',
     sections: {
       stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured stem ' }, { type: 'formulaBlock', attrs: { id: 'formula-stem', canonicalLatex: 'E=mc^{2}', displayMode: 'block' } }] }] },
-      options: [{ id: 'option-a', label: 'A', isCorrect: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-option', canonicalLatex: '\\frac{1}{2}', displayMode: 'inline' } }] }] } }],
-      subQuestions: [{ id: 'sub-1', label: '（1）', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formulaBlock', attrs: { id: 'formula-sub', canonicalLatex: 'a^{2}+b^{2}=c^{2}', displayMode: 'block' } }] }] }, answer: { type: 'doc', content: [] } }],
-      answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-answer', canonicalLatex: 'x=1', displayMode: 'inline' } }] }] },
-      analysis: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { id: 'formula-analysis', canonicalLatex: 'v=at', displayMode: 'inline' } }] }] },
+      options: [{ id: 'option-a', label: 'A', isCorrect: true, content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured option ' }, { type: 'formula', attrs: { id: 'formula-option', canonicalLatex: '\\frac{1}{2}', displayMode: 'inline' } }] }] } }],
+      subQuestions: [{ id: 'sub-1', label: '（1）', content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured subquestion ' }, { type: 'formulaBlock', attrs: { id: 'formula-sub', canonicalLatex: 'a^{2}+b^{2}=c^{2}', displayMode: 'block' } }] }] }, answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured subanswer' }] }] } }],
+      answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured answer ' }, { type: 'formula', attrs: { id: 'formula-answer', canonicalLatex: 'x=1', displayMode: 'inline' } }] }] },
+      analysis: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured analysis ' }, { type: 'formula', attrs: { id: 'formula-analysis', canonicalLatex: 'v=at', displayMode: 'inline' } }] }] },
     },
   };
   const layout = { items: [{ id: 'q1', sectionTitle: 'Part one', score: 3 }, { id: 'q2', sectionTitle: 'Part one', score: 6 }] };
@@ -59,6 +59,9 @@ const { renderPaperExport } = require('./paperExportRenderer');
   const richArchive = await JSZip.loadAsync(richWord.bytes);
   const richXml = await richArchive.file('word/document.xml').async('string');
   assert.ok(richXml.includes('Structured stem'), 'formal rich content text must remain in the exported paper');
+  for (const expected of ['Structured option', 'Structured subquestion', 'Structured subanswer', 'Structured answer', 'Structured analysis']) {
+    assert.ok(richXml.includes(expected), `formal rich content must retain ${expected}`);
+  }
   assert.ok(!richXml.includes('E=mc^{2}'), 'formal rich content formulas must not degrade into raw LaTeX');
   const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
   assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
