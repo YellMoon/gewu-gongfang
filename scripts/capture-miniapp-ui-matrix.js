@@ -127,6 +127,27 @@ function fixtureIdentityFromRequest(request) {
   return identities[role] || identities.super_admin;
 }
 
+function validPdfFixture() {
+  const content = 'BT /F1 18 Tf 72 720 Td (Fixture paper) Tj ET\n';
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>\nendobj\n',
+    `4 0 obj\n<< /Length ${Buffer.byteLength(content, 'ascii')} >>\nstream\n${content}endstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ];
+  const header = '%PDF-1.4\n% fixture paper\n';
+  let offset = Buffer.byteLength(header, 'ascii');
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(offset);
+    offset += Buffer.byteLength(object, 'ascii');
+  }
+  const xrefOffset = offset;
+  const xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(value => `${String(value).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(header + objects.join('') + xref, 'ascii');
+}
+
 function fixtureResponse(request, scenario) {
   const url = new URL(request.url, FIXTURE_BASE);
   const pathname = url.pathname;
@@ -185,7 +206,7 @@ function fixtureResponse(request, scenario) {
     return { statusCode: 200, body: { ok: true, delivery: { deliveryId: 'delivery_fixture', status: 'ready', artifactId: 'paper_artifact_fixture', fileName: 'fixture-paper.pdf', mimeType: 'application/pdf', expiresAt: '2026-08-27T00:15:00.000Z' } } };
   }
   if (pathname === '/api/business/miniapp-artifact-deliveries/delivery_fixture/download') {
-    return { statusCode: 200, bytes: Buffer.from('%PDF-1.4\n% fixture paper\n', 'utf8'), contentType: 'application/pdf' };
+    return { statusCode: 200, bytes: validPdfFixture(), contentType: 'application/pdf' };
   }
   if (pathname === '/api/miniapp/role-applications/me') return { statusCode: 200, body: { ok: true, state: 'not_submitted', application: null } };
   if (['/api/students', '/api/courses', '/api/schedules', '/api/teachers', '/api/payments', '/api/grades', '/api/modules'].includes(pathname)) return { statusCode: 200, body: { success: true, data: [] } };
@@ -403,4 +424,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { startFixtureServer, fixtureResponse };
+module.exports = { startFixtureServer, fixtureResponse, validPdfFixture };

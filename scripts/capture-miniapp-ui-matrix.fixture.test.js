@@ -5,6 +5,7 @@ const http = require('http');
 
 const { startFixtureServer } = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
+const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
 const TEST_PORT = 3020;
 
 function request(pathname, token, port = TEST_PORT, method = 'GET') {
@@ -103,7 +104,7 @@ function requestBytes(pathname, token, port = TEST_PORT) {
 
     const downloaded = await requestBytes('/api/business/miniapp-artifact-deliveries/delivery_fixture/download', 'fixture-paper-teacher');
     assert.strictEqual(downloaded.statusCode, 200);
-    assert.strictEqual(downloaded.body.toString('utf8'), '%PDF-1.4\n% fixture paper\n');
+    assert.strictEqual(assertPdfArtifact(downloaded.body), downloaded.body, 'the fixture download must be a real parseable PDF, never a header-only placeholder');
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
