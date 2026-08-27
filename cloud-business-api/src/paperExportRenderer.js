@@ -158,13 +158,13 @@ async function hydrateMedia(items, resolveQuestionAsset) {
 
 function answerRows(item, prefix = '') {
   const rows = [];
-  if (item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + 'Answer: ' + item.answer })] }));
-  if (item.explanation) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + 'Explanation: ' + item.explanation })] }));
+  if (item.answer) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + '答案：' + item.answer })] }));
+  if (item.explanation) rows.push(new Paragraph({ children: [new TextRun({ text: prefix + '解析：' + item.explanation })] }));
   return rows;
 }
 
 function bodyRows(items, answerPosition) {
-  const rows = [new Paragraph({ children: [new TextRun({ text: 'Questions', bold: true })] })];
+  const rows = [new Paragraph({ children: [new TextRun({ text: '试题', bold: true })] })];
   let previousSection = '';
   for (const item of items) {
     if (item.sectionTitle && item.sectionTitle !== previousSection) {
@@ -185,7 +185,7 @@ function bodyRows(items, answerPosition) {
     if (answerPosition === 'after') rows.push(...answerRows(item));
   }
   if (answerPosition !== 'after') {
-    rows.push(new Paragraph({ children: [new TextRun({ text: 'Answers', bold: true })] }));
+    rows.push(new Paragraph({ children: [new TextRun({ text: '参考答案', bold: true })] }));
     for (const item of items) rows.push(...answerRows(item, String(item.number) + '. '));
   }
   return rows;
@@ -231,15 +231,15 @@ function pdfBytes(input, items) {
         }
       }
       if (input.answerPosition === 'after') {
-        if (item.answer) document.fontSize(10).text('Answer: ' + item.answer);
-        if (item.explanation) document.fontSize(10).text('Explanation: ' + item.explanation);
+        if (item.answer) document.fontSize(10).text('答案：' + item.answer);
+        if (item.explanation) document.fontSize(10).text('解析：' + item.explanation);
       }
     }
     if (input.answerPosition !== 'after') {
-      document.moveDown().fontSize(13).text('Answers');
+      document.moveDown().fontSize(13).text('参考答案');
       for (const item of items) {
-        if (item.answer) document.fontSize(10).text(String(item.number) + '. Answer: ' + item.answer);
-        if (item.explanation) document.fontSize(10).text(String(item.number) + '. Explanation: ' + item.explanation);
+        if (item.answer) document.fontSize(10).text(String(item.number) + '. 答案：' + item.answer);
+        if (item.explanation) document.fontSize(10).text(String(item.number) + '. 解析：' + item.explanation);
       }
     }
     document.end();
