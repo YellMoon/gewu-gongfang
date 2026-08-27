@@ -94,7 +94,9 @@ function canonicalFormula(value) {
 
 function formulaDisplayMode(value) {
   const attrs = value && value.attrs && typeof value.attrs === 'object' && !Array.isArray(value.attrs) ? value.attrs : {};
-  return attrs.displayMode === 'inline' || value?.displayMode === 'inline' ? 'inline' : 'block';
+  if (attrs.displayMode === 'block' || value?.displayMode === 'block') return 'block';
+  if (attrs.displayMode === 'inline' || value?.displayMode === 'inline') return 'inline';
+  return /(?:block|display)/i.test(String(value?.type || value?.kind || '')) ? 'block' : 'inline';
 }
 
 function richTokens(value, seen = new Set(), tokens = []) {
@@ -468,19 +470,43 @@ function drawPdfMedia(document, media) {
   }
 }
 
+function compactFormulaText(latex) {
+  const superscripts = Object.freeze({ 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾' });
+  return String(latex || '')
+    .replace(/\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)')
+    .replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
+    .replace(/\\(?:times|cdot)/g, '×')
+    .replace(/\\(?:leq|le)/g, '≤')
+    .replace(/\\(?:geq|ge)/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\(?:mathrm|text)\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\^\{([^{}]*)\}/g, (_, value) => String(value).split('').map(char => superscripts[char] || '^' + char).join(''))
+    .replace(/\^([0-9])/g, (_, value) => superscripts[value] || '^' + value)
+    .replace(/_\{([^{}]*)\}/g, '($1)')
+    .replace(/[{}]/g, '')
+    .replace(/\\([A-Za-z]+)/g, '$1');
+}
+
 function drawPdfTokens(document, tokens, prefix = '', size = 10) {
-  let nextPrefix = prefix;
+  let text = prefix;
+  const flushText = () => {
+    if (!text) return;
+    document.fontSize(size).text(text).moveDown(0.25);
+    text = '';
+  };
   for (const token of tokens || []) {
     if (token.kind === 'text') {
-      document.fontSize(size).text(nextPrefix + token.text).moveDown(0.25);
-      nextPrefix = '';
+      text += token.text;
     } else if (token.kind === 'formula' && token.media) {
-      if (nextPrefix) document.fontSize(size).text(nextPrefix).moveDown(0.25);
-      nextPrefix = '';
+      if (token.displayMode === 'inline') {
+        text += compactFormulaText(token.latex);
+        continue;
+      }
+      flushText();
       drawPdfMedia(document, token.media);
     }
   }
-  if (nextPrefix) document.fontSize(size).text(nextPrefix).moveDown(0.25);
+  flushText();
 }
 
 function drawPdfAnswers(document, item, prefix = '') {

@@ -78,6 +78,14 @@ const { renderPaperExport } = require('./paperExportRenderer');
   });
   assert.ok(richPdf.bytes.includes(Buffer.from('/Subtype /Image')),
     'PDF formulas must use their measured fallback images so a formula cannot overflow the page or create a blank trailing page');
+  const defaultInlinePdf = await renderPaperExport({
+    format: 'pdf', title: 'Default inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
+    snapshot: [{ id: 'q-default-inline', stem: 'Fallback', answer: '', explanation: '', richContent: { blocks: [
+      { type: 'formula', canonicalLatex: '\\frac{H}{2t}' },
+    ] } }],
+  });
+  assert.ok(!defaultInlinePdf.bytes.includes(Buffer.from('/Subtype /Image')),
+    'a formula without an explicit block display mode must remain inline instead of consuming a standalone image row');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {
