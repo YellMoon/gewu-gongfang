@@ -4,19 +4,19 @@ const assert = require('assert');
 const { createQuestionImportTaskRuntime } = require('./questionImportRuntime');
 
 async function main() {
-  assert.strictEqual(createQuestionImportTaskRuntime(), null, 'question import must not fall back to the runtime reader when its writer is unavailable');
+  assert.strictEqual(createQuestionImportTaskRuntime(), null, 'question-import tasks require the dedicated cloud task query');
   const calls = [];
   const runtime = createQuestionImportTaskRuntime({
-    writerQuery: async (text, values) => {
+    taskQuery: async (text, values) => {
       calls.push([text, values]);
       return { rows: [] };
     },
   });
-  assert.ok(runtime && typeof runtime.create === 'function', 'a dedicated command-writer query must create the import runtime');
+  assert.ok(runtime && typeof runtime.read === 'function');
   await assert.rejects(runtime.read({
     tenantId: 'default', actor: { accountId: 'account_1', roles: ['teacher'] }, taskId: 'question_import_task_1',
   }), /CLOUD_QUESTION_IMPORT_NOT_FOUND/);
-  assert.ok(calls.length > 0, 'all import repository access must use the supplied command-writer query');
+  assert.ok(calls.length > 0, 'repository operations must use the dedicated cloud task query');
   process.stdout.write('question import runtime wiring passed\n');
 }
 

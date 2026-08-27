@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.7.22",
+  "version": "8.7.24",
   "scripts": {
     "test:runtime-role": "node sql/runtime-reader-membership.test.js",
     "pretest": "node scripts/verifyFixedSuperAdmin.test.js && npm run test:miniapp-cloud-read && node src/businessCourseLifecycleMutationService.test.js && node sql/course-lifecycle.test.js && node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node src/businessSupplementalLifecycleMutationService.test.js && node src/supplementalLifecycleRoutes.test.js && node sql/supplemental-business-authority.test.js && node sql/foundation-lifecycle.test.js && node sql/foundation-lifecycle.postgres.test.js && node sql/schedule-lifecycle.postgres.test.js && node sql/question-taxonomy-authority.test.js && node sql/question-taxonomy-authority.postgres.test.js && node sql/runtime-reader-membership.test.js",

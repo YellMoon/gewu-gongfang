@@ -2,9 +2,9 @@
 
 const { createQuestionImportTaskRepository } = require('./questionImportTaskRepository');
 
-function createQuestionImportTaskRuntime({ writerQuery } = {}) {
-  if (typeof writerQuery !== 'function') return null;
-  return createQuestionImportTaskRepository({ query: writerQuery });
+function createQuestionImportTaskRuntime({ taskQuery } = {}) {
+  if (typeof taskQuery !== 'function') return null;
+  return createQuestionImportTaskRepository({ query: taskQuery });
 }
 
 module.exports = Object.freeze({ createQuestionImportTaskRuntime });
