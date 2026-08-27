@@ -36,6 +36,11 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn(f'--label gewu.candidate-operation="{operation_id}"', command)
         self.assertIn("trap 'rm -f -- \"$env_path\"' EXIT", command)
 
+    def test_candidate_and_promoted_cloud_service_enable_the_paper_export_worker(self):
+        for command in (candidate_command("8.1.0-8c425eab", "a" * 32), switch_command("8.1.0-8c425eab", "b" * 32)):
+            self.assertIn("CLOUD_PAPER_EXPORT_WORKER_ENABLED=1", command)
+            self.assertIn("sed -i", command)
+
     def test_switch_always_removes_the_copied_environment_file(self):
         command = switch_command("8.1.0-8c425eab", "b" * 32)
         self.assertIn("trap 'rm -f -- \"$env_path\"' EXIT", command)
