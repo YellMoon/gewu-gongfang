@@ -17,7 +17,7 @@ function scenario(id, route, roleView, identity, state, expectedText, categories
 }
 
 const runtimeScenarios = Object.freeze([
-  scenario('login-guest', 'pages/login/index', 'guest', 'guest', 'cloud-login', '使用微信手机号登录', ['guest']),
+  scenario('login-guest', 'pages/login/index', 'guest', 'guest', 'cloud-login', '授权手机号并继续', ['guest']),
   scenario('privacy-guest', 'pages/login/privacy', 'guest', 'guest', 'privacy-content', '隐私保护指引', ['guest'], 'empty', 'tap-privacy-link'),
   scenario('home-super-admin', 'pages/index/index', 'super_admin', 'super_admin', 'super-admin-dashboard', '运营面板', ['super-admin-path']),
   scenario('home-teacher', 'pages/index/index', 'teacher', 'teacher', 'teacher-dashboard', String.fromCharCode(25945, 23398, 38754, 26495), ['teacher-path']),

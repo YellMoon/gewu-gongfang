@@ -28,6 +28,9 @@ const appConfig = read('miniapp/src/app.config.ts');
 const appSource = read('miniapp/src/app.tsx');
 const privacyPage = display(read('miniapp/src/pages/login/privacy.tsx'));
 const privacyConfig = read('miniapp/src/pages/login/privacy.config.ts');
+const loginConfig = read('miniapp/src/pages/login/index.config.ts');
+const loginPage = display(read('miniapp/src/pages/login/index.tsx'));
+const loginStyles = read('miniapp/src/pages/login/index.scss');
 const desktopNavigation = read('src/navigation/appNavigation.tsx');
 const desktopQuestionBank = read('src/pages/QuestionBankPreview.tsx');
 
@@ -97,6 +100,13 @@ assert.ok(privacyPage.includes('微信登录凭证') && privacyPage.includes('�
 assert.ok(!privacyPage.includes('昵称、头像') && !privacyPage.includes('设备型号'), 'privacy guidance must not claim collection that the miniapp does not perform');
 assert.ok(privacyConfig.includes("navigationStyle: 'custom'"), 'privacy guidance must use its own safe-area-aware header instead of stacking a second global navigation bar');
 assert.ok(privacyPage.includes('本指引生效日期：2026年8月26日'), 'privacy guidance must show its current effective date');
+assert.ok(loginPage.includes('授权手机号并继续'), 'the sign-in action must describe the user authorization that actually occurs');
+assert.ok(!loginPage.includes('微信登录'), 'the sign-in action must not use a vague implementation label');
+assert.ok(!loginPage.includes('新账号默认为访客') && !loginPage.includes('家庭成员申请'), 'the sign-in page must not expose role-policy explanations before authentication');
+assert.ok(loginPage.includes('openType="getPhoneNumber"'), 'the sign-in action must retain the WeChat phone authorization capability');
+assert.ok(loginStyles.includes('.login-brand') && loginStyles.includes('flex-direction: row'), 'the logo and product name must form one compact horizontal brand lockup');
+assert.ok(!loginStyles.includes('.login-form'), 'the sign-in action must not be wrapped in a decorative explanatory card');
+assert.ok(loginConfig.includes("navigationStyle: 'custom'"), 'the sign-in page must not add a redundant navigation title above its own brand');
 
 for (const removedRoute of [
   'pages/admin/users/index',

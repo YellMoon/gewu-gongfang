@@ -1,3 +1,3 @@
 module.exports = {
-  navigationBarTitleText: '登录',
+  navigationStyle: 'custom',
 };
