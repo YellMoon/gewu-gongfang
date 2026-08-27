@@ -6,6 +6,8 @@ const path = require('path');
 
 const dockerfile = fs.readFileSync(path.join(__dirname, 'Dockerfile'), 'utf8');
 assert.match(dockerfile, /^COPY cloud-business-api\/package\.json \.\/$/m, 'the cloud image must be built from the repository root');
+assert.match(dockerfile, /^RUN npm install --omit=dev --ignore-scripts --registry=https:\/\/registry\.npmmirror\.com --fetch-timeout=30000 --fetch-retries=2$/m,
+  'the cloud image must use the verified reachable package registry with bounded retries');
 assert.match(dockerfile, /^COPY cloud-business-api\/server\.js \.\/$/m);
 assert.match(dockerfile, /^COPY cloud-business-api\/src \.\/src$/m);
 assert.match(dockerfile, /^COPY cloud-business-api\/sql \.\/sql$/m, 'the cloud image must include versioned database migrations');
