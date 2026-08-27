@@ -150,5 +150,21 @@ function identity(overrides = {}) {
   const failure = await failed.refresh({ id: 'user-1', user_type: 'teacher', teacher_id: 'teacher-1' }, { force: true });
   assert.strictEqual(failure.status, 'error');
   assert.deepStrictEqual(failure.capabilities, [], 'fetch failure must not reuse persisted capabilities');
+
+  const rejectedEvents = [];
+  const rejected = createAuthorizationSession({
+    readCache: () => oldCache, writeCache: () => {}, clearPermissionCache: () => rejectedEvents.push('clear-permission'),
+    clearBusinessCache: () => rejectedEvents.push('clear-business'), setBusinessCacheIdentity: () => {}, writeUser: () => {},
+    onIdentityRejected: user => rejectedEvents.push(['identity-rejected', user.id]),
+    fetchRemote: async () => {
+      const error = new Error('Cloud identity rejected');
+      error.code = 'CLOUD_MINIAPP_IDENTITY_REJECTED';
+      throw error;
+    },
+  });
+  const rejectedResult = await rejected.refresh({ id: 'user-1', user_type: 'teacher', teacher_id: 'teacher-1' }, { force: true });
+  assert.strictEqual(rejectedResult.status, 'error');
+  assert.deepStrictEqual(rejectedEvents, ['clear-business', 'clear-permission', ['identity-rejected', 'user-1']],
+    'a server-rejected identity must clear only that stale session, while ordinary network failures stay recoverable');
   console.log('miniapp authorization session checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

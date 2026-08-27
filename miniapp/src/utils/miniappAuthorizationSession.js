@@ -133,6 +133,9 @@ function createAuthorizationSession(dependencies) {
       dependencies.clearBusinessCache();
       dependencies.clearPermissionCache();
       dependencies.writeCache(null);
+      if (error?.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED' && typeof dependencies.onIdentityRejected === 'function') {
+        dependencies.onIdentityRejected(localUser);
+      }
       return { status: 'error', identity: null, capabilities: [], error };
     }
   }

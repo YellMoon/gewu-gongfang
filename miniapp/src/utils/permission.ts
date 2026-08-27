@@ -5,6 +5,7 @@
 import Taro from '@tarojs/taro';
 import { miniappCloudBusinessApi } from './api';
 import { authSessionRuntime } from './authSession';
+import { clearAuthenticatedSession } from './miniappApiSessionRuntime';
 import { cloudSessionUser } from '../pages/login/cloudSessionIdentityRuntime';
 import {
   canUserSubmitMiniappWrite,
@@ -16,6 +17,7 @@ import {
 import { createAuthorizationSession } from './miniappAuthorizationSession';
 import { createPermissionFetchBoundary } from './miniappPermissionFetchRuntime';
 import { clearBusinessCache, setBusinessCacheIdentity } from './storage';
+import { accountSessionCleanupStorageKeys } from './accountExperience';
 
 export const readonlyModules = [
   'students',
@@ -152,11 +154,24 @@ const authorizationSession = createAuthorizationSession({
   fetchRemote: async () => {
     const token = String(Taro.getStorageSync('auth_token') || '').trim();
     const response = await miniappCloudBusinessApi.readAuthorization(token);
-    if (!response.success || !response.data) throw new Error(response.error || 'AUTHORIZATION_REFRESH_FAILED');
+    if (!response.success || !response.data) {
+      const error: any = new Error(response.error || 'AUTHORIZATION_REFRESH_FAILED');
+      error.code = response.code || 'AUTHORIZATION_REFRESH_FAILED';
+      throw error;
+    }
     const payload = response.data as any;
     const identity = cloudSessionUser(payload.identity);
     if (!identity) throw new Error('AUTHORIZATION_REFRESH_REJECTED');
     return { identity, capabilities: payload.capabilities || [] };
+  },
+  onIdentityRejected: (user: UserInfo | null) => {
+    clearAuthenticatedSession({
+      invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
+      clearPermissionCache,
+      clearBusinessCache,
+      removeStorage: (key: string) => Taro.removeStorageSync(key),
+      cleanupStorageKeys: accountSessionCleanupStorageKeys,
+    }, [user]);
   },
   sanitizeCapabilities: sanitizeCapabilitiesForIdentity,
 });
