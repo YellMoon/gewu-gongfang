@@ -92,6 +92,11 @@ function canonicalFormula(value) {
   return String(value.canonicalLatex || value.canonical_latex || value.latex || attrs.canonicalLatex || attrs.canonical_latex || attrs.latex || '').trim();
 }
 
+function formulaDisplayMode(value) {
+  const attrs = value && value.attrs && typeof value.attrs === 'object' && !Array.isArray(value.attrs) ? value.attrs : {};
+  return attrs.displayMode === 'inline' || value?.displayMode === 'inline' ? 'inline' : 'block';
+}
+
 function richTokens(value, seen = new Set(), tokens = []) {
   if (value === null || value === undefined || seen.has(value)) return tokens;
   if (typeof value === 'string') {
@@ -107,7 +112,7 @@ function richTokens(value, seen = new Set(), tokens = []) {
   }
   const latex = canonicalFormula(value);
   if (latex) {
-    tokens.push({ kind: 'formula', latex });
+    tokens.push({ kind: 'formula', latex, displayMode: formulaDisplayMode(value) });
     return tokens;
   }
   if (value.type === 'text' && typeof value.text === 'string') {
@@ -302,35 +307,52 @@ function bodyRows(items, answerPosition) {
   return rows;
 }
 
-function wordMediaRow(media) {
-  return new Paragraph({ children: [new ImageRun({
+function wordMediaRun(media) {
+  return new ImageRun({
     data: media.bytes,
     type: media.kind === 'formula' ? 'svg' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
     ...(media.kind === 'formula' ? { fallback: { data: media.fallbackBytes, type: 'png' } } : {}),
     transformation: media.kind === 'formula' ? { width: 240, height: 72 } : { width: 420, height: 280 },
-  })] });
+  });
+}
+
+function wordMediaRow(media) {
+  return new Paragraph({ children: [wordMediaRun(media)] });
 }
 
 function appendWordTokens(rows, tokens, prefix = '') {
   let nextPrefix = prefix;
+  let children = [];
+  const flush = () => {
+    if (children.length) rows.push(new Paragraph({ children }));
+    children = [];
+  };
   for (const token of tokens || []) {
     if (token.kind === 'text') {
-      rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix + token.text })] }));
+      children.push(new TextRun({ text: nextPrefix + token.text }));
       nextPrefix = '';
     } else if (token.kind === 'formula' && token.media) {
+      if (token.displayMode === 'inline') {
+        if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
+        nextPrefix = '';
+        children.push(wordMediaRun(token.media));
+        continue;
+      }
+      flush();
       if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
       nextPrefix = '';
       rows.push(wordMediaRow(token.media));
     }
   }
-  if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
+  if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
+  flush();
 }
 
 function orderedAnswerRows(item, prefix = '') {
   const rows = [];
-  for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
-  appendWordTokens(rows, item.answerTokens, prefix + paperLabels.answer);
-  appendWordTokens(rows, item.explanationTokens, prefix + paperLabels.analysis);
+  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) appendWordTokens(rows, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
+  if (item.answerTokens.length) appendWordTokens(rows, item.answerTokens, prefix + paperLabels.answer);
+  if (item.explanationTokens.length) appendWordTokens(rows, item.explanationTokens, prefix + paperLabels.analysis);
   return rows;
 }
 
@@ -440,9 +462,9 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10) {
 }
 
 function drawPdfAnswers(document, item, prefix = '') {
-  for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
-  drawPdfTokens(document, item.answerTokens, prefix + paperLabels.answer);
-  drawPdfTokens(document, item.explanationTokens, prefix + paperLabels.analysis);
+  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) drawPdfTokens(document, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
+  if (item.answerTokens.length) drawPdfTokens(document, item.answerTokens, prefix + paperLabels.answer);
+  if (item.explanationTokens.length) drawPdfTokens(document, item.explanationTokens, prefix + paperLabels.analysis);
 }
 
 function orderedPdfBytes(input, items) {

@@ -48,6 +48,16 @@ function reference(value, key) {
   return found ? { objectNumber: Number(found[1]), generation: Number(found[2]) } : null;
 }
 
+function nonNegativeInteger(value, key) {
+  const found = new RegExp(`/${key}\\s+(\\d+)\\b`).exec(value);
+  if (!found || !Number.isSafeInteger(Number(found[1]))) return null;
+  return Number(found[1]);
+}
+
+function sameReference(left, right) {
+  return Boolean(left && right && left.objectNumber === right.objectNumber && left.generation === right.generation);
+}
+
 function assertPageTree(text, xref, root) {
   const load = ref => {
     const entry = xref.entries.get(ref.objectNumber);
@@ -64,18 +74,25 @@ function assertPageTree(text, xref, root) {
   const pages = reference(catalog, 'Pages');
   if (!pages) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
   const seen = new Set();
-  const walk = ref => {
+  const walk = (ref, parent) => {
     const key = `${ref.objectNumber}:${ref.generation}`;
     if (seen.has(key)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     seen.add(key);
     const object = load(ref);
-    if (/\/Type\s*\/Page\b/.test(object)) return 1;
+    if (/\/Type\s*\/Page\b/.test(object)) {
+      if (!parent || !sameReference(reference(object, 'Parent'), parent)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
+      return 1;
+    }
     if (!/\/Type\s*\/Pages\b/.test(object)) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
+    const count = nonNegativeInteger(object, 'Count');
+    if (count === null || count < 1) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     const kids = /\/Kids\s*\[([^\]]*)\]/.exec(object);
     if (!kids) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
     const refs = Array.from(kids[1].matchAll(/(\d+)\s+(\d+)\s+R\b/g), match => ({ objectNumber: Number(match[1]), generation: Number(match[2]) }));
     if (!refs.length) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
-    return refs.reduce((total, child) => total + walk(child), 0);
+    const pages = refs.reduce((total, child) => total + walk(child, ref), 0);
+    if (pages !== count) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
+    return pages;
   };
   if (walk(pages) < 1) throw failure('CLOUD_PAPER_ARTIFACT_PDF_INVALID');
 }

@@ -72,5 +72,20 @@ const { renderPaperExport } = require('./paperExportRenderer');
     'an answer formula must retain its position after its answer text instead of moving into the question body');
   const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
   assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
+  const inlineWord = await renderPaperExport({
+    format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
+    snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {
+      version: 1, type: 'question-document', sections: {
+        stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Before ' }, { type: 'formula', attrs: { canonicalLatex: 'x=1', displayMode: 'inline' } }, { type: 'text', text: ' after' }] }] },
+        options: [], subQuestions: [], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] },
+      },
+    } }],
+  });
+  const inlineXml = await (await JSZip.loadAsync(inlineWord.bytes)).file('word/document.xml').async('string');
+  const inlineBefore = inlineXml.indexOf('Before');
+  const inlineAfter = inlineXml.indexOf('after');
+  const inlineParagraph = inlineXml.slice(inlineXml.lastIndexOf('<w:p', inlineBefore), inlineXml.indexOf('</w:p>', inlineBefore));
+  assert.ok(inlineBefore < inlineAfter && inlineParagraph.includes('<w:drawing>') && inlineParagraph.includes('after'),
+    'inline formula text and its vector must remain in the same Word paragraph');
   console.log('paper export renderer checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

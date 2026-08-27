@@ -1,7 +1,7 @@
 {
   "name": "gewu-controlled-storage-agent",
   "private": true,
-  "version": "8.7.12",
+  "version": "8.7.13",
   "scripts": {
     "start": "node src/main.js",
     "test": "node Dockerfile.test.js && node src/config.test.js && node src/launchConfig.test.js && node src/objectStore.test.js && node src/health.test.js && node src/healthCli.test.js && node src/cloudClient.test.js && node src/questionImportParser.test.js && node src/worker.test.js && node src/artifactDeliveryWorker.test.js && node src/runtime.test.js"

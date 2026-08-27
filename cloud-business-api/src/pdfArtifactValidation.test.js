@@ -32,6 +32,21 @@ const { renderPaperExport } = require('./paperExportRenderer');
     error => error.code === 'CLOUD_PAPER_ARTIFACT_PDF_INVALID',
     'xref offsets alone must not make non-dictionary page-tree objects a valid PDF',
   );
+  const incompleteObjects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page >>\nendobj\n',
+  ];
+  let incompletePdf = '%PDF-1.4\n';
+  const incompleteOffsets = [0];
+  for (const object of incompleteObjects) { incompleteOffsets.push(Buffer.byteLength(incompletePdf, 'latin1')); incompletePdf += object; }
+  const incompleteXrefOffset = Buffer.byteLength(incompletePdf, 'latin1');
+  incompletePdf += `xref\n0 4\n0000000000 65535 f \n${incompleteOffsets.slice(1).map(offset => String(offset).padStart(10, '0') + ' 00000 n ').join('\n')}\ntrailer\n<< /Root 1 0 R >>\nstartxref\n${incompleteXrefOffset}\n%%EOF\n`;
+  assert.throws(
+    () => assertPdfArtifact(Buffer.from(incompletePdf, 'latin1')),
+    error => error.code === 'CLOUD_PAPER_ARTIFACT_PDF_INVALID',
+    'a dictionary-shaped tree without a page count or page parent must be rejected',
+  );
   const rendered = await renderPaperExport({
     format: 'pdf', title: 'PDF artifact validation', answerPosition: 'end', formulaMode: 'word-native',
     snapshot: [{ id: 'q1', stem: 'Question', options: ['A. choice'], answer: 'A', explanation: 'Explanation' }],
