@@ -32,7 +32,7 @@ const { createDesktopRegistrationPgAdapter } = require('./src/desktopRegistratio
 const { resolveRuntimeDatabaseUser } = require('./src/runtimeDatabaseRole');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
-const { createQuestionImportTaskRepository } = require('./src/questionImportTaskRepository');
+const { createQuestionImportTaskRuntime } = require('./src/questionImportRuntime');
 const { createPaperExportTaskRepository } = require('./src/paperExportTaskRepository');
 const { createPaperExportArtifactRepository } = require('./src/paperExportArtifactRepository');
 const { createPaperExportTaskProcessor } = require('./src/paperExportTaskProcessor');
@@ -340,6 +340,7 @@ function createDesktopRegistrationFromEnvironment() {
     businessTeacherLifecycleMutations,
     businessRoomLifecycleMutations,
     businessCourseLifecycleMutations,
+    questionImportQuery: (text, values) => writerPool.query(text, values),
     async close() { await Promise.all([identityPool.end(), writerPool.end()]); },
   };
 }
@@ -388,8 +389,8 @@ const questionAuthority = createQuestionAuthorityRuntime({
   query: (text, values) => pool.query(text, values),
   transaction: questionCommandTransaction,
 });
-const questionImportTasks = createQuestionImportTaskRepository({
-  query: (text, values) => pool.query(text, values),
+const questionImportTasks = createQuestionImportTaskRuntime({
+  writerQuery: desktopRuntime?.questionImportQuery,
 });
 const paperExportTasks = createPaperExportTaskRepository({
   query: (text, values) => pool.query(text, values),
