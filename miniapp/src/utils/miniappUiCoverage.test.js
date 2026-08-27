@@ -221,7 +221,7 @@ for (const category of REQUIRED_COVERAGE_CATEGORIES) {
 }
 for (const [route, roles] of Object.entries({
   'pages/index/index': ['super_admin', 'teacher', 'student', 'visitor'],
-  'pages/schedule/index': ['student'],
+  'pages/schedule/index': ['student', 'visitor'],
   'pages/schedule/detail/index': ['student'],
   'pages/schedule/edit/index': ['student'],
   'pages/student-detail/index': ['student'],
@@ -251,7 +251,7 @@ const superAdminScenarios = runtimeScenarios.filter(item => item.roleView === 's
 assert.ok(superAdminScenarios.length > 0 && superAdminScenarios.every(item => (
   item.categories.includes('super-admin-path') && !item.categories.includes('teacher-path')
 )), 'super-admin scenarios must remain distinct from the teacher path');
-assert.ok(!pageInventory.find(entry => entry.route === 'pages/schedule/index')?.roleViews.includes('visitor'), 'visitor access must not be represented as a schedule-page audit path');
+assert.ok(pageInventory.find(entry => entry.route === 'pages/schedule/index')?.roleViews.includes('visitor'), 'visitor schedule access must remain in the page audit path');
 assert.ok(!runtimeScenarios.find(item => item.id === 'question-visitor-preview')?.categories.includes('limited-write'), 'visitor question preview must not be mislabeled as a write capability');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('parent')), 'guardian access is a student relationship, not a parent role');
 assert.ok(pageInventory.every(entry => !entry.roleViews.includes('super-admin')), 'role spelling must use super_admin');

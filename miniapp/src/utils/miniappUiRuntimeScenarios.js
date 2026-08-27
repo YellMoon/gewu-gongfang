@@ -28,6 +28,7 @@ const runtimeScenarios = Object.freeze([
   scenario('schedule-teacher-empty', 'pages/schedule/index', 'teacher', 'teacher', 'empty-day', '暂无排课数据', ['teacher-path', 'empty']),
   scenario('schedule-student-empty', 'pages/schedule/index', 'student', 'student', 'empty-day', '暂无排课数据', ['student-path', 'empty']),
   scenario('schedule-guardian-empty', 'pages/schedule/index', 'student', 'guardian', 'empty-day', '暂无排课数据', ['student-path', 'empty']),
+  scenario('schedule-visitor-empty', 'pages/schedule/index', 'visitor', 'visitor', 'visitor-empty', '暂无课程安排', ['visitor', 'empty']),
   scenario('schedule-detail-super-admin-missing', 'pages/schedule/detail/index', 'super_admin', 'super_admin', 'missing-record', '未找到排课记录', ['super-admin-path', 'empty']),
   scenario('schedule-detail-teacher-missing', 'pages/schedule/detail/index', 'teacher', 'teacher', 'missing-record', '未找到排课记录', ['teacher-path', 'empty']),
   scenario('schedule-detail-student-missing', 'pages/schedule/detail/index', 'student', 'student', 'missing-record', '未找到排课记录', ['student-path', 'empty']),
