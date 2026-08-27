@@ -96,6 +96,34 @@ async function main() {
   assert.deepStrictEqual(events, ['lease', 'lease', 'download', 'putVerified', 'complete', 'lease', 'download', 'putVerified', 'parse', 'reportSourceCandidates', 'lease', 'putVerified', 'complete'],
     'derived media must reuse the just-verified source parse instead of parsing the same Word file again');
 
+  const fallbackEvents = [];
+  const stalePositionWorker = createStorageWorker({
+    agentPrivateKey,
+    objectStore: {
+      async readVerified() { fallbackEvents.push('readVerified'); return sourceBytes; },
+      async putVerified(descriptor, bytes) {
+        fallbackEvents.push('putVerified');
+        assert.deepStrictEqual(descriptor, { objectId: 'obj_media_1', version: 1, sha256: mediaHash, bytes: mediaBytes.length });
+        assert.deepStrictEqual(bytes, mediaBytes);
+      },
+    },
+    client: {
+      async lease() { fallbackEvents.push('lease'); return mediaTask; },
+      async download() { throw new Error('not used'); },
+      async complete(input) { fallbackEvents.push('complete'); assert.strictEqual(input.taskId, mediaTask.taskId); },
+      async reportSourceCandidates() { throw new Error('not used'); },
+    },
+    questionImportParser: {
+      async parse() {
+        fallbackEvents.push('parse');
+        return { candidates: [], mediaBytes: [[Buffer.from('different')], [mediaBytes]] };
+      },
+    },
+  });
+  assert.deepStrictEqual(await stalePositionWorker.runOnce(), { state: 'verified', taskId: mediaTask.taskId },
+    'a checksum-identified imported asset must remain recoverable when a legacy parser emitted a different positional ordering');
+  assert.deepStrictEqual(fallbackEvents, ['lease', 'readVerified', 'parse', 'putVerified', 'complete']);
+
   const rejectedEvents = [];
   const tamperedWorker = createStorageWorker({
     agentPrivateKey,

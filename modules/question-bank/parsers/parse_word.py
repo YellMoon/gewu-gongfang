@@ -1135,13 +1135,23 @@ def attach_referenced_assets_from_rich_rows(questions, rich_rows):
         return
     for question in questions:
         text = _question_rich_text(question)
-        refs = set(re.findall(r"question-asset://([A-Za-z0-9_-]+)", text))
+        refs = []
+        seen_refs = set()
+
+        def add_ref(value):
+            reference = str(value or "")
+            if reference and reference not in seen_refs:
+                seen_refs.add(reference)
+                refs.append(reference)
+
+        for reference in re.findall(r"question-asset://([A-Za-z0-9_-]+)", text):
+            add_ref(reference)
         for img_match in re.finditer(r"<img\b[^>]*\b(?:alt|src)=[\"']([^\"']+)[\"'][^>]*>", text, flags=re.I):
             value = img_match.group(1)
             if value.startswith("question-asset://"):
-                refs.add(value.split("question-asset://", 1)[1])
+                add_ref(value.split("question-asset://", 1)[1])
             elif value:
-                refs.add(value)
+                add_ref(value)
         if not refs:
             continue
         question.setdefault("assets", [])

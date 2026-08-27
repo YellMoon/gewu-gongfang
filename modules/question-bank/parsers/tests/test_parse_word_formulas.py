@@ -14,7 +14,7 @@ if str(PARSER_DIR) not in sys.path:
     sys.path.insert(0, str(PARSER_DIR))
 
 from docx_fixture import DocxFixture  # noqa: E402
-from parse_word import _image_tag, build_question_rich_content, quality_report  # noqa: E402
+from parse_word import attach_referenced_assets_from_rich_rows, _image_tag, build_question_rich_content, quality_report  # noqa: E402
 
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -42,6 +42,19 @@ def _formula_node_ids(document):
 
 
 class ParseWordFormulaIntegrationTests(unittest.TestCase):
+    def test_referenced_assets_follow_document_reference_order(self):
+        first = "a" * 64
+        second = "b" * 64
+        questions = [{"stem": "<img src=\"question-asset://%s\" /><img src=\"question-asset://%s\" />" % (first, second), "assets": []}]
+        rich_rows = [{"assets": [
+            {"content_hash": first, "file_name": "first.png"},
+            {"content_hash": second, "file_name": "second.png"},
+        ]}]
+
+        attach_referenced_assets_from_rich_rows(questions, rich_rows)
+
+        self.assertEqual([asset["content_hash"] for asset in questions[0]["assets"]], [first, second])
+
     def setUp(self) -> None:
         self.fixture = DocxFixture().add("word/document.xml", DOCUMENT).add("word/numbering.xml", NUMBERING)
         self.path = self.fixture.write()

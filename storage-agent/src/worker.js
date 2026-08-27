@@ -12,8 +12,24 @@ function descriptorFor(task) {
 }
 
 function assertExpected(task, bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length !== task.expectedBytes
-    || crypto.createHash('sha256').update(bytes).digest('hex') !== task.expectedSha256) throw failure('STORAGE_WORKER_BYTES_MISMATCH');
+  if (!matchesExpected(task, bytes)) throw failure('STORAGE_WORKER_BYTES_MISMATCH');
+}
+
+function matchesExpected(task, bytes) {
+  return Buffer.isBuffer(bytes) && bytes.length === task.expectedBytes
+    && crypto.createHash('sha256').update(bytes).digest('hex') === task.expectedSha256;
+}
+
+function mediaBytesForTask(task, parsed) {
+  const direct = parsed?.mediaBytes?.[task.itemIndex]?.[task.assetIndex];
+  if (matchesExpected(task, direct)) return direct;
+  for (const assets of parsed?.mediaBytes || []) {
+    if (!Array.isArray(assets)) continue;
+    for (const bytes of assets) {
+      if (matchesExpected(task, bytes)) return bytes;
+    }
+  }
+  throw failure('STORAGE_WORKER_BYTES_MISMATCH');
 }
 
 function sourceDescriptor(task) {
@@ -96,8 +112,7 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
       }
       if (task.kind === 'question_import_media') {
         const parsed = await parseImportSource(sourceDescriptor(task));
-        const bytes = parsed?.mediaBytes?.[task.itemIndex]?.[task.assetIndex];
-        assertExpected(task, bytes);
+        const bytes = mediaBytesForTask(task, parsed);
         await objectStore.putVerified(descriptorFor(task), bytes);
         await client.complete({
           taskId: task.taskId, leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
