@@ -72,6 +72,12 @@ const { renderPaperExport } = require('./paperExportRenderer');
     'an answer formula must retain its position after its answer text instead of moving into the question body');
   const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
   assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
+  const richPdf = await renderPaperExport({
+    format: 'pdf', title: 'Structured formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
+    snapshot: [{ id: 'q-rich', stem: 'Fallback stem', answer: 'A', explanation: 'Explanation', richContent: productionRichContent }],
+  });
+  assert.ok(richPdf.bytes.includes(Buffer.from('/Subtype /Image')),
+    'PDF formulas must use their measured fallback images so a formula cannot overflow the page or create a blank trailing page');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {

@@ -240,7 +240,9 @@ async function hydrateMedia(items, resolveQuestionAsset) {
     if (token.kind !== 'formula') return token;
     const bytes = formulaSvg(token.latex);
     try {
-      return { ...token, media: { kind: 'formula', bytes, fallbackBytes: await sharp(bytes).png().toBuffer() } };
+      const fallbackBytes = await sharp(bytes).png().toBuffer();
+      const metadata = await sharp(fallbackBytes).metadata();
+      return { ...token, media: { kind: 'formula', bytes, fallbackBytes, width: metadata.width, height: metadata.height } };
     } catch (_) {
       throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
     }
@@ -250,7 +252,12 @@ async function hydrateMedia(items, resolveQuestionAsset) {
     media: await Promise.all(item.assets.map(async asset => {
       const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
       if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
-      return { ...asset, bytes: Buffer.from(bytes), kind: 'image' };
+      try {
+        const metadata = await sharp(bytes).metadata();
+        return { ...asset, bytes: Buffer.from(bytes), kind: 'image', width: metadata.width, height: metadata.height };
+      } catch (_) {
+        throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      }
     })),
     stemTokens: await hydrateTokens(item.stemTokens),
     options: await Promise.all(item.options.map(hydrateTokens)),
@@ -435,12 +442,27 @@ function pdfBytes(input, items) {
   });
 }
 
+function pdfMediaSize(media) {
+  const naturalWidth = Number.isFinite(media.width) && media.width > 0 ? media.width : 280;
+  const naturalHeight = Number.isFinite(media.height) && media.height > 0 ? media.height : 72;
+  const maxWidth = media.kind === 'formula' ? 280 : 480;
+  const maxHeight = media.kind === 'formula' ? 96 : 360;
+  const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, 1);
+  return { width: Math.max(1, naturalWidth * scale), height: Math.max(1, naturalHeight * scale) };
+}
+
+function ensurePdfSpace(document, height) {
+  const bottom = document.page.height - document.page.margins.bottom;
+  if (document.y + height > bottom) document.addPage();
+}
+
 function drawPdfMedia(document, media) {
   try {
-    if (media.kind === 'formula') {
-      SVGtoPDF(document, media.bytes.toString('utf8'), document.x, document.y, { width: 280 });
-      document.moveDown(2);
-    } else document.image(media.bytes, { fit: [480, 360] }).moveDown(0.5);
+    const { width, height } = pdfMediaSize(media);
+    ensurePdfSpace(document, height + 6);
+    document.image(media.kind === 'formula' ? media.fallbackBytes : media.bytes, document.x, document.y, { width, height });
+    document.y += height + 6;
+    document.x = document.page.margins.left;
   } catch (_) {
     throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
   }
