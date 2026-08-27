@@ -22,6 +22,10 @@ Every formal deployment is instead gated by one reviewed protocol and data-compa
 5. Before publishing an OSS desktop update, cloud, storage, and miniapp must each have compatible verified receipts in the same ledger. Their version strings may differ.
 6. `npm run release:complete` additionally requires the miniapp production receipt. A development upload remains partial.
 
+### Storage proxy update policy
+
+The NAS storage proxy is not rebuilt or switched merely because the desktop, cloud business service, or miniapp has a new version. Build a storage-proxy candidate only when its own change affects object storage, import parsing, media or artifact delivery, storage transport compatibility, or a security fix. A failed upload or deployment is retried with the same verified artifact; it is not a reason to increment the storage-proxy version. Keep the last verified rollback container until the replacement has passed its health and compatibility checks.
+
 ## Compatibility boundary
 
 - Changes to a REST protocol, export protocol, storage transport, or business-data schema must first update `config/release-compatibility.json`, their contract tests, and every affected component’s release plan.
