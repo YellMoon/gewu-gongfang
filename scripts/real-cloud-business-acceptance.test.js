@@ -140,6 +140,10 @@ async function teachingLoopCreatesReadsConflictsAndCleans() {
     const key = `${resource}:${id}`;
     const responseKey = singularByPath[resource];
     if (method === 'POST') {
+      if (resource === 'courses') {
+        assert.deepStrictEqual(body.data.pricings, [{ studentId: `${marker}-student`, tuition: 100, teacherFee: 60 }]);
+        assert.strictEqual(Object.hasOwn(body.data, 'studentPricings'), false);
+      }
       const updatedAt = `2026-08-27T04:40:${String(timestamps.size + 1).padStart(2, '0')}.000Z`;
       created.add(key); timestamps.set(key, updatedAt);
       return response(201, { ok: true, [responseKey]: { id, updatedAt } });

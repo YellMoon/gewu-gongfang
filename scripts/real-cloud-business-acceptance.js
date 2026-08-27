@@ -405,7 +405,7 @@ async function runTeachingLoopAcceptance({
     sourceType: 1, institutionId: ids.institution, priceTuition: 100, priceTeacher: 60, billingUnit: 1,
     teacherFeeMode: 1, roomId: ids.room, roomName: `${marker} room`, teacherId: ids.teacher,
     teacherName: `${marker} teacher`, active: true, defaultDurationMinutes: 90, notes: 'controlled temporary teaching acceptance',
-    studentPricings: [{ studentId: ids.student, tuition: 100, teacherFee: 60 }],
+    pricings: [{ studentId: ids.student, tuition: 100, teacherFee: 60 }],
   });
   const operations = [
     { resource: 'institutions', table: 'institutions', key: 'institution', id: ids.institution,
