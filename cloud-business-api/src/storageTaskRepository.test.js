@@ -53,8 +53,8 @@ async function main() {
   assert.ok(calls[1].text.includes('encrypted_import_source_relays import_relay'), 'import source tasks require a live encrypted relay before leasing');
   assert.ok(calls[1].text.includes('question_import_media_objects import_media') && calls[1].text.includes("'question_import_media'"),
     'a derived media task must lease only after the source object is verified and must identify itself to the agent');
-  assert.ok(calls[1].text.includes('ORDER BY CASE WHEN import_source.import_task_id IS NOT NULL THEN 0 ELSE 1 END,task.created_at ASC,task.task_id ASC'),
-    'new encrypted import sources must be leased before derived media so a large older import cannot starve a new Word import');
+  assert.match(calls[1].text, /ORDER BY CASE WHEN import_source\.import_task_id IS NOT NULL THEN 0 WHEN import_media\.media_id IS NOT NULL THEN 1 ELSE 2 END,\s*CASE WHEN import_media\.media_id IS NOT NULL THEN media_import_task\.updated_at ELSE NULL END DESC NULLS LAST,\s*task\.created_at ASC,task\.task_id ASC/,
+    'new encrypted import sources and their newest derived media must not be starved by a large older import');
   assert.ok(calls[1].text.includes('media_source.storage_state=\'verified\''),
     'derived media must be reconstructed only from an immutable, verified NAS source object');
   assert.ok(calls[1].text.includes('question_relay.expires_at > transaction_timestamp()') && calls[1].text.includes('artifact_relay.expires_at > transaction_timestamp()'), 'leasing must exclude expired relay ciphertext');
