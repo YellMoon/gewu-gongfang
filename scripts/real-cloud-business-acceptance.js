@@ -378,6 +378,109 @@ async function runPublicAcceptance({
   }
 }
 
+function projectionHasRecord(payload, table, id) {
+  const records = payload?.projection?.[table];
+  return Array.isArray(records) && records.some(record => record && record.id === id);
+}
+
+async function runTeachingLoopAcceptance({
+  fetchImpl,
+  sessionToken,
+  baseUrl = PUBLIC_BASE_URL,
+  version,
+  marker,
+} = {}) {
+  if (typeof fetchImpl !== 'function' || typeof sessionToken !== 'string'
+    || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(sessionToken)
+    || baseUrl !== PUBLIC_BASE_URL || typeof version !== 'string' || !MARKER_PATTERN.test(marker)
+    || !marker.startsWith(`codex-e2e-${version}-`)) {
+    throw acceptanceFailure('REAL_CLOUD_TEACHING_LOOP_CONFIG_INVALID');
+  }
+  const ids = Object.freeze({
+    institution: `${marker}-institution`, school: `${marker}-school`, room: `${marker}-room`,
+    teacher: `${marker}-teacher`, student: `${marker}-student`, course: `${marker}-course`, schedule: `${marker}-schedule`,
+  });
+  const courseData = Object.freeze({
+    name: `${marker} physics`, year: 2030, semester: 'spring', displayName: `${marker} physics`, type: 1,
+    sourceType: 1, institutionId: ids.institution, priceTuition: 100, priceTeacher: 60, billingUnit: 1,
+    teacherFeeMode: 1, roomId: ids.room, roomName: `${marker} room`, teacherId: ids.teacher,
+    teacherName: `${marker} teacher`, active: true, defaultDurationMinutes: 90, notes: 'controlled temporary teaching acceptance',
+    studentPricings: [{ studentId: ids.student, tuition: 100, teacherFee: 60 }],
+  });
+  const operations = [
+    { resource: 'institutions', table: 'institutions', key: 'institution', id: ids.institution,
+      body: { institutionId: ids.institution, data: { name: `${marker} institution`, contactPerson: null, contactPhone: null, revenueShare: null, notes: 'controlled temporary teaching acceptance' } } },
+    { resource: 'schools', table: 'schools', key: 'school', id: ids.school,
+      body: { schoolId: ids.school, data: { name: `${marker} school`, count: 1 } } },
+    { resource: 'rooms', table: 'rooms', key: 'room', id: ids.room,
+      body: { roomId: ids.room, name: `${marker} room`, address: `${marker} address` } },
+    { resource: 'teachers', table: 'teachers', key: 'teacher', id: ids.teacher,
+      body: { teacherId: ids.teacher, name: `${marker} teacher`, phone: '13700000001', subject: 'physics', hourlyRate: 60, notes: 'controlled temporary teaching acceptance' } },
+    { resource: 'students', table: 'students', key: 'student', id: ids.student,
+      body: { studentId: ids.student, name: `${marker} student`, school: ids.school, gradeYear: 2030, gradeCurrent: 'G1', institutionId: ids.institution, parentName: 'controlled guardian', notes: 'controlled temporary teaching acceptance', sourceType: 1, studentSource: 'acceptance', contacts: [{ slot: 1, relationship: 'student', phone: '13700000002', wechat: null }, { slot: 2, relationship: 'guardian', phone: '13700000003', wechat: null }] } },
+    { resource: 'courses', table: 'courses', key: 'course', id: ids.course, body: { courseId: ids.course, data: courseData } },
+    { resource: 'schedules', table: 'schedules', key: 'schedule', id: ids.schedule,
+      body: { scheduleId: ids.schedule, data: { courseId: ids.course, startAt: '2030-01-07T01:00:00.000Z', endAt: '2030-01-07T02:30:00.000Z', recurringRule: null, status: 1, roomDisplay: `${marker} room`, serviceType: 1, tuition: 100, teacherFee: 60, notes: 'controlled temporary teaching acceptance', pricings: [{ studentId: ids.student, attendanceStatus: 1, tuition: 100, teacherFee: 60 }] } } },
+  ];
+  const created = [];
+  let courseOriginalUpdatedAt = null;
+  let courseLatestUpdatedAt = null;
+  let evidence = null;
+  try {
+    for (const operation of operations) {
+      const result = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/${operation.resource}`, {
+        method: 'POST', body: operation.body,
+      }), 201, `REAL_CLOUD_TEACHING_LOOP_CREATE_${operation.resource.toUpperCase()}_FAILED`);
+      const record = result.body?.[operation.key];
+      const updatedAt = observedTimestamp(record);
+      created.push({ ...operation, updatedAt });
+      if (operation.resource === 'courses') {
+        courseOriginalUpdatedAt = updatedAt;
+        courseLatestUpdatedAt = updatedAt;
+      }
+    }
+    const projection = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_TEACHING_LOOP_READ_FAILED');
+    if (!created.every(operation => projectionHasRecord(projection.body, operation.table, operation.id))) {
+      throw acceptanceFailure('REAL_CLOUD_TEACHING_LOOP_READ_BACK_MISSING');
+    }
+    const coursePath = `${baseUrl}/api/business/courses/${encodeURIComponent(ids.course)}`;
+    const update = requireResponse(await requestJson(fetchImpl, sessionToken, coursePath, {
+      method: 'PUT', body: { expectedUpdatedAt: courseOriginalUpdatedAt, ...courseData, notes: 'controlled temporary teaching acceptance updated' },
+    }), 200, 'REAL_CLOUD_TEACHING_LOOP_COURSE_UPDATE_FAILED');
+    courseLatestUpdatedAt = observedTimestamp(update.body?.course);
+    const course = created.find(operation => operation.resource === 'courses');
+    course.updatedAt = courseLatestUpdatedAt;
+    const conflict = requireResponse(await requestJson(fetchImpl, sessionToken, coursePath, {
+      method: 'PUT', body: { expectedUpdatedAt: courseOriginalUpdatedAt, ...courseData, notes: 'stale write must conflict' },
+    }), 409, 'REAL_CLOUD_TEACHING_LOOP_COURSE_CONFLICT_REQUIRED');
+    if (conflict.body?.code !== 'CLOUD_BUSINESS_COURSE_CONFLICT') {
+      throw acceptanceFailure('REAL_CLOUD_TEACHING_LOOP_COURSE_CONFLICT_REQUIRED');
+    }
+    evidence = {
+      teachingLoopCreated: created.length,
+      teachingLoopReadBack: true,
+      teachingLoopCourseUpdateStatus: update.status,
+      teachingLoopCourseConflictStatus: conflict.status,
+      teachingLoopCleanupConfirmed: false,
+    };
+  } finally {
+    for (const operation of [...created].reverse()) {
+      const response = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/${operation.resource}/${encodeURIComponent(operation.id)}`, {
+        method: 'DELETE', body: { expectedUpdatedAt: operation.updatedAt },
+      }), 200, 'REAL_CLOUD_TEACHING_LOOP_CLEANUP_FAILED');
+      observedTimestamp(response.body?.[operation.key]);
+    }
+    if (created.length) {
+      const after = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_TEACHING_LOOP_CLEANUP_FAILED');
+      if (created.some(operation => projectionHasRecord(after.body, operation.table, operation.id))) {
+        throw acceptanceFailure('REAL_CLOUD_TEACHING_LOOP_CLEANUP_FAILED');
+      }
+      if (evidence) evidence.teachingLoopCleanupConfirmed = true;
+    }
+  }
+  return evidence;
+}
+
 function miniappAssetRecordMatches(record, categoryName) {
   return Boolean(record) && typeof record === 'object'
     && (record.category_name === categoryName || record.categoryName === categoryName)
@@ -743,22 +846,35 @@ async function revokeControlledAcceptanceSession(appPool, session) {
 
 async function forceCleanup(appPool, writerPool, tenantId, marker) {
   if (!MARKER_PATTERN.test(marker)) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
-  const found = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_LOOKUP_FAILED', () => appPool.query(
-    'SELECT to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM business.institutions WHERE tenant_id=$1 AND id=$2 AND legacy_deleted=false',
-    [tenantId, marker],
-  ));
-  if (found.rows.length > 1) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
-  if (found.rows.length === 1) {
-    await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_DELETE_FAILED', () => writerPool.query(
-      'SELECT id FROM business.vnext_soft_delete_institution($1,$2,$3::timestamptz)',
-      [tenantId, marker, found.rows[0].updatedAt],
+  const resources = [
+    ['schedules', 'vnext_soft_delete_schedule'], ['courses', 'vnext_soft_delete_course'],
+    ['students', 'vnext_soft_delete_student'], ['teachers', 'vnext_soft_delete_teacher'],
+    ['rooms', 'vnext_soft_delete_room'], ['schools', 'vnext_soft_delete_school'],
+    ['institutions', 'vnext_soft_delete_institution'],
+  ];
+  for (const [table, deleteFunction] of resources) {
+    const found = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_LOOKUP_FAILED', () => appPool.query(
+      `SELECT id,to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
+         FROM business.${table} WHERE tenant_id=$1 AND legacy_deleted=false AND (id=$2 OR id LIKE $3)`,
+      [tenantId, marker, `${marker}-%`],
     ));
+    for (const row of found.rows) {
+      const removed = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_DELETE_FAILED', () => writerPool.query(
+        `SELECT removed.id AS id FROM business.${deleteFunction}($1,$2,$3::timestamptz) AS removed`,
+        [tenantId, row.id, row.updatedAt],
+      ));
+      if (removed.rows.length !== 1 || removed.rows[0].id !== row.id) {
+        throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
+      }
+    }
   }
-  const after = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_VERIFY_FAILED', () => appPool.query(
-    'SELECT count(*)::int AS count FROM business.institutions WHERE tenant_id=$1 AND id=$2 AND legacy_deleted=false',
-    [tenantId, marker],
-  ));
-  if (after.rows[0]?.count !== 0) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
+  for (const [table] of resources) {
+    const after = await runStage('REAL_CLOUD_ACCEPTANCE_CLEANUP_VERIFY_FAILED', () => appPool.query(
+      `SELECT count(*)::int AS count FROM business.${table} WHERE tenant_id=$1 AND legacy_deleted=false AND (id=$2 OR id LIKE $3)`,
+      [tenantId, marker, `${marker}-%`],
+    ));
+    if (after.rows[0]?.count !== 0) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CLEANUP_FAILED');
+  }
   return true;
 }
 
@@ -877,6 +993,7 @@ async function runFromEnvironment(env = process.env) {
           });
         }
         const businessEvidence = await runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
+        const teachingLoopEvidence = await runTeachingLoopAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
         const miniappSessionToken = makeMiniappSessionToken(env.CLOUD_MINIAPP_TICKET_SECRET, loaded.identity.accountId);
         const miniappEvidence = await runMiniappLimitedWriteAcceptance({
           fetchImpl: fetch,
@@ -887,13 +1004,28 @@ async function runFromEnvironment(env = process.env) {
           version,
           marker,
         });
-        return Object.freeze({ ...businessEvidence, ...onlineRegistration.evidence, ...miniappEvidence });
+        return Object.freeze({ ...businessEvidence, ...teachingLoopEvidence, ...onlineRegistration.evidence, ...miniappEvidence });
       },
       () => runWithCleanup(
         () => forceCleanup(appPool, writerPool, tenantId, marker),
         () => onlineRegistrationFixture ? revokeOnlineRegistrationAcceptance(writerPool, onlineRegistrationFixture) : Promise.resolve(),
       ),
     );
+  } finally {
+    await Promise.allSettled([appPool.end(), writerPool.end()]);
+  }
+}
+
+async function cleanupTeachingAcceptanceMarker(marker, env = process.env) {
+  if (!MARKER_PATTERN.test(marker)) throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
+  const runtimeModules = resolveRuntimeModules(__dirname);
+  const { Pool } = require(runtimeModules.pgPath);
+  const { resolveRuntimeDatabaseUser } = require(path.join(path.dirname(runtimeModules.packagePath), 'src', 'runtimeDatabaseRole'));
+  const tenantId = String(env.CLOUD_BUSINESS_TENANT_ID || 'default');
+  const appPool = new Pool(postgresConfig(env, resolveRuntimeDatabaseUser(env.POSTGRES_USER), env.POSTGRES_PASSWORD));
+  const writerPool = new Pool(postgresConfig(env, 'vnext_pg17_writer', env.COMMAND_WRITER_POSTGRES_PASSWORD));
+  try {
+    return Object.freeze({ ok: await forceCleanup(appPool, writerPool, tenantId, marker), markerSha256: crypto.createHash('sha256').update(marker, 'utf8').digest('hex') });
   } finally {
     await Promise.allSettled([appPool.end(), writerPool.end()]);
   }
@@ -914,6 +1046,7 @@ module.exports = Object.freeze({
   makeMarker,
   resolveRuntimeModules,
   runPublicAcceptance,
+  runTeachingLoopAcceptance,
   runMiniappLimitedWriteAcceptance,
   loadActiveSuperAdminSession,
   resolveOperatorIdentity,
@@ -924,11 +1057,16 @@ module.exports = Object.freeze({
   revokeOnlineRegistrationAcceptance,
   forceCleanup,
   forceMiniappAssetCleanup,
+  cleanupTeachingAcceptanceMarker,
   runFromEnvironment,
 });
 
 if (require.main === module) {
-  runFromEnvironment()
+  const cleanupMarkerIndex = process.argv.indexOf('--cleanup-marker');
+  const run = cleanupMarkerIndex >= 0
+    ? cleanupTeachingAcceptanceMarker(process.argv[cleanupMarkerIndex + 1])
+    : runFromEnvironment();
+  run
     .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))
     .catch(error => {
       process.stderr.write(`${JSON.stringify({

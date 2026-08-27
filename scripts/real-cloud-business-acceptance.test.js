@@ -9,7 +9,9 @@ const {
   runStage,
   runWithCleanup,
   runPublicAcceptance,
+  runTeachingLoopAcceptance,
   runMiniappLimitedWriteAcceptance,
+  forceCleanup,
   forceMiniappAssetCleanup,
   createControlledAcceptanceSession,
   revokeControlledAcceptanceSession,
@@ -102,6 +104,97 @@ async function cleanupOnFailure() {
   assert.strictEqual(calls[3].method, 'DELETE', 'a failure after create must still delete the disposable record');
   assert.strictEqual(calls[3].body.expectedUpdatedAt, createdAt);
   assert.strictEqual(calls[4].method, 'GET', 'cleanup must prove the disposable record is absent');
+}
+
+async function teachingLoopCreatesReadsConflictsAndCleans() {
+  const marker = 'codex-e2e-8.7.3-loop';
+  const timestamps = new Map();
+  const created = new Set();
+  const calls = [];
+  const singularByPath = {
+    institutions: 'institution', schools: 'school', rooms: 'room', teachers: 'teacher',
+    students: 'student', courses: 'course', schedules: 'schedule',
+  };
+  const tableByResource = {
+    institutions: 'institutions', schools: 'schools', rooms: 'rooms', teachers: 'teachers',
+    students: 'students', courses: 'courses', schedules: 'schedules',
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    const method = options.method || 'GET';
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ path, method, body });
+    if (path.endsWith('/desktop-projection')) {
+      const projection = {};
+      for (const [resource, table] of Object.entries(tableByResource)) {
+        projection[table] = [...created]
+          .filter(key => key.startsWith(`${resource}:`))
+          .map(key => ({ id: key.slice(resource.length + 1), updated_at: timestamps.get(key) }));
+      }
+      return response(200, { ok: true, projection });
+    }
+    const match = path.match(/\/api\/business\/(institutions|schools|rooms|teachers|students|courses|schedules)(?:\/([^/]+))?$/);
+    assert.ok(match, `unexpected path ${path}`);
+    const resource = match[1];
+    const id = decodeURIComponent(match[2] || body?.[`${resource.slice(0, -1)}Id`] || body?.studentId || body?.courseId || body?.scheduleId || '');
+    const key = `${resource}:${id}`;
+    const responseKey = singularByPath[resource];
+    if (method === 'POST') {
+      const updatedAt = `2026-08-27T04:40:${String(timestamps.size + 1).padStart(2, '0')}.000Z`;
+      created.add(key); timestamps.set(key, updatedAt);
+      return response(201, { ok: true, [responseKey]: { id, updatedAt } });
+    }
+    if (method === 'PUT' && resource === 'courses' && body.expectedUpdatedAt === timestamps.get(key)) {
+      const updatedAt = '2026-08-27T04:41:00.000Z'; timestamps.set(key, updatedAt);
+      return response(200, { ok: true, course: { id, updatedAt } });
+    }
+    if (method === 'PUT' && resource === 'courses') return response(409, { ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
+    if (method === 'DELETE') {
+      assert.strictEqual(body.expectedUpdatedAt, timestamps.get(key), `delete must use latest ${resource} version`);
+      created.delete(key);
+      return response(200, { ok: true, [responseKey]: { id, updatedAt: timestamps.get(key) } });
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const result = await runTeachingLoopAcceptance({
+    fetchImpl, sessionToken: 'payload.signature', baseUrl: 'https://physicsedu.xyz/scheduling', version: '8.7.3', marker,
+  });
+  assert.deepStrictEqual(result, {
+    teachingLoopCreated: 7,
+    teachingLoopReadBack: true,
+    teachingLoopCourseUpdateStatus: 200,
+    teachingLoopCourseConflictStatus: 409,
+    teachingLoopCleanupConfirmed: true,
+  });
+  assert.deepStrictEqual([...created], []);
+  const deletes = calls.filter(call => call.method === 'DELETE').map(call => call.path);
+  assert.deepStrictEqual(deletes.map(path => path.split('/').at(-2)), ['schedules', 'courses', 'students', 'teachers', 'rooms', 'schools', 'institutions']);
+}
+
+async function forceCleanupQualifiesTheFunctionOutputColumn() {
+  const appCalls = [];
+  const writerCalls = [];
+  const appPool = {
+    async query(sql) {
+      appCalls.push(sql);
+      if (sql.includes('SELECT id,to_char') && sql.includes('business.teachers')) {
+        return { rows: [{ id: 'codex-e2e-8.7.4-clean-teacher', updatedAt: '2030-01-01T00:00:00.000Z' }] };
+      }
+      if (sql.includes('SELECT id,to_char')) return { rows: [] };
+      return { rows: [{ count: 0 }] };
+    },
+  };
+  const writerPool = {
+    async query(sql, values) {
+      writerCalls.push([sql, values]);
+      return { rows: [{ id: 'codex-e2e-8.7.4-clean-teacher' }] };
+    },
+  };
+  assert.strictEqual(await forceCleanup(appPool, writerPool, 'default', 'codex-e2e-8.7.4-clean'), true);
+  assert.strictEqual(writerCalls.length, 1);
+  assert.match(writerCalls[0][0], /SELECT removed\.id AS id FROM business\.vnext_soft_delete_teacher\([^)]*\) AS removed/);
+  assert.deepStrictEqual(writerCalls[0][1], ['default', 'codex-e2e-8.7.4-clean-teacher', '2030-01-01T00:00:00.000Z']);
+  assert.ok(appCalls.some(sql => sql.includes('business.institutions')));
 }
 
 function tokenIsBoundAndOpaque() {
@@ -608,4 +701,6 @@ Promise.resolve()
   .then(preparedOnlineRegistrationCleanupRevokesPersistedSessionWithoutReceiptId)
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
+  .then(teachingLoopCreatesReadsConflictsAndCleans)
+  .then(forceCleanupQualifiesTheFunctionOutputColumn)
   .then(() => console.log('real cloud business acceptance checks passed'));

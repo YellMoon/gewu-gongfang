@@ -28,6 +28,11 @@ RECEIPT_KEYS = {
     "absenceConfirmed",
     "cleanupConfirmed",
     "markerSha256",
+    "teachingLoopCreated",
+    "teachingLoopReadBack",
+    "teachingLoopCourseUpdateStatus",
+    "teachingLoopCourseConflictStatus",
+    "teachingLoopCleanupConfirmed",
     "onlineRegistrationStatus",
     "onlineSessionContextStatus",
     "onlineRegistrationReplayed",
@@ -94,6 +99,11 @@ def parse_receipt(output):
         and isinstance(payload.get("markerSha256"), str)
         and len(payload["markerSha256"]) == 64
         and all(character in "0123456789abcdef" for character in payload["markerSha256"])
+        and payload.get("teachingLoopCreated") == 7
+        and payload.get("teachingLoopReadBack") is True
+        and payload.get("teachingLoopCourseUpdateStatus") == 200
+        and payload.get("teachingLoopCourseConflictStatus") == 409
+        and payload.get("teachingLoopCleanupConfirmed") is True
         and payload.get("onlineRegistrationStatus") == 200
         and payload.get("onlineSessionContextStatus") == 200
         and payload.get("onlineRegistrationReplayed") is False
