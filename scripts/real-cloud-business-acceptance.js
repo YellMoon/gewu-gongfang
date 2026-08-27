@@ -450,6 +450,10 @@ async function runTeachingLoopAcceptance({
     courseLatestUpdatedAt = observedTimestamp(update.body?.course);
     const course = created.find(operation => operation.resource === 'courses');
     course.updatedAt = courseLatestUpdatedAt;
+    const projectionAfterCourseUpdate = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_TEACHING_LOOP_READ_FAILED');
+    const schedule = created.find(operation => operation.resource === 'schedules');
+    const updatedSchedule = projectionAfterCourseUpdate.body?.projection?.schedules?.find(record => record && record.id === ids.schedule);
+    schedule.updatedAt = observedTimestamp(updatedSchedule);
     const conflict = requireResponse(await requestJson(fetchImpl, sessionToken, coursePath, {
       method: 'PUT', body: { expectedUpdatedAt: courseOriginalUpdatedAt, ...courseData, notes: 'stale write must conflict' },
     }), 409, 'REAL_CLOUD_TEACHING_LOOP_COURSE_CONFLICT_REQUIRED');

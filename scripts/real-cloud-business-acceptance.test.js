@@ -150,6 +150,7 @@ async function teachingLoopCreatesReadsConflictsAndCleans() {
     }
     if (method === 'PUT' && resource === 'courses' && body.expectedUpdatedAt === timestamps.get(key)) {
       const updatedAt = '2026-08-27T04:41:00.000Z'; timestamps.set(key, updatedAt);
+      timestamps.set(`schedules:${marker}-schedule`, '2026-08-27T04:41:00.100Z');
       return response(200, { ok: true, course: { id, updatedAt } });
     }
     if (method === 'PUT' && resource === 'courses') return response(409, { ok: false, code: 'CLOUD_BUSINESS_COURSE_CONFLICT' });
