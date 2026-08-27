@@ -78,7 +78,43 @@ def test_receipt_is_strict_and_contains_no_session_material():
             raise AssertionError(f"unexpected receipt key accepted: {key}")
 
 
+def test_receipt_version_must_match_the_requested_release():
+    module = load_module()
+    payload = {
+        "ok": True,
+        "version": "8.4.1",
+        "createStatus": 201,
+        "readBack": True,
+        "updateStatus": 200,
+        "staleConflictStatus": 409,
+        "deleteStatus": 200,
+        "absenceConfirmed": True,
+        "cleanupConfirmed": True,
+        "markerSha256": "a" * 64,
+        "teachingLoopCreated": 7,
+        "teachingLoopReadBack": True,
+        "teachingLoopCourseUpdateStatus": 200,
+        "teachingLoopCourseConflictStatus": 409,
+        "teachingLoopCleanupConfirmed": True,
+        "onlineRegistrationStatus": 200,
+        "onlineSessionContextStatus": 200,
+        "onlineRegistrationReplayed": False,
+        "onlineReceiptSha256": "b" * 64,
+        "miniappAssetImportStatus": 202,
+        "miniappAssetReplayStatus": 200,
+        "miniappAssetReadBack": True,
+        "miniappAssetCleanupConfirmed": True,
+    }
+    try:
+        module.parse_receipt(json.dumps(payload), expected_version="8.4.2")
+    except ValueError as error:
+        assert str(error) == "REAL_CLOUD_ACCEPTANCE_VERSION_MISMATCH"
+    else:
+        raise AssertionError("stale acceptance receipt version was accepted")
+
+
 if __name__ == "__main__":
     test_paths_and_commands_are_exact_and_nonrecursive()
     test_receipt_is_strict_and_contains_no_session_material()
+    test_receipt_version_must_match_the_requested_release()
     print("real cloud business acceptance runner checks passed")

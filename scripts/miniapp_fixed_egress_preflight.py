@@ -31,7 +31,7 @@ PROBE_TIMEOUT = 8.0
 EXPECTED_MINIPROGRAM_CI_VERSION = "2.1.31"
 DEFAULT_ECHO_URL = "https://checkip.amazonaws.com/"
 DEFAULT_HEALTH_URLS = (
-    "https://physicsedu.xyz/scheduling/api/health",
+    "https://physicsedu.xyz/cloud-business/api/health",
 )
 
 

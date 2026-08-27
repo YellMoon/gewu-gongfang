@@ -66,6 +66,12 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         self.assertEqual(config.echo_url, "https://checkip.amazonaws.com/")
         self.assertIn(("checkip.amazonaws.com", 443), config.allowlist)
 
+    def test_default_health_target_is_the_cloud_business_authority(self):
+        environment = self.base_env()
+        environment.pop("WECHAT_MINIAPP_CLOUD_BUSINESS_HEALTH_URL")
+        config = target.config_from_env(environment, expected_version="7.2.10")
+        self.assertEqual(config.health_urls, ("https://physicsedu.xyz/cloud-business/api/health",))
+
     def test_health_requires_ok_true_and_exact_version(self):
         target.check_health(
             "https://health.example/check",

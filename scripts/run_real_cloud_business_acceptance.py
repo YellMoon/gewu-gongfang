@@ -44,6 +44,16 @@ RECEIPT_KEYS = {
 }
 
 
+def expected_release_version():
+    try:
+        value = json.loads((ROOT / "cloud-business-api" / "package.json").read_text(encoding="utf-8")).get("version")
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError("REAL_CLOUD_ACCEPTANCE_EXPECTED_VERSION_INVALID") from error
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError("REAL_CLOUD_ACCEPTANCE_EXPECTED_VERSION_INVALID")
+    return value
+
+
 def remote_preflight_command():
     return f"test ! -e {REMOTE_SCRIPT}"
 
@@ -78,7 +88,7 @@ def cleanup_command():
     return f"docker exec -u 0 {CONTAINER} rm -f -- {CONTAINER_SCRIPT}; rm -f -- {REMOTE_SCRIPT}"
 
 
-def parse_receipt(output):
+def parse_receipt(output, expected_version=None):
     try:
         lines = [line.strip() for line in str(output).splitlines() if line.strip()]
         payload = json.loads(lines[-1])
@@ -117,6 +127,8 @@ def parse_receipt(output):
     )
     if not valid:
         raise ValueError("REAL_CLOUD_ACCEPTANCE_RECEIPT_INVALID")
+    if expected_version is not None and payload["version"] != expected_version:
+        raise ValueError("REAL_CLOUD_ACCEPTANCE_VERSION_MISMATCH")
     return payload
 
 
@@ -143,7 +155,7 @@ def run_acceptance():
         finally:
             deploy.run(ssh, revoke_owner_command())
             owner_granted = False
-        return parse_receipt(output)
+        return parse_receipt(output, expected_release_version())
     finally:
         if owner_granted:
             deploy.run(ssh, revoke_owner_command())
