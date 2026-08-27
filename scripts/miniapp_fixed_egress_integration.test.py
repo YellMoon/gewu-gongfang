@@ -85,6 +85,11 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def fixture_manifest_path(root):
+    matrix_id = "desktop-7.2.10__cloud-business-7.2.10__storage-proxy-7.2.10__miniapp-7.2.10"
+    return root / "output" / f"release-matrix-{matrix_id}" / "active.json"
+
+
 def prepare_node_release_fixture(root):
     scripts_dir = root / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +99,7 @@ def prepare_node_release_fixture(root):
     for relative_path in (
         Path("package.json"),
         Path("cloud-business-api/package.json"),
+        Path("storage-agent/package.json"),
         Path("miniapp/package.json"),
     ):
         write_json(root / relative_path, {"version": "7.2.10"})
@@ -117,9 +123,18 @@ def prepare_node_release_fixture(root):
         "module.exports = { Project, proxy, upload };\n",
         encoding="utf-8",
     )
+    compatibility = json.loads((source_scripts.parent / "config/release-compatibility.json").read_text(encoding="utf-8"))
+    component_versions = {
+        "desktop": "7.2.10",
+        "cloud_business": "7.2.10",
+        "storage_proxy": "7.2.10",
+        "miniapp": "7.2.10",
+    }
     manifest = {
-        "schema": "gewu.unified-release.v1",
+        "schema": "gewu.release-compatibility.v2",
         "version": "7.2.10",
+        "componentVersions": component_versions,
+        "compatibility": compatibility,
         "commit": "离线集成提交",
         "createdAt": "2026-08-01T00:00:00.000Z",
         "targets": {
@@ -127,11 +142,12 @@ def prepare_node_release_fixture(root):
             for target in ("desktop", "cloud_business", "storage_proxy", "miniapp")
         },
     }
-    manifest_path = root / "output/release-matrix-7.2.10/active.json"
+    write_json(root / "config/release-compatibility.json", compatibility)
+    manifest_path = fixture_manifest_path(root)
     write_json(manifest_path, manifest)
     private_key_path = root / "private.wx-offline-test.key"
     private_key_path.write_text("offline-only-key", encoding="utf-8")
-    return manifest_path, root / "output/release-matrix-7.2.10/miniapp-upload-pending.json", private_key_path
+    return manifest_path, manifest_path.parent / "miniapp-upload-pending.json", private_key_path
 
 
 class FixedEgressIntegrationTests(unittest.TestCase):
@@ -235,8 +251,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
             root = Path(temp_dir)
             with self.assertRaisesRegex(RuntimeError, "offline post-health failure"):
                 self.run_offline_deferred_upload(root, fail_post_health=True)
-            manifest_path = root / "output/release-matrix-7.2.10/active.json"
-            marker_path = root / "output/release-matrix-7.2.10/miniapp-upload-pending.json"
+            manifest_path = fixture_manifest_path(root)
+            marker_path = manifest_path.parent / "miniapp-upload-pending.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["targets"]["miniapp"]["status"], "pending")
             self.assertTrue(marker_path.exists())

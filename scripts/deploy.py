@@ -104,12 +104,45 @@ def read_root_version():
         return ""
 
 
+RELEASE_MATRIX_TARGETS = ("desktop", "cloud_business", "storage_proxy", "miniapp")
+RELEASE_COMPONENT_PACKAGES = {
+    "desktop": PROJECT_ROOT / "package.json",
+    "cloud_business": PROJECT_ROOT / "cloud-business-api" / "package.json",
+    "storage_proxy": PROJECT_ROOT / "storage-agent" / "package.json",
+    "miniapp": PROJECT_ROOT / "miniapp" / "package.json",
+}
+
+
+def read_component_versions():
+    versions = {}
+    for name, package_path in RELEASE_COMPONENT_PACKAGES.items():
+        try:
+            versions[name] = json.loads(package_path.read_text(encoding="utf-8")).get("version") or ""
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"Unable to read {name} package version for release compatibility") from error
+    return versions
+
+
+def release_matrix_id(component_versions):
+    return "__".join(f"{target.replace('_', '-')}-{component_versions[target]}" for target in RELEASE_MATRIX_TARGETS)
+
+
+def read_release_compatibility():
+    compatibility_path = PROJECT_ROOT / "config" / "release-compatibility.json"
+    try:
+        compatibility = json.loads(compatibility_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit("Release compatibility declaration is unreadable") from error
+    if compatibility.get("schema") != "gewu.protocol-data-compatibility.v1" or not isinstance(compatibility.get("contracts"), dict):
+        raise SystemExit("Release compatibility declaration is invalid")
+    return compatibility
+
+
 RELEASE_MATRIX_PATH = Path(os.getenv(
     "GEWU_RELEASE_MANIFEST_PATH",
-    PROJECT_ROOT / "output" / f"release-matrix-{read_root_version()}" / "active.json",
+    PROJECT_ROOT / "output" / f"release-matrix-{release_matrix_id(read_component_versions())}" / "active.json",
 ))
-RELEASE_MATRIX_SCHEMA = "gewu.unified-release.v1"
-RELEASE_MATRIX_TARGETS = ("desktop", "cloud_business", "storage_proxy", "miniapp")
+RELEASE_MATRIX_SCHEMA = "gewu.release-compatibility.v2"
 
 
 def current_source_commit():
@@ -142,32 +175,20 @@ def require_release_manifest(target, allowed_statuses=("pending",)):
         manifest = json.loads(RELEASE_MATRIX_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise SystemExit("Unified release manifest is unreadable") from error
-    expected_version = read_root_version()
-    if manifest.get("schema") != RELEASE_MATRIX_SCHEMA or manifest.get("version") != expected_version:
-        raise SystemExit("Unified release manifest does not match the checked-out source version")
+    component_versions = read_component_versions()
+    if (manifest.get("schema") != RELEASE_MATRIX_SCHEMA
+            or manifest.get("version") != component_versions["desktop"]
+            or manifest.get("componentVersions") != component_versions
+            or manifest.get("compatibility") != read_release_compatibility()):
+        raise SystemExit("Release compatibility manifest does not match the checked-out component versions or contracts")
     if manifest.get("commit") != current_source_commit():
         raise SystemExit("Unified release manifest does not match the checked-out source commit")
-    package_paths = {
-        "desktop": PROJECT_ROOT / "package.json",
-        "cloud_business": PROJECT_ROOT / "cloud-business-api" / "package.json",
-        "miniapp": PROJECT_ROOT / "miniapp" / "package.json",
-    }
-    stale = []
-    for name, package_path in package_paths.items():
-        try:
-            version = json.loads(package_path.read_text(encoding="utf-8")).get("version")
-        except (OSError, json.JSONDecodeError) as error:
-            raise SystemExit(f"Unable to read {name} package version for unified release") from error
-        if version != expected_version:
-            stale.append(f"{name}={version or '<empty>'}")
-    if stale:
-        raise SystemExit(f"Unified source version mismatch: {', '.join(stale)}; expected {expected_version}")
     target_state = (manifest.get("targets") or {}).get(target)
     if not isinstance(target_state, dict) or target_state.get("status") not in allowed_statuses:
         raise SystemExit(f"Unified release target {target} is not in an allowed state")
     if target_state.get("status") == "verified":
         receipt = target_state.get("receipt")
-        if (not isinstance(receipt, dict) or receipt.get("version") != expected_version
+        if (not isinstance(receipt, dict) or receipt.get("version") != component_versions[target]
                 or not isinstance(receipt.get("verifiedAt"), str) or not receipt.get("verifiedAt")
                 or not isinstance(receipt.get("evidence"), str) or not receipt.get("evidence")):
             raise SystemExit(f"Unified release target {target} has an invalid verified receipt")
@@ -179,7 +200,7 @@ def record_release_receipt(target, evidence):
     manifest["targets"][target] = {
         "status": "verified",
         "receipt": {
-            "version": manifest["version"],
+            "version": manifest["componentVersions"][target],
             "verifiedAt": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
             "evidence": str(evidence),
         },

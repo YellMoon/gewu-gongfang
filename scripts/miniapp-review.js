@@ -128,7 +128,7 @@ function recordProductionRelease({
   }
   return releaseMatrix.recordReceipt(manifest, {
     target: 'miniapp',
-    version: manifest?.version,
+    version: manifest?.componentVersions?.miniapp,
     verifiedAt,
     evidence,
     releaseLevel: 'production',
@@ -142,10 +142,12 @@ function recordProductionReleaseReceipt({
   verifiedAt,
 } = {}) {
   const manifest = releaseMatrix.readManifest(manifestPath);
-  releaseMatrix.assertSourceVersionMatrix(
+  const sourceVersions = releaseMatrix.assertSourceVersionMatrix(
     releaseMatrix.readSourceVersionMatrix({ rootDir }),
-    manifest.version,
   );
+  if (sourceVersions.miniapp !== manifest.componentVersions?.miniapp) {
+    throw new Error('Miniapp source version does not match the release compatibility matrix');
+  }
   recordProductionRelease({ manifest, releaseResult, verifiedAt });
   releaseMatrix.writeManifest(manifestPath, manifest);
   return manifest;

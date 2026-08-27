@@ -120,11 +120,11 @@ assert.ok(source.includes('--bump=major'), 'update-version should document --bum
 assert.ok(source.includes('--bump=minor'), 'update-version should document --bump=minor');
 assert.ok(source.includes('--bump=patch'), 'update-version should document --bump=patch');
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
-assert.ok(source.includes('syncBackendPackageVersion'), 'update-version should sync backend/package.json with the root package version');
-assert.ok(source.includes('syncGatewayPackageVersion'), 'update-version should sync gateway/package.json with the unified root release version');
-assert.ok(source.includes('syncMiniappPackageVersion'), 'update-version should sync miniapp/package.json with the unified root release version');
-assert.ok(source.includes('syncCloudBusinessApiPackageVersion'), 'update-version should sync cloud-business-api/package.json with the unified root release version');
-assert.ok(source.includes('syncStorageAgentPackageVersion'), 'update-version should sync storage-agent/package.json with the unified root release version');
+assert.ok(source.includes('COMPONENTS'), 'version tooling must define independently versioned release components');
+assert.ok(source.includes('--component'), 'version tooling must require an explicit component when bumping a non-desktop endpoint');
+assert.ok(!source.includes('syncBackendPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite retired backend package versions');
+assert.ok(!source.includes('syncCloudBusinessApiPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the cloud service version');
+assert.ok(!source.includes('syncStorageAgentPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the storage agent version');
 const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
 const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
 fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));
@@ -171,9 +171,10 @@ version.writeFileUtf8WithRetry(generatedVersionPath, 'export const APP_VERSION =
 });
 assert.strictEqual(generatedWriteAttempts, 2, 'generated version writes should retry a transient Windows open failure once');
 assert.match(fs.readFileSync(generatedVersionPath, 'utf8'), /9\.9\.9/, 'retry should preserve the generated version content');
-assert.ok(packageJson.includes('version:bump:major'), 'package scripts should expose major version bump');
-assert.ok(packageJson.includes('version:bump:minor'), 'package scripts should expose minor version bump');
-assert.ok(packageJson.includes('version:bump:patch'), 'package scripts should expose patch version bump');
+assert.ok(packageJson.includes('version:bump:desktop:patch'), 'package scripts should expose desktop component bumps');
+assert.ok(packageJson.includes('version:bump:cloud-business:patch'), 'package scripts should expose cloud service component bumps');
+assert.ok(packageJson.includes('version:bump:storage-proxy:patch'), 'package scripts should expose storage proxy component bumps');
+assert.ok(packageJson.includes('version:bump:miniapp:patch'), 'package scripts should expose miniapp component bumps');
 assert.ok(packageJson.includes('scripts/update-version.test.js'), 'version bump rule test should run in npm test');
 
 console.log('update-version checks passed');

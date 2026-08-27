@@ -1,0 +1,25 @@
+{
+  "schema": "gewu.protocol-data-compatibility.v1",
+  "contracts": {
+    "cloudBusinessRest": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "cloud_business is the only business-data writer; desktop submits confirmed drafts and miniapp has limited task writes"
+    },
+    "questionPaperExport": {
+      "version": "3",
+      "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
+      "rule": "structured question text is cloud-authoritative; storage_proxy keeps only media and export artifacts"
+    },
+    "storageAgentTransport": {
+      "version": "1",
+      "participants": ["cloud_business", "storage_proxy"],
+      "rule": "storage_proxy never decides identity, permissions, or business transactions"
+    },
+    "businessDataSchema": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "desktop offline changes are local drafts until confirmed; miniapp does not directly mutate core teaching data"
+    }
+  }
+}

@@ -33,14 +33,15 @@ function resolveUploadVersion(options = {}) {
   const argv = options.argv || process.argv.slice(2);
   const explicitVersion = parseOption(argv, 'version');
   if (options.releaseManifest) {
-    return releaseMatrix.resolveManifestVersion({
+    return releaseMatrix.resolveTargetVersion({
       manifest: options.releaseManifest,
+      target: 'miniapp',
       requestedVersion: explicitVersion,
     });
   }
   if (explicitVersion) return explicitVersion;
 
-  const pkg = options.packageJson || require(path.join(__dirname, '..', 'package.json'));
+  const pkg = options.packageJson || require(path.join(__dirname, '..', 'miniapp', 'package.json'));
   if (!pkg.version) {
     throw new Error('package.json version is required for miniapp upload');
   }
@@ -360,11 +361,13 @@ function loadDeferredReceiptContext(options = {}) {
   const markerPath = options.markerPath || defaultPendingMarkerPath(rootDir, manifestPath);
   const marker = readPendingMarker(markerPath);
   const manifest = matrix.readManifest(manifestPath);
-  const version = matrix.resolveManifestVersion({
+  const version = matrix.resolveTargetVersion({
     manifest,
+    target: 'miniapp',
     requestedVersion: parseOption(argv, 'version'),
   });
-  matrix.assertSourceVersionMatrix(matrix.readSourceVersionMatrix({ rootDir }), version);
+  const sourceVersions = matrix.assertSourceVersionMatrix(matrix.readSourceVersionMatrix({ rootDir }));
+  if (sourceVersions.miniapp !== version) throw new Error(MINIAPP_DEFERRED_UPLOAD_VERSION_MISMATCH);
   if (marker.version !== version) {
     throw new Error(MINIAPP_DEFERRED_UPLOAD_VERSION_MISMATCH);
   }

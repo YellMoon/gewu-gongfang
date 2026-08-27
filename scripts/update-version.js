@@ -8,6 +8,23 @@ const childProcess = require('child_process');
 // Patch: Bug 修复、样式、文档、测试、小调整
 
 const VALID_BUMP_LEVELS = new Set(['major', 'minor', 'patch']);
+const COMPONENTS = Object.freeze({
+  desktop: {
+    packagePath: path.join(__dirname, '..', 'package.json'),
+    lockPath: path.join(__dirname, '..', 'package-lock.json'),
+    generatesDesktopVersion: true,
+  },
+  cloud_business: {
+    packagePath: path.join(__dirname, '..', 'cloud-business-api', 'package.json'),
+  },
+  storage_proxy: {
+    packagePath: path.join(__dirname, '..', 'storage-agent', 'package.json'),
+  },
+  miniapp: {
+    packagePath: path.join(__dirname, '..', 'miniapp', 'package.json'),
+    lockPath: path.join(__dirname, '..', 'miniapp', 'package-lock.json'),
+  },
+});
 const RELEASE_ARTIFACT_PATH_PATTERNS = [
   /^(?:dist|dist-host|output)\//,
   /^tmp[-_]/,
@@ -209,6 +226,28 @@ function syncMiniappPackageVersion(version, { packagePath } = {}) {
   return result;
 }
 
+function resolveComponent(args = []) {
+  const inline = args.find(arg => arg.startsWith('--component='));
+  const named = inline ? inline.slice('--component='.length) : (() => {
+    const index = args.indexOf('--component');
+    return index >= 0 ? args[index + 1] : '';
+  })();
+  const component = String(named || 'desktop').trim().replace(/-/g, '_');
+  if (!COMPONENTS[component]) {
+    throw new Error(`Invalid release component: ${component || '<empty>'}. Use desktop, cloud_business, storage_proxy, or miniapp.`);
+  }
+  return component;
+}
+
+function updateComponentVersion(component, version, { now } = {}) {
+  const config = COMPONENTS[component];
+  if (!config) throw new Error(`Invalid release component: ${component || '<empty>'}`);
+  const pkg = writePackageVersion(config.packagePath, version);
+  if (config.lockPath) syncPackageLockVersion(config.lockPath, version);
+  if (config.generatesDesktopVersion) writeGeneratedVersion(pkg, now);
+  return pkg;
+}
+
 function syncPackageLockVersion(lockPath, version) {
   if (!fs.existsSync(lockPath)) return null;
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
@@ -255,31 +294,18 @@ function writeGeneratedVersion(pkg, now = new Date()) {
 }
 
 function main() {
-  const pkgPath = path.join(__dirname, '..', 'package.json');
-  const lockPath = path.join(__dirname, '..', 'package-lock.json');
-  const pkg = require(pkgPath);
   const args = process.argv.slice(2);
+  const component = resolveComponent(args);
+  const config = COMPONENTS[component];
+  const pkg = JSON.parse(fs.readFileSync(config.packagePath, 'utf8'));
 
   if (args.includes('--bump') || args.some(arg => arg.startsWith('--bump='))) {
     const bumpLevel = resolveBumpLevel(args);
     const newVersion = nextVersion(pkg.version, bumpLevel);
-    const pkgContent = writePackageVersion(pkgPath, newVersion);
-    syncPackageLockVersion(lockPath, newVersion);
-    syncBackendPackageVersion(newVersion);
-    syncGatewayPackageVersion(newVersion);
-    syncCloudBusinessApiPackageVersion(newVersion);
-    syncStorageAgentPackageVersion(newVersion);
-    syncMiniappPackageVersion(newVersion);
-    writeGeneratedVersion(pkgContent);
-    console.log(`Version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
+    updateComponentVersion(component, newVersion);
+    console.log(`${component} version bumped (${bumpLevel}): ${pkg.version} → ${newVersion}`);
   } else {
-    syncPackageLockVersion(lockPath, pkg.version);
-    syncBackendPackageVersion(pkg.version);
-    syncGatewayPackageVersion(pkg.version);
-    syncCloudBusinessApiPackageVersion(pkg.version);
-    syncStorageAgentPackageVersion(pkg.version);
-    syncMiniappPackageVersion(pkg.version);
-    writeGeneratedVersion(pkg);
+    updateComponentVersion(component, pkg.version);
   }
 }
 
@@ -289,13 +315,16 @@ if (require.main === module) {
 
 module.exports = {
   analyzeVersionBump,
+  COMPONENTS,
   filterReleaseArtifactPaths,
   nextVersion,
   readChangeContext,
   resolveBumpLevel,
+  resolveComponent,
   syncBackendPackageVersion,
   syncGatewayPackageVersion,
   syncMiniappPackageVersion,
   syncPackageLockVersion,
+  updateComponentVersion,
   writeFileUtf8WithRetry,
 };

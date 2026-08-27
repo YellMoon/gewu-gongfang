@@ -1,43 +1,39 @@
-# Unified Release Version Matrix
+# Release Compatibility Matrix
 
 ## Rule
 
-One user-facing release has one `Major.Minor.Patch` version. The unified desktop installer, Backend, Gateway, and the WeChat miniapp development build must all use that exact version. There is no separate local-host installer target. If any required endpoint has no same-version receipt, the release is **partial**, never complete.
+Desktop, cloud business service, NAS storage proxy, and the WeChat miniapp have independent semantic versions. A version increase in one component never rewrites another component’s package or lockfile.
 
-The source of truth is the root `package.json`. `scripts/update-version.js` synchronizes the root, Backend, Gateway, lockfiles, and generated desktop version. The generated local manifest at `output/release-matrix/active.json` is the runtime release ledger: it contains the source commit, the single version, and exact receipts. It is not a second version source and must not be hand-edited.
+Every formal deployment is instead gated by one reviewed protocol and data-compatibility declaration in `config/release-compatibility.json`. The release ledger records the source commit, all four component versions, that exact declaration, and a separately verified receipt for every target. It is generated under a path containing the complete component-version matrix and must not be hand-edited.
 
-| Target | Required evidence |
-| --- | --- |
-| `desktop` | OSS installer and `latest.yml` uploaded, with an exact feed version |
-| `backend` | Backup, migration/restart, then exact `/api/health` version |
-| `gateway` | Backup/restart, then exact Gateway health version |
-| `miniapp` | Successful WeChat development upload for compatibility; an official WeChat production-release receipt is additionally required before the matrix may be called complete |
+| Target | Version source | Required evidence |
+| --- | --- | --- |
+| `desktop` | root `package.json` | OSS installer and `latest.yml` match the desktop component version |
+| `cloud_business` | `cloud-business-api/package.json` | backup, migration/restart, and health evidence match the cloud component version |
+| `storage_proxy` | `storage-agent/package.json` | Docker-UI artifact and health evidence match the storage component version |
+| `miniapp` | `miniapp/package.json` | WeChat development upload for compatibility; production receipt before a formal matrix is complete |
 
-## Required order
+## Bumping and release order
 
-1. Run compatibility tests and select exactly one semantic bump with `npm run version:bump:major|minor|patch`.
-2. Commit and push the synchronized source version.
-3. Run `npm run release:prepare`. It refuses a root/Backend/Gateway mismatch and creates the one release ledger.
-4. Run `npm run dist:win`. Packaging reads the ledger and cannot bump the version again.
-5. Deploy Backend and Gateway. Each script creates its normal backup, verifies the exact health version, then records its receipt.
-6. Run `npm run miniapp:upload`. The upload refuses a manual `--version` that differs from the ledger and writes the miniapp receipt only after success.
-7. Publish OSS with `npm run publish:desktop-update`; it refuses to update the unified desktop feed until Backend, Gateway, and Miniapp have exact-version receipts. The successful feed and installer upload records the desktop receipt.
-8. Use `npm run release:status`, then `npm run release:complete`. Desktop publication may rely on the exact-version miniapp development-upload receipt, but formal multi-end completion additionally requires the miniapp receipt to be upgraded by a confirmed WeChat production release.
+1. Run relevant protocol/data contract tests. Choose the semantic increment for the component that changed.
+2. Use the component command, for example `npm run version:bump:cloud-business:minor`. The four component families are `desktop`, `cloud-business`, `storage-proxy`, and `miniapp`.
+3. Commit and push the changed component version. Run `npm run release:prepare`; it snapshots the independent versions and the reviewed compatibility declaration.
+4. Deploy only the changed component, then record its receipt. A receipt must match that component’s version, not the desktop version.
+5. Before publishing an OSS desktop update, cloud, storage, and miniapp must each have compatible verified receipts in the same ledger. Their version strings may differ.
+6. `npm run release:complete` additionally requires the miniapp production receipt. A development upload remains partial.
 
-## Failure and rollback boundary
+## Compatibility boundary
 
-- A failed endpoint stays pending. Fix the environment and retry with the same manifest and version; never create a second bump merely because a retry occurred.
-- A verified endpoint cannot be published again under the same version. A different artifact requires a new release version.
-- `npm run publish:desktop-rollback -- --rollback=<archived-version>` changes only the OSS desktop feed. It does not claim that cloud services or miniapp builds were rolled back.
-- A successful miniapp development upload must be reported as a development upload, not as review approval or production release.
-- No endpoint may be called directly for a formal release without its release-manifest gate.
+- Changes to a REST protocol, export protocol, storage transport, or business-data schema must first update `config/release-compatibility.json`, their contract tests, and every affected component’s release plan.
+- Cloud business data remains cloud-write-authoritative. Desktop offline mutations stay drafts until user confirmation; miniapp retains only its approved limited task writes; NAS remains media/artifact-only.
+- A failed target stays pending. Retrying it does not require another version bump. A changed artifact or changed compatibility declaration requires a new component release matrix.
+- OSS rollback only changes the desktop feed; it does not claim a cloud, NAS, or miniapp rollback.
 
 ## Regression checks
 
 ```powershell
-npm run test:release-matrix
-node scripts/check_deploy_readiness.js
-npm run miniapp:release-check
+node scripts/update-version.test.js
+node scripts/release-matrix.test.js
+node scripts/independent-release-version.test.js
+node scripts/release-matrix-python.test.js
 ```
-
-Post-release evidence must include the live OSS feed, Backend health, Gateway health, and WeChat upload receipt. Git state or a local build is not substitute evidence.

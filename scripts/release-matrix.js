@@ -4,16 +4,42 @@ const childProcess = require('child_process');
 
 const DEFAULT_TARGETS = Object.freeze(['desktop', 'cloud_business', 'storage_proxy', 'miniapp']);
 const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['cloud_business', 'storage_proxy', 'miniapp']);
-const MANIFEST_SCHEMA = 'gewu.unified-release.v1';
+const MANIFEST_SCHEMA = 'gewu.release-compatibility.v2';
+const COMPATIBILITY_SCHEMA = 'gewu.protocol-data-compatibility.v1';
 const MINIAPP_RELEASE_LEVELS = Object.freeze(['development', 'production']);
+
+function compatibilityDeclarationPath(rootDir = path.resolve(__dirname, '..')) {
+  return path.join(rootDir, 'config', 'release-compatibility.json');
+}
+
+function readCompatibilityDeclaration({ rootDir = path.resolve(__dirname, '..') } = {}) {
+  const declarationPath = compatibilityDeclarationPath(rootDir);
+  if (!fs.existsSync(declarationPath)) throw new Error(`Release compatibility declaration is required: ${declarationPath}`);
+  const declaration = readJson(declarationPath);
+  if (declaration?.schema !== COMPATIBILITY_SCHEMA || !declaration.contracts || typeof declaration.contracts !== 'object') {
+    throw new Error('Release compatibility declaration is invalid');
+  }
+  for (const [name, contract] of Object.entries(declaration.contracts)) {
+    if (!name || !contract || !/^\d+$/.test(String(contract.version || '')) || !Array.isArray(contract.participants) || contract.participants.length === 0) {
+      throw new Error(`Release compatibility contract is invalid: ${name || '<empty>'}`);
+    }
+  }
+  return declaration;
+}
+
+function compatibilityFingerprint(declaration) {
+  return JSON.stringify(declaration);
+}
+
+function matrixReleaseId(componentVersions) {
+  return DEFAULT_TARGETS.map(target => `${target.replace('_', '-')}-${componentVersions[target]}`).join('__');
+}
 
 function defaultManifestPath(rootDir = path.resolve(__dirname, '..')) {
   const configured = String(process.env.GEWU_RELEASE_MANIFEST_PATH || '').trim();
   if (configured) return path.resolve(rootDir, configured);
-  const packagePath = path.join(rootDir, 'package.json');
-  const version = fs.existsSync(packagePath) ? String(JSON.parse(fs.readFileSync(packagePath, 'utf8')).version || '').trim() : '';
-  if (!isVersion(version)) throw new Error('Root package version is required to select the unified release manifest');
-  return path.join(rootDir, 'output', `release-matrix-${version}`, 'active.json');
+  const componentVersions = readSourceVersionMatrix({ rootDir });
+  return path.join(rootDir, 'output', `release-matrix-${matrixReleaseId(componentVersions)}`, 'active.json');
 }
 
 function historicalManifestPath(manifestPath, manifest) {
@@ -31,8 +57,11 @@ function isVersion(value) {
   return /^\d+\.\d+\.\d+$/.test(String(value || ''));
 }
 
-function createReleaseManifest({ version, commit, createdAt = new Date().toISOString(), targets = DEFAULT_TARGETS } = {}) {
-  if (!isVersion(version)) throw new Error(`Invalid unified release version: ${version || '<empty>'}`);
+function createReleaseManifest({ version, componentVersions, compatibility, commit, createdAt = new Date().toISOString(), targets = DEFAULT_TARGETS } = {}) {
+  const versions = componentVersions || Object.fromEntries(targets.map(target => [target, version]));
+  for (const target of targets) {
+    if (!isVersion(versions?.[target])) throw new Error(`Invalid ${target} release version: ${versions?.[target] || '<empty>'}`);
+  }
   if (!commit || typeof commit !== 'string') throw new Error('A source commit is required for a unified release manifest');
   const targetState = {};
   for (const target of targets) {
@@ -40,7 +69,11 @@ function createReleaseManifest({ version, commit, createdAt = new Date().toISOSt
   }
   return {
     schema: MANIFEST_SCHEMA,
-    version,
+    // `version` remains the desktop version for legacy status readers. New gates
+    // must use componentVersions[target], never infer cross-component equality.
+    version: versions.desktop,
+    componentVersions: Object.fromEntries(targets.map(target => [target, versions[target]])),
+    compatibility: compatibility || readCompatibilityDeclaration(),
     commit,
     createdAt,
     targets: targetState,
@@ -54,7 +87,23 @@ function validateManifest(manifest) {
     return { issues };
   }
   if (manifest.schema !== MANIFEST_SCHEMA) issues.push(`release manifest schema must be ${MANIFEST_SCHEMA}`);
-  if (!isVersion(manifest.version)) issues.push(`release manifest version is invalid: ${manifest.version || '<empty>'}`);
+  if (!isVersion(manifest.version)) issues.push(`release manifest desktop version is invalid: ${manifest.version || '<empty>'}`);
+  if (!manifest.componentVersions || typeof manifest.componentVersions !== 'object') {
+    issues.push('release manifest component versions are missing');
+  } else {
+    for (const target of DEFAULT_TARGETS) {
+      if (!isVersion(manifest.componentVersions[target])) issues.push(`release target ${target} version is invalid`);
+    }
+    if (manifest.componentVersions.desktop !== manifest.version) issues.push('release manifest desktop version does not match componentVersions.desktop');
+  }
+  try {
+    const expectedCompatibility = readCompatibilityDeclaration();
+    if (compatibilityFingerprint(manifest.compatibility) !== compatibilityFingerprint(expectedCompatibility)) {
+      issues.push('release manifest compatibility declaration does not match the reviewed protocol/data contract');
+    }
+  } catch (error) {
+    issues.push(error.message);
+  }
   if (!manifest.commit || typeof manifest.commit !== 'string') issues.push('release manifest commit is missing');
   if (!manifest.targets || typeof manifest.targets !== 'object') {
     issues.push('release manifest targets are missing');
@@ -64,8 +113,8 @@ function validateManifest(manifest) {
       if (!state || !['pending', 'verified'].includes(state.status)) {
         issues.push(`release target ${target} must be pending or verified`);
       }
-      if (state?.status === 'verified' && (!state.receipt || state.receipt.version !== manifest.version)) {
-        issues.push(`release target ${target} has no exact-version receipt`);
+      if (state?.status === 'verified' && (!state.receipt || state.receipt.version !== manifest.componentVersions?.[target])) {
+        issues.push(`release target ${target} has no component-version receipt`);
       }
     }
   }
@@ -98,9 +147,9 @@ function isCompletedHistoricalManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || !isVersion(manifest.version) || !manifest.commit) return false;
   const targets = manifest.targets;
   if (!targets || typeof targets !== 'object' || Object.keys(targets).length === 0) return false;
-  return Object.values(targets).every(state => (
+  return Object.entries(targets).every(([target, state]) => (
     state?.status === 'verified'
-    && state.receipt?.version === manifest.version
+    && state.receipt?.version === manifest.componentVersions?.[target]
     && typeof state.receipt.evidence === 'string'
     && state.receipt.evidence.length > 0
   )) && targets.miniapp?.receipt?.releaseLevel === 'production';
@@ -171,6 +220,7 @@ function readSourceVersionMatrix({ rootDir = path.resolve(__dirname, '..') } = {
   const entries = [
     ['desktop', 'package.json'],
     ['cloud_business', path.join('cloud-business-api', 'package.json')],
+    ['storage_proxy', path.join('storage-agent', 'package.json')],
     ['miniapp', path.join('miniapp', 'package.json')],
   ];
   return Object.fromEntries(entries.map(([name, relativePath]) => {
@@ -180,11 +230,10 @@ function readSourceVersionMatrix({ rootDir = path.resolve(__dirname, '..') } = {
   }));
 }
 
-function assertSourceVersionMatrix(matrix, expectedVersion) {
-  if (!isVersion(expectedVersion)) throw new Error(`Invalid expected release version: ${expectedVersion || '<empty>'}`);
-  const stale = Object.entries(matrix).filter(([, version]) => version !== expectedVersion);
-  if (stale.length) {
-    throw new Error(`Unified source version mismatch: ${stale.map(([name, version]) => `${name}=${version || '<empty>'}`).join(', ')}; expected ${expectedVersion}`);
+function assertSourceVersionMatrix(matrix) {
+  const invalid = DEFAULT_TARGETS.filter(target => !isVersion(matrix?.[target]));
+  if (invalid.length) {
+    throw new Error(`Release source component version is invalid: ${invalid.map(target => `${target}=${matrix?.[target] || '<empty>'}`).join(', ')}`);
   }
   return matrix;
 }
@@ -194,16 +243,30 @@ function resolveManifestVersion({ manifest, requestedVersion } = {}) {
   const validation = validateManifest(manifest);
   if (validation.issues.length) throw new Error(validation.issues.join('; '));
   if (requestedVersion && requestedVersion !== manifest.version) {
-    throw new Error(`Release version mismatch: requested ${requestedVersion}, manifest requires ${manifest.version}`);
+    throw new Error(`Desktop release version mismatch: requested ${requestedVersion}, manifest requires ${manifest.version}`);
   }
   return manifest.version;
+}
+
+function resolveTargetVersion({ manifest, target, requestedVersion } = {}) {
+  if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
+  const validation = validateManifest(manifest);
+  if (validation.issues.length) throw new Error(validation.issues.join('; '));
+  const expectedVersion = manifest.componentVersions[target];
+  if (requestedVersion && requestedVersion !== expectedVersion) {
+    throw new Error(`${target} release version mismatch: requested ${requestedVersion}, manifest requires ${expectedVersion}`);
+  }
+  return expectedVersion;
 }
 
 function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifestPath = defaultManifestPath(rootDir), target, requestedVersion } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const manifest = readManifest(manifestPath);
-  const version = resolveManifestVersion({ manifest, requestedVersion });
-  assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }), version);
+  const version = resolveTargetVersion({ manifest, target, requestedVersion });
+  const sourceVersions = assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }));
+  if (sourceVersions[target] !== version) {
+    throw new Error(`Release target ${target} source version mismatch: ${sourceVersions[target]} != ${version}`);
+  }
   const targetState = manifest.targets[target];
   if (targetState.status !== 'pending') {
     throw new Error(`Release target ${target} already has a verified receipt for ${version}; use an explicit rollback or a new release`);
@@ -218,12 +281,13 @@ function assertDesktopReleasePrerequisites({
   requestedVersion,
 } = {}) {
   const manifest = suppliedManifest || readManifest(manifestPath);
-  const version = resolveManifestVersion({ manifest, requestedVersion });
-  assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }), version);
+  const version = resolveTargetVersion({ manifest, target: 'desktop', requestedVersion });
+  const sourceVersions = assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }));
+  if (sourceVersions.desktop !== version) throw new Error(`Release target desktop source version mismatch: ${sourceVersions.desktop} != ${version}`);
   for (const target of DESKTOP_PREREQUISITE_TARGETS) {
     const state = manifest.targets[target];
-    if (state?.status !== 'verified' || state.receipt?.version !== version) {
-      throw new Error(`Release ${version} cannot publish OSS updates until ${target} has a verified exact-version receipt`);
+    if (state?.status !== 'verified' || state.receipt?.version !== manifest.componentVersions[target]) {
+      throw new Error(`Desktop ${version} cannot publish OSS updates until ${target} has a verified compatible component receipt`);
     }
   }
   return { manifest, version, manifestPath };
@@ -231,7 +295,7 @@ function assertDesktopReleasePrerequisites({
 
 function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
-  const expectedVersion = resolveManifestVersion({ manifest, requestedVersion: version });
+  const expectedVersion = resolveTargetVersion({ manifest, target, requestedVersion: version });
   const targetState = manifest.targets[target];
   const resolvedReleaseLevel = target === 'miniapp' && releaseLevel === undefined ? 'development' : releaseLevel;
   const isMiniappProductionUpgrade = target === 'miniapp'
@@ -247,8 +311,8 @@ function recordReceipt(manifest, { target, version, verifiedAt = new Date().toIS
   }
   targetState.status = 'verified';
   targetState.receipt = target === 'miniapp'
-    ? { version: expectedVersion, verifiedAt, evidence, releaseLevel: resolvedReleaseLevel }
-    : { version: expectedVersion, verifiedAt, evidence };
+    ? { version: expectedVersion, verifiedAt, evidence, releaseLevel: resolvedReleaseLevel, compatibility: manifest.compatibility.schema }
+    : { version: expectedVersion, verifiedAt, evidence, compatibility: manifest.compatibility.schema };
   return manifest;
 }
 
@@ -274,7 +338,8 @@ function prepareReleaseManifest({
 } = {}) {
   const matrix = readSourceVersionMatrix({ rootDir });
   const version = matrix.desktop;
-  assertSourceVersionMatrix(matrix, version);
+  assertSourceVersionMatrix(matrix);
+  const compatibility = readCompatibilityDeclaration({ rootDir });
   if (fs.existsSync(manifestPath)) {
     const existingRaw = readJson(manifestPath);
     if (existingRaw.version === version && existingRaw.commit === commit) {
@@ -283,16 +348,16 @@ function prepareReleaseManifest({
     }
     if (isUntouchedPendingManifest(existingRaw)) {
       const archivedManifestPath = archiveUntouchedPendingManifest({ manifestPath, manifest: existingRaw });
-      const manifest = createReleaseManifest({ version, commit });
+      const manifest = createReleaseManifest({ componentVersions: matrix, compatibility, commit });
       writeManifest(manifestPath, manifest);
       return { action: 'superseded-and-prepared', version, manifestPath, manifest, archivedManifestPath };
     }
     const archivedManifestPath = archiveCompletedHistoricalManifest({ manifestPath, manifest: existingRaw });
-    const manifest = createReleaseManifest({ version, commit });
+    const manifest = createReleaseManifest({ componentVersions: matrix, compatibility, commit });
     writeManifest(manifestPath, manifest);
     return { action: 'archived-and-prepared', version, manifestPath, manifest, archivedManifestPath };
   }
-  const manifest = createReleaseManifest({ version, commit });
+  const manifest = createReleaseManifest({ componentVersions: matrix, compatibility, commit });
   writeManifest(manifestPath, manifest);
   return { action: 'prepared', version, manifestPath, manifest, archivedManifestPath: null };
 }
@@ -305,7 +370,7 @@ function recoverPartiallyPublishedManifest({
 } = {}) {
   const matrix = readSourceVersionMatrix({ rootDir });
   const version = matrix.desktop;
-  assertSourceVersionMatrix(matrix, version);
+  assertSourceVersionMatrix(matrix);
   const existing = readManifest(manifestPath);
   const archivedManifestPath = archivePartiallyVerifiedManifest({
     manifestPath,
@@ -313,7 +378,7 @@ function recoverPartiallyPublishedManifest({
     reason,
     supersededByCommit: commit,
   });
-  const manifest = createReleaseManifest({ version, commit });
+  const manifest = createReleaseManifest({ componentVersions: matrix, compatibility: readCompatibilityDeclaration({ rootDir }), commit });
   writeManifest(manifestPath, manifest);
   return { action: 'recovered-and-prepared', version, manifestPath, manifest, archivedManifestPath };
 }
@@ -336,6 +401,7 @@ function cli() {
     console.log(JSON.stringify({
       action: result.action,
       version: result.version,
+      componentVersions: result.manifest.componentVersions,
       manifestPath,
       targets: result.manifest.targets,
       archivedManifestPath: result.archivedManifestPath,
@@ -355,7 +421,7 @@ function cli() {
   }
   if (command === 'assert') {
     const result = assertReleaseTarget({ rootDir, manifestPath, target: option(argv, 'target'), requestedVersion: option(argv, 'version') });
-    console.log(JSON.stringify({ action: 'allowed', target: option(argv, 'target'), version: result.version, manifestPath }, null, 2));
+    console.log(JSON.stringify({ action: 'allowed', target: option(argv, 'target'), version: result.version, componentVersions: result.manifest.componentVersions, manifestPath }, null, 2));
     return;
   }
   if (command === 'record') {
@@ -366,7 +432,7 @@ function cli() {
       evidence: option(argv, 'evidence'),
     });
     writeManifest(manifestPath, manifest);
-    console.log(JSON.stringify({ action: 'recorded', target: option(argv, 'target'), version: manifest.version, manifestPath }, null, 2));
+    console.log(JSON.stringify({ action: 'recorded', target: option(argv, 'target'), version: manifest.componentVersions[option(argv, 'target')], componentVersions: manifest.componentVersions, manifestPath }, null, 2));
     return;
   }
   if (command === 'status') {
@@ -376,8 +442,8 @@ function cli() {
   }
   if (command === 'complete') {
     const manifest = readManifest(manifestPath);
-    if (!isReleaseComplete(manifest)) throw new Error(`Release ${manifest.version} is partial; every target needs an exact-version receipt`);
-    console.log(JSON.stringify({ action: 'complete', version: manifest.version, manifestPath }, null, 2));
+    if (!isReleaseComplete(manifest)) throw new Error(`Release matrix is partial; every target needs a compatible component-version receipt`);
+    console.log(JSON.stringify({ action: 'complete', version: manifest.version, componentVersions: manifest.componentVersions, manifestPath }, null, 2));
     return;
   }
   throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--evidence text] [--reason text]');
@@ -397,6 +463,7 @@ module.exports = {
   DESKTOP_PREREQUISITE_TARGETS,
   MANIFEST_SCHEMA,
   MINIAPP_RELEASE_LEVELS,
+  COMPATIBILITY_SCHEMA,
   assertDesktopReleasePrerequisites,
   assertReleaseTarget,
   assertSourceVersionMatrix,
@@ -414,6 +481,8 @@ module.exports = {
   readSourceVersionMatrix,
   recordReceipt,
   resolveManifestVersion,
+  resolveTargetVersion,
+  readCompatibilityDeclaration,
   validateManifest,
   writeManifest,
 };
