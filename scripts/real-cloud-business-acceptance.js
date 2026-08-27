@@ -591,7 +591,9 @@ function resolveRuntimeModules(scriptDir, existsSync = fs.existsSync) {
     throw acceptanceFailure('REAL_CLOUD_ACCEPTANCE_CONFIG_INVALID');
   }
   const resolver = scriptDir.startsWith('/') ? path.posix : path;
-  const roots = [resolver.resolve(scriptDir, '../cloud-business-api'), resolver.resolve(scriptDir)];
+  // The acceptance script is copied into /app.  Prefer that co-located runtime:
+  // a legacy /cloud-business-api mount may coexist in a container and be stale.
+  const roots = [resolver.resolve(scriptDir), resolver.resolve(scriptDir, '../cloud-business-api')];
   for (const root of roots) {
     const packagePath = portablePath(path.join(root, 'package.json'));
     const pgPath = portablePath(path.join(root, 'node_modules', 'pg'));

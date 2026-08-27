@@ -363,6 +363,12 @@ function runtimeLayoutIsExplicit() {
     resolveRuntimeModules('/app', candidate => candidate === '/app/package.json' || candidate === '/app/node_modules/pg'),
     { packagePath: '/app/package.json', pgPath: '/app/node_modules/pg' },
   );
+  assert.deepStrictEqual(
+    resolveRuntimeModules('/app', candidate => candidate === '/app/package.json' || candidate === '/app/node_modules/pg'
+      || candidate === '/cloud-business-api/package.json' || candidate === '/cloud-business-api/node_modules/pg'),
+    { packagePath: '/app/package.json', pgPath: '/app/node_modules/pg' },
+    'the acceptance script must prefer the running container image over a stale sibling mount',
+  );
 }
 
 async function stageAndCleanupErrorsStayDiagnosable() {
