@@ -86,7 +86,7 @@ export default function LoginPage() {
       <Text className="login-title">{'\u683c\u7269\u5de5\u574a'}</Text>
     </View>
     <View className="login-action">
-      <Button className="wx-login-btn" openType="getPhoneNumber" onGetPhoneNumber={(event) => void handleCloudLogin(event?.detail?.code || '')} loading={loading} disabled={loading}>{'\u6388\u6743\u624b\u673a\u53f7\u5e76\u7ee7\u7eed'}</Button>
+      <Button className="wx-login-btn" openType="getPhoneNumber" onGetPhoneNumber={(event) => void handleCloudLogin(event?.detail?.code || '')} loading={loading} disabled={loading}>{'\u624b\u673a\u53f7\u5feb\u6377\u767b\u5f55'}</Button>
     </View>
     <View className="privacy-entry">
       <Text className="privacy-text">{'\u7ee7\u7eed\u5373\u8868\u793a\u4f60\u5df2\u9605\u8bfb'}</Text>

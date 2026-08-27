@@ -100,7 +100,7 @@ assert.ok(privacyPage.includes('微信登录凭证') && privacyPage.includes('�
 assert.ok(!privacyPage.includes('昵称、头像') && !privacyPage.includes('设备型号'), 'privacy guidance must not claim collection that the miniapp does not perform');
 assert.ok(privacyConfig.includes("navigationStyle: 'custom'"), 'privacy guidance must use its own safe-area-aware header instead of stacking a second global navigation bar');
 assert.ok(privacyPage.includes('本指引生效日期：2026年8月26日'), 'privacy guidance must show its current effective date');
-assert.ok(loginPage.includes('授权手机号并继续'), 'the sign-in action must describe the user authorization that actually occurs');
+assert.ok(loginPage.includes('手机号快捷登录'), 'the sign-in action must use the familiar user-facing phone sign-in label');
 assert.ok(!loginPage.includes('微信登录'), 'the sign-in action must not use a vague implementation label');
 assert.ok(!loginPage.includes('新账号默认为访客') && !loginPage.includes('家庭成员申请'), 'the sign-in page must not expose role-policy explanations before authentication');
 assert.ok(loginPage.includes('openType="getPhoneNumber"'), 'the sign-in action must retain the WeChat phone authorization capability');
