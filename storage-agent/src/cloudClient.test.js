@@ -98,6 +98,17 @@ async function main() {
     /STORAGE_CLOUD_RESPONSE_INVALID/,
     'malformed or unexpected cloud data must not become a local storage task'
   );
+  const rejectedClient = createStorageCloudClient({
+    cloudBaseUrl: 'https://cloud.example.invalid/cloud-business',
+    agentId: 'storage-agent-1',
+    token: 'storage-agent-client-test-token-with-sufficient-length',
+    fetch: async () => ({ ok: false, status: 409, json: async () => ({ ok: false, code: 'CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED' }) }),
+  });
+  await assert.rejects(
+    () => rejectedClient.lease(),
+    /STORAGE_CLOUD_HTTP_409/,
+    'the NAS log must retain the cloud HTTP status without copying cloud response details'
+  );
 }
 
 main().then(() => console.log('storage cloud client checks passed')).catch(error => {

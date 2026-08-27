@@ -87,6 +87,13 @@ function relayBytes(value) {
   return bytes;
 }
 
+function unavailableResponse(response) {
+  if (response && Number.isInteger(response.status) && response.status >= 400 && response.status <= 599) {
+    return failure('STORAGE_CLOUD_HTTP_' + response.status);
+  }
+  return failure('STORAGE_CLOUD_UNAVAILABLE');
+}
+
 function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchImpl = globalThis.fetch } = {}) {
   if (typeof cloudBaseUrl !== 'string' || !/^https:\/\/[A-Za-z0-9.-]+(?:\/[^?#]*)?$/u.test(cloudBaseUrl)
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
@@ -103,7 +110,7 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
     } catch (_) {
       throw failure('STORAGE_CLOUD_UNAVAILABLE');
     }
-    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw failure('STORAGE_CLOUD_UNAVAILABLE');
+    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw unavailableResponse(response);
     try {
       return await response.json();
     } catch (_) {
@@ -121,7 +128,7 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
     } catch (_) {
       throw failure('STORAGE_CLOUD_UNAVAILABLE');
     }
-    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw failure('STORAGE_CLOUD_UNAVAILABLE');
+    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw unavailableResponse(response);
     try {
       return await response.json();
     } catch (_) {
