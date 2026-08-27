@@ -96,6 +96,8 @@ const { compactFormulaText, renderPaperExport } = require('./paperExportRenderer
     'legacy TeX fractions without a braced numerator must not leak the frac command into PDF text');
   assert.strictEqual(compactFormulaText('\\frac H {2t}'), '(H)/(2t)',
     'legacy TeX fractions without a braced numerator must be normalized into readable inline text');
+  assert.strictEqual(compactFormulaText('\\frac{H（t－t_{0}）^{2}}{t^{2}}'), '(H（t－t(0)）²)/(t²)',
+    'nested subscript and superscript groups must be normalized before parsing inline fractions');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {

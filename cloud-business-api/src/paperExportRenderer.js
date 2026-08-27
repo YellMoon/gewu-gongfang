@@ -473,6 +473,9 @@ function drawPdfMedia(document, media) {
 function compactFormulaText(latex) {
   const superscripts = Object.freeze({ 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾' });
   return String(latex || '')
+    .replace(/\^\{([^{}]*)\}/g, (_, value) => String(value).split('').map(char => superscripts[char] || '^' + char).join(''))
+    .replace(/\^([0-9])/g, (_, value) => superscripts[value] || '^' + value)
+    .replace(/_\{([^{}]*)\}/g, '($1)')
     .replace(/\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)')
     .replace(/\\(?:d?frac)\s*([A-Za-z0-9]+)\s*\{([^{}]*)\}/g, '($1)/($2)')
     .replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
@@ -481,9 +484,6 @@ function compactFormulaText(latex) {
     .replace(/\\(?:geq|ge)/g, '≥')
     .replace(/\\neq/g, '≠')
     .replace(/\\(?:mathrm|text)\s*\{([^{}]*)\}/g, '$1')
-    .replace(/\^\{([^{}]*)\}/g, (_, value) => String(value).split('').map(char => superscripts[char] || '^' + char).join(''))
-    .replace(/\^([0-9])/g, (_, value) => superscripts[value] || '^' + value)
-    .replace(/_\{([^{}]*)\}/g, '($1)')
     .replace(/[{}]/g, '')
     .replace(/\\([A-Za-z]+)/g, '$1');
 }
