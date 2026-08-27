@@ -26,9 +26,19 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertEqual(candidate_name("8.1.0-8c425eab"), "gewu-cloud-business-api-candidate-8.1.0-8c425eab")
 
     def test_candidate_health_waits_for_startup(self):
-        command = candidate_command("8.1.0-8c425eab")
+        command = candidate_command("8.1.0-8c425eab", "a" * 32)
         self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
         self.assertIn("sleep 1", command)
+
+    def test_candidate_binds_cleanup_to_its_own_operation_and_always_removes_env_file(self):
+        operation_id = "a" * 32
+        command = candidate_command("8.1.0-8c425eab", operation_id)
+        self.assertIn(f'--label gewu.candidate-operation="{operation_id}"', command)
+        self.assertIn("trap 'rm -f -- \"$env_path\"' EXIT", command)
+
+    def test_switch_always_removes_the_copied_environment_file(self):
+        command = switch_command("8.1.0-8c425eab", "b" * 32)
+        self.assertIn("trap 'rm -f -- \"$env_path\"' EXIT", command)
 
     def test_switch_command_keeps_a_rollback_container_and_recovers_on_health_failure(self):
         command = switch_command("8.1.0-8c425eab", "a" * 32)
@@ -92,6 +102,14 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module.discard_candidate_command("8.4.1-881fe92c01ff"),
             "docker rm -f -- 'gewu-cloud-business-api-candidate-8.4.1-881fe92c01ff'",
         )
+
+    def test_failed_candidate_cleanup_requires_the_creating_operation(self):
+        operation_id = "c" * 32
+        command = module.discard_candidate_command("8.4.1-881fe92c01ff", operation_id)
+        self.assertIn("gewu-cloud-business-api-candidate-8.4.1-881fe92c01ff", command)
+        self.assertIn('gewu.candidate-operation', command)
+        self.assertIn(operation_id, command)
+        self.assertIn('"$actual" = "$owner"', command)
 
     def test_promotion_lock_is_atomic_owned_and_records_recovery_metadata(self):
         operation_id = "a" * 32
@@ -286,7 +304,10 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_candidate_start_failure_discards_only_its_exact_candidate(self):
         ssh = mock.Mock()
         tag = "8.5.0-1165783d"
-        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+        operation_id = "d" * 32
+        with mock.patch.object(module.secrets, "token_hex", return_value=operation_id), mock.patch.object(
+            module, "source_version", return_value="8.5.0"
+        ), mock.patch.object(
             module, "source_revision", return_value="1165783d"
         ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
             module.deploy, "connect", return_value=ssh
@@ -296,7 +317,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "candidate bind failed"):
                 module.deploy_release()
         self.assertEqual(run.call_count, 2)
-        self.assertEqual(run.call_args_list[1].args[1], module.discard_candidate_command(tag))
+        self.assertIn(f'--label gewu.candidate-operation="{operation_id}"', run.call_args_list[0].args[1])
+        self.assertIn("gewu.candidate-operation", run.call_args_list[1].args[1])
+        self.assertIn(operation_id, run.call_args_list[1].args[1])
         promote.assert_not_called()
         ssh.close.assert_called_once()
 

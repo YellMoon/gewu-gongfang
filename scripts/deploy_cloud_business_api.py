@@ -26,6 +26,7 @@ PROMOTION_GUARD_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion-guard.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
 OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 PROMOTION_LOCK_STALE_SECONDS = 900
+CANDIDATE_OPERATION_LABEL = "gewu.candidate-operation"
 
 
 def failure(code):
@@ -58,27 +59,39 @@ def remote_env_path(tag):
     return f"/tmp/gewu-cloud-business-{tag}.env"
 
 
-def candidate_command(tag):
+def candidate_command(tag, operation_id):
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     image = f"gewu-cloud-business-api:{tag}"
     candidate = candidate_name(tag)
     env_path = remote_env_path(tag)
     return (
         "set -eu; "
-        f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; "
+        f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; owner='{operation_id}'; "
+        "trap 'rm -f -- \"$env_path\"' EXIT; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
         "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$current\" > \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
-        f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 '{image}'; "
-        "rm -f -- \"$env_path\"; "
+        f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
         "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
         "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3003/api/health && exit 0; sleep 1; done; exit 1"
     )
 
 
-def discard_candidate_command(tag):
-    return f"docker rm -f -- '{candidate_name(tag)}'"
+def discard_candidate_command(tag, operation_id=None):
+    candidate = candidate_name(tag)
+    if operation_id is None:
+        return f"docker rm -f -- '{candidate}'"
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return (
+        "set -eu; "
+        f"candidate='{candidate}'; owner='{operation_id}'; "
+        f"actual=$(docker inspect -f '{{{{ index .Config.Labels \"{CANDIDATE_OPERATION_LABEL}\" }}}}' \"$candidate\" 2>/dev/null || true); "
+        "if [ \"$actual\" = \"$owner\" ]; then docker rm -f -- \"$candidate\"; fi"
+    )
 
 
 def promotion_lock_acquire_command(operation_id, tag):
@@ -158,6 +171,7 @@ def switch_command(tag, operation_id):
         "set -eu; "
         + promotion_owner_guard(operation_id, tag)
         + f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; rollback='{rollback}'; env_path='{env_path}'; "
+        + "trap 'rm -f -- \"$env_path\"' EXIT; "
         f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
@@ -444,25 +458,26 @@ def deploy_release():
     version = source_version()
     deploy.require_release_manifest("cloud_business")
     tag = validated_release_tag()
+    candidate_operation_id = secrets.token_hex(16)
     ssh = deploy.connect()
     try:
         upload_source(ssh, tag)
         build_image(ssh, tag)
         try:
-            deploy.run(ssh, candidate_command(tag), timeout=90)
+            deploy.run(ssh, candidate_command(tag, candidate_operation_id), timeout=90)
         except Exception:
             # docker can leave a created candidate behind when port binding or
             # startup fails. Remove only this release's exact candidate so a
             # subsequent verified retry is not blocked by stale state.
             try:
-                deploy.run(ssh, discard_candidate_command(tag), timeout=30)
+                deploy.run(ssh, discard_candidate_command(tag, candidate_operation_id), timeout=30)
             except Exception:
                 pass
             raise
         try:
             run_cloud_migrations()
         except Exception:
-            deploy.run(ssh, discard_candidate_command(tag))
+            deploy.run(ssh, discard_candidate_command(tag, candidate_operation_id))
             raise
     finally:
         ssh.close()
@@ -500,11 +515,12 @@ def main():
         tag = validated_release_tag(args.tag)
     if args.command == "candidate":
         deploy.require_release_manifest("cloud_business")
+        candidate_operation_id = secrets.token_hex(16)
         ssh = deploy.connect()
         try:
             upload_source(ssh, tag)
             build_image(ssh, tag)
-            deploy.run(ssh, candidate_command(tag), timeout=90)
+            deploy.run(ssh, candidate_command(tag, candidate_operation_id), timeout=90)
         finally:
             ssh.close()
         return
