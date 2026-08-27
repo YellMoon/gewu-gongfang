@@ -30,7 +30,10 @@ const APPLY = Object.freeze({ appliedAt: '2026-08-27T00:00:00.000Z', appliedBy: 
       await facade.query("INSERT INTO business.questions(id,tenant_id,subject,question_type,difficulty,status,taxonomy_json,has_formula) VALUES ('question-asset-demo','tenant-1','physics','single_choice',3,'published','{}',false)");
       await facade.query("INSERT INTO business.question_assets(id,tenant_id,question_id,asset_type,file_name,mime_type,size_bytes,storage_object_id,storage_object_version,content_hash,state) VALUES ('question_asset_import_question_asset_demo_0','tenant-1','question-asset-demo','image','diagram.png','image/png',11,'obj_import_media_demo_0',1,$1,'verified')", [HASH]);
       const repository = createQuestionAssetDeliveryRepository({
-        query: (text, values) => facade.query(text, values), randomId: () => '12345678', randomToken: () => 'lease-token-with-sufficient-length', now: () => new Date('2026-08-27T00:00:00.000Z'),
+        query: (text, values) => facade.query(text, values), randomId: () => '12345678', randomToken: () => 'lease-token-with-sufficient-length',
+        // PostgreSQL evaluates created_at with its actual transaction clock.  A fixed
+        // historical test clock eventually makes the delivery expiration precede it.
+        now: () => new Date(),
       });
       const requested = await repository.request({ tenantId: 'tenant-1', accountId: 'student-1', questionId: 'question-asset-demo', assetKey: HASH });
       assert.strictEqual(requested.status, 'queued');
