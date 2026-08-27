@@ -409,6 +409,31 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     name: 'Student updated', school: 'School one', gradeYear: 2024, gradeCurrent: '\\u4e8c\\u5e74\\u7ea7',
     institutionId: null, parentName: 'Parent one', notes: 'cloud command update', sourceType: 1, studentSource: 'Referral',
   }]);
+  const studentLifecycleWrites = [];
+  const studentCreate = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    businessStudentLifecycleMutations: {
+      create: async input => { studentLifecycleWrites.push(input); return { id: input.studentId, updatedAt: '2026-08-27T05:00:00.000Z' }; },
+      remove: async () => ({ id: 'student-cloud-new', updatedAt: '2026-08-27T05:00:01.000Z' }),
+    },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/students', {
+    method: 'POST',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: {
+      studentId: 'student-cloud-new', name: 'New student', school: null, gradeYear: 2026, gradeCurrent: null,
+      institutionId: null, parentName: null, notes: null, sourceType: 1, studentSource: 'Referral',
+      contacts: [{ slot: 1, relationship: 'student', phone: '13800138001', wechat: null }],
+    },
+  });
+  assert.strictEqual(studentCreate.status, 201);
+  assert.deepStrictEqual(studentCreate.body, { ok: true, student: { id: 'student-cloud-new', updatedAt: '2026-08-27T05:00:00.000Z' } });
+  assert.deepStrictEqual(studentLifecycleWrites, [{
+    tenantId: 'default', studentId: 'student-cloud-new', name: 'New student', school: null, gradeYear: 2026,
+    gradeCurrent: null, institutionId: null, parentName: null, notes: null, sourceType: 1, studentSource: 'Referral',
+    contacts: [{ slot: 1, relationship: 'student', phone: '13800138001', wechat: null }],
+  }]);
   const studentRecordWrites = [];
   const studentRecordUpdate = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }),
@@ -514,6 +539,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
+   ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],
    ['sessionContext', { sessionToken: 'eyJ2IjoxfQ.signature' }],

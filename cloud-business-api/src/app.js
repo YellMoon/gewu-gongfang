@@ -118,13 +118,17 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       ? value
       : undefined;
   }
-  function studentContacts(value, allowUnbind = false) {
+  function studentContacts(value, { allowUnbind = false, requireExpectedUpdatedAt = true } = {}) {
     if (!Array.isArray(value) || value.length > 3) return null;
     const slots = new Set();
     const contacts = [];
     for (const candidate of value) {
-      const contact = exactBody(candidate, ['slot', 'relationship', 'phone', 'wechat', 'expectedUpdatedAt']);
-      const expectedUpdatedAt = contact?.expectedUpdatedAt === null ? null : instant(contact?.expectedUpdatedAt);
+      const contact = exactBody(candidate, requireExpectedUpdatedAt
+        ? ['slot', 'relationship', 'phone', 'wechat', 'expectedUpdatedAt']
+        : ['slot', 'relationship', 'phone', 'wechat']);
+      const expectedUpdatedAt = requireExpectedUpdatedAt
+        ? (contact?.expectedUpdatedAt === null ? null : instant(contact?.expectedUpdatedAt))
+        : null;
       const phone = contact?.phone;
       const wechat = contact?.wechat;
       const validPhone = phone === null || (typeof phone === 'string' && /^1[3-9][0-9]{9}$/u.test(phone));
@@ -132,10 +136,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (!contact || !Number.isInteger(contact.slot) || contact.slot < 1 || contact.slot > 3 || slots.has(contact.slot)
         || !['student', 'guardian'].includes(contact.relationship)
         || (contact.slot === 1 && contact.relationship !== 'student') || (contact.slot > 1 && contact.relationship !== 'guardian')
-        || expectedUpdatedAt === undefined || !validPhone || !validWechat
+        || (requireExpectedUpdatedAt && expectedUpdatedAt === undefined) || !validPhone || !validWechat
         || (phone === null && wechat === null && (!allowUnbind || expectedUpdatedAt === null))) return null;
       slots.add(contact.slot);
-      contacts.push({ slot: contact.slot, relationship: contact.relationship, phone, wechat, expectedUpdatedAt });
+      contacts.push(requireExpectedUpdatedAt
+        ? { slot: contact.slot, relationship: contact.relationship, phone, wechat, expectedUpdatedAt }
+        : { slot: contact.slot, relationship: contact.relationship, phone, wechat });
     }
     return contacts;
   }
@@ -1471,7 +1477,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const parentName = boundedText(update.parentName, 256);
     const notes = optionalText(update.notes);
     const studentSource = boundedText(update.studentSource, 512);
-    const contacts = studentContacts(update.contacts, true);
+    const contacts = studentContacts(update.contacts, { allowUnbind: true });
     const gradeYear = update.gradeYear;
     const sourceType = update.sourceType;
     if (!expectedUpdatedAt || !name || school === undefined || gradeCurrent === undefined || institutionId === undefined
@@ -1502,7 +1508,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const studentId = String(update?.studentId || '').trim();
     const name = boundedText(update?.name, 256); const school = boundedText(update?.school, 256); const gradeCurrent = boundedText(update?.gradeCurrent, 128);
     const institutionId = boundedText(update?.institutionId, 256); const parentName = boundedText(update?.parentName, 256); const notes = optionalText(update?.notes); const studentSource = boundedText(update?.studentSource, 512);
-    const contacts = studentContacts(update?.contacts);
+    const contacts = studentContacts(update?.contacts, { requireExpectedUpdatedAt: false });
     if (!studentId || !name || school === undefined || gradeCurrent === undefined || institutionId === undefined || parentName === undefined || notes === undefined || studentSource === undefined || contacts === null
       || !(update.gradeYear === null || (Number.isInteger(update.gradeYear) && update.gradeYear >= 1900 && update.gradeYear <= 2200))
       || !(update.sourceType === null || (Number.isInteger(update.sourceType) && [1, 2].includes(update.sourceType)))) return businessInputInvalid(response);
