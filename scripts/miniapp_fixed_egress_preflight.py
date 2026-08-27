@@ -44,9 +44,9 @@ class FixedEgressConfig:
     expected_version: str
 
 
-def read_root_version(root: Path = PROJECT_ROOT) -> str:
+def read_miniapp_version(root: Path = PROJECT_ROOT) -> str:
     try:
-        payload = json.loads((root / "package.json").read_text(encoding="utf-8"))
+        payload = json.loads((root / "miniapp" / "package.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT) from error
     version = payload.get("version")
@@ -102,7 +102,7 @@ def config_from_env(
     )
     for health_url in health_urls:
         _validate_https_url(health_url, "health URL")
-    version = expected_version or read_root_version()
+    version = expected_version or read_miniapp_version()
     return FixedEgressConfig(
         fixed_egress_ip=raw_ip,
         echo_url=echo_url,
@@ -339,12 +339,8 @@ def verify_local_upload_inputs(
     expected_version: str,
     root: Path = PROJECT_ROOT,
 ) -> None:
-    root_package = _read_json_file(root / "package.json")
     miniapp_package = _read_json_file(root / "miniapp" / "package.json")
-    if (
-        root_package.get("version") != expected_version
-        or miniapp_package.get("version") != expected_version
-    ):
+    if miniapp_package.get("version") != expected_version:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT)
     declared_ci = (miniapp_package.get("devDependencies") or {}).get("miniprogram-ci")
     if declared_ci != EXPECTED_MINIPROGRAM_CI_VERSION:

@@ -115,7 +115,7 @@ function createFakeCi(uploadCalls) {
 assert.strictEqual(
   resolveUploadVersion({ packageJson: { version: '5.0.34' } }),
   '5.0.34',
-  'miniapp upload should default to the root package version'
+  'miniapp upload should default to the miniapp package version'
 );
 
 assert.strictEqual(

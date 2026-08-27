@@ -4,8 +4,8 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const rootPackage = require('../package.json');
 const matrix = require('./release-matrix');
+const componentVersions = matrix.readSourceVersionMatrix({ rootDir: path.resolve(__dirname, '..') });
 
 const currentCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
   cwd: path.resolve(__dirname, '..'),
@@ -18,7 +18,7 @@ const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-p
 const manifestPath = path.join(fixtureRoot, 'active.json');
 try {
   matrix.writeManifest(manifestPath, matrix.createReleaseManifest({
-    version: rootPackage.version,
+    componentVersions,
     commit,
   }));
   const probe = spawnSync('python', ['-c', [
@@ -26,17 +26,17 @@ try {
     'import scripts.deploy as deploy',
     "manifest = deploy.require_release_manifest('cloud_business')",
     "deploy.record_release_receipt('cloud_business', 'unit health receipt')",
-    'print(manifest["version"])',
+    'print(manifest["componentVersions"]["cloud_business"])',
   ].join('\n')], {
     cwd: path.resolve(__dirname, '..'),
     env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: manifestPath },
     encoding: 'utf8',
   });
   assert.strictEqual(probe.status, 0, probe.stderr || probe.stdout || 'cloud business release manifest probe must pass');
-  assert.strictEqual(probe.stdout.trim(), rootPackage.version, 'cloud business receipt gate should use the exact root version');
+  assert.strictEqual(probe.stdout.trim(), componentVersions.cloud_business, 'cloud business receipt gate should use the cloud component version');
   const recorded = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.strictEqual(recorded.targets.cloud_business.status, 'verified');
-  assert.strictEqual(recorded.targets.cloud_business.receipt.version, rootPackage.version);
+  assert.strictEqual(recorded.targets.cloud_business.receipt.version, componentVersions.cloud_business);
   const verifiedRecoveryProbe = spawnSync('python', ['-c', [
     'import scripts.deploy as deploy',
     "manifest = deploy.require_release_manifest('cloud_business', allowed_statuses=('pending', 'verified'))",
@@ -58,13 +58,13 @@ try {
   });
   assert.notStrictEqual(duplicatePendingProbe.status, 0, 'normal deploy must still reject an already verified target');
   assert.throws(
-    () => matrix.recordReceipt(recorded, { target: 'cloud_business', version: rootPackage.version, evidence: 'duplicate' }),
+    () => matrix.recordReceipt(recorded, { target: 'cloud_business', version: componentVersions.cloud_business, evidence: 'duplicate' }),
     /already has a verified receipt/i,
     'a duplicate deployment receipt must fail instead of silently reusing a target'
   );
 
   matrix.writeManifest(manifestPath, matrix.createReleaseManifest({
-    version: rootPackage.version,
+    componentVersions,
     commit: '0'.repeat(40),
   }));
   const staleProbe = spawnSync('python', ['-c', [

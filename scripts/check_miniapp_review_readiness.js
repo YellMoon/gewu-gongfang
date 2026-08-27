@@ -8,7 +8,7 @@ const REVIEW_DOC_PATH = path.join(ROOT_DIR, 'docs', 'miniapp-review-guide.md');
 
 function buildDefaultReviewInfo() {
   return {
-    version: require(path.join(ROOT_DIR, 'package.json')).version,
+    version: require(path.join(ROOT_DIR, 'miniapp', 'package.json')).version,
     versionDesc: '支持已绑定微信直接登录；首次登录需授权微信手机号，新账号自动创建为访客，可预览云端题目并提交教师、学生或家庭成员身份申请。',
     testRemark: '审核员可用已绑定微信直接登录，或在首次登录时授权微信手机号。新账号以访客身份进入，只能预览云端题目并提交身份申请，不会读取或修改正式教务数据。',
     orderCenterPath: '',

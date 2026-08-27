@@ -35,7 +35,7 @@ assert.deepStrictEqual(validateReviewInfo(info).errors, []);
 assert.ok(fs.existsSync(REVIEW_DOC_PATH));
 
 const doc = fs.readFileSync(REVIEW_DOC_PATH, 'utf8');
-const currentVersion = require(path.join(process.cwd(), 'package.json')).version;
+const currentVersion = require(path.join(process.cwd(), 'miniapp', 'package.json')).version;
 assert.ok(doc.includes(info.versionDesc));
 assert.ok(doc.includes(info.testRemark));
 assert.ok(doc.includes(currentVersion) || doc.includes('<当前版本>'));

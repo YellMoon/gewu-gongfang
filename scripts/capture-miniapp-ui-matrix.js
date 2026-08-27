@@ -13,7 +13,7 @@ const automator = require(path.join(ROOT, 'miniapp', 'node_modules', 'miniprogra
 const automatorRuntime = path.join(ROOT, 'miniapp', 'node_modules', 'miniprogram-automator', 'out');
 const AutomationConnection = require(path.join(automatorRuntime, 'Connection')).default;
 const AutomationMiniProgram = require(path.join(automatorRuntime, 'MiniProgram')).default;
-const VERSION = require('../package.json').version;
+const VERSION = require('../miniapp/package.json').version;
 const scenarioIdFilter = new Set(String(process.env.MINIAPP_UI_SCENARIO_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const focusedRun = scenarioIdFilter.size > 0;
 const scenarios = focusedRun ? runtimeScenarios.filter(scenario => scenarioIdFilter.has(scenario.id)) : runtimeScenarios;

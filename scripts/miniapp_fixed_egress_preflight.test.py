@@ -106,7 +106,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         self.assertEqual(https_handlers[0]._context.verify_mode, target.ssl.CERT_REQUIRED)
         self.assertTrue(https_handlers[0]._context.check_hostname)
 
-    def test_local_preflight_requires_matching_versions_ci_and_key(self):
+    def test_local_preflight_uses_the_miniapp_version_not_the_desktop_version(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             ci_dir = root / "miniapp" / "node_modules" / "miniprogram-ci"
@@ -114,7 +114,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
             key_path = root / "private.key"
             key_path.write_text("local-only", encoding="utf-8")
             (root / "package.json").write_text(
-                '{"version":"7.2.10"}', encoding="utf-8"
+                '{"version":"9.0.0"}', encoding="utf-8"
             )
             miniapp_package = root / "miniapp" / "package.json"
             miniapp_package.write_text(
@@ -130,6 +130,16 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
                 expected_version="7.2.10",
                 root=root,
             )
+            miniapp_package.write_text(
+                '{"version":"7.2.9","devDependencies":{"miniprogram-ci":"2.1.31"}}',
+                encoding="utf-8",
+            )
+            with self.assertRaises(FixedEgressError):
+                target.verify_local_upload_inputs(
+                    environment,
+                    expected_version="7.2.10",
+                    root=root,
+                )
             miniapp_package.write_text(
                 '{"version":"7.2.10","devDependencies":{"miniprogram-ci":"^2.1.31"}}',
                 encoding="utf-8",
