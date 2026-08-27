@@ -19,6 +19,8 @@ assert.match(source, /question\.knowledgeLabels/, 'question cards must show clou
 assert.match(source, /requestQuestionAssetDelivery/, 'question cards must fetch NAS-backed media only through the cloud delivery boundary');
 assert.match(source, /<RichText/, 'question cards must render resolved rich-media content instead of raw asset references');
 assert.match(source, /createQuestionBasketRuntime/, 'question selection must use a scoped basket rather than an unscoped local array');
+assert.match(source, /const currentBasket = synchronizeBasketScope\(\);/, 'the first selection after a restored session must reconcile the current scoped basket before writing');
+assert.match(source, /replaceBasket\(ids, currentBasket\.scopeKey\)/, 'a reconciled first selection must write using the live scoped basket key');
 assert.match(source, /pages\/question-paper\/index/, 'the basket entry must open the dedicated paper editor');
 assert.match(paperSource, /miniappCloudBusinessApi\.createPaperExportTask/, 'Word and PDF tasks must use the limited cloud export route');
 assert.match(paperSource, /miniappCloudBusinessApi\.requestPaperExportDelivery/, 'completed exports must request the NAS-backed delivery through cloud');

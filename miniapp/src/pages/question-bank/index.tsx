@@ -84,12 +84,15 @@ export default function QuestionBankPage() {
     const current = basketRuntime.snapshot();
     if (current.scopeKey !== basketState.scopeKey) {
       setBasketState(current);
-      return false;
+      // A restored session can mount this page before its identity reaches storage.
+      // An empty initial scope is safe to hydrate and use immediately; a switch
+      // between two established scopes still requires a deliberate second action.
+      return !basketState.scopeKey && current.scopeKey ? current : null;
     }
-    return Boolean(current.scopeKey);
+    return current.scopeKey ? current : null;
   };
-  const replaceBasket = (ids: string[]) => {
-    const result = basketRuntime.replace(ids, basketState.scopeKey);
+  const replaceBasket = (ids: string[], expectedScopeKey: string) => {
+    const result = basketRuntime.replace(ids, expectedScopeKey);
     setBasketState(result.snapshot);
     return result.written;
   };
@@ -144,20 +147,22 @@ export default function QuestionBankPage() {
     });
   };
   const openBasket = () => {
-    if (!canBuildPaper || !synchronizeBasketScope()) {
+    const currentBasket = synchronizeBasketScope();
+    if (!canBuildPaper || !currentBasket) {
       requestRoleApplication();
       return;
     }
     Taro.navigateTo({ url: '/pages/question-paper/index' });
   };
   const toggleBasket = (questionId: string) => {
-    if (!canBuildPaper || !synchronizeBasketScope()) {
+    const currentBasket = synchronizeBasketScope();
+    if (!canBuildPaper || !currentBasket) {
       requestRoleApplication();
       return;
     }
-    const ids = basketState.ids.includes(questionId)
-      ? basketState.ids.filter(id => id !== questionId) : [...basketState.ids, questionId];
-    replaceBasket(ids);
+    const ids = currentBasket.ids.includes(questionId)
+      ? currentBasket.ids.filter(id => id !== questionId) : [...currentBasket.ids, questionId];
+    replaceBasket(ids, currentBasket.scopeKey);
   };
   const onReachPreviewEnd = () => {
     if (isVisitor && questions.length >= 20) requestRoleApplication();
