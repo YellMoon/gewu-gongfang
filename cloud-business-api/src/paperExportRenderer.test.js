@@ -3,7 +3,7 @@
 const assert = require('assert');
 const JSZip = require('jszip');
 const sharp = require('sharp');
-const { renderPaperExport } = require('./paperExportRenderer');
+const { compactFormulaText, renderPaperExport } = require('./paperExportRenderer');
 
 (async () => {
   const imageBytes = await sharp({ create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
@@ -86,6 +86,16 @@ const { renderPaperExport } = require('./paperExportRenderer');
   });
   assert.ok(!defaultInlinePdf.bytes.includes(Buffer.from('/Subtype /Image')),
     'a formula without an explicit block display mode must remain inline instead of consuming a standalone image row');
+  const legacyFractionPdf = await renderPaperExport({
+    format: 'pdf', title: 'Legacy fraction paper', answerPosition: 'end', formulaMode: 'latex-vector',
+    snapshot: [{ id: 'q-legacy-fraction', stem: 'Fallback', answer: '', explanation: '', richContent: { blocks: [
+      { type: 'formula', canonicalLatex: '\\frac H {2t}' },
+    ] } }],
+  });
+  assert.ok(!legacyFractionPdf.bytes.includes(Buffer.from('frac')),
+    'legacy TeX fractions without a braced numerator must not leak the frac command into PDF text');
+  assert.strictEqual(compactFormulaText('\\frac H {2t}'), '(H)/(2t)',
+    'legacy TeX fractions without a braced numerator must be normalized into readable inline text');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {

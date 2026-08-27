@@ -474,6 +474,7 @@ function compactFormulaText(latex) {
   const superscripts = Object.freeze({ 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾' });
   return String(latex || '')
     .replace(/\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)')
+    .replace(/\\(?:d?frac)\s*([A-Za-z0-9]+)\s*\{([^{}]*)\}/g, '($1)/($2)')
     .replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
     .replace(/\\(?:times|cdot)/g, '×')
     .replace(/\\(?:leq|le)/g, '≤')
@@ -555,4 +556,4 @@ async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 
-module.exports = Object.freeze({ renderPaperExport });
+module.exports = Object.freeze({ compactFormulaText, renderPaperExport });
