@@ -90,14 +90,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       return response.status(409).json({ ok: false, code: error.code });
     }
     if (error && error.code === 'CLOUD_QUESTION_IMPORT_INPUT_INVALID') return businessInputInvalid(response);
-    process.stderr.write(`question-import runtime failure: ${String(error?.code || error?.message || 'UNKNOWN').slice(0, 512)}\n`);
+    process.stderr.write(`question-import runtime failure: ${String(error?.code || 'UNKNOWN')}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
     return businessUnavailable(response);
   }
   function storageAgentFailure(response, error) {
     if (error && error.code === 'STORAGE_AGENT_REJECTED') return response.status(403).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_REJECTED' });
     if (error && error.code === 'STORAGE_TASK_INPUT_INVALID') return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     if (error && error.code === 'STORAGE_TASK_RECEIPT_MISMATCH') return response.status(409).json({ ok: false, code: 'CLOUD_STORAGE_TASK_RECEIPT_MISMATCH' });
-    process.stderr.write(`storage-agent runtime failure: ${String(error?.code || error?.message || 'UNKNOWN').slice(0, 512)}\n`);
+    process.stderr.write(`storage-agent runtime failure: ${String(error?.code || 'UNKNOWN')}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
     return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
   }
   function exactBody(value, keys) {
