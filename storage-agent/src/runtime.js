@@ -12,7 +12,13 @@ function createStorageAgentRuntime({ worker, pollSeconds, sleep = milliseconds =
     async runForever({ shouldContinue = () => true, onResult = () => {} } = {}) {
       if (typeof shouldContinue !== 'function' || typeof onResult !== 'function') throw failure('STORAGE_AGENT_RUNTIME_CONFIG_INVALID');
       while (shouldContinue()) {
-        const result = await worker.runOnce();
+        let result;
+        try {
+          result = await worker.runOnce();
+        } catch (error) {
+          const code = typeof error?.code === 'string' && error.code ? error.code : 'STORAGE_AGENT_WORKER_FAILED';
+          result = Object.freeze({ state: 'retryable_error', code });
+        }
         await onResult(result);
         if (shouldContinue()) await sleep(pollSeconds * 1000);
       }

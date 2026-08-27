@@ -29,6 +29,7 @@ async function main() {
     shouldContinue: () => running,
     onResult: async result => {
       if (result?.state === 'verified') process.stdout.write(`storage-agent verified ${result.taskId}\n`);
+      if (result?.state === 'retryable_error') process.stderr.write(`storage-agent retrying: ${result.code}\n`);
     },
   });
 }
