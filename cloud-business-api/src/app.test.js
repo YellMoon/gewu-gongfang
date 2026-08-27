@@ -634,6 +634,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(questionImportCalls[0][1].tenantId, 'default');
   assert.strictEqual(questionImportCalls[0][1].actor.accountId, 'account-1');
   assert.ok(Buffer.isBuffer(questionImportCalls[0][1].request.relay.ciphertext), 'desktop source ciphertext must be decoded only for the relay repository');
+  assert.deepStrictEqual(Object.keys(questionImportCalls[0][1].request.relay).sort(), ['agentKeyFingerprint', 'ciphertext', 'envelope', 'expiresAt'], 'the transport-only ciphertextBase64 field must not cross the cloud repository boundary');
   const importRead = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(importRead.status, 200);
   assert.strictEqual(importRead.body.task.sourceStorageState, 'verified');

@@ -562,7 +562,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const actor = await desktopQuestionContext(request);
       const task = await questionImportTasks.create({
         tenantId: businessTenantId, actor, idempotencyKey,
-        request: { ...body, relay: { ...relay, ciphertext } },
+        request: {
+          ...body,
+          relay: {
+            agentKeyFingerprint: relay.agentKeyFingerprint,
+            envelope: relay.envelope,
+            ciphertext,
+            expiresAt: relay.expiresAt,
+          },
+        },
       });
       response.status(task.replayed ? 200 : 202).json({ ok: true, task });
     } catch (error) {
