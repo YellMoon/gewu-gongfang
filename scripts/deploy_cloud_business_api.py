@@ -236,6 +236,21 @@ def upload_source(ssh, tag):
         f"elif test ! -e '{build_dir}'; then mkdir -p '{build_dir}'; else exit 2; fi",
     )
     sftp = ssh.open_sftp()
+    created_directories = set()
+
+    def ensure_directory(remote_directory):
+        if remote_directory in created_directories:
+            return
+        current = ""
+        for part in remote_directory.split("/"):
+            if not part:
+                continue
+            current += "/" + part
+            try:
+                sftp.stat(current)
+            except OSError:
+                sftp.mkdir(current)
+        created_directories.add(remote_directory)
     try:
         for top_level in ("cloud-business-api", "shared"):
             local_top = ROOT / top_level
@@ -245,13 +260,13 @@ def upload_source(ssh, tag):
                 relative = local_path.relative_to(ROOT).as_posix()
                 remote_path = posixpath.join(build_dir, relative)
                 remote_parent = posixpath.dirname(remote_path)
-                deploy.run(ssh, f"mkdir -p '{remote_parent}'")
+                ensure_directory(remote_parent)
                 sftp.put(str(local_path), remote_path)
         font = ROOT / "backend" / "assets" / "fonts" / "NotoSansCJKsc-Regular.otf"
         if not font.is_file():
             raise failure("CLOUD_DOCKER_DEPLOY_FONT_MISSING")
         font_target = posixpath.join(build_dir, "backend", "assets", "fonts", font.name)
-        deploy.run(ssh, f"mkdir -p '{posixpath.dirname(font_target)}'")
+        ensure_directory(posixpath.dirname(font_target))
         sftp.put(str(font), font_target)
     finally:
         sftp.close()

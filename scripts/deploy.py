@@ -335,6 +335,9 @@ def connect():
         print(f"Connecting {HOST}:{PORT} env={APP_ENV} remote={REMOTE_DIR} attempt={attempt + 1}/3")
         try:
             ssh.connect(HOST, port=PORT, username=USER, password=PASSWORD, key_filename=KEY_PATH, timeout=10)
+            transport = ssh.get_transport()
+            if transport is not None:
+                transport.set_keepalive(15)
             return ssh
         except (OSError, paramiko.SSHException) as error:
             last_error = error
