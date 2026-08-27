@@ -283,6 +283,23 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertEqual(record_receipt.call_args.args[0], "cloud_business")
         self.assertIn("8.5.0", record_receipt.call_args.args[1])
 
+    def test_candidate_start_failure_discards_only_its_exact_candidate(self):
+        ssh = mock.Mock()
+        tag = "8.5.0-1165783d"
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
+            module.deploy, "connect", return_value=ssh
+        ), mock.patch.object(module, "upload_source"), mock.patch.object(module, "build_image"), mock.patch.object(
+            module.deploy, "run", side_effect=RuntimeError("candidate bind failed")
+        ) as run, mock.patch.object(module, "promote_validated_candidate") as promote:
+            with self.assertRaisesRegex(RuntimeError, "candidate bind failed"):
+                module.deploy_release()
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(run.call_args_list[1].args[1], module.discard_candidate_command(tag))
+        promote.assert_not_called()
+        ssh.close.assert_called_once()
+
     def test_public_health_failure_rolls_back_and_skips_receipt(self):
         switch_ssh = mock.Mock()
         tag_ssh = mock.Mock()

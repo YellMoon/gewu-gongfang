@@ -433,7 +433,17 @@ def deploy_release():
     try:
         upload_source(ssh, tag)
         build_image(ssh, tag)
-        deploy.run(ssh, candidate_command(tag), timeout=90)
+        try:
+            deploy.run(ssh, candidate_command(tag), timeout=90)
+        except Exception:
+            # docker can leave a created candidate behind when port binding or
+            # startup fails. Remove only this release's exact candidate so a
+            # subsequent verified retry is not blocked by stale state.
+            try:
+                deploy.run(ssh, discard_candidate_command(tag), timeout=30)
+            except Exception:
+                pass
+            raise
         try:
             run_cloud_migrations()
         except Exception:
