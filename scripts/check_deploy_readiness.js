@@ -358,7 +358,7 @@ function checkDesktopReleaseBoundary() {
 
   return Object.freeze({
     defaultDesktopFlavor: packageJson.desktopBuildFlavor,
-    miniappReleaseState: 'frozen',
+    miniappReleaseState: 'development-testable',
     issues: Object.freeze(issues),
   });
 }

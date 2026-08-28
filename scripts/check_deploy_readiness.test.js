@@ -75,7 +75,11 @@ assert.deepStrictEqual(buildSafety.issues, [], `identity build safety failed: ${
 assert.strictEqual(buildSafety.scanned, true, 'fresh desktop build artifacts must be scanned');
 const desktopRelease = readiness.checkDesktopReleaseBoundary();
 assert.deepStrictEqual(desktopRelease.issues, [], `desktop release boundary failed: ${desktopRelease.issues.join(', ')}`);
-assert.strictEqual(desktopRelease.miniappReleaseState, 'frozen');
+assert.strictEqual(
+  desktopRelease.miniappReleaseState,
+  'development-testable',
+  'the user-approved development build must be testable even though formal publication remains gated',
+);
 assert.strictEqual(desktopRelease.defaultDesktopFlavor, 'unified-desktop');
 
 console.log('deploy readiness checks passed');
