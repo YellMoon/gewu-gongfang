@@ -2,7 +2,7 @@
   "name": "scheduling-miniapp",
   "version": "8.7.25",
   "private": true,
-  "description": "教育综合服务平台 - 微信小程序",
+  "description": "格物工坊微信小程序",
   "templateInfo": {
     "name": "default",
     "typescript": true,

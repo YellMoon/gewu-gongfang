@@ -10,13 +10,14 @@ import { clearPermissionCache } from '../../utils/permission'
 import { pullFromCloud } from '../../utils/sync'
 import AccountStatusBanner from '../../components/AccountStatusBanner'
 import MembershipBadge from '../../components/MembershipBadge'
+import miniappPackage from '../../../package.json'
 import './index.scss'
 
 declare const __APP_VERSION__: string | undefined
 
 const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
   ? __APP_VERSION__.trim()
-  : '8.5.0'
+  : miniappPackage.version
 
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')

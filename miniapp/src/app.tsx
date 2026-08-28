@@ -4,13 +4,20 @@
 import { PropsWithChildren } from 'react';
 import { useLaunch } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
+import miniappPackage from '../package.json';
 import './app.scss';
 
 let App: React.FC<PropsWithChildren<any>>;
 
+declare const __APP_VERSION__: string | undefined;
+
+const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim()
+  ? __APP_VERSION__.trim()
+  : miniappPackage.version;
+
 App = function App({ children }: PropsWithChildren<any>) {
   useLaunch((options) => {
-    console.log('\u6559\u80b2\u7efc\u5408\u670d\u52a1\u5e73\u53f0 v1.6.0');
+    console.info(`\u683c\u7269\u5de5\u574a v${APP_VERSION}`);
     initializeAuthenticatedApp(options).catch(() => {
       if (!isUnauthenticatedEntryPage(options?.path)) {
         Taro.reLaunch({ url: '/pages/login/index' });
