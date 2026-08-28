@@ -98,6 +98,12 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
       assert.deepStrictEqual(asset.rows.map(row => ({
         questionId: row.question_id, objectId: row.storage_object_id, objectVersion: row.storage_object_version, contentHash: row.content_hash, state: row.state,
       })), [{ questionId: 'question-bound-1', objectId: 'obj_import_media_demo_0', objectVersion: 1, contentHash: HASH, state: 'verified' }]);
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['source.docx'],
+        'a newly confirmed import must retain its original source filename');
+      await facade.query("UPDATE business.questions SET source='' WHERE id='question-bound-1'");
+      await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['source.docx'],
+        'the historical source migration must recover a unique NAS-object import chain');
       assert.deepStrictEqual((await facade.query("SELECT status FROM business.question_import_items WHERE item_id='question_import_item_demo_0'")).rows.map(row => row.status), ['submitted']);
       assert.deepStrictEqual((await facade.query("SELECT status,phase FROM business.question_import_tasks WHERE task_id='question_import_task_demo'")).rows.map(row => ({ status: row.status, phase: row.phase })), [{ status: 'submitted', phase: 'submitted' }]);
 
