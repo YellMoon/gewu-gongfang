@@ -76,7 +76,8 @@ assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 25945, 24072,
 assert.ok(!settingsPage.includes('reviewRoleApplication') && !settingsPage.includes('listSubmittedRoleApplications'), 'miniapp settings must not expose role-approval operations');
 assert.ok(!settingsPage.includes(String.fromCharCode(36523, 20221, 30003, 35831, 22788, 29702)), 'miniapp settings must not expose the role-application approval queue');
 assert.ok(!applicationRuntime.includes('\u6559\u5e08\u7aef') && !applicationPage.includes('\u6559\u5e08\u7aef') && !homePage.includes('\u6559\u5e08\u7aef'), 'visitor role-application copy must not imply that teachers approve identities');
-assert.ok(applicationPage.includes('\u5ba1\u6838') && homePage.includes('\u5ba1\u6838'), 'visitor role-application copy must explain the review boundary without inventing a reviewer role');
+assert.ok(applicationPage.includes('\u5ba1\u6838'), 'the detailed role-application page must explain the review boundary without inventing a reviewer role');
+assert.ok(!homePage.includes('\u5ba1\u6838'), 'the visitor home entry must remain concise and defer process details to the application page');
 assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered miniapp action must not fall back to a fictional unfinished module');
 assert.ok(!homePage.includes(String.fromCharCode(39064, 24211, 32452, 21367)), 'the miniapp entry must name the question bank rather than turn it into a grouping feature');
 assert.ok(!desktopNavigation.includes(String.fromCharCode(26816, 32034, 21644, 39044, 35272, 39064, 24211, 20869, 23481)), 'desktop navigation must not describe question-bank access as a preview');
@@ -90,8 +91,11 @@ assert.ok(!questionBankPage.includes('访客题库浏览') && !questionBankPage.
 assert.ok(!questionBankPage.includes('可浏览的题目'), 'question-bank must not describe its browsing allowance as permanent page copy');
 assert.ok(!questionBankPage.includes('关联身份后可组卷') && questionBankPage.includes('组卷需要教师角色'), 'limited paper-building prompts must name the required role without internal binding wording');
 assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和导出') && questionPaperPage.includes('组卷和导出需要教师角色'), 'paper access guidance must use the same direct role wording');
-assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请关联身份'), 'the schedule empty state must give a neutral next step without labeling the account as a visitor');
+assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请角色'), 'the schedule empty state must give a concise, user-facing next step without labeling the account as a visitor');
 assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
+assert.ok(!homePage.includes('申请关联身份') && homePage.includes('申请角色'), 'the visitor home must not expose internal identity-binding language');
+assert.ok(homePage.includes('查看课程安排。') && !homePage.includes('已关联的课程安排'), 'the visitor schedule entry must not imply an existing relationship before one exists');
+assert.ok(homePage.includes('教师、学生或家庭成员') && !homePage.includes('申请老师、学生或家庭成员'), 'the visitor application entry must use a concise action title rather than a sentence-length button');
 
 assert.ok(!forbiddenPage.includes('\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458'), 'the access boundary must not imply a retired ordinary-administrator role');
 assert.ok(forbiddenPage.includes('\u5f53\u524d\u8d26\u53f7\u6682\u4e0d\u80fd\u4f7f\u7528\u6b64\u529f\u80fd'), 'the access boundary must give the user a neutral, actionable explanation');

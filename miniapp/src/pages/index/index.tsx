@@ -303,7 +303,7 @@ export default function Index() {
             <View className='home-avatar'><Text className='home-avatar__text'>{userDisplayName.charAt(0) || '\u683c'}</Text></View>
             <View className='home-hero__copy'>
               <Text className='home-hero__title'>{userDisplayName}</Text>
-              <Text className='home-hero__subtitle'>{'\u67e5\u770b\u8bfe\u7a0b\u5b89\u6392\u3001\u9898\u5e93\u5185\u5bb9\uff0c\u6216\u7533\u8bf7\u5173\u8054\u8eab\u4efd\u3002'}</Text>
+              <Text className='home-hero__subtitle'>{'\u67e5\u770b\u8bfe\u7a0b\u5b89\u6392\u548c\u9898\u5e93\u5185\u5bb9\uff0c\u6216\u7533\u8bf7\u89d2\u8272\u3002'}</Text>
             </View>
             <View className='home-logout' onClick={handleLogout}><Text className='home-logout__text'>{'\u9000\u51fa'}</Text></View>
           </View>
@@ -311,9 +311,9 @@ export default function Index() {
         <View className='home-section'>
           <View className='home-section__header'><Text className='home-section__title'>{'\u53ef\u7528\u529f\u80fd'}</Text><Text className='home-section__meta'>{'3'}</Text></View>
           <View className='home-action-list'>
-            <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u67e5\u770b\u5df2\u5173\u8054\u7684\u8bfe\u7a0b\u5b89\u6392\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-teal' onClick={() => Taro.switchTab({ url: '/pages/schedule/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u8bfe'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u8bfe\u7a0b\u8868'}</Text><Text className='home-action-card__desc'>{'\u67e5\u770b\u8bfe\u7a0b\u5b89\u6392\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
             <View className='home-action-card tone-indigo' onClick={() => Taro.switchTab({ url: '/pages/question-bank/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u9898'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u9898\u5e93'}</Text><Text className='home-action-card__desc'>{'\u6d4f\u89c8\u5df2\u5f00\u653e\u7684\u9898\u76ee\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
-            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u7533\u8bf7\u8001\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458'}</Text><Text className='home-action-card__desc'>{'\u63d0\u4ea4\u540e\u7b49\u5f85\u5ba1\u6838\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
+            <View className='home-action-card tone-amber' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}><View className='home-module-mark'><Text className='home-module-mark__text'>{'\u7533'}</Text></View><View className='home-action-card__body'><Text className='home-action-card__title'>{'\u7533\u8bf7\u89d2\u8272'}</Text><Text className='home-action-card__desc'>{'\u9009\u62e9\u6559\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u3002'}</Text></View><Text className='home-action-card__arrow'>{'\u203a'}</Text></View>
           </View>
         </View>
       </View>

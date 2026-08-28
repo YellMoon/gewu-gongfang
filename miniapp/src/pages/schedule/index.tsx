@@ -176,7 +176,7 @@ export default function SchedulePage() {
         <EmptyState
           icon={'\u8bfe'}
           text={'\u6682\u65e0\u8bfe\u7a0b\u5b89\u6392'}
-          actionText={'\u7533\u8bf7\u5173\u8054\u8eab\u4efd'}
+          actionText={'\u7533\u8bf7\u89d2\u8272'}
           onAction={() => Taro.navigateTo({ url: '/pages/account-application/index' })}
         />
       </View>
