@@ -25,7 +25,13 @@ const OUTPUT = process.env.MINIAPP_UI_OUTPUT_DIR
     `miniapp-${VERSION}-ui-coverage`,
     focusedRun ? `runtime-diagnostic-${[...scenarioIdFilter].join('-')}` : 'runtime-scenario-matrix',
   );
-const FIXTURE_PORT = 3019;
+function resolveFixturePort(value = process.env.MINIAPP_UI_FIXTURE_PORT || '3019') {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('fixture server port is invalid');
+  return port;
+}
+
+const FIXTURE_PORT = resolveFixturePort();
 const FIXTURE_BASE = `http://127.0.0.1:${FIXTURE_PORT}`;
 const SCREENSHOT_WAIT_MS = 1100;
 
@@ -424,4 +430,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { startFixtureServer, fixtureResponse, validPdfFixture };
+module.exports = { startFixtureServer, fixtureResponse, validPdfFixture, resolveFixturePort };

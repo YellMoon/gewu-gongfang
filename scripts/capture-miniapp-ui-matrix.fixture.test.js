@@ -3,10 +3,14 @@
 const assert = require('assert');
 const http = require('http');
 
-const { startFixtureServer } = require('./capture-miniapp-ui-matrix');
+const { startFixtureServer, resolveFixturePort } = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
 const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
 const TEST_PORT = 3020;
+
+assert.strictEqual(resolveFixturePort('3020'), 3020, 'the runtime matrix must accept an isolated local fixture port');
+assert.throws(() => resolveFixturePort('0'), /fixture server port is invalid/);
+assert.throws(() => resolveFixturePort('not-a-port'), /fixture server port is invalid/);
 
 function request(pathname, token, port = TEST_PORT, method = 'GET') {
   return new Promise((resolve, reject) => {
