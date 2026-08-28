@@ -23,7 +23,7 @@ const runtimeScenarios = Object.freeze([
   scenario('home-teacher', 'pages/index/index', 'teacher', 'teacher', 'teacher-dashboard', String.fromCharCode(25945, 23398, 38754, 26495), ['teacher-path']),
   scenario('home-student', 'pages/index/index', 'student', 'student', 'student-dashboard', '学习面板', ['student-path']),
   scenario('home-guardian', 'pages/index/index', 'student', 'guardian', 'student-dashboard', '学习面板', ['student-path']),
-  scenario('home-visitor', 'pages/index/index', 'visitor', 'visitor', 'empty-modules', '访客', ['visitor']),
+  scenario('home-visitor', 'pages/index/index', 'visitor', 'visitor', 'empty-modules', '可用功能', ['visitor']),
   scenario('schedule-super-admin-empty', 'pages/schedule/index', 'super_admin', 'super_admin', 'empty-day', '暂无排课数据', ['super-admin-path', 'empty']),
   scenario('schedule-teacher-empty', 'pages/schedule/index', 'teacher', 'teacher', 'empty-day', '暂无排课数据', ['teacher-path', 'empty']),
   scenario('schedule-student-empty', 'pages/schedule/index', 'student', 'student', 'empty-day', '暂无排课数据', ['student-path', 'empty']),
