@@ -6,6 +6,7 @@ const VISITOR_CAPABILITIES = Object.freeze([
   'role-application:submit',
   'question-preview:read',
 ]);
+const FORMAL_ROLES = new Set(['super_admin', 'teacher', 'student']);
 
 const SESSION_CLEANUP_KEYS = Object.freeze([
   'auth_token',
@@ -31,6 +32,16 @@ function isVisitorIdentity(identity) {
     && typeof identity.authority_id === 'string'
     && identity.authority_id.trim()
     && hasExactCapabilities(identity.capabilities, VISITOR_CAPABILITIES));
+}
+
+function isFormalIdentity(identity) {
+  return Boolean(identity
+    && typeof identity === 'object'
+    && typeof identity.id === 'string'
+    && identity.id.trim()
+    && FORMAL_ROLES.has(identity.role || identity.user_type)
+    && identity.account_state === 'formal'
+    && identity.token_use === 'miniapp-cloud');
 }
 
 function accountCapabilities(identity) {
@@ -62,5 +73,6 @@ module.exports = {
   accountCapabilities,
   accountExperiencePath,
   accountSessionCleanupStorageKeys,
+  isFormalIdentity,
   isVisitorIdentity,
 };

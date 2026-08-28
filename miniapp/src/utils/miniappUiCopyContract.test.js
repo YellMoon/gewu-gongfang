@@ -60,6 +60,8 @@ assert.ok(applicationRuntime.includes(String.fromCharCode(31561, 24453, 23457, 2
 assert.ok(!settingsPage.includes('getApiBaseUrl') && !settingsPage.includes('setApiBaseUrl'), 'end users must not edit the service endpoint');
 assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 21153, 22120, 22336)) && !settingsPage.includes(String.fromCharCode(26381, 21153, 22120, 32622)), 'settings must not leak implementation configuration');
 assert.ok(!settingsPage.includes('getPendingChanges') && !settingsPage.includes('clearPendingChanges'), 'miniapp settings must not expose retired core-business draft controls');
+assert.ok(settingsPage.includes('isFormalIdentity(currentIdentity)'), 'only a canonical formal identity may reveal formal-account settings');
+assert.ok(!settingsPage.includes(String.fromCharCode(26410, 30693, 29992, 25143)), 'settings must not label a stale session as an unknown user');
 assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
 assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must use the same inclusive role-application entry as the application page');

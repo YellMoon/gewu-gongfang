@@ -4,7 +4,7 @@ import Taro from '@tarojs/taro'
 import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { authSessionRuntime } from '../../utils/authSession'
 import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime'
-import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils/accountExperience'
+import { accountSessionCleanupStorageKeys, isFormalIdentity } from '../../utils/accountExperience'
 import { isOnline, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { pullFromCloud } from '../../utils/sync'
@@ -20,8 +20,7 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim(
 
 export default function Settings() {
   const currentIdentity = Taro.getStorageSync('user_info')
-  const isVisitor = isVisitorIdentity(currentIdentity)
-  const isLimitedIdentity = isVisitor
+  const isLimitedIdentity = !isFormalIdentity(currentIdentity)
   const [online, setOnline] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [lastSync, setLastSync] = useState(0)
@@ -123,7 +122,7 @@ export default function Settings() {
           </View>
           <View className='item-right'>
             <MembershipBadge membership={currentIdentity?.membership} />
-            <Text className='value'>{currentIdentity?.name || '\u672a\u77e5\u7528\u6237'}</Text>
+            <Text className='value'>{currentIdentity?.name || '\u5fae\u4fe1\u7528\u6237'}</Text>
             {currentIdentity?.isMember && <View className='member-badge'><Text className='member-text'>{'\u4f1a\u5458'}</Text></View>}
           </View>
         </View>
