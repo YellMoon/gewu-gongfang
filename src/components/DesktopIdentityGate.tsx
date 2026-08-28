@@ -580,7 +580,6 @@ const DesktopIdentityGate: React.FC = () => {
     if (!pending) {
       return (
         <>
-          <Paragraph className="desktop-identity-copy">{'\u9996\u6b21\u767b\u5f55\u9700\u8981\u8054\u7f51\u3002\u8bf7\u9009\u62e9\u5fae\u4fe1\u767b\u5f55\uff0c\u6216\u4f7f\u7528\u624b\u673a\u53f7\u3001\u8d26\u53f7\u540d\u548c\u5bc6\u7801\u767b\u5f55\u3002'}</Paragraph>
           <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u767b\u5f55'}</Button>
           <Divider plain>{'\u6216\u4f7f\u7528\u8d26\u53f7\u5bc6\u7801'}</Divider>
           <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[

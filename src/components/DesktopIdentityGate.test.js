@@ -32,7 +32,10 @@ assert.ok(!decodedGateSource.includes(
 assert.ok(gateSource.includes('className="desktop-identity-header"'));
 assert.ok(gateSource.includes('className="desktop-identity-title"'));
 assert.ok(decodedGateSource.includes('登录格物工坊'), 'the primary gate must present a normal product login title');
-assert.ok(decodedGateSource.includes('首次登录需要联网'), 'first-use copy must explain only the user-visible network requirement');
+assert.ok(!decodedGateSource.includes('首次登录需要联网'), 'the login page must not explain internal first-use flow');
+assert.ok(!decodedGateSource.includes('请选择微信登录'), 'the login page must not narrate controls that are already visible');
+assert.ok(decodedGateSource.includes('输入手机号') && decodedGateSource.includes('输入账号名'),
+  'password login must clearly identify its phone and account-name fields');
 assert.ok(decodedGateSource.includes('微信登录') && decodedGateSource.includes('密码登录'),
   'login modes must use familiar user-facing labels');
 for (const internalLoginCopy of [
