@@ -29,6 +29,7 @@ const appSource = read('miniapp/src/app.tsx');
 const privacyPage = display(read('miniapp/src/pages/login/privacy.tsx'));
 const privacyConfig = read('miniapp/src/pages/login/privacy.config.ts');
 const loginConfig = read('miniapp/src/pages/login/index.config.ts');
+const loginRaw = read('miniapp/src/pages/login/index.tsx');
 const loginPage = display(read('miniapp/src/pages/login/index.tsx'));
 const loginStyles = read('miniapp/src/pages/login/index.scss');
 const desktopNavigation = read('src/navigation/appNavigation.tsx');
@@ -106,6 +107,8 @@ assert.ok(privacyConfig.includes("navigationStyle: 'custom'"), 'privacy guidance
 assert.ok(privacyPage.includes('本指引生效日期：2026年8月26日'), 'privacy guidance must show its current effective date');
 assert.ok(loginPage.includes('手机号快捷登录'), 'the sign-in action must use the familiar user-facing phone sign-in label');
 assert.ok(!loginPage.includes('微信登录'), 'the sign-in action must not use a vague implementation label');
+assert.ok(!loginRaw.includes(String.raw`\\u5fae`), 'login copy must not contain double-escaped Unicode sequences that render as raw escape text');
+assert.ok(!loginPage.includes(String.fromCharCode(36523, 20221, 26680, 39564)) && !loginPage.includes(String.fromCharCode(36523, 20221, 39564, 35777)), 'login failures must not expose internal identity-verification jargon');
 assert.ok(!loginPage.includes('新账号默认为访客') && !loginPage.includes('家庭成员申请'), 'the sign-in page must not expose role-policy explanations before authentication');
 assert.ok(loginPage.includes('openType="getPhoneNumber"'), 'the sign-in action must retain the WeChat phone authorization capability');
 assert.ok(loginStyles.includes('.login-brand') && loginStyles.includes('flex-direction: row'), 'the logo and product name must form one compact horizontal brand lockup');

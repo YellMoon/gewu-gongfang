@@ -57,7 +57,7 @@ export default function LoginPage() {
       const wechatLogin = await loginBoundary.run(() => Taro.login());
       const loginCode = wechatLogin?.code;
       if (typeof loginCode !== 'string' || !loginCode.trim()) {
-        Taro.showToast({ title: '\\u5fae\\u4fe1\\u8eab\\u4efd\\u6838\\u9a8c\\u5931\\u8d25\\uff0c\\u8bf7\\u91cd\\u8bd5', icon: 'none' });
+        Taro.showToast({ title: '\u6682\u65f6\u65e0\u6cd5\u767b\u5f55\uff0c\u8bf7\u91cd\u8bd5', icon: 'none' });
         return;
       }
       const response = await loginBoundary.run(() => miniappCloudAuthApi.login(loginCode, phoneCode));
