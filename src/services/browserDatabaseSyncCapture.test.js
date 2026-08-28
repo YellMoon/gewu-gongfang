@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 
 const source = fs.readFileSync('src/services/browserDatabase.ts', 'utf-8');
+const personalAssetsSource = fs.readFileSync('src/pages/PersonalAssets.tsx', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQuestionUpdate } = require('./questionRichContent.ts');
 
@@ -20,6 +21,16 @@ assert.ok(
 assert.ok(!source.includes('sync_engine_sync_pending_changes'), 'browser database must not write raw-row pending changes');
 assert.ok(!source.includes('sync_engine_sync_pending_ops'), 'browser database must not write the legacy raw pending queue');
 assert.ok(!source.includes('sourceOperationId'), 'browser drafts must not invent legacy raw sync operation ids');
+assert.ok(!source.includes("{id:'builtin-tuition'"),
+  'browser cache must not manufacture local asset-category business data');
+assert.ok(!source.includes("id.startsWith('builtin-')"),
+  'legacy local asset categories must not receive special authority-exempt behavior');
+assert.ok(!personalAssetsSource.includes("'builtin-other-income'"),
+  'asset imports must not target a locally seeded income category');
+assert.ok(!personalAssetsSource.includes("'builtin-other-expense'"),
+  'asset imports must not target a locally seeded expense category');
+assert.ok(personalAssetsSource.includes('createAssetCategory'),
+  'asset imports must create an ordinary confirmation draft category when required');
 
 for (const table of [
   'students',

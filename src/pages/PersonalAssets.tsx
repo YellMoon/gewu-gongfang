@@ -19,6 +19,18 @@ const { Option } = Select;
 
 const dbService = () => (window as any).dbService;
 
+function ensureImportCategory(db: any, type: 'income' | 'expense'): AssetCategory {
+  const name = type === 'income' ? '\u5176\u4ed6\u6536\u5165' : '\u5176\u4ed6\u652f\u51fa';
+  const existing = db.getAssetCategoriesByType(type)
+    .find((category: AssetCategory) => category.name === name);
+  if (existing) return existing;
+  return db.createAssetCategory({
+    name,
+    type,
+    color: type === 'income' ? '#13c2c2' : '#eb2f96',
+  });
+}
+
 // ===== 账单 CSV 解析器 =====
 function parseCsvContent(fileName: string, content: string): { type: string; amount: number; date: string; description: string; counterparty: string }[] {
   const lines = content.replace(/\r\n?/g, '\n').split('\n');
@@ -99,11 +111,12 @@ const handleCsvUpload = (fileName: string, content: string, loadD: () => void, l
   let added = 0;
   for (const r of records) {
     try {
+      const category = ensureImportCategory(db, r.type as 'income' | 'expense');
       db.createAssetRecord({
         date: r.date,
         type: r.type as 'income' | 'expense',
-        category_id: r.type === 'income' ? 'builtin-other-income' : 'builtin-other-expense',
-        category_name: r.type === 'income' ? '其他收入' : '其他支出',
+        category_id: category.id,
+        category_name: category.name,
         amount: r.amount,
         student_name: r.counterparty || undefined,
         note: `[账单导入] ${r.description || fileName}`.slice(0, 200),
@@ -177,11 +190,12 @@ const PersonalAssets: React.FC = () => {
     let added = 0;
     for (const r of records) {
       try {
+        const category = ensureImportCategory(db, r.type as 'income' | 'expense');
         db.createAssetRecord({
           date: r.date,
           type: r.type as 'income' | 'expense',
-          category_id: r.type === 'income' ? 'builtin-other-income' : 'builtin-other-expense',
-          category_name: r.type === 'income' ? '其他收入' : '其他支出',
+          category_id: category.id,
+          category_name: category.name,
           amount: r.amount,
           student_name: r.counterparty || undefined,
           note: `[${r.platform || '账单'}] ${r.description || ''}`.slice(0, 200),

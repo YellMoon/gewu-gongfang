@@ -89,6 +89,25 @@ const BUSINESS_DATA_SAFETY_BACKUP_KEY = 'business_data_safety_backups_v1';
 const BUSINESS_DATA_SAFETY_BACKUP_LIMIT = 20;
 const TAXONOMY_DELETION_BACKUP_KEY = 'taxonomy_deletion_backups_v1';
 const TAXONOMY_DELETION_BACKUP_LIMIT = 50;
+const LEGACY_LOCAL_ASSET_CATEGORY_IDS = new Set([
+  'builtin-tuition',
+  'builtin-payment',
+  'builtin-salary',
+  'builtin-rent',
+  'builtin-material',
+  'builtin-other-income',
+  'builtin-other-expense',
+]);
+
+function removeUnreferencedLegacyAssetCategorySeeds(
+  categories: AssetCategory[] = [],
+  records: AssetRecord[] = [],
+): AssetCategory[] {
+  const referencedCategoryIds = new Set(records.map((record) => record?.category_id).filter(Boolean));
+  return categories.filter((category) => (
+    !LEGACY_LOCAL_ASSET_CATEGORY_IDS.has(category.id) || referencedCategoryIds.has(category.id)
+  ));
+}
 
 function emptyDatabase(): Database {
   return {
@@ -277,15 +296,7 @@ class BrowserDatabaseService {
         rooms: [],
         teachers: [],
         assetRecords: [],
-        assetCategories: [
-          {id:'builtin-tuition',name:'课时费',type:'income',color:'#3f8600',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-payment',name:'学费',type:'income',color:'#1890ff',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-salary',name:'工资支出',type:'expense',color:'#cf1322',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-rent',name:'房租',type:'expense',color:'#fa8c16',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-material',name:'教材费',type:'expense',color:'#722ed1',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-other-income',name:'其他收入',type:'income',color:'#13c2c2',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-          {id:'builtin-other-expense',name:'其他支出',type:'expense',color:'#eb2f96',created_at:'2026-01-01T00:00:00.000Z',updated_at:'2026-01-01T00:00:00.000Z'},
-        ],
+        assetCategories: [],
         questions: [],
         knowledgeTree: loadedData?.knowledgeTree ?? [],
         modelTree: loadedData?.modelTree ?? [],
@@ -301,6 +312,10 @@ class BrowserDatabaseService {
         importTaskItems: loadedData?.importTaskItems ?? [],
         ...loadedData
       };
+      this.data.assetCategories = removeUnreferencedLegacyAssetCategorySeeds(
+        this.data.assetCategories || [],
+        this.data.assetRecords || [],
+      );
     }
     this.migrateLegacyQuestionData();
     this.migrateLegacyTagData();
@@ -1795,7 +1810,6 @@ class BrowserDatabaseService {
   }
 
   deleteAssetCategory(id: string): boolean {
-    if (id.startsWith('builtin-')) return false; // 内置分类不可删除
     const idx = this.data.assetCategories.findIndex(c => c.id === id);
     if (idx === -1) return false;
     const baseVersion = this.data.assetCategories[idx].updated_at || this.data.assetCategories[idx].created_at || null;
