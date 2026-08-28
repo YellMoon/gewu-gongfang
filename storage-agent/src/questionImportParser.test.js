@@ -6,13 +6,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createQuestionImportParser } = require('./questionImportParser');
+const { createQuestionImportParser, executePython } = require('./questionImportParser');
 
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-outside-'));
   const parserPath = path.join(root, 'parse_word.py');
+  const hangingParserPath = path.join(root, 'hang-forever.js');
   fs.writeFileSync(parserPath, '# parser fixture\n');
+  fs.writeFileSync(hangingParserPath, 'setInterval(() => {}, 1000);\n');
   const assetBytes = Buffer.from('image-fixture');
   const assetHash = crypto.createHash('sha256').update(assetBytes).digest('hex');
   let temporaryPath = null;
@@ -32,6 +34,17 @@ async function main() {
         }] });
       },
     });
+    await assert.rejects(
+      () => executePython({
+        pythonBin: process.execPath,
+        parserPath: hangingParserPath,
+        filePath: path.join(root, 'unused.docx'),
+        sourceType: 'lecture',
+        timeoutMs: 25,
+      }),
+      /QUESTION_IMPORT_PARSE_TIMEOUT/,
+      'a parser that ignores normal shutdown must be force-killed so the NAS worker can lease another task'
+    );
     const parsed = await parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') });
     assert.strictEqual(parsed.candidates.length, 1);
     assert.strictEqual(parsed.candidates[0].validation.status, 'accepted');

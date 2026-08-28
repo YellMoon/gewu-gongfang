@@ -119,16 +119,25 @@ function validationFor(candidate) {
   return codes.length ? { status: 'warning', codes } : { status: 'accepted', codes };
 }
 
-function executePython({ pythonBin, parserPath, filePath, sourceType }) {
+function executePython({ pythonBin, parserPath, filePath, sourceType, timeoutMs = 60000 }) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
   return new Promise((resolve, reject) => {
-    const child = spawn(pythonBin, [parserPath, filePath, sourceType], { windowsHide: true, timeout: 60000 });
+    const child = spawn(pythonBin, [parserPath, filePath, sourceType], { windowsHide: true });
     const chunks = [];
     let length = 0;
     let settled = false;
-    function rejectOnce() {
+    const timeout = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } finally {
+        rejectOnce('QUESTION_IMPORT_PARSE_TIMEOUT');
+      }
+    }, timeoutMs);
+    function rejectOnce(code = 'QUESTION_IMPORT_PARSE_FAILED') {
       if (!settled) {
         settled = true;
-        reject(failure('QUESTION_IMPORT_PARSE_FAILED'));
+        clearTimeout(timeout);
+        reject(failure(code));
       }
     }
     child.stdout.on('data', chunk => {
@@ -143,6 +152,7 @@ function executePython({ pythonBin, parserPath, filePath, sourceType }) {
     child.on('error', rejectOnce);
     child.on('close', code => {
       if (settled) return;
+      clearTimeout(timeout);
       if (code !== 0) return rejectOnce();
       settled = true;
       resolve(Buffer.concat(chunks).toString('utf8'));
@@ -209,4 +219,4 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
   });
 }
 
-module.exports = Object.freeze({ createQuestionImportParser });
+module.exports = Object.freeze({ createQuestionImportParser, executePython });
