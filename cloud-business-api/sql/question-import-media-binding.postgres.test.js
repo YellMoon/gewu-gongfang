@@ -101,9 +101,28 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
       assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['source.docx'],
         'a newly confirmed import must retain its original source filename');
       await facade.query("UPDATE business.questions SET source='' WHERE id='question-bound-1'");
+      await facade.query("UPDATE business.question_assets SET state='queued' WHERE question_id='question-bound-1'");
+      await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), [''],
+        'a queued question asset is not sufficient evidence for historical source recovery');
+      await facade.query("UPDATE business.question_assets SET state='verified' WHERE question_id='question-bound-1'");
+      await facade.query("UPDATE business.question_import_media_objects SET storage_state='queued',verified_at=NULL WHERE media_id='question_import_media_demo_0'");
+      await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), [''],
+        'unverified imported media is not sufficient evidence for historical source recovery');
+      await facade.query("UPDATE business.question_import_media_objects SET storage_state='verified',verified_at=transaction_timestamp() WHERE media_id='question_import_media_demo_0'");
+      await facade.query("UPDATE business.question_import_items SET status='draft_prepared' WHERE item_id='question_import_item_demo_0'");
+      await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), [''],
+        'an unsubmitted import item is not sufficient evidence for historical source recovery');
+      await facade.query("UPDATE business.question_import_items SET status='submitted' WHERE item_id='question_import_item_demo_0'");
       await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
       assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['source.docx'],
         'the historical source migration must recover a unique NAS-object import chain');
+      await facade.query("UPDATE business.questions SET source='manual-label' WHERE id='question-bound-1'");
+      await facade.query(ownedSql('20260828-zz-question-import-source-backfill.sql'));
+      assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['manual-label'],
+        'the historical source migration must preserve a pre-existing source label');
       assert.deepStrictEqual((await facade.query("SELECT status FROM business.question_import_items WHERE item_id='question_import_item_demo_0'")).rows.map(row => row.status), ['submitted']);
       assert.deepStrictEqual((await facade.query("SELECT status,phase FROM business.question_import_tasks WHERE task_id='question_import_task_demo'")).rows.map(row => ({ status: row.status, phase: row.phase })), [{ status: 'submitted', phase: 'submitted' }]);
 
