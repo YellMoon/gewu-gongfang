@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Button, Card, Descriptions, Empty, Modal, Space, Statistic, Table, Tag, message } from 'antd';
-import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined, SyncOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { getQuestionAssetDataUrl, assetKeyFromRef } from '../services/questionAssetStore';
 
@@ -42,12 +42,8 @@ const copy = {
   state: '\u72b6\u6001',
   transport: '\u4f20\u8f93 / \u6295\u5f71',
   actions: '\u64cd\u4f5c',
-  authorityMessage: '\u9002\u7528\u4e1a\u52a1\u6570\u636e\u4e0e\u9898\u5e93\u6587\u5b57\u5199\u5165\u5747\u7531\u4e91\u7aef\u88c1\u51b3',
   conflictMessage: '\u5b58\u5728\u56de\u6267\u51b2\u7a81\uff0c\u8349\u7a3f\u5df2\u4fdd\u7559',
-  authorityDescription: '\u79bb\u7ebf\u7f16\u8f91\u5148\u8fdb\u5165\u672c\u673a\u52a0\u5bc6\u8349\u7a3f\u7bb1\uff1b\u53ea\u6709\u660e\u786e\u786e\u8ba4\u4e14\u5728\u7ebf\u65f6\uff0c\u624d\u4f1a\u63d0\u4ea4\u4e91\u7aef\u88c1\u51b3\u3002\u4e91\u7aef\u547d\u4ee4\u4f7f\u7528\u5f53\u6b21\u684c\u9762\u4f1a\u8bdd\uff0c\u4e0d\u4f1a\u5199\u5165\u8349\u7a3f\u6216 NAS\u3002',
   empty: '\u5f53\u524d\u6ca1\u6709\u7b26\u5408\u6761\u4ef6\u7684\u6743\u5a01\u547d\u4ee4',
-  wsTitle: '\u4e91\u7aef\u63d0\u4ea4\u4e0d\u4f9d\u8d56\u5c40\u57df\u7f51\u4e3b\u673a',
-  wsDescription: '\u4efb\u610f\u7535\u8111\u4e0a\u7684\u7edf\u4e00\u684c\u9762\u7aef\u90fd\u53ef\u4fdd\u7559\u79bb\u7ebf\u8349\u7a3f\uff1b\u4e0a\u7ebf\u540e\u9700\u8981\u4f60\u786e\u8ba4\uff0c\u4e0d\u4f1a\u9759\u9ed8\u63a8\u9001\u3002',
   assetVerificationPending: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u8fdb\u5165 NAS \u6838\u9a8c\u961f\u5217\uff0c\u672a\u901a\u8fc7\u5b8c\u6574\u6027\u56de\u6267\u524d\u4e0d\u89c6\u4e3a\u5b8c\u6210\u3002',
   assetVerified: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u901a\u8fc7 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
   questionTextCommitted: '\u9898\u5e93\u6587\u5b57\u5df2\u7531\u4e91\u7aef\u63d0\u4ea4\uff1b\u5bcc\u5a92\u4f53\u6b63\u5728\u7b49\u5f85 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
@@ -424,9 +420,8 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     <Card title={<span><SafetyCertificateOutlined /> {copy.title}</span>}
       extra={<Button icon={<ReloadOutlined />} loading={loading}
         onClick={() => void refresh()}>{copy.refresh}</Button>}>
-      <Alert type={errorCode ? 'error' : counts.issues ? 'warning' : 'info'} showIcon
-        message={errorCode || (counts.issues ? copy.conflictMessage : copy.authorityMessage)}
-        description={copy.authorityDescription} style={{ marginBottom: 16 }} />
+      {(errorCode || counts.issues > 0) && <Alert type={errorCode ? 'error' : 'warning'} showIcon
+        message={errorCode || copy.conflictMessage} style={{ marginBottom: 16 }} />}
       <Space size="large" wrap style={{ marginBottom: 20 }}>
         <Statistic title={copy.waitConfirm} value={counts.confirmation} />
         <Statistic title={copy.waitReceipt} value={counts.pending} />
@@ -437,8 +432,6 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
         ? <Empty description={copy.empty} />
         : <Table rowKey="id" size={compact ? 'small' : 'middle'}
           pagination={{ pageSize: compact ? 5 : 10 }} columns={columns} dataSource={visibleItems} />}
-      <Alert type="success" showIcon icon={<SyncOutlined />} message={copy.wsTitle}
-        description={copy.wsDescription} style={{ marginTop: 16 }} />
     </Card>
   );
 };

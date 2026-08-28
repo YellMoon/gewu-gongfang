@@ -11,6 +11,12 @@ assert.match(panel, /sessionToken/,
   'the panel must pass only a one-time token to the Electron bridge');
 assert.match(panel, /function cloudDraftSubmissionInput/,
   'question and business drafts must share the one-time cloud session input boundary');
+assert.ok(!panel.includes('authorityMessage:'),
+  'the outbox must not show users an implementation-level cloud authority slogan');
+assert.ok(!panel.includes('authorityDescription:'),
+  'the outbox must not show users architecture internals as persistent guidance');
+assert.ok(!panel.includes('wsTitle:'),
+  'the outbox must not show users retired LAN-host architecture messaging');
 assert.match(panel, /student\|course\|schedule\|teacher\|room\|institution\|school\|payment\|consumption\|grade\|personal-asset-record\|personal-asset-category/,
   'the one-time cloud session boundary must include every known business draft family');
 assert.ok(!panel.includes('cloudQuestionSubmissionInput'),
