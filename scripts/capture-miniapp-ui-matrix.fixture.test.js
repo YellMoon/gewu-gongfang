@@ -6,7 +6,14 @@ const http = require('http');
 const { startFixtureServer, resolveFixturePort } = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
 const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
+const fs = require('fs');
 const TEST_PORT = 3020;
+
+const matrixSource = fs.readFileSync(require.resolve('./capture-miniapp-ui-matrix'), 'utf8');
+assert.match(matrixSource, /auth_session_generation/u,
+  'fixture identities must carry a trusted auth-session generation for page API calls');
+assert.match(matrixSource, /auth_session_state_v1/u,
+  'fixture identities must carry a non-invalidated auth-session state for page API calls');
 
 assert.strictEqual(resolveFixturePort('3020'), 3020, 'the runtime matrix must accept an isolated local fixture port');
 assert.throws(() => resolveFixturePort('0'), /fixture server port is invalid/);

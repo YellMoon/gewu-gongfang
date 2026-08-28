@@ -260,6 +260,11 @@ async function setScenarioIdentity(miniProgram, role) {
       wx.setStorageSync('auth_token', token);
       wx.setStorageSync('user_info', nextIdentity);
       wx.setStorageSync('user_permissions', { identity: nextIdentity, capabilities: nextIdentity.capabilities || [] });
+      // The miniapp API client accepts only a trusted, non-invalidated session.
+      // A fixture is not a login flow, so supply the same persisted state that
+      // the normal session activation writes before opening a data page.
+      wx.setStorageSync('auth_session_generation', 0);
+      wx.setStorageSync('auth_session_state_v1', { version: 1, generation: 0, invalidated: false });
     }
   }, { nextIdentity: identity, token: identity ? `fixture-${role}` : '', fixtureBase: FIXTURE_BASE });
 }
