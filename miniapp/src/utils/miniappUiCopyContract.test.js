@@ -53,7 +53,8 @@ for (const source of [applicationConfig, applicationPage, applicationRuntime, ac
   }
 }
 
-assert.ok(applicationConfig.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'the visitor application page must use an accurate title');
+assert.ok(applicationConfig.includes(String.fromCharCode(30003, 35831, 35282, 33394)), 'the visitor application page must name the role-application action');
+assert.ok(!applicationConfig.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'the visitor application page must not frame the action as an internal identity binding');
 assert.ok(applicationRuntime.includes(String.fromCharCode(25945, 24072, 12289, 23398, 29983, 25110, 23478, 24237, 25104, 21592)), 'the visitor action must describe every selectable identity');
 assert.ok(applicationPage.includes(String.fromCharCode(25552, 20132, 30003, 35831)), 'the primary visitor action must stay clear and short');
 assert.ok(applicationRuntime.includes(String.fromCharCode(31561, 24453, 23457, 26680)), 'application status must explain the neutral review state');

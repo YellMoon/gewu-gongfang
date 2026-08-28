@@ -82,5 +82,10 @@ assert.ok(runtimeSource.includes('family_member'), 'application copy must includ
 const submittedCopy = copyForApplicationState('submitted');
 assert.ok(submittedCopy.title.includes('等待审核'), 'submitted applications must describe a neutral review state');
 assert.ok(!submittedCopy.description.includes('教师端'), 'submitted applications must not imply that a teacher reviews role applications');
+const initialCopy = copyForApplicationState('not_submitted');
+assert.strictEqual(initialCopy.title, '申请角色', 'the visitor entry must name the user action, not an internal binding process');
+assert.ok(!initialCopy.description.includes('档案') && !initialCopy.description.includes('身份绑定'), 'the role-application introduction must not expose internal record terminology');
+const invalidCopy = copyForApplicationState('invalid');
+assert.ok(!invalidCopy.description.includes('档案'), 'validation guidance must use information users can recognize instead of internal records');
 
 console.log('account application runtime checks passed');
