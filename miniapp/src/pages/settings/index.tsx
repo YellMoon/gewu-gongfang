@@ -104,7 +104,7 @@ export default function Settings() {
         </View>
         <View className='section'>
           <View className='setting-item' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
-            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u8eab\u4efd\u7ed1\u5b9a'}</Text></View>
+            <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u89d2\u8272'}</Text></View>
             <View className='item-right'><Text className='arrow'>{'\u203a'}</Text></View>
           </View>
         </View>

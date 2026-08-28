@@ -64,7 +64,7 @@ const runtimeScenarios = Object.freeze([
   scenario('settings-teacher-online', 'pages/settings/index', 'teacher', 'teacher', 'online', '网络已连接', ['teacher-path']),
   scenario('settings-student-online', 'pages/settings/index', 'student', 'student', 'online', '网络已连接', ['student-path']),
   scenario('settings-guardian-online', 'pages/settings/index', 'student', 'guardian', 'online', '网络已连接', ['student-path']),
-  scenario('settings-visitor', 'pages/settings/index', 'visitor', 'visitor', 'visitor-account-application', '申请身份绑定', ['visitor']),
+  scenario('settings-visitor', 'pages/settings/index', 'visitor', 'visitor', 'visitor-account-application', String.fromCharCode(30003, 35831, 35282, 33394), ['visitor']),
   scenario('forbidden-super-admin', 'pages/forbidden/index', 'super_admin', 'super_admin', 'blocked-module', '暂无权限访问此功能', ['super-admin-path', 'permission-denied']),
   scenario('forbidden-teacher', 'pages/forbidden/index', 'teacher', 'teacher', 'blocked-module', '暂无权限访问此功能', ['teacher-path', 'permission-denied']),
   scenario('forbidden-student', 'pages/forbidden/index', 'student', 'student', 'blocked-module', '暂无权限访问此功能', ['student-path', 'permission-denied']),

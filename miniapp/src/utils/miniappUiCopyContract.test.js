@@ -70,7 +70,8 @@ assert.ok(settingsPage.includes('isVisitorIdentity(currentUser)'), 'the sign-out
 assert.ok(settingsPage.includes('isFormalIdentity, isVisitorIdentity'), 'the settings page must import both identity checks used by its formal and sign-out branches');
 assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
-assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must use the same inclusive role-application entry as the application page');
+assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 35282, 33394)), 'visitor settings must use the same clear role-application entry as the application page');
+assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must not expose the internal identity-binding label');
 assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 25945, 24072, 25110, 23398, 29983)), 'visitor settings must not omit household-member applications');
 assert.ok(!settingsPage.includes('reviewRoleApplication') && !settingsPage.includes('listSubmittedRoleApplications'), 'miniapp settings must not expose role-approval operations');
 assert.ok(!settingsPage.includes(String.fromCharCode(36523, 20221, 30003, 35831, 22788, 29702)), 'miniapp settings must not expose the role-application approval queue');
