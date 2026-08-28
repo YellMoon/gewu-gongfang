@@ -19,8 +19,8 @@ const ROLE_OPTIONS = [
   { value: 'family_member' as RequestedIdentity, label: '\u5bb6\u5ead\u6210\u5458' },
 ];
 const PROFILE_MODE_OPTIONS = [
-  { value: 'existing' as ProfileMode, label: '\u5173\u8054\u5df2\u6709\u6863\u6848' },
-  { value: 'new' as ProfileMode, label: '\u65b0\u5efa\u6863\u6848' },
+  { value: 'existing' as ProfileMode, label: '\u5173\u8054\u5df2\u6709\u8eab\u4efd' },
+  { value: 'new' as ProfileMode, label: '\u521b\u5efa\u65b0\u8eab\u4efd' },
 ];
 
 function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode): string {
@@ -114,10 +114,10 @@ export default function AccountApplicationPage() {
     : PROFILE_MODE_OPTIONS[profileModeIndex].value;
   const nameLabel = requestedIdentity === 'family_member'
     ? '\u5b66\u751f\u59d3\u540d'
-    : (profileMode === 'new' ? '\u65b0\u6863\u6848\u59d3\u540d' : '\u5173\u8054\u5bf9\u8c61\u59d3\u540d');
+    : (profileMode === 'new' ? '\u65b0\u8eab\u4efd\u59d3\u540d' : '\u5173\u8054\u5bf9\u8c61\u59d3\u540d');
   const phoneLabel = requestedIdentity === 'family_member'
     ? '\u5b66\u751f\u6216\u76d1\u62a4\u4eba\u624b\u673a\u53f7'
-    : (profileMode === 'new' ? '\u65b0\u6863\u6848\u5e38\u7528\u624b\u673a\u53f7' : '\u5173\u8054\u5bf9\u8c61\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7');
+    : (profileMode === 'new' ? '\u65b0\u8eab\u4efd\u5e38\u7528\u624b\u673a\u53f7' : '\u5173\u8054\u5bf9\u8c61\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7');
 
   return (
       <View className='application-page'>
@@ -143,7 +143,7 @@ export default function AccountApplicationPage() {
 
           {requestedIdentity !== 'family_member' ? (
             <View className='field'>
-              <Text className='label'>{'\u6863\u6848\u65b9\u5f0f'}</Text>
+              <Text className='label'>{'\u7533\u8bf7\u65b9\u5f0f'}</Text>
               <Picker
                 mode='selector'
                 range={PROFILE_MODE_OPTIONS.map(option => option.label)}
@@ -175,7 +175,7 @@ export default function AccountApplicationPage() {
               onInput={event => setContactPhone(event.detail.value)}
               placeholder='请输入 11 位手机号'
             />
-            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u6863\u6848\u5e76\u5b8c\u6210\u8eab\u4efd\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u4e0e\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7\uff0c\u4e0d\u9700\u8981\u8f93\u5165\u7cfb\u7edf\u7f16\u53f7\u3002'}</Text>
+            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u8eab\u4efd\u5e76\u5b8c\u6210\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u4e0e\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7\uff0c\u4e0d\u9700\u8981\u8f93\u5165\u7cfb\u7edf\u7f16\u53f7\u3002'}</Text>
           </View>
 
           <Button

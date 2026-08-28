@@ -57,6 +57,8 @@ assert.ok(applicationConfig.includes(String.fromCharCode(30003, 35831, 36523, 20
 assert.ok(applicationRuntime.includes(String.fromCharCode(25945, 24072, 12289, 23398, 29983, 25110, 23478, 24237, 25104, 21592)), 'the visitor action must describe every selectable identity');
 assert.ok(applicationPage.includes(String.fromCharCode(25552, 20132, 30003, 35831)), 'the primary visitor action must stay clear and short');
 assert.ok(applicationRuntime.includes(String.fromCharCode(31561, 24453, 23457, 26680)), 'application status must explain the neutral review state');
+assert.ok(!applicationPage.includes('档案方式') && !applicationPage.includes('关联已有档案') && !applicationPage.includes('新建档案'), 'role application must not expose internal archive terminology');
+assert.ok(applicationPage.includes('申请方式') && applicationPage.includes('关联已有身份') && applicationPage.includes('创建新身份'), 'role application must use user-facing identity wording');
 
 assert.ok(!settingsPage.includes('getApiBaseUrl') && !settingsPage.includes('setApiBaseUrl'), 'end users must not edit the service endpoint');
 assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 21153, 22120, 22336)) && !settingsPage.includes(String.fromCharCode(26381, 21153, 22120, 32622)), 'settings must not leak implementation configuration');
