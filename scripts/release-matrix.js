@@ -12,6 +12,20 @@ function compatibilityDeclarationPath(rootDir = path.resolve(__dirname, '..')) {
   return path.join(rootDir, 'config', 'release-compatibility.json');
 }
 
+function normalizedStringRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.some(([key, item]) => !key || typeof item !== 'string' || !item)) return null;
+  return Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function sameStringRecord(left, right) {
+  const normalizedLeft = normalizedStringRecord(left);
+  const normalizedRight = normalizedStringRecord(right);
+  return normalizedLeft !== null && normalizedRight !== null
+    && JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
+}
+
 function readCompatibilityDeclaration({ rootDir = path.resolve(__dirname, '..') } = {}) {
   const declarationPath = compatibilityDeclarationPath(rootDir);
   if (!fs.existsSync(declarationPath)) throw new Error(`Release compatibility declaration is required: ${declarationPath}`);
@@ -22,6 +36,28 @@ function readCompatibilityDeclaration({ rootDir = path.resolve(__dirname, '..') 
   for (const [name, contract] of Object.entries(declaration.contracts)) {
     if (!name || !contract || !/^\d+$/.test(String(contract.version || '')) || !Array.isArray(contract.participants) || contract.participants.length === 0) {
       throw new Error(`Release compatibility contract is invalid: ${name || '<empty>'}`);
+    }
+  }
+  if (declaration.runtimeReceipts !== undefined) {
+    if (!declaration.runtimeReceipts || typeof declaration.runtimeReceipts !== 'object' || Array.isArray(declaration.runtimeReceipts)) {
+      throw new Error('Release runtime receipt declaration is invalid');
+    }
+    for (const [target, policy] of Object.entries(declaration.runtimeReceipts)) {
+      if (!DEFAULT_TARGETS.includes(target) || !policy || typeof policy !== 'object' || Array.isArray(policy)
+        || !Array.isArray(policy.approvedRuntimeVersions) || policy.approvedRuntimeVersions.length === 0
+        || policy.approvedRuntimeVersions.some(version => !isVersion(version))) {
+        throw new Error(`Release runtime receipt declaration is invalid: ${target || '<empty>'}`);
+      }
+      const runtimeContracts = normalizedStringRecord(policy.contracts);
+      if (!runtimeContracts || Object.keys(runtimeContracts).length === 0) {
+        throw new Error(`Release runtime receipt declaration is invalid: ${target}`);
+      }
+      for (const [contractName, contractVersion] of Object.entries(runtimeContracts)) {
+        const contract = declaration.contracts[contractName];
+        if (!contract || contract.version !== contractVersion || !contract.participants.includes(target)) {
+          throw new Error(`Release runtime receipt declaration is invalid: ${target}`);
+        }
+      }
     }
   }
   return declaration;
@@ -115,6 +151,18 @@ function validateManifest(manifest) {
       }
       if (state?.status === 'verified' && (!state.receipt || state.receipt.version !== manifest.componentVersions?.[target])) {
         issues.push(`release target ${target} has no component-version receipt`);
+      }
+      if (state?.status === 'verified' && state.receipt) {
+        try {
+          assertRuntimeReceiptCompatibility({
+            manifest,
+            target,
+            runtimeVersion: state.receipt.runtimeVersion,
+            runtimeContracts: state.receipt.runtimeContracts,
+          });
+        } catch (error) {
+          issues.push(error.message);
+        }
       }
     }
   }
@@ -259,6 +307,29 @@ function resolveTargetVersion({ manifest, target, requestedVersion } = {}) {
   return expectedVersion;
 }
 
+function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts } = {}) {
+  if (runtimeVersion === undefined || runtimeVersion === null || runtimeVersion === '') return null;
+  if (!isVersion(runtimeVersion)) throw new Error(`Release target ${target} runtime version is invalid`);
+  if (!DEFAULT_TARGETS.includes(target) || !isVersion(manifest?.componentVersions?.[target])) {
+    throw new Error(`Release target ${target || '<empty>'} runtime receipt cannot be validated`);
+  }
+  const expectedVersion = manifest.componentVersions[target];
+  if (runtimeVersion === expectedVersion) {
+    if (runtimeContracts !== undefined && normalizedStringRecord(runtimeContracts) === null) {
+      throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
+    }
+    return { runtimeVersion, runtimeContracts: runtimeContracts === undefined ? undefined : normalizedStringRecord(runtimeContracts) };
+  }
+  const policy = manifest.compatibility?.runtimeReceipts?.[target];
+  if (!policy || !policy.approvedRuntimeVersions.includes(runtimeVersion)) {
+    throw new Error(`Release target ${target} runtime version is not approved: ${runtimeVersion}`);
+  }
+  if (!sameStringRecord(runtimeContracts, policy.contracts)) {
+    throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
+  }
+  return { runtimeVersion, runtimeContracts: normalizedStringRecord(runtimeContracts) };
+}
+
 function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifestPath = defaultManifestPath(rootDir), target, requestedVersion } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const manifest = readManifest(manifestPath);
@@ -293,7 +364,7 @@ function assertDesktopReleasePrerequisites({
   return { manifest, version, manifestPath };
 }
 
-function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel } = {}) {
+function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel, runtimeVersion, runtimeContracts } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const expectedVersion = resolveTargetVersion({ manifest, target, requestedVersion: version });
   const targetState = manifest.targets[target];
@@ -309,10 +380,13 @@ function recordReceipt(manifest, { target, version, verifiedAt = new Date().toIS
   if (target === 'miniapp' && !MINIAPP_RELEASE_LEVELS.includes(resolvedReleaseLevel)) {
     throw new Error('Miniapp release receipt must declare development or production');
   }
+  const runtimeReceipt = assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts });
   targetState.status = 'verified';
+  const baseReceipt = { version: expectedVersion, verifiedAt, evidence, compatibility: manifest.compatibility.schema };
+  if (runtimeReceipt) Object.assign(baseReceipt, runtimeReceipt);
   targetState.receipt = target === 'miniapp'
-    ? { version: expectedVersion, verifiedAt, evidence, releaseLevel: resolvedReleaseLevel, compatibility: manifest.compatibility.schema }
-    : { version: expectedVersion, verifiedAt, evidence, compatibility: manifest.compatibility.schema };
+    ? { ...baseReceipt, releaseLevel: resolvedReleaseLevel }
+    : baseReceipt;
   return manifest;
 }
 
@@ -391,6 +465,16 @@ function option(argv, name) {
   return index >= 0 && argv[index + 1] && !argv[index + 1].startsWith('--') ? argv[index + 1] : '';
 }
 
+function jsonOption(argv, name) {
+  const value = option(argv, name);
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    throw new Error(`Invalid JSON option: --${name}`);
+  }
+}
+
 function cli() {
   const argv = process.argv.slice(2);
   const command = argv[0];
@@ -430,6 +514,8 @@ function cli() {
       target: option(argv, 'target'),
       version: option(argv, 'version'),
       evidence: option(argv, 'evidence'),
+      runtimeVersion: option(argv, 'runtime-version') || undefined,
+      runtimeContracts: jsonOption(argv, 'runtime-contracts'),
     });
     writeManifest(manifestPath, manifest);
     console.log(JSON.stringify({ action: 'recorded', target: option(argv, 'target'), version: manifest.componentVersions[option(argv, 'target')], componentVersions: manifest.componentVersions, manifestPath }, null, 2));
@@ -446,7 +532,7 @@ function cli() {
     console.log(JSON.stringify({ action: 'complete', version: manifest.version, componentVersions: manifest.componentVersions, manifestPath }, null, 2));
     return;
   }
-  throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--evidence text] [--reason text]');
+  throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--runtime-version x.y.z] [--runtime-contracts json] [--evidence text] [--reason text]');
 }
 
 if (require.main === module) {

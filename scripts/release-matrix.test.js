@@ -24,6 +24,40 @@ assert.throws(
   /cloud_business release version mismatch/i,
   'a target cannot receive another component’s version',
 );
+const compatibleRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-compatibility' });
+matrix.recordReceipt(compatibleRuntimeManifest, {
+  target: 'storage_proxy',
+  version: versions.storage_proxy,
+  runtimeVersion: '8.7.20',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' },
+  evidence: 'storage runtime health and live import acceptance',
+});
+assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.version, versions.storage_proxy,
+  'the receipt keeps the source release version distinct from the running storage runtime');
+assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeVersion, '8.7.20',
+  'the receipt records the independently deployed storage runtime version');
+assert.deepStrictEqual(matrix.validateManifest(compatibleRuntimeManifest).issues, [],
+  'an approved storage runtime receipt keeps the release manifest valid');
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questionPaperExport = '2';
+assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /runtime contract receipt is incompatible/i,
+  'a persisted runtime receipt is revalidated instead of being trusted after record time');
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questionPaperExport = '3';
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-incompatible' }), {
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.19',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' }, evidence: 'old runtime',
+  }),
+  /runtime version is not approved/i,
+  'an unreviewed storage runtime must not satisfy a desktop release prerequisite',
+);
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-contract-missing' }), {
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.20',
+    runtimeContracts: { questionPaperExport: '2', storageAgentTransport: '1' }, evidence: 'wrong protocol',
+  }),
+  /runtime contract receipt is incompatible/i,
+  'a matching version alone must not bypass the reviewed protocol contract',
+);
 for (const target of targets) {
   matrix.recordReceipt(manifest, {
     target,

@@ -21,5 +21,14 @@
       "participants": ["desktop", "cloud_business", "miniapp"],
       "rule": "desktop offline changes are local drafts until confirmed; miniapp does not directly mutate core teaching data"
     }
+  },
+  "runtimeReceipts": {
+    "storage_proxy": {
+      "approvedRuntimeVersions": ["8.7.20"],
+      "contracts": {
+        "questionPaperExport": "3",
+        "storageAgentTransport": "1"
+      }
+    }
   }
 }
