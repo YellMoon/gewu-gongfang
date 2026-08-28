@@ -14,7 +14,12 @@ const assert = require('assert');
   );
   assert.strictEqual(
     desktopIdentityErrorMessage(invalidHostKind),
-    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
+    '\u767b\u5f55\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\uff0c\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002'
+  );
+  const missingDesktopBridge = new Error('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
+  assert.strictEqual(
+    desktopIdentityErrorMessage(missingDesktopBridge),
+    '\u5f53\u524d\u9875\u9762\u4e0d\u652f\u6301\u684c\u9762\u767b\u5f55\uff0c\u8bf7\u4ece\u683c\u7269\u5de5\u574a\u684c\u9762\u5e94\u7528\u6253\u5f00\u3002'
   );
   const invalidRuntimeRole = new Error(
     "Error invoking remote method 'single-user:bootstrap': Error: PRIMARY_HOST_RUNTIME_ROLE_REQUIRED"
@@ -36,16 +41,16 @@ const assert = require('assert');
   const missingRelayAssertionSecret = new Error('RELAY_ASSERTION_SECRET_REQUIRED');
   assert.strictEqual(
     desktopIdentityErrorMessage(missingRelayAssertionSecret),
-    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
+    '\u767b\u5f55\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\uff0c\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002'
   );
   const wrappedRelayFailure = new Error('DESKTOP_IDENTITY_REQUEST_FAILED');
   wrappedRelayFailure.cause = missingRelayAssertionSecret;
   assert.strictEqual(
     desktopIdentityErrorMessage(wrappedRelayFailure),
-    '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002'
+    '\u767b\u5f55\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\uff0c\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002'
   );
   const unknown = desktopIdentityErrorMessage(new Error('Error invoking remote method unlock: C:\\private\\vault'));
-  assert.strictEqual(unknown, '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210\uff0c\u8bf7\u91cd\u8bd5\u3002');
+  assert.strictEqual(unknown, '\u767b\u5f55\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\uff0c\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002');
   assert.ok(!unknown.includes('remote method') && !unknown.includes('private'));
   console.log('desktop identity error mapping checks passed');
 })().catch(error => {

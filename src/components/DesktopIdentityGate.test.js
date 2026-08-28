@@ -141,6 +141,14 @@ for (const code of [
   'SINGLE_USER_MODE_DISABLED', 'LOCAL_BACKUP_FAILED',
 ]) assert.ok(!identityErrorSource.includes(code), `managed identity error catalog must not retain legacy code: ${code}`);
 assert.ok(gateSource.includes('desktopIdentityErrorMessage(error)'));
+assert.ok(gateSource.includes("{ kind: 'initialization-failed' }"),
+  'a bootstrap failure must leave the loading state instead of showing a blank login screen');
+assert.ok(gateSource.includes('retryInitialization'),
+  'a bootstrap failure must provide a retry action');
+assert.ok(decodedGateSource.includes('暂时无法打开登录'),
+  'bootstrap failures must have a clear, user-facing state');
+assert.ok(!decodedGateSource.includes('身份验证未完成，请重试。'),
+  'the opaque generic identity verification message must not be shown to users');
 assert.ok(!identityErrorSource.includes('Error invoking remote method'));
 assert.ok(
   gateSource.includes("console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'))"),

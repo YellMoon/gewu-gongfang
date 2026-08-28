@@ -82,6 +82,7 @@ const DesktopIdentityGate: React.FC = () => {
   const [polling, setPolling] = useState(false);
   const [runtimeSuspended, setRuntimeSuspended] = useState(false);
   const [error, setError] = useState('');
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
   const clientRef = useRef<any>(null);
   const onlineSessionRef = useRef<any>(null);
   const currentPartitionRef = useRef<string | null>(null);
@@ -141,6 +142,12 @@ const DesktopIdentityGate: React.FC = () => {
     setRuntimeSuspended(false);
     setError('');
   }, [installIdentityContext]);
+
+  const retryInitialization = useCallback(() => {
+    setError('');
+    setGateState({ kind: 'loading' });
+    setInitializationAttempt(attempt => attempt + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -324,7 +331,12 @@ const DesktopIdentityGate: React.FC = () => {
         const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), onlineSession: null, now: new Date() });
         setGateState(next);
       } catch (caught) {
-        if (!cancelled) setError(messageForError(caught));
+        console.error('[desktop-identity:initialization]', String((caught as any)?.code || 'DESKTOP_IDENTITY_INITIALIZATION_FAILED'));
+        if (!cancelled) {
+          setRuntimeSuspended(false);
+          setGateState({ kind: 'initialization-failed' });
+          setError(messageForError(caught));
+        }
       }
     })();
     return () => {
@@ -333,7 +345,7 @@ const DesktopIdentityGate: React.FC = () => {
         delete (window as any).desktopIdentitySessionProvider;
       }
     };
-  }, [acceptRuntime, suspendBusinessMemory]);
+  }, [acceptRuntime, initializationAttempt, suspendBusinessMemory]);
 
   const pollRegistration = useCallback(async () => {
     if (!pending || pollingFlowRef.current === registrationFlowRef.current || !clientRef.current) return;
@@ -668,6 +680,17 @@ const DesktopIdentityGate: React.FC = () => {
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
           {gateState.kind === 'loading' && <Spin tip="正在检查本机身份…" />}
+          {gateState.kind === 'initialization-failed' && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                message={'\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\u767b\u5f55'}
+                description={error || '\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002'}
+              />
+              <Button icon={<ReloadOutlined />} onClick={retryInitialization} block>{'\u91cd\u65b0\u68c0\u67e5'}</Button>
+            </>
+          )}
           {gateState.kind === 'upgrade-required' && (
             <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
@@ -684,7 +707,7 @@ const DesktopIdentityGate: React.FC = () => {
           )}          {gateState.kind === 'offline-blocked' && (
             <Alert type="error" showIcon message={'\u79bb\u7ebf\u767b\u5f55\u5df2\u8fc7\u671f'} description={'\u8bf7\u8fde\u63a5\u7f51\u7edc\u540e\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
-          {error && <Alert type="error" showIcon message={error} />}
+          {error && gateState.kind !== 'initialization-failed' && <Alert type="error" showIcon message={error} />}
         </Space>
       </Card>
     </main>
