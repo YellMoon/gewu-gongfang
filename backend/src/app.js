@@ -15,7 +15,6 @@ const HostWebSocketClient = require('./websocket/client');
 
 const authRouter = require('./routes/auth');
 const opsRouter = require('./routes/ops');
-const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const permissionsRouter = require('./routes/permissions');
 const adminUsersRouter = require('./routes/adminUsers');
@@ -215,8 +214,8 @@ function requestLogger(req, res, next) {
 
 function resolvePackageVersion(options = {}) {
   const candidates = options.candidates || [
-    path.join(__dirname, '..', 'package.json'),
     path.join(__dirname, '..', '..', 'package.json'),
+    path.join(__dirname, '..', 'package.json'),
     path.join(process.cwd(), 'package.json'),
   ];
 
@@ -336,7 +335,6 @@ function createApp(options = {}) {
     findReceipt: input => authorityCloudRuntime.findReceipt(input),
   }));
   app.use('/api/authority', authorityApiRouter);
-  app.use('/api/modules', optionalAuth, modulesRouter);
   app.use('/api/cloud', optionalAuth, cloudRelayRouter);
   app.use('/api/admin/users', authMiddleware, adminUsersRouter);
   app.use('/api/permissions', authMiddleware, permissionsRouter);

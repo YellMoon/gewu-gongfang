@@ -2,18 +2,15 @@ const assert = require('assert');
 const fs = require('fs');
 
 const app = fs.readFileSync('backend/src/app.js', 'utf-8');
-const modulesRoute = fs.readFileSync('backend/src/routes/modules.js', 'utf-8');
 const cloudRoute = fs.readFileSync('backend/src/routes/cloudRelay.js', 'utf-8');
 const permissionsRoute = fs.readFileSync('backend/src/routes/permissions.js', 'utf-8');
 const schema = fs.readFileSync('backend/src/schema.sql', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
-assert.ok(app.includes("app.use('/api/modules', optionalAuth, modulesRouter)"), 'backend should expose miniapp modules route');
+assert.ok(!app.includes("app.use('/api/modules', optionalAuth, modulesRouter)"), 'retired local module catalog must not remain reachable');
 assert.ok(app.includes("app.use('/api/cloud', optionalAuth, cloudRelayRouter)"), 'backend should expose miniapp cloud route');
 assert.ok(app.includes("app.use('/api/permissions', authMiddleware, permissionsRouter)"), 'permissions must require an authenticated persisted identity');
-assert.ok(modulesRoute.includes("id: 'scheduling'"), 'modules route should include scheduling module');
-assert.ok(modulesRoute.includes("id: 'question-bank'"), 'modules route should include question bank module');
-assert.ok(modulesRoute.includes("id: 'assets'"), 'modules route should include assets module');
+assert.ok(!app.includes("require('./routes/modules')"), 'retired local module catalog router must not remain imported');
 assert.ok(cloudRoute.includes("router.get('/snapshots/read'"), 'cloud route should expose snapshot read');
 assert.ok(cloudRoute.includes("router.post('/tasks'"), 'cloud route should expose miniapp task creation');
 assert.ok(!cloudRoute.includes("router.get('/tasks'"), 'retired V1 pending-task polling must not remain');

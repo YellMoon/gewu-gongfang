@@ -14,7 +14,11 @@ async function requestJson(origin, pathname, token) {
     },
     body: JSON.stringify({ applicationType: 'student', payload: { legacy: true } }),
   });
-  return { status: response.status, body: await response.json() };
+  return {
+    status: response.status,
+    contentType: response.headers.get('content-type') || '',
+    body: await response.text(),
+  };
 }
 
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-retired-miniapp-applications-'));
@@ -54,8 +58,9 @@ const { createApp } = require('../app');
   const origin = `http://127.0.0.1:${server.address().port}`;
   try {
     const retired = await requestJson(origin, '/api/miniapp/applications', token);
-    assert.strictEqual(retired.status, 401);
-    assert.strictEqual(retired.body.code, 'TOKEN_INVALID');
+    assert.strictEqual(retired.status, 404);
+    assert.ok(retired.contentType.includes('text/html'),
+      'a retired route must fall through to the normal not-found response instead of a compatibility handler');
     assert.strictEqual(
       db.prepare('SELECT COUNT(*) AS count FROM miniapp_role_applications').get().count,
       0,

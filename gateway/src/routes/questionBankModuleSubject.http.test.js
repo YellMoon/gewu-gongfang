@@ -16,6 +16,8 @@ const { loadModules } = require('../config/moduleLoader');
 const modules = loadModules();
 process.chdir(previousCwd);
 
+assert.ok(!modules.some(module => module.id === 'assets'),
+  'retired local asset SQLite module must never be dynamically mounted');
 const questionBank = modules.find(module => module.id === 'question-bank');
 assert.ok(questionBank, 'the real dynamic question-bank module must load for the HTTP permission contract');
 
