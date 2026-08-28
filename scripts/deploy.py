@@ -19,6 +19,7 @@ import posixpath
 import re
 import secrets
 import shlex
+import socket
 import subprocess
 import sys
 import time
@@ -81,6 +82,8 @@ DEFAULTS = ENV_CONFIG[APP_ENV]
 APP_PORT = os.getenv("PORT", DEFAULTS["app_port"])
 HOST = os.getenv("DEPLOY_HOST")
 PORT = int(os.getenv("DEPLOY_PORT", "22"))
+SSH_BANNER_TIMEOUT_SECONDS = 10
+SSH_BANNER_MAX_BYTES = 256
 USER = os.getenv("DEPLOY_USER", "root")
 PASSWORD = os.getenv("DEPLOY_PASSWORD")
 KEY_PATH = os.getenv("DEPLOY_KEY_PATH")
@@ -347,8 +350,38 @@ def configure_host_key_verification(ssh):
         raise SystemExit("Production deployment trusted SSH host key required")
 
 
+def assert_ssh_transport(host=None, port=None, connector=socket.create_connection):
+    """Fail before Paramiko auth if the target is not speaking SSH at all."""
+    target_host = HOST if host is None else host
+    target_port = PORT if port is None else port
+    if not isinstance(target_host, str) or not target_host.strip() or not isinstance(target_port, int) or not 1 <= target_port <= 65535:
+        raise RuntimeError("CLOUD_DEPLOY_SSH_BANNER_UNAVAILABLE")
+    sock = None
+    try:
+        sock = connector((target_host, target_port), timeout=SSH_BANNER_TIMEOUT_SECONDS)
+        sock.settimeout(SSH_BANNER_TIMEOUT_SECONDS)
+        received = bytearray()
+        while len(received) < SSH_BANNER_MAX_BYTES and b"\n" not in received:
+            chunk = sock.recv(min(64, SSH_BANNER_MAX_BYTES - len(received)))
+            if not chunk:
+                break
+            received.extend(chunk)
+        banner = bytes(received).split(b"\n", 1)[0].rstrip(b"\r")
+        if not banner.startswith(b"SSH-"):
+            raise RuntimeError("CLOUD_DEPLOY_SSH_BANNER_UNAVAILABLE")
+        return banner.decode("ascii", "strict")
+    except RuntimeError:
+        raise
+    except (OSError, UnicodeDecodeError) as error:
+        raise RuntimeError("CLOUD_DEPLOY_SSH_BANNER_UNAVAILABLE") from error
+    finally:
+        if sock is not None:
+            sock.close()
+
+
 def connect():
     require_remote_env()
+    assert_ssh_transport()
     last_error = None
     for attempt in range(3):
         ssh = paramiko.SSHClient()
