@@ -40,6 +40,36 @@ function vaultError(code, cause) {
   return error;
 }
 
+function recoveryBackupPath(filePath, now, fsImpl) {
+  const stamp = currentDate(now).toISOString().replace(/[^0-9A-Za-z]/g, '');
+  const extension = path.extname(filePath);
+  const stem = extension ? filePath.slice(0, -extension.length) : filePath;
+  for (let index = 0; index < 100; index += 1) {
+    const suffix = index === 0 ? '' : `-${index}`;
+    const candidate = `${stem}.unreadable-${stamp}${suffix}${extension}`;
+    if (!fsImpl.existsSync(candidate)) return candidate;
+  }
+  throw vaultError('DESKTOP_IDENTITY_VAULT_RECOVERY_BACKUP_CONFLICT');
+}
+
+function recoverUnreadableDesktopIdentityVault({
+  filePath,
+  fsImpl = fs,
+  now = () => new Date(),
+} = {}) {
+  if (!filePath || !fsImpl.existsSync(filePath)) return null;
+  const backupPath = recoveryBackupPath(filePath, now, fsImpl);
+  try {
+    // Move, rather than delete or decrypt, the unreadable encrypted envelope.
+    // It remains available for forensic recovery while the active path becomes
+    // available for the next cloud login.
+    fsImpl.renameSync(filePath, backupPath);
+    return backupPath;
+  } catch (error) {
+    throw vaultError('DESKTOP_IDENTITY_VAULT_RECOVERY_FAILED', error);
+  }
+}
+
 function sha256(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
@@ -988,4 +1018,5 @@ module.exports = {
   createDesktopIdentityVault,
   desktopDeviceSessionSigningPayload,
   fingerprintPublicKey,
+  recoverUnreadableDesktopIdentityVault,
 };

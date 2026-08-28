@@ -10,6 +10,10 @@ for (const marker of ['primaryHost', 'primary-host', 'hostBaseUrl', 'primaryHost
   assert.ok(!preloadSource.includes(marker), `preload must not retain ${marker}`);
 }
 assert.ok(electronSource.includes("listen(port, '127.0.0.1'"));
+assert.ok(electronSource.includes('readDesktopIdentityStatus'),
+  'Electron must recover only unreadable local identity envelopes before rendering the login page');
+assert.ok(electronSource.includes("DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID"),
+  'only an unreadable identity envelope may take the non-destructive recovery path');
 assert.ok(!electronSource.includes('remote-debugging-port='));
 assert.ok(electronSource.includes('resolveDevelopmentRenderer'), 'Electron must use the tested development renderer boundary');
 assert.ok(preloadSource.includes('preloadLoginFixtureEnabled'), 'preload must use the tested fixture bridge boundary');

@@ -16,6 +16,7 @@ const {
 } = require('../backend/src/services/primaryHostReceiptProtocol');
 const {
   createDesktopIdentityVault,
+  recoverUnreadableDesktopIdentityVault,
 } = require('./desktopIdentityVault');
 const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
 const { verifySignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
@@ -152,6 +153,19 @@ async function main() {
   const legacyFilePath = path.join(workspace, 'desktop-session.bin');
   const businessFile = path.join(workspace, 'scheduling.db');
   fs.writeFileSync(businessFile, 'business-data-must-survive');
+  const unreadableVaultPath = path.join(workspace, 'desktop-identity-unreadable.bin');
+  fs.writeFileSync(unreadableVaultPath, 'unreadable-encrypted-identity');
+  const unreadableVaultBackup = recoverUnreadableDesktopIdentityVault({
+    filePath: unreadableVaultPath,
+    now: () => new Date('2026-08-29T01:55:00.000Z'),
+  });
+  assert.ok(unreadableVaultBackup && fs.existsSync(unreadableVaultBackup),
+    'an unreadable identity vault must be preserved before the login flow starts over');
+  assert.strictEqual(fs.existsSync(unreadableVaultPath), false,
+    'the active unreadable vault path must be released for a fresh cloud login');
+  assert.strictEqual(fs.readFileSync(unreadableVaultBackup, 'utf8'), 'unreadable-encrypted-identity');
+  assert.strictEqual(fs.readFileSync(businessFile, 'utf8'), 'business-data-must-survive',
+    'identity recovery must not alter local business caches');
   const safeStorage = mockSafeStorage();
   const delays = [];
   let clock = new Date('2026-07-17T10:00:00.000Z');

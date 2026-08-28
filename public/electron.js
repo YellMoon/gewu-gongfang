@@ -13,7 +13,7 @@ const {
   MANAGED_CLOUD_BASE_URL,
   MANAGED_CLOUD_BUSINESS_BASE_URL,
 } = require('./runtimeConfig');
-const { createDesktopIdentityVault } = require('./desktopIdentityVault');
+const { createDesktopIdentityVault, recoverUnreadableDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
 const { resolveDesktopBuildFlavor, updateFeedForFlavor, validateDesktopCapabilityManifest } = require('./desktopBuildFlavor');
 const { withOperationTimeout } = require('./updateCheckTimeout');
@@ -84,6 +84,19 @@ function getDesktopIdentityVault() {
     });
   }
   return desktopIdentityVault;
+}
+
+function readDesktopIdentityStatus() {
+  try {
+    return getDesktopIdentityVault().status();
+  } catch (error) {
+    if (error?.code !== 'DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID') throw error;
+    const filePath = path.join(app.getPath('userData'), 'desktop-identity-v2.bin');
+    recoverUnreadableDesktopIdentityVault({ filePath });
+    desktopIdentityVault = null;
+    log('Unreadable desktop identity envelope preserved for recovery; starting a fresh cloud login.');
+    return getDesktopIdentityVault().status();
+  }
 }
 
 function configuredDesktopIdentity(input = {}) {
@@ -261,7 +274,7 @@ const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
 ipcMain.handle('runtime-config:get', () => ({ ...loadRuntimeConfig(), buildFlavor: DESKTOP_BUILD_FLAVOR }));
-ipcMain.handle('desktop-identity:status', () => getDesktopIdentityVault().status());
+ipcMain.handle('desktop-identity:status', () => readDesktopIdentityStatus());
 ipcMain.handle('desktop-identity:begin-unified-online-registration', (_event, input) => getDesktopIdentityVault().beginUnifiedOnlineRegistration(input));
 ipcMain.handle('desktop-identity:complete-registration', (_event, input) => getDesktopIdentityVault().completeRegistration(input));
 ipcMain.handle('desktop-identity:resume', () => getDesktopIdentityVault().resume());
