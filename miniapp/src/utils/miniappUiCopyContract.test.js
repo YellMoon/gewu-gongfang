@@ -62,6 +62,8 @@ assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 2115
 assert.ok(!settingsPage.includes('getPendingChanges') && !settingsPage.includes('clearPendingChanges'), 'miniapp settings must not expose retired core-business draft controls');
 assert.ok(settingsPage.includes('isFormalIdentity(currentIdentity)'), 'only a canonical formal identity may reveal formal-account settings');
 assert.ok(!settingsPage.includes(String.fromCharCode(26410, 30693, 29992, 25143)), 'settings must not label a stale session as an unknown user');
+assert.ok(settingsPage.includes('isVisitorIdentity(currentUser)'), 'the sign-out path must retain the visitor cleanup branch');
+assert.ok(settingsPage.includes('isFormalIdentity, isVisitorIdentity'), 'the settings page must import both identity checks used by its formal and sign-out branches');
 assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
 assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must use the same inclusive role-application entry as the application page');
