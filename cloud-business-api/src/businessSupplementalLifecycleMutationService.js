@@ -33,12 +33,27 @@ function createBusinessSupplementalLifecycleMutations({ query } = {}) {
       create: input => resultRow(`INSERT INTO business.grades(id,tenant_id,student_id,subject,score,exam_date,notes)
         SELECT $2,$1,$3,$4,$5,$6::date,$7 FROM business.students s WHERE s.tenant_id=$1 AND s.id=$3 AND s.legacy_deleted=false ${returning}`,
       [input.tenantId, input.gradeId, input.studentId, input.subject, input.score, input.examDate, input.notes]),
+      update: input => resultRow(`UPDATE business.grades SET student_id=$4,subject=$5,score=$6,exam_date=$7::date,notes=$8,updated_at=transaction_timestamp()
+        WHERE tenant_id=$1 AND id=$2 AND updated_at=$3::timestamptz AND deleted=false
+          AND EXISTS (SELECT 1 FROM business.students s WHERE s.tenant_id=$1 AND s.id=$4 AND s.legacy_deleted=false) ${returning}`,
+      [input.tenantId, input.gradeId, input.expectedUpdatedAt, input.studentId, input.subject, input.score, input.examDate, input.notes]),
       remove: input => resultRow(`UPDATE business.grades SET deleted=true,updated_at=transaction_timestamp() WHERE tenant_id=$1 AND id=$2 AND updated_at=$3::timestamptz AND deleted=false ${returning}`,
       [input.tenantId, input.gradeId, input.expectedUpdatedAt]),
     }),
     assetCategories: Object.freeze({
       create: input => resultRow(`INSERT INTO business.personal_asset_manual_categories(category_id,tenant_id,account_id,name,category_type,color) VALUES($3,$1,$2,$4,$5,$6) ${assetReturning('category_id')}`,
       [input.tenantId, input.accountId, input.categoryId, input.name, input.type, input.color]),
+      update: input => resultRow(`WITH changed AS (
+          UPDATE business.personal_asset_manual_categories SET name=$5,category_type=$6,color=$7,updated_at=transaction_timestamp()
+          WHERE tenant_id=$1 AND account_id=$2 AND category_id=$3 AND updated_at=$4::timestamptz AND deleted=false
+            AND (category_type=$6 OR NOT EXISTS (SELECT 1 FROM business.personal_asset_manual_records r WHERE r.tenant_id=$1 AND r.account_id=$2 AND r.category_id=$3 AND r.deleted=false))
+          RETURNING category_id,updated_at
+        ), relabeled AS (
+          UPDATE business.personal_asset_manual_records SET category_name=$5,updated_at=transaction_timestamp()
+          WHERE tenant_id=$1 AND account_id=$2 AND category_id=$3 AND deleted=false
+            AND EXISTS (SELECT 1 FROM changed)
+        ) SELECT category_id AS "id",to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt" FROM changed`,
+      [input.tenantId, input.accountId, input.categoryId, input.expectedUpdatedAt, input.name, input.type, input.color]),
       remove: input => resultRow(`UPDATE business.personal_asset_manual_categories SET deleted=true,updated_at=transaction_timestamp()
         WHERE tenant_id=$1 AND account_id=$2 AND category_id=$3 AND updated_at=$4::timestamptz AND deleted=false
           AND NOT EXISTS (SELECT 1 FROM business.personal_asset_manual_records r WHERE r.tenant_id=$1 AND r.account_id=$2 AND r.category_id=$3 AND r.deleted=false) ${assetReturning('category_id')}`,

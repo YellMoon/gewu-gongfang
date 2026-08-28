@@ -1058,8 +1058,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   const supplementalRoutes = [
     { resource: 'payments', service: 'payments', kind: 'payment', idKey: 'paymentId', responseKey: 'payment', allowUpdate: true, accountScoped: false },
     { resource: 'consumptions', service: 'consumptions', kind: 'consumption', idKey: 'consumptionId', responseKey: 'consumption', allowUpdate: true, accountScoped: false },
-    { resource: 'grades', service: 'grades', kind: 'grade', idKey: 'gradeId', responseKey: 'grade', allowUpdate: false, accountScoped: false },
-    { resource: 'personal-asset-categories', service: 'assetCategories', kind: 'assetCategory', idKey: 'categoryId', responseKey: 'category', allowUpdate: false, accountScoped: true },
+    { resource: 'grades', service: 'grades', kind: 'grade', idKey: 'gradeId', responseKey: 'grade', allowUpdate: true, accountScoped: false },
+    { resource: 'personal-asset-categories', service: 'assetCategories', kind: 'assetCategory', idKey: 'categoryId', responseKey: 'category', allowUpdate: true, accountScoped: true },
     { resource: 'personal-asset-records', service: 'assetRecords', kind: 'assetRecord', idKey: 'recordId', responseKey: 'record', allowUpdate: true, accountScoped: true },
   ];
   for (const config of supplementalRoutes) {

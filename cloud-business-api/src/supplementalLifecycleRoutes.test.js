@@ -40,21 +40,23 @@ async function request(app, path, method, body) {
   assert.strictEqual((await request(app, '/api/business/consumptions/consumption-1', 'DELETE', { expectedUpdatedAt: at })).status, 200);
   const grade = { studentId: 'student-1', subject: 'physics', score: 92, examDate: null, notes: null };
   assert.strictEqual((await request(app, '/api/business/grades', 'POST', { gradeId: 'grade-1', data: grade })).status, 201);
+  assert.strictEqual((await request(app, '/api/business/grades/grade-1', 'PUT', { expectedUpdatedAt: at, ...grade, score: 95 })).status, 200);
   assert.strictEqual((await request(app, '/api/business/grades/grade-1', 'DELETE', { expectedUpdatedAt: at })).status, 200);
   const category = { name: 'books', type: 'expense', color: '#123456' };
   assert.strictEqual((await request(app, '/api/business/personal-asset-categories', 'POST', { categoryId: 'cat-1', data: category })).status, 201);
   assert.strictEqual(calls.at(-1)[1].accountId, 'account-1');
+  assert.strictEqual((await request(app, '/api/business/personal-asset-categories/cat-1', 'PUT', { expectedUpdatedAt: at, ...category, name: 'reference books' })).status, 200);
   const asset = { date: '2026-08-24', type: 'expense', categoryId: 'cat-1', categoryName: 'books', amount: 60, studentId: null, studentName: null, note: '' };
   assert.strictEqual((await request(app, '/api/business/personal-asset-records', 'POST', { recordId: 'asset-1', data: asset })).status, 201);
   assert.strictEqual((await request(app, '/api/business/personal-asset-records/asset-1', 'PUT', { expectedUpdatedAt: at, ...asset })).status, 200);
   assert.strictEqual((await request(app, '/api/business/personal-asset-records/asset-1', 'DELETE', { expectedUpdatedAt: at })).status, 200);
   assert.strictEqual((await request(app, '/api/business/personal-asset-categories/cat-1', 'DELETE', { expectedUpdatedAt: at })).status, 200);
-  assert.strictEqual(calls.length, 13);
+  assert.strictEqual(calls.length, 15);
   const deniedApp = createCloudBusinessApp({
     query: async () => ({ rows: [] }), businessTenantId: 'default', businessSupplementalLifecycleMutations: mutations,
     desktopRegistration: { begin: async () => null, register: async () => null, sessionContext: async () => ({ accountId: 'account-student', roles: ['student'] }) },
   });
   assert.strictEqual((await request(deniedApp, '/api/business/payments', 'POST', { paymentId: 'denied', data: payment })).status, 403);
-  assert.strictEqual(calls.length, 13, 'non-super-admin desktop sessions must never reach supplemental mutations');
+  assert.strictEqual(calls.length, 15, 'non-super-admin desktop sessions must never reach supplemental mutations');
   console.log('supplemental lifecycle route checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

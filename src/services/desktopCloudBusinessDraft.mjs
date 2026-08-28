@@ -224,13 +224,10 @@ function stableCloudRejection(error) {
     : null;
 }
 
-// These drafts have no corresponding cloud REST mutation.  Keep them out of
-// the confirmed outbox until that contract exists instead of sending a 404 or
-// falling back to the retired desktop authority relay.
-export const restrictedCloudBusinessDraftTypes = Object.freeze({
-  'grade.update.v1': true,
-  'personal-asset-category.update.v1': true,
-});
+// Typed business drafts never fall back to the retired desktop authority
+// relay. Keep this exported value for callers that surface a future temporary
+// contract restriction.
+export const restrictedCloudBusinessDraftTypes = Object.freeze({});
 
 export function createDesktopCloudBusinessDraftAdapter({
   cloudClient,
@@ -392,6 +389,10 @@ export function createDesktopCloudBusinessDraftAdapter({
         return cloudClient.createCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
           gradeId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...gradeInput(createRecord),
         }));
+      case 'grade.update.v1':
+        return cloudClient.updateCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+          gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...gradeInput(updateRecord),
+        }));
       case 'grade.delete.v1':
         return cloudClient.deleteCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
           gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
@@ -399,6 +400,10 @@ export function createDesktopCloudBusinessDraftAdapter({
       case 'personal-asset-category.create.v1':
         return cloudClient.createCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
           categoryId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetCategoryInput(createRecord),
+        }));
+      case 'personal-asset-category.update.v1':
+        return cloudClient.updateCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+          categoryId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...personalAssetCategoryInput(updateRecord),
         }));
       case 'personal-asset-category.delete.v1':
         return cloudClient.deleteCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
