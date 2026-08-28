@@ -8,9 +8,11 @@ const packageText = fs.readFileSync(path.join(root, 'package.json'), 'utf8');
 
 assert.ok(fs.existsSync(matrixPath), 'the isolated API/Desktop/Miniapp authority role matrix runner must exist');
 const source = fs.readFileSync(matrixPath, 'utf8');
-for (const role of ['visitor', 'student', 'teacher', 'admin', 'super_admin']) {
+for (const role of ['visitor', 'student', 'teacher', 'super_admin']) {
   assert.ok(source.includes(`'${role}'`), `role matrix must include ${role}`);
 }
+assert.ok(!source.includes("id: 'admin', role: 'admin'"),
+  'the retired ordinary administrator must only be rejected, never exercised as a system role');
 for (const scenario of [
   'student-bound',
   'student-unbound',
@@ -23,6 +25,10 @@ assert.ok(source.includes('subjectBound') && source.includes('businessDataFailCl
   'the matrix result must distinguish subject binding and prove unbound business data fails closed');
 assert.ok(source.includes('createAuthorityCommandPolicy'),
   'the same matrix must enforce that admins cannot self-apply while superadmins can review');
+assert.ok(source.includes('createAuthorityCloudEpochService') && source.includes('ensure(AUTHORITY_ID)'),
+  'the matrix must initialize the active cloud epoch used to authorize its signed projections');
+assert.ok(!source.includes('primary_host_epochs'),
+  'the cloud authority matrix must not seed a retired primary-host epoch');
 assert.ok(source.includes('/api/authority/projections/current'),
   'role matrix must fetch each signed projection through the formal authority HTTP route');
 assert.ok(source.includes('buildAuthorityBackedBrowserCache'),

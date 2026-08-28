@@ -11,6 +11,7 @@ const { resolveActingScope } = require('../backend/src/services/authorityAccessS
 const { projectAuthorityData } = require('../backend/src/services/authorityProjectionService');
 const { createAuthorityProjectionStoreService } = require('../backend/src/services/authorityProjectionStoreService');
 const { createAuthorityCommandPolicy } = require('../backend/src/services/authorityCommandRegistry');
+const { createAuthorityCloudEpochService } = require('../backend/src/services/authorityCloudEpochService');
 const { projectionCacheEntries } = require('../miniapp/src/utils/authorityProjectionCache');
 const {
   deriveAccess,
@@ -23,7 +24,6 @@ const ROLE_SCENARIOS = Object.freeze([
   Object.freeze({ id: 'student-unbound', role: 'student', userId: 'user-student-unbound', subjectId: null }),
   Object.freeze({ id: 'teacher-bound', role: 'teacher', userId: 'user-teacher', subjectId: 'teacher-1' }),
   Object.freeze({ id: 'teacher-unbound', role: 'teacher', userId: 'user-teacher-unbound', subjectId: null }),
-  Object.freeze({ id: 'admin', role: 'admin', userId: 'user-admin', subjectId: null }),
   Object.freeze({ id: 'super-admin', role: 'super_admin', userId: 'user-super-admin', subjectId: null }),
 ]);
 const SUBJECT_BUSINESS_COLLECTIONS = Object.freeze([
@@ -31,7 +31,6 @@ const SUBJECT_BUSINESS_COLLECTIONS = Object.freeze([
   'teachers', 'rooms', 'institutions',
 ]);
 const AUTHORITY_ID = 'authority-role-matrix';
-const EPOCH_ID = 'epoch-role-matrix';
 const CREATED_AT = '2026-07-30T00:00:00.000Z';
 const TEMP_ROOT_PATTERN = /^gewu-authority-role-matrix-[A-Za-z0-9]+$/;
 const TEMP_ROOT_MARKER = '.gewu-isolated-authority-role-matrix';
@@ -197,7 +196,6 @@ function miniappRuntimeFor(fixture) {
     visitor: ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'],
     student: ['question-bank:view'],
     teacher: ['business:teacher-scope', 'question-bank:view', 'question-bank:edit'],
-    admin: ['business:all', 'question-bank:view', 'question-bank:edit'],
     super_admin: ['users:review', 'business:all', 'question-bank:view', 'question-bank:edit'],
   }[fixture.role];
   const user = {
@@ -205,6 +203,7 @@ function miniappRuntimeFor(fixture) {
     role: fixture.role,
     user_type: fixture.role,
     authority_id: AUTHORITY_ID,
+    token_use: fixture.role === 'visitor' ? 'miniapp-visitor' : 'miniapp-cloud',
     teacher_id: fixture.role === 'teacher' ? fixture.subjectId || undefined : undefined,
     student_id: fixture.role === 'student' ? fixture.subjectId || undefined : undefined,
     ...(['student', 'teacher'].includes(fixture.role) ? {
@@ -214,7 +213,6 @@ function miniappRuntimeFor(fixture) {
     ...(fixture.role === 'visitor' ? {
       identity_kind: 'visitor',
       account_state: 'visitor',
-      token_use: 'miniapp-visitor',
       capabilities,
     } : {}),
   };
@@ -235,10 +233,11 @@ function assertRoleProjection(fixture, projection, desktopCache, miniappCache, m
   assert.strictEqual(projection.role, role);
   assert.strictEqual(desktopCache.authorityCacheMetadata.role, role);
   assert.strictEqual(miniappAccess.role, role);
-  assert.strictEqual(miniappAccess.canReviewUsers, role === 'super_admin');
+  assert.strictEqual(Object.hasOwn(miniappAccess, 'canReviewUsers'), false,
+    `${role}:MINIAPP_MUST_NOT_EXPOSE_ROLE_REVIEW_CAPABILITY`);
   if (role === 'visitor') {
     assert.strictEqual(miniappAccess.experienceOnly, true);
-    assert.deepStrictEqual(miniappAccess.modules, ['question-bank', 'settings']);
+    assert.deepStrictEqual(miniappAccess.modules, ['scheduling', 'question-bank', 'settings']);
   } else {
     assert.strictEqual(miniappAccess.experienceOnly, false);
     assert.ok(miniappAccess.modules.length > 0, `${role}:MINIAPP_MODULE_SCOPE_REQUIRED`);
@@ -296,17 +295,6 @@ function assertRoleProjection(fixture, projection, desktopCache, miniappCache, m
     ], role, 'all');
     return { businessDataFailClosed: false };
   }
-  if (role === 'admin') {
-    assert.strictEqual(payload.courses.length, 2);
-    assert.strictEqual(payload.questions.length, 1);
-    assert.strictEqual(payload.roleApplications, undefined);
-    assert.strictEqual(payload.roleGrants, undefined);
-    assertNoLeak([payload, desktopCache, miniappCache], [
-      'full-account-student-secret', 'full-account-peer-secret',
-      'role-application-secret', 'role-grant-secret',
-    ], role, 'all');
-    return { businessDataFailClosed: false };
-  }
   assert.strictEqual(role, 'super_admin');
   assert.strictEqual(payload.roleApplications[0].applicationId, 'role-application-secret');
   assert.strictEqual(payload.roleGrants[0].bindingId, 'role-grant-secret');
@@ -328,14 +316,6 @@ async function main() {
   const fixtures = ROLE_SCENARIOS.map(roleFixture);
   const hostKeyPair = crypto.generateKeyPairSync('ed25519');
   database.db.pragma('foreign_keys = OFF');
-  database.db.prepare(`INSERT INTO primary_host_epochs
-    (id,generation,device_id,user_id,authorization_id,status,activation_reason,source_epoch_id,
-     challenge_id,db_instance_digest,schema_version,store_id,db_authority_id,host_credential_hash,
-     credential_version,row_version,created_at,updated_at,activated_at,retired_at)
-    VALUES(?,1,'host-role-matrix','user-super','authorization-role-matrix','active','bootstrap',NULL,
-     'challenge-role-matrix','digest-role-matrix',1,'store-role-matrix',?,'credential-hash-role-matrix',
-     1,1,?,?,?,NULL)`)
-    .run(EPOCH_ID, AUTHORITY_ID, CREATED_AT, CREATED_AT, CREATED_AT);
   const insertGrant = database.db.prepare(`INSERT INTO device_grants
     (grant_id,authority_id,device_id,user_id,public_key,host_generation,status,grant_version,created_at,updated_at)
     VALUES(?,?,?,?,?,1,'active',1,?,?)`);
@@ -372,13 +352,17 @@ async function main() {
     }
   }
   database.db.pragma('foreign_keys = ON');
+  const cloudEpoch = createAuthorityCloudEpochService({
+    db: database.db,
+    now: () => CREATED_AT,
+  }).ensure(AUTHORITY_ID);
   const store = createAuthorityProjectionStoreService({ db: database.db });
   const source = fixtureData();
   let sourceVersion = 1;
   for (const fixture of fixtures) {
     store.publish(createSignedAuthorityProjection({
       authorityId: AUTHORITY_ID,
-      hostEpochId: EPOCH_ID,
+      hostEpochId: cloudEpoch.id,
       userId: fixture.userId,
       role: fixture.role,
       sourceVersion: sourceVersion++,
@@ -467,8 +451,8 @@ async function main() {
     success: true,
     matrix: results,
     roleApplicationPolicy: {
-      adminSelfApplicationForbidden: true,
-      adminReviewForbidden: true,
+      retiredAdminSelfApplicationForbidden: true,
+      retiredAdminReviewForbidden: true,
       superAdminReviewAllowed: true,
     },
     isolatedRoot: tempRoot,

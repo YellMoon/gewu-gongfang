@@ -20,9 +20,9 @@ function getMiniappHomeRoleLabel(identityOrRole) {
     super_admin: '\u8d85\u7ea7\u7ba1\u7406\u5458',
     teacher: '\u6559\u5e08',
     student: '\u5b66\u751f',
-    visitor: '\u8bbf\u5ba2',
+    visitor: '',
   };
-  return labels[normalizedRole] || normalizedRole;
+  return Object.hasOwn(labels, normalizedRole) ? labels[normalizedRole] : normalizedRole;
 }
 
 module.exports = { getMiniappHomeDisplayName, getMiniappHomeRoleLabel };
