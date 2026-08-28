@@ -81,5 +81,10 @@ assert.match(
   /stopUserDataProcesses\(isolatedUserDataDir\)/,
   'packaged smoke must clean up any exact renderer PID that outlives the launched main process',
 );
+assert.match(
+  source,
+  /assertNoLegacyIdentityFailure\(/,
+  'packaged smoke must reject the retired generic identity-verification failure copy in a fresh profile',
+);
 
 console.log('packaged smoke isolation checks passed');

@@ -42,6 +42,12 @@ function verifyPackagedRendererBundle() {
   return rendererEntry;
 }
 
+function assertNoLegacyIdentityFailure(state) {
+  if (String(state?.bodyText || '').includes('身份验证未完成')) {
+    throw new Error('Packaged app shows the retired generic identity-verification failure in a fresh profile');
+  }
+}
+
 function verifyPackagedNativeAbi() {
   const electronExe = path.join(process.cwd(), 'node_modules', 'electron', 'dist', 'electron.exe');
   const nativeModule = path.join(packagedAppRoot, 'node_modules', 'better-sqlite3');
@@ -203,6 +209,7 @@ async function main() {
       /Uncaught|ReferenceError|TypeError|SyntaxError|module\.exports/i.test(message.text)
     ));
 
+    assertNoLegacyIdentityFailure(state);
     if (state.rootLength <= 0 || state.bodyLength <= 0 || blockingMessages.length > 0) {
       throw new Error(`Packaged app smoke failed: ${JSON.stringify({ state, blockingMessages }, null, 2)}`);
     }
