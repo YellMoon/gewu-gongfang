@@ -17,6 +17,7 @@ const { createDesktopIdentityVault } = require('./desktopIdentityVault');
 const { createDesktopAuthorityRuntime } = require('./desktopAuthorityRuntime');
 const { resolveDesktopBuildFlavor, updateFeedForFlavor, validateDesktopCapabilityManifest } = require('./desktopBuildFlavor');
 const { withOperationTimeout } = require('./updateCheckTimeout');
+const { scheduleDesktopUpdateCheck } = require('./desktopUpdateScheduler');
 const { buildApplicationMenu, desktopUpdaterErrorMessage, desktopWindowChrome } = require('./electronShellPolicy');
 const { ensureLocalSessionSigningSecret } = require('./localSessionSigningSecret');
 const { LOGIN_FIXTURE_RENDERER_ARGUMENT, resolveDevelopmentRenderer } = require('./electronDevelopmentFixture');
@@ -51,7 +52,9 @@ try {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeedUrl });
-} catch (_error) {}
+} catch (_error) {
+  autoUpdater = null;
+}
 
 const logDir = path.join(app.getPath('userData'), 'logs');
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
@@ -218,14 +221,6 @@ function showErrorPage(message) {
   mainWindow.show();
 }
 
-function scheduleDesktopUpdateCheck() {
-  if (!app.isPackaged || !autoUpdater) return;
-  setTimeout(() => {
-    withOperationTimeout(autoUpdater.checkForUpdates(), 30000, 'UPDATE_CHECK_TIMEOUT', 'UPDATE_CHECK_TIMEOUT')
-      .catch(error => log(`Desktop update check failed ${String(error?.code || error?.message || error)}`));
-  }, 4000);
-}
-
 function stopServices() {
   try { desktopIdentityVault?.lock(); } catch (_error) {}
   if (backendServer) {
@@ -239,7 +234,12 @@ if (singleInstanceOwner) {
     if (!owner) return;
     startBackendService();
     createWindow();
-    scheduleDesktopUpdateCheck();
+    scheduleDesktopUpdateCheck({
+      isPackaged: app.isPackaged,
+      updater: autoUpdater,
+      timeoutRunner: withOperationTimeout,
+      log,
+    });
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   }).catch(error => { log(`INSTANCE_LOCK_FAILED ${String(error?.message || error)}`); app.quit(); });
 }

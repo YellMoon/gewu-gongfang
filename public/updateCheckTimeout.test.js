@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const { withOperationTimeout } = require('./updateCheckTimeout');
+const { scheduleDesktopUpdateCheck } = require('./desktopUpdateScheduler');
 
 (async () => {
   assert.strictEqual(
@@ -27,9 +28,43 @@ const { withOperationTimeout } = require('./updateCheckTimeout');
     'a downloaded desktop update must install when the user normally closes the app',
   );
   assert.ok(
-    electronMain.includes('scheduleDesktopUpdateCheck()'),
+    electronMain.includes('scheduleDesktopUpdateCheck({'),
     'the desktop app must check its OSS update feed after startup rather than waiting for a manual settings action',
   );
+
+  let scheduledCheck = null;
+  const synchronousFailures = [];
+  assert.strictEqual(scheduleDesktopUpdateCheck({
+    isPackaged: true,
+    updater: { checkForUpdates() { throw new Error('sync updater failure'); } },
+    timeoutRunner: () => { throw new Error('must not run after a synchronous updater failure'); },
+    log: message => synchronousFailures.push(message),
+    setTimer: (callback, delay) => { scheduledCheck = callback; assert.strictEqual(delay, 4000); },
+  }), true);
+  assert.strictEqual(typeof scheduledCheck, 'function');
+  scheduledCheck();
+  assert.deepStrictEqual(synchronousFailures, ['Desktop update check failed sync updater failure']);
+
+  let scheduledRejection = null;
+  const asynchronousFailures = [];
+  scheduleDesktopUpdateCheck({
+    isPackaged: true,
+    updater: { checkForUpdates() { return Promise.resolve('update-check'); } },
+    timeoutRunner: () => Promise.reject(new Error('async updater failure')),
+    log: message => asynchronousFailures.push(message),
+    setTimer: callback => { scheduledRejection = callback; },
+  });
+  scheduledRejection();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(asynchronousFailures, ['Desktop update check failed async updater failure']);
+
+  assert.strictEqual(scheduleDesktopUpdateCheck({
+    isPackaged: false,
+    updater: { checkForUpdates() { throw new Error('should not execute'); } },
+    timeoutRunner: () => undefined,
+    log: () => undefined,
+    setTimer: () => { throw new Error('development builds must not schedule updates'); },
+  }), false);
 
   console.log('desktop updater timeout tests passed');
 })().catch(error => {
