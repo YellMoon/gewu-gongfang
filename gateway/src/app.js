@@ -10,7 +10,6 @@ const proxyaddr = require('proxy-addr');
 const { getDb, initDatabase } = require('./db/database');
 const { authMiddleware, optionalAuth } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
-const { loadModules } = require('./config/moduleLoader');
 const { loadUserPermissions } = require('./middleware/permission');
 const CloudWebSocketServer = require('./websocket/server');
 
@@ -18,7 +17,6 @@ const CloudWebSocketServer = require('./websocket/server');
 const authRouter = require('./routes/auth');
 const adminRouter = require('./routes/admin');
 const permissionsRouter = require('./routes/permissions');
-const modulesRouter = require('./routes/modules');
 const cloudRelayRouter = require('./routes/cloudRelay');
 const gatewayPackage = require('../package.json');
 
@@ -75,20 +73,7 @@ function createApp(options = {}) {
   // ===================== 需要认证的路由 =====================
   app.use('/api/admin', authMiddleware, loadUserPermissions, adminRouter);
   app.use('/api/permissions', authMiddleware, loadUserPermissions, permissionsRouter);
-  app.use('/api/modules', authMiddleware, loadUserPermissions, modulesRouter);
 
-  // ===================== 动态加载模块路由 =====================
-  const moduleRoutes = loadModules();
-  for (const mod of moduleRoutes) {
-    const { routePrefix, router, permission } = mod;
-    if (permission) {
-      const { requirePermission } = require('./middleware/permission');
-      app.use(routePrefix, authMiddleware, loadUserPermissions, requirePermission(permission.module, permission.action), router);
-    } else {
-      app.use(routePrefix, authMiddleware, loadUserPermissions, router);
-    }
-    console.log(`[Gateway] 模块已挂载: ${mod.id} → ${routePrefix}`);
-  }
 
   // ===================== 404 =====================
   app.use((_req, res) => {
