@@ -38,6 +38,7 @@ assert.ok(decodedGateSource.includes('微信登录') && decodedGateSource.includ
 for (const internalLoginCopy of [
   '格物工坊身份验证', '核验账号并登记此电脑', '设备名称', '开始微信身份注册',
   '静默登记这台电脑', '云端账号已核验', '请完成微信身份验证', '此电脑将自动登记',
+  '正在检查本机身份', '当前身份验证不能设置云端账号密码',
 ]) assert.ok(!decodedGateSource.includes(internalLoginCopy),
   `silent device registration must not leak implementation copy into login: ${internalLoginCopy}`);
 assert.ok(!gateSource.includes('setDeviceName'), 'device naming must be derived silently by the Electron main process');

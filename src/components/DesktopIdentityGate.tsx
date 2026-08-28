@@ -443,7 +443,7 @@ const DesktopIdentityGate: React.FC = () => {
     const passwordEnrollmentRequested = Boolean(cloudLoginName || cloudPassword || cloudPasswordAgain);
     const canEnrollCloudPassword = pending?.pairingId && pending?.status === 'verified' && pending?.recovery !== true;
     if (passwordEnrollmentRequested && !canEnrollCloudPassword) {
-      setError('\u5f53\u524d\u8eab\u4efd\u9a8c\u8bc1\u4e0d\u80fd\u8bbe\u7f6e\u4e91\u7aef\u8d26\u53f7\u5bc6\u7801\u3002');
+      setError('\u6682\u65f6\u65e0\u6cd5\u8bbe\u7f6e\u8d26\u53f7\u5bc6\u7801\u3002');
       return;
     }
     if (passwordEnrollmentRequested && (!cloudPassword || cloudPassword !== cloudPasswordAgain)) {
@@ -616,7 +616,7 @@ const DesktopIdentityGate: React.FC = () => {
     return (
       <>
         <Paragraph className="desktop-identity-copy">{'\u8bf7\u5728\u5fae\u4fe1\u4e2d\u786e\u8ba4\u767b\u5f55\u3002'}</Paragraph>
-        {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt="identity verification code" /></div>
+        {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt={'\u5fae\u4fe1\u767b\u5f55\u4e8c\u7ef4\u7801'} /></div>
           : pending.qrValue ? <div className="desktop-identity-qr"><QRCode value={pending.qrValue} size={196} bordered={false} /></div> : null}
         <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>{'\u5237\u65b0\u767b\u5f55\u72b6\u6001'}</Button>
         <Button loading={busy} onClick={returnToPasswordLogin} block>{'\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'}</Button>
@@ -679,7 +679,7 @@ const DesktopIdentityGate: React.FC = () => {
         </header>
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
-          {gateState.kind === 'loading' && <Spin tip="正在检查本机身份…" />}
+          {gateState.kind === 'loading' && <Spin tip={'\u6b63\u5728\u51c6\u5907\u767b\u5f55\u2026'} />}
           {gateState.kind === 'initialization-failed' && (
             <>
               <Alert
