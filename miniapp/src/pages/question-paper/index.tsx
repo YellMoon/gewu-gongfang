@@ -254,7 +254,7 @@ export default function QuestionPaperPage() {
     } catch (error: any) { Taro.showToast({ title: error?.message || '下载失败', icon: 'none' }); }
   };
 
-  if (!canBuildPaper) return <View className='question-paper-page access-boundary'><Text>{'关联教师身份后可选题组卷和导出。'}</Text><Button onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>{'去申请'}</Button></View>;
+  if (!canBuildPaper) return <View className='question-paper-page access-boundary'><Text>{'组卷和导出需要教师角色。'}</Text><Button onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>{'去申请'}</Button></View>;
   const distributionSummary = items.length ? <View className='paper-summary paper-distribution'>{typeStats.map(([type, count]) => <Text key={type}>{questionTypeLabel(type) + ' ' + count + ' ' + String.fromCharCode(39064)}</Text>)}{difficultyStats.map(([level, count]) => <Text key={String(level)}>{String.fromCharCode(38590, 24230) + level + ' ' + count + ' ' + String.fromCharCode(39064)}</Text>)}</View> : null;
   return <View className='question-paper-page'>{distributionSummary}
     <View className='paper-form'><Text className='field-label'>{'试卷名称'}</Text><Input className='field-input' value={title} onInput={event => setTitle(event.detail.value)} />

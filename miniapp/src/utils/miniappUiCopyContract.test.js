@@ -88,6 +88,8 @@ assert.ok(questionPaperPage.includes('String.fromCharCode(31572, 26696, 20301, 3
 assert.ok(questionBankStyles.includes('.basket-toggle'), 'question cards must expose a clear basket operation for eligible identities');
 assert.ok(!questionBankPage.includes('访客题库浏览') && !questionBankPage.includes('题库文字内容由云端权威提供'), 'question-bank must not expose identity labels or implementation explanations as user-facing content');
 assert.ok(!questionBankPage.includes('可浏览的题目'), 'question-bank must not describe its browsing allowance as permanent page copy');
+assert.ok(!questionBankPage.includes('关联身份后可组卷') && questionBankPage.includes('组卷需要教师角色'), 'limited paper-building prompts must name the required role without internal binding wording');
+assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和导出') && questionPaperPage.includes('组卷和导出需要教师角色'), 'paper access guidance must use the same direct role wording');
 assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请关联身份'), 'the schedule empty state must give a neutral next step without labeling the account as a visitor');
 assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
 

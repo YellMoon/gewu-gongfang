@@ -140,8 +140,8 @@ export default function QuestionBankPage() {
 
   const requestRoleApplication = () => {
     Taro.showModal({
-      title: '关联身份后可组卷',
-      content: '选题、组卷和导出仅对已关联的教师身份开放。',
+      title: '组卷需要教师角色',
+      content: '申请教师角色后即可选题、组卷和导出。',
       confirmText: '去申请',
       success: result => { if (result.confirm) Taro.navigateTo({ url: '/pages/account-application/index' }); },
     });
