@@ -36,6 +36,7 @@ const copy = {
   safety: '\u63d0\u4ea4\u8bf4\u660e',
   safetyText: '\u53ea\u6709\u4f60\u786e\u8ba4\u540e\u624d\u4f1a\u63d0\u4ea4\uff1b\u63d0\u4ea4\u65f6\u4f1a\u518d\u6b21\u6838\u5bf9\u5f53\u524d\u767b\u5f55\u72b6\u6001\u548c\u53ef\u64cd\u4f5c\u8303\u56f4\u3002',
   confirm: '\u786e\u8ba4\u5e76\u53d1\u9001',
+  actionConfirm: '\u67e5\u770b\u5e76\u786e\u8ba4',
   keep: '\u7ee7\u7eed\u4fdd\u7559\u8349\u7a3f',
   retry: '\u91cd\u8bd5\u540c\u4e00\u547d\u4ee4',
   retained: '\u4fdd\u7559\uff0c\u7b49\u5f85\u5904\u7406',
@@ -44,9 +45,9 @@ const copy = {
   actions: '\u64cd\u4f5c',
   conflictMessage: '\u5b58\u5728\u56de\u6267\u51b2\u7a81\uff0c\u8349\u7a3f\u5df2\u4fdd\u7559',
   empty: '\u5f53\u524d\u6ca1\u6709\u5f85\u5904\u7406\u7684\u66f4\u6539',
-  assetVerificationPending: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u8fdb\u5165 NAS \u6838\u9a8c\u961f\u5217\uff0c\u672a\u901a\u8fc7\u5b8c\u6574\u6027\u56de\u6267\u524d\u4e0d\u89c6\u4e3a\u5b8c\u6210\u3002',
-  assetVerified: '\u9898\u5e93\u5bcc\u5a92\u4f53\u5df2\u901a\u8fc7 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
-  questionTextCommitted: '\u9898\u5e93\u6587\u5b57\u5df2\u7531\u4e91\u7aef\u63d0\u4ea4\uff1b\u5bcc\u5a92\u4f53\u6b63\u5728\u7b49\u5f85 NAS \u5b8c\u6574\u6027\u6838\u9a8c',
+  assetVerificationPending: '\u76f8\u5173\u9644\u4ef6\u6b63\u5728\u6838\u9a8c\uff0c\u5b8c\u6210\u540e\u4f1a\u663e\u793a\u7ed3\u679c\u3002',
+  assetVerified: '\u76f8\u5173\u9644\u4ef6\u5df2\u5b8c\u6210\u6838\u9a8c',
+  questionTextCommitted: '\u5df2\u63d0\u4ea4\uff0c\u76f8\u5173\u9644\u4ef6\u6b63\u5728\u6838\u9a8c',
 };
 
 function requireBridge() {
@@ -400,7 +401,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       render: (_: unknown, item: AuthorityOutboxItem) => {
         if (item.status === 'awaiting_confirmation') {
           return <Button type="primary" size="small" loading={busyId === item.id}
-            onClick={() => confirmAndSubmit(item)}>{copy.preview}</Button>;
+            onClick={() => confirmAndSubmit(item)}>{copy.actionConfirm}</Button>;
         }
         if (item.status === 'confirmed' || item.status === 'submitted') {
           return <Button size="small" loading={busyId === item.id}

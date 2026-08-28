@@ -30,13 +30,21 @@ assert.match(panel, /relayQuestionAssetsAfterReceipt\(item, result\.receipt\)/,
 assert.match(panel, /client\.readAssetRelay\(state\.taskId\)/,
   'a locally queued relay must be checked against the NAS verification receipt before it is treated as complete');
 assert.match(panel, /assetVerificationPending/,
-  'the UI must clearly state that a cloud relay is still pending NAS verification');
+  'the UI must clearly state that related attachments are still being checked');
 assert.match(panel, /hasPendingQuestionAssetVerification\(item\)/,
   'completed question commands with unverified media must remain visibly pending');
 assert.match(panel, /item\.status === 'completed' && !hasPendingQuestionAssetVerification\(item\)/,
   'a question command must not enter the completed count before every media receipt is verified');
 assert.match(panel, /questionTextCommitted/,
-  'the command receipt must distinguish cloud text completion from NAS media verification');
+  'the command receipt must distinguish question completion from pending attachment checks');
+assert.ok(panel.includes("actionConfirm: '\\u67e5\\u770b\\u5e76\\u786e\\u8ba4'"),
+  'an unconfirmed change must offer a clear review-and-confirm action instead of a content label');
+for (const implementationCopy of [
+  '\\u4e91\\u7aef\\u63d0\\u4ea4',
+  ' NAS ',
+  '\\u5bcc\\u5a92\\u4f53',
+]) assert.ok(!panel.includes(implementationCopy),
+  `the outbox must not expose storage implementation wording: ${implementationCopy}`);
 assert.match(preload, /confirmAndSubmit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:confirm-and-submit', id, input\)/,
   'the preload bridge must forward an explicit one-time submission input');
 assert.match(preload, /submit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:submit', id, input\)/,
