@@ -197,6 +197,8 @@ async function main() {
     probeTimeoutMs: 50,
   });
   assert.strictEqual(await splitOwner.ready, true);
+  const splitOwnerPortIndex = splitOwner.ports.indexOf(splitOwner.ownerPort);
+  assert.ok(splitOwnerPortIndex >= 0, 'the split-frame owner must bind one of its deterministic candidate ports');
   const splitExits = [];
   const splitContender = createCrossInstallInstanceLock({
     app: { exit(code) { splitExits.push(code); } },
@@ -212,8 +214,8 @@ async function main() {
     'a valid activation frame split across TCP chunks must still identify the matching owner');
   assert.deepStrictEqual(splitExits, [0]);
   assert.deepStrictEqual(splitFocusCalls, ['activate']);
-  assert.strictEqual(splitTransport.listenCalls(), 2,
-    'a fragmented matching-owner handshake must never advance the contender to another listen port');
+  assert.strictEqual(splitTransport.listenCalls(), 2 * (splitOwnerPortIndex + 1),
+    'a fragmented matching-owner handshake must never advance the contender beyond the owner port, even when an earlier candidate is occupied');
 
   for (const fixture of [
     ['unterminated', 'activate:partial'],
