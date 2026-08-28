@@ -15,6 +15,10 @@ assert.ok(!panel.includes('authorityMessage:'),
   'the outbox must not show users an implementation-level cloud authority slogan');
 assert.ok(!panel.includes('authorityDescription:'),
   'the outbox must not show users architecture internals as persistent guidance');
+assert.ok(panel.includes('\\u5f85\\u63d0\\u4ea4\\u7684\\u66f4\\u6539'),
+  'the outbox title must describe the user action rather than the implementation');
+assert.ok(!panel.includes('\\u4e91\\u7aef\\u6743\\u5a01\\u6570\\u636e\\u540c\\u6b65'),
+  'the outbox must not expose cloud-authority implementation wording');
 assert.ok(!panel.includes('wsTitle:'),
   'the outbox must not show users retired LAN-host architecture messaging');
 assert.match(panel, /student\|course\|schedule\|teacher\|room\|institution\|school\|payment\|consumption\|grade\|personal-asset-record\|personal-asset-category/,

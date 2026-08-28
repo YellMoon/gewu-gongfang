@@ -2,6 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   padding: calc(88rpx + env(safe-area-inset-top)) 48rpx calc(44rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #1a514b;

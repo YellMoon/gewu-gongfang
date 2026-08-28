@@ -22,7 +22,7 @@ const allRoutes = [
   { path: '/?page=address', key: 'address', pageKey: 'address', requiredText: ['地址总数', '添加地址'] },
   { path: '/?page=institution', key: 'institution', pageKey: 'institution', requiredText: ['机构总数', '添加机构'] },
   { path: '/?page=operate-log', key: 'operate-log', pageKey: 'operate-log', requiredText: ['操作审计', '刷新'] },
-  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['与数据主机双向同步', '同步设置'] },
+  { path: '/?page=cloud-sync', key: 'cloud-sync', pageKey: 'cloud-sync', requiredText: ['账号与同步', '待提交的更改'] },
 ];
 const requestedRoute = String(process.env.UI_SMOKE_ROUTE || '').trim();
 const routes = requestedRoute ? allRoutes.filter(route => route.key === requestedRoute) : allRoutes;
@@ -36,6 +36,18 @@ async function waitForAppReady(page) {
   await page.waitForFunction(() => document.body.innerText.trim().length >= 20, null, {
     timeout: 10000,
   });
+  await page.waitForFunction(() => Boolean(window.dbService), null, {
+    timeout: 10000,
+  }).catch(async () => {
+    const diagnostic = await page.evaluate(() => ({
+      online: navigator.onLine,
+      apiInvoke: typeof window.api?.invoke,
+      identityStatus: typeof window.desktopIdentity?.status,
+      sessionProvider: typeof window.desktopIdentitySessionProvider,
+      visibleText: document.body.innerText.slice(0, 300),
+    }));
+    throw new Error(`desktop database service did not become ready: ${JSON.stringify(diagnostic)}`);
+  });
 }
 
 async function installNavigationProbe(page) {
@@ -44,7 +56,17 @@ async function installNavigationProbe(page) {
     const userId = 'ui-smoke-super-admin';
     const deviceId = 'ui-smoke-device';
     const authorizationId = 'ui-smoke-authorization';
+    const partitionKey = `${userId}:super_admin:all`;
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false });
+    window.__GEWU_DESKTOP_IDENTITY_PARTITION__ = partitionKey;
+    window.__GEWU_DESKTOP_IDENTITY_CONTEXT__ = Object.freeze({
+      userId,
+      activeRole: 'super_admin',
+      teacherId: null,
+      studentId: null,
+      partitionKey,
+      offline: true,
+    });
     window.api = {
       invoke: async (channel) => {
         if (channel === 'runtime-config:get') {
@@ -72,6 +94,9 @@ async function installNavigationProbe(page) {
         if (channel === 'get-app-version') return 'ui-smoke';
         return null;
       },
+    };
+    window.desktopAuthority = {
+      list: async () => [],
     };
     window.desktopIdentity = {
       status: async () => ({

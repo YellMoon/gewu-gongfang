@@ -120,17 +120,17 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
 
   return (
     <div>
-      <Card title={'\u8d26\u53f7\u4e0e\u4e91\u7aef\u540c\u6b65'} style={{ marginBottom: 16 }}>
-        <Alert type="info" showIcon style={{ marginBottom: 16 }} message={'\u7edf\u4e00\u684c\u9762\u7aef'} description={'\u4e1a\u52a1\u6570\u636e\u548c\u9898\u5e93\u6587\u5b57\u5185\u5bb9\u7531\u4e91\u7aef\u88c1\u51b3\u3002\u672c\u673a\u79bb\u7ebf\u4fee\u6539\u53ea\u4f5c\u4e3a\u8349\u7a3f\uff0c\u8054\u7f51\u540e\u5fc5\u987b\u7531\u7528\u6237\u786e\u8ba4\u63d0\u4ea4\u3002'} />
+      <Card title={'\u8d26\u53f7\u4e0e\u540c\u6b65'} style={{ marginBottom: 16 }}>
+        <Alert type="info" showIcon style={{ marginBottom: 16 }} message={'\u540c\u6b65\u8bf4\u660e'} description={'\u79bb\u7ebf\u65f6\u7684\u66f4\u6539\u4f1a\u5148\u4fdd\u5b58\u4e3a\u672c\u673a\u8349\u7a3f\uff1b\u6062\u590d\u8054\u7f51\u540e\uff0c\u7531\u4f60\u786e\u8ba4\u518d\u63d0\u4ea4\u3002'} />
         <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
           <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{APP_VERSION}</Descriptions.Item>
           <Descriptions.Item label={'\u5f53\u524d\u8d26\u53f7'}>{accountLabel}</Descriptions.Item>
-          <Descriptions.Item label={'\u9898\u5e93\u5bcc\u5a92\u4f53'}><Tag color="blue">NAS \u53d7\u63a7\u5b58\u50a8</Tag></Descriptions.Item>
-          <Descriptions.Item label={'\u8bbe\u5907\u767b\u8bb0'}><Tag color="green">\u9996\u6b21\u767b\u5f55\u540e\u9759\u9ed8\u5b8c\u6210</Tag></Descriptions.Item>
+          <Descriptions.Item label={'\u9898\u5e93\u6587\u4ef6'}><Tag color="blue">\u53d7\u63a7\u5b58\u50a8</Tag></Descriptions.Item>
+          <Descriptions.Item label={'\u672c\u673a\u767b\u5f55'}><Tag color="green">\u9996\u6b21\u767b\u5f55\u540e\u81ea\u52a8\u5b8c\u6210</Tag></Descriptions.Item>
         </Descriptions>
       </Card>
       <Card title={'\u8f6f\u4ef6\u66f4\u65b0'} style={{ marginBottom: 16 }}>
-        <Alert type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : desktopUpdate.available ? 'info' : 'success'} showIcon style={{ marginBottom: 16 }} message={desktopUpdate.error ? '\u66f4\u65b0\u68c0\u67e5\u5931\u8d25' : desktopUpdate.downloaded ? '\u66f4\u65b0\u5df2\u4e0b\u8f7d\u5b8c\u6210' : desktopUpdate.available ? `\u53d1\u73b0\u65b0\u7248\u672c ${desktopUpdate.latestVersion || ''}` : '\u53ef\u5728\u8f6f\u4ef6\u5185\u68c0\u67e5\u548c\u5b89\u88c5\u66f4\u65b0'} description={desktopUpdate.error || desktopUpdate.feedUrl || '\u901a\u8fc7\u963f\u91cc\u4e91 OSS \u66f4\u65b0\u901a\u9053\u68c0\u67e5\u3001\u4e0b\u8f7d\u5e76\u5b89\u88c5\u7edf\u4e00\u684c\u9762\u7aef\u65b0\u7248\u672c\u3002'} />
+        <Alert type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : desktopUpdate.available ? 'info' : 'success'} showIcon style={{ marginBottom: 16 }} message={desktopUpdate.error ? '\u66f4\u65b0\u68c0\u67e5\u5931\u8d25' : desktopUpdate.downloaded ? '\u66f4\u65b0\u5df2\u4e0b\u8f7d\u5b8c\u6210' : desktopUpdate.available ? `\u53d1\u73b0\u65b0\u7248\u672c ${desktopUpdate.latestVersion || ''}` : '\u53ef\u5728\u8f6f\u4ef6\u5185\u68c0\u67e5\u548c\u5b89\u88c5\u66f4\u65b0'} description={desktopUpdate.error || desktopUpdate.feedUrl || '\u53ef\u76f4\u63a5\u68c0\u67e5\u3001\u4e0b\u8f7d\u5e76\u5b89\u88c5\u65b0\u7248\u672c\u3002'} />
         <Space wrap>
           <Button icon={<CloudDownloadOutlined />} loading={desktopUpdate.checking} onClick={handleCheckDesktopUpdate}>{'\u68c0\u67e5\u66f4\u65b0'}</Button>
           <Button type="primary" disabled={!desktopUpdate.available || desktopUpdate.downloaded} loading={desktopUpdate.downloading} onClick={handleDownloadDesktopUpdate}>{'\u4e0b\u8f7d\u66f4\u65b0'}</Button>
