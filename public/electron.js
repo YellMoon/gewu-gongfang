@@ -48,8 +48,8 @@ process.env.GEWU_ELECTRON_LOCAL_BRIDGE_SECRET = electronLocalBridgeSecret;
 
 try {
   autoUpdater = require('electron-updater').autoUpdater;
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.setFeedURL({ provider: 'generic', url: updateFeedUrl });
 } catch (_error) {}
 
@@ -218,6 +218,14 @@ function showErrorPage(message) {
   mainWindow.show();
 }
 
+function scheduleDesktopUpdateCheck() {
+  if (!app.isPackaged || !autoUpdater) return;
+  setTimeout(() => {
+    withOperationTimeout(autoUpdater.checkForUpdates(), 30000, 'UPDATE_CHECK_TIMEOUT', 'UPDATE_CHECK_TIMEOUT')
+      .catch(error => log(`Desktop update check failed ${String(error?.code || error?.message || error)}`));
+  }, 4000);
+}
+
 function stopServices() {
   try { desktopIdentityVault?.lock(); } catch (_error) {}
   if (backendServer) {
@@ -231,6 +239,7 @@ if (singleInstanceOwner) {
     if (!owner) return;
     startBackendService();
     createWindow();
+    scheduleDesktopUpdateCheck();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
   }).catch(error => { log(`INSTANCE_LOCK_FAILED ${String(error?.message || error)}`); app.quit(); });
 }

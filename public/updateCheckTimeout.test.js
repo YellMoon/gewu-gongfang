@@ -18,6 +18,18 @@ const { withOperationTimeout } = require('./updateCheckTimeout');
     electronMain.includes('updateAvailable: result?.isUpdateAvailable === true'),
     'the updater IPC result must retain electron-updater availability rather than relying only on a renderer event',
   );
+  assert.ok(
+    electronMain.includes('autoUpdater.autoDownload = true'),
+    'the desktop app must download an available verified update without requiring the user to open settings',
+  );
+  assert.ok(
+    electronMain.includes('autoUpdater.autoInstallOnAppQuit = true'),
+    'a downloaded desktop update must install when the user normally closes the app',
+  );
+  assert.ok(
+    electronMain.includes('scheduleDesktopUpdateCheck()'),
+    'the desktop app must check its OSS update feed after startup rather than waiting for a manual settings action',
+  );
 
   console.log('desktop updater timeout tests passed');
 })().catch(error => {
