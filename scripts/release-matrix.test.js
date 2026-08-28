@@ -38,6 +38,16 @@ assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runti
   'the receipt records the independently deployed storage runtime version');
 assert.deepStrictEqual(matrix.validateManifest(compatibleRuntimeManifest).issues, [],
   'an approved storage runtime receipt keeps the release manifest valid');
+const currentStorageRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'current-storage-runtime' });
+matrix.recordReceipt(currentStorageRuntimeManifest, {
+  target: 'storage_proxy',
+  version: versions.storage_proxy,
+  runtimeVersion: '8.7.25',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' },
+  evidence: 'storage runtime health and live import acceptance for the current NAS candidate',
+});
+assert.deepStrictEqual(matrix.validateManifest(currentStorageRuntimeManifest).issues, [],
+  'the current NAS storage runtime must be explicitly approved for a release receipt');
 compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questionPaperExport = '2';
 assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /runtime contract receipt is incompatible/i,
   'a persisted runtime receipt is revalidated instead of being trusted after record time');
