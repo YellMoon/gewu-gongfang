@@ -25,6 +25,16 @@
   gap: 16px;
 }
 
+.desktop-identity-password-form,
+.desktop-identity-password-fields {
+  display: block;
+  width: 100%;
+}
+
+.desktop-identity-loading-placeholder {
+  min-height: 72px;
+}
+
 .desktop-identity-title {
   margin: 0 !important;
 }

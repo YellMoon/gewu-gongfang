@@ -582,13 +582,20 @@ const DesktopIdentityGate: React.FC = () => {
         <>
           <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u767b\u5f55'}</Button>
           <Divider plain>{'\u6216\u4f7f\u7528\u8d26\u53f7\u5bc6\u7801'}</Divider>
-          <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
-            { value: 'phone', label: '\u624b\u673a\u53f7' },
-            { value: 'account_name', label: '\u8d26\u53f7\u540d' },
-          ]} />
-          <Input value={accountLogin} onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u8d26\u53f7\u540d'} />
-          <Input.Password value={accountPassword} onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u5bc6\u7801'} onPressEnter={beginPasswordVerification} />
-          <Button type="primary" loading={busy} onClick={beginPasswordVerification} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
+          <form className="desktop-identity-password-form" onSubmit={event => {
+            event.preventDefault();
+            void beginPasswordVerification();
+          }}>
+            <Space direction="vertical" size={16} className="desktop-identity-password-fields">
+              <Select<'phone' | 'account_name'> value={accountLoginType} onChange={setAccountLoginType} options={[
+                { value: 'phone', label: '\u624b\u673a\u53f7' },
+                { value: 'account_name', label: '\u8d26\u53f7\u540d' },
+              ]} />
+              <Input value={accountLogin} autoComplete="username" onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u8d26\u53f7\u540d'} />
+              <Input.Password value={accountPassword} autoComplete="current-password" onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u5bc6\u7801'} />
+              <Button type="primary" htmlType="submit" loading={busy} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
+            </Space>
+          </form>
         </>
       );
     }
@@ -656,9 +663,9 @@ const DesktopIdentityGate: React.FC = () => {
         </div>
         {error && <Alert className="desktop-identity-runtime-error" type="error" showIcon message={error} closable onClose={() => setError('')} />}
         {runtimeSuspended ? (
-          <div className="desktop-identity-business-loading"><Spin tip="正在切换身份分区…" /></div>
+          <Spin spinning tip="正在切换身份分区…"><div className="desktop-identity-business-loading" /></Spin>
         ) : (
-          <Suspense fallback={<div className="desktop-identity-business-loading"><Spin tip="正在加载工作台…" /></div>}>
+          <Suspense fallback={<Spin spinning tip="正在加载工作台…"><div className="desktop-identity-business-loading" /></Spin>}>
             <BusinessApp key={gateState.partitionKey} />
           </Suspense>
         )}
@@ -669,7 +676,7 @@ const DesktopIdentityGate: React.FC = () => {
   const locked = ['locked', 'online-authentication-required', 'offline-blocked'].includes(gateState.kind);
   return (
     <main className="desktop-identity-shell">
-      <Card className="desktop-identity-card" bordered={false}>
+      <Card className="desktop-identity-card" variant="borderless">
         <header className="desktop-identity-header">
           <div className="desktop-identity-mark" aria-hidden="true">
             <SafetyCertificateOutlined />
@@ -678,7 +685,7 @@ const DesktopIdentityGate: React.FC = () => {
         </header>
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
-          {gateState.kind === 'loading' && <Spin tip={'\u6b63\u5728\u51c6\u5907\u767b\u5f55\u2026'} />}
+          {gateState.kind === 'loading' && <Spin spinning tip={'\u6b63\u5728\u51c6\u5907\u767b\u5f55\u2026'}><div className="desktop-identity-loading-placeholder" /></Spin>}
           {gateState.kind === 'initialization-failed' && (
             <>
               <Alert

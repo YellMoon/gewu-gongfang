@@ -59,6 +59,14 @@ assert.ok(
 );
 assert.ok(gateStyle.includes('.desktop-identity-header'));
 assert.ok(gateStyle.includes('align-items: center'));
+assert.ok(gateSource.includes('<Card className="desktop-identity-card" variant="borderless">') && !gateSource.includes('<Card className="desktop-identity-card" bordered={false}>'),
+  'the login card must use the current Ant Design borderless variant API');
+assert.ok(!gateSource.includes('<Spin tip='),
+  'loading messages must use a nested Spin so Ant Design does not emit a runtime warning');
+assert.ok(gateSource.includes('desktop-identity-password-form') && gateSource.includes('onSubmit={event => {'),
+  'password login inputs must be inside a real submit form for keyboard and accessibility support');
+assert.ok(gateSource.includes('autoComplete="username"') && gateSource.includes('autoComplete="current-password"'),
+  'password login must expose standard browser autofill semantics');
 assert.ok(gateSource.includes('canStartBusinessRuntime'));
 assert.ok(gateSource.includes('desktopIdentityExpiryDelay'));
 assert.ok(gateSource.includes('const secureRelock = useCallback'));
