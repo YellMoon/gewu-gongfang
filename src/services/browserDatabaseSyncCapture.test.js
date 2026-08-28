@@ -39,6 +39,16 @@ for (const table of [
   assert.ok(source.includes(`this.recordAuthorityDraft('${table}'`), `browser database should queue typed drafts for ${table}`);
 }
 
+const syncTablesMatch = source.match(/const SYNC_TABLES: SyncTable\[\] = \[([\s\S]*?)\];/);
+assert.ok(syncTablesMatch, 'browser database should declare the authority projection sync table list');
+for (const table of [
+  'students', 'courses', 'schedules', 'payments', 'consumptions', 'teachers',
+  'grades', 'rooms', 'institutions', 'schools', 'assetRecords', 'assetCategories',
+]) {
+  assert.ok(syncTablesMatch[1].includes(`'${table}'`),
+    `authority projection refresh must include ${table} after a confirmed cloud command`);
+}
+
 assert.ok(source.includes(", 'create',"), 'browser database should queue create operations');
 assert.ok(source.includes(", 'update',"), 'browser database should queue update operations');
 assert.ok(source.includes(", 'delete',"), 'browser database should queue delete operations');

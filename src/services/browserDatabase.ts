@@ -76,6 +76,7 @@ const SYNC_TABLES: SyncTable[] = [
   'grades',
   'rooms',
   'institutions',
+  'schools',
   'assetRecords',
   'questions',
   'assetCategories',
