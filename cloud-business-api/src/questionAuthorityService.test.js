@@ -136,6 +136,8 @@ async function main() {
   assert.ok(importedWrite, 'an imported draft must bind the NAS objects inside the cloud question transaction');
   assert.ok(importedWrite[0].includes('storage_task_receipts') && importedWrite[0].includes('business.question_assets'),
     'only NAS-receipted media may become cloud question assets');
+  assert.ok(importedWrite[0].includes('source_file_name') && importedWrite[0].includes('source'),
+    'a confirmed import must retain the original file name as the cloud question source label');
   assert.ok(importedWrite[0].includes("task.status='drafts_prepared'") && importedWrite[0].includes("item.status='draft_prepared'"),
     'the binding must accept only the user-confirmed import item');
   assert.ok(importedWrite[0].includes("SET status='submitted'") && importedWrite[0].includes("phase='submitted'"),

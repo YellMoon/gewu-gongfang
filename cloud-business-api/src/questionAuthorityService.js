@@ -405,8 +405,10 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
              FROM import_item item
             WHERE (SELECT count(*) FROM all_media)=(SELECT count(*) FROM verified_media)
          ), inserted_question AS (
-           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula)
-           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8 FROM binding_complete
+           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,source)
+           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,task.source_file_name
+             FROM binding_complete
+             JOIN business.question_import_tasks task ON task.task_id=binding_complete.import_task_id
            RETURNING id,status
          ), inserted_content AS (
            INSERT INTO business.question_contents (question_id,tenant_id,stem,answer,explanation,options_json,rich_content_json,content_hash)
