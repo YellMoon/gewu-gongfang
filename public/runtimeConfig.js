@@ -62,22 +62,17 @@ function normalizeRuntimeConfig(input = {}, options = {}) {
   delete next.primaryHostEpochId;
   delete next.primaryHostGeneration;
   delete next.hostBaseUrl;
-  next.mainDbPath = next.mainDbPath || defaults.mainDbPath;
-  next.questionBankPath = trimTrailingSlash(next.questionBankPath || '');
-  next.questionBankCandidatePaths = Array.from(new Set(
-    (Array.isArray(next.questionBankCandidatePaths) ? next.questionBankCandidatePaths : [])
-      .map(trimTrailingSlash)
-      .filter(Boolean)
-  ));
-  if (next.questionBankPath && !next.questionBankCandidatePaths.includes(next.questionBankPath)) {
-    next.questionBankCandidatePaths.unshift(next.questionBankPath);
-  }
-  next.questionBankStoreId = String(next.questionBankStoreId || '').trim();
-  next.localCachePath = trimTrailingSlash(next.localCachePath || defaults.localCachePath);
-  next.nasBackupPath = trimTrailingSlash(next.nasBackupPath || '');
-  next.questionAssetPath = trimTrailingSlash(
-    next.questionAssetPath || (next.questionBankPath ? path.join(next.questionBankPath, 'assets') : '')
-  );
+  // A desktop installation carries only its own disposable cache and offline
+  // drafts.  Old host configurations pointed these fields at an external disk
+  // or NAS share; keeping even one of those values makes a normal login depend
+  // on a device that is no longer part of the product architecture.
+  next.mainDbPath = defaults.mainDbPath;
+  next.questionBankPath = '';
+  next.questionAssetPath = '';
+  next.questionBankCandidatePaths = [];
+  next.questionBankStoreId = '';
+  next.localCachePath = defaults.localCachePath;
+  next.nasBackupPath = '';
 
   return next;
 }
@@ -201,15 +196,13 @@ function applyRuntimeConfigToEnv(config, env = process.env) {
   env.GEWU_CLOUD_BUSINESS_IDENTITY_BASE_URL = config.cloudBusinessIdentityBaseUrl || '';
   delete env.GEWU_DESKTOP_SYNC_TOKEN;
   delete env.GEWU_CLOUD_RELAY_HOST_TOKEN;
+  delete env.QUESTION_BANK_ROOT;
+  delete env.QUESTION_BANK_UPLOAD_DIR;
+  delete env.QUESTION_BANK_CANDIDATE_ROOTS;
+  delete env.QUESTION_BANK_STORE_ID;
+  delete env.GEWU_NAS_BACKUP_PATH;
   env.DB_PATH = config.mainDbPath;
-  if (config.questionBankPath) env.QUESTION_BANK_ROOT = config.questionBankPath;
-  if (config.questionAssetPath) env.QUESTION_BANK_UPLOAD_DIR = config.questionAssetPath;
-  if (config.questionBankCandidatePaths?.length) {
-    env.QUESTION_BANK_CANDIDATE_ROOTS = config.questionBankCandidatePaths.join(';');
-  }
-  if (config.questionBankStoreId) env.QUESTION_BANK_STORE_ID = config.questionBankStoreId;
   if (config.localCachePath) env.GEWU_LOCAL_CACHE_PATH = config.localCachePath;
-  if (config.nasBackupPath) env.GEWU_NAS_BACKUP_PATH = config.nasBackupPath;
   return env;
 }
 
