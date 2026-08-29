@@ -55,6 +55,20 @@ async function connectAutomation(wsEndpoint) {
   return miniProgram;
 }
 
+async function connectLaunchedAutomation(wsEndpoint, { attempts = 20, pauseMilliseconds = 1000 } = {}) {
+  let lastConnectionError = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await connectAutomation(wsEndpoint);
+    } catch (error) {
+      if (!/ECONNREFUSED/u.test(String(error?.message || error))) throw error;
+      lastConnectionError = error;
+      if (attempt + 1 < attempts) await wait(pauseMilliseconds);
+    }
+  }
+  throw lastConnectionError;
+}
+
 async function reLaunchPage(miniProgram, route) {
   await miniProgram.evaluate(function requestReLaunch(nextRoute) {
     wx.reLaunch({ url: nextRoute });
@@ -321,7 +335,7 @@ async function run() {
           ...(process.env.WECHAT_DEVTOOLS_CLI ? { cliPath: process.env.WECHAT_DEVTOOLS_CLI } : {}),
         });
       } catch (launchError) {
-        miniProgram = await connectAutomation(`ws://127.0.0.1:${port}`);
+        miniProgram = await connectLaunchedAutomation(`ws://127.0.0.1:${port}`);
       }
     } else {
       const wsEndpoint = String(process.env.MINIAPP_AUTOMATION_WS_ENDPOINT || 'ws://127.0.0.1:9420').trim();

@@ -27,6 +27,12 @@ assert.ok(
   'runtime capture must accept the current DevTools tool-info shape when the legacy SDKVersion field is unavailable',
 );
 assert.ok(
+  captureRuntimeSource.includes('async function connectLaunchedAutomation(wsEndpoint')
+    && captureRuntimeSource.includes('/ECONNREFUSED/u')
+    && captureRuntimeSource.includes('await connectLaunchedAutomation(`ws://127.0.0.1:${port}`)'),
+  'a fresh DevTools launch must wait through a bounded connection-refused startup window without swallowing other automation errors',
+);
+assert.ok(
   captureRuntimeSource.includes('async function reLaunchPage(miniProgram, route)')
     && captureRuntimeSource.includes("wx.reLaunch({ url: nextRoute })"),
   'runtime capture must issue fixture route changes through the supported App.callFunction bridge',
