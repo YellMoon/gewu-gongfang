@@ -22,6 +22,53 @@ function importedQuestionIds(task) {
   });
 }
 
+function questionTypeFromImportCandidate(candidate) {
+  const types = Array.isArray(candidate.question_types) ? candidate.question_types : [candidate.question_types];
+  const normalized = types.map(value => String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-'));
+  if (normalized.some(value => /^(multi|multiple|multiple-choice)$/.test(value))) return '\u591a\u9009\u9898';
+  if (normalized.some(value => /^(single|single-choice|choice)$/.test(value))) return '\u5355\u9009\u9898';
+  if (normalized.some(value => value === 'experiment')) return '\u5b9e\u9a8c\u9898';
+  if (normalized.some(value => value === 'judge')) return '\u5224\u65ad\u9898';
+  return '\u89e3\u7b54\u9898';
+}
+
+function questionRecordFromImportItem(taskId, item) {
+  if (typeof taskId !== 'string' || !/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)
+    || !plainObject(item) || typeof item.itemId !== 'string' || !/^question_import_item_[A-Za-z0-9_-]{1,128}$/.test(item.itemId)
+    || !Number.isSafeInteger(item.itemIndex) || item.itemIndex < 0 || typeof item.contentHash !== 'string' || !/^[0-9a-f]{64}$/u.test(item.contentHash)
+    || !plainObject(item.candidate) || typeof item.candidate.stem !== 'string' || !item.candidate.stem.trim()
+    || !Array.isArray(item.candidate.options)) {
+    throw failure('REAL_QUESTION_IMPORT_PUBLISH_TASK_INVALID');
+  }
+  const candidate = item.candidate;
+  const answer = candidate.answer === null || candidate.answer === undefined ? null : String(candidate.answer);
+  const analysisValue = candidate.analysis === undefined ? candidate.explanation : candidate.analysis;
+  const analysis = analysisValue === null || analysisValue === undefined ? '' : String(analysisValue);
+  const richContent = candidate.rich_content === null || candidate.rich_content === undefined ? null : candidate.rich_content;
+  if (!(richContent === null || plainObject(richContent))) throw failure('REAL_QUESTION_IMPORT_PUBLISH_TASK_INVALID');
+  const difficulty = Number.isSafeInteger(candidate.difficulty) && candidate.difficulty >= 1 && candidate.difficulty <= 5 ? candidate.difficulty : 3;
+  return {
+    id: `question-import-${item.contentHash.slice(0, 40)}`,
+    subject: typeof candidate.subject === 'string' && candidate.subject.trim() ? candidate.subject.trim() : '\u7269\u7406',
+    type: questionTypeFromImportCandidate(candidate), difficulty, content: candidate.stem,
+    options: candidate.options, answer, analysis, rich_content: richContent,
+    knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: {}, has_formula: Boolean(candidate.has_formula),
+    import_task_id: taskId, import_item_id: item.itemId, import_item_index: item.itemIndex, import_content_hash: item.contentHash,
+  };
+}
+
+function questionCreateCommand(question) {
+  if (!plainObject(question) || typeof question.id !== 'string' || !question.id) throw failure('REAL_QUESTION_IMPORT_PUBLISH_QUESTION_INVALID');
+  const type = 'question.create.v1';
+  const payload = { record: question };
+  return {
+    commandId: `question-import-create-${crypto.createHash('sha256').update(question.id, 'utf8').digest('hex').slice(0, 40)}`,
+    payloadHash: crypto.createHash('sha256').update(stableJson({ type, payload }), 'utf8').digest('hex'),
+    type,
+    payload,
+  };
+}
+
 function changesForPublishedQuestion(question) {
   if (!plainObject(question) || typeof question.id !== 'string' || !question.id
     || typeof question.subject !== 'string' || !question.subject || typeof question.type !== 'string' || !question.type
@@ -66,16 +113,26 @@ async function publishImportedSamples({ fetchImpl, sessionToken, deviceId, baseU
   if (typeof fetchImpl !== 'function' || typeof sessionToken !== 'string' || !sessionToken || typeof deviceId !== 'string' || !deviceId
     || typeof baseUrl !== 'string' || !Array.isArray(taskIds) || taskIds.length !== 2) throw failure('REAL_QUESTION_IMPORT_PUBLISH_INPUT_INVALID');
   const root = baseUrl.replace(/\/$/, '');
-  const desiredIds = [];
+  const desiredRecords = [];
   for (const taskId of taskIds) {
     const taskBody = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-imports/${encodeURIComponent(taskId)}`);
-    const ids = importedQuestionIds(taskBody.task);
-    if (!ids.length) throw failure('REAL_QUESTION_IMPORT_PUBLISH_TASK_INVALID');
-    desiredIds.push(ids[0]);
+    if (!plainObject(taskBody.task) || !Array.isArray(taskBody.task.items) || !taskBody.task.items.length) throw failure('REAL_QUESTION_IMPORT_PUBLISH_TASK_INVALID');
+    desiredRecords.push(questionRecordFromImportItem(taskId, taskBody.task.items[0]));
   }
   const listed = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/questions?limit=200`);
   if (!Array.isArray(listed.questions)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
-  const selected = desiredIds.map(id => listed.questions.find(question => question?.id === id));
+  const existing = new Map(listed.questions.filter(question => question && typeof question.id === 'string').map(question => [question.id, question]));
+  for (const record of desiredRecords) {
+    if (!existing.has(record.id)) {
+      await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/commands`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(questionCreateCommand(record)),
+      });
+    }
+  }
+  const created = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/questions?limit=200`);
+  if (!Array.isArray(created.questions)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
+  const desiredIds = desiredRecords.map(record => record.id);
+  const selected = desiredIds.map(id => created.questions.find(question => question?.id === id));
   if (selected.some(question => !question)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_NOT_FOUND');
   for (const question of selected) {
     if (question.status !== 'published') {
@@ -202,7 +259,7 @@ async function runFromEnvironment(env = process.env) {
   }
 }
 
-module.exports = Object.freeze({ importedQuestionIds, changesForPublishedQuestion, questionPublishCommand, publishImportedSamples, fixtureAccount, fixtureTeacherIdentity, verifyMiniappBrowse, verifyMultiRoleQuestionAccess, runFromEnvironment });
+module.exports = Object.freeze({ importedQuestionIds, questionTypeFromImportCandidate, questionRecordFromImportItem, questionCreateCommand, changesForPublishedQuestion, questionPublishCommand, publishImportedSamples, fixtureAccount, fixtureTeacherIdentity, verifyMiniappBrowse, verifyMultiRoleQuestionAccess, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))
