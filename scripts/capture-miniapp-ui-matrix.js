@@ -219,10 +219,10 @@ function fixtureResponse(request, scenario) {
   return { statusCode: 200, body: { success: true, data: {} } };
 }
 
-function startFixtureServer(port = FIXTURE_PORT) {
+function startFixtureServer(port = FIXTURE_PORT, initialScenario = null) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('fixture server port is invalid');
   const requests = [];
-  let activeScenario = null;
+  let activeScenario = initialScenario;
   const server = http.createServer((request, response) => {
     requests.push({ scenarioId: activeScenario?.id || '', method: request.method, path: String(request.url || '').replace(/([?&])_t=\d+/g, '$1_t=[timestamp]') });
     const fixture = fixtureResponse(request, activeScenario);
@@ -418,7 +418,14 @@ async function run() {
 
 if (require.main === module) {
   if (process.env.MINIAPP_UI_FIXTURE_SERVER === '1') {
-    startFixtureServer().then(({ server }) => {
+    const standaloneScenarioId = String(process.env.MINIAPP_UI_FIXTURE_SCENARIO_ID || '').trim();
+    const standaloneScenario = standaloneScenarioId
+      ? runtimeScenarios.find(scenario => scenario.id === standaloneScenarioId)
+      : null;
+    if (standaloneScenarioId && !standaloneScenario) {
+      throw new Error(`miniapp fixture scenario is unknown: ${standaloneScenarioId}`);
+    }
+    startFixtureServer(FIXTURE_PORT, standaloneScenario).then(({ server }) => {
       console.log(`[miniapp-ui] fixture server listening at ${FIXTURE_BASE}`);
       const close = () => server.close(() => process.exit(0));
       process.once('SIGINT', close);

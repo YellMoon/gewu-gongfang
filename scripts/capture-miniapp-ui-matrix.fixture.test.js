@@ -101,6 +101,16 @@ function requestBytes(pathname, token, port = TEST_PORT) {
       status: 'published',
     });
 
+    const isolatedPort = TEST_PORT + 1;
+    const { server: forbiddenServer } = await startFixtureServer(isolatedPort, { fixtureMode: 'question-forbidden' });
+    try {
+      const forbiddenQuestions = await request('/api/business/miniapp-question-previews', 'fixture-visitor', isolatedPort);
+      assert.strictEqual(forbiddenQuestions.statusCode, 403,
+        'a standalone fixture must be able to reproduce an access-denied question-bank state without a real account');
+    } finally {
+      await new Promise(resolve => forbiddenServer.close(resolve));
+    }
+
     const exportTask = await request('/api/business/miniapp-paper-export-tasks', 'fixture-paper-teacher', TEST_PORT, 'POST');
     assert.strictEqual(exportTask.statusCode, 202);
     assert.deepStrictEqual(exportTask.body.task, {
