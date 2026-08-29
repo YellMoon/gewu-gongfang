@@ -97,7 +97,7 @@ def is_test_account(value):
 
 
 def clear_test_session(project):
-    current = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => wx.getStorageSync('user_info') || null"])
+    current = read_refreshed_test_user(project)
     if not isinstance(current, dict) or not is_test_account(current.get("id")):
         return False
     run_wx_api(project, "removeStorageSync", ["auth_token"])
@@ -128,6 +128,48 @@ def wait_for_simulator_runtime(project, *, attempts=4, pause_seconds=1):
     raise RuntimeError("REAL_MINIAPP_ROLE_UI_RUNTIME_UNAVAILABLE")
 
 
+def is_transient_post_refresh_automator_error(error):
+    message = str(error)
+    return "timeout waiting for automator response" in message or "wx is not defined" in message
+
+
+def read_refreshed_test_user(project, *, attempts=3, pause_seconds=1):
+    if not isinstance(attempts, int) or attempts < 1 or not isinstance(pause_seconds, (int, float)) or pause_seconds < 0:
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_TEST_USER_READ_INPUT_INVALID")
+    command = ["automation_evaluate", "--project", str(project), "--fn-source", "() => wx.getStorageSync('user_info') || null"]
+    last_transient_error = None
+    for attempt in range(attempts):
+        try:
+            return run_wechatide(command)
+        except RuntimeError as error:
+            if not is_transient_post_refresh_automator_error(error):
+                raise
+            last_transient_error = error
+            if attempt + 1 < attempts:
+                time.sleep(pause_seconds)
+    raise last_transient_error
+
+
+def read_refreshed_identity(project, *, attempts=3, pause_seconds=1):
+    if not isinstance(attempts, int) or attempts < 1 or not isinstance(pause_seconds, (int, float)) or pause_seconds < 0:
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_IDENTITY_READ_INPUT_INVALID")
+    command = [
+        "automation_evaluate", "--project", str(project),
+        "--fn-source", "() => { const user = wx.getStorageSync('user_info'); return { accountId: user && user.id, role: user && user.role, identityKind: user && user.identity_kind || null, accountState: user && user.account_state }; }",
+    ]
+    last_transient_error = None
+    for attempt in range(attempts):
+        try:
+            return run_wechatide(command)
+        except RuntimeError as error:
+            if not is_transient_post_refresh_automator_error(error):
+                raise
+            last_transient_error = error
+            if attempt + 1 < attempts:
+                time.sleep(pause_seconds)
+    raise last_transient_error
+
+
 def verify_identity(project, session):
     key = ACCOUNT_PATTERN.fullmatch(session["accountId"]).group(1)
     user = user_for_session(key, session["accountId"])
@@ -138,7 +180,7 @@ def verify_identity(project, session):
     run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
     run_wechatide(["simulator_refresh", "--project", str(project)], timeout=60)
     wait_for_simulator_runtime(project)
-    result = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => { const user = wx.getStorageSync('user_info'); return { accountId: user && user.id, role: user && user.role, identityKind: user && user.identity_kind || null, accountState: user && user.account_state }; }"])
+    result = read_refreshed_identity(project)
     if not isinstance(result, dict) or result.get("accountId") != session["accountId"] or result.get("role") != user["role"]:
         raise RuntimeError(f"REAL_MINIAPP_ROLE_UI_INJECTION_INVALID:{json.dumps(result, ensure_ascii=True)[:500]}")
     return {key: result.get(key) for key in ("accountId", "role", "identityKind", "accountState")}
@@ -150,9 +192,13 @@ def capture_page_screenshot(project, role, route, screenshots_dir):
     filename = f"{role}-{route.strip('/').replace('/', '-')}.png"
     target = screenshots_dir.resolve() / filename
     target.parent.mkdir(parents=True, exist_ok=True)
-    run_wechatide([
-        "automation_viewport_action", "--project", str(project), "--action", "screenshot", "--wait", "4", "--path", str(target),
-    ])
+    try:
+        run_wechatide([
+            "simulator_screenshot", "--project", str(project), "--wait", "4", "--path", str(target),
+        ])
+    except RuntimeError as error:
+        if "timeout waiting for automator response" not in str(error) or not target.is_file() or target.stat().st_size < 8:
+            raise
     if not target.is_file() or target.stat().st_size < 8:
         raise RuntimeError("REAL_MINIAPP_ROLE_UI_SCREENSHOT_MISSING")
     return target

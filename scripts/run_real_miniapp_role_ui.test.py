@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, is_test_account, parse_session_receipt, user_for_session, wait_for_simulator_runtime, verify_identity, verify_pages
+from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, clear_test_session, is_test_account, parse_session_receipt, user_for_session, wait_for_simulator_runtime, verify_identity, verify_pages
 
 
 class RoleUiReceiptTests(unittest.TestCase):
@@ -115,8 +115,7 @@ class RoleUiReceiptTests(unittest.TestCase):
 
     def test_captures_only_a_nonempty_page_screenshot_under_the_requested_directory(self):
         def wechatide(arguments, **_kwargs):
-            self.assertEqual(arguments[0], "automation_viewport_action")
-            self.assertEqual(arguments[arguments.index("--action") + 1], "screenshot")
+            self.assertEqual(arguments[0], "simulator_screenshot")
             self.assertEqual(arguments[arguments.index("--wait") + 1], "4")
             target = Path(arguments[arguments.index("--path") + 1])
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -129,6 +128,24 @@ class RoleUiReceiptTests(unittest.TestCase):
                     target = capture_page_screenshot(Path("C:/miniapp"), "teacher", "pages/courses/index", Path(directory))
                 self.assertEqual(target.name, "teacher-pages-courses-index.png")
                 self.assertEqual(target.read_bytes(), b"PNG evidence")
+
+    def test_accepts_a_screenshot_timeout_only_when_the_image_was_written(self):
+        def wechatide(arguments, **_kwargs):
+            target = Path(arguments[arguments.index("--path") + 1])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"PNG evidence")
+            raise RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:timeout waiting for automator response")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+                target = capture_page_screenshot(Path("C:/miniapp"), "teacher", "pages/courses/index", Path(directory))
+            self.assertEqual(target.read_bytes(), b"PNG evidence")
+
+    def test_rejects_a_screenshot_timeout_without_an_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:timeout waiting for automator response")):
+                with self.assertRaisesRegex(RuntimeError, "timeout waiting for automator response"):
+                    capture_page_screenshot(Path("C:/miniapp"), "teacher", "pages/courses/index", Path(directory))
 
     def test_identity_injection_waits_for_the_runtime_after_one_simulator_refresh(self):
         account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
@@ -154,6 +171,76 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertIn("auth_session_state_v1", removed_keys)
         self.assertIn(["simulator_refresh", "--project", str(Path("C:/miniapp"))], wechatide_calls)
         self.assertEqual(identity["role"], "student")
+
+    def test_identity_read_retries_only_the_post_refresh_automator_timeout(self):
+        account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
+        identity_reads = iter([
+            RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:timeout waiting for automator response"),
+            {"accountId": account_id, "role": "student", "identityKind": None, "accountState": "formal"},
+        ])
+
+        def wechatide(arguments, **_kwargs):
+            if arguments[0] != "automation_evaluate":
+                return {"success": True}
+            source = arguments[arguments.index("--fn-source") + 1]
+            if "ready:" in source:
+                return {"ready": True}
+            result = next(identity_reads)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        session = {"accountId": account_id, "token": "ticket.signature"}
+        with patch("run_real_miniapp_role_ui.run_wx_api"), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+            identity = verify_identity(Path("C:/miniapp"), session)
+        self.assertEqual(identity["accountId"], account_id)
+        sleep.assert_called_once_with(1)
+
+    def test_identity_read_retries_when_wx_is_temporarily_unavailable_after_refresh(self):
+        account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
+        identity_reads = iter([
+            RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:wx is not defined"),
+            {"accountId": account_id, "role": "student", "identityKind": None, "accountState": "formal"},
+        ])
+
+        def wechatide(arguments, **_kwargs):
+            if arguments[0] != "automation_evaluate":
+                return {"success": True}
+            source = arguments[arguments.index("--fn-source") + 1]
+            if "ready:" in source:
+                return {"ready": True}
+            result = next(identity_reads)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        session = {"accountId": account_id, "token": "ticket.signature"}
+        with patch("run_real_miniapp_role_ui.run_wx_api"), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+            identity = verify_identity(Path("C:/miniapp"), session)
+        self.assertEqual(identity["accountId"], account_id)
+        sleep.assert_called_once_with(1)
+
+    def test_cleanup_retries_a_transient_wx_unavailable_error_then_removes_only_e2e_keys(self):
+        account_id = "e2e-account-visitor-e2e-role-test-0123456789abcdef"
+        reads = iter([
+            RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:wx is not defined"),
+            {"id": account_id},
+        ])
+        removed = []
+
+        def wechatide(_arguments, **_kwargs):
+            result = next(reads)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        def wx_api(_project, method, args):
+            removed.append((method, args[0]))
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.run_wx_api", side_effect=wx_api), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+            self.assertTrue(clear_test_session(Path("C:/miniapp")))
+        sleep.assert_called_once_with(1)
+        self.assertEqual([key for _method, key in removed], ["auth_token", "user_info", "user_permissions", "auth_session_generation", "auth_session_state_v1"])
 
 
 if __name__ == "__main__":
