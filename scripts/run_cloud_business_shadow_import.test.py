@@ -7,6 +7,7 @@ from pathlib import Path
 from run_cloud_business_shadow_import import (
     REQUIRED_COUNTS,
     count_query,
+    create_shadow_database_command,
     database_exists_query,
     parse_counts,
     read_plan,
@@ -63,6 +64,14 @@ class CloudBusinessShadowImportTests(unittest.TestCase):
         self.assertNotIn("'", query)
         with self.assertRaisesRegex(RuntimeError, "CLOUD_BUSINESS_SHADOW_PLAN_INVALID"):
             database_exists_query("gewu-cloud-shadow")
+
+    def test_create_database_command_has_no_invalid_database_flag(self):
+        command = create_shadow_database_command("gewu_cloud_shadow_20260830")
+        self.assertEqual(
+            command,
+            "docker exec gewu-postgres17 createdb -U gewu_app 'gewu_cloud_shadow_20260830'",
+        )
+        self.assertNotIn(" -d ", command)
 
 
 if __name__ == "__main__":

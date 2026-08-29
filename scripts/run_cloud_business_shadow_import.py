@@ -69,6 +69,14 @@ def database_exists_query(target):
     return f"SELECT 1 FROM pg_database WHERE datname = $${target}$$;"
 
 
+def create_shadow_database_command(target):
+    if not isinstance(target, str) or DATABASE_NAME.fullmatch(target) is None:
+        raise failure("CLOUD_BUSINESS_SHADOW_PLAN_INVALID")
+    # createdb does not take a database-selection flag: it connects to its
+    # default maintenance database and creates the validated target.
+    return f"docker exec {POSTGRES_CONTAINER} createdb -U {DATABASE_ROLE} {quote(target)}"
+
+
 def parse_counts(output, expected):
     lines = [line.strip() for line in str(output).splitlines() if line.strip()]
     try:
@@ -104,7 +112,7 @@ def run_shadow_import(plan_dir):
         ).strip()
         if exists:
             raise failure("CLOUD_BUSINESS_SHADOW_DATABASE_EXISTS")
-        remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} createdb -U {DATABASE_ROLE} -d {PRODUCTION_DATABASE} {quote(target)}")
+        remote_exec(ssh, create_shadow_database_command(target))
         created = True
         remote_exec(ssh, f"mkdir -p {quote(remote_dir)}")
         staged = True
