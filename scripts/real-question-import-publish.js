@@ -90,6 +90,88 @@ async function publishImportedSamples({ fetchImpl, sessionToken, deviceId, baseU
   return { questionIds: desiredIds, publishedCount: published.length };
 }
 
+async function responseBody(response) {
+  const body = await response.json().catch(() => ({}));
+  return { status: response.status, body };
+}
+
+async function fixtureAccount(appPool, key) {
+  if (!/^(visitor|teacher|student|family)$/u.test(key)) throw failure('REAL_QUESTION_ROLE_ACCESS_INPUT_INVALID');
+  const result = await appPool.query(
+    'SELECT account_id AS "accountId" FROM business.miniapp_cloud_accounts WHERE account_id LIKE $1 ORDER BY account_id',
+    [`e2e-account-${key}-%`],
+  );
+  if (!Array.isArray(result?.rows) || result.rows.length !== 1 || typeof result.rows[0]?.accountId !== 'string') {
+    throw failure('REAL_QUESTION_ROLE_ACCESS_IDENTITY_INVALID');
+  }
+  return result.rows[0].accountId;
+}
+
+async function fixtureTeacherIdentity(writerPool) {
+  const result = await writerPool.query(
+    `SELECT account.authority_id AS "authorityId",account.account_id AS "accountId",contact.normalized_value_hash AS "phoneHmac"
+       FROM vnext_control_plane.vnext_accounts account
+       JOIN vnext_control_plane.vnext_verified_contacts contact
+         ON contact.account_id=account.account_id AND contact.contact_type='phone' AND contact.verification_state='verified' AND contact.revoked_at IS NULL
+      WHERE account.account_id LIKE 'e2e-account-teacher-%' AND account.status='active'
+      ORDER BY account.account_id`,
+  );
+  if (!Array.isArray(result?.rows) || result.rows.length !== 1 || !plainObject(result.rows[0])) throw failure('REAL_QUESTION_ROLE_ACCESS_IDENTITY_INVALID');
+  const identity = result.rows[0];
+  if (typeof identity.authorityId !== 'string' || !identity.authorityId || typeof identity.accountId !== 'string' || !identity.accountId
+    || typeof identity.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/u.test(identity.phoneHmac)) throw failure('REAL_QUESTION_ROLE_ACCESS_IDENTITY_INVALID');
+  return identity;
+}
+
+async function verifyMiniappBrowse({ fetchImpl, token, baseUrl, expectedQuestionIds }) {
+  const { status, body } = await responseBody(await fetchImpl(`${baseUrl}/api/business/miniapp-question-previews`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  }));
+  if (status !== 200 || body?.ok !== true || !Array.isArray(body.questions)) throw failure('REAL_QUESTION_ROLE_ACCESS_MINIAPP_FAILED');
+  const found = expectedQuestionIds.map(id => body.questions.find(question => question?.id === id));
+  if (found.some(question => !question || typeof question.answer !== 'string' || typeof question.explanation !== 'string')) {
+    throw failure('REAL_QUESTION_ROLE_ACCESS_CONTENT_INVALID');
+  }
+  return body.questions.length;
+}
+
+async function verifyMultiRoleQuestionAccess({ fetchImpl, appPool, writerPool, runtimeModules, ticketSecret, miniappTicketSecret, baseUrl, expectedQuestionIds }) {
+  if (typeof fetchImpl !== 'function' || !Array.isArray(expectedQuestionIds) || expectedQuestionIds.length !== 2) throw failure('REAL_QUESTION_ROLE_ACCESS_INPUT_INVALID');
+  const cloudAcceptance = require('./real-cloud-business-acceptance');
+  const accounts = {};
+  for (const key of ['visitor', 'student', 'family']) accounts[key] = await fixtureAccount(appPool, key);
+  const miniappCounts = {};
+  for (const key of ['visitor', 'student', 'family']) {
+    miniappCounts[key] = await verifyMiniappBrowse({
+      fetchImpl, token: cloudAcceptance.makeMiniappSessionToken(miniappTicketSecret, accounts[key]), baseUrl, expectedQuestionIds,
+    });
+  }
+  const identity = await fixtureTeacherIdentity(writerPool);
+  const fixture = cloudAcceptance.createOnlineRegistrationRequest(runtimeModules, ticketSecret, identity);
+  let persistedFixture = { sessionId: null, installationId: fixture.body.installationId, deviceId: fixture.deviceId };
+  try {
+    const registration = await responseBody(await fetchImpl(`${baseUrl}/api/desktop/online-registration`, {
+      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(fixture.body),
+    }));
+    if (registration.status !== 200 || registration.body?.ok !== true || typeof registration.body.sessionToken !== 'string' || !registration.body.sessionToken
+      || typeof registration.body.sessionId !== 'string' || !registration.body.sessionId) throw failure('REAL_QUESTION_ROLE_ACCESS_TEACHER_REGISTRATION_FAILED');
+    persistedFixture = { sessionId: registration.body.sessionId, installationId: fixture.body.installationId, deviceId: fixture.deviceId };
+    const context = await responseBody(await fetchImpl(`${baseUrl}/api/desktop/session-context`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${registration.body.sessionToken}` },
+    }));
+    if (context.status !== 200 || context.body?.ok !== true || !Array.isArray(context.body.roles) || !context.body.roles.includes('teacher')) {
+      throw failure('REAL_QUESTION_ROLE_ACCESS_TEACHER_CONTEXT_FAILED');
+    }
+    const desktop = await request(fetchImpl, registration.body.sessionToken, fixture.deviceId, `${baseUrl}/api/desktop/question-bank/questions?limit=200`);
+    if (!Array.isArray(desktop.questions) || expectedQuestionIds.some(id => !desktop.questions.some(question => question?.id === id && question?.status === 'published'))) {
+      throw failure('REAL_QUESTION_ROLE_ACCESS_TEACHER_QUESTION_FAILED');
+    }
+    return { miniappCounts, teacherQuestionCount: desktop.questions.length };
+  } finally {
+    await cloudAcceptance.revokeOnlineRegistrationAcceptance(writerPool, persistedFixture);
+  }
+}
+
 async function runFromEnvironment(env = process.env) {
   const cloudAcceptance = require('./real-cloud-business-acceptance');
   const taskIds = [env.REAL_QUESTION_IMPORT_EXAM_TASK_ID, env.REAL_QUESTION_IMPORT_LECTURE_TASK_ID];
@@ -109,14 +191,18 @@ async function runFromEnvironment(env = process.env) {
       fetchImpl: fetch, sessionToken: registration.sessionToken, deviceId: registration.fixture.deviceId,
       baseUrl: cloudAcceptance.PUBLIC_BASE_URL, taskIds,
     });
-    return { ok: true, ...result };
+    const roleAccess = await verifyMultiRoleQuestionAccess({
+      fetchImpl: fetch, appPool, writerPool, runtimeModules, ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET,
+      miniappTicketSecret: env.CLOUD_MINIAPP_TICKET_SECRET, baseUrl: cloudAcceptance.PUBLIC_BASE_URL, expectedQuestionIds: result.questionIds,
+    });
+    return { ok: true, ...result, roleAccess };
   } finally {
     if (registration?.fixture) await cloudAcceptance.revokeOnlineRegistrationAcceptance(writerPool, registration.fixture);
     await Promise.allSettled([appPool.end(), writerPool.end()]);
   }
 }
 
-module.exports = Object.freeze({ importedQuestionIds, changesForPublishedQuestion, questionPublishCommand, publishImportedSamples, runFromEnvironment });
+module.exports = Object.freeze({ importedQuestionIds, changesForPublishedQuestion, questionPublishCommand, publishImportedSamples, fixtureAccount, fixtureTeacherIdentity, verifyMiniappBrowse, verifyMultiRoleQuestionAccess, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))
