@@ -20,9 +20,9 @@ def test_paths_and_commands_are_exact_and_nonrecursive():
     assert module.CONTAINER_SCRIPT == "/app/real-cloud-business-acceptance.js"
     assert module.CONTAINER == "gewu-cloud-business-api"
     commands = "\n".join([
-        module.remote_preflight_command(),
-        module.container_preflight_command(),
+        module.prepare_command(),
         module.copy_command(),
+        module.copy_verification_command(),
         module.grant_owner_command(),
         module.revoke_owner_command(),
         module.execute_command(),
@@ -32,6 +32,9 @@ def test_paths_and_commands_are_exact_and_nonrecursive():
     assert "docker rm" not in commands
     assert "docker stop" not in commands
     assert "docker exec gewu-cloud-business-api node /app/real-cloud-business-acceptance.js" in commands
+    assert "rm -f -- /tmp/gewu-real-cloud-business-acceptance.js" in module.prepare_command()
+    assert "docker exec -u 0 gewu-cloud-business-api rm -f -- /app/real-cloud-business-acceptance.js" in module.prepare_command()
+    assert module.copy_verification_command() == "docker exec gewu-cloud-business-api test -s /app/real-cloud-business-acceptance.js"
     assert module.grant_owner_command().endswith("-c 'GRANT vnext_pg17_owner, vnext_pg17_business_owner TO vnext_pg17_writer'")
     assert module.revoke_owner_command().endswith("-c 'REVOKE vnext_pg17_owner, vnext_pg17_business_owner FROM vnext_pg17_writer'")
     assert "docker exec -u 0 gewu-cloud-business-api rm -f -- /app/real-cloud-business-acceptance.js" in module.cleanup_command()

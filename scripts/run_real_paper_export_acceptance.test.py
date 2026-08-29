@@ -28,4 +28,7 @@ else:
 
 assert "docker cp" in MODULE.copy_artifact_command("pdf")
 assert "rm -f" in MODULE.cleanup_command()
+assert "rm -f" in MODULE.prepare_command()
+assert "docker exec -u 0 gewu-cloud-business-api rm -f" in MODULE.prepare_command()
+assert MODULE.copy_verification_command() == "docker exec gewu-cloud-business-api test -s '/app/real-paper-export-acceptance.js' && docker exec gewu-cloud-business-api test -s '/app/real-cloud-business-acceptance.js'"
 print("real paper export runner checks passed")

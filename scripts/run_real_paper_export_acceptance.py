@@ -47,6 +47,15 @@ def copy_artifact_command(format_name):
     return f"docker cp {CONTAINER}:{source} '{REMOTE_DIR}/{destination}'"
 
 
+def prepare_command():
+    paths = " ".join(repr(source) for source, _ in ARTIFACTS.values())
+    return f"docker exec -u 0 {CONTAINER} rm -f -- '{CONTAINER_SCRIPT}' '{CONTAINER_HELPER}' {paths}; rm -rf -- '{REMOTE_DIR}' && mkdir -p '{REMOTE_DIR}'"
+
+
+def copy_verification_command():
+    return f"docker exec {CONTAINER} test -s '{CONTAINER_SCRIPT}' && docker exec {CONTAINER} test -s '{CONTAINER_HELPER}'"
+
+
 def cleanup_command():
     paths = " ".join(repr(source) for source, _ in ARTIFACTS.values())
     return f"docker exec -u 0 {CONTAINER} rm -f -- '{CONTAINER_SCRIPT}' '{CONTAINER_HELPER}' {paths}; rm -rf -- '{REMOTE_DIR}'"
@@ -59,7 +68,7 @@ def run():
     ssh = deploy.connect()
     uploaded = False
     try:
-        deploy.run(ssh, f"rm -rf -- '{REMOTE_DIR}' && mkdir -p '{REMOTE_DIR}'")
+        deploy.run(ssh, prepare_command())
         sftp = ssh.open_sftp()
         try:
             sftp.put(str(LOCAL_SCRIPT), f"{REMOTE_DIR}/real-paper-export-acceptance.js")
@@ -67,9 +76,9 @@ def run():
         finally:
             sftp.close()
         uploaded = True
-        deploy.run(ssh, f"docker exec -u 0 {CONTAINER} test ! -e '{CONTAINER_SCRIPT}' && docker exec -u 0 {CONTAINER} test ! -e '{CONTAINER_HELPER}'")
         deploy.run(ssh, f"docker cp '{REMOTE_DIR}/real-paper-export-acceptance.js' {CONTAINER}:{CONTAINER_SCRIPT}")
         deploy.run(ssh, f"docker cp '{REMOTE_DIR}/real-cloud-business-acceptance.js' {CONTAINER}:{CONTAINER_HELPER}")
+        deploy.run(ssh, copy_verification_command())
         output, _ = deploy.run(ssh, f"docker exec {CONTAINER} node {CONTAINER_SCRIPT}", timeout=300)
         value = receipt(output)
         for format_name, (_, remote_name) in ARTIFACTS.items():

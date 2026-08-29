@@ -54,16 +54,16 @@ def expected_release_version():
     return value
 
 
-def remote_preflight_command():
-    return f"test ! -e {REMOTE_SCRIPT}"
-
-
-def container_preflight_command():
-    return f"docker exec {CONTAINER} test ! -e {CONTAINER_SCRIPT}"
+def prepare_command():
+    return f"rm -f -- {REMOTE_SCRIPT}; docker exec -u 0 {CONTAINER} rm -f -- {CONTAINER_SCRIPT}"
 
 
 def copy_command():
     return f"docker cp {REMOTE_SCRIPT} {CONTAINER}:{CONTAINER_SCRIPT}"
+
+
+def copy_verification_command():
+    return f"docker exec {CONTAINER} test -s {CONTAINER_SCRIPT}"
 
 
 def execute_command():
@@ -139,8 +139,7 @@ def run_acceptance():
     cleanup_required = False
     owner_granted = False
     try:
-        deploy.run(ssh, remote_preflight_command())
-        deploy.run(ssh, container_preflight_command())
+        deploy.run(ssh, prepare_command())
         sftp = ssh.open_sftp()
         try:
             sftp.put(str(LOCAL_SCRIPT), REMOTE_SCRIPT)
@@ -148,6 +147,7 @@ def run_acceptance():
             sftp.close()
         cleanup_required = True
         deploy.run(ssh, copy_command())
+        deploy.run(ssh, copy_verification_command())
         deploy.run(ssh, grant_owner_command())
         owner_granted = True
         try:
