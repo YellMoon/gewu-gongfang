@@ -39,7 +39,7 @@ const { compactFormulaText, renderPaperExport } = require('./paperExportRenderer
   assert.ok(wordXml.indexOf('Second stem') < wordXml.indexOf('答案：A'), 'end-position answers must follow every question in Word');
   const wordArchive = await JSZip.loadAsync(word.bytes);
   assert.ok(Object.keys(wordArchive.files).some(name => /^word\/media\/.+\.png$/.test(name)), 'Word must embed verified question images rather than omit them');
-  assert.ok(Object.keys(wordArchive.files).some(name => /^word\/media\/.+\.svg$/.test(name)), 'Word must embed canonical formulas as vector images');
+  assert.ok(Object.keys(wordArchive.files).some(name => /^word\/media\/.+\.png$/.test(name)), 'Word must embed a raster formula representation that Microsoft Word can display');
   assert.deepStrictEqual(assetCalls, [{ questionId: 'q1', assetKey: 'a'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png', assetType: 'image' }, { questionId: 'q1', assetKey: 'b'.repeat(64), fileName: 'formula-preview.png', mimeType: 'image/png', assetType: 'formula_preview' }]);
   const wordAfter = await renderPaperExport({ ...input, format: 'word', answerPosition: 'after' }, { resolveQuestionAsset });
   const wordAfterXml = await (await JSZip.loadAsync(wordAfter.bytes)).file('word/document.xml').async('string');
@@ -70,8 +70,10 @@ const { compactFormulaText, renderPaperExport } = require('./paperExportRenderer
   const richAnswerIndex = richXml.indexOf('Structured answer');
   assert.ok(richAnswerIndex < richXml.indexOf('<w:drawing>', richAnswerIndex),
     'an answer formula must retain its position after its answer text instead of moving into the question body');
-  const richMedia = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
-  assert.ok(richMedia.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must be rendered as vectors');
+  const richFormulaSvg = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
+  const richFormulaPng = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.png$/.test(name));
+  assert.strictEqual(richFormulaSvg.length, 0, 'Word formula runs must not select SVG because current Microsoft Word renders those formula slots blank');
+  assert.ok(richFormulaPng.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must embed a Word-readable PNG');
   const richPdf = await renderPaperExport({
     format: 'pdf', title: 'Structured formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-rich', stem: 'Fallback stem', answer: 'A', explanation: 'Explanation', richContent: productionRichContent }],

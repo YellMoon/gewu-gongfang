@@ -317,11 +317,14 @@ function bodyRows(items, answerPosition) {
 }
 
 function wordMediaRun(media) {
+  const formula = media.kind === 'formula';
   return new ImageRun({
-    data: media.bytes,
-    type: media.kind === 'formula' ? 'svg' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
-    ...(media.kind === 'formula' ? { fallback: { data: media.fallbackBytes, type: 'png' } } : {}),
-    transformation: media.kind === 'formula' ? { width: 240, height: 72 } : { width: 420, height: 280 },
+    // Word 2021 may select an embedded SVG formula and render it as a blank
+    // placeholder even when a PNG fallback is present. Use the verified PNG
+    // directly so formula content remains visible in desktop Word.
+    data: formula ? media.fallbackBytes : media.bytes,
+    type: formula ? 'png' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
+    transformation: formula ? { width: 240, height: 72 } : { width: 420, height: 280 },
   });
 }
 
