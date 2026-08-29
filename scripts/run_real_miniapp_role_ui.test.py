@@ -60,6 +60,24 @@ class RoleUiReceiptTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "project closed"):
                 verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
 
+    def test_retries_once_only_when_the_refreshed_runtime_is_observably_back_on_home(self):
+        calls = []
+        routes = iter([
+            {"route": "pages/index/index", "user": "student"},
+            {"route": "pages/schedule/index", "user": "student"},
+        ])
+
+        def wechatide(arguments, **_kwargs):
+            calls.append(arguments)
+            if arguments[0] == "automation_evaluate":
+                return next(routes)
+            return {"success": True}
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+            visited = verify_pages(Path("C:/miniapp"), ("/pages/schedule/index",))
+        self.assertEqual(visited, [{"route": "pages/schedule/index", "user": "student"}])
+        self.assertEqual([call[0] for call in calls], ["automation_navigate", "automation_evaluate", "automation_navigate", "automation_evaluate"])
+
     def test_captures_only_a_nonempty_page_screenshot_under_the_requested_directory(self):
         def wechatide(arguments, **_kwargs):
             self.assertEqual(arguments[0], "automation_viewport_action")

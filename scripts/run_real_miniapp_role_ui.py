@@ -141,8 +141,9 @@ def verify_pages(project, pages, *, role=None, screenshots_dir=None):
     for page in pages:
         action = "switchTab" if page in {"/pages/schedule/index", "/pages/question-bank/index"} else "navigateTo"
         expected_route = page.removeprefix("/")
+        navigation = ["automation_navigate", "--project", str(project), "--action", action, "--url", page, "--wait", "2"]
         try:
-            run_wechatide(["automation_navigate", "--project", str(project), "--action", action, "--url", page, "--wait", "2"], timeout=45)
+            run_wechatide(navigation, timeout=45)
         except RuntimeError as error:
             # DevTools can report an automator timeout after the navigation has
             # completed. Treat it as successful only when the runtime reports
@@ -151,6 +152,9 @@ def verify_pages(project, pages, *, role=None, screenshots_dir=None):
             if "timeout waiting for automator response" not in str(error):
                 raise
         runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
+        if isinstance(runtime, dict) and runtime.get("route") == "pages/index/index":
+            run_wechatide(navigation, timeout=45)
+            runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
         if not isinstance(runtime, dict) or runtime.get("route") != expected_route:
             raise RuntimeError("REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID")
         if screenshots_dir is not None:
