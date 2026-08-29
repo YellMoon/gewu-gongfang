@@ -14,6 +14,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import deploy  # noqa: E402
 
 POSTGRES_CONTAINER = "gewu-postgres17"
+DATABASE_ROLE = "gewu_app"
+PRODUCTION_DATABASE = "gewu_cloud"
 REQUIRED_COUNTS = (
     "tenants", "institutions", "schools", "rooms", "teachers", "students",
     "courses", "course_student_pricings", "schedules", "schedule_student_overrides",
@@ -89,11 +91,11 @@ def run_shadow_import(plan_dir):
         existing_database_query = f"SELECT 1 FROM pg_database WHERE datname = '{target}'"
         exists = remote_exec(
             ssh,
-            f"docker exec {POSTGRES_CONTAINER} psql -U postgres -d postgres -tAc {quote(existing_database_query)}",
+            f"docker exec {POSTGRES_CONTAINER} psql -U {DATABASE_ROLE} -d {PRODUCTION_DATABASE} -tAc {quote(existing_database_query)}",
         ).strip()
         if exists:
             raise failure("CLOUD_BUSINESS_SHADOW_DATABASE_EXISTS")
-        remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} createdb -U postgres {quote(target)}")
+        remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} createdb -U {DATABASE_ROLE} -d {PRODUCTION_DATABASE} {quote(target)}")
         created = True
         remote_exec(ssh, f"mkdir -p {quote(remote_dir)}")
         staged = True
@@ -103,9 +105,9 @@ def run_shadow_import(plan_dir):
         finally:
             sftp.close()
         remote_exec(ssh, f"docker cp {quote(remote_sql)} {POSTGRES_CONTAINER}:{quote(container_sql)}")
-        remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} psql -U postgres -d {quote(target)} -v ON_ERROR_STOP=1 -f {quote(container_sql)}", timeout=600)
+        remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} psql -U {DATABASE_ROLE} -d {quote(target)} -v ON_ERROR_STOP=1 -f {quote(container_sql)}", timeout=600)
         observed = parse_counts(
-            remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} psql -U postgres -d {quote(target)} -tAc {quote(count_query())}"),
+            remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} psql -U {DATABASE_ROLE} -d {quote(target)} -tAc {quote(count_query())}"),
             expected,
         )
         receipt = {
@@ -117,7 +119,7 @@ def run_shadow_import(plan_dir):
             "importSqlSha256": plan["importSqlSha256"],
             "relationCounts": observed,
             "quarantinedScheduleCount": plan["quarantinedScheduleCount"],
-            "productionDatabaseUntouched": "gewu_cloud",
+            "productionDatabaseUntouched": PRODUCTION_DATABASE,
         }
         (directory / "shadow-import-receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return receipt
@@ -126,7 +128,7 @@ def run_shadow_import(plan_dir):
         # removed, and production never appears in this command path.
         if created:
             try:
-                remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} dropdb -U postgres --if-exists {quote(target)}")
+                remote_exec(ssh, f"docker exec {POSTGRES_CONTAINER} dropdb -U {DATABASE_ROLE} -d {PRODUCTION_DATABASE} --if-exists {quote(target)}")
             except Exception:
                 pass
         raise
