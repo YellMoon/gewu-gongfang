@@ -85,8 +85,29 @@ function readRuntimeConfig(configPath, options = {}) {
   return normalizeRuntimeConfig(raw, options);
 }
 
+function unreadableRuntimeConfigBackupPath(configPath) {
+  const parsed = path.parse(configPath);
+  const stamp = `${Date.now()}-${process.pid}`;
+  return path.join(parsed.dir, `${parsed.name}.invalid-${stamp}${parsed.ext}`);
+}
+
+function recoverUnreadableRuntimeConfig(configPath, options = {}) {
+  // Retain the exact bytes for support/recovery.  A runtime config has no
+  // authority over business data, so a fresh managed config is safer than
+  // leaving the desktop blocked at its login screen.
+  fs.renameSync(configPath, unreadableRuntimeConfigBackupPath(configPath));
+  return writeRuntimeConfig(configPath, {}, options);
+}
+
 function ensureRuntimeConfig(configPath, options = {}) {
-  if (fs.existsSync(configPath)) return readRuntimeConfig(configPath, options);
+  if (fs.existsSync(configPath)) {
+    try {
+      return readRuntimeConfig(configPath, options);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      return recoverUnreadableRuntimeConfig(configPath, options);
+    }
+  }
   try {
     return writeRuntimeConfig(configPath, {}, options);
   } catch (error) {
@@ -210,6 +231,7 @@ module.exports = {
   normalizeRuntimeConfig,
   readRuntimeConfig,
   ensureRuntimeConfig,
+  recoverUnreadableRuntimeConfig,
   writeRuntimeConfig,
   writeManagedHostBootstrapRuntimeConfig,
   writeManagedHostRuntimeConfig,

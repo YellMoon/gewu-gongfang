@@ -8,6 +8,7 @@ const {
   MANAGED_CLOUD_BASE_URL,
   MANAGED_CLOUD_BUSINESS_BASE_URL,
   applyRuntimeConfigToEnv,
+  ensureRuntimeConfig,
   normalizeRuntimeConfig,
   readRuntimeConfig,
   writeManagedClientRuntimeConfig,
@@ -54,6 +55,17 @@ try {
     expectedEpochId: 'legacy-epoch',
   }, { userDataPath: root });
   assert.strictEqual(legacyTransition.cloudBaseUrl, MANAGED_CLOUD_BASE_URL);
+
+  fs.writeFileSync(configPath, '{not valid json', 'utf8');
+  const recovered = ensureRuntimeConfig(configPath, { userDataPath: root });
+  assert.strictEqual(recovered.cloudBaseUrl, MANAGED_CLOUD_BASE_URL,
+    'a damaged desktop runtime configuration must recover into the managed cloud configuration');
+  assert.ok(recovered.deviceId, 'recovered desktop configuration must create an installation id');
+  const retainedInvalidCopies = fs.readdirSync(root).filter(name => name.startsWith('runtime.invalid-'));
+  assert.strictEqual(retainedInvalidCopies.length, 1,
+    'a damaged runtime configuration must be retained for support instead of discarded');
+  assert.deepStrictEqual(readRuntimeConfig(configPath, { userDataPath: root }), recovered,
+    'the recovered runtime configuration must be readable on the next desktop start');
 
   const env = {
     GEWU_NODE_ROLE: 'primary-host',
