@@ -1,7 +1,9 @@
 import json
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from run_real_miniapp_role_ui import ROLE_KEYS, is_test_account, parse_session_receipt, user_for_session
+from run_real_miniapp_role_ui import ROLE_KEYS, is_test_account, parse_session_receipt, user_for_session, verify_pages
 
 
 class RoleUiReceiptTests(unittest.TestCase):
@@ -36,6 +38,25 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertEqual(family["identity_kind"], "family_member")
         self.assertTrue(is_test_account(family["id"]))
         self.assertFalse(is_test_account("real-user-account"))
+
+    def test_accepts_an_automator_timeout_only_after_the_runtime_confirms_route(self):
+        calls = []
+
+        def wechatide(arguments, **_kwargs):
+            calls.append(arguments)
+            if arguments[0] == "automation_navigate":
+                raise RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:timeout waiting for automator response")
+            return {"route": "pages/courses/index", "user": "teacher"}
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+            visited = verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
+        self.assertEqual(visited, [{"route": "pages/courses/index", "user": "teacher"}])
+        self.assertEqual([call[0] for call in calls], ["automation_navigate", "automation_evaluate"])
+
+    def test_rejects_non_timeout_navigation_failures(self):
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:project closed")):
+            with self.assertRaisesRegex(RuntimeError, "project closed"):
+                verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
 
 
 if __name__ == "__main__":

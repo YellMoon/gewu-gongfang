@@ -121,9 +121,17 @@ def verify_pages(project, pages):
     visited = []
     for page in pages:
         action = "switchTab" if page in {"/pages/schedule/index", "/pages/question-bank/index"} else "navigateTo"
-        run_wechatide(["automation_navigate", "--project", str(project), "--action", action, "--url", page], timeout=45)
-        runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
         expected_route = page.removeprefix("/")
+        try:
+            run_wechatide(["automation_navigate", "--project", str(project), "--action", action, "--url", page], timeout=45)
+        except RuntimeError as error:
+            # DevTools can report an automator timeout after the navigation has
+            # completed. Treat it as successful only when the runtime reports
+            # the exact requested route; all other navigation failures remain
+            # hard failures.
+            if "timeout waiting for automator response" not in str(error):
+                raise
+        runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
         if not isinstance(runtime, dict) or runtime.get("route") != expected_route:
             raise RuntimeError("REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID")
         visited.append(runtime)
