@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, is_test_account, parse_session_receipt, user_for_session, verify_identity, verify_pages
+from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, is_test_account, parse_session_receipt, user_for_session, wait_for_simulator_runtime, verify_identity, verify_pages
 
 
 class RoleUiReceiptTests(unittest.TestCase):
@@ -60,6 +60,31 @@ class RoleUiReceiptTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "project closed"):
                 verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
 
+    def test_waits_for_the_simulator_runtime_after_a_refresh(self):
+        states = iter([{"ready": False}, {"ready": True}])
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=lambda *_args, **_kwargs: next(states)), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+            wait_for_simulator_runtime(Path("C:/miniapp"), attempts=2, pause_seconds=1)
+        sleep.assert_called_once_with(1)
+
+    def test_rejects_a_simulator_that_never_becomes_ready(self):
+        with patch("run_real_miniapp_role_ui.run_wechatide", return_value={"ready": False}), patch("run_real_miniapp_role_ui.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "REAL_MINIAPP_ROLE_UI_RUNTIME_UNAVAILABLE"):
+                wait_for_simulator_runtime(Path("C:/miniapp"), attempts=2, pause_seconds=1)
+
+    def test_retries_a_known_automator_timeout_while_waiting_for_runtime(self):
+        results = iter([RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:timeout waiting for automator response"), {"ready": True}])
+
+        def wechatide(*_args, **_kwargs):
+            result = next(results)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+            wait_for_simulator_runtime(Path("C:/miniapp"), attempts=2, pause_seconds=1)
+        sleep.assert_called_once_with(1)
+
     def test_retries_once_only_when_the_refreshed_runtime_is_observably_back_on_home(self):
         calls = []
         routes = iter([
@@ -78,6 +103,16 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertEqual(visited, [{"route": "pages/schedule/index", "user": "student"}])
         self.assertEqual([call[0] for call in calls], ["automation_navigate", "automation_evaluate", "automation_navigate", "automation_evaluate"])
 
+    def test_reports_only_sanitized_runtime_route_when_navigation_lands_elsewhere(self):
+        def wechatide(arguments, **_kwargs):
+            if arguments[0] == "automation_evaluate":
+                return {"route": "pages/login/index", "user": "student"}
+            return {"success": True}
+
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+            with self.assertRaisesRegex(RuntimeError, r"REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID:pages/login/index"):
+                verify_pages(Path("C:/miniapp"), ("/pages/schedule/index",))
+
     def test_captures_only_a_nonempty_page_screenshot_under_the_requested_directory(self):
         def wechatide(arguments, **_kwargs):
             self.assertEqual(arguments[0], "automation_viewport_action")
@@ -95,7 +130,7 @@ class RoleUiReceiptTests(unittest.TestCase):
                 self.assertEqual(target.name, "teacher-pages-courses-index.png")
                 self.assertEqual(target.read_bytes(), b"PNG evidence")
 
-    def test_identity_injection_resets_the_real_auth_session_state_before_one_simulator_refresh(self):
+    def test_identity_injection_waits_for_the_runtime_after_one_simulator_refresh(self):
         account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
         storage_calls = []
         wechatide_calls = []
@@ -106,6 +141,8 @@ class RoleUiReceiptTests(unittest.TestCase):
         def wechatide(arguments, **_kwargs):
             wechatide_calls.append(arguments)
             if arguments[0] == "automation_evaluate":
+                if "ready:" in arguments[arguments.index("--fn-source") + 1]:
+                    return {"ready": True}
                 return {"accountId": account_id, "role": "student", "identityKind": None, "accountState": "formal"}
             return {"success": True}
 

@@ -27,7 +27,7 @@ interface ScheduleWithCourse extends Schedule {
 
 function displayStudentName(student: Student) {
   const name = String(student?.name || '').trim();
-  return name && !/^e2e-/i.test(name) && !/\be2e-role-test-/i.test(name) ? name : '学生';
+  return name && !/^e2e-/i.test(name) && !name.toLowerCase().includes('e2e-role-test-') ? name : '学生';
 }
 
 export default function SchedulePage() {

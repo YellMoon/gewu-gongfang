@@ -8,6 +8,7 @@ import secrets
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +108,26 @@ def clear_test_session(project):
     return True
 
 
+def wait_for_simulator_runtime(project, *, attempts=4, pause_seconds=1):
+    if not isinstance(attempts, int) or attempts < 1 or not isinstance(pause_seconds, (int, float)) or pause_seconds < 0:
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_RUNTIME_INPUT_INVALID")
+    for attempt in range(attempts):
+        try:
+            runtime = run_wechatide([
+                "automation_evaluate", "--project", str(project),
+                "--fn-source", "() => ({ ready: typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function' })",
+            ])
+        except RuntimeError as error:
+            if "timeout waiting for automator response" not in str(error):
+                raise
+            runtime = None
+        if isinstance(runtime, dict) and runtime.get("ready") is True:
+            return
+        if attempt + 1 < attempts:
+            time.sleep(pause_seconds)
+    raise RuntimeError("REAL_MINIAPP_ROLE_UI_RUNTIME_UNAVAILABLE")
+
+
 def verify_identity(project, session):
     key = ACCOUNT_PATTERN.fullmatch(session["accountId"]).group(1)
     user = user_for_session(key, session["accountId"])
@@ -116,6 +137,7 @@ def verify_identity(project, session):
     run_wx_api(project, "removeStorageSync", [AUTH_SESSION_GENERATION_KEY])
     run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
     run_wechatide(["simulator_refresh", "--project", str(project)], timeout=60)
+    wait_for_simulator_runtime(project)
     result = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => { const user = wx.getStorageSync('user_info'); return { accountId: user && user.id, role: user && user.role, identityKind: user && user.identity_kind || null, accountState: user && user.account_state }; }"])
     if not isinstance(result, dict) or result.get("accountId") != session["accountId"] or result.get("role") != user["role"]:
         raise RuntimeError(f"REAL_MINIAPP_ROLE_UI_INJECTION_INVALID:{json.dumps(result, ensure_ascii=True)[:500]}")
@@ -156,7 +178,11 @@ def verify_pages(project, pages, *, role=None, screenshots_dir=None):
             run_wechatide(navigation, timeout=45)
             runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
         if not isinstance(runtime, dict) or runtime.get("route") != expected_route:
-            raise RuntimeError("REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID")
+            # Keep this receipt useful for real-runtime diagnosis without ever
+            # serialising session data, account IDs, or any user profile fields.
+            route = runtime.get("route") if isinstance(runtime, dict) else None
+            safe_route = route if isinstance(route, str) and re.fullmatch(r"[a-z0-9_/-]+", route) else "unknown"
+            raise RuntimeError(f"REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID:{safe_route}")
         if screenshots_dir is not None:
             if role not in ROLE_KEYS:
                 raise RuntimeError("REAL_MINIAPP_ROLE_UI_SCREENSHOT_INPUT_INVALID")
