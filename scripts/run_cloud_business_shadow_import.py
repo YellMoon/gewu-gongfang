@@ -56,8 +56,17 @@ def read_plan(plan_dir):
 
 def count_query():
     return "SELECT json_build_object(" + ", ".join(
-        f"'{name}', (SELECT count(*) FROM business.{name})" for name in REQUIRED_COUNTS
+        # Dollar-quoted literals avoid embedding a second single-quoted layer in
+        # the remote shell command.  The relation names are a fixed allow-list.
+        f"$${name}$$, (SELECT count(*) FROM business.{name})" for name in REQUIRED_COUNTS
     ) + ")::text;"
+
+
+def database_exists_query(target):
+    if not isinstance(target, str) or DATABASE_NAME.fullmatch(target) is None:
+        raise failure("CLOUD_BUSINESS_SHADOW_PLAN_INVALID")
+    # See count_query(): keep this SQL free of shell-nested single quotes.
+    return f"SELECT 1 FROM pg_database WHERE datname = $${target}$$;"
 
 
 def parse_counts(output, expected):
@@ -88,7 +97,7 @@ def run_shadow_import(plan_dir):
     created = False
     staged = False
     try:
-        existing_database_query = f"SELECT 1 FROM pg_database WHERE datname = '{target}'"
+        existing_database_query = database_exists_query(target)
         exists = remote_exec(
             ssh,
             f"docker exec {POSTGRES_CONTAINER} psql -U {DATABASE_ROLE} -d {PRODUCTION_DATABASE} -tAc {quote(existing_database_query)}",
