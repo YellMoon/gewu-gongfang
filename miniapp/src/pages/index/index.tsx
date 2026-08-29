@@ -67,7 +67,7 @@ const STAFF_SHORTCUTS = [
 
 const STUDENT_SHORTCUTS = [
   { mark: '表', label: '我的课表', desc: '查看本人相关课程', url: '/pages/schedule/index' },
-  { mark: '卷', label: '题库', desc: '查看题目与解析', url: '/pages/question-bank/index' },
+  { mark: '题', label: '题库', desc: '查看题目与解析', url: '/pages/question-bank/index' },
 ];
 
 export default function Index() {
@@ -427,8 +427,8 @@ export default function Index() {
       {loading ? null : modules.some(m => m.id === 'scheduling') && (
         <View className="home-section">
           <View className="home-section__header">
-            <Text className="home-section__title">{isStudent ? '我的学习' : '运营快捷入口'}</Text>
-            <Text className="home-section__meta">{isStudent ? '只读与组卷' : '常用管理'}</Text>
+            <Text className="home-section__title">{isStudent ? '我的学习' : '教学工具'}</Text>
+            <Text className="home-section__meta">{isStudent ? '常用内容' : '常用资料'}</Text>
           </View>
           <View className="home-shortcut-grid">
             {shortcuts.map((item) => (
