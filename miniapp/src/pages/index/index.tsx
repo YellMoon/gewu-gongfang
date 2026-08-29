@@ -1,5 +1,5 @@
 /**
- * 首页仪表盘 v3 - 数据快照 + 今日摘要 + 角色入口
+ * 首页仪表盘 v3 - 最近更新 + 今日摘要 + 角色入口
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { View, Text } from '@tarojs/components';
@@ -168,7 +168,7 @@ export default function Index() {
     try {
       const cloudModuleNames: Record<string, string> = {
         scheduling: '\u8bfe\u7a0b\u5b89\u6392',
-        'question-bank': '\u7ec4\u5377\u4e0e\u5bfc\u51fa',
+        'question-bank': '\u9898\u5e93',
         assets: '\u8d22\u52a1\u5bfc\u5165',
       };
       const res = { success: true, data: { modules: Object.keys(MODULE_CONFIG).map(id => ({ id, name: cloudModuleNames[id] || id, description: '', icon: '' })) } };
@@ -340,9 +340,9 @@ export default function Index() {
             {user ? <MembershipBadge membership={user.membership} /> : null}
             <Text className="home-hero__title">{greeting}</Text>
             <Text className="home-hero__subtitle">
-              {user ? `${user.name}` : '登录后查看今日课程与授权数据。'}
+              {user ? `${user.name}` : '登录后查看今天的课程。'}
 
-              {user ? '，今天先看课程、题库和数据快照。' : ''}
+              {user ? '，今天看看课程和题库。' : ''}
             </Text>
           </View>
           {user && (
@@ -354,17 +354,17 @@ export default function Index() {
 
         <View className="home-status-panel">
           <View className="home-status-panel__item">
-            <Text className="home-status-panel__label">数据快照</Text>
+            <Text className="home-status-panel__label">最近更新</Text>
             <Text className="home-status-panel__value">{snapshotLabel}</Text>
           </View>
           <View className="home-status-panel__divider" />
           <View className="home-status-panel__item">
-            <Text className="home-status-panel__label">同步状态</Text>
+            <Text className="home-status-panel__label">联网状态</Text>
             <Text className="home-status-panel__value">{cloudConnection === 'connected'
-              ? '\u4e91\u7aef\u5df2\u8fde\u63a5'
+              ? '\u5df2\u8054\u7f51'
               : cloudConnection === 'unavailable'
-                ? '\u6682\u672a\u8fde\u63a5\u4e91\u7aef'
-                : '\u6b63\u5728\u8fde\u63a5\u4e91\u7aef'}</Text>
+                ? '\u6682\u65f6\u65e0\u6cd5\u8054\u7f51'
+                : '\u6b63\u5728\u8fde\u63a5'}</Text>
           </View>
         </View>
       </View>
@@ -396,7 +396,7 @@ export default function Index() {
 
       <View className="home-section">
         <View className="home-section__header">
-          <Text className="home-section__title">核心入口</Text>
+          <Text className="home-section__title">常用功能</Text>
           <Text className="home-section__meta">{moduleActions.length} 个可用</Text>
         </View>
         {loading ? (

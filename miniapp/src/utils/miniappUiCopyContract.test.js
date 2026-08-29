@@ -80,6 +80,15 @@ assert.ok(applicationPage.includes('\u5ba1\u6838'), 'the detailed role-applicati
 assert.ok(!homePage.includes('\u5ba1\u6838'), 'the visitor home entry must remain concise and defer process details to the application page');
 assert.ok(!homePage.includes('\u6a21\u5757\u5f00\u53d1\u4e2d'), 'a rendered miniapp action must not fall back to a fictional unfinished module');
 assert.ok(!homePage.includes(String.fromCharCode(39064, 24211, 32452, 21367)), 'the miniapp entry must name the question bank rather than turn it into a grouping feature');
+const paperWorkflowTitle = String.fromCharCode(32452, 21367, 19982, 23548, 20986);
+const questionBankTitle = String.fromCharCode(39064, 24211);
+const internalSnapshotTitle = String.fromCharCode(25968, 25454, 24555, 29031);
+const recentUpdateTitle = String.fromCharCode(26368, 36817, 26356, 26032);
+const coreEntryTitle = String.fromCharCode(26680, 24515, 20837, 21475);
+const commonFunctionTitle = String.fromCharCode(24120, 29992, 21151, 33021);
+assert.ok(!homePage.includes(paperWorkflowTitle) && homePage.includes(`'question-bank': '${questionBankTitle}'`), 'the teacher home must name the question-bank module directly, not after one optional workflow');
+assert.ok(!homePage.includes(internalSnapshotTitle) && homePage.includes(recentUpdateTitle), 'the home status must use user-facing update wording rather than an internal snapshot term');
+assert.ok(!homePage.includes(coreEntryTitle) && homePage.includes(commonFunctionTitle), 'the home action area must use a familiar user-facing title');
 assert.ok(!desktopNavigation.includes(String.fromCharCode(26816, 32034, 21644, 39044, 35272, 39064, 24211, 20869, 23481)), 'desktop navigation must not describe question-bank access as a preview');
 assert.ok(!desktopQuestionBank.includes(String.fromCharCode(39064, 30446, 39044, 35272)), 'desktop question dialogs must use a direct viewing label rather than preview');
 assert.ok(!questionBankPage.includes(String.fromCharCode(31649, 29702, 21592)), 'question-bank permission guidance must not refer to a retired generic administrator role');
