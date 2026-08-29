@@ -3,9 +3,13 @@
 const assert = require('assert');
 const JSZip = require('jszip');
 const sharp = require('sharp');
-const { compactFormulaText, renderPaperExport } = require('./paperExportRenderer');
+const { compactFormulaText, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
 
 (async () => {
+  assert.deepStrictEqual(wordFormulaTransformation({ width: 36, height: 16 }, 'inline'), { width: 36, height: 16 },
+    'inline Word formulas must preserve their measured size instead of being stretched to a fixed blank row');
+  assert.deepStrictEqual(wordFormulaTransformation({ width: 800, height: 300 }, 'block'), { width: 192, height: 72 },
+    'large block formulas must be proportionally capped to keep the paper layout readable');
   const imageBytes = await sharp({ create: { width: 1, height: 1, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 1 } } }).png().toBuffer();
   const assetCalls = [];
   const snapshot = [

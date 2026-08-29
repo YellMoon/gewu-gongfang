@@ -316,7 +316,18 @@ function bodyRows(items, answerPosition) {
   return rows;
 }
 
-function wordMediaRun(media) {
+function wordFormulaTransformation(media, displayMode = 'block') {
+  const naturalWidth = Number.isFinite(media?.width) && media.width > 0 ? media.width : 120;
+  const naturalHeight = Number.isFinite(media?.height) && media.height > 0 ? media.height : 36;
+  const maximum = displayMode === 'inline' ? { width: 120, height: 24 } : { width: 360, height: 72 };
+  const scale = Math.min(maximum.width / naturalWidth, maximum.height / naturalHeight, 1);
+  return {
+    width: Math.max(1, Math.round(naturalWidth * scale)),
+    height: Math.max(1, Math.round(naturalHeight * scale)),
+  };
+}
+
+function wordMediaRun(media, displayMode = 'block') {
   const formula = media.kind === 'formula';
   return new ImageRun({
     // Word 2021 may select an embedded SVG formula and render it as a blank
@@ -324,12 +335,12 @@ function wordMediaRun(media) {
     // directly so formula content remains visible in desktop Word.
     data: formula ? media.fallbackBytes : media.bytes,
     type: formula ? 'png' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
-    transformation: formula ? { width: 240, height: 72 } : { width: 420, height: 280 },
+    transformation: formula ? wordFormulaTransformation(media, displayMode) : { width: 420, height: 280 },
   });
 }
 
-function wordMediaRow(media) {
-  return new Paragraph({ children: [wordMediaRun(media)] });
+function wordMediaRow(media, displayMode = 'block') {
+  return new Paragraph({ children: [wordMediaRun(media, displayMode)] });
 }
 
 function appendWordTokens(rows, tokens, prefix = '') {
@@ -347,13 +358,13 @@ function appendWordTokens(rows, tokens, prefix = '') {
       if (token.displayMode === 'inline') {
         if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
         nextPrefix = '';
-        children.push(wordMediaRun(token.media));
+        children.push(wordMediaRun(token.media, token.displayMode));
         continue;
       }
       flush();
       if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
       nextPrefix = '';
-      rows.push(wordMediaRow(token.media));
+      rows.push(wordMediaRow(token.media, token.displayMode));
     }
   }
   if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -559,4 +570,4 @@ async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 
-module.exports = Object.freeze({ compactFormulaText, renderPaperExport });
+module.exports = Object.freeze({ compactFormulaText, wordFormulaTransformation, renderPaperExport });
