@@ -89,6 +89,21 @@ def user_for_session(key, account_id):
     return user
 
 
+def is_test_account(value):
+    return isinstance(value, str) and ACCOUNT_PATTERN.fullmatch(value) is not None
+
+
+def clear_test_session(project):
+    current = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => wx.getStorageSync('user_info') || null"])
+    if not isinstance(current, dict) or not is_test_account(current.get("id")):
+        return False
+    run_wx_api(project, "removeStorageSync", ["auth_token"])
+    run_wx_api(project, "removeStorageSync", ["user_info"])
+    run_wx_api(project, "removeStorageSync", ["user_permissions"])
+    run_wx_api(project, "removeStorageSync", ["__gewu_auth_session_state__"])
+    return True
+
+
 def verify_identity(project, session):
     key = ACCOUNT_PATTERN.fullmatch(session["accountId"]).group(1)
     user = user_for_session(key, session["accountId"])
@@ -167,11 +182,14 @@ def main(argv=None):
     receipt = fetch_sessions()
     checks = {}
     keys = (args.role,) if args.role else ROLE_KEYS
-    for key in keys:
-        identity = verify_identity(project, receipt["sessions"][key])
-        pages = verify_pages(project, ROLE_PAGES[key]) if args.pages else []
-        checks[key] = {"identity": identity, "pages": pages}
-    print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
+    try:
+        for key in keys:
+            identity = verify_identity(project, receipt["sessions"][key])
+            pages = verify_pages(project, ROLE_PAGES[key]) if args.pages else []
+            checks[key] = {"identity": identity, "pages": pages}
+        print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
+    finally:
+        clear_test_session(project)
 
 
 if __name__ == "__main__":

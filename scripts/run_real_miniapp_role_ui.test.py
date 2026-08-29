@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from run_real_miniapp_role_ui import ROLE_KEYS, parse_session_receipt, user_for_session
+from run_real_miniapp_role_ui import ROLE_KEYS, is_test_account, parse_session_receipt, user_for_session
 
 
 class RoleUiReceiptTests(unittest.TestCase):
@@ -34,6 +34,8 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertEqual(teacher["teacher_id"], f"e2e-teacher-{marker}")
         self.assertEqual(family["student_id"], f"e2e-student-{marker}")
         self.assertEqual(family["identity_kind"], "family_member")
+        self.assertTrue(is_test_account(family["id"]))
+        self.assertFalse(is_test_account("real-user-account"))
 
 
 if __name__ == "__main__":
