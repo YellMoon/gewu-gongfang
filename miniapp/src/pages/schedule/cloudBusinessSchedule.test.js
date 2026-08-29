@@ -13,6 +13,9 @@ assert.ok(source.includes('shiftShanghaiDateKey(current, dir * 7)'), 'schedule w
 assert.ok(!source.includes('.getDate()') && !source.includes('.getMonth()') && !source.includes('.getDay()'), 'schedule labels and today highlighting must not mix device-local calendar fields');
 assert.ok(!source.includes('miniappCloudBusinessApi'), 'schedule page must not bypass the shared cloud projection runtime');
 assert.ok(source.includes("course_name: course?.display_name || course?.name || '未知课程'"), 'cloud schedule cache must retain the course display name');
+assert.ok(source.includes('function displayStudentName(student: Student)'), 'student filter labels must be normalized before display');
+assert.ok(source.includes('<Text>{displayStudentName(student)}</Text>'), 'student filter must not expose raw profile identifiers');
+assert.ok(source.includes("!/^e2e-/i.test(name)"), 'test-only technical account identifiers must never be shown as student names');
 assert.ok(projectionSource.includes("timeZone: 'Asia/Shanghai'"), 'cloud schedule instants must be projected in the product time zone before date filtering');
 assert.ok(projectionSource.includes('cloudScheduleDateTime(schedule.start_time)'), 'cloud schedule start times must be normalized before the calendar filter receives them');
 assert.ok(projectionSource.includes('cloudScheduleDateTime(schedule.end_time)'), 'cloud schedule end times must be normalized before rendering');

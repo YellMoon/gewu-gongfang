@@ -25,6 +25,11 @@ interface ScheduleWithCourse extends Schedule {
   course_type?: number;
 }
 
+function displayStudentName(student: Student) {
+  const name = String(student?.name || '').trim();
+  return name && !/^e2e-/i.test(name) && !/\be2e-role-test-/i.test(name) ? name : '学生';
+}
+
 export default function SchedulePage() {
   const identity = Taro.getStorageSync('user_info');
   const isVisitor = isVisitorIdentity(identity);
@@ -213,7 +218,7 @@ export default function SchedulePage() {
               className={`filter-tag ${selectedStudentId === student.id ? 'active' : ''}`}
               onClick={() => setSelectedStudentId(student.id)}
             >
-              <Text>{student.name}</Text>
+              <Text>{displayStudentName(student)}</Text>
             </View>
           ))}
         </ScrollView>

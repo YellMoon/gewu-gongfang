@@ -1,9 +1,10 @@
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from run_real_miniapp_role_ui import ROLE_KEYS, is_test_account, parse_session_receipt, user_for_session, verify_pages
+from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, is_test_account, parse_session_receipt, user_for_session, verify_identity, verify_pages
 
 
 class RoleUiReceiptTests(unittest.TestCase):
@@ -52,11 +53,52 @@ class RoleUiReceiptTests(unittest.TestCase):
             visited = verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
         self.assertEqual(visited, [{"route": "pages/courses/index", "user": "teacher"}])
         self.assertEqual([call[0] for call in calls], ["automation_navigate", "automation_evaluate"])
+        self.assertEqual(calls[0][-2:], ["--wait", "2"])
 
     def test_rejects_non_timeout_navigation_failures(self):
         with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:project closed")):
             with self.assertRaisesRegex(RuntimeError, "project closed"):
                 verify_pages(Path("C:/miniapp"), ("/pages/courses/index",))
+
+    def test_captures_only_a_nonempty_page_screenshot_under_the_requested_directory(self):
+        def wechatide(arguments, **_kwargs):
+            self.assertEqual(arguments[0], "automation_viewport_action")
+            self.assertEqual(arguments[arguments.index("--action") + 1], "screenshot")
+            self.assertEqual(arguments[arguments.index("--wait") + 1], "4")
+            target = Path(arguments[arguments.index("--path") + 1])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"PNG evidence")
+            return {"path": str(target)}
+
+        with self.subTest("accepted"):
+            with tempfile.TemporaryDirectory() as directory:
+                with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+                    target = capture_page_screenshot(Path("C:/miniapp"), "teacher", "pages/courses/index", Path(directory))
+                self.assertEqual(target.name, "teacher-pages-courses-index.png")
+                self.assertEqual(target.read_bytes(), b"PNG evidence")
+
+    def test_identity_injection_resets_the_real_auth_session_state_before_one_simulator_refresh(self):
+        account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
+        storage_calls = []
+        wechatide_calls = []
+
+        def wx_api(_project, method, args):
+            storage_calls.append((method, args))
+
+        def wechatide(arguments, **_kwargs):
+            wechatide_calls.append(arguments)
+            if arguments[0] == "automation_evaluate":
+                return {"accountId": account_id, "role": "student", "identityKind": None, "accountState": "formal"}
+            return {"success": True}
+
+        session = {"accountId": account_id, "token": "ticket.signature"}
+        with patch("run_real_miniapp_role_ui.run_wx_api", side_effect=wx_api), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
+            identity = verify_identity(Path("C:/miniapp"), session)
+        removed_keys = [args[0] for method, args in storage_calls if method == "removeStorageSync"]
+        self.assertIn("auth_session_generation", removed_keys)
+        self.assertIn("auth_session_state_v1", removed_keys)
+        self.assertIn(["simulator_refresh", "--project", str(Path("C:/miniapp"))], wechatide_calls)
+        self.assertEqual(identity["role"], "student")
 
 
 if __name__ == "__main__":

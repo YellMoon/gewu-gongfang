@@ -22,6 +22,8 @@ CLOUD_HELPER = ROOT / "scripts" / "real-cloud-business-acceptance.js"
 WECHATIDE = r"C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd"
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$")
 ACCOUNT_PATTERN = re.compile(r"^e2e-account-(visitor|teacher|student|family)-e2e-role-test-[a-z0-9-]{12,64}$")
+AUTH_SESSION_GENERATION_KEY = "auth_session_generation"
+AUTH_SESSION_STATE_KEY = "auth_session_state_v1"
 
 ROLE_PAGES = {
     "visitor": ("/pages/question-bank/index", "/pages/schedule/index"),
@@ -100,7 +102,8 @@ def clear_test_session(project):
     run_wx_api(project, "removeStorageSync", ["auth_token"])
     run_wx_api(project, "removeStorageSync", ["user_info"])
     run_wx_api(project, "removeStorageSync", ["user_permissions"])
-    run_wx_api(project, "removeStorageSync", ["__gewu_auth_session_state__"])
+    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_GENERATION_KEY])
+    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
     return True
 
 
@@ -110,20 +113,36 @@ def verify_identity(project, session):
     run_wx_api(project, "setStorageSync", ["auth_token", session["token"]])
     run_wx_api(project, "setStorageSync", ["user_info", user])
     run_wx_api(project, "removeStorageSync", ["user_permissions"])
-    run_wx_api(project, "removeStorageSync", ["__gewu_auth_session_state__"])
+    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_GENERATION_KEY])
+    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
+    run_wechatide(["simulator_refresh", "--project", str(project)], timeout=60)
     result = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => { const user = wx.getStorageSync('user_info'); return { accountId: user && user.id, role: user && user.role, identityKind: user && user.identity_kind || null, accountState: user && user.account_state }; }"])
     if not isinstance(result, dict) or result.get("accountId") != session["accountId"] or result.get("role") != user["role"]:
         raise RuntimeError(f"REAL_MINIAPP_ROLE_UI_INJECTION_INVALID:{json.dumps(result, ensure_ascii=True)[:500]}")
     return {key: result.get(key) for key in ("accountId", "role", "identityKind", "accountState")}
 
 
-def verify_pages(project, pages):
+def capture_page_screenshot(project, role, route, screenshots_dir):
+    if role not in ROLE_KEYS or not isinstance(route, str) or not route or not isinstance(screenshots_dir, Path):
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_SCREENSHOT_INPUT_INVALID")
+    filename = f"{role}-{route.strip('/').replace('/', '-')}.png"
+    target = screenshots_dir.resolve() / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    run_wechatide([
+        "automation_viewport_action", "--project", str(project), "--action", "screenshot", "--wait", "4", "--path", str(target),
+    ])
+    if not target.is_file() or target.stat().st_size < 8:
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_SCREENSHOT_MISSING")
+    return target
+
+
+def verify_pages(project, pages, *, role=None, screenshots_dir=None):
     visited = []
     for page in pages:
         action = "switchTab" if page in {"/pages/schedule/index", "/pages/question-bank/index"} else "navigateTo"
         expected_route = page.removeprefix("/")
         try:
-            run_wechatide(["automation_navigate", "--project", str(project), "--action", action, "--url", page], timeout=45)
+            run_wechatide(["automation_navigate", "--project", str(project), "--action", action, "--url", page, "--wait", "2"], timeout=45)
         except RuntimeError as error:
             # DevTools can report an automator timeout after the navigation has
             # completed. Treat it as successful only when the runtime reports
@@ -134,6 +153,10 @@ def verify_pages(project, pages):
         runtime = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", "() => ({ route: getCurrentPages().slice(-1)[0]?.route || null, user: wx.getStorageSync('user_info')?.user_type || null })"])
         if not isinstance(runtime, dict) or runtime.get("route") != expected_route:
             raise RuntimeError("REAL_MINIAPP_ROLE_UI_PAGE_ROUTE_INVALID")
+        if screenshots_dir is not None:
+            if role not in ROLE_KEYS:
+                raise RuntimeError("REAL_MINIAPP_ROLE_UI_SCREENSHOT_INPUT_INVALID")
+            runtime["screenshot"] = capture_page_screenshot(project, role, expected_route, screenshots_dir).name
         visited.append(runtime)
     return visited
 
@@ -183,17 +206,19 @@ def main(argv=None):
     parser.add_argument("--project", default=str(PROJECT))
     parser.add_argument("--pages", action="store_true")
     parser.add_argument("--role", choices=ROLE_KEYS)
+    parser.add_argument("--screenshots-dir")
     args = parser.parse_args(argv)
     project = Path(args.project).resolve()
     if not project.is_dir():
         raise RuntimeError("REAL_MINIAPP_ROLE_UI_PROJECT_MISSING")
+    screenshots_dir = Path(args.screenshots_dir).resolve() if args.screenshots_dir else None
     receipt = fetch_sessions()
     checks = {}
     keys = (args.role,) if args.role else ROLE_KEYS
     try:
         for key in keys:
             identity = verify_identity(project, receipt["sessions"][key])
-            pages = verify_pages(project, ROLE_PAGES[key]) if args.pages else []
+            pages = verify_pages(project, ROLE_PAGES[key], role=key, screenshots_dir=screenshots_dir) if args.pages else []
             checks[key] = {"identity": identity, "pages": pages}
         print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
     finally:
