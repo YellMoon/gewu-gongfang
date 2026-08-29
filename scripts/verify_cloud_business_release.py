@@ -39,8 +39,11 @@ def verification_sql():
         "institutions": "SELECT count(*) FROM business.institutions WHERE legacy_deleted=false",
         "schools": "SELECT count(*) FROM business.schools WHERE legacy_deleted=false",
         "rooms": "SELECT count(*) FROM business.rooms WHERE legacy_deleted=false",
-        "teachers": "SELECT count(*) FROM business.teachers WHERE legacy_deleted=false",
-        "students": "SELECT count(*) FROM business.students WHERE legacy_deleted=false",
+        # Acceptance identities are explicitly named fixtures. They are needed
+        # for repeatable role tests but must not change the historical import
+        # inventory that gates a migration or deployment.
+        "teachers": "SELECT count(*) FROM business.teachers WHERE legacy_deleted=false AND id NOT LIKE 'e2e-teacher-%'",
+        "students": "SELECT count(*) FROM business.students WHERE legacy_deleted=false AND id NOT LIKE 'e2e-student-%'",
         "courses": "SELECT count(*) FROM business.courses WHERE legacy_deleted=false",
         "pricings": "SELECT count(*) FROM business.course_student_pricings",
         "schedules": "SELECT count(*) FROM business.schedules WHERE legacy_deleted=false",
