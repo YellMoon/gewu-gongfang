@@ -159,9 +159,11 @@ function legacyQuestion(record) {
   if (!Number.isSafeInteger(difficulty) || difficulty < 1 || difficulty > 5) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   const options = record.options === undefined ? [] : record.options;
   if (!Array.isArray(options)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  const status = record.status === undefined ? null : text(record.status, { max: 32 });
+  if (status !== null && !['draft', 'published', 'archived'].includes(status)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   const richContent = record.rich_content === undefined || record.rich_content === null ? null : record.rich_content;
   if (richContent !== null && !plainObject(richContent)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
-  return {
+  const question = {
     id: text(record.id, { max: 128 }), subject: text(record.subject, { max: 128 }), questionType,
     difficulty, stem, answer: optionalLegacyText(record.answer),
     explanation: optionalLegacyText(record.explanation === undefined ? record.analysis : record.explanation),
@@ -173,6 +175,8 @@ function legacyQuestion(record) {
     hasFormula: Boolean(record.has_formula),
     importBinding: legacyImportBinding(record),
   };
+  if (status !== null) question.status = status;
+  return question;
 }
 
 function desktopCommand(value) {
@@ -487,13 +491,13 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
         const contentHash = canonicalContentHash({ stem: question.stem, answer: question.answer, explanation: question.explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
         const updated = await transactionQuery(
           `WITH updated_question AS (
-             UPDATE business.questions SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,updated_at=transaction_timestamp()
+             UPDATE business.questions SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,status=COALESCE($8,status),updated_at=transaction_timestamp()
              WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
            ), updated_content AS (
-             UPDATE business.question_contents SET stem=$8,answer=$9,explanation=$10,options_json=$11::jsonb,rich_content_json=$12::jsonb,content_hash=$13,version=version+1,updated_at=transaction_timestamp()
+             UPDATE business.question_contents SET stem=$9,answer=$10,explanation=$11,options_json=$12::jsonb,rich_content_json=$13::jsonb,content_hash=$14,version=version+1,updated_at=transaction_timestamp()
              WHERE question_id=$1 AND tenant_id=$2 AND deleted=false RETURNING version,content_hash AS "contentHash"
            ) SELECT q.id,q.status,c.version,c."contentHash" FROM updated_question q CROSS JOIN updated_content c`,
-          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.stem, question.answer, question.explanation, options, richContent, contentHash],
+          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.status, question.stem, question.answer, question.explanation, options, richContent, contentHash],
         );
         if (!updated || !Array.isArray(updated.rows) || updated.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
         result = questionRow(updated.rows[0]);

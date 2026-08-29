@@ -237,7 +237,7 @@ async function main() {
     changes: {
       subject: 'physics', type: 'single_choice', difficulty: 4,
       content: 'Cloud update is authoritative', options: [], answer: 'updated', analysis: '',
-      knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: true,
+      knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: true, status: 'published',
     },
   };
   const updateReceipt = await service.submitDesktopDraft({
@@ -249,6 +249,9 @@ async function main() {
   });
   assert.strictEqual(updateReceipt.status, 'committed');
   assert.ok(calls.some(call => call[0].includes('UPDATE business.questions') && call[0].includes('UPDATE business.question_contents')));
+  const publishedWrite = calls.find(call => call[0].includes('UPDATE business.questions') && call[0].includes('status=COALESCE($8,status)'));
+  assert.ok(publishedWrite, 'a teacher question update must be able to publish an imported question through the cloud authority command');
+  assert.strictEqual(publishedWrite[1][7], 'published');
 
   const deletePayload = { id: 'question-3' };
   const deleteReceipt = await service.submitDesktopDraft({
