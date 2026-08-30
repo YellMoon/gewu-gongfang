@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from run_real_miniapp_role_ui import ROLE_KEYS, capture_page_screenshot, clear_test_session, is_test_account, parse_session_receipt, user_for_session, wait_for_simulator_runtime, verify_identity, verify_pages
 
@@ -166,10 +166,14 @@ class RoleUiReceiptTests(unittest.TestCase):
         session = {"accountId": account_id, "token": "ticket.signature"}
         with patch("run_real_miniapp_role_ui.run_wx_api", side_effect=wx_api), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide):
             identity = verify_identity(Path("C:/miniapp"), session)
-        removed_keys = [args[0] for method, args in storage_calls if method == "removeStorageSync"]
-        self.assertIn("auth_session_generation", removed_keys)
-        self.assertIn("auth_session_state_v1", removed_keys)
-        self.assertIn(["simulator_refresh", "--project", str(Path("C:/miniapp"))], wechatide_calls)
+        session_state_writes = [args for method, args in storage_calls if method == "setStorageSync" and args[0] == "auth_session_state_v1"]
+        generation_writes = [args for method, args in storage_calls if method == "setStorageSync" and args[0] == "auth_session_generation"]
+        self.assertEqual(generation_writes, [["auth_session_generation", 0]])
+        self.assertEqual(session_state_writes, [["auth_session_state_v1", {"version": 1, "generation": 0, "invalidated": False}]])
+        self.assertIn([
+            "automation_navigate", "--project", str(Path("C:/miniapp")),
+            "--action", "reLaunch", "--url", "/pages/index/index", "--wait", "1",
+        ], wechatide_calls)
         self.assertEqual(identity["role"], "student")
 
     def test_identity_read_retries_only_the_post_refresh_automator_timeout(self):
@@ -194,7 +198,7 @@ class RoleUiReceiptTests(unittest.TestCase):
         with patch("run_real_miniapp_role_ui.run_wx_api"), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
             identity = verify_identity(Path("C:/miniapp"), session)
         self.assertEqual(identity["accountId"], account_id)
-        sleep.assert_called_once_with(1)
+        self.assertEqual(sleep.call_args_list, [call(1), call(1)])
 
     def test_identity_read_retries_when_wx_is_temporarily_unavailable_after_refresh(self):
         account_id = "e2e-account-student-e2e-role-test-0123456789abcdef"
@@ -218,7 +222,7 @@ class RoleUiReceiptTests(unittest.TestCase):
         with patch("run_real_miniapp_role_ui.run_wx_api"), patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
             identity = verify_identity(Path("C:/miniapp"), session)
         self.assertEqual(identity["accountId"], account_id)
-        sleep.assert_called_once_with(1)
+        self.assertEqual(sleep.call_args_list, [call(1), call(1)])
 
     def test_cleanup_retries_a_transient_wx_unavailable_error_then_removes_only_e2e_keys(self):
         account_id = "e2e-account-visitor-e2e-role-test-0123456789abcdef"

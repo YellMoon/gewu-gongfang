@@ -176,13 +176,27 @@ def verify_identity(project, session):
     run_wx_api(project, "setStorageSync", ["auth_token", session["token"]])
     run_wx_api(project, "setStorageSync", ["user_info", user])
     run_wx_api(project, "removeStorageSync", ["user_permissions"])
-    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_GENERATION_KEY])
-    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
-    run_wechatide(["simulator_refresh", "--project", str(project)], timeout=60)
+    # This is an authenticated cloud test session, not a raw storage spoof.
+    # Mirror the normal login committer so startup can recognize the session as
+    # intentionally activated while authorization is refreshed from the cloud.
+    run_wx_api(project, "setStorageSync", [AUTH_SESSION_GENERATION_KEY, 0])
+    run_wx_api(project, "setStorageSync", [AUTH_SESSION_STATE_KEY, {"version": 1, "generation": 0, "invalidated": False}])
+    # Re-launch from the injected authenticated storage rather than refreshing
+    # DevTools' whole simulator. Whole-simulator refresh can retain a stale
+    # unauthenticated launch fallback and race it against the first role page.
+    run_wechatide([
+        "automation_navigate", "--project", str(project),
+        "--action", "reLaunch", "--url", "/pages/index/index", "--wait", "1",
+    ], timeout=60)
     wait_for_simulator_runtime(project)
     result = read_refreshed_identity(project)
     if not isinstance(result, dict) or result.get("accountId") != session["accountId"] or result.get("role") != user["role"]:
         raise RuntimeError(f"REAL_MINIAPP_ROLE_UI_INJECTION_INVALID:{json.dumps(result, ensure_ascii=True)[:500]}")
+    # DevTools reports the JavaScript bridge as ready before the launch-time
+    # authentication initializer has finished. Let that prior initializer
+    # settle before driving a tab change; otherwise its stale login fallback
+    # can win a race with the first requested role page.
+    time.sleep(1)
     return {key: result.get(key) for key in ("accountId", "role", "identityKind", "accountState")}
 
 
