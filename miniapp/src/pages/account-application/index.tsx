@@ -122,7 +122,6 @@ export default function AccountApplicationPage() {
   return (
       <View className='application-page'>
       <View className={`state-card state-${state}`}>
-        <Text className='state-kicker'>{'\u8d26\u53f7\u8eab\u4efd\u7533\u8bf7'}</Text>
         <Text className='state-title'>{copy.title}</Text>
         <Text className='state-description'>{copy.description}</Text>
       </View>

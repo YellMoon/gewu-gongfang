@@ -87,5 +87,6 @@ assert.strictEqual(initialCopy.title, '申请角色', 'the visitor entry must na
 assert.ok(!initialCopy.description.includes('档案') && !initialCopy.description.includes('身份绑定'), 'the role-application introduction must not expose internal record terminology');
 const invalidCopy = copyForApplicationState('invalid');
 assert.ok(!invalidCopy.description.includes('档案'), 'validation guidance must use information users can recognize instead of internal records');
+assert.ok(!pageSource.includes("className='state-kicker'"), 'the role-application page must not repeat an internal account-identity heading above the user-facing action title');
 
 console.log('account application runtime checks passed');
