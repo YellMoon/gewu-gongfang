@@ -1596,6 +1596,18 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       storageAgentFailure(response, error);
     }
   });
+  app.post('/api/storage-agent/runtime-receipts', async (request, response) => {
+    if (!storageAgent || typeof storageAgent.reportRuntime !== 'function') return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
+    const body = exactBody(request.body, ['agentId', 'agentVersion', 'contracts']);
+    const token = storageAgentToken(request);
+    if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    try {
+      const receipt = await storageAgent.reportRuntime({ ...body, token });
+      response.json({ ok: true, receipt });
+    } catch (error) {
+      storageAgentFailure(response, error);
+    }
+  });
   app.post('/api/storage-agent/artifact-deliveries/lease', async (request, response) => {
     if (!storageAgent || typeof storageAgent.leaseArtifactDelivery !== 'function') return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
     const body = exactBody(request.body, ['agentId']);

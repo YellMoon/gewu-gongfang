@@ -28,13 +28,13 @@ const compatibleRuntimeManifest = matrix.createReleaseManifest({ componentVersio
 matrix.recordReceipt(compatibleRuntimeManifest, {
   target: 'storage_proxy',
   version: versions.storage_proxy,
-  runtimeVersion: '8.7.20',
-  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' },
+  runtimeVersion: '8.8.0',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
   evidence: 'storage runtime health and live import acceptance',
 });
 assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.version, versions.storage_proxy,
   'the receipt keeps the source release version distinct from the running storage runtime');
-assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeVersion, '8.7.20',
+assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeVersion, '8.8.0',
   'the receipt records the independently deployed storage runtime version');
 assert.deepStrictEqual(matrix.validateManifest(compatibleRuntimeManifest).issues, [],
   'an approved storage runtime receipt keeps the release manifest valid');
@@ -42,8 +42,8 @@ const currentStorageRuntimeManifest = matrix.createReleaseManifest({ componentVe
 matrix.recordReceipt(currentStorageRuntimeManifest, {
   target: 'storage_proxy',
   version: versions.storage_proxy,
-  runtimeVersion: '8.7.25',
-  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' },
+  runtimeVersion: '8.8.0',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
   evidence: 'storage runtime health and live import acceptance for the current NAS candidate',
 });
 assert.deepStrictEqual(matrix.validateManifest(currentStorageRuntimeManifest).issues, [],
@@ -54,7 +54,7 @@ assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '
 compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questionPaperExport = '3';
 assert.throws(
   () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-incompatible' }), {
-    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.19',
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.25',
     runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '1' }, evidence: 'old runtime',
   }),
   /runtime version is not approved/i,
@@ -62,8 +62,8 @@ assert.throws(
 );
 assert.throws(
   () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-contract-missing' }), {
-    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.20',
-    runtimeContracts: { questionPaperExport: '2', storageAgentTransport: '1' }, evidence: 'wrong protocol',
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.0',
+    runtimeContracts: { questionPaperExport: '2', storageAgentTransport: '2' }, evidence: 'wrong protocol',
   }),
   /runtime contract receipt is incompatible/i,
   'a matching version alone must not bypass the reviewed protocol contract',

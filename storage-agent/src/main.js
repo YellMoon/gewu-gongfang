@@ -8,13 +8,16 @@ const { createStorageWorker } = require('./worker');
 const { createQuestionImportParser } = require('./questionImportParser');
 const { createStorageAgentRuntime } = require('./runtime');
 const { runStorageAgentHealthCheck } = require('./health');
+const { createStorageAgentRuntimeManifest } = require('./runtimeManifest');
 
 async function main() {
   const config = loadStorageAgentConfig(process.env);
   await runStorageAgentHealthCheck({ config, version: packageJson.version });
+  const client = createStorageCloudClient({ cloudBaseUrl: config.cloudBaseUrl, agentId: config.agentId, token: config.token });
+  await client.reportRuntime(createStorageAgentRuntimeManifest({ version: packageJson.version }));
   const worker = createStorageWorker({
     agentPrivateKey: config.agentPrivateKey,
-    client: createStorageCloudClient({ cloudBaseUrl: config.cloudBaseUrl, agentId: config.agentId, token: config.token }),
+    client,
     objectStore: createObjectStore({ nasRoot: config.nasRoot }),
     questionImportParser: createQuestionImportParser({
       nasRoot: config.nasRoot, parserPath: config.questionImportParserPath, pythonBin: config.questionImportPythonBin,

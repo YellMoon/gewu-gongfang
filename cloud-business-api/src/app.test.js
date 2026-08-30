@@ -771,6 +771,11 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
       return { taskId: input.taskId, state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' };
     },
+    reportRuntime: async input => {
+      storageCalls.push(['runtime', input]);
+      if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
+      return { receiptId: 'storage_runtime_receipt_12345678', agentId: input.agentId, agentVersion: input.agentVersion, contracts: input.contracts, observedAt: '2026-08-30T00:00:00.000Z' };
+    },
   };
   const storageApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), storageAgent });
   const leasedStorageTask = await request(storageApp, '/api/storage-agent/lease', {
@@ -789,6 +794,12 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(completedStorageTask.status, 200);
   assert.deepStrictEqual(completedStorageTask.body, { ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } });
+  const reportedStorageRuntime = await request(storageApp, '/api/storage-agent/runtime-receipts', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
+    body: { agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } },
+  });
+  assert.strictEqual(reportedStorageRuntime.status, 200);
+  assert.deepStrictEqual(reportedStorageRuntime.body, { ok: true, receipt: { receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z' } });
   const rejectedStorageTask = await request(storageApp, '/api/storage-agent/lease', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'wrong-token' }, body: { agentId: 'storage-agent-1' },
   });
@@ -798,6 +809,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['lease', { agentId: 'storage-agent-1', token: 'storage-agent-test-token' }],
     ['download', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }],
     ['complete', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
+    ['runtime', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }],
     ['lease', { agentId: 'storage-agent-1', token: 'wrong-token' }],
   ]);
 

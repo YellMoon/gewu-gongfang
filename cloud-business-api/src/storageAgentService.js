@@ -20,12 +20,13 @@ function sameToken(expected, actual) {
   return expectedBytes.length === actualBytes.length && crypto.timingSafeEqual(expectedBytes, actualBytes);
 }
 
-function createStorageAgentService({ repository, artifactDeliveries = null, questionAssetDeliveries = null, agentId, token } = {}) {
+function createStorageAgentService({ repository, runtimeReceipts = null, artifactDeliveries = null, questionAssetDeliveries = null, agentId, token } = {}) {
   if (!repository || typeof repository.leaseNext !== 'function' || typeof repository.downloadRelay !== 'function' || typeof repository.complete !== 'function'
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
     || typeof token !== 'string' || token.length < 24) throw rejected();
   if (artifactDeliveries && (typeof artifactDeliveries.lease !== 'function' || typeof artifactDeliveries.upload !== 'function')) throw rejected();
   if (questionAssetDeliveries && (typeof questionAssetDeliveries.lease !== 'function' || typeof questionAssetDeliveries.upload !== 'function')) throw rejected();
+  if (runtimeReceipts && typeof runtimeReceipts.record !== 'function') throw rejected();
   function authenticate(input) {
     const request = exact(input, ['agentId', 'token']);
     if (request.agentId !== agentId || !sameToken(token, request.token)) throw rejected();
@@ -34,6 +35,11 @@ function createStorageAgentService({ repository, artifactDeliveries = null, ques
     async authorize(input) {
       authenticate(input);
       return { agentId };
+    },
+    async reportRuntime(input) {
+      const request = exact(input, ['agentId', 'token', 'agentVersion', 'contracts']);
+      if (request.agentId !== agentId || !sameToken(token, request.token) || !runtimeReceipts) throw rejected();
+      return runtimeReceipts.record({ agentId, agentVersion: request.agentVersion, contracts: request.contracts });
     },
     async lease(input) {
       authenticate(input);

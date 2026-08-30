@@ -12,9 +12,9 @@
       "rule": "structured question text is cloud-authoritative; storage_proxy keeps only media and export artifacts"
     },
     "storageAgentTransport": {
-      "version": "1",
+      "version": "2",
       "participants": ["cloud_business", "storage_proxy"],
-      "rule": "storage_proxy never decides identity, permissions, or business transactions"
+      "rule": "storage_proxy never decides identity, permissions, or business transactions; v2 adds an authenticated append-only runtime receipt"
     },
     "businessDataSchema": {
       "version": "1",
@@ -24,10 +24,10 @@
   },
   "runtimeReceipts": {
     "storage_proxy": {
-      "approvedRuntimeVersions": ["8.7.20", "8.7.25"],
+      "approvedRuntimeVersions": ["8.8.0"],
       "contracts": {
         "questionPaperExport": "3",
-        "storageAgentTransport": "1"
+        "storageAgentTransport": "2"
       }
     }
   }

@@ -18,6 +18,12 @@ async function main() {
         }
         return { ok: true, status: 200, json: async () => ({ ok: true, task: { taskId: 'task_12345678', objectId: 'obj_1', objectVersion: 1, expectedSha256: 'a'.repeat(64), expectedBytes: 3, mediaType: 'image/png', kind: 'relay', leaseToken: 'lease-token-test-value', leaseExpiresAt: '2026-08-22T00:05:00.000Z' } }) };
       }
+      if (url.endsWith('/api/storage-agent/runtime-receipts')) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, receipt: {
+          receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0',
+          contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z',
+        } }) };
+      }
       if (url.endsWith('/api/storage-agent/tasks/task_12345678/download')) {
         return { ok: true, status: 200, json: async () => ({ ok: true, relay: {
           envelope: { version: 'x25519-aes-256-gcm-v1' }, ciphertextBase64: Buffer.from('relay-ciphertext').toString('base64url'),
@@ -51,6 +57,10 @@ async function main() {
     },
   });
   const task = await client.lease();
+  assert.deepStrictEqual(await client.reportRuntime({ agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }), {
+    receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z',
+  });
   assert.strictEqual(task.taskId, 'task_12345678');
   const relay = await client.download(task);
   assert.deepStrictEqual(relay, {
@@ -73,26 +83,28 @@ async function main() {
   assert.strictEqual(calls[0].options.headers['x-gewu-storage-agent-token'], 'storage-agent-client-test-token-with-sufficient-length');
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), { agentId: 'storage-agent-1' });
   assert.ok(!calls[0].options.body.includes('storage-agent-client-test-token-with-sufficient-length'));
-  assert.strictEqual(calls[1].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/download');
-  assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' });
-  assert.strictEqual(calls[2].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
-  assert.deepStrictEqual(JSON.parse(calls[2].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 });
-  assert.strictEqual(calls[3].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-imports/question_import_task_1/candidates');
-  assert.deepStrictEqual(JSON.parse(calls[3].options.body), {
+  assert.strictEqual(calls[1].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/runtime-receipts');
+  assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } });
+  assert.strictEqual(calls[2].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/download');
+  assert.deepStrictEqual(JSON.parse(calls[2].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' });
+  assert.strictEqual(calls[3].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
+  assert.deepStrictEqual(JSON.parse(calls[3].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 });
+  assert.strictEqual(calls[4].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-imports/question_import_task_1/candidates');
+  assert.deepStrictEqual(JSON.parse(calls[4].options.body), {
     agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
-  assert.strictEqual(calls[4].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/lease');
-  assert.deepStrictEqual(JSON.parse(calls[4].options.body), { agentId: 'storage-agent-1' });
-  assert.strictEqual(calls[5].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/delivery_12345678/upload');
-  assert.strictEqual(calls[5].options.headers['content-type'], 'application/octet-stream');
-  assert.strictEqual(calls[5].options.headers['x-gewu-storage-agent-id'], 'storage-agent-1');
-  assert.strictEqual(calls[5].options.headers['x-gewu-storage-agent-lease-token'], 'lease-token-test-value');
-  assert.deepStrictEqual(calls[5].options.body, Buffer.from('pdf'));
-  assert.strictEqual(calls[6].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-asset-deliveries/lease');
-  assert.strictEqual(calls[7].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-asset-deliveries/question_asset_delivery_12345678/upload');
-  assert.strictEqual(calls[7].options.headers['x-gewu-storage-agent-id'], 'storage-agent-1');
-  assert.deepStrictEqual(calls[7].options.body, Buffer.from('png'));
+  assert.strictEqual(calls[5].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/lease');
+  assert.deepStrictEqual(JSON.parse(calls[5].options.body), { agentId: 'storage-agent-1' });
+  assert.strictEqual(calls[6].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/delivery_12345678/upload');
+  assert.strictEqual(calls[6].options.headers['content-type'], 'application/octet-stream');
+  assert.strictEqual(calls[6].options.headers['x-gewu-storage-agent-id'], 'storage-agent-1');
+  assert.strictEqual(calls[6].options.headers['x-gewu-storage-agent-lease-token'], 'lease-token-test-value');
+  assert.deepStrictEqual(calls[6].options.body, Buffer.from('pdf'));
+  assert.strictEqual(calls[7].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-asset-deliveries/lease');
+  assert.strictEqual(calls[8].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-asset-deliveries/question_asset_delivery_12345678/upload');
+  assert.strictEqual(calls[8].options.headers['x-gewu-storage-agent-id'], 'storage-agent-1');
+  assert.deepStrictEqual(calls[8].options.body, Buffer.from('png'));
   await assert.rejects(
     () => client.lease(),
     /STORAGE_CLOUD_RESPONSE_INVALID/,
@@ -108,6 +120,16 @@ async function main() {
     () => rejectedClient.lease(),
     /STORAGE_CLOUD_HTTP_409/,
     'the NAS log must retain the cloud HTTP status without copying cloud response details'
+  );
+  const malformedRuntimeClient = createStorageCloudClient({
+    cloudBaseUrl: 'https://cloud.example.invalid/cloud-business', agentId: 'storage-agent-1',
+    token: 'storage-agent-client-test-token-with-sufficient-length',
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, receipt: { agentId: 'storage-agent-1' } }) }),
+  });
+  await assert.rejects(
+    () => malformedRuntimeClient.reportRuntime({ agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }),
+    /STORAGE_CLOUD_RESPONSE_INVALID/,
+    'a malformed runtime receipt must not be accepted as NAS version evidence',
   );
 }
 

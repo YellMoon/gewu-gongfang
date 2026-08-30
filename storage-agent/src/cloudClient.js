@@ -29,6 +29,20 @@ function validTask(task) {
       && Number.isSafeInteger(task.assetIndex) && task.assetIndex >= 0 && validSource(task.source)));
 }
 
+function validRuntimeReceipt(receipt) {
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) || Object.getPrototypeOf(receipt) !== Object.prototype) return false;
+  if (Reflect.ownKeys(receipt).length !== 5 || typeof receipt.receiptId !== 'string' || !/^storage_runtime_receipt_[A-Za-z0-9_-]{8,128}$/.test(receipt.receiptId)
+    || typeof receipt.agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(receipt.agentId)
+    || typeof receipt.agentVersion !== 'string' || !/^\d+\.\d+\.\d+$/u.test(receipt.agentVersion)
+    || typeof receipt.observedAt !== 'string' || !Number.isFinite(Date.parse(receipt.observedAt))) return false;
+  try {
+    const contracts = exact(receipt.contracts, ['questionPaperExport', 'storageAgentTransport']);
+    return contracts.questionPaperExport === 3 && contracts.storageAgentTransport === 2;
+  } catch (_) {
+    return false;
+  }
+}
+
 function validArtifactDelivery(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
     && /^delivery_[A-Za-z0-9_-]{8,128}$/.test(value.deliveryId || '') && value.status === 'leased'
@@ -140,6 +154,14 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       const response = exact(await post('/api/storage-agent/lease', { agentId }), ['ok', 'task']);
       if (response.ok !== true || (response.task !== null && !validTask(response.task))) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       return response.task;
+    },
+    async reportRuntime(request) {
+      const response = exact(await post('/api/storage-agent/runtime-receipts', request && {
+        agentId, agentVersion: request.agentVersion, contracts: request.contracts,
+      }), ['ok', 'receipt']);
+      if (response.ok !== true || !validRuntimeReceipt(response.receipt) || response.receipt.agentId !== agentId
+        || response.receipt.agentVersion !== request.agentVersion) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      return response.receipt;
     },
     async leaseArtifactDelivery() {
       const response = exact(await post('/api/storage-agent/artifact-deliveries/lease', { agentId }), ['ok', 'delivery']);

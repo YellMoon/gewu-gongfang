@@ -2,6 +2,7 @@
 
 const { createStorageAgentService } = require('./storageAgentService');
 const { createStorageTaskRepository } = require('./storageTaskRepository');
+const { createStorageAgentRuntimeReceiptRepository } = require('./storageAgentRuntimeReceiptRepository');
 
 function createStorageAgentRuntimeFromEnvironment({ env = process.env, query, artifactDeliveries = null, questionAssetDeliveries = null, randomToken, randomId, now } = {}) {
   if (!env || typeof env !== 'object' || typeof query !== 'function') return null;
@@ -13,6 +14,7 @@ function createStorageAgentRuntimeFromEnvironment({ env = process.env, query, ar
       agentId,
       token,
       repository: createStorageTaskRepository({ query, randomToken, randomId, now }),
+      runtimeReceipts: createStorageAgentRuntimeReceiptRepository({ query, randomId }),
       artifactDeliveries,
       questionAssetDeliveries,
     });
