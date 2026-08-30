@@ -230,6 +230,7 @@ export default function SchedulePage() {
         <ScrollView
           className="week-view"
           scrollY
+          enableFlex
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}
@@ -280,6 +281,7 @@ export default function SchedulePage() {
         <ScrollView
           className="day-view"
           scrollY
+          enableFlex
           refresherEnabled
           refresherTriggered={refreshing}
           onRefresherRefresh={handleRefresh}

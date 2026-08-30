@@ -20,5 +20,9 @@ assert.ok(projectionSource.includes("timeZone: 'Asia/Shanghai'"), 'cloud schedul
 assert.ok(projectionSource.includes('cloudScheduleDateTime(schedule.start_time)'), 'cloud schedule start times must be normalized before the calendar filter receives them');
 assert.ok(projectionSource.includes('cloudScheduleDateTime(schedule.end_time)'), 'cloud schedule end times must be normalized before rendering');
 assert.ok(!source.includes("'/pages/cloud-account-admin/index'"), 'retired cloud account authorization must not remain reachable from the schedule page');
+assert.strictEqual((source.match(/enableFlex/g) || []).length, 2, 'both vertical schedule scrollers must opt into the miniapp flex layout mode');
+const styles = fs.readFileSync('miniapp/src/pages/schedule/index.scss', 'utf8');
+assert.ok(styles.includes('margin: 0 18rpx;') && styles.includes('width: calc(100% - 36rpx);'), 'wide schedule layout must use outer spacing instead of unsupported scroll-view padding');
+assert.ok(!styles.includes('.week-view {\n    padding:'), 'wide schedule layout must not rely on scroll-view padding in webview mode');
 assert.ok(packageJson.scripts['test:cloud-schedule'].includes('miniapp/src/pages/schedule/cloudBusinessSchedule.test.js'), 'cloud schedule test runner must include the miniapp cloud schedule boundary');
 console.log('miniapp cloud schedule source checks passed');

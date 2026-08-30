@@ -299,8 +299,8 @@
 
 @media (orientation: landscape), (min-width: 700px) {
   .week-view {
-    padding: 0 18rpx;
-    box-sizing: border-box;
+    width: calc(100% - 36rpx);
+    margin: 0 18rpx;
   }
 
   .week-grid {
