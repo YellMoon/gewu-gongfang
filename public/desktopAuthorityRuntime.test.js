@@ -56,7 +56,7 @@ async function withTimeout(promise, timeoutMs, message) {
     hostEpochId: 'epoch-1',
     actor: Object.freeze({ userId: 'user-1', deviceId: 'device-1', role: 'teacher' }),
     lease: Object.freeze({ id: 'lease-1', grantVersion: 1 }),
-    type: 'role-application.update.v1',
+    type: 'authority.reconcile.v1',
     payload: Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'private runtime draft' }) }),
     payloadHash: 'payload-hash-1',
     createdAt: '2026-07-28T00:00:00.000Z',
@@ -457,6 +457,17 @@ async function withTimeout(promise, timeoutMs, message) {
   assert.strictEqual(schoolResult.transportUsed, 'cloud-business-authority');
   assert.strictEqual(calls.filter(call => call.url.endsWith('/api/authority/commands')).length, legacyBusinessCallsBefore,
     'school drafts must never use the legacy authority command relay');
+  const unmappedBusinessDraft = await runtime.appendDraft({
+    type: 'pricing.create.v1',
+    payload: { record: { id: 'pricing-runtime-1' } },
+    preview: { title: 'Unmapped business draft' },
+  });
+  await assert.rejects(
+    () => runtime.confirmAndSubmit(unmappedBusinessDraft.id, { sessionToken: 'desktop-session-token' }),
+    error => error?.code === 'CLOUD_BUSINESS_DRAFT_MAPPING_REQUIRED',
+  );
+  assert.strictEqual(calls.filter(call => call.url.endsWith('/api/authority/commands')).length, legacyBusinessCallsBefore,
+    'an unregistered business mutation must not enter the legacy authority command relay');
   assert.ok(!Buffer.from(fs.readFileSync(outboxPath, 'utf8'), 'base64').toString('utf8').includes('desktop-session-token'),
     'the business session token must not be persisted in the encrypted outbox payload');
   await assert.rejects(

@@ -25,7 +25,7 @@ const assert = require('assert');
     hostEpochId: 'epoch-1',
     actor: Object.freeze({ userId: 'user-1', deviceId: 'device-1', role: 'teacher' }),
     lease: Object.freeze({ id: 'lease-1', grantVersion: 1 }),
-    type: 'role-application.update.v1',
+    type: 'authority.reconcile.v1',
     payload: Object.freeze({ id: 'schedule-1', changes: Object.freeze({ notes: 'safe' }) }),
     payloadHash: 'payload-hash-1',
     createdAt: '2026-07-28T00:00:00.000Z',
@@ -338,6 +338,17 @@ const assert = require('assert');
     error => error?.code === 'CLOUD_QUESTION_AUTHORITY_UNAVAILABLE',
   );
   assert.strictEqual(legacyBusinessCalls, 0, 'taxonomy drafts must never enter legacy envelope or transport fallback');
+
+  const unregisteredBusinessDraft = await failClosedClient.appendDraft({
+    type: 'pricing.create.v1',
+    payload: { record: { id: 'pricing-1' } },
+  });
+  await assert.rejects(
+    () => failClosedClient.confirmAndSubmit(unregisteredBusinessDraft.id),
+    error => error?.code === 'CLOUD_BUSINESS_DRAFT_MAPPING_REQUIRED',
+  );
+  assert.strictEqual(legacyBusinessCalls, 0,
+    'an unregistered business mutation must fail closed instead of reaching the legacy relay');
 
   console.log('desktop authority client tests passed');
 })().catch(error => {

@@ -53,12 +53,6 @@ export const studentModules = [
   'question-bank',
 ];
 
-export const studentWriteTasks = [
-  'question-paper',
-  'paper-export-word',
-  'paper-export-pdf',
-];
-
 export const teacherModules = staffModules.slice();
 
 export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'visitor';
@@ -252,7 +246,7 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
       modules: studentModules,
       readonlyScope: 'linked-student',
       linkedStudentIds: getLinkedStudentIds(user),
-      allowedWriteTasks: studentWriteTasks,
+      allowedWriteTasks: [],
       canReadAllSnapshots: false,
       capabilities: ['question-bank:view'] as MiniappCapability[],
     };

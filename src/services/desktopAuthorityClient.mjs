@@ -32,6 +32,10 @@ export function createDesktopAuthorityClient({
     return /^(student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
   }
 
+  function unregisteredBusinessMutation(draft) {
+    return /^[a-z][a-z0-9-]*\.(create|update|delete)\.v[1-9][0-9]*$/.test(String(draft?.type || ''));
+  }
+
   async function submitCloudDraft(id, draft, options, createCommand, submitCommand, transportUsed, unavailableCode, invalidCode) {
     if (!createCommand || !submitCommand) throw authorityClientError(unavailableCode);
     let command;
@@ -66,6 +70,9 @@ export function createDesktopAuthorityClient({
     if (cloudBusinessDraft(draft)) {
       return submitCloudDraft(id, draft, options, createCloudBusinessCommand, submitCloudBusiness,
         'cloud-business-authority', 'CLOUD_BUSINESS_AUTHORITY_UNAVAILABLE', 'CLOUD_BUSINESS_COMMAND_INVALID');
+    }
+    if (unregisteredBusinessMutation(draft)) {
+      throw authorityClientError('CLOUD_BUSINESS_DRAFT_MAPPING_REQUIRED');
     }
     let command;
     if (draft.status === 'confirmed') {
