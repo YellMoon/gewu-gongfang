@@ -100,11 +100,14 @@ def clear_test_session(project):
     current = read_refreshed_test_user(project)
     if not isinstance(current, dict) or not is_test_account(current.get("id")):
         return False
-    run_wx_api(project, "removeStorageSync", ["auth_token"])
-    run_wx_api(project, "removeStorageSync", ["user_info"])
-    run_wx_api(project, "removeStorageSync", ["user_permissions"])
-    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_GENERATION_KEY])
-    run_wx_api(project, "removeStorageSync", [AUTH_SESSION_STATE_KEY])
+    cleanup = (
+        "() => { const user = wx.getStorageSync('user_info'); "
+        "if (!user || typeof user.id !== 'string' || !/^e2e-account-(visitor|teacher|student|family)-e2e-role-test-[a-z0-9-]{12,64}$/.test(user.id)) return false; "
+        "['auth_token','user_info','user_permissions','auth_session_generation','auth_session_state_v1'].forEach(key => wx.removeStorageSync(key)); return true; }"
+    )
+    result = run_wechatide(["automation_evaluate", "--project", str(project), "--fn-source", cleanup])
+    if result is not True:
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_TEST_SESSION_CLEANUP_FAILED")
     return True
 
 

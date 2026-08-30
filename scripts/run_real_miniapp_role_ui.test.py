@@ -230,21 +230,24 @@ class RoleUiReceiptTests(unittest.TestCase):
             RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:wx is not defined"),
             {"id": account_id},
         ])
-        removed = []
+        cleanup_sources = []
 
-        def wechatide(_arguments, **_kwargs):
+        def wechatide(arguments, **_kwargs):
+            if arguments[0] == "automation_evaluate" and "removeStorageSync" in arguments[-1]:
+                cleanup_sources.append(arguments[-1])
+                return True
             result = next(reads)
             if isinstance(result, Exception):
                 raise result
             return result
 
-        def wx_api(_project, method, args):
-            removed.append((method, args[0]))
-
-        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.run_wx_api", side_effect=wx_api), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
+        with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=wechatide), patch("run_real_miniapp_role_ui.time.sleep") as sleep:
             self.assertTrue(clear_test_session(Path("C:/miniapp")))
         sleep.assert_called_once_with(1)
-        self.assertEqual([key for _method, key in removed], ["auth_token", "user_info", "user_permissions", "auth_session_generation", "auth_session_state_v1"])
+        self.assertEqual(len(cleanup_sources), 1)
+        self.assertIn("auth_token", cleanup_sources[0])
+        self.assertIn("auth_session_state_v1", cleanup_sources[0])
+        self.assertIn("e2e-account-", cleanup_sources[0])
 
 
 if __name__ == "__main__":
