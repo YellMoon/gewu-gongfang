@@ -580,8 +580,6 @@ const DesktopIdentityGate: React.FC = () => {
     if (!pending) {
       return (
         <>
-          <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u767b\u5f55'}</Button>
-          <Divider plain>{'\u6216\u4f7f\u7528\u8d26\u53f7\u5bc6\u7801'}</Divider>
           <form className="desktop-identity-password-form" onSubmit={event => {
             event.preventDefault();
             void beginPasswordVerification();
@@ -596,6 +594,8 @@ const DesktopIdentityGate: React.FC = () => {
               <Button type="primary" htmlType="submit" loading={busy} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
             </Space>
           </form>
+          <Divider plain>{'\u5176\u4ed6\u767b\u5f55\u65b9\u5f0f'}</Divider>
+          <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u626b\u7801\u767b\u5f55'}</Button>
         </>
       );
     }

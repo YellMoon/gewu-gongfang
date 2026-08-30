@@ -36,8 +36,12 @@ assert.ok(!decodedGateSource.includes('首次登录需要联网'), 'the login pa
 assert.ok(!decodedGateSource.includes('请选择微信登录'), 'the login page must not narrate controls that are already visible');
 assert.ok(decodedGateSource.includes('输入手机号') && decodedGateSource.includes('输入账号名'),
   'password login must clearly identify its phone and account-name fields');
-assert.ok(decodedGateSource.includes('微信登录') && decodedGateSource.includes('密码登录'),
-  'login modes must use familiar user-facing labels');
+assert.ok(decodedGateSource.includes('微信扫码登录') && decodedGateSource.includes('密码登录'),
+  'login modes must use familiar and unambiguous user-facing labels');
+assert.ok(
+  gateSource.indexOf('desktop-identity-password-form') < gateSource.indexOf("\\u5fae\\u4fe1\\u626b\\u7801\\u767b\\u5f55"),
+  'the teacher desktop must make phone/account password login the primary entry and keep QR login secondary'
+);
 for (const internalLoginCopy of [
   '格物工坊身份验证', '核验账号并登记此电脑', '设备名称', '开始微信身份注册',
   '静默登记这台电脑', '云端账号已核验', '请完成微信身份验证', '此电脑将自动登记',
@@ -52,7 +56,7 @@ assert.ok(!/^\s*admin:/m.test(gateSource), 'desktop identity labels must not ret
 assert.ok(!/^\s*parent:/m.test(gateSource), 'a household relationship must not be rendered as a desktop role');
 assert.ok(!gateSource.includes('<Space.Compact'), 'login methods must not be rendered as a duplicate action switcher');
 assert.ok(gateSource.includes('onClick={beginRegistration} block'),
-  'WeChat login must start directly from its single visible action');
+  'QR login must start directly from its single visible action');
 assert.ok(
   electronSource.includes("input.deviceName || config.deviceName || require('os').hostname()"),
   'Electron main must silently derive the device name when registration starts'
