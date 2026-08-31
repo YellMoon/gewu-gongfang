@@ -7,6 +7,8 @@ const path = require('path');
 const PUBLIC_BASE_URL = 'https://physicsedu.xyz/scheduling';
 const LOCAL_BASE_URL = 'http://127.0.0.1:3002';
 const MARKER_PATTERN = /^codex-e2e-[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9]{4,32}$/;
+const ROLE_TEACHING_ACCOUNT_PATTERN = /^e2e-account-(visitor|teacher|student|family)-(e2e-role-test-[a-z0-9-]{12,64})$/u;
+const ROLE_TEACHING_KEYS = Object.freeze(['visitor', 'teacher', 'student', 'family']);
 
 function acceptanceFailure(code, details) {
   return Object.assign(new Error(code), { code, details });
@@ -382,6 +384,224 @@ async function runPublicAcceptance({
 function projectionHasRecord(payload, table, id) {
   const records = payload?.projection?.[table];
   return Array.isArray(records) && records.some(record => record && record.id === id);
+}
+
+function roleProjectionRecord(projection, table, id) {
+  const records = projection?.[table];
+  if (!Array.isArray(records)) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_PROJECTION_INVALID');
+  return records.find(record => record && record.id === id) || null;
+}
+
+function verifyRoleScopedTeachingProjection({ courseId, scheduleId, projections } = {}) {
+  if (typeof courseId !== 'string' || !courseId || typeof scheduleId !== 'string' || !scheduleId
+    || !projections || typeof projections !== 'object' || Array.isArray(projections)
+    || Object.keys(projections).sort().join(',') !== 'family,student,teacher,visitor') {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_CONFIG_INVALID');
+  }
+  if (projections.visitor !== null) {
+    const visitorCourse = roleProjectionRecord(projections.visitor, 'courses', courseId);
+    const visitorSchedule = roleProjectionRecord(projections.visitor, 'schedules', scheduleId);
+    if (visitorCourse || visitorSchedule) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_VISITOR_SCOPE_FAILED');
+  }
+
+  const teacherCourse = roleProjectionRecord(projections.teacher, 'courses', courseId);
+  const teacherSchedule = roleProjectionRecord(projections.teacher, 'schedules', scheduleId);
+  if (!teacherCourse || !teacherSchedule || teacherCourse.price_teacher === null || teacherCourse.price_teacher === undefined
+    || teacherSchedule.calculated_teacher_fee === null || teacherSchedule.calculated_teacher_fee === undefined
+    || !Array.isArray(teacherCourse.student_pricings) || teacherCourse.student_pricings.length !== 1
+    || teacherCourse.student_pricings[0]?.teacher_fee === null || teacherCourse.student_pricings[0]?.teacher_fee === undefined
+    || !Array.isArray(teacherSchedule.student_pricings) || teacherSchedule.student_pricings.length !== 1
+    || teacherSchedule.student_pricings[0]?.teacher_fee === null || teacherSchedule.student_pricings[0]?.teacher_fee === undefined) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_TEACHER_SCOPE_FAILED');
+  }
+
+  const studentCourse = roleProjectionRecord(projections.student, 'courses', courseId);
+  const studentSchedule = roleProjectionRecord(projections.student, 'schedules', scheduleId);
+  if (!studentCourse || !studentSchedule) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_STUDENT_SCOPE_FAILED');
+  if (studentCourse.price_teacher !== null || studentSchedule.calculated_teacher_fee !== null
+    || !Array.isArray(studentCourse.student_pricings) || studentCourse.student_pricings.length !== 1
+    || studentCourse.student_pricings[0]?.teacher_fee !== null
+    || !Array.isArray(studentSchedule.student_pricings) || studentSchedule.student_pricings.length !== 1
+    || studentSchedule.student_pricings[0]?.teacher_fee !== null) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_STUDENT_REDACTION_FAILED');
+  }
+
+  const familyCourse = roleProjectionRecord(projections.family, 'courses', courseId);
+  const familySchedule = roleProjectionRecord(projections.family, 'schedules', scheduleId);
+  if (!familyCourse || !familySchedule) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_FAMILY_SCOPE_FAILED');
+  if (familyCourse.price_teacher !== null || familySchedule.calculated_teacher_fee !== null
+    || !Array.isArray(familyCourse.student_pricings) || familyCourse.student_pricings.length !== 1
+    || familyCourse.student_pricings[0]?.teacher_fee !== null
+    || !Array.isArray(familySchedule.student_pricings) || familySchedule.student_pricings.length !== 1
+    || familySchedule.student_pricings[0]?.teacher_fee !== null) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_FAMILY_REDACTION_FAILED');
+  }
+
+  return Object.freeze({
+    visitorExcluded: true,
+    teacherReadBack: true,
+    studentReadBack: true,
+    familyReadBack: true,
+    studentFeeRedacted: true,
+    familyFeeRedacted: true,
+  });
+}
+
+function validRoleTeachingRow(key, marker, row) {
+  const expected = {
+    visitor: { roles: [], profileType: null, profileId: null, relationship: null },
+    teacher: { roles: ['teacher'], profileType: 'teacher', profileId: `e2e-teacher-${marker}`, relationship: null },
+    student: { roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'student' },
+    family: { roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian' },
+  }[key];
+  return Boolean(expected) && row?.status === 'active' && Array.isArray(row.roles)
+    && JSON.stringify(row.roles) === JSON.stringify(expected.roles)
+    && row.profileType === expected.profileType && row.profileId === expected.profileId
+    && row.relationship === expected.relationship && Number.isFinite(Date.parse(row.updatedAt));
+}
+
+async function loadRoleTeachingBindings(appPool, tenantId = 'default') {
+  if (!appPool || typeof appPool.query !== 'function' || typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_BINDINGS_CONFIG_INVALID');
+  }
+  const result = await runStage('REAL_CLOUD_ROLE_TEACHING_BINDINGS_READ_FAILED', () => appPool.query(
+    `SELECT accounts.account_id AS "accountId",accounts.status,
+      COALESCE(array_agg(grants.role ORDER BY grants.role) FILTER (WHERE grants.status='active'),ARRAY[]::text[]) AS roles,
+      MAX(grants.profile_type) FILTER (WHERE grants.status='active') AS "profileType",
+      MAX(grants.profile_id) FILTER (WHERE grants.status='active') AS "profileId",
+      MAX(grants.student_relationship) FILTER (WHERE grants.status='active') AS relationship,
+      to_char(GREATEST(accounts.updated_at,COALESCE(MAX(grants.updated_at) FILTER (WHERE grants.status='active'),accounts.updated_at)) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
+     FROM business.miniapp_cloud_accounts accounts
+     LEFT JOIN business.miniapp_cloud_role_grants grants ON grants.account_id=accounts.account_id
+     WHERE accounts.account_id LIKE 'e2e-account-%-e2e-role-test-%'
+     GROUP BY accounts.account_id,accounts.status,accounts.updated_at`,
+  ));
+  if (!Array.isArray(result?.rows)) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_BINDINGS_INVALID');
+  const groups = new Map();
+  for (const row of result.rows) {
+    const match = typeof row?.accountId === 'string' ? row.accountId.match(ROLE_TEACHING_ACCOUNT_PATTERN) : null;
+    if (!match) continue;
+    const [, key, marker] = match;
+    if (!groups.has(marker)) groups.set(marker, new Map());
+    groups.get(marker).set(key, row);
+  }
+  const candidates = [...groups.entries()].filter(([marker, rows]) => ROLE_TEACHING_KEYS.every(key => validRoleTeachingRow(key, marker, rows.get(key))));
+  candidates.sort((left, right) => {
+    const latest = rows => Math.max(...ROLE_TEACHING_KEYS.map(key => Date.parse(rows.get(key).updatedAt)));
+    return latest(right[1]) - latest(left[1]) || right[0].localeCompare(left[0]);
+  });
+  if (!candidates.length) throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_BINDINGS_INVALID');
+  const [marker, rows] = candidates[0];
+  const teacherId = rows.get('teacher').profileId;
+  const studentId = rows.get('student').profileId;
+  const profiles = await runStage('REAL_CLOUD_ROLE_TEACHING_BINDINGS_READ_FAILED', () => appPool.query(
+    `SELECT
+       EXISTS(SELECT 1 FROM business.teachers WHERE tenant_id=$1 AND id=$2 AND legacy_deleted=false) AS "teacherExists",
+       EXISTS(SELECT 1 FROM business.students WHERE tenant_id=$1 AND id=$3 AND legacy_deleted=false) AS "studentExists"`,
+    [tenantId, teacherId, studentId],
+  ));
+  if (profiles?.rows?.length !== 1 || profiles.rows[0].teacherExists !== true || profiles.rows[0].studentExists !== true) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_BINDINGS_INVALID');
+  }
+  const roles = Object.fromEntries(ROLE_TEACHING_KEYS.map(key => [key, Object.freeze({
+    accountId: rows.get(key).accountId,
+    profileId: rows.get(key).profileId,
+  })]));
+  return Object.freeze({ marker, roles: Object.freeze(roles) });
+}
+
+async function runRoleScopedTeachingAcceptance({
+  fetchImpl,
+  sessionToken,
+  miniappTicketSecret,
+  bindings,
+  baseUrl = PUBLIC_BASE_URL,
+  version,
+  marker,
+} = {}) {
+  if (typeof fetchImpl !== 'function' || typeof sessionToken !== 'string'
+    || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(sessionToken)
+    || typeof miniappTicketSecret !== 'string' || miniappTicketSecret.length < 24
+    || baseUrl !== PUBLIC_BASE_URL || typeof version !== 'string' || !MARKER_PATTERN.test(marker)
+    || !marker.startsWith(`codex-e2e-${version}-`) || !bindings || typeof bindings !== 'object'
+    || !bindings.roles || !ROLE_TEACHING_KEYS.every(key => typeof bindings.roles[key]?.accountId === 'string')
+    || typeof bindings.roles.teacher.profileId !== 'string' || typeof bindings.roles.student.profileId !== 'string'
+    || bindings.roles.family.profileId !== bindings.roles.student.profileId) {
+    throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_CONFIG_INVALID');
+  }
+  const ids = Object.freeze({
+    institution: `${marker}-role-institution`, school: `${marker}-role-school`, room: `${marker}-role-room`,
+    course: `${marker}-role-course`, schedule: `${marker}-role-schedule`,
+  });
+  const teacherId = bindings.roles.teacher.profileId;
+  const studentId = bindings.roles.student.profileId;
+  const operations = [
+    { resource: 'institutions', table: 'institutions', key: 'institution', id: ids.institution,
+      body: { institutionId: ids.institution, data: { name: `${marker} role institution`, contactPerson: null, contactPhone: null, revenueShare: null, notes: 'controlled role acceptance' } } },
+    { resource: 'schools', table: 'schools', key: 'school', id: ids.school,
+      body: { schoolId: ids.school, data: { name: `${marker} role school`, count: 1 } } },
+    { resource: 'rooms', table: 'rooms', key: 'room', id: ids.room,
+      body: { roomId: ids.room, name: `${marker} role room`, address: `${marker} role address` } },
+    { resource: 'courses', table: 'courses', key: 'course', id: ids.course,
+      body: { courseId: ids.course, data: { name: `${marker} role physics`, year: 2031, semester: 'spring', displayName: `${marker} role physics`, type: 1, sourceType: 1, institutionId: ids.institution, priceTuition: 100, priceTeacher: 60, billingUnit: 1, teacherFeeMode: 1, roomId: ids.room, roomName: `${marker} role room`, teacherId, teacherName: `${marker} role teacher`, active: true, defaultDurationMinutes: 90, notes: 'controlled role acceptance', pricings: [{ studentId, tuition: 100, teacherFee: 60 }] } } },
+    { resource: 'schedules', table: 'schedules', key: 'schedule', id: ids.schedule,
+      body: { scheduleId: ids.schedule, data: { courseId: ids.course, startAt: '2031-01-07T01:00:00.000Z', endAt: '2031-01-07T02:30:00.000Z', recurringRule: null, status: 1, roomDisplay: `${marker} role room`, serviceType: 1, tuition: 100, teacherFee: 60, notes: 'controlled role acceptance', pricings: [{ studentId, attendanceStatus: 1, tuition: 100, teacherFee: 60 }] } } },
+  ];
+  const created = [];
+  let evidence = null;
+  try {
+    for (const operation of operations) {
+      const createdResult = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/${operation.resource}`, {
+        method: 'POST', body: operation.body,
+      }), 201, `REAL_CLOUD_ROLE_TEACHING_CREATE_${operation.resource.toUpperCase()}_FAILED`);
+      created.push({ ...operation, updatedAt: observedTimestamp(createdResult.body?.[operation.key]) });
+    }
+    const desktopProjection = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_ROLE_TEACHING_DESKTOP_READ_FAILED');
+    if (!created.every(operation => projectionHasRecord(desktopProjection.body, operation.table, operation.id))) {
+      throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_DESKTOP_READ_FAILED');
+    }
+    const projections = {};
+    let visitorStatus = null;
+    for (const key of ROLE_TEACHING_KEYS) {
+      const roleToken = makeMiniappSessionToken(miniappTicketSecret, bindings.roles[key].accountId);
+      const response = await requestJson(fetchImpl, roleToken, `${baseUrl}/api/business/miniapp-projection`);
+      if (key === 'visitor' && response.status === 403 && response.body?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') {
+        projections.visitor = null;
+        visitorStatus = response.status;
+        continue;
+      }
+      requireResponse(response, 200, `REAL_CLOUD_ROLE_TEACHING_${key.toUpperCase()}_READ_FAILED`);
+      projections[key] = response.body.projection;
+      if (key === 'visitor') visitorStatus = response.status;
+    }
+    const roleEvidence = verifyRoleScopedTeachingProjection({ courseId: ids.course, scheduleId: ids.schedule, projections });
+    evidence = {
+      roleTeachingCreated: created.length,
+      roleTeachingDesktopReadBack: true,
+      roleTeachingVisitorStatus: visitorStatus,
+      roleTeachingVisitorExcluded: roleEvidence.visitorExcluded,
+      roleTeachingTeacherReadBack: roleEvidence.teacherReadBack,
+      roleTeachingStudentReadBack: roleEvidence.studentReadBack,
+      roleTeachingFamilyReadBack: roleEvidence.familyReadBack,
+      roleTeachingStudentFeeRedacted: roleEvidence.studentFeeRedacted,
+      roleTeachingFamilyFeeRedacted: roleEvidence.familyFeeRedacted,
+      roleTeachingCleanupConfirmed: false,
+    };
+  } finally {
+    for (const operation of [...created].reverse()) {
+      requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/${operation.resource}/${encodeURIComponent(operation.id)}`, {
+        method: 'DELETE', body: { expectedUpdatedAt: operation.updatedAt },
+      }), 200, `REAL_CLOUD_ROLE_TEACHING_CLEANUP_${operation.resource.toUpperCase()}_FAILED`);
+    }
+    if (created.length) {
+      const after = requireResponse(await requestJson(fetchImpl, sessionToken, `${baseUrl}/api/business/desktop-projection`), 200, 'REAL_CLOUD_ROLE_TEACHING_CLEANUP_FAILED');
+      if (created.some(operation => projectionHasRecord(after.body, operation.table, operation.id))) {
+        throw acceptanceFailure('REAL_CLOUD_ROLE_TEACHING_CLEANUP_FAILED');
+      }
+      if (evidence) evidence.roleTeachingCleanupConfirmed = true;
+    }
+  }
+  return evidence;
 }
 
 async function runTeachingLoopAcceptance({
@@ -1029,6 +1249,16 @@ async function runFromEnvironment(env = process.env) {
         }
         const businessEvidence = await runPublicAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
         const teachingLoopEvidence = await runTeachingLoopAcceptance({ fetchImpl: fetch, sessionToken, baseUrl: PUBLIC_BASE_URL, version, marker });
+        const roleTeachingBindings = await loadRoleTeachingBindings(appPool, tenantId);
+        const roleTeachingEvidence = await runRoleScopedTeachingAcceptance({
+          fetchImpl: fetch,
+          sessionToken,
+          miniappTicketSecret: env.CLOUD_MINIAPP_TICKET_SECRET,
+          bindings: roleTeachingBindings,
+          baseUrl: PUBLIC_BASE_URL,
+          version,
+          marker,
+        });
         const miniappSessionToken = makeMiniappSessionToken(env.CLOUD_MINIAPP_TICKET_SECRET, loaded.identity.accountId);
         const miniappEvidence = await runMiniappLimitedWriteAcceptance({
           fetchImpl: fetch,
@@ -1039,7 +1269,7 @@ async function runFromEnvironment(env = process.env) {
           version,
           marker,
         });
-        return Object.freeze({ ...businessEvidence, ...teachingLoopEvidence, ...onlineRegistration.evidence, ...miniappEvidence });
+        return Object.freeze({ ...businessEvidence, ...teachingLoopEvidence, ...roleTeachingEvidence, ...onlineRegistration.evidence, ...miniappEvidence });
       },
       () => runWithCleanup(
         () => forceCleanup(appPool, writerPool, tenantId, marker),
@@ -1082,6 +1312,9 @@ module.exports = Object.freeze({
   resolveRuntimeModules,
   runPublicAcceptance,
   runTeachingLoopAcceptance,
+  loadRoleTeachingBindings,
+  runRoleScopedTeachingAcceptance,
+  verifyRoleScopedTeachingProjection,
   runMiniappLimitedWriteAcceptance,
   loadActiveSuperAdminSession,
   resolveOperatorIdentity,

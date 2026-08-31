@@ -10,6 +10,9 @@ const {
   runWithCleanup,
   runPublicAcceptance,
   runTeachingLoopAcceptance,
+  loadRoleTeachingBindings,
+  runRoleScopedTeachingAcceptance,
+  verifyRoleScopedTeachingProjection,
   runMiniappLimitedWriteAcceptance,
   forceCleanup,
   forceMiniappAssetCleanup,
@@ -175,6 +178,155 @@ async function teachingLoopCreatesReadsConflictsAndCleans() {
   const deletes = calls.filter(call => call.method === 'DELETE').map(call => call.path);
   assert.deepStrictEqual(deletes.map(path => path.split('/').at(-2)), ['schedules', 'courses', 'students', 'teachers', 'rooms', 'schools', 'institutions']);
   assert.strictEqual(calls.filter(call => call.method === 'GET' && call.path.endsWith('/desktop-projection')).length, 3, 'course updates must refresh dependent schedule versions before cleanup');
+}
+
+function roleScopedTeachingProjectionRequiresExpectedVisibilityAndRedaction() {
+  const courseId = 'codex-e2e-8.9.0-role-course';
+  const scheduleId = 'codex-e2e-8.9.0-role-schedule';
+  const projectionFor = (visible, fee) => ({
+    courses: visible ? [{ id: courseId, price_teacher: fee, student_pricings: [{ student_id: 'student-1', teacher_fee: fee }] }] : [],
+    schedules: visible ? [{ id: scheduleId, course_id: courseId, calculated_teacher_fee: fee, student_pricings: [{ student_id: 'student-1', teacher_fee: fee }] }] : [],
+  });
+  assert.deepStrictEqual(verifyRoleScopedTeachingProjection({
+    courseId,
+    scheduleId,
+    projections: {
+      visitor: null,
+      teacher: projectionFor(true, 60),
+      student: projectionFor(true, null),
+      family: projectionFor(true, null),
+    },
+  }), {
+    visitorExcluded: true,
+    teacherReadBack: true,
+    studentReadBack: true,
+    familyReadBack: true,
+    studentFeeRedacted: true,
+    familyFeeRedacted: true,
+  });
+  assert.throws(() => verifyRoleScopedTeachingProjection({
+    courseId,
+    scheduleId,
+    projections: {
+      visitor: projectionFor(true, null),
+      teacher: projectionFor(true, 60),
+      student: projectionFor(true, null),
+      family: projectionFor(true, null),
+    },
+  }), /REAL_CLOUD_ROLE_TEACHING_VISITOR_SCOPE_FAILED/);
+}
+
+async function roleTeachingBindingsRequireOneCoherentFixture() {
+  const marker = 'e2e-role-test-da6c43760d5d46428fa699af38148bb7';
+  const rows = [
+    { accountId: `e2e-account-visitor-${marker}`, status: 'active', roles: [], profileType: null, profileId: null, relationship: null, updatedAt: '2026-08-30T01:00:00.000Z' },
+    { accountId: `e2e-account-teacher-${marker}`, status: 'active', roles: ['teacher'], profileType: 'teacher', profileId: `e2e-teacher-${marker}`, relationship: null, updatedAt: '2026-08-30T01:00:01.000Z' },
+    { accountId: `e2e-account-student-${marker}`, status: 'active', roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'student', updatedAt: '2026-08-30T01:00:02.000Z' },
+    { accountId: `e2e-account-family-${marker}`, status: 'active', roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian', updatedAt: '2026-08-30T01:00:03.000Z' },
+  ];
+  const calls = [];
+  const bindings = await loadRoleTeachingBindings({
+    async query(sql, values) {
+      calls.push([sql, values]);
+      if (sql.includes('FROM business.miniapp_cloud_accounts')) return { rows };
+      return { rows: [{ teacherExists: true, studentExists: true }] };
+    },
+  }, 'default');
+  assert.strictEqual(bindings.marker, marker);
+  assert.strictEqual(bindings.roles.teacher.profileId, `e2e-teacher-${marker}`);
+  assert.strictEqual(bindings.roles.student.profileId, `e2e-student-${marker}`);
+  assert.strictEqual(bindings.roles.family.profileId, bindings.roles.student.profileId);
+  assert.strictEqual(calls.length, 2);
+  assert.deepStrictEqual(calls[1][1], ['default', `e2e-teacher-${marker}`, `e2e-student-${marker}`]);
+}
+
+async function roleScopedTeachingCreatesReadsAndCleans() {
+  const marker = 'codex-e2e-8.9.0-roleloop';
+  const fixtureMarker = 'e2e-role-test-da6c43760d5d46428fa699af38148bb7';
+  const bindings = {
+    marker: fixtureMarker,
+    roles: {
+      visitor: { accountId: `e2e-account-visitor-${fixtureMarker}`, profileId: null },
+      teacher: { accountId: `e2e-account-teacher-${fixtureMarker}`, profileId: `e2e-teacher-${fixtureMarker}` },
+      student: { accountId: `e2e-account-student-${fixtureMarker}`, profileId: `e2e-student-${fixtureMarker}` },
+      family: { accountId: `e2e-account-family-${fixtureMarker}`, profileId: `e2e-student-${fixtureMarker}` },
+    },
+  };
+  const created = new Map();
+  const calls = [];
+  const singularByResource = { institutions: 'institution', schools: 'school', rooms: 'room', courses: 'course', schedules: 'schedule' };
+  const tableByResource = { institutions: 'institutions', schools: 'schools', rooms: 'rooms', courses: 'courses', schedules: 'schedules' };
+  const roleFromToken = authorization => {
+    const encoded = String(authorization || '').replace(/^Bearer /, '').split('.')[0];
+    const accountId = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')).accountId;
+    return Object.entries(bindings.roles).find(([, value]) => value.accountId === accountId)?.[0] || null;
+  };
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    const method = options.method || 'GET';
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ path, method, body, authorization: options.headers?.Authorization });
+    if (path.endsWith('/miniapp-projection')) {
+      const role = roleFromToken(options.headers?.Authorization);
+      if (role === 'visitor') return response(403, { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      const fee = role === 'teacher' ? 60 : null;
+      return response(200, { ok: true, projection: {
+        courses: [{ id: `${marker}-role-course`, price_teacher: fee, student_pricings: [{ student_id: bindings.roles.student.profileId, teacher_fee: fee }] }],
+        schedules: [{ id: `${marker}-role-schedule`, course_id: `${marker}-role-course`, calculated_teacher_fee: fee, student_pricings: [{ student_id: bindings.roles.student.profileId, teacher_fee: fee }] }],
+      } });
+    }
+    if (path.endsWith('/desktop-projection')) {
+      const projection = {};
+      for (const [resource, table] of Object.entries(tableByResource)) {
+        projection[table] = [...created.entries()].filter(([key]) => key.startsWith(`${resource}:`)).map(([key, updatedAt]) => ({ id: key.slice(resource.length + 1), updated_at: updatedAt }));
+      }
+      return response(200, { ok: true, projection });
+    }
+    const match = path.match(/\/api\/business\/(institutions|schools|rooms|courses|schedules)(?:\/([^/]+))?$/);
+    assert.ok(match, `unexpected path ${path}`);
+    const resource = match[1];
+    const id = decodeURIComponent(match[2] || body?.[`${resource.slice(0, -1)}Id`] || body?.courseId || body?.scheduleId || '');
+    const key = `${resource}:${id}`;
+    const responseKey = singularByResource[resource];
+    if (method === 'POST') {
+      if (resource === 'courses') {
+        assert.strictEqual(body.data.teacherId, bindings.roles.teacher.profileId);
+        assert.deepStrictEqual(body.data.pricings, [{ studentId: bindings.roles.student.profileId, tuition: 100, teacherFee: 60 }]);
+      }
+      const updatedAt = `2026-08-31T01:00:${String(created.size + 1).padStart(2, '0')}.000Z`;
+      created.set(key, updatedAt);
+      return response(201, { ok: true, [responseKey]: { id, updatedAt } });
+    }
+    if (method === 'DELETE') {
+      assert.strictEqual(body.expectedUpdatedAt, created.get(key));
+      created.delete(key);
+      return response(200, { ok: true, [responseKey]: { id, updatedAt: body.expectedUpdatedAt } });
+    }
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const result = await runRoleScopedTeachingAcceptance({
+    fetchImpl,
+    sessionToken: 'payload.signature',
+    miniappTicketSecret: 'miniapp-ticket-secret-for-real-role-tests',
+    bindings,
+    baseUrl: 'https://physicsedu.xyz/scheduling',
+    version: '8.9.0',
+    marker,
+  });
+  assert.deepStrictEqual(result, {
+    roleTeachingCreated: 5,
+    roleTeachingDesktopReadBack: true,
+    roleTeachingVisitorStatus: 403,
+    roleTeachingVisitorExcluded: true,
+    roleTeachingTeacherReadBack: true,
+    roleTeachingStudentReadBack: true,
+    roleTeachingFamilyReadBack: true,
+    roleTeachingStudentFeeRedacted: true,
+    roleTeachingFamilyFeeRedacted: true,
+    roleTeachingCleanupConfirmed: true,
+  });
+  assert.deepStrictEqual([...created], []);
+  assert.deepStrictEqual(calls.filter(call => call.method === 'DELETE').map(call => call.path.split('/').at(-2)), ['schedules', 'courses', 'rooms', 'schools', 'institutions']);
 }
 
 async function forceCleanupQualifiesTheFunctionOutputColumn() {
@@ -724,5 +876,8 @@ Promise.resolve()
   .then(successfulAcceptance)
   .then(cleanupOnFailure)
   .then(teachingLoopCreatesReadsConflictsAndCleans)
+  .then(roleScopedTeachingProjectionRequiresExpectedVisibilityAndRedaction)
+  .then(roleTeachingBindingsRequireOneCoherentFixture)
+  .then(roleScopedTeachingCreatesReadsAndCleans)
   .then(forceCleanupQualifiesTheFunctionOutputColumn)
   .then(() => console.log('real cloud business acceptance checks passed'));

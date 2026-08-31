@@ -33,6 +33,16 @@ RECEIPT_KEYS = {
     "teachingLoopCourseUpdateStatus",
     "teachingLoopCourseConflictStatus",
     "teachingLoopCleanupConfirmed",
+    "roleTeachingCreated",
+    "roleTeachingDesktopReadBack",
+    "roleTeachingVisitorStatus",
+    "roleTeachingVisitorExcluded",
+    "roleTeachingTeacherReadBack",
+    "roleTeachingStudentReadBack",
+    "roleTeachingFamilyReadBack",
+    "roleTeachingStudentFeeRedacted",
+    "roleTeachingFamilyFeeRedacted",
+    "roleTeachingCleanupConfirmed",
     "onlineRegistrationStatus",
     "onlineSessionContextStatus",
     "onlineRegistrationReplayed",
@@ -114,6 +124,16 @@ def parse_receipt(output, expected_version=None):
         and payload.get("teachingLoopCourseUpdateStatus") == 200
         and payload.get("teachingLoopCourseConflictStatus") == 409
         and payload.get("teachingLoopCleanupConfirmed") is True
+        and payload.get("roleTeachingCreated") == 5
+        and payload.get("roleTeachingDesktopReadBack") is True
+        and payload.get("roleTeachingVisitorStatus") in (200, 403)
+        and payload.get("roleTeachingVisitorExcluded") is True
+        and payload.get("roleTeachingTeacherReadBack") is True
+        and payload.get("roleTeachingStudentReadBack") is True
+        and payload.get("roleTeachingFamilyReadBack") is True
+        and payload.get("roleTeachingStudentFeeRedacted") is True
+        and payload.get("roleTeachingFamilyFeeRedacted") is True
+        and payload.get("roleTeachingCleanupConfirmed") is True
         and payload.get("onlineRegistrationStatus") == 200
         and payload.get("onlineSessionContextStatus") == 200
         and payload.get("onlineRegistrationReplayed") is False
