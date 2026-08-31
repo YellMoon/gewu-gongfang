@@ -14,6 +14,10 @@ assert.match(source, /question\.explanation/, 'limited question browsing must re
 assert.match(source, /expandedQuestionId/, 'limited question browsing must reuse the desktop-style answer drawer state');
 assert.match(source, /expandedQuestionId === question\.id/, 'only a selected question may reveal its answer and explanation');
 assert.match(source, /expanded \? <View className='question-preview-answer'>/, 'answers must be conditional on the selected question drawer');
+assert.match(source, /const VISITOR_QUESTION_LIMIT = 20/, 'visitor question browsing must have an enforced display boundary');
+assert.match(source, /const visibleQuestions = isVisitor \? matchingQuestions\.slice\(0, VISITOR_QUESTION_LIMIT\) : matchingQuestions/, 'visitor browsing must render only the bounded slice rather than every cloud question');
+assert.match(source, /matchingQuestions\.length > visibleQuestions\.length/, 'the page must detect when more questions exist beyond the visitor boundary');
+assert.match(source, /String\.fromCharCode\(32487, 32493, 27983, 35272\)/, 'the boundary must offer a deliberate user action instead of displaying allowance copy by default');
 assert.match(source, /question\.source/, 'question cards must show the cloud-provided source label');
 assert.match(source, /question\.knowledgeLabels/, 'question cards must show cloud-resolved knowledge labels');
 assert.match(source, /requestQuestionAssetDelivery/, 'question cards must fetch NAS-backed media only through the cloud delivery boundary');

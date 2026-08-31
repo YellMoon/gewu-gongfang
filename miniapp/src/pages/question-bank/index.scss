@@ -172,6 +172,21 @@
   margin-top: 18rpx;
 }
 
+.question-more-entry {
+  width: 100%;
+  height: 76rpx;
+  line-height: 76rpx;
+  margin: 18rpx 0 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #eef5f2;
+  color: #1f6f68;
+  font-size: 26rpx;
+  font-weight: 800;
+}
+
+.question-more-entry::after { border: 0; }
+
 .question-preview-item {
   padding: 22rpx 0;
   border-bottom: 1rpx solid rgba(23, 32, 51, 0.07);

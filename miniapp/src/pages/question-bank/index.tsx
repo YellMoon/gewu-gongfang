@@ -25,6 +25,7 @@ interface QuestionPreview {
 }
 
 const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
+const VISITOR_QUESTION_LIMIT = 20;
 
 function questionAssetKeys(value: unknown): string[] {
   const source = typeof value === 'string' ? value : JSON.stringify(value || {});
@@ -132,11 +133,22 @@ export default function QuestionBankPage() {
     if (current.scopeKey !== basketState.scopeKey) setBasketState(current);
   });
 
-  const filtered = useMemo(() => {
+  const matchingQuestions = useMemo(() => {
     const key = searchText.trim().toLowerCase();
     return questions.filter(question => !key || [question.subject, question.type, question.stemPreview, question.source, ...(question.knowledgeLabels || [])]
       .filter(Boolean).join(' ').toLowerCase().includes(key));
   }, [questions, searchText]);
+  const visibleQuestions = isVisitor ? matchingQuestions.slice(0, VISITOR_QUESTION_LIMIT) : matchingQuestions;
+  const filtered = visibleQuestions;
+
+  const requestMoreQuestionAccess = () => {
+    Taro.showModal({
+      title: String.fromCharCode(32487, 32493, 27983, 35272),
+      content: '\u7533\u8bf7\u6559\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u89d2\u8272\u540e\u53ef\u7ee7\u7eed\u6d4f\u89c8\u3002',
+      confirmText: '\u53bb\u7533\u8bf7',
+      success: result => { if (result.confirm) Taro.navigateTo({ url: '/pages/account-application/index' }); },
+    });
+  };
 
   const requestRoleApplication = () => {
     Taro.showModal({
@@ -164,9 +176,7 @@ export default function QuestionBankPage() {
       ? currentBasket.ids.filter(id => id !== questionId) : [...currentBasket.ids, questionId];
     replaceBasket(ids, currentBasket.scopeKey);
   };
-  const onReachPreviewEnd = () => {
-    if (isVisitor && questions.length >= 20) requestRoleApplication();
-  };
+  const onReachPreviewEnd = () => undefined;
   const stateText = previewState === 'loading' ? '正在加载题目'
     : previewState === 'empty' ? '云端暂无可用题目'
       : previewState === 'forbidden' ? '当前账号无权读取题库' : '离线或云端不可达';
@@ -197,6 +207,7 @@ export default function QuestionBankPage() {
           {canBuildPaper ? <Button className='basket-toggle' onClick={(event: any) => { event.stopPropagation(); toggleBasket(question.id); }}>{inBasket ? '移出试题篮' : '加入试题篮'}</Button> : null}
         </View>;
       })}</ScrollView>}
+      {isVisitor && matchingQuestions.length > visibleQuestions.length ? <Button className='question-more-entry' onClick={requestMoreQuestionAccess}>{String.fromCharCode(32487, 32493, 27983, 35272)}</Button> : null}
     </View>
   </View>;
 }
