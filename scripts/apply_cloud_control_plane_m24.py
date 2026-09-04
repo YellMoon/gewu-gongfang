@@ -31,7 +31,7 @@ def state_sql(upgrade):
         "SELECT json_build_object("
         "'ledgerCount',count(*),"
         "'targetCount',count(*) FILTER (WHERE migration_id='" + upgrade["migrationId"] + "' AND semantic_version=24 AND manifest_sha256='" + upgrade["manifestSha256"] + "'),"
-        "'functionFixed',(SELECT position('FROM vnext_control_plane.vnext_accounts AS a' in pg_get_functiondef(p.oid))>0 AND position('a.status = ''active''' in pg_get_functiondef(p.oid))>0 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='vnext_control_plane' AND p.proname='vnext_revoke_desktop_device'),"
+        "'functionFixed',(SELECT position('fromvnext_control_plane.vnext_accountsasa' in normalized_definition)>0 AND position('a.status=''active''' in normalized_definition)>0 FROM (SELECT lower(regexp_replace(pg_get_functiondef(p.oid),'[[:space:]]+','','g')) AS normalized_definition FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='vnext_control_plane' AND p.proname='vnext_revoke_desktop_device') AS target_function),"
         "'writerFunction',has_function_privilege('vnext_pg17_writer','" + signature + "','EXECUTE'),"
         "'publicFunction',has_function_privilege('public','" + signature + "','EXECUTE')"
         ")::text FROM vnext_control_plane.vnext_schema_migrations;"
