@@ -41,22 +41,23 @@ CONTROL_PLANE_M26_ID = "vnext-pg17-desktop-device-revoke-authorization-lock-26"
 CONTROL_PLANE_M26_SHA256 = "48bcfbdd3958d70a224ce807f4da1e23ce7142024a62913ce2e59b7eb8cd87cc"
 CONTROL_PLANE_M27_ID = "vnext-pg17-family-member-canonical-role-27"
 CONTROL_PLANE_M27_SHA256 = "297f705391d59c85733505e8b84e708ce33e4c90abb24a8a9231ad1bfc02de1c"
+NON_FIXTURE_ID_PREDICATE = "lower(id) NOT LIKE 'codex-%' AND lower(id) NOT LIKE 'e2e-%'"
 
 
 def verification_sql():
     count_queries = {
         "tenants": "SELECT count(*) FROM business.tenants",
-        "institutions": "SELECT count(*) FROM business.institutions",
-        "schools": "SELECT count(*) FROM business.schools",
-        "rooms": "SELECT count(*) FROM business.rooms",
-        # Acceptance identities are explicitly named fixtures. They are needed
-        # for repeatable role tests but must not change the historical import
-        # inventory that gates a migration or deployment.
-        "teachers": "SELECT count(*) FROM business.teachers WHERE id NOT LIKE 'e2e-teacher-%'",
-        "students": "SELECT count(*) FROM business.students WHERE id NOT LIKE 'e2e-student-%'",
-        "courses": "SELECT count(*) FROM business.courses",
+        # Acceptance identities are explicitly prefixed fixtures. Count all
+        # non-fixture historical rows, including soft-deleted rows, so normal
+        # create/delete activity cannot weaken or falsely trip the import gate.
+        "institutions": f"SELECT count(*) FROM business.institutions WHERE {NON_FIXTURE_ID_PREDICATE}",
+        "schools": f"SELECT count(*) FROM business.schools WHERE {NON_FIXTURE_ID_PREDICATE}",
+        "rooms": f"SELECT count(*) FROM business.rooms WHERE {NON_FIXTURE_ID_PREDICATE}",
+        "teachers": f"SELECT count(*) FROM business.teachers WHERE {NON_FIXTURE_ID_PREDICATE}",
+        "students": f"SELECT count(*) FROM business.students WHERE {NON_FIXTURE_ID_PREDICATE}",
+        "courses": f"SELECT count(*) FROM business.courses WHERE {NON_FIXTURE_ID_PREDICATE}",
         "pricings": "SELECT count(*) FROM business.course_student_pricings",
-        "schedules": "SELECT count(*) FROM business.schedules",
+        "schedules": f"SELECT count(*) FROM business.schedules WHERE {NON_FIXTURE_ID_PREDICATE}",
         "overrides": "SELECT count(*) FROM business.schedule_student_overrides",
     }
     fields = []

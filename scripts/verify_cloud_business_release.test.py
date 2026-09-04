@@ -30,8 +30,10 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertEqual(MODULE.CONTROL_PLANE_M26_SHA256, "48bcfbdd3958d70a224ce807f4da1e23ce7142024a62913ce2e59b7eb8cd87cc")
         self.assertEqual(MODULE.CONTROL_PLANE_M27_ID, "vnext-pg17-family-member-canonical-role-27")
         self.assertEqual(MODULE.CONTROL_PLANE_M27_SHA256, "297f705391d59c85733505e8b84e708ce33e4c90abb24a8a9231ad1bfc02de1c")
-        for table in ("institutions", "schools", "rooms", "courses", "schedules"):
-            self.assertIn(f"(SELECT count(*) FROM business.{table})", sql)
+        fixture_filter = "lower(id) NOT LIKE 'codex-%' AND lower(id) NOT LIKE 'e2e-%'"
+        self.assertEqual(MODULE.NON_FIXTURE_ID_PREDICATE, fixture_filter)
+        for table in ("institutions", "schools", "rooms", "teachers", "students", "courses", "schedules"):
+            self.assertIn(f"(SELECT count(*) FROM business.{table} WHERE {fixture_filter})", sql)
             self.assertNotIn(f"business.{table} WHERE legacy_deleted=false", sql)
         self.assertIn("vnext_create_schedule_record_v1", sql)
         self.assertIn("has_table_privilege('vnext_pg17_writer'", sql)
@@ -80,10 +82,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("miniapp_cloud_role_grants_one_active_super_admin", sql)
         self.assertIn("runtimeProjectionRead", sql)
         self.assertIn("runtimeCoreDirectWrite", sql)
-        self.assertIn("business.teachers WHERE id NOT LIKE 'e2e-teacher-%'", sql)
-        self.assertIn("business.students WHERE id NOT LIKE 'e2e-student-%'", sql)
-        self.assertNotIn("business.teachers WHERE legacy_deleted=false", sql)
-        self.assertNotIn("business.students WHERE legacy_deleted=false", sql)
+        self.assertNotIn("id NOT LIKE 'e2e-teacher-%'", sql)
+        self.assertNotIn("id NOT LIKE 'e2e-student-%'", sql)
 
     def test_validation_fails_closed(self):
         valid = dict(MODULE.IMPORTED_COUNT_BASELINES)
