@@ -13,7 +13,7 @@ const contexts = new Map([
 const service = createDesktopVerifiedAccessService({
   inspectVerificationToken: token => {
     if (token === 'invalid') throw new Error('invalid ticket');
-    return { authorityId: 'authority-1', accountId: token, phoneHmac, challenge: 'challenge-1', proofId: 'proof-1', expiresAt: Date.now() + 60_000 };
+    return { v: 1, authorityId: 'authority-1', accountId: token, phoneHmac, challenge: 'challenge-1', proofId: 'proof-1', expiresAt: Date.now() + 60_000 };
   },
   readAccountContext: ({ accountId }) => contexts.get(accountId) || null,
   readAccountContextByPhoneHmac: ({ phoneHmac: supplied }) => supplied === phoneHmac ? null : null,
@@ -35,6 +35,16 @@ const service = createDesktopVerifiedAccessService({
   await assert.rejects(
     () => service.read({ verificationToken: 'invalid' }),
     error => error.code === 'CLOUD_DESKTOP_VERIFIED_ACCESS_REJECTED',
+  );
+  const malformedTicketService = createDesktopVerifiedAccessService({
+    inspectVerificationToken: () => ({ v: 2, authorityId: 'authority-1', accountId: 'account-teacher', phoneHmac, challenge: 'challenge-1', proofId: 'proof-1', expiresAt: Date.now() + 60_000 }),
+    readAccountContext: ({ accountId }) => contexts.get(accountId) || null,
+    readAccountContextByPhoneHmac: () => null,
+  });
+  await assert.rejects(
+    () => malformedTicketService.read({ verificationToken: 'ticket-v2' }),
+    error => error.code === 'CLOUD_DESKTOP_VERIFIED_ACCESS_REJECTED',
+    'desktop verified access must accept only the v1 ticket contract emitted by desktop registration',
   );
   console.log('desktop verified access service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

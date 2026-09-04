@@ -31,8 +31,9 @@ function createDesktopVerifiedAccessService(config) {
       let directAccount;
       let phoneAccount;
       try {
-        ticket = exact(settings.inspectVerificationToken(verificationToken), ['authorityId', 'accountId', 'phoneHmac', 'challenge', 'proofId', 'expiresAt']);
-        if (!text(ticket.authorityId, 512) || !text(ticket.accountId, 512) || !/^[0-9a-f]{64}$/u.test(ticket.phoneHmac || '')) throw failure();
+        ticket = exact(settings.inspectVerificationToken(verificationToken), ['v', 'authorityId', 'accountId', 'phoneHmac', 'challenge', 'proofId', 'expiresAt']);
+        if (ticket.v !== 1 || !text(ticket.authorityId, 512) || !text(ticket.accountId, 512)
+          || !/^[0-9a-f]{64}$/u.test(ticket.phoneHmac || '')) throw failure();
         [directAccount, phoneAccount] = await Promise.all([
           settings.readAccountContext({ accountId: ticket.accountId }),
           settings.readAccountContextByPhoneHmac({ phoneHmac: ticket.phoneHmac }),
