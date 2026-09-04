@@ -27,9 +27,9 @@ const reviewedCompatibility = matrix.readCompatibilityDeclaration();
 assert.deepStrictEqual(
   reviewedCompatibility.contracts.desktopCloudSession,
   {
-    version: '1',
-    participants: ['desktop', 'cloud_business'],
-    rule: 'desktop login verifies the cloud account before silently registering the device and installation; restart challenges and role switching are cloud-authoritative',
+    version: '2',
+    participants: ['desktop', 'cloud_business', 'miniapp'],
+    rule: 'desktop login verifies the cloud account before silently registering the device and installation; an authenticated miniapp session can confirm pairing without a second phone proof; restart challenges and role switching are cloud-authoritative',
   },
   'desktop session and silent device registration compatibility must be reviewed independently of component versions',
 );
