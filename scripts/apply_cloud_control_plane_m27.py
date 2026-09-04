@@ -64,14 +64,16 @@ def read_state(executor, upgrade):
 def apply_control_plane_m27(executor, upgrade):
     upgrade = validate_upgrade(upgrade)
     before = read_state(executor, upgrade)
-    ready = {"ledgerCount": 27, "targetCount": 1, "familyMemberRole": True}
     pending = {"ledgerCount": 26, "targetCount": 0, "familyMemberRole": False}
-    if before == ready:
+    def ready(state):
+        return (isinstance(state.get("ledgerCount"), int) and state["ledgerCount"] >= 27
+                and state.get("targetCount") == 1 and state.get("familyMemberRole") is True)
+    if ready(before):
         return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != pending:
         raise RuntimeError("CLOUD_CONTROL_PLANE_M27_STATE_INVALID")
     executor.run(upgrade["sql"])
-    if read_state(executor, upgrade) != ready:
+    if not ready(read_state(executor, upgrade)):
         raise RuntimeError("CLOUD_CONTROL_PLANE_M27_VERIFICATION_FAILED")
     return {"applied": [upgrade["migrationId"]], "skipped": []}
 

@@ -31,9 +31,11 @@ class Tests(unittest.TestCase):
         self.assertEqual(apply_control_plane_m27(fake, UPGRADE), {"applied": [UPGRADE["migrationId"]], "skipped": []})
         self.assertEqual(len(fake.sql), 3)
 
-    def test_skips_only_exact_ready_state(self):
+    def test_skips_ready_state_after_later_migrations(self):
         self.assertEqual(apply_control_plane_m27(Fake([json.dumps(READY)]), UPGRADE)["skipped"], [UPGRADE["migrationId"]])
-        for mutation in ({"ledgerCount": 28}, {"targetCount": 0}, {"familyMemberRole": False}):
+        after_m28 = {**READY, "ledgerCount": 28}
+        self.assertEqual(apply_control_plane_m27(Fake([json.dumps(after_m28)]), UPGRADE)["skipped"], [UPGRADE["migrationId"]])
+        for mutation in ({"ledgerCount": 26}, {"targetCount": 0}, {"familyMemberRole": False}):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(RuntimeError, "M27_STATE_INVALID"):
                 apply_control_plane_m27(Fake([json.dumps({**READY, **mutation})]), UPGRADE)
 
