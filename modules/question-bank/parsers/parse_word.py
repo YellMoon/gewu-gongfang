@@ -57,6 +57,9 @@ def extract_question_number(text):
     match = QUESTION_RE.match(text)
     if match:
         return int(match.group(1)), match.group(2).strip()
+    match = re.match(r"^\s*((?:<img\b[^>]*>\s*)+)(\d+)[\.\u3001\uff0e]\s*(.*)", text or "", flags=re.I | re.S)
+    if match:
+        return int(match.group(2)), (match.group(1) + match.group(3)).strip()
     return None, text
 
 
@@ -373,16 +376,16 @@ UNIT_PATTERN = r"(?:%s)(?:\s*(?:[·⋅*/\/]\s*|\^?-?\d+|<sup>-?\d+</sup>|\s+)(?:
 def normalize_physics_markup(text):
     if not text:
         return ""
-    protected_images = []
+    protected_tags = []
 
-    def protect_image(match):
-        token = "@@QUESTION_IMAGE_%d@@" % len(protected_images)
-        protected_images.append(match.group(0))
+    def protect_tag(match):
+        token = "@@QUESTION_MARKUP_%d@@" % len(protected_tags)
+        protected_tags.append(match.group(0))
         return token
 
-    text = re.sub(r"<img\b[^>]*>", protect_image, text, flags=re.I)
+    text = re.sub(r"<[^>]+>", protect_tag, text)
     text = re.sub(r"(?<=\d)\s*(%s)" % UNIT_PATTERN, lambda m: " " + m.group(1), text)
-    text = re.sub(r"@@QUESTION_IMAGE_(\d+)@@", lambda m: protected_images[int(m.group(1))] if int(m.group(1)) < len(protected_images) else "", text)
+    text = re.sub(r"@@QUESTION_MARKUP_(\d+)@@", lambda m: protected_tags[int(m.group(1))] if int(m.group(1)) < len(protected_tags) else "", text)
     return text
 
 def _plain_math_text(node):
@@ -1371,29 +1374,71 @@ def split_image_only_options(question):
 
 def split_packed_options(question):
     options = question.get("options") or []
-    next_options = []
+    proposed = []
     changed = False
     for option in options:
-        raw = "%s. %s" % (option.get("label", "A"), option.get("content", ""))
-        matches = list(re.finditer(r"(^|[\r\n\t\f])\s*([A-G])[\.\uff0e]\s*", raw, flags=re.I))
-        if len(matches) < 2:
-            next_options.append(option)
+        if not isinstance(option, dict):
+            proposed.append(option)
             continue
-        expanded = []
-        for index, match in enumerate(matches):
-            prefix = match.group(1) or ""
-            content_start = match.end()
-            content_end = (matches[index + 1].start() + len(matches[index + 1].group(1) or "")) if index + 1 < len(matches) else len(raw)
-            content = raw[content_start:content_end].strip()
-            if content:
-                expanded.append({"label": match.group(2).upper(), "content": content, "is_correct": False})
-        if len(expanded) >= 2:
-            next_options.extend(expanded)
+        label = str(option.get("label") or "").strip().upper()
+        content = str(option.get("content") or "")
+        if not re.fullmatch(r"[A-G]", label) or not content:
+            proposed.append(option)
+            continue
+        tags = []
+
+        def protect_tag(match):
+            token = "\ue000%d\ue001" % len(tags)
+            tags.append(match.group(0))
+            return token
+
+        searchable = re.sub(r"<[^>]+>", protect_tag, content)
+        matches = [match for match in re.finditer(r"([A-G])[\.\uff0e]\s*", searchable, flags=re.I)
+                   if match.group(1).upper() > label]
+        if not matches:
+            proposed.append(option)
+            continue
+        segments = []
+        segment_label = label
+        start = 0
+        for match in matches:
+            value = searchable[start:match.start()].strip()
+            value = re.sub(r"\ue000(\d+)\ue001", lambda token: tags[int(token.group(1))], value)
+            if value:
+                segments.append({"label": segment_label, "content": value, "is_correct": bool(option.get("is_correct") or option.get("isCorrect")) if segment_label == label else False})
+            segment_label = match.group(1).upper()
+            start = match.end()
+        value = searchable[start:].strip()
+        value = re.sub(r"\ue000(\d+)\ue001", lambda token: tags[int(token.group(1))], value)
+        if value:
+            segments.append({"label": segment_label, "content": value, "is_correct": bool(option.get("is_correct") or option.get("isCorrect")) if segment_label == label else False})
+        if len(segments) > 1:
+            proposed.extend(segments)
             changed = True
         else:
-            next_options.append(option)
-    if changed:
-        question["options"] = next_options
+            proposed.append(option)
+    labels = [str(option.get("label") or "").upper() for option in proposed if isinstance(option, dict)]
+    expected = [chr(65 + index) for index in range(len(labels))]
+    if changed and len(labels) >= 4 and labels == expected:
+        question["options"] = proposed
+
+
+def recover_inline_first_option(question):
+    options = question.get("options") or []
+    labels = [str(option.get("label") or "").strip().upper() for option in options if isinstance(option, dict)]
+    if len(labels) != len(options) or len(labels) < 2 or labels != [chr(66 + index) for index in range(len(labels))]:
+        return
+    stem = str(question.get("stem") or "")
+    matches = list(re.finditer(r"(?<![A-Za-z])A[\.\uff0e]\s*", stem, flags=re.I))
+    if not matches:
+        return
+    marker = matches[-1]
+    content = stem[marker.end():].strip()
+    prefix = stem[:marker.start()].strip()
+    if not content or not prefix:
+        return
+    question["stem"] = prefix
+    question["options"] = [{"label": "A", "content": content, "is_correct": False}] + options
 
 
 def normalize_subquestion_image_positions(question):
@@ -1451,6 +1496,7 @@ def normalize_leading_image_positions(question):
 
 
 def finalize_question_type(question):
+    recover_inline_first_option(question)
     split_packed_options(question)
     normalize_leading_image_positions(question)
     normalize_subquestion_image_positions(question)

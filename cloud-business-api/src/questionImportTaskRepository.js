@@ -193,6 +193,7 @@ const completeSourceAndStoreCandidatesSql = [
   'FROM business.import_source_objects source',
   "WHERE source.import_task_id=$1 AND storage.task_id=source.storage_task_id AND storage.state='leased' AND storage.lease_agent_id=$2 AND storage.lease_token_sha256=$3",
   'AND storage.lease_expires_at > transaction_timestamp() AND storage.expected_sha256=$4 AND storage.expected_bytes=$5',
+  "AND EXISTS (SELECT 1 FROM business.question_import_tasks expected WHERE expected.task_id=source.import_task_id AND (NOT (expected.metadata_json ? 'parserSha256') OR expected.metadata_json->>'parserSha256'=$8))",
   'RETURNING storage.task_id',
   '), receipt AS (',
   'INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)',
@@ -387,12 +388,16 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       return { ...task, mediaTargets: result.rows[0].mediaTargets };
     },
     async completeSourceAndStoreCandidates(input) {
-      const request = exact(input, ['taskId', 'agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
+      const request = plainObject(input) && Object.hasOwn(input, 'parserSha256')
+        ? exact(input, ['taskId', 'agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'parserSha256', 'candidates'])
+        : exact(input, ['taskId', 'agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
       const taskId = text(request.taskId, 160);
       const currentAgentId = text(request.agentId, 64);
+      const parserSha256 = Object.hasOwn(request, 'parserSha256') ? request.parserSha256 : null;
       if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId) || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(currentAgentId)
         || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16 || !/^[0-9a-f]{64}$/.test(request.observedSha256)
-        || !Number.isSafeInteger(request.observedBytes) || request.observedBytes < 1) {
+        || !Number.isSafeInteger(request.observedBytes) || request.observedBytes < 1
+        || (parserSha256 !== null && (typeof parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(parserSha256)))) {
         throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
       }
       const receiptId = 'storage_receipt_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '');
@@ -400,7 +405,7 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       const candidates = candidateRows(request.candidates, randomId);
       const leaseHash = crypto.createHash('sha256').update(request.leaseToken, 'utf8').digest('hex');
       const result = await query(completeSourceAndStoreCandidatesSql, [
-        taskId, currentAgentId, leaseHash, request.observedSha256, request.observedBytes, receiptId, stableJson(candidates),
+        taskId, currentAgentId, leaseHash, request.observedSha256, request.observedBytes, receiptId, stableJson(candidates), parserSha256,
       ]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
       const task = taskRow(result.rows[0], false);

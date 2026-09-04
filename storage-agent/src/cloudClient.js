@@ -217,16 +217,18 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       return response.receipt;
     },
     async reportSourceCandidates(input) {
-      const request = exact(input, ['taskId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
+      const request = exact(input, ['taskId', 'leaseToken', 'observedSha256', 'observedBytes', 'parserSha256', 'candidates']);
       if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(request.taskId) || typeof request.leaseToken !== 'string' || request.leaseToken.length < 16
         || !/^[0-9a-f]{64}$/.test(request.observedSha256) || !Number.isSafeInteger(request.observedBytes) || request.observedBytes < 1
+        || typeof request.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(request.parserSha256)
         || !Array.isArray(request.candidates) || request.candidates.length < 1 || request.candidates.length > 500) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       const serializedCandidates = JSON.stringify(request.candidates);
       if (serializedCandidates.length > (90 * 1024 * 1024) || /data:[^,]*;base64|"(?:ciphertext|plaintext)"\s*:/iu.test(serializedCandidates)) {
         throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       }
       const response = exact(await post(`/api/storage-agent/question-imports/${encodeURIComponent(request.taskId)}/candidates`, {
-        agentId, leaseToken: request.leaseToken, observedSha256: request.observedSha256, observedBytes: request.observedBytes, candidates: request.candidates,
+        agentId, leaseToken: request.leaseToken, observedSha256: request.observedSha256, observedBytes: request.observedBytes,
+        parserSha256: request.parserSha256, candidates: request.candidates,
       }), ['ok', 'task']);
       if (response.ok !== true || !validImportTask(response.task)) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
       return response.task;

@@ -12,9 +12,14 @@
       "rule": "structured question text is cloud-authoritative; storage_proxy keeps only media and export artifacts"
     },
     "storageAgentTransport": {
-      "version": "2",
+      "version": "3",
       "participants": ["cloud_business", "storage_proxy"],
-      "rule": "storage_proxy never decides identity, permissions, or business transactions; v2 adds an authenticated append-only runtime receipt"
+      "rule": "storage_proxy never decides identity, permissions, or business transactions; v3 carries an exact parser revision proof with question-import candidates"
+    },
+    "questionImportParserProof": {
+      "version": "1",
+      "participants": ["cloud_business", "storage_proxy"],
+      "rule": "storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates"
     },
     "businessDataSchema": {
       "version": "1",
@@ -39,10 +44,11 @@
   },
   "runtimeReceipts": {
     "storage_proxy": {
-      "approvedRuntimeVersions": ["8.8.0"],
+      "approvedRuntimeVersions": ["8.8.1"],
       "contracts": {
         "questionPaperExport": "3",
-        "storageAgentTransport": "2"
+        "storageAgentTransport": "3",
+        "questionImportParserProof": "1"
       }
     }
   }

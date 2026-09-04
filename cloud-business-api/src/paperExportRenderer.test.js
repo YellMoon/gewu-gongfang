@@ -3,7 +3,7 @@
 const assert = require('assert');
 const JSZip = require('jszip');
 const sharp = require('sharp');
-const { compactFormulaText, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
+const { compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
 
 (async () => {
   assert.deepStrictEqual(wordFormulaTransformation({ width: 36, height: 16 }, 'inline'), { width: 36, height: 16 },
@@ -104,8 +104,18 @@ const { compactFormulaText, wordFormulaTransformation, renderPaperExport } = req
     'legacy TeX fractions without a braced numerator must not leak the frac command into PDF text');
   assert.strictEqual(compactFormulaText('\\frac H {2t}'), '(H)/(2t)',
     'legacy TeX fractions without a braced numerator must be normalized into readable inline text');
-  assert.strictEqual(compactFormulaText('\\frac{H（t－t_{0}）^{2}}{t^{2}}'), '(H（t－t(0)）²)/(t²)',
+  assert.strictEqual(compactFormulaText('\\frac{H（t－t_{0}）^{2}}{t^{2}}'), '(H（t-t_0）^2)/(t^2)',
     'nested subscript and superscript groups must be normalized before parsing inline fractions');
+  assert.strictEqual(compactFormulaText('\\mathrm{kg}⋅\\mathrm{m}^{-1}⋅\\mathrm{s}^{-2}'), 'kg*m^-1*s^-2',
+    'inline PDF formula fallback must use glyph-safe operators and exponents');
+  assert.deepStrictEqual(normalizeOptionTokenGroups(['A. first', 'B．second']).map(tokens => tokens.map(token => token.text)), [
+    ['A. first'], ['B．second'],
+  ], 'already-labelled string options must not receive a duplicate generated label');
+  assert.deepStrictEqual(normalizeOptionTokenGroups([{ label: 'A', content: 'from A．point to B．point' }]).map(tokens => tokens.map(token => token.text)), [
+    ['A. from A．point to B．point'],
+  ], 'the renderer must not guess that ordinary option prose contains packed options');
+  assert.strictEqual(compactFormulaText('\\frac{\\sqrt{x}}{2}'), '(sqrt(x))/(2)',
+    'nested fractions must retain their mathematical structure in PDF fallback text');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {

@@ -11,6 +11,74 @@ const OUTPUT_PREFIX = '/tmp/gewu-real-paper-export-';
 
 function failure(code) { return Object.assign(new Error(code), { code }); }
 
+function sourceSha256(value) {
+  const current = String(value || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(current)) throw failure('REAL_PAPER_EXPORT_SOURCE_INVALID');
+  return current;
+}
+
+function verifyRendererRevision(filePath, expectedSha256) {
+  const expected = sourceSha256(expectedSha256);
+  let actual;
+  try {
+    actual = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  } catch (_) {
+    throw failure('REAL_PAPER_EXPORT_RENDERER_UNAVAILABLE');
+  }
+  if (actual !== expected) throw failure('REAL_PAPER_EXPORT_RENDERER_MISMATCH');
+  return actual;
+}
+
+function exportMarker(examSha256, lectureSha256, rendererSha256, selectedQuestions) {
+  const sources = [sourceSha256(examSha256), sourceSha256(lectureSha256)];
+  if (sources[0] === sources[1]) throw failure('REAL_PAPER_EXPORT_SOURCE_INVALID');
+  const renderer = sourceSha256(rendererSha256);
+  if (!Array.isArray(selectedQuestions) || selectedQuestions.length !== 2
+    || selectedQuestions.some(item => !item || typeof item.questionId !== 'string' || !item.questionId
+      || !/^[0-9a-f]{64}$/u.test(item.contentHash || ''))) throw failure('REAL_PAPER_EXPORT_SOURCE_INVALID');
+  const selection = selectedQuestions.map(item => `${item.questionId}:${item.contentHash}`).join(':');
+  return `sources-${crypto.createHash('sha256').update(`real-paper-export-explicit-v2:${sources.join(':')}:${renderer}:${selection}`, 'utf8').digest('hex').slice(0, 32)}`;
+}
+
+async function loadExplicitQuestionIds({ query, tenantId = 'default', examSha256, lectureSha256 } = {}) {
+  if (typeof query !== 'function' || typeof tenantId !== 'string' || !tenantId.trim()) throw failure('REAL_PAPER_EXPORT_SOURCE_INVALID');
+  const hashes = [sourceSha256(examSha256), sourceSha256(lectureSha256)];
+  if (hashes[0] === hashes[1]) throw failure('REAL_PAPER_EXPORT_SOURCE_INVALID');
+  const result = await query(
+    `WITH requested(source_type,source_sha256,ordinal) AS (
+       VALUES ('exam',$2::text,1),('lecture',$3::text,2)
+     ), ranked_tasks AS (
+       SELECT requested.source_type,requested.ordinal,task.task_id,
+              row_number() OVER (PARTITION BY requested.source_type ORDER BY task.created_at DESC,task.task_id DESC) AS rank
+         FROM requested
+         JOIN business.question_import_tasks task
+           ON task.tenant_id=$1 AND task.source_type=requested.source_type
+          AND task.source_sha256=requested.source_sha256 AND task.status='submitted'
+     ), latest_tasks AS (
+       SELECT source_type,ordinal,task_id FROM ranked_tasks WHERE rank=1
+     ), candidates AS (
+       SELECT latest.source_type,latest.ordinal,question.id AS "questionId",item.content_hash AS "contentHash"
+         FROM latest_tasks latest
+         JOIN business.question_import_items item
+           ON item.import_task_id=latest.task_id AND item.item_index=0 AND item.status='submitted'
+         JOIN business.questions question
+           ON question.tenant_id=$1
+          AND question.id=('question-import-' || left(item.content_hash,40))
+          AND question.deleted=false AND question.status='published'
+         JOIN business.question_contents content
+           ON content.tenant_id=question.tenant_id AND content.question_id=question.id
+          AND content.deleted=false AND content.content_hash=item.content_hash
+     )
+     SELECT source_type AS "sourceType","questionId","contentHash" FROM candidates ORDER BY ordinal`,
+    [tenantId.trim(), ...hashes],
+  );
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  if (rows.length !== 2 || rows[0]?.sourceType !== 'exam' || rows[1]?.sourceType !== 'lecture'
+    || rows.some(row => typeof row.questionId !== 'string' || !row.questionId || !/^[0-9a-f]{64}$/u.test(row.contentHash || ''))
+    || rows[0].questionId === rows[1].questionId) throw failure('REAL_PAPER_EXPORT_QUESTIONS_UNAVAILABLE');
+  return rows.map(row => Object.freeze({ sourceType: row.sourceType, questionId: row.questionId, contentHash: row.contentHash }));
+}
+
 function artifactEvidence(format, bytes) {
   if (!['pdf', 'word'].includes(format) || !Buffer.isBuffer(bytes) || bytes.length < 8) throw failure('REAL_PAPER_EXPORT_ARTIFACT_INVALID');
   const expected = format === 'pdf'
@@ -68,7 +136,7 @@ async function createAndDownload({ fetchImpl, token, baseUrl, format, questionId
   const taskType = format === 'pdf' ? 'paper-export-pdf' : 'paper-export-word';
   const request = {
     questionIds,
-    title: `GeWu export verification ${marker}-${format}`,
+    title: String.fromCharCode(29289, 29702, 35797, 39064),
     subject: 'physics',
     answerPosition: 'after',
     formulaMode: 'word-native',
@@ -108,20 +176,25 @@ async function runFromEnvironment(env = process.env) {
     appPool = new Pool({ host: env.POSTGRES_HOST || '127.0.0.1', port: Number(env.POSTGRES_PORT || 5432), database: env.POSTGRES_DB || 'gewu_cloud', user: resolveRuntimeDatabaseUser(env.POSTGRES_USER), password: env.POSTGRES_PASSWORD, max: 1 });
     writerPool = new Pool({ host: env.POSTGRES_HOST || '127.0.0.1', port: Number(env.POSTGRES_PORT || 5432), database: env.POSTGRES_DB || 'gewu_cloud', user: 'vnext_pg17_writer', password: env.COMMAND_WRITER_POSTGRES_PASSWORD, max: 1 });
     const loaded = await cloudAcceptance.loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
-    const questions = await appPool.query("SELECT id FROM business.questions WHERE tenant_id=$1 AND deleted=false ORDER BY created_at,id LIMIT 2", [env.CLOUD_BUSINESS_TENANT_ID || 'default']);
-    const questionIds = questions.rows.map(row => row.id).filter(id => typeof id === 'string');
-    if (questionIds.length < 1) throw failure('REAL_PAPER_EXPORT_QUESTIONS_UNAVAILABLE');
-    const marker = crypto.randomUUID().replace(/[^A-Za-z0-9_-]/g, '');
+    const examSha256 = sourceSha256(env.REAL_QUESTION_IMPORT_EXAM_SHA256);
+    const lectureSha256 = sourceSha256(env.REAL_QUESTION_IMPORT_LECTURE_SHA256);
+    const rendererSha256 = verifyRendererRevision(env.REAL_PAPER_EXPORT_RENDERER_PATH || '/app/src/paperExportRenderer.js', env.REAL_PAPER_EXPORT_RENDERER_SHA256);
+    const selectedQuestions = await loadExplicitQuestionIds({
+      query: (...args) => appPool.query(...args), tenantId: env.CLOUD_BUSINESS_TENANT_ID || 'default',
+      examSha256, lectureSha256,
+    });
+    const questionIds = selectedQuestions.map(item => item.questionId);
+    const marker = exportMarker(examSha256, lectureSha256, rendererSha256, selectedQuestions);
     const token = cloudAcceptance.makeMiniappSessionToken(env.CLOUD_MINIAPP_TICKET_SECRET, loaded.identity.accountId);
     const artifacts = [];
     for (const format of ['pdf', 'word']) artifacts.push(await createAndDownload({ fetchImpl: fetch, token, baseUrl: 'http://127.0.0.1:3002', format, questionIds, marker }));
-    return Object.freeze({ ok: true, artifacts });
+    return Object.freeze({ ok: true, marker, questionIds, artifacts });
   } finally {
     await Promise.allSettled([appPool?.end?.(), writerPool?.end?.()]);
   }
 }
 
-module.exports = Object.freeze({ artifactEvidence, waitForCompletedTask, waitForReadyDelivery, createAndDownload, runFromEnvironment });
+module.exports = Object.freeze({ sourceSha256, verifyRendererRevision, exportMarker, loadExplicitQuestionIds, artifactEvidence, waitForCompletedTask, waitForReadyDelivery, createAndDownload, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))

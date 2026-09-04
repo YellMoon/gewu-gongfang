@@ -762,14 +762,16 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.post('/api/storage-agent/question-imports/:taskId/candidates', async (request, response) => {
     if (!questionImportTasks || !storageAgent || typeof storageAgent.authorize !== 'function' || businessTenantId === null) return businessUnavailable(response);
-    const body = exactBody(request.body, ['agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
+    const body = exactBody(request.body, ['agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'parserSha256', 'candidates'])
+      || exactBody(request.body, ['agentId', 'leaseToken', 'observedSha256', 'observedBytes', 'candidates']);
     const token = storageAgentToken(request);
     if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     try {
       const agent = await storageAgent.authorize({ agentId: body.agentId, token });
       const task = await questionImportTasks.completeSourceAndStoreCandidates({
         taskId: String(request.params.taskId || ''), agentId: agent.agentId, leaseToken: body.leaseToken,
-        observedSha256: body.observedSha256, observedBytes: body.observedBytes, candidates: body.candidates,
+        observedSha256: body.observedSha256, observedBytes: body.observedBytes,
+        ...(typeof body.parserSha256 === 'string' ? { parserSha256: body.parserSha256 } : {}), candidates: body.candidates,
       });
       response.json({ ok: true, task });
     } catch (error) {

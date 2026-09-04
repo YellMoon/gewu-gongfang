@@ -77,6 +77,9 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
     const parsed = await questionImportParser.parse({
       sourceType: source.sourceType, sourceFileName: source.sourceFileName, bytes: sourceBytes,
     });
+    if (!parsed || typeof parsed.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(parsed.parserSha256)) {
+      throw failure('STORAGE_WORKER_PARSER_REVISION_INVALID');
+    }
     const mediaBytes = parsedMediaBytes(parsed);
     if (mediaBytes !== null && mediaBytes <= maxCachedSourceMediaBytes) {
       parsedSourceCache.clear();
@@ -132,7 +135,7 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
         const parsed = await parseImportSource(sourceDescriptor(task), bytes);
         await client.reportSourceCandidates({
           taskId: task.importTaskId, leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
-          candidates: parsed.candidates,
+          parserSha256: parsed.parserSha256, candidates: parsed.candidates,
         });
         return Object.freeze({ state: 'candidates_ready', taskId: task.taskId, importTaskId: task.importTaskId });
       }

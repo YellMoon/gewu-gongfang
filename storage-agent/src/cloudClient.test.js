@@ -70,6 +70,7 @@ async function main() {
   assert.deepStrictEqual(receipt, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
   const importTask = await client.reportSourceCandidates({
     taskId: 'question_import_task_1', leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
+    parserSha256: '9'.repeat(64),
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(importTask.status, 'candidates_ready');
@@ -92,6 +93,7 @@ async function main() {
   assert.strictEqual(calls[4].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-imports/question_import_task_1/candidates');
   assert.deepStrictEqual(JSON.parse(calls[4].options.body), {
     agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
+    parserSha256: '9'.repeat(64),
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(calls[5].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/lease');

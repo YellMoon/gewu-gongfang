@@ -34,6 +34,8 @@ async function main() {
         }] });
       },
     });
+    const parserSha256 = crypto.createHash('sha256').update('# parser fixture\n', 'utf8').digest('hex');
+    assert.strictEqual(parser.revision, parserSha256, 'the parser exposed to the worker must identify the exact deployed parser bytes');
     await assert.rejects(
       () => executePython({
         pythonBin: process.execPath,
@@ -46,6 +48,7 @@ async function main() {
       'a parser that ignores normal shutdown must be force-killed so the NAS worker can lease another task'
     );
     const parsed = await parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') });
+    assert.strictEqual(parsed.parserSha256, parserSha256);
     assert.strictEqual(parsed.candidates.length, 1);
     assert.strictEqual(parsed.candidates[0].validation.status, 'accepted');
     assert.deepStrictEqual(parsed.candidates[0].mediaManifest, [{ sha256: assetHash, bytes: assetBytes.length, mimeType: 'image/png' }]);

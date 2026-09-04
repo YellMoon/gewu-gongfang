@@ -167,6 +167,11 @@ function optionTokens(value, index) {
   return prefixedTokens(label ? label + '. ' : '', tokens);
 }
 
+function normalizeOptionTokenGroups(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((option, index) => optionTokens(option, index)).filter(tokens => tokens.length);
+}
+
 function formulaSvg(latex) {
   try {
     const adaptor = liteAdaptor();
@@ -231,6 +236,7 @@ function questions(value, layout, formulaMode) {
       ? tokensOrFallback(sections.stem, item.stem)
       : richTokens(item.stem).concat(richTokens(item.richContent));
     const sourceOptions = Array.isArray(sections?.options) && sections.options.length ? sections.options : item.options;
+    const optionGroups = normalizeOptionTokenGroups(sourceOptions);
     const subQuestions = Array.isArray(sections?.subQuestions) ? sections.subQuestions.map((subQuestion, subQuestionIndex) => ({
       label: structuredText(subQuestion?.label || `(${subQuestionIndex + 1})`, formulaMode),
       contentTokens: tokensOrFallback(subQuestion?.content, ''),
@@ -238,7 +244,7 @@ function questions(value, layout, formulaMode) {
     })).filter(subQuestion => subQuestion.label || subQuestion.contentTokens.length || subQuestion.answerTokens.length) : [];
     return {
       id: item.id, number: index + 1, stemTokens,
-      options: Array.isArray(sourceOptions) ? sourceOptions.map((option, optionIndex) => optionTokens(option, optionIndex)).filter(tokens => tokens.length) : [],
+      options: optionGroups,
       subQuestions,
       answerTokens: tokensOrFallback(sections?.answer, item.answer),
       explanationTokens: tokensOrFallback(sections?.analysis, item.explanation),
@@ -497,21 +503,61 @@ function drawPdfMedia(document, media) {
 }
 
 function compactFormulaText(latex) {
-  const superscripts = Object.freeze({ 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾' });
-  return String(latex || '')
-    .replace(/\^\{([^{}]*)\}/g, (_, value) => String(value).split('').map(char => superscripts[char] || '^' + char).join(''))
-    .replace(/\^([0-9])/g, (_, value) => superscripts[value] || '^' + value)
-    .replace(/_\{([^{}]*)\}/g, '($1)')
-    .replace(/\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '($1)/($2)')
-    .replace(/\\(?:d?frac)\s*([A-Za-z0-9]+)\s*\{([^{}]*)\}/g, '($1)/($2)')
-    .replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
-    .replace(/\\(?:times|cdot)/g, '×')
-    .replace(/\\(?:leq|le)/g, '≤')
-    .replace(/\\(?:geq|ge)/g, '≥')
-    .replace(/\\neq/g, '≠')
-    .replace(/\\(?:mathrm|text)\s*\{([^{}]*)\}/g, '$1')
-    .replace(/[{}]/g, '')
-    .replace(/\\([A-Za-z]+)/g, '$1');
+  const source = String(latex || '');
+  let cursor = 0;
+  const commandText = Object.freeze({ times: '*', cdot: '*', leq: '<=', le: '<=', geq: '>=', ge: '>=', neq: '!=', pm: '+/-' });
+  const skipWhitespace = () => { while (/\s/u.test(source[cursor] || '')) cursor += 1; };
+  const parse = stopAtBrace => {
+    let output = '';
+    const argument = () => {
+      skipWhitespace();
+      if (source[cursor] === '{') {
+        cursor += 1;
+        return parse(true);
+      }
+      if (source[cursor] === '\\') return command();
+      const value = source[cursor] || '';
+      cursor += value ? 1 : 0;
+      return value;
+    };
+    const command = () => {
+      cursor += 1;
+      const start = cursor;
+      while (/[A-Za-z]/u.test(source[cursor] || '')) cursor += 1;
+      const name = source.slice(start, cursor);
+      if (!name) return argument();
+      if (['frac', 'dfrac', 'tfrac'].includes(name)) return `(${argument()})/(${argument()})`;
+      if (name === 'sqrt') return `sqrt(${argument()})`;
+      if (['mathrm', 'mathbf', 'mathit', 'text', 'operatorname'].includes(name)) return argument();
+      if (name === 'left' || name === 'right') return '';
+      return commandText[name] || name;
+    };
+    while (cursor < source.length) {
+      const character = source[cursor];
+      if (character === '}' && stopAtBrace) {
+        cursor += 1;
+        break;
+      }
+      if (character === '{') {
+        cursor += 1;
+        output += parse(true);
+        continue;
+      }
+      if (character === '\\') {
+        output += command();
+        continue;
+      }
+      if (character === '^' || character === '_') {
+        cursor += 1;
+        output += character + argument();
+        continue;
+      }
+      output += ({ '⋅': '*', '·': '*', '∙': '*', '－': '-', '−': '-' })[character] || character;
+      cursor += 1;
+    }
+    return output;
+  };
+  return parse(false);
 }
 
 function drawPdfTokens(document, tokens, prefix = '', size = 10) {
@@ -582,4 +628,4 @@ async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 
-module.exports = Object.freeze({ compactFormulaText, wordFormulaTransformation, renderPaperExport });
+module.exports = Object.freeze({ compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport });

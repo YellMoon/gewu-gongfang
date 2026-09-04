@@ -7,6 +7,7 @@ const { createStorageWorker } = require('./worker');
 const { sealForAgent } = require('../../shared/encryptedNasRelay');
 
 async function main() {
+  const parserSha256 = '9'.repeat(64);
   const events = [];
   const pair = crypto.generateKeyPairSync('x25519');
   const agentPublicKey = pair.publicKey.export({ format: 'der', type: 'spki' }).toString('base64url');
@@ -75,6 +76,7 @@ async function main() {
         events.push('reportSourceCandidates');
         assert.deepStrictEqual(input, {
           taskId: 'question_import_task_1', leaseToken: sourceTask.leaseToken, observedSha256: sourceHash, observedBytes: sourceBytes.length,
+          parserSha256,
           candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'parsed' }, validation: { status: 'accepted' }, mediaManifest: [] }],
         });
         return { taskId: input.taskId, status: 'candidates_ready' };
@@ -84,7 +86,7 @@ async function main() {
       async parse(input) {
         events.push('parse');
         assert.deepStrictEqual(input, { sourceType: 'lecture', sourceFileName: 'source.docx', bytes: sourceBytes });
-        return { candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'parsed' }, validation: { status: 'accepted' }, mediaManifest: [] }], mediaBytes: [[mediaBytes]] };
+        return { parserSha256, candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'parsed' }, validation: { status: 'accepted' }, mediaManifest: [] }], mediaBytes: [[mediaBytes]] };
       },
     },
   });
@@ -116,7 +118,7 @@ async function main() {
     questionImportParser: {
       async parse() {
         fallbackEvents.push('parse');
-        return { candidates: [], mediaBytes: [[Buffer.from('different')], [mediaBytes]] };
+        return { parserSha256, candidates: [], mediaBytes: [[Buffer.from('different')], [mediaBytes]] };
       },
     },
   });

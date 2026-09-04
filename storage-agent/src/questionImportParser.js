@@ -174,7 +174,9 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
     if (error?.code === 'QUESTION_IMPORT_PARSE_CONFIG_INVALID') throw error;
     throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
   }
+  const revision = crypto.createHash('sha256').update(fs.readFileSync(script)).digest('hex');
   return Object.freeze({
+    revision,
     async parse(input) {
       const request = exact(input, ['sourceType', 'sourceFileName', 'bytes']);
       if (!['lecture', 'exam'].includes(request.sourceType) || typeof request.sourceFileName !== 'string'
@@ -203,6 +205,7 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
         }
         const parsed = output.questions.map(sanitizeQuestion);
         return {
+          parserSha256: revision,
           candidates: parsed.map(item => ({
             contentHash: crypto.createHash('sha256').update(stableJson(item.candidate), 'utf8').digest('hex'),
             candidate: item.candidate,

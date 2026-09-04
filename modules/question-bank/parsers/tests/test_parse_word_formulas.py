@@ -14,7 +14,7 @@ if str(PARSER_DIR) not in sys.path:
     sys.path.insert(0, str(PARSER_DIR))
 
 from docx_fixture import DocxFixture  # noqa: E402
-from parse_word import attach_referenced_assets_from_rich_rows, _image_tag, build_question_rich_content, quality_report  # noqa: E402
+from parse_word import attach_referenced_assets_from_rich_rows, _image_tag, build_question_rich_content, extract_question_number, finalize_question_type, normalize_physics_markup, quality_report, split_packed_options  # noqa: E402
 
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -42,6 +42,51 @@ def _formula_node_ids(document):
 
 
 class ParseWordFormulaIntegrationTests(unittest.TestCase):
+    def test_physics_unit_normalization_does_not_mutate_markup_attributes(self):
+        markup = '<span data-formula-id="formula-78ff6f73e7b3cdac5df039a9" data-latex="x^{2}kg"></span>23m'
+        normalized = normalize_physics_markup(markup)
+        self.assertIn('data-formula-id="formula-78ff6f73e7b3cdac5df039a9"', normalized)
+        self.assertIn('data-latex="x^{2}kg"', normalized)
+        self.assertTrue(normalized.endswith('23 m'))
+
+    def test_packed_word_options_expand_only_as_a_complete_choice_sequence(self):
+        formula_a = '<span data-formula-id="formula-a" data-latex="a"></span>'
+        formula_b = '<span data-formula-id="formula-b" data-latex="b"></span>'
+        question = {"options": [
+            {"label": "A", "content": formula_a + "B．" + formula_b, "is_correct": False},
+            {"label": "C", "content": "thirdD．fourth", "is_correct": False},
+        ]}
+        split_packed_options(question)
+        self.assertEqual([option["label"] for option in question["options"]], ["A", "B", "C", "D"])
+        self.assertEqual(question["options"][0]["content"], formula_a)
+        self.assertEqual(question["options"][1]["content"], formula_b)
+
+        ordinary = {"options": [{"label": "A", "content": "from A．point to B．point", "is_correct": False}]}
+        split_packed_options(ordinary)
+        self.assertEqual(ordinary["options"], [{"label": "A", "content": "from A．point to B．point", "is_correct": False}])
+
+    def test_exam_question_number_after_leading_image_is_not_merged_into_previous_question(self):
+        image = '<img src="question-asset://%s" alt="diagram" />' % ("a" * 64)
+        number, content = extract_question_number(image + "13．new question")
+        self.assertEqual(number, 13)
+        self.assertEqual(content, image + "new question")
+
+    def test_inline_first_option_is_recovered_when_following_options_start_at_b(self):
+        question = {
+            "stem": "question text（    ） A．first",
+            "options": [
+                {"label": "B", "content": "second", "is_correct": False},
+                {"label": "C", "content": "third", "is_correct": False},
+                {"label": "D", "content": "fourth", "is_correct": False},
+            ],
+            "sub_questions": [], "answer": "A", "analysis": "", "knowledge_point": "",
+            "knowledge_points": [], "assets": [], "formulas": [], "has_image": False, "has_formula": False,
+        }
+        finalize_question_type(question)
+        self.assertEqual(question["stem"], "question text（    ）")
+        self.assertEqual([option["label"] for option in question["options"]], ["A", "B", "C", "D"])
+        self.assertEqual(question["options"][0]["content"], "first")
+
     def test_referenced_assets_follow_document_reference_order(self):
         first = "a" * 64
         second = "b" * 64

@@ -25,6 +25,67 @@ function importSource(sourceType, sourcePath) {
   return Object.freeze({ sourceType, sourcePath, sourceFileName, sourceMimeType: WORD_MIME });
 }
 
+function parserRevision(value) {
+  const current = String(value || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(current)) throw failure('REAL_QUESTION_IMPORT_PARSER_REVISION_INVALID');
+  return current;
+}
+
+function sourceFileEvidence(source) {
+  const bytes = fs.readFileSync(source.sourcePath);
+  if (!bytes.length || bytes.length > MAX_SOURCE_BYTES) throw failure('REAL_QUESTION_IMPORT_SOURCE_INVALID');
+  return Object.freeze({ bytes, sourceSha256: crypto.createHash('sha256').update(bytes).digest('hex'), sourceBytes: bytes.length });
+}
+
+function importIdempotencyKey(sourceType, sourceSha256, parserSha256) {
+  if (!['exam', 'lecture'].includes(sourceType) || !/^[0-9a-f]{64}$/u.test(String(sourceSha256 || ''))) {
+    throw failure('REAL_QUESTION_IMPORT_SOURCE_INVALID');
+  }
+  return `real-question-import-v2-${sourceType}-${sourceSha256}-${parserRevision(parserSha256)}`;
+}
+
+async function findReusableImport({ query, tenantId = 'default', accountId, sourceType, sourceSha256, sourceBytes, parserSha256 } = {}) {
+  const tenant = String(tenantId || '').trim();
+  const account = String(accountId || '').trim();
+  const revision = parserRevision(parserSha256);
+  if (typeof query !== 'function' || !tenant || !account || !['exam', 'lecture'].includes(sourceType)
+    || !/^[0-9a-f]{64}$/u.test(String(sourceSha256 || '')) || !Number.isSafeInteger(sourceBytes) || sourceBytes < 1) {
+    throw failure('REAL_QUESTION_IMPORT_INPUT_INVALID');
+  }
+  const result = await query(
+    `SELECT task.task_id AS "taskId",task.status,task.phase,
+            count(item.item_id)::int AS "itemCount",
+            count(item.item_id) FILTER (WHERE item.validation_json->>'status' IN ('accepted','warning'))::int AS "acceptedOrWarningCount"
+       FROM business.question_import_tasks task
+       LEFT JOIN business.question_import_items item ON item.import_task_id=task.task_id
+      WHERE task.tenant_id=$1 AND task.account_id=$2 AND task.source_type=$3
+        AND task.source_sha256=$4 AND task.source_size_bytes=$5
+        AND task.metadata_json->>'acceptance'='real-question-import-v2'
+        AND task.metadata_json->>'parserSha256'=$6
+      GROUP BY task.task_id,task.status,task.phase,task.created_at
+      ORDER BY task.created_at DESC,task.task_id DESC LIMIT 2`,
+    [tenant, account, sourceType, sourceSha256, sourceBytes, revision],
+  );
+  const rows = Array.isArray(result?.rows) ? result.rows : null;
+  if (!rows) throw failure('REAL_QUESTION_IMPORT_REUSE_UNAVAILABLE');
+  if (rows.length > 1) throw failure('REAL_QUESTION_IMPORT_DUPLICATE_REVISION');
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  if (!row || !/^question_import_task_[A-Za-z0-9_-]{8,128}$/u.test(row.taskId || '')
+    || !['awaiting_source_storage', 'queued_for_parse', 'parsing', 'candidates_ready', 'drafts_prepared', 'submitted', 'failed', 'cancelled', 'quarantined'].includes(row.status)
+    || typeof row.phase !== 'string' || !Number.isSafeInteger(row.itemCount) || row.itemCount < 0
+    || !Number.isSafeInteger(row.acceptedOrWarningCount) || row.acceptedOrWarningCount < 0 || row.acceptedOrWarningCount > row.itemCount) {
+    throw failure('REAL_QUESTION_IMPORT_REUSE_UNAVAILABLE');
+  }
+  if (['failed', 'cancelled', 'quarantined'].includes(row.status)) throw failure('REAL_QUESTION_IMPORT_FAILED_REVISION');
+  if (['candidates_ready', 'drafts_prepared', 'submitted'].includes(row.status)
+    && (row.itemCount < 1 || row.acceptedOrWarningCount < 1)) throw failure('REAL_QUESTION_IMPORT_REUSE_UNAVAILABLE');
+  return Object.freeze({
+    taskId: row.taskId, status: row.status, phase: row.phase,
+    itemCount: row.itemCount, acceptedOrWarningCount: row.acceptedOrWarningCount,
+  });
+}
+
 function taskEvidence(task) {
   if (!task || typeof task !== 'object' || !/^question_import_task_[A-Za-z0-9_-]{8,128}$/.test(task.taskId || '')
     || typeof task.status !== 'string' || typeof task.phase !== 'string') throw failure('REAL_QUESTION_IMPORT_TASK_INVALID');
@@ -72,9 +133,22 @@ async function request(fetchImpl, sessionToken, deviceId, url, options = {}) {
   return body;
 }
 
-async function createWordImport({ fetchImpl, sessionToken, deviceId, baseUrl, source, idFactory = crypto.randomUUID }) {
-  const bytes = fs.readFileSync(source.sourcePath);
-  if (!bytes.length || bytes.length > MAX_SOURCE_BYTES) throw failure('REAL_QUESTION_IMPORT_SOURCE_INVALID');
+async function createWordImport({
+  fetchImpl, sessionToken, deviceId, baseUrl, source, parserSha256,
+  sourceEvidence: suppliedSourceEvidence = null,
+  idFactory = crypto.randomUUID, now = () => new Date(), sealer = sealForAgent, preflight = preflightPayload,
+}) {
+  if (typeof idFactory !== 'function' || typeof now !== 'function' || typeof sealer !== 'function' || typeof preflight !== 'function') {
+    throw failure('REAL_QUESTION_IMPORT_INPUT_INVALID');
+  }
+  const revision = parserRevision(parserSha256);
+  const sourceEvidence = suppliedSourceEvidence || sourceFileEvidence(source);
+  if (!sourceEvidence || !Buffer.isBuffer(sourceEvidence.bytes) || !Number.isSafeInteger(sourceEvidence.sourceBytes)
+    || sourceEvidence.sourceBytes !== sourceEvidence.bytes.length || !/^[0-9a-f]{64}$/u.test(sourceEvidence.sourceSha256 || '')
+    || crypto.createHash('sha256').update(sourceEvidence.bytes).digest('hex') !== sourceEvidence.sourceSha256) {
+    throw failure('REAL_QUESTION_IMPORT_SOURCE_INVALID');
+  }
+  const bytes = sourceEvidence.bytes;
   const relayKey = await request(fetchImpl, sessionToken, deviceId, `${baseUrl}/api/desktop/question-imports/relay-key`);
   if (typeof relayKey.agentPublicKey !== 'string' || typeof relayKey.agentKeyFingerprint !== 'string' || !/^[0-9a-f]{64}$/.test(relayKey.agentKeyFingerprint)) {
     throw failure('REAL_QUESTION_IMPORT_RELAY_KEY_INVALID');
@@ -83,15 +157,21 @@ async function createWordImport({ fetchImpl, sessionToken, deviceId, baseUrl, so
   if (suffix.length < 8) throw failure('REAL_QUESTION_IMPORT_ID_INVALID');
   const storageTaskId = `task_${suffix}`;
   const objectId = `obj_${suffix}`;
-  const sealed = sealForAgent({ agentPublicKey: relayKey.agentPublicKey, binding: `${storageTaskId}:${objectId}:1`, plaintext: bytes });
+  const sealed = sealer({ agentPublicKey: relayKey.agentPublicKey, binding: `${storageTaskId}:${objectId}:1`, plaintext: bytes });
+  if (!sealed || !sealed.envelope || !Buffer.isBuffer(sealed.ciphertext)
+    || sealed.envelope.plaintextSha256 !== sourceEvidence.sourceSha256 || sealed.envelope.plaintextBytes !== sourceEvidence.sourceBytes) {
+    throw failure('REAL_QUESTION_IMPORT_RELAY_PAYLOAD_INVALID');
+  }
+  const current = now();
+  if (!(current instanceof Date) || !Number.isFinite(current.getTime())) throw failure('REAL_QUESTION_IMPORT_INPUT_INVALID');
   const payload = {
     sourceType: source.sourceType, sourceFileName: source.sourceFileName, sourceMimeType: source.sourceMimeType,
-    sourceSha256: sealed.envelope.plaintextSha256, sourceBytes: bytes.length,
-    metadata: { sourceFileName: source.sourceFileName, acceptance: 'real-question-import-v1' },
+    sourceSha256: sourceEvidence.sourceSha256, sourceBytes: sourceEvidence.sourceBytes,
+    metadata: { sourceFileName: source.sourceFileName, acceptance: 'real-question-import-v2', parserSha256: revision },
     storage: { taskId: storageTaskId, objectId, objectVersion: 1 },
-    relay: { agentKeyFingerprint: relayKey.agentKeyFingerprint, envelope: sealed.envelope, ciphertextBase64: sealed.ciphertext.toString('base64url'), expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString() },
+    relay: { agentKeyFingerprint: relayKey.agentKeyFingerprint, envelope: sealed.envelope, ciphertextBase64: sealed.ciphertext.toString('base64url'), expiresAt: new Date(current.getTime() + 15 * 60 * 1000).toISOString() },
   };
-  await preflightPayload({
+  await preflight({
     ...payload,
     relay: {
       agentKeyFingerprint: payload.relay.agentKeyFingerprint,
@@ -102,7 +182,7 @@ async function createWordImport({ fetchImpl, sessionToken, deviceId, baseUrl, so
   });
   const created = await request(fetchImpl, sessionToken, deviceId, `${baseUrl}/api/desktop/question-imports`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-idempotency-key': `real-question-import-${source.sourceType}-${suffix}` },
+    headers: { 'Content-Type': 'application/json', 'x-idempotency-key': importIdempotencyKey(source.sourceType, sourceEvidence.sourceSha256, revision) },
     body: JSON.stringify(payload),
   });
   return created.task;
@@ -117,6 +197,8 @@ async function runFromEnvironment(env = process.env) {
     const exam = importSource('exam', env.REAL_QUESTION_IMPORT_EXAM_PATH || '/tmp/gewu-real-exam.docx');
     const lecture = importSource('lecture', env.REAL_QUESTION_IMPORT_LECTURE_PATH || '/tmp/gewu-real-lecture.docx');
     for (const source of [exam, lecture]) if (!fs.statSync(source.sourcePath).isFile()) throw failure('REAL_QUESTION_IMPORT_SOURCE_INVALID');
+    const revision = parserRevision(env.REAL_QUESTION_IMPORT_PARSER_SHA256);
+    const sources = [exam, lecture].map(source => Object.freeze({ source, evidence: sourceFileEvidence(source) }));
     stage = 'runtime-resolution';
     const runtimeModules = cloudAcceptance.resolveRuntimeModules(__dirname);
     const { Pool } = require(runtimeModules.pgPath);
@@ -125,21 +207,50 @@ async function runFromEnvironment(env = process.env) {
     writerPool = new Pool({ host: env.POSTGRES_HOST || '127.0.0.1', port: Number(env.POSTGRES_PORT || 5432), database: env.POSTGRES_DB || 'gewu_cloud', user: 'vnext_pg17_writer', password: env.COMMAND_WRITER_POSTGRES_PASSWORD });
     stage = 'identity-loading';
     const loaded = await cloudAcceptance.loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
-    stage = 'controlled-registration';
-    registration = await cloudAcceptance.runOnlineRegistrationAcceptance({ fetchImpl: fetch, runtimeModules, ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET, identity: loaded.identity });
-    const sessionToken = registration.sessionToken;
-    const deviceId = registration.fixture.deviceId;
+    const tenantId = env.CLOUD_BUSINESS_TENANT_ID || 'default';
+    const plans = [];
+    for (const current of sources) {
+      stage = `reuse-audit-${current.source.sourceType}`;
+      const existing = await findReusableImport({
+        query: (...args) => appPool.query(...args), tenantId, accountId: loaded.identity.accountId,
+        sourceType: current.source.sourceType, sourceSha256: current.evidence.sourceSha256,
+        sourceBytes: current.evidence.sourceBytes, parserSha256: revision,
+      });
+      plans.push(Object.freeze({ ...current, existing }));
+    }
+    const requiresDesktopApi = plans.some(plan => !plan.existing || !['drafts_prepared', 'submitted'].includes(plan.existing.status));
+    if (requiresDesktopApi) {
+      stage = 'controlled-registration';
+      registration = await cloudAcceptance.runOnlineRegistrationAcceptance({ fetchImpl: fetch, runtimeModules, ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET, identity: loaded.identity });
+    }
+    const sessionToken = registration?.sessionToken || null;
+    const deviceId = registration?.fixture?.deviceId || null;
     const results = [];
-    for (const source of [exam, lecture]) {
+    for (const plan of plans) {
+      const source = plan.source;
+      const common = {
+        sourceType: source.sourceType, sourceFileNameSha256: hash(source.sourceFileName),
+        sourceSha256: plan.evidence.sourceSha256, sourceBytes: plan.evidence.sourceBytes, parserSha256: revision,
+      };
+      if (plan.existing && ['drafts_prepared', 'submitted'].includes(plan.existing.status)) {
+        results.push(Object.freeze({ ...common, reused: true, final: plan.existing }));
+        continue;
+      }
       stage = `create-${source.sourceType}`;
-      const created = await createWordImport({ fetchImpl: fetch, sessionToken, deviceId, baseUrl: cloudAcceptance.PUBLIC_BASE_URL, source });
+      const created = plan.existing || await createWordImport({
+        fetchImpl: fetch, sessionToken, deviceId, baseUrl: cloudAcceptance.PUBLIC_BASE_URL,
+        source, sourceEvidence: plan.evidence, parserSha256: revision,
+      });
       stage = `parse-${source.sourceType}`;
       const ready = await waitForCandidates({
         read: async () => (await request(fetch, sessionToken, deviceId, `${cloudAcceptance.PUBLIC_BASE_URL}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}`)).task,
       });
       stage = `prepare-${source.sourceType}`;
       const prepared = await request(fetch, sessionToken, deviceId, `${cloudAcceptance.PUBLIC_BASE_URL}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}/prepare-drafts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      results.push(Object.freeze({ sourceType: source.sourceType, sourceFileNameSha256: hash(source.sourceFileName), ready: taskEvidence(ready), prepared: taskEvidence(prepared.task) }));
+      results.push(Object.freeze({
+        ...common, reused: Boolean(plan.existing), ready: taskEvidence(ready),
+        prepared: taskEvidence(prepared.task), final: taskEvidence(prepared.task),
+      }));
     }
     return Object.freeze({ ok: true, imports: results });
   } catch (error) {
@@ -151,7 +262,10 @@ async function runFromEnvironment(env = process.env) {
   }
 }
 
-module.exports = Object.freeze({ importSource, taskEvidence, waitForCandidates, preflightPayload, createWordImport, runFromEnvironment });
+module.exports = Object.freeze({
+  importSource, parserRevision, sourceFileEvidence, importIdempotencyKey, findReusableImport,
+  taskEvidence, waitForCandidates, preflightPayload, createWordImport, runFromEnvironment,
+});
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))

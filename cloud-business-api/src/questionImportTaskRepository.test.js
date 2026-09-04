@@ -136,7 +136,7 @@ async function main() {
 
   const atomicCandidates = await repository.completeSourceAndStoreCandidates({
     taskId: created.taskId, agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value',
-    observedSha256: 'a'.repeat(64), observedBytes: 3,
+    observedSha256: 'a'.repeat(64), observedBytes: 3, parserSha256: '9'.repeat(64),
     candidates: [{ contentHash: 'f'.repeat(64), candidate: { stem: 'atomically stored' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(atomicCandidates.status, 'candidates_ready');
@@ -145,6 +145,8 @@ async function main() {
     'source receipt, candidate storage, and encrypted relay deletion must occur in one cloud transaction');
   assert.ok(atomicCall[0].includes("storage.state='leased'") && atomicCall[0].includes('lease_token_sha256=$3'),
     'an agent may report source candidates only while it owns an unexpired lease');
+  assert.ok(atomicCall[0].includes("metadata_json->>'parserSha256'=$8") && atomicCall[1][7] === '9'.repeat(64),
+    'a revision-marked import may accept candidates only from the exact parser bytes requested by the task');
   assert.ok(!atomicCall[1].includes('lease-token-test-value'), 'raw source lease tokens must never reach PostgreSQL');
 
   const prepared = await repository.prepareDrafts({

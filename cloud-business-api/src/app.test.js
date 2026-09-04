@@ -767,12 +767,14 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const agentCandidates = await request(importAgentApp, '/api/storage-agent/question-imports/question_import_task_1/candidates', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' }, body: {
       agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
+      parserSha256: '9'.repeat(64),
       candidates: [{ contentHash: 'c'.repeat(64), candidate: { stem: 'text' }, validation: { status: 'accepted' }, mediaManifest: [] }],
     },
   });
   assert.strictEqual(agentCandidates.status, 200);
   assert.strictEqual(agentCandidates.body.task.status, 'candidates_ready');
   assert.deepStrictEqual(importAgentCalls.map(call => call[0]), ['authorize', 'completeSourceAndStoreCandidates']);
+  assert.strictEqual(importAgentCalls[1][1].parserSha256, '9'.repeat(64));
   const directQuestionWrite = await request(questionApp, '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
       id: 'question-1', subject: 'physics', questionType: 'single_choice', difficulty: 3,
