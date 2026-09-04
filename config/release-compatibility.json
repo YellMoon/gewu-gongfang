@@ -27,9 +27,9 @@
       "rule": "desktop offline changes are local drafts until confirmed; miniapp does not directly mutate core teaching data"
     },
     "desktopCloudSession": {
-      "version": "1",
-      "participants": ["desktop", "cloud_business"],
-      "rule": "desktop login verifies the cloud account before silently registering the device and installation; restart challenges and role switching are cloud-authoritative"
+      "version": "2",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "desktop login verifies the cloud account before silently registering the device and installation; an authenticated miniapp session can confirm pairing without a second phone proof; restart challenges and role switching are cloud-authoritative"
     },
     "identityRoleModel": {
       "version": "2",
