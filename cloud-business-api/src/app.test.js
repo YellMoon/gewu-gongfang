@@ -672,21 +672,35 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const pairing = {
     start: async input => { pairingCalls.push(['start', input]); return { pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z', qrImageDataUrl: 'data:image/png;base64,cXItMQ==' }; },
     confirm: async input => { pairingCalls.push(['confirm', input]); return { status: 'verified' }; },
+    confirmLegacy: async input => { pairingCalls.push(['confirmLegacy', input]); return { status: 'verified' }; },
     read: input => { pairingCalls.push(['read', input]); return { status: 'verified', verificationToken: 'ticket-1' }; },
   };
-  const pairedApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPairing: pairing });
+  const pairedApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPairing: pairing, miniappCloudAccount: miniappIdentity });
   const pairingStart = await request(pairedApp, '/api/desktop/pairing/start', { method: 'POST', body: { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' } });
   assert.strictEqual(pairingStart.status, 200);
   assert.deepStrictEqual(pairingStart.body, { ok: true, pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z', qrImageDataUrl: 'data:image/png;base64,cXItMQ==' });
-  const pairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', { method: 'POST', body: { scene: 'd_123456789012345678901234567890', loginCode: 'login-code', phoneCode: 'provider-code' } });
+  const pairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', {
+    method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: { scene: 'd_123456789012345678901234567890' },
+  });
   assert.strictEqual(pairingConfirm.status, 200);
   assert.deepStrictEqual(pairingConfirm.body, { ok: true, status: 'verified' });
+  const rejectedSessionPairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', {
+    method: 'POST', headers: { authorization: 'Bearer rejected-ticket.signature' }, body: { scene: 'd_123456789012345678901234567890' },
+  });
+  assert.strictEqual(rejectedSessionPairingConfirm.status, 403);
+  assert.deepStrictEqual(rejectedSessionPairingConfirm.body, { ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+  const missingSessionPairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', {
+    method: 'POST', body: { scene: 'd_123456789012345678901234567890', loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' },
+  });
+  assert.strictEqual(missingSessionPairingConfirm.status, 200);
+  assert.deepStrictEqual(missingSessionPairingConfirm.body, { ok: true, status: 'verified' });
   const pairingRead = await request(pairedApp, '/api/desktop/pairing/pair-1?secret=secret-1');
   assert.strictEqual(pairingRead.status, 200);
   assert.deepStrictEqual(pairingRead.body, { ok: true, status: 'verified', verificationToken: 'ticket-1' });
   assert.deepStrictEqual(pairingCalls, [
     ['start', { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' }],
-    ['confirm', { scene: 'd_123456789012345678901234567890', loginCode: 'login-code', phoneCode: 'provider-code' }],
+    ['confirm', { scene: 'd_123456789012345678901234567890', accountId: 'miniapp-account-1' }],
+    ['confirmLegacy', { scene: 'd_123456789012345678901234567890', loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' }],
     ['read', { pairingId: 'pair-1', pairingSecret: 'secret-1' }],
   ]);
 
@@ -696,6 +710,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     desktopPairing: {
       start: async () => { throw Object.assign(new Error('wechat unavailable'), { code: 'CLOUD_DESKTOP_PAIRING_UNAVAILABLE' }); },
       confirm: async () => null,
+      confirmLegacy: async () => null,
       read: () => null,
     },
   }), '/api/desktop/pairing/start', { method: 'POST', body: { installationId: 'install-2', installationPublicKey: 'public-key', idempotencyKey: 'retry-2' } });

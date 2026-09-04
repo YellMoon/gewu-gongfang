@@ -122,7 +122,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
   if (miniappRoleApplications && (typeof miniappRoleApplications.mine !== 'function' || typeof miniappRoleApplications.submit !== 'function'
     || typeof miniappRoleApplications.listSubmittedForDesktop !== 'function' || typeof miniappRoleApplications.reviewForDesktop !== 'function')) throw new TypeError('miniappRoleApplications is invalid');
-  if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
+  if (desktopPairing && (typeof desktopPairing.start !== 'function' || typeof desktopPairing.confirm !== 'function' || typeof desktopPairing.confirmLegacy !== 'function' || typeof desktopPairing.read !== 'function')) throw new TypeError('desktopPairing is invalid');
   if (storageAgent && (typeof storageAgent.lease !== 'function' || typeof storageAgent.download !== 'function' || typeof storageAgent.complete !== 'function')) throw new TypeError('storageAgent is invalid');
   if (questionAuthority && (typeof questionAuthority.list !== 'function' || typeof questionAuthority.create !== 'function')) throw new TypeError('questionAuthority is invalid');
   if (paperExportTasks && (typeof paperExportTasks.create !== 'function' || typeof paperExportTasks.read !== 'function' || typeof paperExportTasks.cancel !== 'function')) throw new TypeError('paperExportTasks is invalid');
@@ -2092,8 +2092,21 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.post('/api/desktop/pairing/confirm', async (request, response) => {
     if (!desktopPairing) return desktopUnavailable(response);
+    const token = sessionToken(request);
+    let context = null;
+    if (token) {
+      if (!miniappCloudAccount) return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      try {
+        context = await miniappCloudAccount.context({ token });
+      } catch (_) {
+        return response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      }
+    }
     try {
-      const result = await desktopPairing.confirm(request.body);
+      const body = context ? exactBody(request.body, ['scene']) : null;
+      const result = context
+        ? await desktopPairing.confirm({ scene: body?.scene, accountId: context.accountId })
+        : await desktopPairing.confirmLegacy(request.body);
       response.json({ ok: true, status: result.status });
     } catch (error) {
       pairingFailure(response, error);

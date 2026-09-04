@@ -9,11 +9,16 @@ const apiSource = fs.readFileSync(path.join(root, 'src/utils/api.ts'), 'utf8');
 const loginSource = fs.readFileSync(path.join(root, 'src/pages/login/index.tsx'), 'utf8');
 
 assert.ok(apiSource.includes("cloudBusinessUrl('/api/desktop/pairing/confirm')"));
-assert.ok(apiSource.includes('data: { scene: desktopLogin.scene, loginCode, phoneCode }'));
-assert.ok(loginSource.includes('parseDesktopLoginConfirmationQuery'));
+assert.ok(apiSource.includes('Authorization: `Bearer ${token}`'));
+assert.ok(apiSource.includes('data: { scene: desktopLogin.scene }'));
+assert.ok(loginSource.includes('resolveDesktopLoginConfirmationQuery'));
+assert.ok(loginSource.includes('Taro.getCurrentPages()'));
+assert.ok(loginSource.includes('Taro.getLaunchOptionsSync()'));
 assert.ok(loginSource.includes('miniappCloudAuthApi.confirmDesktopLogin'));
 assert.ok(loginSource.includes('desktopLogin,'));
 assert.ok(loginSource.includes('openType="getPhoneNumber"'));
+assert.ok(loginSource.includes('handleDesktopSessionLogin'));
+assert.ok(loginSource.includes('authSessionRuntime.capture()'));
 assert.ok(loginSource.includes("{'\\u786e\\u8ba4\\u767b\\u5f55'}"));
 assert.ok(!loginSource.includes('\u6838\u9a8c\u8d26\u53f7'));
 assert.ok(!loginSource.includes('\u767b\u8bb0\u8bbe\u5907'));

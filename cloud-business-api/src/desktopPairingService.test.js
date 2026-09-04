@@ -6,6 +6,7 @@ const { createDesktopPairingService } = require('./desktopPairingService');
 let now = new Date('2026-08-21T12:00:00.000Z');
 let serial = 0;
 const verificationInputs = [];
+const sessionIdentityInputs = [];
 const issuedIdentities = [];
 const codeInputs = [];
 const service = createDesktopPairingService({
@@ -13,7 +14,11 @@ const service = createDesktopPairingService({
   randomId: prefix => `${prefix}-${++serial}`,
   resolveWechatIdentity: async input => {
     verificationInputs.push(input);
-    return { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) };
+    return { authorityId: 'authority-1', accountId: 'legacy-account', phoneHmac: 'b'.repeat(64) };
+  },
+  resolveVerifiedAccount: async input => {
+    sessionIdentityInputs.push(input);
+    return { authorityId: 'authority-1', accountId: input.accountId, phoneHmac: 'a'.repeat(64) };
   },
   issueVerificationForVerifiedAccount: input => {
     issuedIdentities.push(input);
@@ -45,11 +50,10 @@ const service = createDesktopPairingService({
 
   const verified = await service.confirm({
     scene: codeInputs[0].scene,
-    loginCode: 'wechat-login-code',
-    phoneCode: 'wechat-phone-code',
+    accountId: 'account-1',
   });
   assert.strictEqual(verified.status, 'verified');
-  assert.deepStrictEqual(verificationInputs, [{ loginCode: 'wechat-login-code', phoneCode: 'wechat-phone-code' }]);
+  assert.deepStrictEqual(sessionIdentityInputs, [{ accountId: 'account-1' }]);
   assert.deepStrictEqual(issuedIdentities, [{ authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) }]);
   assert.deepStrictEqual(service.read({ pairingId: started.pairingId, pairingSecret: started.pairingSecret }), {
     status: 'verified',
@@ -57,17 +61,28 @@ const service = createDesktopPairingService({
     deviceChallenge: 'desktop-proof-challenge-1',
   });
 
-  await service.confirm({ scene: codeInputs[0].scene, loginCode: 'unused-login-code', phoneCode: 'unused-replay-code' });
-  assert.strictEqual(verificationInputs.length, 1, 'a verified attempt must not consume another phone proof');
+  await service.confirm({ scene: codeInputs[0].scene, accountId: 'account-1' });
+  assert.strictEqual(sessionIdentityInputs.length, 1, 'a verified attempt must not resolve the account again');
+  await assert.rejects(
+    () => service.confirm({ scene: codeInputs[0].scene, accountId: 'different-account' }),
+    error => error?.code === 'CLOUD_DESKTOP_PAIRING_REJECTED',
+    'an already verified pairing must stay bound to its authenticated account',
+  );
   assert.throws(
     () => service.read({ pairingId: started.pairingId, pairingSecret: 'wrong-secret' }),
     error => error?.code === 'CLOUD_DESKTOP_PAIRING_REJECTED',
   );
   await assert.rejects(
-    () => service.confirm({ pairingId: started.pairingId, pairingSecret: started.pairingSecret, loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' }),
+    () => service.confirm({ scene: codeInputs[0].scene, loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' }),
     error => error?.code === 'CLOUD_DESKTOP_PAIRING_REJECTED',
-    'the miniapp confirmation endpoint must no longer accept pairing secrets embedded in legacy links',
+    'the session confirmation method must not accept the legacy request shape',
   );
+
+  const legacyPairing = await service.start({ installationId: 'installation-legacy', installationPublicKey: 'public-key-legacy', idempotencyKey: 'register-legacy' });
+  const legacyVerified = await service.confirmLegacy({ scene: codeInputs[1].scene, loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' });
+  assert.strictEqual(legacyVerified.status, 'verified');
+  assert.deepStrictEqual(verificationInputs, [{ loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' }]);
+  assert.strictEqual(service.read({ pairingId: legacyPairing.pairingId, pairingSecret: legacyPairing.pairingSecret }).status, 'verified');
 
   const expiring = await service.start({ installationId: 'installation-2', installationPublicKey: 'public-key-2', idempotencyKey: 'register-2' });
   now = new Date('2026-08-21T12:06:00.000Z');

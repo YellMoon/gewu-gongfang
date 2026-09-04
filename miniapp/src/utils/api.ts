@@ -43,18 +43,18 @@ export const miniappCloudAuthApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud login unavailable' };
     }
   },
-  async confirmDesktopLogin(desktopLogin: { scene: string }, loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; status: 'verified' }>> {
+  async confirmDesktopLogin(desktopLogin: { scene: string }, token: string): Promise<ApiResponse<{ ok: true; status: 'verified' }>> {
     if (!desktopLogin || typeof desktopLogin !== 'object' || Array.isArray(desktopLogin)
       || Object.keys(desktopLogin).length !== 1 || !/^d_[A-Za-z0-9_-]{30}$/u.test(desktopLogin.scene)
-      || ![loginCode, phoneCode].every(value => typeof value === 'string' && value.trim())) {
+      || typeof token !== 'string' || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u.test(token) || token.length > 4096) {
       return { success: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED', error: 'Desktop login request is invalid' };
     }
     try {
       const response = await Taro.request({
         url: cloudBusinessUrl('/api/desktop/pairing/confirm'),
         method: 'POST',
-        header: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-        data: { scene: desktopLogin.scene, loginCode, phoneCode },
+        header: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        data: { scene: desktopLogin.scene },
         timeout: REQUEST_TIMEOUT,
         dataType: 'json',
       });

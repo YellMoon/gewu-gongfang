@@ -15,6 +15,7 @@ const { createBusinessTeacherLifecycleMutations } = require('./src/businessTeach
 const { createBusinessRoomLifecycleMutations } = require('./src/businessRoomLifecycleMutationService');
 const { createBusinessCourseLifecycleMutations } = require('./src/businessCourseLifecycleMutationService');
 const { createDesktopPairingService } = require('./src/desktopPairingService');
+const { createDesktopPairingIdentityResolver } = require('./src/desktopPairingIdentityResolver');
 const { createMiniappCloudAccountService } = require('./src/miniappCloudAccountService');
 const { createMiniappRoleApplicationService } = require('./src/miniappRoleApplicationService');
 const { selectDesktopBusinessAccount, desktopSessionRoles } = require('./src/desktopBusinessAccountResolver');
@@ -355,6 +356,16 @@ function createDesktopRegistrationFromEnvironment() {
   const businessTeacherLifecycleMutations = createBusinessTeacherLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   const businessRoomLifecycleMutations = createBusinessRoomLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   const businessCourseLifecycleMutations = createBusinessCourseLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
+  const resolveVerifiedAccount = createDesktopPairingIdentityResolver({
+    accountRepository,
+    readCanonicalByPhoneHmac: async input => {
+      const result = await identityPool.query(
+        'SELECT authority_id AS "authorityId",account_id AS "accountId",phone_hash AS "phoneHmac" FROM vnext_control_plane.vnext_read_canonical_account_by_verified_contact($1,$2)',
+        ['phone', input.phoneHmac],
+      );
+      return result.rows.length === 1 ? result.rows[0] : null;
+    },
+  });
   return {
     registration,
     desktopCloudIdentity,
@@ -364,6 +375,7 @@ function createDesktopRegistrationFromEnvironment() {
     canonicalAccount,
     canonicalWechatIdentity,
     accountRepository,
+    resolveVerifiedAccount,
     roleApplicationQuery: (text, values) => identityPool.query(text, values),
     bootstrapAdminAccountId,
     businessScheduleUpdate,
@@ -475,6 +487,7 @@ const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonical
       const identity = await desktopRuntime.canonicalWechatIdentity.resolveOrBind(input);
       return { authorityId: identity.authorityId, accountId: identity.accountId, phoneHmac: identity.phoneHmac };
     },
+    resolveVerifiedAccount: input => desktopRuntime.resolveVerifiedAccount(input),
     issueVerificationForVerifiedAccount: input => desktopRuntime.registration.issueVerificationForVerifiedAccount(input),
     inspectVerificationToken: token => desktopRuntime.registration.inspectVerificationToken(token),
     generateLoginCode: input => desktopLoginCode.generateDesktopLoginCode(input),

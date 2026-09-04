@@ -100,6 +100,20 @@ function createMiniappCloudAccountRepository({ query, tenantId }) {
       );
       return result.rows[0] ? accountRow(result.rows[0]) : null;
     },
+    async readVerifiedPhoneBinding(input) {
+      const request = exact(input, ['accountId']);
+      if (typeof request.accountId !== 'string' || !request.accountId) throw invalid();
+      const result = await query(
+        `SELECT account_id AS "accountId",phone_hmac AS "phoneHmac"
+           FROM business.miniapp_cloud_accounts
+          WHERE account_id=$1 AND status='active'`,
+        [request.accountId],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      if (row.accountId !== request.accountId || typeof row.phoneHmac !== 'string' || !/^[0-9a-f]{64}$/u.test(row.phoneHmac)) throw invalid();
+      return Object.freeze({ accountId: row.accountId, phoneHmac: row.phoneHmac });
+    },
   });
 }
 

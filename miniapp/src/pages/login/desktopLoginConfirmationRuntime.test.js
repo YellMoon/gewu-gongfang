@@ -3,6 +3,7 @@
 const assert = require('assert');
 const {
   parseDesktopLoginConfirmationQuery,
+  resolveDesktopLoginConfirmationQuery,
   desktopLoginConfirmationError,
 } = require('./desktopLoginConfirmationRuntime');
 
@@ -23,6 +24,22 @@ assert.strictEqual(parseDesktopLoginConfirmationQuery({
   desktopLogin: '1', pairingId: 'pairing-id-1', secret: 'legacy-secret',
 }), null);
 
+assert.deepStrictEqual(resolveDesktopLoginConfirmationQuery(
+  {},
+  { scene: 'd_123456789012345678901234567890' },
+  { scene: 'd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+), { scene: 'd_123456789012345678901234567890' });
+assert.deepStrictEqual(resolveDesktopLoginConfirmationQuery(
+  { scene: ['d_123456789012345678901234567890'] },
+  null,
+  { scene: 'd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+), { scene: 'd_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+assert.strictEqual(resolveDesktopLoginConfirmationQuery({}, null, { scene: 'invalid' }), null);
+
+assert.strictEqual(
+  desktopLoginConfirmationError('CLOUD_MINIAPP_IDENTITY_REJECTED'),
+  '登录状态已过期，请重新登录',
+);
 assert.strictEqual(
   desktopLoginConfirmationError('CLOUD_DESKTOP_PAIRING_REJECTED'),
   '登录二维码已失效，请在电脑上重新获取',
