@@ -27,7 +27,7 @@ const { compactFormulaText, wordFormulaTransformation, renderPaperExport } = req
       analysis: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Structured analysis ' }, { type: 'formula', attrs: { id: 'formula-analysis', canonicalLatex: 'v=at', displayMode: 'inline' } }] }] },
     },
   };
-  const layout = { items: [{ id: 'q1', sectionTitle: 'Part one', score: 3 }, { id: 'q2', sectionTitle: 'Part one', score: 6 }] };
+  const layout = { items: [{ id: 'q1', sectionTitle: 'Part one', score: 2.5 }, { id: 'q2', sectionTitle: 'Part one', score: 6 }] };
   const input = { title: 'Paper', answerPosition: 'end', layout, snapshot, formulaMode: 'latex-vector' };
   const resolveQuestionAsset = async input => {
     assetCalls.push(input);
@@ -38,6 +38,8 @@ const { compactFormulaText, wordFormulaTransformation, renderPaperExport } = req
   assert.ok(word.bytes.subarray(0, 2).equals(Buffer.from('PK')));
   const wordXml = await (await JSZip.loadAsync(word.bytes)).file('word/document.xml').async('string');
   for (const expected of ['first option', 'second option', 'First explanation', 'Second explanation']) assert.ok(wordXml.includes(expected), `Word must retain ${expected}`);
+  assert.ok(wordXml.includes('（2.5 分）'), 'one-decimal paper scores accepted by the editor must survive Word rendering with user-facing Chinese copy');
+  assert.ok(!wordXml.includes(' pts'), 'Chinese paper exports must not expose the internal English score abbreviation');
   assert.ok(!wordXml.includes('x^{2}'), 'LaTeX source must be rendered as a formula instead of being falsely presented as finished paper text');
   for (const expected of ['试题', '参考答案', '答案：A', '解析：First explanation']) assert.ok(wordXml.includes(expected), `Word export must use Chinese paper labels: ${expected}`);
   assert.ok(wordXml.indexOf('Second stem') < wordXml.indexOf('答案：A'), 'end-position answers must follow every question in Word');

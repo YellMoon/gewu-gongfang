@@ -27,7 +27,7 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
     actor: { accountId: 'account-1', roles: ['teacher'] },
     idempotencyKey: 'export-1',
     taskType: 'paper-export-pdf',
-    request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native', layout: { items: [{ id: 'question-1', sectionTitle: 'Part one', score: 3 }] } },
+    request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native', layout: { items: [{ id: 'question-1', sectionTitle: 'Part one', score: 2.5 }] } },
   });
   await assert.rejects(
     () => repository.create({ tenantId: 'default', actor: { accountId: 'student-1', roles: ['student'] }, idempotencyKey: 'student-export', taskType: 'paper-export-pdf', request: { questionIds: ['q1'], title: 'Paper', subject: 'math', answerPosition: 'end', formulaMode: 'latex-vector' } }),
@@ -55,6 +55,10 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
   await assert.rejects(() => repository.create({
     tenantId: 'default', actor: { accountId: 'account-1', roles: ['teacher'] }, idempotencyKey: 'export-layout-invalid',
     taskType: 'paper-export-pdf', request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native', layout: { items: [{ id: 'other-question', sectionTitle: 'Part one', score: 3 }] } },
+  }), /CLOUD_PAPER_EXPORT_INPUT_INVALID/);
+  await assert.rejects(() => repository.create({
+    tenantId: 'default', actor: { accountId: 'account-1', roles: ['teacher'] }, idempotencyKey: 'export-score-precision-invalid',
+    taskType: 'paper-export-pdf', request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native', layout: { items: [{ id: 'question-1', sectionTitle: 'Part one', score: 2.55 }] } },
   }), /CLOUD_PAPER_EXPORT_INPUT_INVALID/);
   console.log('paper export task repository checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

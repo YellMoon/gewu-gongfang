@@ -15,8 +15,48 @@ from deploy_cloud_business_api import (
     switch_command,
 )
 
+REAL_RUN_CLOUD_MIGRATIONS = module.run_cloud_migrations
+REAL_CREATE_VERIFIED_BACKUP = module.create_verified_backup
+VERIFIED_BACKUP = {
+    "root": "/root/scheduling-backups/postgres/20260901-010203",
+    "dump": "/root/scheduling-backups/postgres/20260901-010203/gewu_cloud.dump",
+    "checksum": "/root/scheduling-backups/postgres/20260901-010203/gewu_cloud.dump.sha256",
+    "metadata": "/root/scheduling-backups/postgres/20260901-010203/metadata.json",
+    "sha256": "b" * 64,
+    "restoreVerified": True,
+}
+VERIFIED_HEALTH = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
+VERIFIED_PERMISSION_CONTRACT = {"contract": "live-authority-result"}
+
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
+    def setUp(self):
+        self.backup_guard = mock.patch.object(
+            module,
+            "create_verified_backup",
+            side_effect=AssertionError("TEST_MUST_MOCK_CLOUD_BACKUP"),
+        )
+        self.backup_guard.start()
+        self.addCleanup(self.backup_guard.stop)
+        self.migration_guard = mock.patch.object(
+            module,
+            "run_cloud_migrations",
+            side_effect=AssertionError("TEST_MUST_MOCK_CLOUD_MIGRATIONS"),
+        )
+        self.migration_guard.start()
+        self.addCleanup(self.migration_guard.stop)
+        self.permission_guard = mock.patch.object(
+            module.verify_cloud_business_release,
+            "verify",
+            side_effect=AssertionError("TEST_MUST_MOCK_CLOUD_PERMISSION_VERIFICATION"),
+        )
+        self.permission_guard.start()
+        self.addCleanup(self.permission_guard.stop)
+
+    def test_test_process_blocks_real_cloud_migrations_by_default(self):
+        with self.assertRaisesRegex(AssertionError, "TEST_MUST_MOCK_CLOUD_MIGRATIONS"):
+            module.run_cloud_migrations()
+
     def test_release_tag_is_stable_and_rejects_unsafe_input(self):
         self.assertEqual(release_tag("8.1.0", "8c425eab"), "8.1.0-8c425eab")
         with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
@@ -171,28 +211,18 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         release.assert_called_once_with("d" * 32)
         self.assertEqual(result["ageSeconds"], 901)
 
-        with mock.patch.object(module.secrets, "token_hex", return_value="d" * 32), mock.patch.object(
-            module, "validated_release_tag", return_value="8.5.0-8a40b41050be"
-        ), mock.patch.object(
-            module, "claim_stale_promotion_lock", return_value=stale
-        ), mock.patch.object(
-            module, "reconcile_uncertain_switch"
-        ) as reconcile, mock.patch.object(module, "verify_public_health", return_value={"ok": True}) as verify, mock.patch.object(
-            module, "verify_current_release_tag"
-        ) as verify_tag, mock.patch.object(
-            module, "heartbeat_promotion_lock"
-        ) as heartbeat, mock.patch.object(
-            module.deploy, "require_release_manifest", return_value=pending_manifest
-        ) as require_manifest, mock.patch.object(module.deploy, "record_release_receipt"
-        ) as receipt, mock.patch.object(module, "release_promotion_lock") as release:
-            module.recover_promotion_lock("8.5.0-8a40b41050be", "preserve")
-        reconcile.assert_not_called()
-        verify_tag.assert_called_once_with("8.5.0-8a40b41050be")
-        verify.assert_called_once_with("8.5.0")
-        heartbeat.assert_called_once_with("d" * 32, "8.5.0-8a40b41050be")
-        require_manifest.assert_called_once_with("cloud_business", allowed_statuses=("pending", "verified"))
-        receipt.assert_called_once()
-        release.assert_called_once_with("d" * 32)
+        with mock.patch.object(module, "validated_release_tag", return_value="8.5.0-8a40b41050be"), mock.patch.object(
+            module, "claim_stale_promotion_lock"
+        ) as claim, mock.patch.object(
+            module.deploy,
+            "require_release_manifest",
+            side_effect=SystemExit("Unified release target cloud_business is not in an allowed state"),
+        ) as require_manifest, mock.patch.object(module.deploy, "record_release_receipt") as receipt:
+            with self.assertRaisesRegex(SystemExit, "not in an allowed state"):
+                module.recover_promotion_lock("8.5.0-8a40b41050be", "preserve")
+        require_manifest.assert_called_once_with("cloud_business", allowed_statuses=("verified",))
+        claim.assert_not_called()
+        receipt.assert_not_called()
 
     def test_preserve_recovery_rejects_a_stale_tag_from_another_commit_before_claim(self):
         with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
@@ -215,28 +245,31 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         stale = {"operationId": "c" * 32, "ageSeconds": 901}
         with mock.patch.object(module, "validated_release_tag", return_value=tag), mock.patch.object(
             module.secrets, "token_hex", return_value="d" * 32
-        ), mock.patch.object(module.deploy, "require_release_manifest", return_value=manifest), mock.patch.object(
+        ), mock.patch.object(module.deploy, "require_release_manifest", return_value=manifest) as require_manifest, mock.patch.object(
             module, "claim_stale_promotion_lock", return_value=stale
         ), mock.patch.object(module, "verify_current_release_tag"), mock.patch.object(
             module, "verify_public_health", return_value={"ok": True}
+        ), mock.patch.object(
+            module.verify_cloud_business_release, "verify", return_value=VERIFIED_PERMISSION_CONTRACT
         ), mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
             module.deploy, "record_release_receipt"
         ) as receipt, mock.patch.object(module, "release_promotion_lock") as release:
             result = module.recover_promotion_lock(tag, "preserve")
         receipt.assert_not_called()
+        require_manifest.assert_called_once_with("cloud_business", allowed_statuses=("verified",))
         release.assert_called_once_with("d" * 32)
         self.assertEqual(result["ageSeconds"], 901)
 
     def test_complete_promotion_lifecycle_holds_one_operation_lock(self):
-        health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
+        health = VERIFIED_HEALTH
         with mock.patch.object(module.secrets, "token_hex", return_value="b" * 32), mock.patch.object(
             module, "acquire_promotion_lock"
         ) as acquire, mock.patch.object(module, "release_promotion_lock") as release, mock.patch.object(
             module, "promote_candidate_under_lock", return_value=health
         ) as promote:
-            self.assertEqual(module.promote_validated_candidate("8.5.0-980f2c842eab", "8.5.0", "evidence"), health)
+            self.assertEqual(module.promote_validated_candidate("8.5.0-980f2c842eab", "8.5.0", VERIFIED_BACKUP), health)
         acquire.assert_called_once_with("b" * 32, "8.5.0-980f2c842eab")
-        promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", "evidence", "b" * 32)
+        promote.assert_called_once_with("8.5.0-980f2c842eab", "8.5.0", VERIFIED_BACKUP, "b" * 32)
         release.assert_called_once_with("b" * 32)
 
     def test_successful_promotion_revalidates_the_promoted_container_before_health_and_receipt_in_order(self):
@@ -251,24 +284,144 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ) as heartbeat, mock.patch.object(
             module, "verify_current_release_tag", side_effect=lambda *_args: events.append("tag")
         ) as verify_tag, mock.patch.object(
-            module, "verify_public_health", side_effect=lambda *_args: events.append("health") or {"ok": True}
+            module, "verify_public_health", side_effect=lambda *_args: events.append("health") or VERIFIED_HEALTH
+        ), mock.patch.object(
+            module.verify_cloud_business_release,
+            "verify",
+            side_effect=lambda: events.append("permissions") or VERIFIED_PERMISSION_CONTRACT,
+        ), mock.patch.object(
+            module, "verified_release_evidence", side_effect=lambda *_args: events.append("evidence") or "bound-evidence"
         ), mock.patch.object(
             module.deploy, "record_release_receipt", side_effect=lambda *_args: events.append("receipt")
         ):
-            module.promote_candidate_under_lock(tag, "8.5.0", "evidence", operation_id)
-        self.assertEqual(events, ["switch", "heartbeat", "tag", "heartbeat", "health", "heartbeat", "receipt"])
-        self.assertEqual(heartbeat.call_args_list, [mock.call(operation_id, tag), mock.call(operation_id, tag), mock.call(operation_id, tag)])
+            module.promote_candidate_under_lock(tag, "8.5.0", VERIFIED_BACKUP, operation_id)
+        self.assertEqual(events, ["switch", "heartbeat", "tag", "heartbeat", "health", "heartbeat", "permissions", "heartbeat", "evidence", "receipt"])
+        self.assertEqual(heartbeat.call_args_list, [mock.call(operation_id, tag), mock.call(operation_id, tag), mock.call(operation_id, tag), mock.call(operation_id, tag)])
         verify_tag.assert_called_once_with(tag)
+
+    def test_permission_contract_failure_rolls_back_and_skips_receipt(self):
+        switch_ssh = mock.Mock()
+        tag_ssh = mock.Mock()
+        rollback_ssh = mock.Mock()
+        with mock.patch.object(
+            module.deploy, "connect", side_effect=[switch_ssh, tag_ssh, rollback_ssh]
+        ), mock.patch.object(module.deploy, "run") as run, mock.patch.object(
+            module, "heartbeat_promotion_lock"
+        ), mock.patch.object(module, "verify_public_health", return_value=VERIFIED_HEALTH), mock.patch.object(
+            module.verify_cloud_business_release,
+            "verify",
+            side_effect=RuntimeError("CLOUD_BUSINESS_RELEASE_DIRECT_WRITE_OPEN"),
+        ), mock.patch.object(module.deploy, "record_release_receipt") as receipt:
+            with self.assertRaisesRegex(RuntimeError, "DIRECT_WRITE_OPEN"):
+                module.promote_candidate_under_lock("8.5.0-fb899bbdd414", "8.5.0", VERIFIED_BACKUP, "e" * 32)
+        receipt.assert_not_called()
+        self.assertIn("rollback-8.5.0-fb899bbdd414", run.call_args_list[-1].args[1])
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
-            self.assertEqual(module.run_cloud_migrations(), 0)
-        self.assertEqual(len(run.call_args_list), 4)
+            self.assertEqual(REAL_RUN_CLOUD_MIGRATIONS(), 0)
+        self.assertEqual(len(run.call_args_list), 9)
         self.assertTrue(str(run.call_args_list[0].args[0][1]).endswith("apply_cloud_control_plane_m20.py"))
         self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_control_plane_m21.py"))
         self.assertTrue(str(run.call_args_list[2].args[0][1]).endswith("apply_cloud_control_plane_m22.py"))
-        self.assertTrue(str(run.call_args_list[3].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
+        self.assertTrue(str(run.call_args_list[3].args[0][1]).endswith("apply_cloud_control_plane_m23.py"))
+        self.assertTrue(str(run.call_args_list[4].args[0][1]).endswith("apply_cloud_control_plane_m24.py"))
+        self.assertTrue(str(run.call_args_list[5].args[0][1]).endswith("apply_cloud_control_plane_m25.py"))
+        self.assertTrue(str(run.call_args_list[6].args[0][1]).endswith("apply_cloud_control_plane_m26.py"))
+        self.assertTrue(str(run.call_args_list[7].args[0][1]).endswith("apply_cloud_control_plane_m27.py"))
+        self.assertTrue(str(run.call_args_list[8].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
+
+    def test_verified_backup_requires_exact_recovery_artifacts_and_checksum(self):
+        with mock.patch.object(module.backup_cloud_postgres, "create_backup", return_value=VERIFIED_BACKUP) as create:
+            self.assertEqual(REAL_CREATE_VERIFIED_BACKUP(), VERIFIED_BACKUP)
+        create.assert_called_once_with(container="gewu-postgres17", database="gewu_cloud", role="gewu_app")
+
+        invalid = {**VERIFIED_BACKUP, "sha256": "not-a-checksum"}
+        with mock.patch.object(module.backup_cloud_postgres, "create_backup", return_value=invalid):
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED"):
+                REAL_CREATE_VERIFIED_BACKUP()
+        invalid = {**VERIFIED_BACKUP, "restoreVerified": False}
+        with mock.patch.object(module.backup_cloud_postgres, "create_backup", return_value=invalid):
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED"):
+                REAL_CREATE_VERIFIED_BACKUP()
+
+    def test_release_evidence_is_derived_from_live_health_permission_and_restore_results(self):
+        with mock.patch.object(
+            module.verify_cloud_business_release,
+            "validate",
+            return_value=VERIFIED_PERMISSION_CONTRACT,
+        ) as validate:
+            evidence = module.verified_release_evidence(
+                "8.5.0", VERIFIED_BACKUP, VERIFIED_HEALTH, VERIFIED_PERMISSION_CONTRACT
+            )
+        validate.assert_called_once_with(dict(VERIFIED_PERMISSION_CONTRACT))
+        self.assertIn("healthContractSha256=", evidence)
+        self.assertIn("authorityContractSha256=", evidence)
+        self.assertIn("restore-verified=true", evidence)
+        with self.assertRaisesRegex(RuntimeError, "CLOUD_RELEASE_EVIDENCE_INVALID"):
+            module.verified_release_evidence(
+                "8.5.0", VERIFIED_BACKUP, {**VERIFIED_HEALTH, "ok": False}, VERIFIED_PERMISSION_CONTRACT
+            )
+
+    def test_deploy_applies_verified_migrations_before_starting_candidate(self):
+        events = []
+        ssh = mock.Mock()
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
+            module.deploy, "connect", return_value=ssh
+        ), mock.patch.object(module, "upload_source", side_effect=lambda *_args: events.append("upload")), mock.patch.object(
+            module, "build_image", side_effect=lambda *_args: events.append("build")
+        ), mock.patch.object(
+            module, "create_verified_backup", side_effect=lambda: events.append("backup") or VERIFIED_BACKUP
+        ), mock.patch.object(
+            module, "deploy_retirement_gateway", side_effect=lambda: events.append("gateway") or {"ok": True}
+        ), mock.patch.object(module, "run_cloud_migrations", side_effect=lambda: events.append("migrate") or 0), mock.patch.object(
+            module.deploy, "run", side_effect=lambda *_args, **_kwargs: events.append("candidate") or ("", "")
+        ), mock.patch.object(module, "promote_validated_candidate", side_effect=lambda *_args: events.append("promote") or {"ok": True}):
+            self.assertEqual(module.deploy_release(), {"ok": True})
+        self.assertEqual(events, ["upload", "build", "backup", "gateway", "migrate", "candidate", "promote"])
+
+    def test_backup_failure_blocks_migrations_candidate_and_promotion(self):
+        ssh = mock.Mock()
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
+            module.deploy, "connect", return_value=ssh
+        ), mock.patch.object(module, "upload_source"), mock.patch.object(module, "build_image"), mock.patch.object(
+            module, "create_verified_backup", side_effect=RuntimeError("CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED")
+        ), mock.patch.object(module, "deploy_retirement_gateway") as gateway, mock.patch.object(module, "run_cloud_migrations") as migrate, mock.patch.object(
+            module.deploy, "run"
+        ) as run, mock.patch.object(module, "promote_validated_candidate") as promote:
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED"):
+                module.deploy_release()
+        gateway.assert_not_called()
+        migrate.assert_not_called()
+        run.assert_not_called()
+        promote.assert_not_called()
+
+    def test_gateway_failure_blocks_migrations_candidate_promotion_and_receipt(self):
+        ssh = mock.Mock()
+        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+            module, "source_revision", return_value="1165783d"
+        ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
+            module.deploy, "connect", return_value=ssh
+        ), mock.patch.object(module, "upload_source"), mock.patch.object(module, "build_image"), mock.patch.object(
+            module, "create_verified_backup", return_value=VERIFIED_BACKUP
+        ), mock.patch.object(
+            module, "deploy_retirement_gateway", side_effect=RuntimeError("GATEWAY_RETIREMENT_HEALTH_INVALID")
+        ), mock.patch.object(module, "run_cloud_migrations") as migrate, mock.patch.object(
+            module.deploy, "run"
+        ) as run, mock.patch.object(module, "promote_validated_candidate") as promote, mock.patch.object(
+            module.deploy, "record_release_receipt"
+        ) as receipt:
+            with self.assertRaisesRegex(RuntimeError, "GATEWAY_RETIREMENT_HEALTH_INVALID"):
+                module.deploy_release()
+        migrate.assert_not_called()
+        run.assert_not_called()
+        promote.assert_not_called()
+        receipt.assert_not_called()
 
     def test_public_health_requires_the_exact_release_version(self):
         ssh = mock.Mock()
@@ -281,6 +434,44 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
                 module.verify_public_health("8.5.0")
         ssh.close.assert_called_once()
 
+    def test_public_health_targets_the_cloud_business_nginx_location(self):
+        nginx = (module.ROOT / "scripts" / "nginx-scheduling.conf").read_text(encoding="utf-8")
+        self.assertIn("location /cloud-business/", nginx)
+        self.assertIn("proxy_pass http://172.18.0.1:3002/", nginx)
+        self.assertEqual(module.health_url(), "https://physicsedu.xyz/cloud-business/api/health")
+
+    def test_public_cloud_health_also_requires_the_retirement_gateway(self):
+        ssh = mock.Mock()
+        with mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
+            module.deploy,
+            "run",
+            return_value=(' {"ok":true,"businessAuthority":"cloud","version":"8.5.0"} ', ""),
+        ), mock.patch.object(
+            module,
+            "verify_public_gateway_retirement",
+            side_effect=RuntimeError("GATEWAY_RETIREMENT_TOMBSTONE_INVALID"),
+        ) as gateway:
+            with self.assertRaisesRegex(RuntimeError, "GATEWAY_RETIREMENT_TOMBSTONE_INVALID"):
+                module.verify_public_health("8.5.0")
+        gateway.assert_called_once_with("8.5.0")
+
+    def test_public_gateway_retirement_verifies_health_tombstones_and_ws_rejection(self):
+        ssh = mock.Mock()
+        responses = [
+            ('{"ok":true,"version":"8.5.0","legacyAuthority":"retired"}', ""),
+            ("410", ""), ("410", ""), ("410", ""), ("410", ""),
+            ("404", ""), ("404", ""),
+        ]
+        with mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
+            module.deploy, "run", side_effect=responses
+        ) as run:
+            result = module.verify_public_gateway_retirement("8.5.0")
+        self.assertEqual(result["legacyAuthority"], "retired")
+        commands = [call.args[1] for call in run.call_args_list]
+        self.assertTrue(all("https://physicsedu.xyz/scheduling/" in command for command in commands))
+        self.assertEqual(sum("Upgrade: websocket" in command for command in commands), 2)
+        ssh.close.assert_called_once()
+
     def test_deploy_release_requires_manifest_and_records_verified_receipt(self):
         ssh = mock.Mock()
         health = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
@@ -291,20 +482,29 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ) as record_receipt, mock.patch.object(module.deploy, "connect", return_value=ssh), mock.patch.object(
             module, "upload_source"
         ), mock.patch.object(module, "build_image"), mock.patch.object(
+            module, "create_verified_backup", return_value=VERIFIED_BACKUP
+        ), mock.patch.object(module, "deploy_retirement_gateway") as deploy_gateway, mock.patch.object(
             module.deploy, "run"
         ), mock.patch.object(module, "run_cloud_migrations", return_value=0), mock.patch.object(
             module, "verify_public_health", return_value=health
         ) as verify_health, mock.patch.object(
+            module.verify_cloud_business_release, "verify", return_value=VERIFIED_PERMISSION_CONTRACT
+        ), mock.patch.object(
+            module.verify_cloud_business_release, "validate", return_value=VERIFIED_PERMISSION_CONTRACT
+        ), mock.patch.object(
             module, "acquire_promotion_lock", return_value=mock.Mock()
         ), mock.patch.object(
             module, "release_promotion_lock"
         ):
             self.assertEqual(module.deploy_release(), health)
         require_manifest.assert_called_once_with("cloud_business")
+        deploy_gateway.assert_called_once_with()
         verify_health.assert_called_once_with("8.5.0")
         record_receipt.assert_called_once()
         self.assertEqual(record_receipt.call_args.args[0], "cloud_business")
         self.assertIn("8.5.0", record_receipt.call_args.args[1])
+        self.assertIn(VERIFIED_BACKUP["root"], record_receipt.call_args.args[1])
+        self.assertIn(VERIFIED_BACKUP["sha256"], record_receipt.call_args.args[1])
 
     def test_candidate_start_failure_discards_only_its_exact_candidate(self):
         ssh = mock.Mock()
@@ -317,6 +517,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
             module.deploy, "connect", return_value=ssh
         ), mock.patch.object(module, "upload_source"), mock.patch.object(module, "build_image"), mock.patch.object(
+            module, "create_verified_backup", return_value=VERIFIED_BACKUP
+        ), mock.patch.object(module, "deploy_retirement_gateway"), mock.patch.object(module, "run_cloud_migrations", return_value=0
+        ), mock.patch.object(
             module.deploy, "run", side_effect=RuntimeError("candidate bind failed")
         ) as run, mock.patch.object(module, "promote_validated_candidate") as promote:
             with self.assertRaisesRegex(RuntimeError, "candidate bind failed"):
@@ -342,7 +545,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module, "verify_public_health", side_effect=RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
         ), mock.patch.object(module.deploy, "record_release_receipt") as record_receipt:
             with self.assertRaisesRegex(RuntimeError, "CLOUD_DOCKER_DEPLOY_HEALTH_INVALID"):
-                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
+                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", VERIFIED_BACKUP)
         self.assertEqual(run.call_count, 3)
         self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[2].args[1])
         record_receipt.assert_not_called()
@@ -361,12 +564,16 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(
             module.deploy, "run"
         ) as run, mock.patch.object(module, "heartbeat_promotion_lock"), mock.patch.object(
-            module, "verify_public_health", return_value={"ok": True, "version": "8.5.0"}
+            module, "verify_public_health", return_value=VERIFIED_HEALTH
+        ), mock.patch.object(
+            module.verify_cloud_business_release, "verify", return_value=VERIFIED_PERMISSION_CONTRACT
+        ), mock.patch.object(
+            module, "verified_release_evidence", return_value="bound-evidence"
         ), mock.patch.object(
             module.deploy, "record_release_receipt", side_effect=OSError("receipt write failed")
         ):
             with self.assertRaisesRegex(OSError, "receipt write failed"):
-                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", "evidence")
+                module.promote_validated_candidate("8.5.0-1101687f349d", "8.5.0", VERIFIED_BACKUP)
         self.assertEqual(run.call_count, 3)
         self.assertIn("rollback-8.5.0-1101687f349d", run.call_args_list[2].args[1])
         tag_ssh.close.assert_called_once()
@@ -384,7 +591,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module.deploy, "record_release_receipt"
         ) as record_receipt:
             with self.assertRaisesRegex(TimeoutError, "ssh timeout"):
-                module.promote_validated_candidate("8.5.0-b195691c27e9", "8.5.0", "evidence")
+                module.promote_validated_candidate("8.5.0-b195691c27e9", "8.5.0", VERIFIED_BACKUP)
         self.assertEqual(run.call_count, 2)
         self.assertIn("flock -x 9", run.call_args_list[0].args[1])
         self.assertIn("rollback-8.5.0-b195691c27e9", run.call_args_list[1].args[1])
@@ -394,11 +601,14 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         reconcile_ssh.close.assert_called_once()
 
     def test_promote_rejects_a_candidate_from_another_source_revision(self):
-        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
-            module, "source_revision", return_value="1165783d"
-        ):
-            with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_DEPLOY_CONFIG_INVALID"):
-                module.promote_release("8.5.0-deadbee")
+        with self.assertRaisesRegex(RuntimeError, "CLOUD_STANDALONE_PROMOTION_RETIRED"):
+            module.promote_release("8.5.0-deadbee")
+
+    def test_standalone_candidate_and_promote_commands_are_not_exposed(self):
+        source = (module.ROOT / "scripts" / "deploy_cloud_business_api.py").read_text(encoding="utf-8")
+        self.assertIn('choices=("deploy", "discard", "recover-lock")', source)
+        self.assertNotIn('if args.command == "candidate"', source)
+        self.assertNotIn('if args.command == "promote"', source)
 
 
 if __name__ == "__main__":

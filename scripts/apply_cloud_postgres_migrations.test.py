@@ -57,11 +57,37 @@ class CloudPostgresMigrationTests(unittest.TestCase):
             self.assertFalse(any("CREATE SCHEMA" in call for call in executor.calls))
             migration_call = next(call for call in executor.calls if "SELECT 1;" in call)
             self.assertIn("SET LOCAL ROLE vnext_pg17_business_owner", migration_call)
+            self.assertIn("INSERT INTO business.cloud_schema_migrations", migration_call)
+            self.assertLess(
+                migration_call.index("INSERT INTO business.cloud_schema_migrations"),
+                migration_call.rindex("COMMIT;"),
+            )
             self.assertEqual(apply_migrations(executor, rows), {"applied": [], "skipped": ["20260823-a.sql"]})
             rows[0]["sha256"] = "0" * 64
             with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_HASH_MISMATCH"):
                 apply_migrations(executor, rows)
         self.assertTrue(any("SET LOCAL ROLE vnext_pg17_business_owner" in call for call in executor.calls))
+
+    def test_migration_body_and_ledger_cannot_be_split_across_psql_calls(self):
+        class RejectSplitExecutor(FakeExecutor):
+            def run(self, sql):
+                if "SELECT 42;" in sql and "INSERT INTO business.cloud_schema_migrations" not in sql:
+                    raise RuntimeError("SIMULATED_DISCONNECT_AFTER_DDL_BEFORE_LEDGER")
+                return super().run(sql)
+
+        executor = RejectSplitExecutor()
+        migration = {
+            "name": "20260901-atomic-ledger.sql",
+            "sql": "BEGIN;\nSELECT 42;\nCOMMIT;\n",
+            "sha256": "a" * 64,
+        }
+        self.assertEqual(
+            apply_migrations(executor, [migration]),
+            {"applied": ["20260901-atomic-ledger.sql"], "skipped": []},
+        )
+        body_calls = [sql for sql in executor.calls if "SELECT 42;" in sql]
+        self.assertEqual(len(body_calls), 1)
+        self.assertIn("INSERT INTO business.cloud_schema_migrations", body_calls[0])
 
     def test_skips_only_exact_reviewed_historical_to_current_pair(self):
         name = "20260822-miniapp-cloud-accounts.sql"

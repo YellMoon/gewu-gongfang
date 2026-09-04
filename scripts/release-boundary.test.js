@@ -21,13 +21,23 @@ assert.ok(
   'OSS publication must require the unified release manifest for its declared artifact target'
 );
 assert.ok(publishDesktop.includes("recordReceipt"), 'a successful OSS publication must write a version receipt');
-assert.ok(deployBackend.includes('require_release_manifest'), 'backend deployment must require the unified release manifest');
-assert.ok(deployBackend.includes("record_release_receipt('backend'"), 'backend health success must write an exact-version receipt');
-assert.ok(deployGateway.includes('require_release_manifest'), 'gateway deployment must require the unified release manifest');
-assert.ok(deployGateway.includes("record_release_receipt('gateway'"), 'gateway health success must write an exact-version receipt');
+assert.ok(deployBackend.includes('LEGACY_BACKEND_DEPLOY_RETIRED'), 'the retired local backend deploy mode must fail closed');
+assert.ok(!deployBackend.includes("require_release_manifest('backend'"), 'the retired backend must not impersonate a unified release target');
+assert.ok(!deployBackend.includes("record_release_receipt('backend'"), 'the retired backend must not create a false release receipt');
+assert.ok(deployGateway.includes('require_release_manifest("cloud_business")'), 'the retirement gateway must use the cloud-business release gate');
+assert.ok(deployGateway.includes('verify_retired_gateway'), 'gateway deployment must verify its health and every authority tombstone');
+assert.ok(!deployGateway.includes("record_release_receipt('gateway'") && !deployGateway.includes('record_release_receipt("gateway"'), 'the gateway is a cloud subcomponent and must not create a fifth receipt');
 assert.ok(deployCloudBusiness.includes('require_release_manifest("cloud_business")'), 'cloud business deployment must require the unified release manifest');
 assert.ok(deployCloudBusiness.includes('record_release_receipt("cloud_business"'), 'cloud business health success must write an exact-version receipt');
 assert.ok(deployCloudBusiness.includes('payload.get("version") != expected_version'), 'cloud business public health must match the exact release version');
+assert.ok(
+  /backup = create_verified_backup\(\)[\s\S]*deploy_retirement_gateway\(\)[\s\S]*run_cloud_migrations\(\)/.test(deployCloudBusiness),
+  'cloud deployment must install and verify the retirement gateway before migrations or promotion',
+);
+assert.ok(
+  /def verify_public_health\(expected_version\):[\s\S]*verify_public_gateway_retirement\(expected_version\)[\s\S]*return payload/.test(deployCloudBusiness),
+  'cloud public health must include the gateway tombstone and websocket rejection contract before a receipt can be written',
+);
 assert.ok(deployCloudBusiness.includes('validated_release_tag(args.tag)'), 'cloud business candidates must match the checked-out source revision');
 assert.ok(deployCloudBusiness.includes('rollback_promoted_release(tag, operation_id)'), 'cloud business promotion failures must automatically restore the previous container under the same owner fence');
 assert.ok(deployCloudBusiness.includes('reconcile_uncertain_switch(tag, operation_id)'), 'cloud business switch transport failures must reconcile remote container state under the same owner fence');

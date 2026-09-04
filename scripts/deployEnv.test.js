@@ -23,22 +23,21 @@ assert.ok(deployPy.includes('def upload_shared(ssh):'), 'backend deployment must
 assert.ok(deployPy.includes('upload_shared(ssh)'), 'backend deployment must invoke shared runtime upload before restart');
 assert.ok(deployPy.includes('posixpath.join(posixpath.dirname(REMOTE_DIR), "shared")'), 'remote shared paths must stay POSIX when deploying from Windows');
 assert.ok(deployPy.includes('pm2 restart {service_name} --update-env'), 'existing backend processes must reload the generated environment instead of failing pm2 start');
-assert.ok(deployGatewayPy.includes('def backup_gateway_release(')
-  && deployGatewayPy.includes("source.backup(")
-  && deployGatewayPy.includes("pragma('quick_check'")
-  && deployGatewayPy.includes('gateway.db')
-  && deployGatewayPy.indexOf('backup_gateway_release(ssh, backup_dir)') < deployGatewayPy.indexOf('upload_dir(sftp, ssh, LOCAL_GATEWAY, REMOTE_GATEWAY)'),
-  'gateway deployment must make and integrity-check a live SQLite backup before uploading or restarting code');
+assert.ok(!deployGatewayPy.includes('backup_gateway_release(')
+  && !deployGatewayPy.includes('gateway.db')
+  && deployGatewayPy.includes('gateway-code.tar.gz')
+  && deployGatewayPy.indexOf('gateway-code.tar.gz') < deployGatewayPy.indexOf('upload_dir(sftp, ssh, LOCAL_GATEWAY, REMOTE_GATEWAY)'),
+  'the retired gateway must preserve its prior code without treating the obsolete SQLite database as authority');
 assert.ok(deployGatewayPy.includes('LEGACY_SERVICE_NAMES = ("gateway",)')
   && deployGatewayPy.includes('def stop_legacy_gateway_services(')
   && deployGatewayPy.includes('pm2 delete {service_name}')
   && deployGatewayPy.indexOf('stop_legacy_gateway_services(ssh)') < deployGatewayPy.indexOf('restart_gateway(ssh)'),
   'gateway deployment must retire the legacy PM2 name before starting edu-gateway on the same port');
-assert.ok(deployGatewayPy.includes('LOCAL_BACKEND = ROOT / "backend"')
-  && deployGatewayPy.includes('REMOTE_BACKEND = "/root/education-platform/backend"')
-  && deployGatewayPy.includes('upload_backend_support(sftp, ssh)')
-  && deployGatewayPy.includes("cd '{REMOTE_BACKEND}' && npm install --production"),
-  'gateway deployment must mirror and install its declared backend/src runtime dependency on the remote monorepo layout');
+assert.ok(!deployGatewayPy.includes('upload_backend_support')
+  && !deployGatewayPy.includes('LOCAL_BACKEND')
+  && deployGatewayPy.includes('require_release_manifest("cloud_business")')
+  && deployGatewayPy.includes('verify_retired_gateway'),
+  'the retirement gateway must not upload legacy authority support and must be verified as a cloud-business subcomponent');
 
 const envFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-deploy-env-'));
 const envFixturePath = path.join(envFixtureDir, '.env.local');
@@ -154,19 +153,18 @@ ssh = FakeSsh()
 paths = [
     "/tmp/gewu-pm2-env-unit-migrate",
     "/tmp/gewu-pm2-env-unit-backend",
-    "/tmp/gewu-pm2-env-unit-gateway",
 ]
 d.migrate(ssh, path_factory=lambda: paths[0])
 d.start_backend_service(ssh, "scheduling-backend-prod", path_factory=lambda: paths[1])
-g.restart_gateway(ssh, path_factory=lambda: paths[2])
+g.restart_gateway(ssh)
 runtime_secrets = [d.BACKEND_JWT_SECRET, d.WECHAT_APPSECRET]
 all_secrets = [d.PASSWORD] + runtime_secrets
 secure_commands = ssh.commands[1:]
 print(all(secret not in command for command in ssh.commands for secret in all_secrets if secret))
 print(ssh.sftp.modes == [(path, 0o600) for path in paths] and all(ssh.sftp.events.index("chmod:" + path) < ssh.sftp.events.index("write:" + path) for path in paths))
 print(ssh.sftp.removed == paths)
-print(len(ssh.commands) == 4 and "mkdir -p" in ssh.commands[0] and all("trap" in command and path in command for command, path in zip(secure_commands, paths)))
-print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 delete edu-gateway" in secure_commands[2] and "pm2 start" in secure_commands[2] and "--update-env" in secure_commands[2])
+print(len(ssh.commands) == 4 and "mkdir -p" in ssh.commands[0] and all("trap" in command and path in command for command, path in zip(secure_commands[:2], paths)) and "trap" not in secure_commands[2])
+print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 delete edu-gateway" in secure_commands[2] and "GEWU_APP_VERSION=8.9.1" in secure_commands[2] and "--update-env" in secure_commands[2])
 print(all(all(secret in ssh.sftp.contents[path] for secret in runtime_secrets if secret) for path in paths))
 `], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
 assert.strictEqual(deploySecurityProbe.status, 0, deploySecurityProbe.stderr || 'secret-safe gateway deploy probe should run');
@@ -428,8 +426,8 @@ assert.ok(!deployPy.includes('validate_review_experience_code'), 'pm2 deploy mus
 assert.ok(!deployPy.includes('remote_env_prefix'), 'deploy helpers must not retain a future secret command-line expansion path');
 assert.ok(!deployGatewayPy.includes('remote_env_prefix'), 'formal gateway deploy must not expand secrets into commands');
 assert.ok(deployPy.includes('run_with_remote_env'), 'backend migration and PM2 should share secure env staging');
-assert.ok(deployGatewayPy.includes('run_with_remote_env'), 'formal gateway should share secure env staging');
-assert.ok(deployGatewayPy.includes('--update-env'), 'formal gateway restart should refresh PM2 environment variables');
+assert.ok(!deployGatewayPy.includes('run_with_remote_env'), 'the retired gateway must not receive backend authority secrets');
+assert.ok(deployGatewayPy.includes('GEWU_APP_VERSION=') && deployGatewayPy.includes('--update-env'), 'retirement gateway restart should refresh only its public cloud component version');
 assert.ok(!taskDoc.includes('Git contains only the literal `<review experience code>` placeholder'), 'task status must not restore the removed review-code workflow');
 
 assert.ok(deployPy.includes('DEPLOY_KEY_PATH'), 'pm2 deploy should support SSH key authentication');
@@ -443,8 +441,9 @@ assert.ok(deployPy.includes('health_port = APP_PORT'), 'pm2 deploy health check 
 assert.ok(deployPy.includes('check_remote_health(ssh, health_port, "backend", read_root_version())'), 'pm2 status should require the configured backend port and exact root version');
 assert.ok(
   deployGatewayPy.includes('backend_deploy.wait_for_remote_health(')
-    && deployGatewayPy.includes('backend_deploy.read_root_version()'),
-  'Gateway deploy should poll for startup and require the exact root unified version',
+    && deployGatewayPy.includes('expected_version,')
+    && deployGatewayPy.includes('return verify_retired_gateway(ssh, expected_version)'),
+  'Gateway deploy should poll for startup and require the exact cloud-business version plus retirement contract',
 );
 const restartGatewaySource = deployGatewayPy.slice(
   deployGatewayPy.indexOf('def restart_gateway('),
@@ -467,7 +466,10 @@ assert.ok(deployPy.includes('redact_command'), 'pm2 deploy should redact sensiti
 assert.ok(deployPy.includes('GEWU_DESKTOP_SYNC_TOKEN') && deployPy.includes('GEWU_CLOUD_RELAY_HOST_TOKEN'), 'pm2 deploy should redact desktop sync secrets');
 assert.ok(deployPy.includes('os.getenv("WECHAT_APPSECRET")'), 'pm2 deploy should redact the WeChat app secret');
 assert.ok(deployPy.includes('safe_print'), 'pm2 deploy should print remote Unicode output safely on Windows consoles');
-assert.ok(deployPy.includes('which pm2 || npm install -g pm2'), 'pm2 deploy should skip global pm2 installation when pm2 already exists');
+assert.ok(deployPy.includes('LEGACY_BACKEND_DEPLOY_RETIRED')
+  && !deployPy.includes("require_release_manifest('backend'")
+  && !deployPy.includes("record_release_receipt('backend'"),
+  'the legacy backend deploy command must fail closed without creating a false unified-release receipt');
 assert.ok(backendPackage.includes('"sanitize-html"'), 'backend production dependencies should include sanitize-html used by questionBankService');
 assert.strictEqual(backendPkg.version, rootPkg.version, 'backend package version should stay aligned with root package version');
 

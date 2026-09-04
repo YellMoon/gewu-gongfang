@@ -33,7 +33,9 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_bootstrap_consumptions_insert_guard',
   'vnext_bootstrap_consumptions_no_delete',
   'vnext_bootstrap_consumptions_no_update',
+  'vnext_exchange_desktop_session_challenge',
   'vnext_issue_online_identity_assertion',
+  'vnext_list_desktop_account_devices',
   'vnext_online_identity_assertion_consumptions_no_delete',
   'vnext_online_identity_assertion_consumptions_no_update',
   'vnext_online_identity_assertions_no_delete',
@@ -42,10 +44,13 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_read_canonical_account_by_verified_contact',
   'vnext_read_desktop_password_by_login_name',
   'vnext_read_desktop_password_by_phone_hash',
+  'vnext_read_desktop_session_installation',
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
   'vnext_register_unified_desktop_online',
+  'vnext_revoke_desktop_device',
+  'vnext_rotate_desktop_role_session',
   'vnext_schema_migrations_insert_guard',
   'vnext_schema_migrations_no_delete',
   'vnext_schema_migrations_no_update',
@@ -54,20 +59,36 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_sessions_no_delete',
   'vnext_sessions_parent_state_match',
   'vnext_set_desktop_password_credential',
+  'vnext_start_desktop_session_challenge',
   'vnext_trust_root_evidence_insert_guard',
   'vnext_trust_root_evidence_no_delete',
   'vnext_trust_root_evidence_no_update',
 ]);
 const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
+  vnext_exchange_desktop_session_challenge: 'p_challenge_id text, p_expected_row_version bigint, p_session_id text, p_session_expires_at timestamp with time zone, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_signature_sha256 text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
   vnext_issue_online_identity_assertion: 'p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_identity_proof_sha256 text, p_hardware_evidence_sha256 text, p_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
+  vnext_list_desktop_account_devices: 'p_authority_id text, p_account_id text',
   vnext_provision_canonical_phone_account: 'p_account_id text, p_contact_id text, p_phone_hash text, p_verification_evidence_hash text',
   vnext_bind_canonical_wechat_identity: 'p_authority_id text, p_account_id text, p_openid_contact_id text, p_openid_hash text, p_unionid_contact_id text, p_unionid_hash text, p_verification_evidence_hash text',
   vnext_read_canonical_account_by_verified_contact: 'p_contact_type text, p_contact_hash text',
   vnext_read_desktop_password_by_login_name: 'p_login_name text',
   vnext_read_desktop_password_by_phone_hash: 'p_phone_hash text',
+  vnext_read_desktop_session_installation: 'p_authority_id text, p_account_id text, p_session_id text',
   vnext_register_unified_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text',
+  vnext_revoke_desktop_device: 'p_authority_id text, p_actor_account_id text, p_actor_session_id text, p_device_id text, p_expected_row_version bigint, p_reason text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
+  vnext_rotate_desktop_role_session: 'p_authority_id text, p_account_id text, p_previous_session_id text, p_expected_row_version bigint, p_session_id text, p_active_role text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
   vnext_set_desktop_password_credential: 'p_authority_id text, p_account_id text, p_login_name text, p_password_algorithm text, p_password_salt_base64 text, p_password_hash_base64 text',
+  vnext_start_desktop_session_challenge: 'p_challenge_id text, p_authorization_id text, p_device_id text, p_nonce_sha256 text, p_nonce_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
 });
+const WRITER_COMMAND_FUNCTIONS = new Set([
+  'vnext_register_unified_desktop_online',
+  'vnext_start_desktop_session_challenge',
+  'vnext_exchange_desktop_session_challenge',
+  'vnext_read_desktop_session_installation',
+  'vnext_rotate_desktop_role_session',
+  'vnext_list_desktop_account_devices',
+  'vnext_revoke_desktop_device',
+]);
 const LEDGER_CONSTRAINTS = Object.freeze([
   Object.freeze({ name: 'vnext_schema_migrations_applied_at_check', type: 'c', definition: "CHECK (applied_at <> 'infinity'::timestamp with time zone AND applied_at <> '-infinity'::timestamp with time zone)" }),
   Object.freeze({ name: 'vnext_schema_migrations_applied_by_check', type: 'c', definition: "CHECK (btrim(applied_by) <> ''::text)" }),
@@ -418,6 +439,7 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_role_grants_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_role_grants_granted_by_account_id_authority_id_fkey: 'FOREIGN KEY (granted_by_account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_role_grants_granted_by_account_id_check: "CHECK (granted_by_account_id IS NULL OR btrim(granted_by_account_id) <> ''::text)",
+  vnext_role_grants_role_check: "CHECK (role = ANY (ARRAY['super_admin'::text, 'teacher'::text, 'student'::text, 'family_member'::text]))",
   vnext_role_grants_check2: "CHECK (status = 'active'::text AND revoked_at IS NULL OR status = 'revoked'::text AND revoked_at IS NOT NULL OR status = 'expired'::text AND ends_at IS NOT NULL AND revoked_at IS NULL)",
   vnext_sessions_account_id_authority_id_fkey: 'FOREIGN KEY (account_id, authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_sessions_device_id_authority_id_fkey: 'FOREIGN KEY (device_id, authority_id) REFERENCES vnext_control_plane.vnext_trusted_devices(device_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
@@ -445,7 +467,7 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_trust_root_evidence_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_trust_root_evidence_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '521f02f31b30eb197e29ec9f68f34c3460cccb4a932ed1eabd50df62b4fce5bc';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '97715f239ca7131c633466ebf2e0f8013e510d297f3318fff817b41aff92413d';
 const FOUNDATION_INDEX_CATALOG_SHA256 = '2455625d99696aa4a0cc576681f016a24b9a23fc232a0265e7d73fe4298d06d6';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",
@@ -466,6 +488,7 @@ const TARGET_RELATION_NAMES = Object.freeze([
   ...FOUNDATION_TABLE_NAMES,
   ...ONLINE_IDENTITY_TABLE_NAMES,
   ...PASSWORD_CREDENTIAL_TABLE_NAMES,
+  'vnext_desktop_session_challenges',
 ]);
 const TARGET_TABLE_NAMES = Object.freeze([...TARGET_RELATION_NAMES].sort());
 const WRITER_TABLE_NAMES = Object.freeze(TARGET_TABLE_NAMES.filter(name => !ONLINE_IDENTITY_TABLE_NAMES.includes(name) && !PASSWORD_CREDENTIAL_TABLE_NAMES.includes(name)));
@@ -848,7 +871,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || !Array.isArray(row.proconfig) || row.proconfig.length !== 1
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
             || row.public_execute || row.runtime_execute || row.verifier_execute
-            || row.writer_execute !== (row.proname === 'vnext_register_unified_desktop_online')
+            || row.writer_execute !== WRITER_COMMAND_FUNCTIONS.has(row.proname)
             || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account' || row.proname === 'vnext_bind_canonical_wechat_identity' || row.proname === 'vnext_read_canonical_account_by_verified_contact' || row.proname === 'vnext_set_desktop_password_credential' || row.proname === 'vnext_read_desktop_password_by_phone_hash' || row.proname === 'vnext_read_desktop_password_by_login_name')
             || row.arguments !== (COMMAND_FUNCTION_ARGUMENTS[row.proname] || '')
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();

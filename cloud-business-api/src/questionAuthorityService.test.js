@@ -71,6 +71,9 @@ async function main() {
   }]);
   assert.ok(calls.some(call => call[0].includes('FROM business.questions q') && call[0].includes('business.question_contents c')),
     'the question list must read cloud structured text only from the cloud authority tables');
+  const questionListQuery = calls.find(call => call[0].includes('FROM business.questions q'))[0];
+  assert.match(questionListQuery, /taxonomyIds'->'knowledge'/u, 'desktop cloud list knowledge labels must use only the knowledge taxonomy system');
+  assert.doesNotMatch(questionListQuery, /jsonb_each/u, 'model and custom systems must remain independent from knowledge labels');
 
   const commandPayload = {
     record: {

@@ -13,6 +13,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(apply_control_plane_m22(fake,UPGRADE)["applied"],[UPGRADE["migrationId"]])
     def test_skip_and_drift(self):
         self.assertEqual(apply_control_plane_m22(Fake(['{"ledgerCount":22,"targetCount":1,"readerPrivilege":true}']),UPGRADE)["skipped"],[UPGRADE["migrationId"]])
+        self.assertEqual(apply_control_plane_m22(Fake(['{"ledgerCount":24,"targetCount":1,"readerPrivilege":true}']),UPGRADE)["skipped"],[UPGRADE["migrationId"]])
         with self.assertRaisesRegex(RuntimeError,"M22_STATE_INVALID"): apply_control_plane_m22(Fake(['{"ledgerCount":22,"targetCount":1,"readerPrivilege":false}']),UPGRADE)
         with self.assertRaisesRegex(RuntimeError,"M22_CONFIG_INVALID"): validate_upgrade({**UPGRADE,"semanticVersion":21})
 if __name__ == "__main__": unittest.main()

@@ -2,7 +2,81 @@
 
 const express = require('express');
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
+const MINIAPP_VISITOR_QUESTION_LIMIT = 20;
+const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
+const MINIAPP_QUESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MINIAPP_QUESTION_ORDER_SQL = 'c.updated_at DESC,q.id ASC';
+
+function normalizedCursorInstant(value) {
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
+
+function decodeMiniappQuestionCursor(value) {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 512 || !/^[A-Za-z0-9_-]+$/u.test(value)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+    if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)
+      || Object.getPrototypeOf(decoded) !== Object.prototype
+      || Reflect.ownKeys(decoded).length !== 3
+      || decoded.v !== 1
+      || !MINIAPP_QUESTION_ID_PATTERN.test(decoded.id)) return null;
+    const updatedAt = normalizedCursorInstant(decoded.updatedAt);
+    if (!updatedAt || updatedAt !== decoded.updatedAt) return null;
+    return Object.freeze({ updatedAt, id: decoded.id });
+  } catch (_) {
+    return null;
+  }
+}
+
+function encodeMiniappQuestionCursor(row) {
+  const updatedAt = normalizedCursorInstant(row?.contentUpdatedAt);
+  const id = typeof row?.id === 'string' && MINIAPP_QUESTION_ID_PATTERN.test(row.id) ? row.id : null;
+  if (!updatedAt || !id) return null;
+  return Buffer.from(JSON.stringify({ v: 1, updatedAt, id }), 'utf8').toString('base64url');
+}
+
+function miniappQuestionPagination(query) {
+  const suppliedLimit = query?.limit;
+  const suppliedCursor = query?.cursor;
+  if (suppliedLimit === undefined && suppliedCursor === undefined) return Object.freeze({ limit: null, cursor: null });
+  if (typeof suppliedLimit !== 'string' || !/^[1-9][0-9]{0,2}$/u.test(suppliedLimit)) return null;
+  const limit = Number(suppliedLimit);
+  if (!Number.isSafeInteger(limit) || limit > MINIAPP_QUESTION_PAGE_MAXIMUM) return null;
+  if (suppliedCursor === undefined) return Object.freeze({ limit, cursor: null });
+  const cursor = decodeMiniappQuestionCursor(suppliedCursor);
+  return cursor ? Object.freeze({ limit, cursor }) : null;
+}
+
+function miniappQuestionBrowseFilters(query) {
+  const optionalText = (key, maximumLength) => {
+    const value = query?.[key];
+    if (value === undefined || value === '') return null;
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed && trimmed.length <= maximumLength ? trimmed : undefined;
+  };
+  const subject = optionalText('subject', 128);
+  const queryText = optionalText('query', 512);
+  const source = optionalText('source', 256);
+  const knowledgePoint = optionalText('knowledgePoint', 256);
+  const type = optionalText('type', 128);
+  const grade = optionalText('grade', 128);
+  const semester = optionalText('semester', 128);
+  const examType = optionalText('examType', 128);
+  const examYear = optionalText('examYear', 64);
+  const suppliedDifficulty = query?.difficulty;
+  const difficulty = suppliedDifficulty === undefined || suppliedDifficulty === ''
+    ? null
+    : (typeof suppliedDifficulty === 'string' && /^[1-5]$/u.test(suppliedDifficulty) ? Number(suppliedDifficulty) : undefined);
+  if ([subject, queryText, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear].includes(undefined)) return null;
+  if (!subject && (queryText || source || knowledgePoint || type || difficulty !== null || grade || semester || examType || examYear)) return null;
+  const queryTerms = queryText ? queryText.toLowerCase().split(/\s+/u).filter(Boolean) : [];
+  if (queryTerms.length > 32) return null;
+  return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
+}
+
+function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -16,6 +90,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessRoomLifecycleMutations !== null && (typeof businessRoomLifecycleMutations.create !== 'function' || typeof businessRoomLifecycleMutations.update !== 'function' || typeof businessRoomLifecycleMutations.remove !== 'function')) throw new TypeError('businessRoomLifecycleMutations is invalid');
   if (businessCourseLifecycleMutations !== null && (typeof businessCourseLifecycleMutations.create !== 'function' || typeof businessCourseLifecycleMutations.update !== 'function' || typeof businessCourseLifecycleMutations.remove !== 'function')) throw new TypeError('businessCourseLifecycleMutations is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
+  if (desktopCloudIdentity && ['startChallenge', 'exchangeChallenge', 'switchRole', 'listDevices', 'revokeDevice'].some(method => typeof desktopCloudIdentity[method] !== 'function')) throw new TypeError('desktopCloudIdentity is invalid');
+  if (desktopVerifiedAccess && typeof desktopVerifiedAccess.read !== 'function') throw new TypeError('desktopVerifiedAccess is invalid');
   if (desktopTeacherSelfRegistration && typeof desktopTeacherSelfRegistration.register !== 'function') throw new TypeError('desktopTeacherSelfRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
   if (miniappCloudAccount && (typeof miniappCloudAccount.login !== 'function' || typeof miniappCloudAccount.context !== 'function')) throw new TypeError('miniappCloudAccount is invalid');
@@ -67,7 +143,38 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       response.status(403).json({ ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
       return;
     }
+    if (error && error.code === 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED') {
+      response.status(409).json({ ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED' });
+      return;
+    }
     desktopUnavailable(response);
+  }
+  function desktopCloudIdentityFailure(response, error) {
+    const databaseCode = String(error?.code || '');
+    const databaseMessage = String(error?.message || '');
+    const code = databaseCode === 'P0001' && /^VNEXT_DESKTOP_[A-Z0-9_]+$/u.test(databaseMessage)
+      ? databaseMessage
+      : String(databaseCode || 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE');
+    if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND' || code === 'DESKTOP_DEVICE_NOT_FOUND') {
+      return response.status(404).json({ success: false, code });
+    }
+    if (code === 'DESKTOP_SESSION_REQUIRED' || code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID'
+      || code === 'VNEXT_DESKTOP_AUTHORIZATION_INVALID') {
+      return response.status(401).json({ success: false, code });
+    }
+    if (code === 'ACTIVE_ROLE_NOT_GRANTED' || code === 'DESKTOP_SUPER_ADMIN_ROLE_REQUIRED'
+      || code === 'DESKTOP_DEVICE_SELF_REVOCATION_FORBIDDEN' || code.startsWith('DESKTOP_ROLE_ELEVATION_')) {
+      return response.status(403).json({ success: false, code });
+    }
+    if (code.includes('REPLAYED') || code.includes('EXPIRED') || code.includes('STALE')
+      || code.includes('VERSION_MISMATCH') || code === 'DESKTOP_ACTIVE_ROLE_UNCHANGED') {
+      return response.status(409).json({ success: false, code });
+    }
+    if (code.includes('INPUT_INVALID') || code.includes('ROW_VERSION_INVALID')
+      || code === 'DESKTOP_IDENTITY_INPUT_FORBIDDEN') {
+      return response.status(400).json({ success: false, code });
+    }
+    return response.status(503).json({ success: false, code: 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE' });
   }
   function pairingFailure(response) {
     response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
@@ -77,6 +184,18 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function businessInputInvalid(response) {
     response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_INPUT_INVALID' });
+  }
+  function roleApplicationFailure(response, error, miniapp = false) {
+    const code = String(error?.code || '');
+    if (['CLOUD_ROLE_APPLICATION_INVALID', 'CLOUD_ROLE_APPLICATION_INPUT_INVALID'].includes(code)) return businessInputInvalid(response);
+    if (code === 'CLOUD_ROLE_APPLICATION_ACCESS_DENIED' || code === 'CLOUD_ROLE_APPLICATION_REVIEWER_DENIED') {
+      return response.status(403).json({ ok: false, code: miniapp ? 'CLOUD_MINIAPP_IDENTITY_REJECTED' : 'CLOUD_BUSINESS_ACCESS_DENIED' });
+    }
+    if (/^CLOUD_ROLE_APPLICATION_(?:IDEMPOTENCY_CONFLICT|PROFILE_[A-Z_]+|VERIFIED_PHONE_REQUIRED|GUARDIAN_RELATION_REQUIRED|ACCOUNT_ROLE_CONFLICT|NOT_REVIEWABLE|CONFLICT)$/u.test(code)) {
+      return response.status(409).json({ ok: false, code });
+    }
+    process.stderr.write(`role-application runtime failure: ${code || 'UNKNOWN'}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
+    return businessUnavailable(response);
   }
   function businessAccessDenied() {
     return Object.assign(new Error('cloud business access denied'), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
@@ -139,7 +258,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         || !['student', 'guardian'].includes(contact.relationship)
         || (contact.slot === 1 && contact.relationship !== 'student') || (contact.slot > 1 && contact.relationship !== 'guardian')
         || (requireExpectedUpdatedAt && expectedUpdatedAt === undefined) || !validPhone || !validWechat
-        || (phone === null && wechat === null && (!allowUnbind || expectedUpdatedAt === null))) return null;
+        || (phone === null && !(allowUnbind && wechat === null && expectedUpdatedAt !== null))) return null;
       slots.add(contact.slot);
       contacts.push(requireExpectedUpdatedAt
         ? { slot: contact.slot, relationship: contact.relationship, phone, wechat, expectedUpdatedAt }
@@ -295,18 +414,24 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     if (desktopRegistration && typeof desktopRegistration.sessionContext === 'function') {
       try {
-        return await desktopRegistration.sessionContext({ sessionToken: token });
+        return desktopEffectiveContext(await desktopRegistration.sessionContext({ sessionToken: token }));
       } catch (_) {
         // Do not expose ticket-verification internals to callers.
       }
     }
     throw businessAccessDenied();
   }
+  function desktopEffectiveContext(context) {
+    if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
+    if (context.activeRole === undefined) return context;
+    if (typeof context.activeRole !== 'string' || !context.roles.includes(context.activeRole)) throw businessAccessDenied();
+    return { ...context, roles: [context.activeRole] };
+  }
   async function desktopQuestionContext(request) {
     const token = sessionToken(request);
     if (!token || !desktopRegistration || typeof desktopRegistration.sessionContext !== 'function') throw businessAccessDenied();
     try {
-      return await desktopRegistration.sessionContext({ sessionToken: token });
+      return desktopEffectiveContext(await desktopRegistration.sessionContext({ sessionToken: token }));
     } catch (_) {
       throw businessAccessDenied();
     }
@@ -328,7 +453,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (context.status !== 'active') throw businessAccessDenied();
     if (context.roles.includes('super_admin')) return ['business:all', 'question-bank:view'];
     if (context.roles.includes('teacher')) return ['business:teacher-scope', 'question-bank:view'];
-    if (context.roles.includes('student')) return ['question-bank:view'];
+    if (context.roles.includes('student') || context.roles.includes('family_member')) return ['question-bank:view'];
     throw businessAccessDenied();
   }
   // Core teaching records are desktop-only mutations.  Miniapp tickets may read
@@ -344,7 +469,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const profileId = profile?.type === 'teacher' ? profile.id : context.teacherId;
       if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'teacher', profileId };
     }
-    if (context.roles.includes('student')) {
+    if (context.roles.includes('student') || context.roles.includes('family_member')) {
       const profileId = profile?.type === 'student' ? profile.id : context.studentId;
       if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'student', profileId };
     }
@@ -358,7 +483,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const profileId = profile?.type === 'teacher' ? profile.id : context.teacherId;
       if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'teacher', profileId, accountId: context.accountId };
     }
-    if (context.roles.includes('student')) {
+    if (context.roles.includes('student') || context.roles.includes('family_member')) {
       const profileId = profile?.type === 'student' ? profile.id : context.studentId;
       if (typeof profileId === 'string' && profileId === profileId.trim() && profileId) return { role: 'student', profileId, accountId: context.accountId };
     }
@@ -472,6 +597,18 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     } catch (error) {
       if (error && error.code === 'CLOUD_DESKTOP_TEACHER_REGISTRATION_INVALID') return response.status(400).json({ ok: false, code: error.code });
       response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REJECTED' });
+    }
+  });
+  app.post('/api/desktop/verified-access', async (request, response) => {
+    if (!desktopVerifiedAccess) return desktopUnavailable(response);
+    const body = exactBody(request.body, ['verificationToken']);
+    if (!body) return response.status(400).json({ ok: false, code: 'CLOUD_DESKTOP_VERIFIED_ACCESS_INVALID' });
+    try {
+      const result = await desktopVerifiedAccess.read(body);
+      response.json({ ok: true, ...result });
+    } catch (error) {
+      if (error && error.code === 'CLOUD_DESKTOP_VERIFIED_ACCESS_INVALID') return response.status(400).json({ ok: false, code: error.code });
+      response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_VERIFIED_ACCESS_REJECTED' });
     }
   });
   app.get('/api/desktop/question-bank/questions', async (request, response) => {
@@ -728,6 +865,66 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       identityFailure(response, error);
     }
   });
+  app.post('/api/desktop-identity/session/challenges/start', async (request, response) => {
+    if (!desktopCloudIdentity) return desktopUnavailable(response);
+    const body = exactBody(request.body, ['authorizationId', 'deviceId']);
+    if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_SESSION_CHALLENGE_INPUT_INVALID' });
+    try {
+      const challenge = await desktopCloudIdentity.startChallenge(body);
+      response.json({ success: true, data: { challenge } });
+    } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop-identity/session/challenges/:challengeId/exchange', async (request, response) => {
+    if (!desktopCloudIdentity) return desktopUnavailable(response);
+    const body = exactBody(request.body, ['signature', 'expectedRowVersion']);
+    if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_SESSION_CHALLENGE_INPUT_INVALID' });
+    try {
+      const issued = await desktopCloudIdentity.exchangeChallenge({ challengeId: request.params.challengeId, ...body });
+      response.json({ success: true, data: issued });
+    } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop-identity/session/role', async (request, response) => {
+    if (!desktopCloudIdentity) return desktopUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
+    const body = exactBody(request.body, ['activeRole'])
+      || exactBody(request.body, ['activeRole', 'elevationIssuedAt', 'elevationSignature']);
+    if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_ROLE_SWITCH_INPUT_INVALID' });
+    try {
+      const issued = await desktopCloudIdentity.switchRole({ sessionToken: token, ...body });
+      response.json({ success: true, data: issued });
+    } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
+  app.get('/api/desktop-identity/devices', async (request, response) => {
+    if (!desktopCloudIdentity) return desktopUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
+    try {
+      const items = await desktopCloudIdentity.listDevices({ sessionToken: token });
+      response.json({ success: true, data: { items } });
+    } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
+  app.post('/api/desktop-identity/devices/:deviceId/revoke', async (request, response) => {
+    if (!desktopCloudIdentity) return desktopUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
+    const body = exactBody(request.body, ['expectedRowVersion', 'reason']);
+    if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_DEVICE_REVOCATION_INPUT_INVALID' });
+    try {
+      const authorization = await desktopCloudIdentity.revokeDevice({ sessionToken: token, deviceId: request.params.deviceId, ...body });
+      response.json({ success: true, data: { authorization } });
+    } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
   app.post('/api/miniapp/cloud-login', async (request, response) => {
     if (!miniappCloudAccount) return desktopUnavailable(response);
     try {
@@ -761,14 +958,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!miniappRoleApplications) return businessUnavailable(response);
     const token = sessionToken(request);
     const idempotencyKey = String(request.get('x-idempotency-key') || '').trim();
-    const body = exactBody(request.body, ['requestedIdentity', 'profileMode', 'bindingHint']);
+    const body = exactBody(request.body, ['requestedIdentity', 'profileMode', 'profileName', 'profilePhone']);
     if (!token || !idempotencyKey || !body) return businessInputInvalid(response);
     try {
       const result = await miniappRoleApplications.submit({ token, idempotencyKey, ...body });
       response.status(201).json({ ok: true, ...result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_ROLE_APPLICATION_INVALID') return businessInputInvalid(response);
-      response.status(403).json({ ok: false, code: 'CLOUD_MINIAPP_IDENTITY_REJECTED' });
+      return roleApplicationFailure(response, error, true);
     }
   });
   app.get('/api/desktop/role-applications/pending', async (request, response) => {
@@ -791,8 +987,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       });
       response.json({ ok: true, ...result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_ROLE_APPLICATION_INVALID') return businessInputInvalid(response);
-      response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      return roleApplicationFailure(response, error);
     }
   });
   app.get('/api/business/miniapp-projection', async (request, response) => {
@@ -810,52 +1005,177 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.get('/api/business/miniapp-question-previews', async (request, response) => {
     if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
+    const pagination = miniappQuestionPagination(request.query);
+    const filters = miniappQuestionBrowseFilters(request.query);
+    if (!pagination || !filters) return businessInputInvalid(response);
     try {
       const actor = await miniappBusinessContext(request);
-      const limitedQuestionBrowse = actor.status === 'visitor'
-        || (Array.isArray(actor.roles) && actor.roles.includes('student'));
-      if (limitedQuestionBrowse) {
-        const questionLimit = actor.status === 'visitor' ? 20 : 200;
-        const result = await query(
-          `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem,c.answer,c.explanation,c.options_json AS options,c.rich_content_json AS "richContent",
-                  COALESCE((
-                    SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
-                    FROM business.question_taxonomy_nodes n
-                    JOIN jsonb_each(CASE WHEN jsonb_typeof(q.taxonomy_json->'taxonomyIds')='object' THEN q.taxonomy_json->'taxonomyIds' ELSE '{}'::jsonb END) systems(system_id,node_ids) ON true
-                    JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(systems.node_ids)='array' THEN systems.node_ids ELSE '[]'::jsonb END) selected(node_id) ON true
-                    WHERE n.tenant_id=q.tenant_id AND n.deleted=false AND n.system_id=systems.system_id AND n.id=selected.node_id
-                  ), '[]'::jsonb) AS "knowledgeLabels"
+      const isVisitor = actor.status === 'visitor';
+      if (isVisitor && pagination.cursor) return businessInputInvalid(response);
+      const values = [
+        businessTenantId,
+        filters.subject,
+        filters.queryTerms,
+        filters.source,
+        filters.knowledgePoint,
+        filters.type,
+        filters.difficulty,
+        filters.grade,
+        filters.semester,
+        filters.examType,
+        filters.examYear,
+        !isVisitor && pagination.cursor ? pagination.cursor.updatedAt : null,
+        !isVisitor && pagination.cursor ? pagination.cursor.id : null,
+        isVisitor ? MINIAPP_VISITOR_QUESTION_LIMIT + 1 : (pagination.limit === null ? null : pagination.limit + 1),
+      ];
+      const result = await query(
+        `WITH published AS (
+           SELECT q.id,q.tenant_id,q.subject,q.question_type AS type,q.difficulty,q.source,q.region,q.school,q.exam_type,q.exam_year,q.grade,q.semester,q.taxonomy_json,q.status,
+                  c.stem,c.answer,c.explanation,c.options_json AS options,c.rich_content_json AS "richContent",c.updated_at AS "contentUpdatedAt"
              FROM business.questions q
              JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
             WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false
-            ORDER BY c.updated_at DESC,q.id ASC LIMIT $2`,
-          [businessTenantId, questionLimit],
-        );
-        if (!result || !Array.isArray(result.rows)) return businessUnavailable(response);
-        return response.json({ ok: true, questions: result.rows.map(question => ({
+         ), filter_options AS (
+           SELECT jsonb_build_object(
+             'subjects', COALESCE((
+               SELECT jsonb_agg(subject ORDER BY subject)
+                 FROM (SELECT DISTINCT subject FROM published) subject_values
+             ), '[]'::jsonb),
+             'types', COALESCE((
+               SELECT jsonb_agg(type ORDER BY type)
+                 FROM (SELECT DISTINCT type FROM published WHERE $2::text IS NOT NULL AND subject=$2) type_values
+             ), '[]'::jsonb),
+             'sources', COALESCE((
+               SELECT jsonb_agg(source ORDER BY source)
+                 FROM (SELECT DISTINCT source FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(source,''))<>'') source_values
+             ), '[]'::jsonb),
+             'knowledgePoints', COALESCE((
+               SELECT jsonb_agg(name ORDER BY name)
+                 FROM (
+                   SELECT DISTINCT n.name
+                     FROM published p
+                     JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(p.taxonomy_json->'taxonomyIds'->'knowledge')='array' THEN p.taxonomy_json->'taxonomyIds'->'knowledge' ELSE '[]'::jsonb END) selected(node_id) ON true
+                     JOIN business.question_taxonomy_nodes n ON n.tenant_id=p.tenant_id AND n.system_id='knowledge' AND n.id=selected.node_id AND n.deleted=false
+                    WHERE $2::text IS NOT NULL AND p.subject=$2
+                 ) knowledge_values
+             ), '[]'::jsonb),
+             'difficulties', COALESCE((
+               SELECT jsonb_agg(difficulty ORDER BY difficulty)
+                 FROM (SELECT DISTINCT difficulty FROM published WHERE $2::text IS NOT NULL AND subject=$2) difficulty_values
+             ), '[]'::jsonb),
+             'grades', COALESCE((
+               SELECT jsonb_agg(grade ORDER BY grade)
+                 FROM (SELECT DISTINCT grade FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(grade,''))<>'') grade_values
+             ), '[]'::jsonb),
+             'semesters', COALESCE((
+               SELECT jsonb_agg(semester ORDER BY semester)
+                 FROM (SELECT DISTINCT semester FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(semester,''))<>'') semester_values
+             ), '[]'::jsonb),
+             'examTypes', COALESCE((
+               SELECT jsonb_agg(exam_type ORDER BY exam_type)
+                 FROM (SELECT DISTINCT exam_type FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(exam_type,''))<>'') exam_type_values
+             ), '[]'::jsonb),
+             'examYears', COALESCE((
+               SELECT jsonb_agg(exam_year ORDER BY exam_year)
+                 FROM (SELECT DISTINCT exam_year FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(exam_year,''))<>'') exam_year_values
+             ), '[]'::jsonb)
+           ) AS options
+         ), filtered AS (
+           SELECT p.*,
+                  COALESCE((
+                    SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
+                      FROM business.question_taxonomy_nodes n
+                      JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(p.taxonomy_json->'taxonomyIds'->'knowledge')='array' THEN p.taxonomy_json->'taxonomyIds'->'knowledge' ELSE '[]'::jsonb END) selected(node_id) ON true
+                     WHERE n.tenant_id=p.tenant_id AND n.deleted=false AND n.system_id='knowledge' AND n.id=selected.node_id
+                  ), '[]'::jsonb) AS "knowledgeLabels"
+             FROM published p
+            WHERE ($2::text IS NULL OR p.subject=$2)
+              AND (cardinality($3::text[])=0 OR NOT EXISTS (
+                SELECT 1 FROM unnest($3::text[]) term
+                 WHERE strpos(lower(concat_ws(' ',p.id,p.stem,p.options::text,p."richContent"::text)),term)=0
+              ))
+              AND ($4::text IS NULL OR strpos(lower(concat_ws(' ',p.source,p.region,p.school,p.exam_type,p.exam_year)),lower($4))>0)
+              AND ($5::text IS NULL OR EXISTS (
+                SELECT 1
+                  FROM business.question_taxonomy_nodes n
+                  JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(p.taxonomy_json->'taxonomyIds'->'knowledge')='array' THEN p.taxonomy_json->'taxonomyIds'->'knowledge' ELSE '[]'::jsonb END) selected(node_id) ON true
+                 WHERE n.tenant_id=p.tenant_id AND n.deleted=false AND n.system_id='knowledge' AND n.id=selected.node_id AND lower(n.name)=lower($5)
+              ))
+              AND ($6::text IS NULL OR p.type=$6)
+              AND ($7::integer IS NULL OR p.difficulty=$7)
+              AND ($8::text IS NULL OR p.grade=$8)
+              AND ($9::text IS NULL OR p.semester=$9)
+              AND ($10::text IS NULL OR p.exam_type=$10)
+              AND ($11::text IS NULL OR p.exam_year=$11)
+         ), filtered_total AS (
+           SELECT count(*)::integer AS "filteredTotal" FROM filtered
+         ), page_rows AS (
+           SELECT * FROM filtered
+            WHERE ($12::timestamptz IS NULL OR ("contentUpdatedAt" < $12::timestamptz OR ("contentUpdatedAt" = $12::timestamptz AND id > $13)))
+            ORDER BY "contentUpdatedAt" DESC,id ASC
+            LIMIT COALESCE($14::integer,2147483647)
+         )
+         SELECT page_rows.*,filtered_total."filteredTotal",filter_options.options AS "filterOptions"
+           FROM filtered_total
+           CROSS JOIN filter_options
+           LEFT JOIN page_rows ON true
+          ORDER BY page_rows."contentUpdatedAt" DESC NULLS LAST,page_rows.id ASC`,
+        values,
+      );
+      if (!result || !Array.isArray(result.rows)) return businessUnavailable(response);
+      const envelope = result.rows[0] || null;
+      const total = Number(envelope?.filteredTotal);
+      if (!Number.isSafeInteger(total) || total < 0) return businessUnavailable(response);
+      const rows = result.rows.filter(question => typeof question?.id === 'string' && question.id);
+      const pageSize = isVisitor ? MINIAPP_VISITOR_QUESTION_LIMIT : pagination.limit;
+      const hasMore = pageSize !== null && rows.length > pageSize;
+      const visibleQuestions = pageSize === null ? rows : rows.slice(0, pageSize);
+      const nextCursor = !isVisitor && pagination.limit !== null && hasMore
+        ? encodeMiniappQuestionCursor(visibleQuestions.at(-1))
+        : null;
+      if (!isVisitor && pagination.limit !== null && hasMore && !nextCursor) return businessUnavailable(response);
+      const rawFilterOptions = envelope?.filterOptions && typeof envelope.filterOptions === 'object' && !Array.isArray(envelope.filterOptions)
+        ? envelope.filterOptions
+        : {};
+      const stringOptions = value => Array.isArray(value)
+        ? Array.from(new Set(value.filter(item => typeof item === 'string').map(item => item.trim()).filter(Boolean)))
+        : [];
+      const filterOptions = {
+        subjects: stringOptions(rawFilterOptions.subjects),
+        types: stringOptions(rawFilterOptions.types),
+        sources: stringOptions(rawFilterOptions.sources),
+        knowledgePoints: stringOptions(rawFilterOptions.knowledgePoints),
+        difficulties: Array.isArray(rawFilterOptions.difficulties)
+          ? Array.from(new Set(rawFilterOptions.difficulties.map(Number).filter(value => Number.isSafeInteger(value) && value >= 1 && value <= 5))).sort((left, right) => left - right)
+          : [],
+        grades: stringOptions(rawFilterOptions.grades),
+        semesters: stringOptions(rawFilterOptions.semesters),
+        examTypes: stringOptions(rawFilterOptions.examTypes),
+        examYears: stringOptions(rawFilterOptions.examYears),
+      };
+      const textValue = value => value === null || value === undefined ? '' : String(value).trim();
+      const payload = { ok: true, hasMore, total, filterOptions, questions: visibleQuestions.map(question => {
+        const source = textValue(question.source);
+        const region = textValue(question.region);
+        const school = textValue(question.school);
+        const examType = textValue(question.exam_type);
+        const examYear = textValue(question.exam_year);
+        const sourceLabel = Array.from(new Set([source, region, school, examType, examYear].filter(Boolean))).join(' / ');
+        return {
           id: question.id, subject: question.subject, type: question.type, stemPreview: String(question.stem || ''),
           answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
           explanation: question.explanation === null || question.explanation === undefined ? '' : String(question.explanation),
           options: Array.isArray(question.options) ? question.options : [],
           richContent: question.richContent && typeof question.richContent === 'object' ? question.richContent : null,
           difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
-          source: typeof question.source === 'string' ? question.source : '',
+          source, sourceLabel, region, school, examType, examYear,
+          grade: textValue(question.grade), semester: textValue(question.semester),
           knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
           status: question.status,
-        })) });
-      }
-      const questions = await questionAuthority.list({ tenantId: businessTenantId, actor, limit: 200 });
-      response.json({ ok: true, questions: questions.map(question => ({
-        id: question.id, subject: question.subject, type: question.type, stemPreview: question.content.slice(0, 240),
-        answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
-        explanation: question.analysis === null || question.analysis === undefined ? '' : String(question.analysis),
-        options: Array.isArray(question.options) ? question.options : [],
-        richContent: question.rich_content && typeof question.rich_content === 'object' ? question.rich_content : null,
-        difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
-        source: typeof question.source === 'string' ? question.source : '',
-        knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],
-        status: question.status,
-      })) });
+        };
+      }) };
+      if (!isVisitor && pagination.limit !== null) payload.nextCursor = nextCursor;
+      response.json(payload);
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
@@ -868,20 +1188,19 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const actor = await miniappBusinessContext(request);
       const questionId = String(body.questionId || '');
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(questionId)) return businessInputInvalid(response);
-      const limitedQuestionBrowse = actor.status === 'visitor'
-        || (Array.isArray(actor.roles) && actor.roles.includes('student'));
-      let allowed = false;
-      if (limitedQuestionBrowse) {
-        const questionLimit = actor.status === 'visitor' ? 20 : 200;
-        const result = await query(
-          "WITH visible AS (SELECT q.id FROM business.questions q JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false ORDER BY c.updated_at DESC,q.id ASC LIMIT $2) SELECT id FROM visible WHERE id=$3",
-          [businessTenantId, questionLimit, questionId],
-        );
-        allowed = Array.isArray(result?.rows) && result.rows.length === 1;
-      } else {
-        const visible = await questionAuthority.list({ tenantId: businessTenantId, actor, limit: 200 });
-        allowed = Array.isArray(visible) && visible.some(question => question?.id === questionId && question?.status === 'published');
-      }
+      const result = await query(
+        actor.status === 'visitor'
+          ? `SELECT visible.id FROM (
+               SELECT q.id
+                 FROM business.questions q
+                 JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
+                WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false
+                ORDER BY ${MINIAPP_QUESTION_ORDER_SQL} LIMIT ${MINIAPP_VISITOR_QUESTION_LIMIT}
+             ) visible WHERE visible.id=$2`
+          : "SELECT q.id FROM business.questions q JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id WHERE q.tenant_id=$1 AND q.id=$2 AND q.status='published' AND q.deleted=false AND c.deleted=false",
+        [businessTenantId, questionId],
+      );
+      const allowed = Array.isArray(result?.rows) && result.rows.length === 1;
       if (!allowed) throw businessAccessDenied();
       const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, questionId, assetKey: String(request.params.assetKey || '') });
       response.status(delivery.status === 'ready' ? 200 : 202).json({ ok: true, delivery });
@@ -1138,19 +1457,30 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!businessTenantId || !businessScheduleUpdate) return businessUnavailable(response);
     const scheduleId = String(request.params.scheduleId || '').trim();
     const hasPricings = Boolean(request.body && Object.prototype.hasOwnProperty.call(request.body, 'pricings'));
-    const update = exactBody(request.body, hasPricings
-      ? ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes', 'pricings']
-      : ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes']);
+    const lifecycleKeys = ['courseId', 'recurringRule', 'serviceType'];
+    const lifecycleKeyCount = lifecycleKeys.filter(key => request.body && Object.prototype.hasOwnProperty.call(request.body, key)).length;
+    const hasLifecycle = lifecycleKeyCount === lifecycleKeys.length;
+    const baseKeys = ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes'];
+    const update = lifecycleKeyCount !== 0 && !hasLifecycle ? null : exactBody(request.body, [
+      ...baseKeys,
+      ...(hasLifecycle ? lifecycleKeys : []),
+      ...(hasPricings ? ['pricings'] : []),
+    ]);
     if (!scheduleId || !update) return businessInputInvalid(response);
     const expectedUpdatedAt = instant(update.expectedUpdatedAt);
+    const courseId = hasLifecycle ? boundedText(update.courseId, 256) : null;
     const startAt = instant(update.startAt);
     const endAt = instant(update.endAt);
+    const recurringRule = hasLifecycle ? optionalText(update.recurringRule) : null;
     const roomDisplay = optionalText(update.roomDisplay);
+    const serviceType = hasLifecycle ? update.serviceType : null;
     const notes = optionalText(update.notes);
     const tuition = nonNegativeNumber(update.tuition);
     const teacherFee = nonNegativeNumber(update.teacherFee);
     const pricings = hasPricings ? schedulePricings(update.pricings) : null;
-    if (!expectedUpdatedAt || !startAt || !endAt || new Date(endAt).getTime() <= new Date(startAt).getTime()
+    if (!expectedUpdatedAt || (hasLifecycle && (!courseId || recurringRule === undefined
+      || !(serviceType === null || [1, 2].includes(serviceType))))
+      || !startAt || !endAt || new Date(endAt).getTime() <= new Date(startAt).getTime()
       || !Number.isInteger(update.status) || ![1, 2, 3, 4].includes(update.status)
       || roomDisplay === undefined || notes === undefined || tuition === null || teacherFee === null
       || (hasPricings && pricings === null)) return businessInputInvalid(response);
@@ -1163,10 +1493,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         tenantId: businessTenantId,
         scheduleId,
         expectedUpdatedAt,
+        courseId,
         startAt,
         endAt,
+        recurringRule,
         status: update.status,
         roomDisplay,
+        serviceType,
         tuition,
         teacherFee,
         notes,
@@ -1554,12 +1887,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const relationship = update?.relationship;
     const phone = update?.phone;
     const wechat = update?.wechat;
-    const validPhone = phone === null || (typeof phone === 'string' && /^1[3-9][0-9]{9}$/u.test(phone));
+    const validPhone = typeof phone === 'string' && /^1[3-9][0-9]{9}$/u.test(phone);
     const validWechat = wechat === null || (typeof wechat === 'string' && wechat === wechat.trim() && wechat.length > 0 && wechat.length <= 128);
     if (!studentId || !Number.isInteger(contactSlot) || contactSlot < 1 || contactSlot > 3 || !update
       || expectedUpdatedAt === undefined || !['student', 'guardian'].includes(relationship)
       || (contactSlot === 1 && relationship !== 'student') || (contactSlot > 1 && relationship !== 'guardian')
-      || !validPhone || !validWechat || (phone === null && wechat === null)) return businessInputInvalid(response);
+      || !validPhone || !validWechat) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
       if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
@@ -1686,11 +2019,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       storageAgentFailure(response, error);
     }
   });
-  app.post('/api/desktop/pairing/start', (request, response) => {
+  app.post('/api/desktop/pairing/start', async (request, response) => {
     if (!desktopPairing) return desktopUnavailable(response);
     try {
-      const result = desktopPairing.start(request.body);
-      response.json({ ok: true, pairingId: result.pairingId, pairingSecret: result.pairingSecret, expiresAt: result.expiresAt });
+      const result = await desktopPairing.start(request.body);
+      response.json({ ok: true, pairingId: result.pairingId, pairingSecret: result.pairingSecret, expiresAt: result.expiresAt, qrValue: result.qrValue });
     } catch (_) {
       pairingFailure(response);
     }

@@ -25,6 +25,10 @@ for (const target of matrix.DEFAULT_TARGETS) {
     target,
     version: componentVersions[target],
     evidence: `${target} compatible receipt`,
+    ...(target === 'storage_proxy' ? {
+      runtimeVersion: '8.8.0',
+      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+    } : {}),
     ...(target === 'miniapp' ? { releaseLevel: 'production' } : {}),
   });
 }

@@ -9,7 +9,8 @@ assert.strictEqual(selectDesktopBusinessAccount({ directAccount: visitorDirect, 
 assert.strictEqual(selectDesktopBusinessAccount({ directAccount: visitorDirect, phoneAccount: null }), visitorDirect);
 assert.strictEqual(selectDesktopBusinessAccount({ directAccount: null, phoneAccount: null }), null);
 assert.deepStrictEqual(desktopSessionRoles(['admin', 'super_admin']), ['super_admin']);
-assert.deepStrictEqual(desktopSessionRoles(['admin']), ['visitor']);
-assert.deepStrictEqual(desktopSessionRoles(['student']), ['visitor'], 'the teacher desktop must not open a student-only account');
-assert.deepStrictEqual(desktopSessionRoles(), ['visitor']);
+assert.deepStrictEqual(desktopSessionRoles(['teacher', 'student']), ['teacher']);
+assert.deepStrictEqual(desktopSessionRoles(['admin']), []);
+assert.deepStrictEqual(desktopSessionRoles(['student']), [], 'the teacher desktop must not turn a student-only account into a desktop visitor');
+assert.deepStrictEqual(desktopSessionRoles(), []);
 console.log('desktop business account resolver checks passed');

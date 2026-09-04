@@ -45,9 +45,15 @@ function constantTimeMatch(expected, supplied) {
 }
 
 function createDesktopPairingService(config) {
-  const settings = exact(config, ['now', 'randomId', 'beginOnlineVerification', 'inspectVerificationToken']);
+  const settings = exact(config, [
+    'now', 'randomId', 'resolveWechatIdentity', 'issueVerificationForVerifiedAccount',
+    'inspectVerificationToken', 'generateLoginScheme',
+  ]);
   if (typeof settings.now !== 'function' || typeof settings.randomId !== 'function'
-    || typeof settings.beginOnlineVerification !== 'function' || typeof settings.inspectVerificationToken !== 'function') throw pairingError();
+    || typeof settings.resolveWechatIdentity !== 'function'
+    || typeof settings.issueVerificationForVerifiedAccount !== 'function'
+    || typeof settings.inspectVerificationToken !== 'function'
+    || typeof settings.generateLoginScheme !== 'function') throw pairingError();
   const attempts = new Map();
 
   function authorize(input) {
@@ -65,7 +71,7 @@ function createDesktopPairingService(config) {
   }
 
   return Object.freeze({
-    start(input) {
+    async start(input) {
       const request = exact(input, ['installationId', 'installationPublicKey', 'idempotencyKey']);
       const installationId = text(request.installationId, 256);
       const installationPublicKey = text(request.installationPublicKey, 8192);
@@ -76,6 +82,14 @@ function createDesktopPairingService(config) {
       const now = currentDate(settings.now);
       if (!pairingId || !pairingSecret || attempts.has(pairingId)) throw pairingError();
       const expiresAt = now.getTime() + 5 * 60 * 1000;
+      const expiresAtIso = new Date(expiresAt).toISOString();
+      let qrValue;
+      try {
+        qrValue = text(await settings.generateLoginScheme({ pairingId, pairingSecret, expiresAt: expiresAtIso }), 4096);
+      } catch (_) {
+        throw pairingError();
+      }
+      if (!qrValue || !qrValue.startsWith('weixin://')) throw pairingError();
       attempts.set(pairingId, Object.freeze({
         pairingId,
         secret: pairingSecret,
@@ -84,7 +98,7 @@ function createDesktopPairingService(config) {
         verificationToken: null,
         deviceChallenge: null,
       }));
-      return Object.freeze({ pairingId, pairingSecret, expiresAt: new Date(expiresAt).toISOString() });
+      return Object.freeze({ pairingId, pairingSecret, expiresAt: expiresAtIso, qrValue });
     },
     read(input) {
       const { attempt } = authorize(input);
@@ -93,19 +107,29 @@ function createDesktopPairingService(config) {
         : Object.freeze({ status: 'awaiting_online_verification' });
     },
     async confirm(input) {
-      const request = exact(input, ['pairingId', 'pairingSecret', 'phoneCode']);
+      const request = exact(input, ['pairingId', 'pairingSecret', 'loginCode', 'phoneCode']);
       const { attempt } = authorize({ pairingId: request.pairingId, pairingSecret: request.pairingSecret });
       if (attempt.verificationToken) return Object.freeze({ status: 'verified' });
+      const loginCode = text(request.loginCode, 512);
       const phoneCode = text(request.phoneCode, 512);
-      if (!phoneCode) throw pairingError();
-      let verification;
+      if (!loginCode || !phoneCode) throw pairingError();
+      let identity;
       try {
-        verification = await settings.beginOnlineVerification({ phoneCode });
+        identity = exact(await settings.resolveWechatIdentity({ loginCode, phoneCode }), ['authorityId', 'accountId', 'phoneHmac']);
       } catch (_) {
         throw pairingError();
       }
-      const verificationToken = text(verification?.verificationToken, 4096);
-      if (!verificationToken) throw pairingError();
+      if (!text(identity.authorityId, 512) || !text(identity.accountId, 512)
+        || !/^[0-9a-f]{64}$/u.test(identity.phoneHmac)) throw pairingError();
+      let verification;
+      try {
+        verification = exact(settings.issueVerificationForVerifiedAccount(identity), ['verificationToken', 'deviceChallenge']);
+      } catch (_) {
+        throw pairingError();
+      }
+      const verificationToken = text(verification.verificationToken, 4096);
+      const issuedDeviceChallenge = text(verification.deviceChallenge, 4096);
+      if (!verificationToken || !issuedDeviceChallenge) throw pairingError();
       let ticket;
       try {
         ticket = settings.inspectVerificationToken(verificationToken);
@@ -113,7 +137,7 @@ function createDesktopPairingService(config) {
         throw pairingError();
       }
       const deviceChallenge = text(ticket?.challenge, 4096);
-      if (!deviceChallenge) throw pairingError();
+      if (!deviceChallenge || !constantTimeMatch(deviceChallenge, issuedDeviceChallenge)) throw pairingError();
       attempts.set(attempt.pairingId, Object.freeze({ ...attempt, verificationToken, deviceChallenge }));
       return Object.freeze({ status: 'verified' });
     },

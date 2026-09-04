@@ -31,6 +31,9 @@ async function request(app, path, { headers = {} } = {}) {
       if (token === 'student-ticket.signature') {
         return { accountId: 'miniapp-account-3', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } };
       }
+      if (token === 'family-ticket.signature') {
+        return { accountId: 'miniapp-account-4', status: 'active', roles: ['family_member'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } };
+      }
       throw new Error('rejected');
     },
     pendingAccounts: async () => [],
@@ -82,6 +85,11 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[2][0].includes("'price_teacher',CASE WHEN $2 IN ('manager','teacher') THEN c.price_teacher ELSE NULL END"), 'student projections must not receive course teacher fees');
   assert.ok(queries[2][0].includes("'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END"), 'student projections must not receive per-student teacher fees');
   assert.ok(queries[2][0].includes("'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN o.teacher_fee ELSE NULL END"), 'student projections must not receive override teacher fees');
+  const familyResponse = await request(app, '/api/business/miniapp-projection', {
+    headers: { authorization: 'Bearer family-ticket.signature' },
+  });
+  assert.strictEqual(familyResponse.status, 200);
+  assert.deepStrictEqual(queries[3][1], ['default', 'student', 'student-1', 'miniapp-account-4']);
   console.log('cloud miniapp business projection checks passed');
 })().catch(error => {
   console.error(error);

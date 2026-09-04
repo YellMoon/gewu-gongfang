@@ -37,6 +37,37 @@ try {
   const recorded = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.strictEqual(recorded.targets.cloud_business.status, 'verified');
   assert.strictEqual(recorded.targets.cloud_business.receipt.version, componentVersions.cloud_business);
+  assert.strictEqual(
+    recorded.targets.cloud_business.receipt.compatibility,
+    recorded.compatibility.schema,
+    'Python deployment receipts must attest the exact reviewed compatibility schema',
+  );
+  assert.strictEqual(
+    matrix.validateManifest(recorded).issues.length,
+    0,
+    'Python deployment receipts must satisfy the same persisted-receipt contract as JavaScript producers',
+  );
+
+  const blankEvidenceManifestPath = path.join(fixtureRoot, 'blank-evidence.json');
+  matrix.writeManifest(blankEvidenceManifestPath, matrix.createReleaseManifest({
+    componentVersions,
+    commit,
+  }));
+  const blankEvidenceProbe = spawnSync('python', ['-c', [
+    'import scripts.deploy as deploy',
+    "deploy.record_release_receipt('cloud_business', ' \\t ')",
+  ].join('\n')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: blankEvidenceManifestPath },
+    encoding: 'utf8',
+  });
+  assert.notStrictEqual(blankEvidenceProbe.status, 0, 'blank evidence must never create a verified deployment receipt');
+  assert.match(`${blankEvidenceProbe.stderr}\n${blankEvidenceProbe.stdout}`, /evidence/i);
+  assert.deepStrictEqual(
+    JSON.parse(fs.readFileSync(blankEvidenceManifestPath, 'utf8')).targets.cloud_business,
+    { status: 'pending' },
+    'a rejected receipt must leave the release target pending',
+  );
   const verifiedRecoveryProbe = spawnSync('python', ['-c', [
     'import scripts.deploy as deploy',
     "manifest = deploy.require_release_manifest('cloud_business', allowed_statuses=('pending', 'verified'))",
@@ -48,6 +79,26 @@ try {
   });
   assert.strictEqual(verifiedRecoveryProbe.status, 0, verifiedRecoveryProbe.stderr || 'verified recovery gate must pass');
   assert.strictEqual(verifiedRecoveryProbe.stdout.trim(), 'verified');
+  for (const [label, mutateReceipt] of [
+    ['missing compatibility', receipt => { delete receipt.compatibility; }],
+    ['blank evidence', receipt => { receipt.evidence = ' \t '; }],
+    ['invalid verifiedAt', receipt => { receipt.verifiedAt = '2026-99-99T25:61:61Z'; }],
+  ]) {
+    const forgedManifest = JSON.parse(JSON.stringify(recorded));
+    mutateReceipt(forgedManifest.targets.cloud_business.receipt);
+    const forgedManifestPath = path.join(fixtureRoot, `forged-${label.replace(/\s+/g, '-')}.json`);
+    fs.writeFileSync(forgedManifestPath, `${JSON.stringify(forgedManifest, null, 2)}\n`, 'utf8');
+    const forgedReceiptProbe = spawnSync('python', ['-c', [
+      'import scripts.deploy as deploy',
+      "deploy.require_release_manifest('cloud_business', allowed_statuses=('pending', 'verified'))",
+    ].join('\n')], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, GEWU_RELEASE_MANIFEST_PATH: forgedManifestPath },
+      encoding: 'utf8',
+    });
+    assert.notStrictEqual(forgedReceiptProbe.status, 0, `verified recovery must reject ${label}`);
+    assert.match(`${forgedReceiptProbe.stderr}\n${forgedReceiptProbe.stdout}`, /invalid verified receipt/i);
+  }
   const duplicatePendingProbe = spawnSync('python', ['-c', [
     'import scripts.deploy as deploy',
     "deploy.require_release_manifest('cloud_business')",

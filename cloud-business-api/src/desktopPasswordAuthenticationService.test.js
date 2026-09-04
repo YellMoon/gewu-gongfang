@@ -15,6 +15,11 @@ const service = createDesktopPasswordAuthenticationService({
     if (token !== 'already-verified-ticket') throw new Error('expired');
     return { v: 1, authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64), challenge: 'already-verified-challenge', proofId: 'proof-1', expiresAt: Date.now() + 60000 };
   },
+  resolveActiveVerifiedPhone: async input => {
+    calls.push(['resolveActiveVerifiedPhone', input]);
+    if (input.accountId === 'account-without-phone') return null;
+    return { ...input, phoneHmac: 'a'.repeat(64) };
+  },
   passwordIdentity: {
     enroll: async input => {
       calls.push(['enroll', input]);
@@ -49,8 +54,27 @@ const service = createDesktopPasswordAuthenticationService({
   assert.deepStrictEqual(verified, { verificationToken: 'signed-registration-ticket', deviceChallenge: 'cloud-device-proof-1' });
   assert.deepStrictEqual(calls.slice(3), [
     ['verify', { loginType: 'account_name', login: 'teacher.a', password: 'correct password' }],
+    ['resolveActiveVerifiedPhone', { authorityId: 'authority-1', accountId: 'account-1' }],
     ['issueRegistrationTicket', { authorityId: 'authority-1', accountId: 'account-1', phoneHmac: 'a'.repeat(64) }],
   ]);
+
+  const withoutPhone = createDesktopPasswordAuthenticationService({
+    phoneVerifier: async () => { throw new Error('unused'); },
+    resolveCanonicalAccount: async () => { throw new Error('unused'); },
+    verificationEvidenceHash: value => value,
+    inspectVerificationToken: () => { throw new Error('unused'); },
+    resolveActiveVerifiedPhone: async () => null,
+    passwordIdentity: {
+      enroll: async () => { throw new Error('unused'); },
+      enrollVerifiedAccount: async () => { throw new Error('unused'); },
+      verify: async () => ({ authorityId: 'authority-1', accountId: 'account-without-phone', phoneHmac: 'b'.repeat(64) }),
+    },
+    issueRegistrationTicket: () => { throw new Error('must not issue a ticket without an active verified phone'); },
+  });
+  await assert.rejects(
+    () => withoutPhone.verify({ loginType: 'account_name', login: 'teacher.old', password: 'correct password' }),
+    error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
+  );
 
   const beforeVerifiedTicketEnrollment = calls.length;
   const ticketEnrolled = await service.enrollFromVerificationTicket({

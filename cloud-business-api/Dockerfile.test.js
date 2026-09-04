@@ -13,4 +13,5 @@ assert.match(dockerfile, /^COPY cloud-business-api\/src \.\/src$/m);
 assert.match(dockerfile, /^COPY cloud-business-api\/sql \.\/sql$/m, 'the cloud image must include versioned database migrations');
 assert.match(dockerfile, /^COPY cloud-business-api\/scripts \.\/scripts$/m, 'the cloud image must include the migration runner');
 assert.match(dockerfile, /^COPY shared \/shared$/m, 'the runtime must include the shared encrypted-relay module');
+assert.match(dockerfile, /^CMD \["node", "scripts\/startVerified\.js"\]$/m, 'the API must verify the fixed super administrator before listening');
 console.log('cloud business Docker build context checks passed');

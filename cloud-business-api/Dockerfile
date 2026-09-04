@@ -10,4 +10,4 @@ COPY backend/assets/fonts ./assets/fonts
 COPY shared /shared
 USER node
 EXPOSE 3002
-CMD ["node", "server.js"]
+CMD ["node", "scripts/startVerified.js"]

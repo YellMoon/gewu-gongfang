@@ -5,10 +5,8 @@ function selectDesktopBusinessAccount({ directAccount, phoneAccount }) {
 }
 
 function desktopSessionRoles(roles) {
-  if (!Array.isArray(roles)) return Object.freeze(['visitor']);
-  if (roles.includes('super_admin')) return Object.freeze(['super_admin']);
-  if (roles.includes('teacher')) return Object.freeze(['teacher']);
-  return Object.freeze(['visitor']);
+  if (!Array.isArray(roles)) return Object.freeze([]);
+  return Object.freeze(['super_admin', 'teacher'].filter(role => roles.includes(role)));
 }
 
 module.exports = Object.freeze({ selectDesktopBusinessAccount, desktopSessionRoles });

@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { types } = require('util');
+const { normalizeMainlandPhone } = require('./mainlandPhone');
 
 function failure(code = 'CLOUD_ONLINE_IDENTITY_INVALID') {
   return Object.assign(new Error('cloud online identity is invalid'), { code });
@@ -32,9 +33,8 @@ function sha256(value) {
 }
 
 function hmacPhone(pepper, phone) {
-  const normalized = String(phone || '').replace(/\D/gu, '');
-  if (!/^(?:86)?1\d{10}$/u.test(normalized)) throw failure();
-  const mainlandPhone = normalized.length === 13 ? normalized.slice(2) : normalized;
+  const mainlandPhone = normalizeMainlandPhone(phone);
+  if (!mainlandPhone) throw failure();
   if (typeof pepper !== 'string' || pepper.length < 24) throw failure();
   return crypto.createHmac('sha256', pepper).update(`phone:${mainlandPhone}`, 'utf8').digest('hex');
 }
@@ -92,24 +92,32 @@ function inspectTicket(secret, token, now) {
 
 function inspectSessionTicket(secret, token, now) {
   const payload = signedTicketPayload(secret, token);
-  const copy = exact(payload, ['v', 'authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt']);
-  if (copy.v !== 1 || !text(copy.authorityId) || !text(copy.accountId) || !text(copy.deviceId)
+  const keys = payload?.v === 2
+    ? ['v', 'authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'activeRole', 'expiresAt']
+    : ['v', 'authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt'];
+  const copy = exact(payload, keys);
+  if (![1, 2].includes(copy.v) || !text(copy.authorityId) || !text(copy.accountId) || !text(copy.deviceId)
     || !text(copy.installationId) || !text(copy.sessionId) || !Number.isSafeInteger(copy.expiresAt)
     || copy.expiresAt <= now.getTime()) throw rejected();
+  if (copy.v === 2 && !['super_admin', 'teacher'].includes(copy.activeRole)) throw rejected();
   return Object.freeze(copy);
 }
 
 function sessionContext(value, ticket) {
-  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'roles', 'teacherId', 'studentId']);
+  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'roles', 'teacherId', 'studentId']);
   if (copy.authorityId !== ticket.authorityId || copy.accountId !== ticket.accountId
     || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
     || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
-    || !Array.isArray(copy.roles) || copy.roles.length === 0 || copy.roles.length > 3
+    || !Array.isArray(copy.roles) || copy.roles.length > 2
     || copy.roles.some(role => !['super_admin', 'teacher'].includes(role))
     || new Set(copy.roles).size !== copy.roles.length
     || (copy.teacherId !== null && !text(copy.teacherId))
-    || (copy.studentId !== null && !text(copy.studentId))) throw rejected();
-  return Object.freeze({ ...copy, roles: Object.freeze(copy.roles.slice()) });
+    || (copy.studentId !== null && !text(copy.studentId))
+    || !Number.isSafeInteger(Number(copy.rowVersion)) || Number(copy.rowVersion) < 1) throw rejected();
+  if (copy.roles.length === 0) throw failure('CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED');
+  const activeRole = ticket.v === 2 ? ticket.activeRole : preferredLeaseRole(copy.roles);
+  if (!activeRole || !copy.roles.includes(activeRole)) throw rejected();
+  return Object.freeze({ ...copy, rowVersion: Number(copy.rowVersion), activeRole, roles: Object.freeze(copy.roles.slice()) });
 }
 
 function preferredLeaseRole(roles) {
@@ -119,11 +127,10 @@ function preferredLeaseRole(roles) {
 }
 
 function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
-  const activeRole = preferredLeaseRole(context.roles);
+  const activeRole = context.activeRole || preferredLeaseRole(context.roles);
   if (!activeRole) throw rejected();
   const scope = { kind: activeRole };
   if (activeRole === 'teacher' && !context.teacherId) throw rejected();
-  if (activeRole === 'super_admin' && (context.teacherId !== null || context.studentId !== null)) throw rejected();
   if (activeRole === 'teacher') scope.teacherId = context.teacherId;
   const lease = {
     v: 1,
@@ -222,16 +229,75 @@ function createCloudDesktopRegistrationService(config) {
     }
     return sessionContext(current, ticket);
   };
+  const issueSession = async input => {
+    let request;
+    try {
+      request = exact(input, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'activeRole']);
+    } catch (_) {
+      throw rejected();
+    }
+    const expiresAt = new Date(request.expiresAt);
+    if (!text(request.authorityId) || !text(request.accountId) || !text(request.deviceId)
+      || !text(request.installationId) || !text(request.sessionId)
+      || !Number.isFinite(expiresAt.getTime()) || expiresAt.getTime() <= currentNow().getTime()
+      || !Number.isSafeInteger(Number(request.rowVersion)) || Number(request.rowVersion) < 1
+      || !(request.activeRole === null || ['super_admin', 'teacher'].includes(request.activeRole))) throw rejected();
+    const baseTicket = {
+      v: 1,
+      authorityId: request.authorityId,
+      accountId: request.accountId,
+      deviceId: request.deviceId,
+      installationId: request.installationId,
+      sessionId: request.sessionId,
+      expiresAt: expiresAt.getTime(),
+    };
+    let token = makeTicket(settings.ticketSecret, baseTicket);
+    let ticket = inspectSessionToken(token);
+    let current = await readCurrentSession(ticket);
+    const selectedRole = request.activeRole || preferredLeaseRole(current.roles);
+    if (!selectedRole || !current.roles.includes(selectedRole)) throw rejected();
+    token = makeTicket(settings.ticketSecret, { ...baseTicket, v: 2, activeRole: selectedRole });
+    ticket = inspectSessionToken(token);
+    current = await readCurrentSession(ticket);
+    if (Number(current.rowVersion) !== Number(request.rowVersion)) throw rejected();
+    const session = Object.freeze({
+      id: current.sessionId,
+      userId: current.accountId,
+      deviceId: current.deviceId,
+      activeRole: selectedRole,
+      eligibleRoles: current.roles,
+      teacherId: selectedRole === 'teacher' ? current.teacherId : null,
+      studentId: null,
+      expiresAt: current.expiresAt,
+      rowVersion: current.rowVersion,
+    });
+    const profile = Object.freeze({
+      userId: current.accountId,
+      user: Object.freeze({ id: current.accountId, name: 'Cloud account' }),
+      eligibleRoles: current.roles,
+      activeRole: selectedRole,
+      teacherId: session.teacherId,
+      studentId: null,
+    });
+    return Object.freeze({
+      token,
+      session,
+      profile,
+      offlineLease: offlineLease(settings.leasePrivateKey, ticket, current, currentNow()),
+    });
+  };
   return Object.freeze({
     inspectVerificationToken,
     inspectSessionToken,
     issueVerificationForVerifiedAccount,
+    issueSession,
     async begin(input) {
       const request = exact(input, ['phoneCode']);
       if (!text(request.phoneCode)) throw rejected();
       let phone;
       try {
-        phone = await settings.phoneVerifier(request.phoneCode);
+        phone = normalizeMainlandPhone(await settings.phoneVerifier(request.phoneCode));
+        if (!phone) throw rejected();
       } catch (_) {
         throw rejected();
       }
@@ -293,7 +359,7 @@ function createCloudDesktopRegistrationService(config) {
           offlineLease: offlineLease(settings.leasePrivateKey, inspectSessionToken(sessionToken), current, now),
         });
       } catch (error) {
-        if (error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED') throw error;
+        if (error && ['CLOUD_ONLINE_IDENTITY_REJECTED', 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED'].includes(error.code)) throw error;
         throw rejected();
       }
     },

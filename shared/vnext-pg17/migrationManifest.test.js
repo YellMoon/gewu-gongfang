@@ -24,6 +24,11 @@ const {
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
   DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
   DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
+  DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION,
+  DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
+  FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -63,7 +68,7 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
   assert.strictEqual(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.semanticVersion, 20);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /vnext_role_grants_one_active_super_admin/);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /role='super_admin' AND status='active'/);
@@ -72,6 +77,36 @@ async function runManifestCases() {
   assert.doesNotMatch(DESKTOP_SESSION_CONTEXT_READER_MIGRATION.sql, /GRANT (?:INSERT|UPDATE|DELETE)/);
   assert.strictEqual(DESKTOP_CANONICAL_PHONE_READER_MIGRATION.semanticVersion, 22);
   assert.match(DESKTOP_CANONICAL_PHONE_READER_MIGRATION.sql, /GRANT SELECT ON TABLE vnext_control_plane\.vnext_verified_contacts TO vnext_pg17_writer/);
+  assert.strictEqual(DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION.semanticVersion, 23);
+  assert.match(DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION.sql, /CREATE TABLE vnext_control_plane\.vnext_desktop_session_challenges/);
+  for (const functionName of [
+    'vnext_start_desktop_session_challenge', 'vnext_exchange_desktop_session_challenge',
+    'vnext_read_desktop_session_installation', 'vnext_rotate_desktop_role_session',
+    'vnext_list_desktop_account_devices', 'vnext_revoke_desktop_device',
+  ]) {
+    assert.match(DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION.sql,
+      new RegExp(`CREATE FUNCTION vnext_control_plane\\.${functionName}`));
+    assert.match(DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION.sql,
+      new RegExp(`GRANT EXECUTE ON FUNCTION vnext_control_plane\\.${functionName}[\\s\\S]*TO vnext_pg17_writer`));
+  }
+  assert.doesNotMatch(DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION.sql,
+    /GRANT (?:INSERT|UPDATE|DELETE) ON (?:TABLE )?vnext_control_plane\.vnext_desktop_session_challenges/);
+  assert.strictEqual(DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION.semanticVersion, 24);
+  assert.match(DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION.sql, /CREATE OR REPLACE FUNCTION vnext_control_plane\.vnext_revoke_desktop_device/);
+  assert.match(DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION.sql, /FROM vnext_control_plane\.vnext_accounts AS a[\s\S]*a\.status='active'/);
+  assert.doesNotMatch(DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION.sql, /AND status='active'/);
+  assert.strictEqual(DESKTOP_SESSION_SOURCE_LOCK_MIGRATION.semanticVersion, 25);
+  assert.match(DESKTOP_SESSION_SOURCE_LOCK_MIGRATION.sql,
+    /CREATE OR REPLACE FUNCTION vnext_control_plane\.vnext_start_desktop_session_challenge/);
+  assert.match(DESKTOP_SESSION_SOURCE_LOCK_MIGRATION.sql,
+    /s\.status='active' AND s\.expires_at>now_at[\s\S]*FOR SHARE OF s/);
+  assert.match(DESKTOP_SESSION_SOURCE_LOCK_MIGRATION.sql,
+    /source_session vnext_control_plane\.vnext_sessions%ROWTYPE/);
+  assert.strictEqual(DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION.semanticVersion, 26);
+  assert.match(DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION.sql,
+    /SELECT a\.\* INTO actor_account[\s\S]*IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_ACCOUNT_INVALID'[\s\S]*SELECT d\.\* INTO target_device/);
+  assert.strictEqual(FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION.semanticVersion, 27);
+  assert.match(FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION.sql, /role IN \('super_admin','teacher','student','family_member'\)/);
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(
@@ -262,6 +297,7 @@ async function runManifestCases() {
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_desktop_password_credentials',
+    'vnext_control_plane.vnext_desktop_session_challenges',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_online_identity_assertion_consumptions',
     'vnext_control_plane.vnext_online_identity_assertions',

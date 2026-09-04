@@ -5,7 +5,7 @@ const { assertVNextControlPlaneReferenceSchema } = require('./vNextControlPlaneR
 const { isVNextAccessContextResolverReferenceForDatabase } = require('./vNextAccessContextResolverReference');
 const { types } = require('node:util');
 
-const ROLES = new Set(['super_admin', 'teacher', 'student']);
+const ROLES = new Set(['super_admin', 'teacher', 'student', 'family_member']);
 const INPUT_KEYS = Object.freeze({
   'role.grant': new Set(['type', 'targetAccountId', 'role', 'expectedTargetRowVersion', 'idempotencyKey', 'reasonCode']),
   'role.revoke': new Set(['type', 'targetGrantId', 'expectedTargetRowVersion', 'idempotencyKey', 'reasonCode']),

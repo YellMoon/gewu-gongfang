@@ -1392,7 +1392,7 @@ async function runCatalogAssertionCases(runtime) {
     assert.deepStrictEqual(await catalog.apply(m17PrefixHandle, migrationInput), { applied: true });
     await withVNextPg17SyntheticQuery(m17PrefixHandle, 'verifier', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }, { semantic_version: '19' }]);
+      assert.deepStrictEqual(ledgerRows.rows, MIGRATIONS.map(migration => ({ semantic_version: String(migration.semanticVersion) })));
     });
 
     const forgedM17PrefixHandle = await createHandle();
@@ -1421,7 +1421,7 @@ async function runCatalogAssertionCases(runtime) {
     );
     await withVNextPg17SyntheticQuery(forgedM17PrefixHandle, 'fixture-provisioner', async facade => {
       const ledgerRows = await facade.query('SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint');
-      assert.strictEqual(ledgerRows.rows.length, 18);
+      assert.strictEqual(ledgerRows.rows.length, MIGRATIONS.length - 1);
       const m18Relation = await facade.query("SELECT to_regclass('vnext_control_plane.vnext_desktop_password_credentials') AS relation");
       assert.strictEqual(m18Relation.rows[0].relation, 'vnext_control_plane.vnext_desktop_password_credentials');
     });
@@ -1436,7 +1436,7 @@ async function runCatalogAssertionCases(runtime) {
       const ledgerRows = await facade.query(
         'SELECT semantic_version::text AS semantic_version FROM vnext_control_plane.vnext_schema_migrations ORDER BY semantic_version::bigint',
       );
-      assert.deepStrictEqual(ledgerRows.rows, [{ semantic_version: '1' }, { semantic_version: '2' }, { semantic_version: '3' }, { semantic_version: '4' }, { semantic_version: '5' }, { semantic_version: '6' }, { semantic_version: '7' }, { semantic_version: '8' }, { semantic_version: '9' }, { semantic_version: '10' }, { semantic_version: '11' }, { semantic_version: '12' }, { semantic_version: '13' }, { semantic_version: '14' }, { semantic_version: '15' }, { semantic_version: '16' }, { semantic_version: '17' }, { semantic_version: '18' }, { semantic_version: '19' }]);
+      assert.deepStrictEqual(ledgerRows.rows, MIGRATIONS.map(migration => ({ semantic_version: String(migration.semanticVersion) })));
       const schemaMetaRows = await facade.query(
         'SELECT schema_key, schema_version::text AS schema_version FROM vnext_control_plane.vnext_schema_meta',
       );

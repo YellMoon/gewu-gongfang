@@ -12,6 +12,35 @@ const versions = {
   miniapp: '7.3.1',
 };
 const manifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'abc123' });
+const reviewedCompatibility = matrix.readCompatibilityDeclaration();
+
+assert.deepStrictEqual(
+  reviewedCompatibility.contracts.desktopCloudSession,
+  {
+    version: '1',
+    participants: ['desktop', 'cloud_business'],
+    rule: 'desktop login verifies the cloud account before silently registering the device and installation; restart challenges and role switching are cloud-authoritative',
+  },
+  'desktop session and silent device registration compatibility must be reviewed independently of component versions',
+);
+assert.deepStrictEqual(
+  reviewedCompatibility.contracts.questionBankBrowse,
+  {
+    version: '1',
+    participants: ['desktop', 'cloud_business', 'miniapp'],
+    rule: 'desktop and miniapp render the same cloud-authoritative question structure, option semantics, filters, basket identities, answers, explanations, and source metadata',
+  },
+  'cross-end question browsing and basket semantics must be part of the reviewed compatibility declaration',
+);
+assert.deepStrictEqual(
+  reviewedCompatibility.contracts.identityRoleModel,
+  {
+    version: '2',
+    participants: ['desktop', 'cloud_business', 'miniapp'],
+    rule: 'formal grants are exactly super_admin, teacher, student, and family_member; visitor has no formal grant; family_member keeps guardian-scoped linked-student data access',
+  },
+  'the family-member grant and visitor no-grant model must be reviewed across every identity consumer',
+);
 
 assert.strictEqual(manifest.schema, matrix.MANIFEST_SCHEMA);
 assert.deepStrictEqual(Object.keys(manifest.targets), targets, 'every deployed component must have a receipt state');
@@ -23,6 +52,60 @@ assert.throws(
   () => matrix.recordReceipt(manifest, { target: 'cloud_business', version: versions.desktop, evidence: 'wrong version' }),
   /cloud_business release version mismatch/i,
   'a target cannot receive another component’s version',
+);
+const missingStorageRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-version-required' });
+assert.throws(
+  () => matrix.recordReceipt(missingStorageRuntimeManifest, {
+    target: 'storage_proxy',
+    version: versions.storage_proxy,
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+    evidence: 'component receipt without live runtime version',
+  }),
+  /runtime version is required/i,
+  'a declared runtime-receipt target must include the live runtime version',
+);
+const persistedMissingStorageRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'persisted-runtime-version-required' });
+persistedMissingStorageRuntimeManifest.targets.storage_proxy = {
+  status: 'verified',
+  receipt: {
+    version: versions.storage_proxy,
+    verifiedAt: new Date().toISOString(),
+    evidence: 'persisted component receipt without live runtime version',
+    compatibility: persistedMissingStorageRuntimeManifest.compatibility.schema,
+  },
+};
+assert.match(
+  matrix.validateManifest(persistedMissingStorageRuntimeManifest).issues.join('; '),
+  /runtime version is required/i,
+  'persisted receipts must be rejected when the declared runtime target lacks a live runtime version',
+);
+const matchingStorageVersionManifest = matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.8.0' },
+  commit: 'matching-runtime-still-requires-contracts',
+});
+assert.throws(
+  () => matrix.recordReceipt(matchingStorageVersionManifest, {
+    target: 'storage_proxy',
+    version: '8.8.0',
+    runtimeVersion: '8.8.0',
+    evidence: 'matching component and runtime version without contracts',
+  }),
+  /runtime contract receipt is incompatible/i,
+  'matching component and runtime versions must not bypass exact runtime contracts',
+);
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({
+    componentVersions: { ...versions, storage_proxy: '8.8.0' },
+    commit: 'matching-runtime-extra-contract',
+  }), {
+    target: 'storage_proxy',
+    version: '8.8.0',
+    runtimeVersion: '8.8.0',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2', unreviewedContract: '1' },
+    evidence: 'matching component and runtime version with an extra contract',
+  }),
+  /runtime contract receipt is incompatible/i,
+  'declared runtime contracts must match exactly even when component and runtime versions are equal',
 );
 const compatibleRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-compatibility' });
 matrix.recordReceipt(compatibleRuntimeManifest, {
@@ -73,6 +156,10 @@ for (const target of targets) {
     target,
     version: versions[target],
     evidence: `${target} receipt`,
+    ...(target === 'storage_proxy' ? {
+      runtimeVersion: '8.8.0',
+      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+    } : {}),
     ...(target === 'miniapp' ? { releaseLevel: 'development' } : {}),
   });
 }
@@ -83,6 +170,75 @@ matrix.recordReceipt(manifest, {
 assert.strictEqual(matrix.isReleaseComplete(manifest), true, 'a production receipt completes the compatible component matrix');
 assert.strictEqual(matrix.isCompletedHistoricalManifest(manifest), true,
   'historical archival must check every target against its own component version');
+
+function copyManifest(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function assertForgedReceiptRejected({ target = 'desktop', mutate, issue, message }) {
+  const forged = copyManifest(manifest);
+  mutate(forged.targets[target].receipt);
+  assert.match(matrix.validateManifest(forged).issues.join('; '), issue, message);
+  assert.strictEqual(matrix.isReleaseComplete(forged), false, `${message}; it must not complete the release`);
+}
+
+assertForgedReceiptRejected({
+  mutate: receipt => { delete receipt.evidence; },
+  issue: /receipt evidence is required/i,
+  message: 'a persisted verified receipt without evidence must be rejected',
+});
+assertForgedReceiptRejected({
+  mutate: receipt => { receipt.evidence = ' \t '; },
+  issue: /receipt evidence is required/i,
+  message: 'whitespace-only persisted receipt evidence must be rejected',
+});
+assertForgedReceiptRejected({
+  mutate: receipt => { delete receipt.verifiedAt; },
+  issue: /verifiedAt must be a valid ISO timestamp/i,
+  message: 'a persisted verified receipt without verifiedAt must be rejected',
+});
+assertForgedReceiptRejected({
+  mutate: receipt => { receipt.verifiedAt = '2026-99-99T25:61:61Z'; },
+  issue: /verifiedAt must be a valid ISO timestamp/i,
+  message: 'a persisted verified receipt with an invalid ISO verifiedAt must be rejected',
+});
+assertForgedReceiptRejected({
+  mutate: receipt => { delete receipt.compatibility; },
+  issue: /receipt compatibility must match/i,
+  message: 'a persisted verified receipt without compatibility must be rejected',
+});
+assertForgedReceiptRejected({
+  mutate: receipt => { receipt.compatibility = 'gewu.protocol-data-compatibility.v0'; },
+  issue: /receipt compatibility must match/i,
+  message: 'a persisted verified receipt with mismatched compatibility must be rejected',
+});
+assertForgedReceiptRejected({
+  target: 'miniapp',
+  mutate: receipt => { delete receipt.releaseLevel; },
+  issue: /miniapp release receipt must declare development or production/i,
+  message: 'a persisted verified miniapp receipt without releaseLevel must be rejected',
+});
+assertForgedReceiptRejected({
+  target: 'miniapp',
+  mutate: receipt => { receipt.releaseLevel = 'staging'; },
+  issue: /miniapp release receipt must declare development or production/i,
+  message: 'a persisted verified miniapp receipt with an unknown releaseLevel must be rejected',
+});
+
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'blank-evidence' }), {
+    target: 'desktop', version: versions.desktop, evidence: ' \r\n ',
+  }),
+  /receipt evidence is required/i,
+  'recording a receipt must reuse the persisted-receipt rule for blank evidence',
+);
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'invalid-verified-at' }), {
+    target: 'desktop', version: versions.desktop, evidence: 'desktop verification', verifiedAt: 'yesterday',
+  }),
+  /verifiedAt must be a valid ISO timestamp/i,
+  'recording a receipt must reuse the persisted-receipt rule for verifiedAt',
+);
 
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-'));
 try {
@@ -102,7 +258,30 @@ try {
   const manifestPath = matrix.defaultManifestPath(fixtureRoot);
   assert.match(manifestPath, /desktop-7\.2\.0__cloud-business-7\.1\.9__storage-proxy-7\.0\.4__miniapp-7\.3\.1/,
     'the default ledger path is isolated by the entire component version matrix');
-  matrix.writeManifest(manifestPath, matrix.createReleaseManifest({ componentVersions: versions, commit: 'abc123' }));
+  const writePaths = [];
+  const renamePairs = [];
+  const originalWriteFileSync = fs.writeFileSync;
+  const originalRenameSync = fs.renameSync;
+  fs.writeFileSync = (filePath, ...args) => {
+    writePaths.push(path.resolve(filePath));
+    return originalWriteFileSync(filePath, ...args);
+  };
+  fs.renameSync = (sourcePath, destinationPath) => {
+    renamePairs.push([path.resolve(sourcePath), path.resolve(destinationPath)]);
+    return originalRenameSync(sourcePath, destinationPath);
+  };
+  try {
+    matrix.writeManifest(manifestPath, matrix.createReleaseManifest({ componentVersions: versions, commit: 'abc123' }));
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+    fs.renameSync = originalRenameSync;
+  }
+  assert.strictEqual(writePaths.length, 1, 'a manifest write uses one temporary file');
+  assert.notStrictEqual(writePaths[0], path.resolve(manifestPath), 'the manifest is not written directly in place');
+  assert.strictEqual(path.dirname(writePaths[0]), path.dirname(path.resolve(manifestPath)),
+    'the temporary manifest is written in the destination directory');
+  assert.deepStrictEqual(renamePairs, [[writePaths[0], path.resolve(manifestPath)]],
+    'the same-directory temporary manifest atomically replaces the destination');
   assert.strictEqual(
     matrix.assertReleaseTarget({ rootDir: fixtureRoot, manifestPath, target: 'cloud_business' }).version,
     versions.cloud_business,
@@ -116,7 +295,15 @@ try {
 
   const pending = matrix.readManifest(manifestPath);
   for (const target of ['cloud_business', 'storage_proxy', 'miniapp']) {
-    matrix.recordReceipt(pending, { target, version: versions[target], evidence: `${target} compatible` });
+    matrix.recordReceipt(pending, {
+      target,
+      version: versions[target],
+      evidence: `${target} compatible`,
+      ...(target === 'storage_proxy' ? {
+        runtimeVersion: '8.8.0',
+        runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+      } : {}),
+    });
   }
   matrix.writeManifest(manifestPath, pending);
   assert.strictEqual(

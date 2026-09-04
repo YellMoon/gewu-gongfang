@@ -13,15 +13,18 @@ const pepper = 'test-phone-lookup-pepper';
 const ticketSecret = 'test-ticket-secret-material-32-bytes';
 const leaseKeyPair = crypto.generateKeyPairSync('ed25519');
 const records = [{ phoneHmac: hmacPhone(pepper, '13700000000'), authorityId: 'tenant-1', accountId: 'account-1' }];
-const calls = { issued: [], registered: [], sessionContexts: [] };
+const calls = { issued: [], registered: [], sessionContexts: [], phoneLookups: [] };
 const privateKey = crypto.generateKeyPairSync('ed25519').privateKey;
 const publicKey = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' });
 
 const service = createCloudDesktopRegistrationService({
   now: () => new Date(now),
   randomId: prefix => `${prefix}-fixed`,
-  phoneVerifier: async code => code === 'verified-phone-code' ? '13700000000' : (() => { throw Object.assign(new Error('invalid'), { code: 'PHONE_VERIFICATION_REJECTED' }); })(),
-  lookupAccount: async phone => createOperatorPhoneLookup({ pepper, records })(phone),
+  phoneVerifier: async code => code === 'verified-phone-code' ? '+86 137-0000-0000' : (() => { throw Object.assign(new Error('invalid'), { code: 'PHONE_VERIFICATION_REJECTED' }); })(),
+  lookupAccount: async phone => {
+    calls.phoneLookups.push(phone);
+    return createOperatorPhoneLookup({ pepper, records })(phone);
+  },
   ticketSecret,
   leasePrivateKey: leaseKeyPair.privateKey,
   issueAssertion: async input => { calls.issued.push(input); },
@@ -35,6 +38,7 @@ const service = createCloudDesktopRegistrationService({
       installationId: input.installationId,
       sessionId: input.sessionId,
       expiresAt: input.expiresAt,
+      rowVersion: 1,
       roles: ['super_admin'],
       teacherId: null,
       studentId: null,
@@ -46,8 +50,13 @@ const service = createCloudDesktopRegistrationService({
   const started = await service.begin({ phoneCode: 'verified-phone-code' });
   assert.ok(typeof started.verificationToken === 'string' && started.verificationToken.length > 40);
   assert.strictEqual(JSON.stringify(started).includes('13700000000'), false);
+  assert.deepStrictEqual(calls.phoneLookups, ['13700000000'], 'desktop registration must pass only the canonical 11-digit phone to account lookup');
 
   const phoneHmac = hmacPhone(pepper, '13700000000');
+  assert.strictEqual(hmacPhone(pepper, '+86 137-0000-0000'), phoneHmac);
+  assert.strictEqual(hmacPhone(pepper, '86 (137) 0000 0000'), phoneHmac);
+  assert.throws(() => hmacPhone(pepper, '12700000000'), error => error.code === 'CLOUD_ONLINE_IDENTITY_INVALID');
+  assert.throws(() => hmacPhone(pepper, '137abc00000000'), error => error.code === 'CLOUD_ONLINE_IDENTITY_INVALID');
   const passwordVerified = service.issueVerificationForVerifiedAccount({ authorityId: 'tenant-1', accountId: 'account-1', phoneHmac });
   assert.ok(typeof passwordVerified.verificationToken === 'string' && passwordVerified.verificationToken.length > 40);
   assert.ok(typeof passwordVerified.deviceChallenge === 'string' && passwordVerified.deviceChallenge.length > 0);
@@ -113,6 +122,8 @@ const service = createCloudDesktopRegistrationService({
       installationId: 'installation-1',
       sessionId: registered.sessionId,
       expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+      rowVersion: 1,
+      activeRole: 'super_admin',
       roles: ['super_admin'],
       teacherId: null,
       studentId: null,
@@ -120,6 +131,15 @@ const service = createCloudDesktopRegistrationService({
     'a desktop session context must be derived from the signed current cloud session',
   );
   assert.strictEqual(calls.sessionContexts.length, 2, 'registration re-reads the cloud session before issuing its lease');
+  const resumed = await service.issueSession({
+    authorityId: 'tenant-1', accountId: 'account-1', deviceId: calls.issued[0].deviceId,
+    installationId: 'installation-1', sessionId: 'resumed-session-1',
+    expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(), rowVersion: 1,
+    activeRole: 'super_admin',
+  });
+  assert.strictEqual(resumed.session.activeRole, 'super_admin');
+  assert.strictEqual(resumed.session.rowVersion, 1);
+  assert.strictEqual((await service.sessionContext({ sessionToken: resumed.token })).activeRole, 'super_admin');
   await assert.rejects(
     () => service.sessionContext({ sessionToken: `${registered.sessionToken}x` }),
     error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
@@ -136,7 +156,7 @@ const service = createCloudDesktopRegistrationService({
     issueAssertion: async () => {}, register: async input => ({ receiptId: input.receiptId, sessionId: input.sessionId, replayed: false }),
     readSessionContext: async input => ({
       authorityId: input.authorityId, accountId: input.accountId, deviceId: input.deviceId, installationId: input.installationId,
-      sessionId: input.sessionId, expiresAt: input.expiresAt, roles: ['pending'], teacherId: null, studentId: null,
+      sessionId: input.sessionId, expiresAt: input.expiresAt, rowVersion: 1, roles: [], teacherId: null, studentId: null,
     }),
   });
   const pendingStarted = await pendingService.begin({ phoneCode: 'verified-phone-code' });
@@ -144,8 +164,8 @@ const service = createCloudDesktopRegistrationService({
   const pendingProof = crypto.sign(null, Buffer.from(pendingTicket.challenge, 'utf8'), privateKey).toString('base64url');
   await assert.rejects(() => pendingService.register({
     verificationToken: pendingStarted.verificationToken, installationId: 'installation-pending', installationPublicKey: publicKey, deviceProof: pendingProof, idempotencyKey: 'registration-pending',
-  }), error => error && error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED',
-  'a no-role account must not receive a desktop lease before teacher registration');
+  }), error => error && error.code === 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED',
+  'a no-role account must receive an explicit teacher-registration-required result instead of a generic identity failure');
 
   console.log('cloud desktop registration service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

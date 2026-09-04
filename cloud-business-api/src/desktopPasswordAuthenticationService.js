@@ -61,6 +61,17 @@ function registrationIdentity(value) {
   return Object.freeze(row);
 }
 
+function activePhoneIdentity(value) {
+  let row;
+  try {
+    row = exact(value, ['authorityId', 'accountId', 'phoneHmac'], rejected);
+  } catch (_) {
+    throw rejected();
+  }
+  if (!text(row.authorityId) || !text(row.accountId) || !/^[0-9a-f]{64}$/u.test(row.phoneHmac)) throw rejected();
+  return Object.freeze(row);
+}
+
 function ticket(value) {
   let row;
   try {
@@ -85,9 +96,10 @@ function verifiedRegistrationTicket(value) {
 }
 
 function createDesktopPasswordAuthenticationService(config) {
-  const settings = exact(config, ['phoneVerifier', 'resolveCanonicalAccount', 'verificationEvidenceHash', 'inspectVerificationToken', 'passwordIdentity', 'issueRegistrationTicket']);
+  const settings = exact(config, ['phoneVerifier', 'resolveCanonicalAccount', 'verificationEvidenceHash', 'inspectVerificationToken', 'resolveActiveVerifiedPhone', 'passwordIdentity', 'issueRegistrationTicket']);
   if (typeof settings.phoneVerifier !== 'function' || typeof settings.resolveCanonicalAccount !== 'function'
-    || typeof settings.verificationEvidenceHash !== 'function' || typeof settings.inspectVerificationToken !== 'function' || typeof settings.issueRegistrationTicket !== 'function'
+    || typeof settings.verificationEvidenceHash !== 'function' || typeof settings.inspectVerificationToken !== 'function'
+    || typeof settings.resolveActiveVerifiedPhone !== 'function' || typeof settings.issueRegistrationTicket !== 'function'
     || !settings.passwordIdentity || typeof settings.passwordIdentity !== 'object' || types.isProxy(settings.passwordIdentity)
     || Object.getPrototypeOf(settings.passwordIdentity) !== Object.prototype
     || typeof settings.passwordIdentity.enroll !== 'function' || typeof settings.passwordIdentity.enrollVerifiedAccount !== 'function'
@@ -148,7 +160,12 @@ function createDesktopPasswordAuthenticationService(config) {
       const request = exact(input, ['loginType', 'login', 'password']);
       let verifiedIdentity;
       try {
-        verifiedIdentity = registrationIdentity(await settings.passwordIdentity.verify(request));
+        const credentialIdentity = registrationIdentity(await settings.passwordIdentity.verify(request));
+        verifiedIdentity = activePhoneIdentity(await settings.resolveActiveVerifiedPhone({
+          authorityId: credentialIdentity.authorityId,
+          accountId: credentialIdentity.accountId,
+        }));
+        if (verifiedIdentity.authorityId !== credentialIdentity.authorityId || verifiedIdentity.accountId !== credentialIdentity.accountId) throw rejected();
       } catch (_) {
         throw rejected();
       }

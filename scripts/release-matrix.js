@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
+const crypto = require('crypto');
 
 const DEFAULT_TARGETS = Object.freeze(['desktop', 'cloud_business', 'storage_proxy', 'miniapp']);
 const DESKTOP_PREREQUISITE_TARGETS = Object.freeze(['cloud_business', 'storage_proxy', 'miniapp']);
@@ -93,6 +94,22 @@ function isVersion(value) {
   return /^\d+\.\d+\.\d+$/.test(String(value || ''));
 }
 
+function isIsoTimestamp(value) {
+  if (typeof value !== 'string' || value !== value.trim()) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  if (month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) return false;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day <= daysInMonth && Number.isFinite(Date.parse(value));
+}
+
 function createReleaseManifest({ version, componentVersions, compatibility, commit, createdAt = new Date().toISOString(), targets = DEFAULT_TARGETS } = {}) {
   const versions = componentVersions || Object.fromEntries(targets.map(target => [target, version]));
   for (const target of targets) {
@@ -114,6 +131,41 @@ function createReleaseManifest({ version, componentVersions, compatibility, comm
     createdAt,
     targets: targetState,
   };
+}
+
+function validateReceipt({ manifest, target, receipt } = {}) {
+  const issues = [];
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
+    issues.push(`release target ${target} has no component-version receipt`);
+    return { issues, runtimeReceipt: null };
+  }
+  if (receipt.version !== manifest?.componentVersions?.[target]) {
+    issues.push(`release target ${target} has no component-version receipt`);
+  }
+  if (typeof receipt.evidence !== 'string' || receipt.evidence.trim().length === 0) {
+    issues.push(`release receipt evidence is required for ${target}`);
+  }
+  if (!isIsoTimestamp(receipt.verifiedAt)) {
+    issues.push(`release receipt verifiedAt must be a valid ISO timestamp for ${target}`);
+  }
+  if (receipt.compatibility !== manifest?.compatibility?.schema) {
+    issues.push(`release receipt compatibility must match the manifest compatibility schema for ${target}`);
+  }
+  if (target === 'miniapp' && !MINIAPP_RELEASE_LEVELS.includes(receipt.releaseLevel)) {
+    issues.push('Miniapp release receipt must declare development or production');
+  }
+  let runtimeReceipt = null;
+  try {
+    runtimeReceipt = assertRuntimeReceiptCompatibility({
+      manifest,
+      target,
+      runtimeVersion: receipt.runtimeVersion,
+      runtimeContracts: receipt.runtimeContracts,
+    });
+  } catch (error) {
+    issues.push(error.message);
+  }
+  return { issues, runtimeReceipt };
 }
 
 function validateManifest(manifest) {
@@ -149,20 +201,8 @@ function validateManifest(manifest) {
       if (!state || !['pending', 'verified'].includes(state.status)) {
         issues.push(`release target ${target} must be pending or verified`);
       }
-      if (state?.status === 'verified' && (!state.receipt || state.receipt.version !== manifest.componentVersions?.[target])) {
-        issues.push(`release target ${target} has no component-version receipt`);
-      }
-      if (state?.status === 'verified' && state.receipt) {
-        try {
-          assertRuntimeReceiptCompatibility({
-            manifest,
-            target,
-            runtimeVersion: state.receipt.runtimeVersion,
-            runtimeContracts: state.receipt.runtimeContracts,
-          });
-        } catch (error) {
-          issues.push(error.message);
-        }
+      if (state?.status === 'verified') {
+        issues.push(...validateReceipt({ manifest, target, receipt: state.receipt }).issues);
       }
     }
   }
@@ -173,11 +213,25 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function writeFileAtomically(filePath, contents) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  const temporaryPath = path.join(
+    directory,
+    `.${path.basename(filePath)}.${process.pid}.${crypto.randomBytes(8).toString('hex')}.tmp`,
+  );
+  try {
+    fs.writeFileSync(temporaryPath, contents, { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporaryPath, filePath);
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
+  }
+}
+
 function writeManifest(manifestPath, manifest) {
   const validation = validateManifest(manifest);
   if (validation.issues.length) throw new Error(validation.issues.join('; '));
-  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
-  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  writeFileAtomically(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
 }
 
@@ -192,15 +246,7 @@ function readManifest(manifestPath) {
 }
 
 function isCompletedHistoricalManifest(manifest) {
-  if (!manifest || typeof manifest !== 'object' || !isVersion(manifest.version) || !manifest.commit) return false;
-  const targets = manifest.targets;
-  if (!targets || typeof targets !== 'object' || Object.keys(targets).length === 0) return false;
-  return Object.entries(targets).every(([target, state]) => (
-    state?.status === 'verified'
-    && state.receipt?.version === manifest.componentVersions?.[target]
-    && typeof state.receipt.evidence === 'string'
-    && state.receipt.evidence.length > 0
-  )) && targets.miniapp?.receipt?.releaseLevel === 'production';
+  return isReleaseComplete(manifest);
 }
 
 function archiveCompletedHistoricalManifest({ manifestPath, manifest } = {}) {
@@ -258,8 +304,7 @@ function archivePartiallyVerifiedManifest({ manifestPath, manifest, reason, reco
     ...manifest,
     recovery: { reason, recoveredAt, supersededByCommit },
   };
-  fs.mkdirSync(path.dirname(archivePath), { recursive: true });
-  fs.writeFileSync(archivePath, `${JSON.stringify(recoveryManifest, null, 2)}\n`, 'utf8');
+  writeFileAtomically(archivePath, `${JSON.stringify(recoveryManifest, null, 2)}\n`);
   fs.unlinkSync(manifestPath);
   return archivePath;
 }
@@ -308,26 +353,33 @@ function resolveTargetVersion({ manifest, target, requestedVersion } = {}) {
 }
 
 function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts } = {}) {
-  if (runtimeVersion === undefined || runtimeVersion === null || runtimeVersion === '') return null;
+  const policy = manifest?.compatibility?.runtimeReceipts?.[target];
+  const runtimeReceiptRequired = policy !== undefined;
+  if (runtimeVersion === undefined || runtimeVersion === null || runtimeVersion === '') {
+    if (runtimeReceiptRequired) throw new Error(`Release target ${target} runtime version is required`);
+    return null;
+  }
   if (!isVersion(runtimeVersion)) throw new Error(`Release target ${target} runtime version is invalid`);
   if (!DEFAULT_TARGETS.includes(target) || !isVersion(manifest?.componentVersions?.[target])) {
     throw new Error(`Release target ${target || '<empty>'} runtime receipt cannot be validated`);
   }
-  const expectedVersion = manifest.componentVersions[target];
-  if (runtimeVersion === expectedVersion) {
-    if (runtimeContracts !== undefined && normalizedStringRecord(runtimeContracts) === null) {
+  if (runtimeReceiptRequired) {
+    if (!Array.isArray(policy?.approvedRuntimeVersions) || !policy.approvedRuntimeVersions.includes(runtimeVersion)) {
+      throw new Error(`Release target ${target} runtime version is not approved: ${runtimeVersion}`);
+    }
+    if (!sameStringRecord(runtimeContracts, policy.contracts)) {
       throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
     }
-    return { runtimeVersion, runtimeContracts: runtimeContracts === undefined ? undefined : normalizedStringRecord(runtimeContracts) };
+    return { runtimeVersion, runtimeContracts: normalizedStringRecord(runtimeContracts) };
   }
-  const policy = manifest.compatibility?.runtimeReceipts?.[target];
-  if (!policy || !policy.approvedRuntimeVersions.includes(runtimeVersion)) {
+  const expectedVersion = manifest.componentVersions[target];
+  if (runtimeVersion !== expectedVersion) {
     throw new Error(`Release target ${target} runtime version is not approved: ${runtimeVersion}`);
   }
-  if (!sameStringRecord(runtimeContracts, policy.contracts)) {
+  if (runtimeContracts !== undefined && normalizedStringRecord(runtimeContracts) === null) {
     throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
   }
-  return { runtimeVersion, runtimeContracts: normalizedStringRecord(runtimeContracts) };
+  return { runtimeVersion, runtimeContracts: runtimeContracts === undefined ? undefined : normalizedStringRecord(runtimeContracts) };
 }
 
 function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifestPath = defaultManifestPath(rootDir), target, requestedVersion } = {}) {
@@ -366,27 +418,27 @@ function assertDesktopReleasePrerequisites({
 
 function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel, runtimeVersion, runtimeContracts } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
-  const expectedVersion = resolveTargetVersion({ manifest, target, requestedVersion: version });
-  const targetState = manifest.targets[target];
+  const targetState = manifest?.targets?.[target];
   const resolvedReleaseLevel = target === 'miniapp' && releaseLevel === undefined ? 'development' : releaseLevel;
   const isMiniappProductionUpgrade = target === 'miniapp'
-    && targetState.status === 'verified'
+    && targetState?.status === 'verified'
     && targetState.receipt?.releaseLevel === 'development'
     && resolvedReleaseLevel === 'production';
-  if (targetState.status === 'verified' && !isMiniappProductionUpgrade) {
-    throw new Error(`Release target ${target} already has a verified receipt for ${expectedVersion}`);
+  if (targetState?.status === 'verified' && !isMiniappProductionUpgrade) {
+    throw new Error(`Release target ${target} already has a verified receipt for ${manifest?.componentVersions?.[target] || version || '<empty>'}`);
   }
-  if (!evidence || typeof evidence !== 'string') throw new Error(`Release receipt evidence is required for ${target}`);
-  if (target === 'miniapp' && !MINIAPP_RELEASE_LEVELS.includes(resolvedReleaseLevel)) {
-    throw new Error('Miniapp release receipt must declare development or production');
-  }
-  const runtimeReceipt = assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts });
-  targetState.status = 'verified';
+  const expectedVersion = resolveTargetVersion({ manifest, target, requestedVersion: version });
   const baseReceipt = { version: expectedVersion, verifiedAt, evidence, compatibility: manifest.compatibility.schema };
-  if (runtimeReceipt) Object.assign(baseReceipt, runtimeReceipt);
-  targetState.receipt = target === 'miniapp'
+  if (runtimeVersion !== undefined) baseReceipt.runtimeVersion = runtimeVersion;
+  if (runtimeContracts !== undefined) baseReceipt.runtimeContracts = runtimeContracts;
+  const receipt = target === 'miniapp'
     ? { ...baseReceipt, releaseLevel: resolvedReleaseLevel }
     : baseReceipt;
+  const receiptValidation = validateReceipt({ manifest, target, receipt });
+  if (receiptValidation.issues.length) throw new Error(receiptValidation.issues.join('; '));
+  if (receiptValidation.runtimeReceipt) Object.assign(receipt, receiptValidation.runtimeReceipt);
+  targetState.status = 'verified';
+  targetState.receipt = receipt;
   return manifest;
 }
 
@@ -569,6 +621,7 @@ module.exports = {
   resolveManifestVersion,
   resolveTargetVersion,
   readCompatibilityDeclaration,
+  validateReceipt,
   validateManifest,
   writeManifest,
 };

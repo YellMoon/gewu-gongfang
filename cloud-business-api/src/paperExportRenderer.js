@@ -17,6 +17,18 @@ function failure(code) {
   return Object.assign(new Error(code), { code });
 }
 
+function paperScore(value) {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= 0
+    && value <= 1000
+    && Math.round(value * 10) / 10 === value;
+}
+
+function paperScoreSuffix(value) {
+  return value === null ? '' : `（${value} 分）`;
+}
+
 function pdfFontPath() {
   const candidates = [
     path.join(__dirname, '..', 'assets', 'fonts', 'NotoSansCJKsc-Regular.otf'),
@@ -211,7 +223,7 @@ function questions(value, layout, formulaMode) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
     const layoutItem = layout?.items?.[index];
-    if (layoutItem && (layoutItem.id !== item.id || typeof layoutItem.sectionTitle !== 'string' || !Number.isSafeInteger(layoutItem.score))) {
+    if (layoutItem && (layoutItem.id !== item.id || typeof layoutItem.sectionTitle !== 'string' || !paperScore(layoutItem.score))) {
       throw failure('CLOUD_PAPER_RENDER_INPUT_INVALID');
     }
     const sections = richSections(item.richContent);
@@ -295,7 +307,7 @@ function bodyRows(items, answerPosition) {
       rows.push(new Paragraph({ children: [new TextRun({ text: item.sectionTitle, bold: true })] }));
       previousSection = item.sectionTitle;
     }
-    const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+    const score = paperScoreSuffix(item.score);
     rows.push(new Paragraph({ children: [new TextRun({ text: String(item.number) + '. ' + item.stem + score })] }));
     for (const option of item.options) rows.push(new Paragraph({ children: [new TextRun({ text: option })] }));
     for (const subQuestion of item.subQuestions || []) rows.push(new Paragraph({ children: [new TextRun({ text: subQuestion.label + subQuestion.content })] }));
@@ -387,7 +399,7 @@ function orderedBodyRows(items, answerPosition) {
       rows.push(new Paragraph({ children: [new TextRun({ text: item.sectionTitle, bold: true })] }));
       previousSection = item.sectionTitle;
     }
-    const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+    const score = paperScoreSuffix(item.score);
     appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ');
     for (const tokens of item.options) appendWordTokens(rows, tokens);
     for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
@@ -427,7 +439,7 @@ function pdfBytes(input, items) {
         document.fontSize(13).text(item.sectionTitle).moveDown(0.25);
         previousSection = item.sectionTitle;
       }
-      const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+      const score = paperScoreSuffix(item.score);
       document.fontSize(11).text(String(item.number) + '. ' + item.stem + score).moveDown(0.5);
       for (const option of item.options) document.fontSize(10).text(option).moveDown(0.25);
       for (const subQuestion of item.subQuestions || []) document.fontSize(10).text(subQuestion.label + subQuestion.content).moveDown(0.25);
@@ -548,7 +560,7 @@ function orderedPdfBytes(input, items) {
         document.fontSize(13).text(item.sectionTitle).moveDown(0.25);
         previousSection = item.sectionTitle;
       }
-      const score = item.score === null ? '' : ' (' + item.score + ' pts)';
+      const score = paperScoreSuffix(item.score);
       drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', 11);
       for (const tokens of item.options) drawPdfTokens(document, tokens);
       for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.contentTokens, subQuestion.label);

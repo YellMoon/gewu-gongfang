@@ -167,7 +167,7 @@ function validHistoricalAuthorization(snapshot) {
   }
   const grants = new Set();
   for (const row of snapshot.roleGrants) {
-    if (!sameKeys(row, HISTORICAL_FIELDS.roleGrants) || !nonBlank(row.grant_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !['super_admin', 'teacher', 'student'].includes(row.role) || !['revoked', 'expired'].includes(row.status)
+    if (!sameKeys(row, HISTORICAL_FIELDS.roleGrants) || !nonBlank(row.grant_id) || row.authority_id !== authorityId || !accounts.has(row.account_id) || !['super_admin', 'teacher', 'student', 'family_member'].includes(row.role) || !['revoked', 'expired'].includes(row.status)
       || !validVersions(row, ['grant_version', 'row_version']) || !validHistoricalLifecycle(row) || !(row.granted_by_account_id === null || accounts.has(row.granted_by_account_id)) || grants.has(row.grant_id)) return false;
     grants.add(row.grant_id);
   }

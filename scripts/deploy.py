@@ -23,7 +23,7 @@ import socket
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import paramiko
@@ -146,6 +146,20 @@ RELEASE_MATRIX_PATH = Path(os.getenv(
     PROJECT_ROOT / "output" / f"release-matrix-{release_matrix_id(read_component_versions())}" / "active.json",
 ))
 RELEASE_MATRIX_SCHEMA = "gewu.release-compatibility.v2"
+RELEASE_RECEIPT_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})"
+)
+
+
+def is_release_receipt_timestamp(value):
+    if not isinstance(value, str) or value != value.strip() or not RELEASE_RECEIPT_TIMESTAMP.fullmatch(value):
+        return False
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        datetime.fromisoformat(normalized)
+    except ValueError:
+        return False
+    return True
 
 
 def current_source_commit():
@@ -192,20 +206,24 @@ def require_release_manifest(target, allowed_statuses=("pending",)):
     if target_state.get("status") == "verified":
         receipt = target_state.get("receipt")
         if (not isinstance(receipt, dict) or receipt.get("version") != component_versions[target]
-                or not isinstance(receipt.get("verifiedAt"), str) or not receipt.get("verifiedAt")
-                or not isinstance(receipt.get("evidence"), str) or not receipt.get("evidence")):
+                or not is_release_receipt_timestamp(receipt.get("verifiedAt"))
+                or not isinstance(receipt.get("evidence"), str) or not receipt.get("evidence").strip()
+                or receipt.get("compatibility") != manifest["compatibility"]["schema"]):
             raise SystemExit(f"Unified release target {target} has an invalid verified receipt")
     return manifest
 
 
 def record_release_receipt(target, evidence):
+    if not isinstance(evidence, str) or not evidence.strip():
+        raise SystemExit(f"Release receipt evidence is required for {target}")
     manifest = require_release_manifest(target)
     manifest["targets"][target] = {
         "status": "verified",
         "receipt": {
             "version": manifest["componentVersions"][target],
-            "verifiedAt": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-            "evidence": str(evidence),
+            "verifiedAt": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "evidence": evidence.strip(),
+            "compatibility": manifest["compatibility"]["schema"],
         },
     }
     RELEASE_MATRIX_PATH.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -641,12 +659,12 @@ def rollback_plan():
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "check"
 
-    if mode == "rollback-plan":
-        rollback_plan()
-        return
-
-    if mode == "deploy":
-        require_release_manifest('backend')
+    if mode in {"deploy", "migrate", "rollback-plan"}:
+        raise SystemExit(
+            "LEGACY_BACKEND_DEPLOY_RETIRED: deploy cloud-business-api and the retirement gateway instead"
+        )
+    if mode not in {"check", "status"}:
+        raise SystemExit(f"Unknown mode: {mode}")
 
     ssh = connect()
     try:
@@ -655,31 +673,10 @@ def main():
             run(ssh, "npm -v")
             run(ssh, "which pm2 || echo 'pm2 not installed'")
             run(ssh, f"ls -ld '{REMOTE_DIR}' 2>/dev/null || true")
-        elif mode == "migrate":
-            migrate(ssh)
-        elif mode == "deploy":
-            run(ssh, f"mkdir -p '{REMOTE_DIR}' '{os.path.dirname(DB_PATH)}'")
-            upload_backend(ssh)
-            upload_shared(ssh)
-            run(ssh, f"cd '{REMOTE_DIR}' && npm install --production 2>&1", timeout=300)
-            run(ssh, "which pm2 || npm install -g pm2 2>/dev/null || echo 'pm2 install skipped'", timeout=120)
-            migrate(ssh)
-            service_name = f"scheduling-backend-{APP_ENV}"
-            run(ssh, f"pm2 stop {service_name} 2>/dev/null || true")
-            run(ssh, f"pm2 delete {service_name} 2>/dev/null || true")
-            start_backend_service(ssh, service_name)
-            run(ssh, "pm2 save")
-            time.sleep(2)
-            run(ssh, "pm2 status")
-            health_port = APP_PORT
-            check_remote_health(ssh, health_port, "backend", read_root_version())
-            record_release_receipt('backend', f"backend health /api/health on port {health_port}")
-        elif mode == "status":
-            run(ssh, "pm2 status")
-            health_port = APP_PORT
-            check_remote_health(ssh, health_port, "backend", read_root_version())
         else:
-            raise SystemExit(f"Unknown mode: {mode}")
+            run(ssh, "pm2 status")
+            health_port = APP_PORT
+            check_remote_health(ssh, health_port, "backend", read_root_version())
     finally:
         ssh.close()
         print("Done")

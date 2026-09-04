@@ -74,6 +74,25 @@ def migration_sql(sql):
         count=1,
     )
 
+
+def atomic_migration_sql(migration):
+    if not isinstance(migration, dict):
+        raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
+    sql = migration_sql(migration.get("sql"))
+    if not re.search(r"\bCOMMIT\s*;\s*$", sql, re.IGNORECASE):
+        raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
+    ledger = (
+        "INSERT INTO business.cloud_schema_migrations(name,sha256) VALUES("
+        + sql_literal(migration.get("name")) + "," + sql_literal(migration.get("sha256")) + ");"
+    )
+    return re.sub(
+        r"\bCOMMIT\s*;\s*$",
+        ledger + "\nCOMMIT;\n",
+        sql,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
 LEDGER_SQL = """
 CREATE TABLE IF NOT EXISTS business.cloud_schema_migrations (
   name text COLLATE \"C\" PRIMARY KEY,
@@ -101,11 +120,10 @@ def apply_migrations(executor, migrations):
                 raise RuntimeError("CLOUD_MIGRATION_HASH_MISMATCH")
             result["skipped"].append(migration["name"])
             continue
-        executor.run(migration_sql(migration["sql"]))
-        executor.run(owner_sql(
-            "INSERT INTO business.cloud_schema_migrations(name,sha256) VALUES("
-            + sql_literal(migration["name"]) + "," + sql_literal(migration["sha256"]) + ")"
-        ))
+        # The migration body and immutable ledger row commit through one psql
+        # transaction. A process or transport failure can no longer leave DDL
+        # committed while the ledger is absent.
+        executor.run(atomic_migration_sql(migration))
         result["applied"].append(migration["name"])
     return result
 

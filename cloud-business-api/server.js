@@ -22,14 +22,19 @@ const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccou
 const { createMiniappRoleApplicationRepository } = require('./src/miniappRoleApplicationRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
+const { createWechatMiniappSchemeService } = require('./src/wechatMiniappSchemeService');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
 const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
 const { createDesktopPasswordAuthenticationService } = require('./src/desktopPasswordAuthenticationService');
 const { createDesktopTeacherSelfRegistrationService } = require('./src/desktopTeacherSelfRegistrationService');
 const { createDesktopTeacherSelfRegistrationRepository } = require('./src/desktopTeacherSelfRegistrationRepository');
+const { createDesktopVerifiedAccessService } = require('./src/desktopVerifiedAccessService');
 const { createDesktopRegistrationPgAdapter } = require('./src/desktopRegistrationPgAdapter');
+const { createCloudDesktopIdentityService } = require('./src/cloudDesktopIdentityService');
+const { createCloudDesktopIdentityPgRepository } = require('./src/cloudDesktopIdentityPgRepository');
 const { resolveRuntimeDatabaseUser } = require('./src/runtimeDatabaseRole');
+const { assertFixedSuperAdminVerified } = require('./src/startupVerificationState');
 const { createStorageAgentRuntimeFromEnvironment } = require('./src/storageAgentRuntime');
 const { createQuestionAuthorityRuntime } = require('./src/questionAuthorityRuntime');
 const { createQuestionImportTaskRepository } = require('./src/questionImportTaskRepository');
@@ -45,6 +50,8 @@ const { createQuestionAssetDeliveryRepository } = require('./src/questionAssetDe
 const { createPersonalAssetImportRepository } = require('./src/personalAssetImportRepository');
 const { BOOTSTRAP_SUPER_ADMIN_PHONE, resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
 const { version } = require('./package.json');
+
+assertFixedSuperAdminVerified();
 
 const port = Number(process.env.PORT || 3002);
 const pool = new Pool({
@@ -193,7 +200,7 @@ function createDesktopRegistrationFromEnvironment() {
     register: createDesktopRegistrationPgAdapter({ writerPool }),
     readSessionContext: async input => {
       const result = await writerPool.query(
-        `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt", vc.normalized_value_hash AS "phoneHmac", NULL::text AS "teacherId", NULL::text AS "studentId",
+        `SELECT s.authority_id AS "authorityId", s.account_id AS "accountId", s.device_id AS "deviceId", s.installation_id AS "installationId", s.session_id AS "sessionId", s.expires_at AS "expiresAt", s.row_version AS "rowVersion", vc.normalized_value_hash AS "phoneHmac", NULL::text AS "teacherId", NULL::text AS "studentId",
           COALESCE(array_agg(DISTINCT g.role ORDER BY g.role) FILTER (WHERE g.status='active' AND g.starts_at <= transaction_timestamp() AND (g.ends_at IS NULL OR g.ends_at > transaction_timestamp())), ARRAY[]::text[]) AS roles
          FROM vnext_control_plane.vnext_sessions s
          JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'
@@ -206,7 +213,7 @@ function createDesktopRegistrationFromEnvironment() {
          WHERE s.authority_id=$1 AND s.account_id=$2 AND s.device_id=$3 AND s.installation_id=$4 AND s.session_id=$5 AND s.expires_at=$6::timestamptz
            AND s.status='active' AND s.session_kind='online' AND s.expires_at > transaction_timestamp()
            AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)=ROW(ac.auth_version,ac.access_version,ac.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version)
-         GROUP BY s.authority_id,s.account_id,s.device_id,s.installation_id,s.session_id,s.expires_at,vc.normalized_value_hash`,
+         GROUP BY s.authority_id,s.account_id,s.device_id,s.installation_id,s.session_id,s.expires_at,s.row_version,vc.normalized_value_hash`,
         [input.authorityId, input.accountId, input.deviceId, input.installationId, input.sessionId, input.expiresAt],
       );
       const row = result.rows[0];
@@ -222,11 +229,20 @@ function createDesktopRegistrationFromEnvironment() {
         installationId: row.installationId,
         sessionId: row.sessionId,
         expiresAt: row.expiresAt.toISOString(),
+        rowVersion: Number(row.rowVersion),
         roles: desktopSessionRoles(account.roles),
         teacherId: account.profile?.type === 'teacher' ? account.profile.id : null,
         studentId: account.profile?.type === 'student' ? account.profile.id : null,
       };
     },
+  });
+  const desktopCloudIdentity = createCloudDesktopIdentityService({
+    repository: createCloudDesktopIdentityPgRepository({ writerPool }),
+    sessionContext: input => registration.sessionContext(input),
+    issueSession: input => registration.issueSession(input),
+    now: () => new Date(),
+    randomBytes: size => require('crypto').randomBytes(size),
+    randomId,
   });
   const desktopPasswordIdentity = createDesktopPasswordIdentityService({
     phoneHash: phone => hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone),
@@ -257,6 +273,20 @@ function createDesktopRegistrationFromEnvironment() {
     resolveCanonicalAccount: input => canonicalAccount.resolveOrProvision(input),
     verificationEvidenceHash: phoneCode => verificationEvidenceHash(process.env.CLOUD_IDENTITY_TICKET_SECRET, 'wechat-desktop-password-enrollment', phoneCode),
     inspectVerificationToken: token => registration.inspectVerificationToken(token),
+    resolveActiveVerifiedPhone: async input => {
+      const result = await writerPool.query(
+        `SELECT a.authority_id AS "authorityId", a.account_id AS "accountId", vc.normalized_value_hash AS "phoneHmac"
+           FROM vnext_control_plane.vnext_accounts a
+           JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=a.authority_id AND au.status='active'
+           JOIN vnext_control_plane.vnext_verified_contacts vc ON vc.authority_id=a.authority_id AND vc.account_id=a.account_id
+          WHERE a.authority_id=$1 AND a.account_id=$2 AND a.status='active'
+            AND vc.contact_type='phone' AND vc.verification_state='verified' AND vc.revoked_at IS NULL
+          ORDER BY vc.contact_id
+          LIMIT 2`,
+        [input.authorityId, input.accountId],
+      );
+      return result.rows.length === 1 ? result.rows[0] : null;
+    },
     passwordIdentity: desktopPasswordIdentity,
     issueRegistrationTicket: input => registration.issueVerificationForVerifiedAccount(input),
   });
@@ -266,6 +296,11 @@ function createDesktopRegistrationFromEnvironment() {
     registerTeacher: createDesktopTeacherSelfRegistrationRepository({
       query: (text, values) => writerPool.query(text, values),
     }).registerTeacher,
+  });
+  const desktopVerifiedAccess = createDesktopVerifiedAccessService({
+    inspectVerificationToken: token => registration.inspectVerificationToken(token),
+    readAccountContext: input => accountRepository.readContext(input),
+    readAccountContextByPhoneHmac: input => accountRepository.readContextByPhoneHmac(input),
   });
   const canonicalWechatIdentity = createCanonicalWechatIdentityService({
     wechatVerifier: createWechatIdentityVerifier({ appId: process.env.WECHAT_APPID, appSecret: process.env.WECHAT_APPSECRET }),
@@ -322,6 +357,8 @@ function createDesktopRegistrationFromEnvironment() {
   const businessCourseLifecycleMutations = createBusinessCourseLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
   return {
     registration,
+    desktopCloudIdentity,
+    desktopVerifiedAccess,
     desktopPasswordAuthentication,
     desktopTeacherSelfRegistration,
     canonicalAccount,
@@ -364,6 +401,7 @@ const miniappRoleApplications = miniappCloudAccount
   ? createMiniappRoleApplicationService({
     now: () => new Date(),
     randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
+    phoneHash: phone => hmacPhone(process.env.CLOUD_IDENTITY_PHONE_PEPPER, phone),
     cloudAccount: miniappCloudAccount,
     repository: createMiniappRoleApplicationRepository({
       query: desktopRuntime.roleApplicationQuery,
@@ -419,12 +457,26 @@ const paperExportWorker = process.env.CLOUD_PAPER_EXPORT_WORKER_ENABLED === '1' 
     log: message => console.error(message),
   })
   : null;
-const desktopPairing = desktopRuntime?.registration
+const desktopLoginScheme = desktopRuntime?.registration
+  ? createWechatMiniappSchemeService({
+    appId: process.env.WECHAT_APPID,
+    appSecret: process.env.WECHAT_APPSECRET,
+    envVersion: process.env.WECHAT_MINIAPP_LOGIN_ENV_VERSION || 'release',
+    fetchImpl: fetch,
+    now: () => new Date(),
+  })
+  : null;
+const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonicalWechatIdentity && desktopLoginScheme
   ? createDesktopPairingService({
     now: () => new Date(),
     randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
-    beginOnlineVerification: input => desktopRuntime.registration.begin(input),
+    resolveWechatIdentity: async input => {
+      const identity = await desktopRuntime.canonicalWechatIdentity.resolveOrBind(input);
+      return { authorityId: identity.authorityId, accountId: identity.accountId, phoneHmac: identity.phoneHmac };
+    },
+    issueVerificationForVerifiedAccount: input => desktopRuntime.registration.issueVerificationForVerifiedAccount(input),
     inspectVerificationToken: token => desktopRuntime.registration.inspectVerificationToken(token),
+    generateLoginScheme: input => desktopLoginScheme.generateDesktopLoginScheme(input),
   })
   : null;
 const app = createCloudBusinessApp({
@@ -442,8 +494,10 @@ const app = createCloudBusinessApp({
   businessRoomLifecycleMutations: desktopRuntime?.businessRoomLifecycleMutations || null,
   businessCourseLifecycleMutations: desktopRuntime?.businessCourseLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
+  desktopVerifiedAccess: desktopRuntime?.desktopVerifiedAccess || null,
   desktopTeacherSelfRegistration: desktopRuntime?.desktopTeacherSelfRegistration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,
+  desktopCloudIdentity: desktopRuntime?.desktopCloudIdentity || null,
   miniappCloudAccount,
   miniappRoleApplications,
   miniappArtifactDeliveries,

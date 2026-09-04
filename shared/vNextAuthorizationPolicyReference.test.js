@@ -17,6 +17,7 @@ assert.strictEqual(manifest.contractVersion, 1);
 assert.ok(Object.isFrozen(manifest) && Object.isFrozen(manifest.capabilities) && Object.isFrozen(manifest.roleDefaults));
 assert.deepStrictEqual(policy.resolveEffectiveCapabilityIds({ manifest, roles: ['teacher', 'super_admin'], surface: 'desktop', at: '2026-08-14T00:00:00.000Z' }).capabilityIds, ['access.manage','device.revoke','user.review']);
 assert.deepStrictEqual(policy.resolveEffectiveCapabilityIds({ manifest, roles: ['super_admin'], surface: 'miniapp', at: '2026-08-14T00:00:00.000Z' }).capabilityIds, []);
+assert.deepStrictEqual(policy.resolveEffectiveCapabilityIds({ manifest, roles: ['family_member'], surface: 'miniapp', at: '2026-08-14T00:00:00.000Z' }).capabilityIds, []);
 assert.deepStrictEqual(policy.resolveEffectiveCapabilityIds({ manifest, roles: ['super_admin'], surface: 'desktop', at: '2026-08-14T00:00:00.000Z', overrides: [{ capabilityId: 'access.manage', effect: 'deny', status: 'active', startsAt: '2026-08-13T00:00:00.000Z' }] }).capabilityIds, ['device.revoke','user.review']);
 assert.throws(() => policy.resolveEffectiveCapabilityIds({ manifest, roles: ['admin'], surface: 'desktop', at: '2026-08-14T00:00:00.000Z' }), /VNEXT_POLICY_INVALID/);
 assert.strictEqual(policy.policyManifestSha256(manifest), policy.policyManifestSha256(policy.createPolicyManifest({ capabilities: [...manifest.capabilities].reverse(), roleDefaults: { student: [], teacher: [], super_admin: [...manifest.roleDefaults.super_admin].reverse() } })));

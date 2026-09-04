@@ -20,15 +20,18 @@ function exact(value, keys) {
 
 function accountRow(row) {
   if (!row || typeof row.accountId !== 'string' || !row.accountId || !['active', 'disabled'].includes(row.status) || !Array.isArray(row.roles)) throw invalid();
-  const ordinary = row.roles.filter(role => role === 'teacher' || role === 'student');
+  if (row.roles.some(role => !['super_admin', 'teacher', 'student', 'family_member'].includes(role)) || new Set(row.roles).size !== row.roles.length) throw invalid();
+  const ordinary = row.roles.filter(role => role === 'teacher' || role === 'student' || role === 'family_member');
   if (ordinary.length > 1 || (ordinary.length === 0 && (row.profileType !== null || row.profileId !== null))) throw invalid();
   if (ordinary.length === 1) {
-    if (row.profileType !== ordinary[0] || typeof row.profileId !== 'string' || !row.profileId) throw invalid();
-    const relationship = row.studentRelationship === 'student' || row.studentRelationship === 'guardian'
-      ? row.studentRelationship : null;
+    const role = ordinary[0];
+    const expectedProfileType = role === 'family_member' ? 'student' : role;
+    const expectedRelationship = role === 'student' ? 'student' : role === 'family_member' ? 'guardian' : null;
+    if (row.profileType !== expectedProfileType || typeof row.profileId !== 'string' || !row.profileId
+      || (row.studentRelationship ?? null) !== expectedRelationship) throw invalid();
     return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: {
       type: row.profileType, id: row.profileId,
-      ...(ordinary[0] === 'student' && relationship ? { relationship } : {}),
+      ...(expectedRelationship ? { relationship: expectedRelationship } : {}),
     } };
   }
   return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: null };

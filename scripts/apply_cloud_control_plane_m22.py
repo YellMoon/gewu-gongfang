@@ -37,7 +37,7 @@ def read_state(executor, upgrade):
 
 def apply_control_plane_m22(executor, upgrade):
     upgrade = validate_upgrade(upgrade); before = read_state(executor, upgrade)
-    if before == {"ledgerCount": 22, "targetCount": 1, "readerPrivilege": True}: return {"applied": [], "skipped": [upgrade["migrationId"]]}
+    if before.get("ledgerCount", 0) >= 22 and before.get("targetCount") == 1 and before.get("readerPrivilege") is True: return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != {"ledgerCount": 21, "targetCount": 0, "readerPrivilege": False}: raise RuntimeError("CLOUD_CONTROL_PLANE_M22_STATE_INVALID")
     executor.run(upgrade["sql"]); after = read_state(executor, upgrade)
     if after != {"ledgerCount": 22, "targetCount": 1, "readerPrivilege": True}: raise RuntimeError("CLOUD_CONTROL_PLANE_M22_VERIFICATION_FAILED")

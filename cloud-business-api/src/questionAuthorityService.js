@@ -344,9 +344,8 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
                 COALESCE((
                   SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
                   FROM business.question_taxonomy_nodes n
-                  JOIN jsonb_each(CASE WHEN jsonb_typeof(q.taxonomy_json->'taxonomyIds')='object' THEN q.taxonomy_json->'taxonomyIds' ELSE '{}'::jsonb END) systems(system_id,node_ids) ON true
-                  JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(systems.node_ids)='array' THEN systems.node_ids ELSE '[]'::jsonb END) selected(node_id) ON true
-                  WHERE n.tenant_id=q.tenant_id AND n.deleted=false AND n.system_id=systems.system_id AND n.id=selected.node_id
+                  JOIN jsonb_array_elements_text(CASE WHEN jsonb_typeof(q.taxonomy_json->'taxonomyIds'->'knowledge')='array' THEN q.taxonomy_json->'taxonomyIds'->'knowledge' ELSE '[]'::jsonb END) selected(node_id) ON true
+                  WHERE n.tenant_id=q.tenant_id AND n.deleted=false AND n.system_id='knowledge' AND n.id=selected.node_id
                 ), '[]'::jsonb) AS "knowledgeLabels"
            FROM business.questions q
            JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id

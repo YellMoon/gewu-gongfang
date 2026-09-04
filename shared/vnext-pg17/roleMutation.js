@@ -6,7 +6,7 @@ const { isVNextPg17DisposableHandleForRuntime, withVNextPg17SyntheticQuery } = r
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const { isVNextPg17AccessContextResolverForHandle } = require('./accessContextResolver');
 
-const ROLES = new Set(['super_admin', 'teacher', 'student']);
+const ROLES = new Set(['super_admin', 'teacher', 'student', 'family_member']);
 const CONFIG_KEYS = ['runtime', 'handle', 'resolver', 'now', 'idFactory', 'testHooks'];
 const GRANT_KEYS = ['type', 'targetAccountId', 'role', 'expectedTargetRowVersion', 'idempotencyKey', 'reasonCode'];
 const REVOKE_KEYS = ['type', 'targetGrantId', 'expectedTargetRowVersion', 'idempotencyKey', 'reasonCode'];

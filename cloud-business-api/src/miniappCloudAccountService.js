@@ -56,19 +56,20 @@ function inspect(secret, token, now) {
 
 function identity(value) {
   const copy = exact(value, ['accountId', 'status', 'roles', 'profile']);
-  if (!text(copy.accountId) || !['active', 'disabled'].includes(copy.status) || !Array.isArray(copy.roles) || copy.roles.some(role => !['super_admin', 'teacher', 'student'].includes(role)) || new Set(copy.roles).size !== copy.roles.length) throw rejected();
-  const ordinaryRoles = copy.roles.filter(role => role === 'teacher' || role === 'student');
+  if (!text(copy.accountId) || !['active', 'disabled'].includes(copy.status) || !Array.isArray(copy.roles) || copy.roles.some(role => !['super_admin', 'teacher', 'student', 'family_member'].includes(role)) || new Set(copy.roles).size !== copy.roles.length) throw rejected();
+  const ordinaryRoles = copy.roles.filter(role => role === 'teacher' || role === 'student' || role === 'family_member');
   if (ordinaryRoles.length > 1 || (ordinaryRoles.length === 0 && copy.profile !== null)) throw rejected();
   if (ordinaryRoles.length === 1) {
     if (!copy.profile || typeof copy.profile !== 'object' || Array.isArray(copy.profile)) throw rejected();
     const profileKeys = Reflect.ownKeys(copy.profile);
     if (!profileKeys.every(key => key === 'type' || key === 'id' || key === 'relationship') || !profileKeys.includes('type') || !profileKeys.includes('id')) throw rejected();
+    const role = ordinaryRoles[0];
+    const expectedProfileType = role === 'family_member' ? 'student' : role;
+    const expectedRelationship = role === 'student' ? 'student' : role === 'family_member' ? 'guardian' : null;
     const profile = { type: copy.profile.type, id: copy.profile.id };
-    if (profile.type !== ordinaryRoles[0] || !text(profile.id)) throw rejected();
-    if (Object.hasOwn(copy.profile, 'relationship')) {
-      if (ordinaryRoles[0] !== 'student' || !['student', 'guardian'].includes(copy.profile.relationship)) throw rejected();
-      profile.relationship = copy.profile.relationship;
-    }
+    if (profile.type !== expectedProfileType || !text(profile.id)
+      || (copy.profile.relationship ?? null) !== expectedRelationship) throw rejected();
+    if (expectedRelationship) profile.relationship = expectedRelationship;
     return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: Object.freeze(profile) });
   }
   return Object.freeze({ accountId: copy.accountId, status: copy.status, roles: Object.freeze(copy.roles.slice()), profile: null });

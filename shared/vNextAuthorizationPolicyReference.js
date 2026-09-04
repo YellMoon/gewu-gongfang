@@ -1,7 +1,11 @@
 'use strict';
 
 const crypto = require('crypto');
-const ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
+const ROLES = new Set(['super_admin', 'teacher', 'student', 'family_member', 'visitor']);
+// Keep the version-1 policy manifest byte-compatible with already published
+// manifests. family_member is a formal role, but intentionally starts with no
+// implicit capabilities and is therefore resolved through the fallback below.
+const POLICY_DEFAULT_ROLES = Object.freeze(['super_admin', 'teacher', 'student']);
 const SURFACES = new Set(['desktop', 'miniapp']);
 const SCOPE_TYPES = new Set(['teacher_profile', 'student_profile', 'school', 'household', 'resource_owner']);
 const CAPABILITY_ID = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
@@ -35,7 +39,7 @@ function deepFreezeManifest(manifest) {
   freeze(manifest.capabilities); freeze(manifest.roleDefaults); return freeze(manifest);
 }
 function createPolicyManifest(input) {
-  if (!input || Object.getPrototypeOf(input) !== Object.prototype || Object.keys(input).some(key => !['capabilities', 'roleDefaults'].includes(key)) || !Array.isArray(input.capabilities) || !input.roleDefaults || Object.getPrototypeOf(input.roleDefaults) !== Object.prototype || Object.keys(input.roleDefaults).length !== 3 || !['super_admin','teacher','student'].every(role => Object.hasOwn(input.roleDefaults, role))) throw error();
+  if (!input || Object.getPrototypeOf(input) !== Object.prototype || Object.keys(input).some(key => !['capabilities', 'roleDefaults'].includes(key)) || !Array.isArray(input.capabilities) || !input.roleDefaults || Object.getPrototypeOf(input.roleDefaults) !== Object.prototype || Object.keys(input.roleDefaults).length !== POLICY_DEFAULT_ROLES.length || !POLICY_DEFAULT_ROLES.every(role => Object.hasOwn(input.roleDefaults, role))) throw error();
   const capabilities = input.capabilities.map(item => {
     if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).some(key => !['capabilityId','status','allowedSurfaces'].includes(key)) || !['active','retired'].includes(item.status) || !Array.isArray(item.allowedSurfaces)) throw error();
     const allowedSurfaces = [...new Set(item.allowedSurfaces.map(surface => { if (!SURFACES.has(surface)) throw error(); return surface; }))].sort();
@@ -44,7 +48,7 @@ function createPolicyManifest(input) {
   if (new Set(capabilities.map(item => item.capabilityId)).size !== capabilities.length) throw error();
   const declared = new Set(capabilities.map(item => item.capabilityId));
   const roleDefaults = {};
-  for (const role of ['super_admin','teacher','student']) {
+  for (const role of POLICY_DEFAULT_ROLES) {
     if (!Array.isArray(input.roleDefaults[role])) throw error();
     roleDefaults[role] = [...new Set(input.roleDefaults[role].map(capabilityId))].sort();
     if (roleDefaults[role].some(id => !declared.has(id))) throw error();

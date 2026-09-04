@@ -1161,6 +1161,653 @@ const DESKTOP_CANONICAL_PHONE_READER_MIGRATION = Object.freeze({
   sql: DESKTOP_CANONICAL_PHONE_READER_SQL, manifestSha256: sha256(DESKTOP_CANONICAL_PHONE_READER_SQL),
 });
 
+const DESKTOP_CLOUD_SESSION_CONTROL_SQL = `CREATE TABLE vnext_control_plane.vnext_desktop_session_challenges (
+  challenge_id text COLLATE "C" PRIMARY KEY CHECK (btrim(challenge_id)<>''),
+  authorization_id text COLLATE "C" NOT NULL CHECK (btrim(authorization_id)<>''),
+  authority_id text COLLATE "C" NOT NULL CHECK (btrim(authority_id)<>''),
+  account_id text COLLATE "C" NOT NULL CHECK (btrim(account_id)<>''),
+  device_id text COLLATE "C" NOT NULL CHECK (btrim(device_id)<>''),
+  installation_id text COLLATE "C" NOT NULL CHECK (btrim(installation_id)<>''),
+  link_id text COLLATE "C" NOT NULL CHECK (btrim(link_id)<>''),
+  credential_version bigint NOT NULL CHECK (credential_version>=1),
+  nonce_sha256 text COLLATE "C" NOT NULL CHECK (nonce_sha256 ~ '^[0-9a-f]{64}$'),
+  nonce_issued_at timestamptz NOT NULL CHECK (nonce_issued_at<>'infinity'::timestamptz AND nonce_issued_at<>'-infinity'::timestamptz),
+  expires_at timestamptz NOT NULL CHECK (expires_at<>'infinity'::timestamptz AND expires_at<>'-infinity'::timestamptz),
+  status text COLLATE "C" NOT NULL CHECK (status IN ('pending','consumed','expired')),
+  consumed_at timestamptz CHECK (consumed_at IS NULL OR (consumed_at<>'infinity'::timestamptz AND consumed_at<>'-infinity'::timestamptz)),
+  issued_session_id text COLLATE "C" CHECK (issued_session_id IS NULL OR btrim(issued_session_id)<>''),
+  row_version bigint NOT NULL CHECK (row_version>=1),
+  created_at timestamptz NOT NULL CHECK (created_at<>'infinity'::timestamptz AND created_at<>'-infinity'::timestamptz),
+  updated_at timestamptz NOT NULL CHECK (updated_at<>'infinity'::timestamptz AND updated_at<>'-infinity'::timestamptz),
+  UNIQUE(challenge_id,authority_id),
+  FOREIGN KEY(authorization_id,authority_id) REFERENCES vnext_control_plane.vnext_sessions(session_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(account_id,authority_id) REFERENCES vnext_control_plane.vnext_accounts(account_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(device_id,authority_id) REFERENCES vnext_control_plane.vnext_trusted_devices(device_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(installation_id,device_id,authority_id) REFERENCES vnext_control_plane.vnext_device_installations(installation_id,device_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(link_id,authority_id,account_id,device_id,installation_id) REFERENCES vnext_control_plane.vnext_account_device_links(link_id,authority_id,account_id,device_id,installation_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  FOREIGN KEY(issued_session_id,authority_id) REFERENCES vnext_control_plane.vnext_sessions(session_id,authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CHECK(expires_at>nonce_issued_at),
+  CHECK(updated_at>=created_at),
+  CHECK((status='pending' AND consumed_at IS NULL AND issued_session_id IS NULL) OR (status='consumed' AND consumed_at IS NOT NULL AND issued_session_id IS NOT NULL) OR (status='expired' AND consumed_at IS NULL AND issued_session_id IS NULL))
+);
+CREATE INDEX vnext_desktop_session_challenges_authorization_idx
+  ON vnext_control_plane.vnext_desktop_session_challenges(authorization_id,device_id,created_at DESC);
+
+CREATE FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(
+  p_challenge_id text, p_authorization_id text, p_device_id text, p_nonce_sha256 text,
+  p_nonce_issued_at timestamptz, p_expires_at timestamptz
+) RETURNS TABLE(
+  "challengeId" text, "authorizationId" text, "authorityId" text, "accountId" text,
+  "deviceId" text, "installationId" text, "linkId" text, "credentialVersion" bigint,
+  "installationPublicKey" text, "nonceSha256" text, "nonceIssuedAt" timestamptz,
+  "expiresAt" timestamptz, status text, "rowVersion" bigint
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE resolved record; now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_nonce_issued_at>now_at+interval '30 seconds' OR p_nonce_issued_at<now_at-interval '5 minutes'
+     OR p_expires_at<=now_at OR p_expires_at>now_at+interval '10 minutes' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_CHALLENGE_TIME_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT s.authority_id,s.account_id,s.device_id,s.installation_id,s.link_id,
+         i.credential_version,i.installation_public_key
+    INTO resolved
+    FROM vnext_control_plane.vnext_sessions s
+    JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'
+    JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=s.authority_id AND a.account_id=s.account_id AND a.status='active'
+    JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id AND d.status='active'
+    JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id AND i.status='active'
+    JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id AND l.status='active'
+   WHERE s.session_id=p_authorization_id AND s.device_id=p_device_id AND s.session_kind='online'
+     AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)
+       = ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version);
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_AUTHORIZATION_INVALID' USING ERRCODE='P0001'; END IF;
+  INSERT INTO vnext_control_plane.vnext_desktop_session_challenges(
+    challenge_id,authorization_id,authority_id,account_id,device_id,installation_id,link_id,
+    credential_version,nonce_sha256,nonce_issued_at,expires_at,status,consumed_at,issued_session_id,
+    row_version,created_at,updated_at
+  ) VALUES(
+    p_challenge_id,p_authorization_id,resolved.authority_id,resolved.account_id,resolved.device_id,
+    resolved.installation_id,resolved.link_id,resolved.credential_version,p_nonce_sha256,
+    p_nonce_issued_at,p_expires_at,'pending',NULL,NULL,1,now_at,now_at
+  );
+  RETURN QUERY SELECT p_challenge_id,p_authorization_id,resolved.authority_id,resolved.account_id,
+    resolved.device_id,resolved.installation_id,resolved.link_id,resolved.credential_version,
+    resolved.installation_public_key,p_nonce_sha256,p_nonce_issued_at,p_expires_at,'pending'::text,1::bigint;
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(
+  p_challenge_id text, p_expected_row_version bigint, p_session_id text, p_session_expires_at timestamptz,
+  p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_signature_sha256 text,
+  p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text,
+  p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE(
+  "authorityId" text, "accountId" text, "deviceId" text, "installationId" text,
+  "sessionId" text, "expiresAt" timestamptz, "rowVersion" bigint
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE c vnext_control_plane.vnext_desktop_session_challenges%ROWTYPE;
+        a vnext_control_plane.vnext_accounts%ROWTYPE;
+        d vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        i vnext_control_plane.vnext_device_installations%ROWTYPE;
+        l vnext_control_plane.vnext_account_device_links%ROWTYPE;
+        now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  SELECT * INTO c FROM vnext_control_plane.vnext_desktop_session_challenges WHERE challenge_id=p_challenge_id FOR UPDATE;
+  IF NOT FOUND OR c.status<>'pending' OR c.row_version<>p_expected_row_version OR c.expires_at<=now_at THEN RETURN; END IF;
+  IF p_session_expires_at<=now_at OR p_session_expires_at>now_at+interval '2 hours' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_EXPIRY_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT * INTO a FROM vnext_control_plane.vnext_accounts WHERE authority_id=c.authority_id AND account_id=c.account_id FOR SHARE;
+  SELECT * INTO d FROM vnext_control_plane.vnext_trusted_devices WHERE authority_id=c.authority_id AND device_id=c.device_id FOR SHARE;
+  SELECT * INTO i FROM vnext_control_plane.vnext_device_installations WHERE authority_id=c.authority_id AND device_id=c.device_id AND installation_id=c.installation_id FOR SHARE;
+  SELECT * INTO l FROM vnext_control_plane.vnext_account_device_links WHERE authority_id=c.authority_id AND account_id=c.account_id AND device_id=c.device_id AND installation_id=c.installation_id AND link_id=c.link_id FOR SHARE;
+  IF a.status<>'active' OR d.status<>'active' OR i.status<>'active' OR l.status<>'active' OR i.credential_version<>c.credential_version THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001';
+  END IF;
+  INSERT INTO vnext_control_plane.vnext_sessions(
+    session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,
+    issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,
+    device_credential_version,device_risk_version,installation_credential_version,link_auth_version,
+    link_access_version,link_row_version,row_version,created_at,updated_at
+  ) VALUES(
+    p_session_id,c.authority_id,c.account_id,c.device_id,c.installation_id,c.link_id,'online','active',
+    now_at,p_session_expires_at,NULL,a.auth_version,a.access_version,a.revocation_version,d.credential_version,
+    d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version,1,now_at,now_at
+  );
+  UPDATE vnext_control_plane.vnext_desktop_session_challenges
+     SET status='consumed',consumed_at=now_at,issued_session_id=p_session_id,
+         row_version=row_version+1,updated_at=GREATEST(now_at,updated_at+interval '1 microsecond')
+   WHERE challenge_id=p_challenge_id;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,c.authority_id,'desktop-installation:'||c.installation_id,c.account_id,c.challenge_id,
+    'desktop.session_challenge.exchange','desktop_session',p_session_id,p_canonical_request_sha256,
+    p_expected_row_version,'accepted','DESKTOP_SESSION_ISSUED',p_canonical_result_json,
+    p_canonical_result_sha256,a.auth_version,a.access_version,a.revocation_version,1,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,c.authority_id,p_receipt_id,'DESKTOP_SESSION_ISSUED',p_signature_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,c.authority_id,p_receipt_id,'desktop.session_issued','desktop_session',p_session_id,1,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT c.authority_id,c.account_id,c.device_id,c.installation_id,p_session_id,p_session_expires_at,1::bigint;
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_read_desktop_session_installation(
+  p_authority_id text, p_account_id text, p_session_id text
+) RETURNS TABLE("installationPublicKey" text) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  RETURN QUERY
+  SELECT i.installation_public_key
+    FROM vnext_control_plane.vnext_sessions s
+    JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'
+    JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=s.authority_id AND a.account_id=s.account_id AND a.status='active'
+    JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id AND d.status='active'
+    JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id AND i.status='active'
+    JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id AND l.status='active'
+   WHERE s.authority_id=p_authority_id AND s.account_id=p_account_id AND s.session_id=p_session_id
+     AND s.session_kind='online' AND s.status='active' AND s.expires_at>transaction_timestamp()
+     AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)
+       = ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version);
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_rotate_desktop_role_session(
+  p_authority_id text, p_account_id text, p_previous_session_id text, p_expected_row_version bigint,
+  p_session_id text, p_active_role text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text,
+  p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text,
+  p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE(
+  "authorityId" text, "accountId" text, "deviceId" text, "installationId" text,
+  "sessionId" text, "expiresAt" timestamptz, "rowVersion" bigint
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE s vnext_control_plane.vnext_sessions%ROWTYPE;
+        a vnext_control_plane.vnext_accounts%ROWTYPE;
+        d vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        i vnext_control_plane.vnext_device_installations%ROWTYPE;
+        l vnext_control_plane.vnext_account_device_links%ROWTYPE;
+        now_at timestamptz := transaction_timestamp(); effective_at timestamptz;
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_active_role NOT IN ('super_admin','teacher') THEN RAISE EXCEPTION 'VNEXT_DESKTOP_ROLE_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT * INTO s FROM vnext_control_plane.vnext_sessions
+   WHERE authority_id=p_authority_id AND account_id=p_account_id AND session_id=p_previous_session_id FOR UPDATE;
+  IF NOT FOUND OR s.status<>'active' OR s.session_kind<>'online' OR s.expires_at<=now_at OR s.row_version<>p_expected_row_version THEN RETURN; END IF;
+  SELECT * INTO a FROM vnext_control_plane.vnext_accounts WHERE authority_id=s.authority_id AND account_id=s.account_id FOR SHARE;
+  SELECT * INTO d FROM vnext_control_plane.vnext_trusted_devices WHERE authority_id=s.authority_id AND device_id=s.device_id FOR SHARE;
+  SELECT * INTO i FROM vnext_control_plane.vnext_device_installations WHERE authority_id=s.authority_id AND device_id=s.device_id AND installation_id=s.installation_id FOR SHARE;
+  SELECT * INTO l FROM vnext_control_plane.vnext_account_device_links WHERE authority_id=s.authority_id AND account_id=s.account_id AND device_id=s.device_id AND installation_id=s.installation_id AND link_id=s.link_id FOR SHARE;
+  IF a.status<>'active' OR d.status<>'active' OR i.status<>'active' OR l.status<>'active'
+     OR ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)
+       <> ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version) THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001';
+  END IF;
+  effective_at := GREATEST(now_at,s.updated_at+interval '1 microsecond');
+  INSERT INTO vnext_control_plane.vnext_sessions(
+    session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,
+    issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,
+    device_credential_version,device_risk_version,installation_credential_version,link_auth_version,
+    link_access_version,link_row_version,row_version,created_at,updated_at
+  ) VALUES(
+    p_session_id,s.authority_id,s.account_id,s.device_id,s.installation_id,s.link_id,'online','active',
+    now_at,s.expires_at,NULL,a.auth_version,a.access_version,a.revocation_version,d.credential_version,
+    d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version,1,now_at,now_at
+  );
+  UPDATE vnext_control_plane.vnext_sessions SET status='revoked',revoked_at=effective_at,
+    row_version=row_version+1,updated_at=effective_at WHERE session_id=s.session_id;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,s.authority_id,'desktop-session:'||s.session_id,s.account_id,p_session_id,
+    'desktop.session.role_switch','desktop_session',p_session_id,p_canonical_request_sha256,
+    p_expected_row_version,'accepted','DESKTOP_ACTIVE_ROLE_CHANGED',p_canonical_result_json,
+    p_canonical_result_sha256,a.auth_version,a.access_version,a.revocation_version,1,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,s.authority_id,p_receipt_id,'DESKTOP_ACTIVE_ROLE_CHANGED',p_canonical_request_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,s.authority_id,p_receipt_id,'desktop.active_role_changed','desktop_session',p_session_id,1,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT s.authority_id,s.account_id,s.device_id,s.installation_id,p_session_id,s.expires_at,1::bigint;
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_list_desktop_account_devices(
+  p_authority_id text, p_account_id text
+) RETURNS TABLE(
+  "deviceId" text, "installationId" text, status text, "rowVersion" bigint,
+  "createdAt" timestamptz, "updatedAt" timestamptz, "lastSeenAt" timestamptz, "revokedAt" timestamptz
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  RETURN QUERY
+  SELECT d.device_id,l.installation_id,d.status,d.row_version,d.created_at,d.updated_at,
+         (SELECT max(s.updated_at) FROM vnext_control_plane.vnext_sessions s WHERE s.authority_id=d.authority_id AND s.device_id=d.device_id),
+         d.revoked_at
+    FROM vnext_control_plane.vnext_trusted_devices d
+    JOIN LATERAL (
+      SELECT adl.installation_id FROM vnext_control_plane.vnext_account_device_links adl
+       WHERE adl.authority_id=d.authority_id AND adl.account_id=p_account_id AND adl.device_id=d.device_id
+       ORDER BY adl.updated_at DESC,adl.link_id DESC LIMIT 1
+    ) l ON true
+   WHERE d.authority_id=p_authority_id
+   ORDER BY d.updated_at DESC,d.device_id;
+END;
+$$;
+
+CREATE FUNCTION vnext_control_plane.vnext_revoke_desktop_device(
+  p_authority_id text, p_actor_account_id text, p_actor_session_id text, p_device_id text,
+  p_expected_row_version bigint, p_reason text, p_receipt_id text, p_audit_event_id text,
+  p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text,
+  p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE("deviceId" text,status text,"rowVersion" bigint,"revokedAt" timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE actor_session vnext_control_plane.vnext_sessions%ROWTYPE;
+        actor_account vnext_control_plane.vnext_accounts%ROWTYPE;
+        target_device vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        now_at timestamptz := transaction_timestamp(); effective_at timestamptz; next_version bigint;
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_reason NOT IN ('lost','replaced','user_request','security') THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_REASON_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT * INTO actor_session FROM vnext_control_plane.vnext_sessions
+   WHERE authority_id=p_authority_id AND account_id=p_actor_account_id AND session_id=p_actor_session_id FOR SHARE;
+  IF NOT FOUND OR actor_session.status<>'active' OR actor_session.expires_at<=now_at THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_SESSION_INVALID' USING ERRCODE='P0001';
+  END IF;
+  IF actor_session.device_id=p_device_id THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_SELF_REVOCATION' USING ERRCODE='P0001'; END IF;
+  SELECT * INTO actor_account FROM vnext_control_plane.vnext_accounts
+   WHERE authority_id=p_authority_id AND account_id=p_actor_account_id AND status='active' FOR SHARE;
+  SELECT * INTO target_device FROM vnext_control_plane.vnext_trusted_devices
+   WHERE authority_id=p_authority_id AND device_id=p_device_id FOR UPDATE;
+  IF NOT FOUND OR target_device.status<>'active' OR target_device.row_version<>p_expected_row_version
+     OR NOT EXISTS(SELECT 1 FROM vnext_control_plane.vnext_account_device_links l WHERE l.authority_id=p_authority_id AND l.account_id=p_actor_account_id AND l.device_id=p_device_id) THEN RETURN; END IF;
+  effective_at := GREATEST(now_at,target_device.updated_at+interval '1 microsecond');
+  UPDATE vnext_control_plane.vnext_sessions s SET status='revoked',
+    revoked_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond'),
+    row_version=s.row_version+1,updated_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond')
+   WHERE s.authority_id=p_authority_id AND s.device_id=p_device_id AND s.status='active';
+  UPDATE vnext_control_plane.vnext_account_device_links l SET status='revoked',
+    auth_version=l.auth_version+1,access_version=l.access_version+1,row_version=l.row_version+1,
+    revoked_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond')
+   WHERE l.authority_id=p_authority_id AND l.device_id=p_device_id AND l.status='active';
+  UPDATE vnext_control_plane.vnext_device_installations i SET status='revoked',
+    credential_version=i.credential_version+1,row_version=i.row_version+1,
+    revoked_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond')
+   WHERE i.authority_id=p_authority_id AND i.device_id=p_device_id AND i.status='active';
+  UPDATE vnext_control_plane.vnext_trusted_devices SET status='revoked',credential_version=credential_version+1,
+    risk_version=risk_version+1,row_version=row_version+1,revoked_at=effective_at,updated_at=effective_at
+   WHERE authority_id=p_authority_id AND device_id=p_device_id
+   RETURNING row_version INTO next_version;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,p_authority_id,'desktop-session:'||p_actor_session_id,p_actor_account_id,
+    p_device_id||':'||p_expected_row_version::text,'desktop.device.revoke','desktop_device',p_device_id,
+    p_canonical_request_sha256,p_expected_row_version,'accepted','DESKTOP_DEVICE_REVOKED',
+    p_canonical_result_json,p_canonical_result_sha256,actor_account.auth_version,actor_account.access_version,
+    actor_account.revocation_version,next_version,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,p_authority_id,p_receipt_id,'DESKTOP_DEVICE_REVOKED',p_canonical_request_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,p_authority_id,p_receipt_id,'desktop.device_revoked','desktop_device',p_device_id,next_version,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT p_device_id,'revoked'::text,next_version,effective_at;
+END;
+$$;
+
+REVOKE ALL ON TABLE vnext_control_plane.vnext_desktop_session_challenges FROM PUBLIC;
+GRANT SELECT ON TABLE vnext_control_plane.vnext_desktop_session_challenges TO vnext_pg17_writer,vnext_pg17_verifier;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(text,text,text,text,timestamptz,timestamptz) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(text,bigint,text,timestamptz,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_session_installation(text,text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_rotate_desktop_role_session(text,text,text,bigint,text,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_list_desktop_account_devices(text,text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(text,text,text,text,timestamptz,timestamptz) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(text,bigint,text,timestamptz,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_read_desktop_session_installation(text,text,text) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_rotate_desktop_role_session(text,text,text,bigint,text,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_list_desktop_account_devices(text,text) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;`;
+const DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-cloud-session-control-23', semanticVersion: 23,
+  sql: DESKTOP_CLOUD_SESSION_CONTROL_SQL, manifestSha256: sha256(DESKTOP_CLOUD_SESSION_CONTROL_SQL),
+});
+
+const DESKTOP_DEVICE_REVOCATION_STATUS_FIX_SQL = `CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_revoke_desktop_device(
+  p_authority_id text, p_actor_account_id text, p_actor_session_id text, p_device_id text,
+  p_expected_row_version bigint, p_reason text, p_receipt_id text, p_audit_event_id text,
+  p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text,
+  p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE("deviceId" text,status text,"rowVersion" bigint,"revokedAt" timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE actor_session vnext_control_plane.vnext_sessions%ROWTYPE;
+        actor_account vnext_control_plane.vnext_accounts%ROWTYPE;
+        target_device vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        now_at timestamptz := transaction_timestamp(); effective_at timestamptz; next_version bigint;
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_reason NOT IN ('lost','replaced','user_request','security') THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_REASON_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT s.* INTO actor_session FROM vnext_control_plane.vnext_sessions AS s
+   WHERE s.authority_id=p_authority_id AND s.account_id=p_actor_account_id AND s.session_id=p_actor_session_id FOR SHARE;
+  IF NOT FOUND OR actor_session.status<>'active' OR actor_session.expires_at<=now_at THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_SESSION_INVALID' USING ERRCODE='P0001';
+  END IF;
+  IF actor_session.device_id=p_device_id THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_SELF_REVOCATION' USING ERRCODE='P0001'; END IF;
+  SELECT a.* INTO actor_account FROM vnext_control_plane.vnext_accounts AS a
+   WHERE a.authority_id=p_authority_id AND a.account_id=p_actor_account_id AND a.status='active' FOR SHARE;
+  SELECT d.* INTO target_device FROM vnext_control_plane.vnext_trusted_devices AS d
+   WHERE d.authority_id=p_authority_id AND d.device_id=p_device_id FOR UPDATE;
+  IF NOT FOUND OR target_device.status<>'active' OR target_device.row_version<>p_expected_row_version
+     OR NOT EXISTS(SELECT 1 FROM vnext_control_plane.vnext_account_device_links l WHERE l.authority_id=p_authority_id AND l.account_id=p_actor_account_id AND l.device_id=p_device_id) THEN RETURN; END IF;
+  effective_at := GREATEST(now_at,target_device.updated_at+interval '1 microsecond');
+  UPDATE vnext_control_plane.vnext_sessions s SET status='revoked',
+    revoked_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond'),
+    row_version=s.row_version+1,updated_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond')
+   WHERE s.authority_id=p_authority_id AND s.device_id=p_device_id AND s.status='active';
+  UPDATE vnext_control_plane.vnext_account_device_links l SET status='revoked',
+    auth_version=l.auth_version+1,access_version=l.access_version+1,row_version=l.row_version+1,
+    revoked_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond')
+   WHERE l.authority_id=p_authority_id AND l.device_id=p_device_id AND l.status='active';
+  UPDATE vnext_control_plane.vnext_device_installations i SET status='revoked',
+    credential_version=i.credential_version+1,row_version=i.row_version+1,
+    revoked_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond')
+   WHERE i.authority_id=p_authority_id AND i.device_id=p_device_id AND i.status='active';
+  UPDATE vnext_control_plane.vnext_trusted_devices SET status='revoked',credential_version=credential_version+1,
+    risk_version=risk_version+1,row_version=row_version+1,revoked_at=effective_at,updated_at=effective_at
+   WHERE authority_id=p_authority_id AND device_id=p_device_id
+   RETURNING row_version INTO next_version;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,p_authority_id,'desktop-session:'||p_actor_session_id,p_actor_account_id,
+    p_device_id||':'||p_expected_row_version::text,'desktop.device.revoke','desktop_device',p_device_id,
+    p_canonical_request_sha256,p_expected_row_version,'accepted','DESKTOP_DEVICE_REVOKED',
+    p_canonical_result_json,p_canonical_result_sha256,actor_account.auth_version,actor_account.access_version,
+    actor_account.revocation_version,next_version,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,p_authority_id,p_receipt_id,'DESKTOP_DEVICE_REVOKED',p_canonical_request_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,p_authority_id,p_receipt_id,'desktop.device_revoked','desktop_device',p_device_id,next_version,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT p_device_id,'revoked'::text,next_version,effective_at;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;`;
+const DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-device-revoke-status-fix-24', semanticVersion: 24,
+  sql: DESKTOP_DEVICE_REVOCATION_STATUS_FIX_SQL, manifestSha256: sha256(DESKTOP_DEVICE_REVOCATION_STATUS_FIX_SQL),
+});
+
+const DESKTOP_SESSION_SOURCE_LOCK_SQL = `CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(
+  p_challenge_id text, p_authorization_id text, p_device_id text, p_nonce_sha256 text,
+  p_nonce_issued_at timestamptz, p_expires_at timestamptz
+) RETURNS TABLE(
+  "challengeId" text, "authorizationId" text, "authorityId" text, "accountId" text,
+  "deviceId" text, "installationId" text, "linkId" text, "credentialVersion" bigint,
+  "installationPublicKey" text, "nonceSha256" text, "nonceIssuedAt" timestamptz,
+  "expiresAt" timestamptz, status text, "rowVersion" bigint
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE resolved record; now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_nonce_issued_at>now_at+interval '30 seconds' OR p_nonce_issued_at<now_at-interval '5 minutes'
+     OR p_expires_at<=now_at OR p_expires_at>now_at+interval '10 minutes' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_CHALLENGE_TIME_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT s.authority_id,s.account_id,s.device_id,s.installation_id,s.link_id,
+         i.credential_version,i.installation_public_key
+    INTO resolved
+    FROM vnext_control_plane.vnext_sessions s
+    JOIN vnext_control_plane.vnext_authorities au ON au.authority_id=s.authority_id AND au.status='active'
+    JOIN vnext_control_plane.vnext_accounts a ON a.authority_id=s.authority_id AND a.account_id=s.account_id AND a.status='active'
+    JOIN vnext_control_plane.vnext_trusted_devices d ON d.authority_id=s.authority_id AND d.device_id=s.device_id AND d.status='active'
+    JOIN vnext_control_plane.vnext_device_installations i ON i.authority_id=s.authority_id AND i.device_id=s.device_id AND i.installation_id=s.installation_id AND i.status='active'
+    JOIN vnext_control_plane.vnext_account_device_links l ON l.authority_id=s.authority_id AND l.account_id=s.account_id AND l.device_id=s.device_id AND l.installation_id=s.installation_id AND l.link_id=s.link_id AND l.status='active'
+   WHERE s.session_id=p_authorization_id AND s.device_id=p_device_id AND s.session_kind='online'
+     AND s.status='active' AND s.expires_at>now_at
+     AND ROW(s.account_auth_version,s.account_access_version,s.account_revocation_version,s.device_credential_version,s.device_risk_version,s.installation_credential_version,s.link_auth_version,s.link_access_version,s.link_row_version)
+       = ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version)
+   FOR SHARE OF s;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_AUTHORIZATION_INVALID' USING ERRCODE='P0001'; END IF;
+  INSERT INTO vnext_control_plane.vnext_desktop_session_challenges(
+    challenge_id,authorization_id,authority_id,account_id,device_id,installation_id,link_id,
+    credential_version,nonce_sha256,nonce_issued_at,expires_at,status,consumed_at,issued_session_id,
+    row_version,created_at,updated_at
+  ) VALUES(
+    p_challenge_id,p_authorization_id,resolved.authority_id,resolved.account_id,resolved.device_id,
+    resolved.installation_id,resolved.link_id,resolved.credential_version,p_nonce_sha256,
+    p_nonce_issued_at,p_expires_at,'pending',NULL,NULL,1,now_at,now_at
+  );
+  RETURN QUERY SELECT p_challenge_id,p_authorization_id,resolved.authority_id,resolved.account_id,
+    resolved.device_id,resolved.installation_id,resolved.link_id,resolved.credential_version,
+    resolved.installation_public_key,p_nonce_sha256,p_nonce_issued_at,p_expires_at,'pending'::text,1::bigint;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(
+  p_challenge_id text, p_expected_row_version bigint, p_session_id text, p_session_expires_at timestamptz,
+  p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_signature_sha256 text,
+  p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text,
+  p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE(
+  "authorityId" text, "accountId" text, "deviceId" text, "installationId" text,
+  "sessionId" text, "expiresAt" timestamptz, "rowVersion" bigint
+) LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE c vnext_control_plane.vnext_desktop_session_challenges%ROWTYPE;
+        source_session vnext_control_plane.vnext_sessions%ROWTYPE;
+        a vnext_control_plane.vnext_accounts%ROWTYPE;
+        d vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        i vnext_control_plane.vnext_device_installations%ROWTYPE;
+        l vnext_control_plane.vnext_account_device_links%ROWTYPE;
+        now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  SELECT * INTO c FROM vnext_control_plane.vnext_desktop_session_challenges WHERE challenge_id=p_challenge_id FOR UPDATE;
+  IF NOT FOUND OR c.status<>'pending' OR c.row_version<>p_expected_row_version OR c.expires_at<=now_at THEN RETURN; END IF;
+  IF p_session_expires_at<=now_at OR p_session_expires_at>now_at+interval '2 hours' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_EXPIRY_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT s.* INTO source_session FROM vnext_control_plane.vnext_sessions AS s
+   WHERE s.authority_id=c.authority_id AND s.session_id=c.authorization_id FOR UPDATE;
+  IF NOT FOUND OR source_session.status<>'active' OR source_session.expires_at<=now_at
+     OR source_session.session_kind<>'online' OR source_session.account_id<>c.account_id
+     OR source_session.device_id<>c.device_id OR source_session.installation_id<>c.installation_id
+     OR source_session.link_id<>c.link_id THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_AUTHORIZATION_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT * INTO a FROM vnext_control_plane.vnext_accounts WHERE authority_id=c.authority_id AND account_id=c.account_id FOR SHARE;
+  SELECT * INTO d FROM vnext_control_plane.vnext_trusted_devices WHERE authority_id=c.authority_id AND device_id=c.device_id FOR SHARE;
+  SELECT * INTO i FROM vnext_control_plane.vnext_device_installations WHERE authority_id=c.authority_id AND device_id=c.device_id AND installation_id=c.installation_id FOR SHARE;
+  SELECT * INTO l FROM vnext_control_plane.vnext_account_device_links WHERE authority_id=c.authority_id AND account_id=c.account_id AND device_id=c.device_id AND installation_id=c.installation_id AND link_id=c.link_id FOR SHARE;
+  IF a.account_id IS NULL OR d.device_id IS NULL OR i.installation_id IS NULL OR l.link_id IS NULL
+     OR a.status<>'active' OR d.status<>'active' OR i.status<>'active' OR l.status<>'active'
+     OR i.credential_version<>c.credential_version
+     OR ROW(source_session.account_auth_version,source_session.account_access_version,source_session.account_revocation_version,
+            source_session.device_credential_version,source_session.device_risk_version,source_session.installation_credential_version,
+            source_session.link_auth_version,source_session.link_access_version,source_session.link_row_version)
+        <> ROW(a.auth_version,a.access_version,a.revocation_version,d.credential_version,d.risk_version,
+               i.credential_version,l.auth_version,l.access_version,l.row_version) THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001';
+  END IF;
+  INSERT INTO vnext_control_plane.vnext_sessions(
+    session_id,authority_id,account_id,device_id,installation_id,link_id,session_kind,status,
+    issued_at,expires_at,revoked_at,account_auth_version,account_access_version,account_revocation_version,
+    device_credential_version,device_risk_version,installation_credential_version,link_auth_version,
+    link_access_version,link_row_version,row_version,created_at,updated_at
+  ) VALUES(
+    p_session_id,c.authority_id,c.account_id,c.device_id,c.installation_id,c.link_id,'online','active',
+    now_at,p_session_expires_at,NULL,a.auth_version,a.access_version,a.revocation_version,d.credential_version,
+    d.risk_version,i.credential_version,l.auth_version,l.access_version,l.row_version,1,now_at,now_at
+  );
+  UPDATE vnext_control_plane.vnext_desktop_session_challenges
+     SET status='consumed',consumed_at=now_at,issued_session_id=p_session_id,
+         row_version=row_version+1,updated_at=GREATEST(now_at,updated_at+interval '1 microsecond')
+   WHERE challenge_id=p_challenge_id;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,c.authority_id,'desktop-installation:'||c.installation_id,c.account_id,c.challenge_id,
+    'desktop.session_challenge.exchange','desktop_session',p_session_id,p_canonical_request_sha256,
+    p_expected_row_version,'accepted','DESKTOP_SESSION_ISSUED',p_canonical_result_json,
+    p_canonical_result_sha256,a.auth_version,a.access_version,a.revocation_version,1,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,c.authority_id,p_receipt_id,'DESKTOP_SESSION_ISSUED',p_signature_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,c.authority_id,p_receipt_id,'desktop.session_issued','desktop_session',p_session_id,1,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT c.authority_id,c.account_id,c.device_id,c.installation_id,p_session_id,p_session_expires_at,1::bigint;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(text,text,text,text,timestamptz,timestamptz) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(text,bigint,text,timestamptz,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_start_desktop_session_challenge(text,text,text,text,timestamptz,timestamptz) TO vnext_pg17_writer;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_exchange_desktop_session_challenge(text,bigint,text,timestamptz,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;`;
+const DESKTOP_SESSION_SOURCE_LOCK_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-session-source-lock-25', semanticVersion: 25,
+  sql: DESKTOP_SESSION_SOURCE_LOCK_SQL, manifestSha256: sha256(DESKTOP_SESSION_SOURCE_LOCK_SQL),
+});
+
+const DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_SQL = `CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_revoke_desktop_device(
+  p_authority_id text, p_actor_account_id text, p_actor_session_id text, p_device_id text,
+  p_expected_row_version bigint, p_reason text, p_receipt_id text, p_audit_event_id text,
+  p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text,
+  p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text
+) RETURNS TABLE("deviceId" text,status text,"rowVersion" bigint,"revokedAt" timestamptz)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,pg_temp AS $$
+DECLARE actor_session vnext_control_plane.vnext_sessions%ROWTYPE;
+        actor_account vnext_control_plane.vnext_accounts%ROWTYPE;
+        actor_device vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        actor_installation vnext_control_plane.vnext_device_installations%ROWTYPE;
+        actor_link vnext_control_plane.vnext_account_device_links%ROWTYPE;
+        actor_grant vnext_control_plane.vnext_role_grants%ROWTYPE;
+        target_device vnext_control_plane.vnext_trusted_devices%ROWTYPE;
+        now_at timestamptz := transaction_timestamp(); effective_at timestamptz; next_version bigint;
+BEGIN
+  IF session_user<>'vnext_pg17_writer' THEN RAISE EXCEPTION 'VNEXT_WRITER_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF p_reason NOT IN ('lost','replaced','user_request','security') THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_REASON_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT s.* INTO actor_session FROM vnext_control_plane.vnext_sessions AS s
+   WHERE s.authority_id=p_authority_id AND s.account_id=p_actor_account_id AND s.session_id=p_actor_session_id FOR UPDATE;
+  IF NOT FOUND OR actor_session.status<>'active' OR actor_session.session_kind<>'online' OR actor_session.expires_at<=now_at THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_SESSION_INVALID' USING ERRCODE='P0001';
+  END IF;
+  SELECT a.* INTO actor_account FROM vnext_control_plane.vnext_accounts AS a
+   WHERE a.authority_id=p_authority_id AND a.account_id=p_actor_account_id AND a.status='active' FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_ACCOUNT_INVALID' USING ERRCODE='P0001'; END IF;
+  SELECT d.* INTO actor_device FROM vnext_control_plane.vnext_trusted_devices AS d
+   WHERE d.authority_id=p_authority_id AND d.device_id=actor_session.device_id AND d.status='active' FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001'; END IF;
+  SELECT i.* INTO actor_installation FROM vnext_control_plane.vnext_device_installations AS i
+   WHERE i.authority_id=p_authority_id AND i.device_id=actor_session.device_id
+     AND i.installation_id=actor_session.installation_id AND i.status='active' FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001'; END IF;
+  SELECT l.* INTO actor_link FROM vnext_control_plane.vnext_account_device_links AS l
+   WHERE l.authority_id=p_authority_id AND l.account_id=p_actor_account_id
+     AND l.device_id=actor_session.device_id AND l.installation_id=actor_session.installation_id
+     AND l.link_id=actor_session.link_id AND l.status='active' FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001'; END IF;
+  IF ROW(actor_session.account_auth_version,actor_session.account_access_version,actor_session.account_revocation_version,
+         actor_session.device_credential_version,actor_session.device_risk_version,
+         actor_session.installation_credential_version,actor_session.link_auth_version,
+         actor_session.link_access_version,actor_session.link_row_version)
+     <> ROW(actor_account.auth_version,actor_account.access_version,actor_account.revocation_version,
+            actor_device.credential_version,actor_device.risk_version,actor_installation.credential_version,
+            actor_link.auth_version,actor_link.access_version,actor_link.row_version) THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED' USING ERRCODE='P0001';
+  END IF;
+  SELECT g.* INTO actor_grant FROM vnext_control_plane.vnext_role_grants AS g
+   WHERE g.authority_id=p_authority_id AND g.account_id=p_actor_account_id
+     AND g.role='super_admin' AND g.status='active' AND g.starts_at<=now_at
+     AND (g.ends_at IS NULL OR g.ends_at>now_at) FOR SHARE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_SUPER_ADMIN_REQUIRED' USING ERRCODE='42501'; END IF;
+  IF actor_session.device_id=p_device_id THEN RAISE EXCEPTION 'VNEXT_DESKTOP_DEVICE_SELF_REVOCATION' USING ERRCODE='P0001'; END IF;
+  SELECT d.* INTO target_device FROM vnext_control_plane.vnext_trusted_devices AS d
+   WHERE d.authority_id=p_authority_id AND d.device_id=p_device_id FOR UPDATE;
+  IF NOT FOUND OR target_device.status<>'active' OR target_device.row_version<>p_expected_row_version THEN RETURN; END IF;
+  PERFORM 1 FROM vnext_control_plane.vnext_account_device_links AS l
+   WHERE l.authority_id=p_authority_id AND l.account_id=p_actor_account_id
+     AND l.device_id=p_device_id AND l.status='active' FOR SHARE;
+  IF NOT FOUND THEN RETURN; END IF;
+  effective_at := GREATEST(now_at,target_device.updated_at+interval '1 microsecond');
+  UPDATE vnext_control_plane.vnext_sessions s SET status='revoked',
+    revoked_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond'),
+    row_version=s.row_version+1,updated_at=GREATEST(effective_at,s.updated_at+interval '1 microsecond')
+   WHERE s.authority_id=p_authority_id AND s.device_id=p_device_id AND s.status='active';
+  UPDATE vnext_control_plane.vnext_account_device_links l SET status='revoked',
+    auth_version=l.auth_version+1,access_version=l.access_version+1,row_version=l.row_version+1,
+    revoked_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,l.updated_at+interval '1 microsecond')
+   WHERE l.authority_id=p_authority_id AND l.device_id=p_device_id AND l.status='active';
+  UPDATE vnext_control_plane.vnext_device_installations i SET status='revoked',
+    credential_version=i.credential_version+1,row_version=i.row_version+1,
+    revoked_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond'),
+    updated_at=GREATEST(effective_at,i.updated_at+interval '1 microsecond')
+   WHERE i.authority_id=p_authority_id AND i.device_id=p_device_id AND i.status='active';
+  UPDATE vnext_control_plane.vnext_trusted_devices SET status='revoked',credential_version=credential_version+1,
+    risk_version=risk_version+1,row_version=row_version+1,revoked_at=effective_at,updated_at=effective_at
+   WHERE authority_id=p_authority_id AND device_id=p_device_id
+   RETURNING row_version INTO next_version;
+  INSERT INTO vnext_control_plane.vnext_authorization_command_receipts(
+    receipt_id,authority_id,actor_key,actor_account_id,idempotency_key,command_type,target_kind,target_id,
+    canonical_request_sha256,expected_row_version,outcome,result_code,canonical_result_json,
+    canonical_result_sha256,committed_auth_version,committed_access_version,committed_revocation_version,
+    committed_target_row_version,created_at
+  ) VALUES(
+    p_receipt_id,p_authority_id,'desktop-session:'||p_actor_session_id,p_actor_account_id,
+    p_device_id||':'||p_expected_row_version::text,'desktop.device.revoke','desktop_device',p_device_id,
+    p_canonical_request_sha256,p_expected_row_version,'accepted','DESKTOP_DEVICE_REVOKED',
+    p_canonical_result_json,p_canonical_result_sha256,actor_account.auth_version,actor_account.access_version,
+    actor_account.revocation_version,next_version,now_at
+  );
+  INSERT INTO vnext_control_plane.vnext_authorization_audit_events(event_id,authority_id,receipt_id,reason_code,context_sha256,created_at)
+    VALUES(p_audit_event_id,p_authority_id,p_receipt_id,'DESKTOP_DEVICE_REVOKED',p_canonical_request_sha256,now_at);
+  INSERT INTO vnext_control_plane.vnext_authorization_outbox_events(event_id,authority_id,receipt_id,event_type,aggregate_kind,aggregate_id,aggregate_version,canonical_payload_json,payload_sha256,occurred_at)
+    VALUES(p_outbox_event_id,p_authority_id,p_receipt_id,'desktop.device_revoked','desktop_device',p_device_id,next_version,p_canonical_payload_json,p_canonical_payload_sha256,now_at);
+  RETURN QUERY SELECT p_device_id,'revoked'::text,next_version,effective_at;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION vnext_control_plane.vnext_revoke_desktop_device(text,text,text,text,bigint,text,text,text,text,text,text,text,text,text) TO vnext_pg17_writer;`;
+const DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-device-revoke-authorization-lock-26', semanticVersion: 26,
+  sql: DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_SQL,
+  manifestSha256: sha256(DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_SQL),
+});
+
+const FAMILY_MEMBER_CANONICAL_ROLE_SQL = `ALTER TABLE vnext_control_plane.vnext_role_grants
+  DROP CONSTRAINT vnext_role_grants_role_check;
+ALTER TABLE vnext_control_plane.vnext_role_grants
+  ADD CONSTRAINT vnext_role_grants_role_check
+  CHECK (role IN ('super_admin','teacher','student','family_member'));`;
+const FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-family-member-canonical-role-27', semanticVersion: 27,
+  sql: FAMILY_MEMBER_CANONICAL_ROLE_SQL,
+  manifestSha256: sha256(FAMILY_MEMBER_CANONICAL_ROLE_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1184,6 +1831,11 @@ const MIGRATIONS = Object.freeze([
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
   DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
   DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
+  DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION,
+  DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
+  FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1321,6 +1973,12 @@ $function$
   vnext_set_desktop_password_credential: '13331367db0aa7f179df18e8c751b2814772c2bc1733706146df5c133e8503ab',
   vnext_bind_canonical_wechat_identity: '1c4eb7ed548e1a5b3547edf1001630507763bc85a923fee4a9d4ec8d9df17db4',
   vnext_read_canonical_account_by_verified_contact: '19936f7f3f7bb08798ef064b51a321d07e132287a5c254cb2c09b5136b69f872',
+  vnext_exchange_desktop_session_challenge: 'ea2c2d275682e8e24510f9c994bd90dbae0ffb08dbcb281e00b2ef0c2d707554',
+  vnext_list_desktop_account_devices: 'a771a2026fa361bbbcfe5af338a33ace7d51f27c254fcad11367bbcfad364de6',
+  vnext_read_desktop_session_installation: 'f53001ea28551e5ab6c8bf68c80876eeb0a1ac4b8c311fbcdc6547bd5e492356',
+  vnext_revoke_desktop_device: '47d293c38deef43393a1e2a2ebe2f1d9367bf54b71a9ec82251c5ef427862469',
+  vnext_rotate_desktop_role_session: '53fd3597b1da4d1342226c746dee7efcd15d5e4ac42104f4f304f6d8172c2f8a',
+  vnext_start_desktop_session_challenge: 'e72d5fb3f940abac5a09cf6261adaf77668c7befe5c8d4cd258e8343d6ab2871',
 });
 
 const expectedCatalog = Object.freeze({
@@ -1338,6 +1996,7 @@ const expectedCatalog = Object.freeze({
     'vnext_control_plane.vnext_capability_overrides',
     'vnext_control_plane.vnext_data_scope_grants',
     'vnext_control_plane.vnext_desktop_password_credentials',
+    'vnext_control_plane.vnext_desktop_session_challenges',
     'vnext_control_plane.vnext_device_installations',
     'vnext_control_plane.vnext_online_identity_assertion_consumptions',
     'vnext_control_plane.vnext_online_identity_assertions',
@@ -1405,6 +2064,11 @@ module.exports = {
   FIXED_SUPER_ADMIN_INVARIANT_MIGRATION,
   DESKTOP_SESSION_CONTEXT_READER_MIGRATION,
   DESKTOP_CANONICAL_PHONE_READER_MIGRATION,
+  DESKTOP_CLOUD_SESSION_CONTROL_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_STATUS_FIX_MIGRATION,
+  DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
+  DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
+  FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

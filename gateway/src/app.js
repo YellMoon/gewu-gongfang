@@ -1,23 +1,11 @@
 /**
- * 教育综合服务平台 — API Gateway
- * 统一入口：认证 → 权限校验 → 路由分发
+ * Gewu Workshop compatibility gateway.
+ * The formal runtime exposes health plus permanent retirement tombstones.
  */
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const path = require('path');
 const proxyaddr = require('proxy-addr');
-const { getDb, initDatabase } = require('./db/database');
-const { authMiddleware, optionalAuth } = require('./middleware/auth');
-const { errorHandler } = require('./middleware/errorHandler');
-const { loadUserPermissions } = require('./middleware/permission');
-const CloudWebSocketServer = require('./websocket/server');
-
-// 路由
-const authRouter = require('./routes/auth');
-const adminRouter = require('./routes/admin');
-const permissionsRouter = require('./routes/permissions');
-const cloudRelayRouter = require('./routes/cloudRelay');
 const gatewayPackage = require('../package.json');
 
 function reviewDemoRemoved(_req, res) {
@@ -28,23 +16,54 @@ function reviewDemoRemoved(_req, res) {
   });
 }
 
+function retired(code, error) {
+  return (_req, res) => res.status(410).json({ success: false, code, error });
+}
+
+const cloudRelayRetired = retired(
+  'CLOUD_RELAY_RETIRED',
+  'Legacy cloud relay has been retired; use the cloud business authority and storage agent APIs',
+);
+const gatewayAuthRetired = retired(
+  'GATEWAY_AUTH_RETIRED',
+  'Gateway authentication has been retired; use the cloud business account API',
+);
+const gatewayAdminRetired = retired(
+  'GATEWAY_ADMIN_RETIRED',
+  'Gateway administration has been retired; use the cloud business authority API',
+);
+const gatewayPermissionsRetired = retired(
+  'GATEWAY_PERMISSIONS_RETIRED',
+  'Gateway permission lookup has been retired; use the cloud business authority API',
+);
+
 function getHealthVersion() {
   const deployedVersion = String(process.env.GEWU_APP_VERSION || '').trim();
   if (deployedVersion) return deployedVersion;
   return String(gatewayPackage.version || 'local').trim() || 'local';
 }
 
-function createApp(options = {}) {
+function createApp() {
   const app = express();
-  const database = options.db || initDatabase();
   const trustedCidrs = ['loopback', ...String(process.env.TRUST_PROXY_CIDRS || '').split(',').map(value => value.trim()).filter(Boolean)];
   app.set('trust proxy', proxyaddr.compile(trustedCidrs));
 
   // CORS
   app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
-    credentials: true
+    credentials: true,
+    preflightContinue: true,
   }));
+
+  // Permanent compatibility tombstones run before body parsing,
+  // authentication, and every retired runtime module. Even preflight and
+  // malformed legacy writes are rejected without processing their input.
+  app.use('/api/auth/review-demo', reviewDemoRemoved);
+  app.use('/api/review-demo', reviewDemoRemoved);
+  app.use('/api/cloud', cloudRelayRetired);
+  app.use('/api/auth', gatewayAuthRetired);
+  app.use('/api/admin', gatewayAdminRetired);
+  app.use('/api/permissions', gatewayPermissionsRetired);
 
   // 请求日志
   app.use((req, _res, next) => {
@@ -52,58 +71,37 @@ function createApp(options = {}) {
     next();
   });
 
-  // Permanent compatibility tombstone. Keep this before the general body
-  // parser so removed endpoints cannot buffer or process legacy payloads.
-  app.use('/api/review-demo', reviewDemoRemoved);
-
-  // Body parsing
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ extended: true }));
-
   // ===================== 健康检查 =====================
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, time: new Date().toISOString(), version: getHealthVersion() });
+    res.json({
+      ok: true,
+      time: new Date().toISOString(),
+      version: getHealthVersion(),
+      legacyAuthority: 'retired',
+    });
   });
-
-  // ===================== 公开路由（无需认证） =====================
-  app.use('/api/auth', authRouter);
-  app.use('/api', optionalAuth);
-  app.use('/api/cloud', optionalAuth, cloudRelayRouter);
-
-  // ===================== 需要认证的路由 =====================
-  app.use('/api/admin', authMiddleware, loadUserPermissions, adminRouter);
-  app.use('/api/permissions', authMiddleware, loadUserPermissions, permissionsRouter);
-
 
   // ===================== 404 =====================
   app.use((_req, res) => {
     res.status(404).json({ error: '接口不存在' });
   });
 
-  // ===================== 错误处理 =====================
-  app.use(errorHandler);
-
   return app;
+}
+
+function createGatewayServer() {
+  const app = createApp();
+  return { app, server: http.createServer(app) };
 }
 
 // ===================== 启动 =====================
 async function main() {
-  // 初始化数据库
-  initDatabase();
-  console.log('[Gateway] 数据库初始化完成');
-
-  const app = createApp();
-  const server = http.createServer(app);
+  const { server } = createGatewayServer();
   const PORT = process.env.GATEWAY_PORT || 3001;
-
-  // 初始化WebSocket服务器
-  const wsServer = new CloudWebSocketServer(server, { db: getDb() });
-  app.set('wsServer', wsServer);
 
   server.listen(PORT, () => {
     console.log(`[Gateway] 教育综合服务平台已启动 → http://localhost:${PORT}`);
     console.log(`[Gateway] 健康检查: http://localhost:${PORT}/api/health`);
-    console.log(`[Gateway] WebSocket服务器已启动 → ws://localhost:${PORT}`);
   });
 }
 
@@ -113,4 +111,4 @@ if (require.main === module) main().catch(err => {
 });
 
 module.exports = createApp;
-module.exports.CloudWebSocketServer = CloudWebSocketServer;
+module.exports.createGatewayServer = createGatewayServer;

@@ -9,7 +9,9 @@ async function requestHealth(app) {
     const { port } = server.address();
     const response = await fetch(`http://127.0.0.1:${port}/api/health`);
     assert.strictEqual(response.status, 200);
-    return response.json();
+    const health = await response.json();
+    assert.strictEqual(health.legacyAuthority, 'retired', 'health must expose the legacy authority retirement state');
+    return health;
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

@@ -42,6 +42,14 @@ function actor(value) {
   return { accountId, roles: value.roles.slice() };
 }
 
+function paperScore(value) {
+  return typeof value === 'number'
+    && Number.isFinite(value)
+    && value >= 0
+    && value <= 1000
+    && Math.round(value * 10) / 10 === value;
+}
+
 function paperLayout(value, questionIds) {
   if (value === undefined) return null;
   if (!plainObject(value) || Reflect.ownKeys(value).length !== 1 || !Array.isArray(value.items)
@@ -49,10 +57,10 @@ function paperLayout(value, questionIds) {
   const items = value.items.map(item => {
     if (!plainObject(item) || Reflect.ownKeys(item).length !== 3
       || typeof item.id !== 'string' || typeof item.sectionTitle !== 'string'
-      || !Number.isSafeInteger(item.score)) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      || !paperScore(item.score)) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
     const id = text(item.id, 128);
     const sectionTitle = item.sectionTitle.trim();
-    if (!sectionTitle || sectionTitle.length > 128 || item.score < 0 || item.score > 1000) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+    if (!sectionTitle || sectionTitle.length > 128) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
     return { id, sectionTitle, score: item.score };
   });
   if (items.some((item, index) => item.id !== questionIds[index])) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');

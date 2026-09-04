@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeMainlandPhone } = require('./mainlandPhone');
+
 function providerFailure() {
   return Object.assign(new Error('wechat phone verification unavailable'), { code: 'WECHAT_PHONE_VERIFICATION_UNAVAILABLE' });
 }
@@ -47,8 +49,8 @@ function createWechatPhoneVerifier({ appId, appSecret, fetchImpl = fetch, now = 
     } catch (_) {
       throw providerFailure();
     }
-    const phone = String(payload?.phone_info?.purePhoneNumber || '').replace(/\D/gu, '');
-    if (!response.ok || payload?.errcode || !/^1\d{10}$/u.test(phone)) throw providerFailure();
+    const phone = normalizeMainlandPhone(payload?.phone_info?.purePhoneNumber);
+    if (!response.ok || payload?.errcode || !phone) throw providerFailure();
     return phone;
   });
 }

@@ -112,6 +112,19 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const sessionContext = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(sessionContext.status, 200);
   assert.deepStrictEqual(sessionContext.body, { ok: true, authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null });
+  const verifiedAccessCalls = [];
+  const desktopVerifiedAccess = {
+    read: async input => {
+      verifiedAccessCalls.push(input);
+      return { access: 'teacher_registration_required', roles: [], teacherId: null };
+    },
+  };
+  const verifiedAccess = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, desktopVerifiedAccess,
+  }), '/api/desktop/verified-access', { method: 'POST', body: { verificationToken: 'ticket-visitor-1' } });
+  assert.strictEqual(verifiedAccess.status, 200);
+  assert.deepStrictEqual(verifiedAccess.body, { ok: true, access: 'teacher_registration_required', roles: [], teacherId: null });
+  assert.deepStrictEqual(verifiedAccessCalls, [{ verificationToken: 'ticket-visitor-1' }]);
   const miniappIdentity = {
     login: async input => {
       assert.deepStrictEqual(input, { loginCode: 'miniapp-login-proof', phoneCode: 'miniapp-proof' });
@@ -143,9 +156,9 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     submit: async input => {
       assert.deepStrictEqual(input, {
         token: 'visitor-ticket.signature', idempotencyKey: 'role-application-visitor-1',
-        requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1',
+        requestedIdentity: 'teacher', profileMode: 'existing', profileName: 'Teacher One', profilePhone: '13800138000',
       });
-      return { state: 'submitted', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' } };
+      return { state: 'submitted', application: { applicationId: 'role_application_0001', requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'name:Teacher One;phone:13800138000', profileName: 'Teacher One', profilePhone: '13800138000', status: 'submitted', submittedAt: '2026-08-26T08:00:00.000Z' } };
     },
     listSubmittedForDesktop: async ({ actor }) => {
       assert.deepStrictEqual(actor, { accountId: 'desktop-super-admin-1', roles: ['super_admin'] });
@@ -160,10 +173,20 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(visitorApplications.status, 200);
   assert.deepStrictEqual(visitorApplications.body, { ok: true, state: 'not_submitted', application: null });
   const submittedApplication = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications', {
-    method: 'POST', headers: { authorization: 'Bearer visitor-ticket.signature', 'x-idempotency-key': 'role-application-visitor-1' }, body: { requestedIdentity: 'teacher', profileMode: 'existing', bindingHint: 'teacher profile 1' },
+    method: 'POST', headers: { authorization: 'Bearer visitor-ticket.signature', 'x-idempotency-key': 'role-application-visitor-1' }, body: { requestedIdentity: 'teacher', profileMode: 'existing', profileName: 'Teacher One', profilePhone: '13800138000' },
   });
   assert.strictEqual(submittedApplication.status, 201);
   assert.strictEqual(submittedApplication.body.ok, true);
+  const mismatchedVerifiedPhone = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    miniappRoleApplications: { ...roleApplications, submit: async () => { throw Object.assign(new Error('phone mismatch'), { code: 'CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED' }); } },
+  }), '/api/miniapp/role-applications', {
+    method: 'POST', headers: { authorization: 'Bearer visitor-ticket.signature', 'x-idempotency-key': 'role-application-phone-mismatch' },
+    body: { requestedIdentity: 'teacher', profileMode: 'new', profileName: 'Teacher Two', profilePhone: '13900139000' },
+  });
+  assert.deepStrictEqual({ status: mismatchedVerifiedPhone.status, body: mismatchedVerifiedPhone.body }, {
+    status: 409, body: { ok: false, code: 'CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED' },
+  });
   const retiredMiniappReviewQueue = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/review/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
   assert.strictEqual(retiredMiniappReviewQueue.status, 404, 'a miniapp must not read the role approval queue');
   const retiredMiniappReview = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications }), '/api/miniapp/role-applications/role_application_0001/review', {
@@ -186,6 +209,15 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(desktopReviewedApplication.status, 200);
   assert.strictEqual(desktopReviewedApplication.body.state, 'approved');
+  const reviewConflict = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: desktopRoleSession,
+    miniappRoleApplications: { ...roleApplications, reviewForDesktop: async () => { throw Object.assign(new Error('name conflict'), { code: 'CLOUD_ROLE_APPLICATION_PROFILE_NAME_CONFLICT' }); } },
+  }), '/api/desktop/role-applications/role_application_0001/review', {
+    method: 'POST', headers: { authorization: 'Bearer desktop-super-admin-ticket.signature' }, body: { decision: 'approved', profileId: null },
+  });
+  assert.deepStrictEqual({ status: reviewConflict.status, body: reviewConflict.body }, {
+    status: 409, body: { ok: false, code: 'CLOUD_ROLE_APPLICATION_PROFILE_NAME_CONFLICT' },
+  });
   const miniappCannotUseDesktopReview = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappRoleApplications: roleApplications, desktopRegistration: desktopRoleSession }), '/api/desktop/role-applications/pending', { headers: { authorization: 'Bearer super-admin-ticket.signature' } });
   assert.strictEqual(miniappCannotUseDesktopReview.status, 403);
   const retiredDirectGrant = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity }), '/api/miniapp/cloud-accounts/miniapp-account-pending/role', {
@@ -281,10 +313,13 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
     body: {
       expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
+      courseId: 'course-2',
       startAt: '2026-08-23T01:00:00.000Z',
       endAt: '2026-08-23T02:00:00.000Z',
+      recurringRule: '{"frequency":"weekly"}',
       status: 1,
       roomDisplay: 'A102',
+      serviceType: 2,
       tuition: 120,
       teacherFee: 60,
       notes: null,
@@ -296,8 +331,9 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(businessWrites.length, 1);
   assert.deepStrictEqual(businessWrites[0], {
     tenantId: 'default', scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
-    startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z', status: 1,
-    roomDisplay: 'A102', tuition: 120, teacherFee: 60, notes: null,
+    courseId: 'course-2', startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z',
+    recurringRule: '{"frequency":"weekly"}', status: 1, roomDisplay: 'A102', serviceType: 2,
+    tuition: 120, teacherFee: 60, notes: null,
     pricings: [{ studentId: 'student-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
   });
   const legacyScheduleUpdate = await request(createCloudBusinessApp({
@@ -325,6 +361,9 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(legacyScheduleUpdate.status, 200);
   assert.strictEqual(businessWrites.length, 2);
   assert.strictEqual(businessWrites[1].pricings, null, 'legacy desktop update must preserve existing student overrides');
+  assert.strictEqual(businessWrites[1].courseId, null, 'legacy desktop update must preserve the existing course');
+  assert.strictEqual(businessWrites[1].recurringRule, null, 'legacy desktop update must preserve the existing recurrence');
+  assert.strictEqual(businessWrites[1].serviceType, null, 'legacy desktop update must preserve the existing service type');
   const scheduleLifecycleWrites = [];
   const scheduleLifecycleMutations = {
     create: async input => { scheduleLifecycleWrites.push(['create', input]); return { id: input.scheduleId, updatedAt: '2026-08-24T03:00:00.000Z' }; },
@@ -511,19 +550,31 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const studentContact = await request(createCloudBusinessApp({
     query: async (text, values) => {
       contactWrites.push([text, values]);
-      return { rows: [{ id: 'student-contact-student-1-2', studentId: 'student-1', slot: 2, relationship: 'guardian', phone: null, wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T01:00:00.000Z' }] };
+      return { rows: [{ id: 'student-contact-student-1-2', studentId: 'student-1', slot: 2, relationship: 'guardian', phone: '13900139000', wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T01:00:00.000Z' }] };
     },
     desktopRegistration: identity,
     businessTenantId: 'default',
   }), '/api/business/students/student-1/contacts/2', {
     method: 'PUT',
     headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
-    body: { expectedUpdatedAt: null, relationship: 'guardian', phone: null, wechat: 'guardian-handle' },
+    body: { expectedUpdatedAt: null, relationship: 'guardian', phone: '13900139000', wechat: 'guardian-handle' },
   });
   assert.strictEqual(studentContact.status, 200);
-  assert.deepStrictEqual(studentContact.body, { ok: true, contact: { id: 'student-contact-student-1-2', studentId: 'student-1', slot: 2, relationship: 'guardian', phone: null, wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T01:00:00.000Z' } });
-  assert.deepStrictEqual(contactWrites[0][1], ['student-1', 'default', 2, 'guardian', null, 'guardian-handle', null]);
+  assert.deepStrictEqual(studentContact.body, { ok: true, contact: { id: 'student-contact-student-1-2', studentId: 'student-1', slot: 2, relationship: 'guardian', phone: '13900139000', wechat: 'guardian-handle', status: 'active', updatedAt: '2026-08-23T01:00:00.000Z' } });
+  assert.deepStrictEqual(contactWrites[0][1], ['student-1', 'default', 2, 'guardian', '13900139000', 'guardian-handle', null]);
   assert.ok(contactWrites[0][0].includes('business.student_contact_directory') && contactWrites[0][0].includes('ON CONFLICT (student_id,contact_slot) DO UPDATE'));
+  let wechatOnlyContactQueried = false;
+  const wechatOnlyContact = await request(createCloudBusinessApp({
+    query: async () => { wechatOnlyContactQueried = true; return { rows: [] }; },
+    desktopRegistration: identity,
+    businessTenantId: 'default',
+  }), '/api/business/students/student-1/contacts/2', {
+    method: 'PUT',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' },
+    body: { expectedUpdatedAt: null, relationship: 'guardian', phone: null, wechat: 'display-only-handle' },
+  });
+  assert.strictEqual(wechatOnlyContact.status, 400);
+  assert.strictEqual(wechatOnlyContactQueried, false, 'a display-only WeChat handle must never become a formal student contact');
   let deniedBusinessQuery = false;
   const deniedScheduleList = await request(createCloudBusinessApp({
     query: async () => { deniedBusinessQuery = true; return { rows: [] }; },
@@ -536,6 +587,15 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const missingSessionToken = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity }), '/api/desktop/session-context');
   assert.strictEqual(missingSessionToken.status, 403);
   assert.deepStrictEqual(missingSessionToken.body, { ok: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+  const registrationRequired = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    desktopRegistration: {
+      ...identity,
+      sessionContext: async () => { throw Object.assign(new Error('teacher registration required'), { code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED' }); },
+    },
+  }), '/api/desktop/session-context', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+  assert.strictEqual(registrationRequired.status, 409);
+  assert.deepStrictEqual(registrationRequired.body, { ok: false, code: 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED' });
   assert.deepStrictEqual(calls, [
     ['begin', { phoneCode: 'provider-code' }],
     ['register', { verificationToken: 'ticket-1', installationId: 'install-1', installationPublicKey: 'public-key', deviceProof: 'proof', idempotencyKey: 'retry-1' }],
@@ -561,15 +621,15 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
 
   const pairingCalls = [];
   const pairing = {
-    start: input => { pairingCalls.push(['start', input]); return { pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z' }; },
+    start: async input => { pairingCalls.push(['start', input]); return { pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z', qrValue: 'weixin://dl/business/?t=pair-1' }; },
     confirm: async input => { pairingCalls.push(['confirm', input]); return { status: 'verified' }; },
     read: input => { pairingCalls.push(['read', input]); return { status: 'verified', verificationToken: 'ticket-1' }; },
   };
   const pairedApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, desktopPairing: pairing });
   const pairingStart = await request(pairedApp, '/api/desktop/pairing/start', { method: 'POST', body: { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' } });
   assert.strictEqual(pairingStart.status, 200);
-  assert.deepStrictEqual(pairingStart.body, { ok: true, pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z' });
-  const pairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', { method: 'POST', body: { pairingId: 'pair-1', pairingSecret: 'secret-1', phoneCode: 'provider-code' } });
+  assert.deepStrictEqual(pairingStart.body, { ok: true, pairingId: 'pair-1', pairingSecret: 'secret-1', expiresAt: '2026-08-21T12:05:00.000Z', qrValue: 'weixin://dl/business/?t=pair-1' });
+  const pairingConfirm = await request(pairedApp, '/api/desktop/pairing/confirm', { method: 'POST', body: { pairingId: 'pair-1', pairingSecret: 'secret-1', loginCode: 'login-code', phoneCode: 'provider-code' } });
   assert.strictEqual(pairingConfirm.status, 200);
   assert.deepStrictEqual(pairingConfirm.body, { ok: true, status: 'verified' });
   const pairingRead = await request(pairedApp, '/api/desktop/pairing/pair-1?secret=secret-1');
@@ -577,7 +637,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(pairingRead.body, { ok: true, status: 'verified', verificationToken: 'ticket-1' });
   assert.deepStrictEqual(pairingCalls, [
     ['start', { installationId: 'install-1', installationPublicKey: 'public-key', idempotencyKey: 'retry-1' }],
-    ['confirm', { pairingId: 'pair-1', pairingSecret: 'secret-1', phoneCode: 'provider-code' }],
+    ['confirm', { pairingId: 'pair-1', pairingSecret: 'secret-1', loginCode: 'login-code', phoneCode: 'provider-code' }],
     ['read', { pairingId: 'pair-1', pairingSecret: 'secret-1' }],
   ]);
 

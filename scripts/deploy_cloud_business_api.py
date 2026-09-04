@@ -2,6 +2,7 @@
 """Deploy the PostgreSQL-backed cloud business API as a verified Docker release."""
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
@@ -15,6 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import deploy  # noqa: E402
+import backup_cloud_postgres  # noqa: E402
+import deploy_gateway as retirement_gateway  # noqa: E402
+import verify_cloud_business_release  # noqa: E402
 
 
 CURRENT_CONTAINER = "gewu-cloud-business-api"
@@ -298,12 +302,126 @@ def run_cloud_migrations():
     control_m20 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m20.py")], cwd=ROOT, check=True, text=True)
     control_m21 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m21.py")], cwd=ROOT, check=True, text=True)
     control_m22 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m22.py")], cwd=ROOT, check=True, text=True)
+    control_m23 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m23.py")], cwd=ROOT, check=True, text=True)
+    control_m24 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m24.py")], cwd=ROOT, check=True, text=True)
+    control_m25 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m25.py")], cwd=ROOT, check=True, text=True)
+    control_m26 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m26.py")], cwd=ROOT, check=True, text=True)
+    control_m27 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m27.py")], cwd=ROOT, check=True, text=True)
     business = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_postgres_migrations.py")], cwd=ROOT, check=True, text=True)
-    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, business.returncode)
+    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, control_m23.returncode, control_m24.returncode, control_m25.returncode, control_m26.returncode, control_m27.returncode, business.returncode)
+
+
+def create_verified_backup():
+    backup = backup_cloud_postgres.create_backup(
+        container=POSTGRES_CONTAINER,
+        database="gewu_cloud",
+        role="gewu_app",
+    )
+    root = backup.get("root") if isinstance(backup, dict) else None
+    sha256 = backup.get("sha256") if isinstance(backup, dict) else None
+    if (not isinstance(root, str)
+            or not re.fullmatch(r"/root/scheduling-backups/postgres/[0-9]{8}-[0-9]{6}", root)
+            or not isinstance(sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+            or backup.get("dump") != f"{root}/gewu_cloud.dump"
+            or backup.get("checksum") != f"{root}/gewu_cloud.dump.sha256"
+            or backup.get("metadata") != f"{root}/metadata.json"
+            or backup.get("restoreVerified") is not True):
+        raise RuntimeError("CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED")
+    return backup
+
+
+def contract_sha256(payload):
+    if not isinstance(payload, dict):
+        raise RuntimeError("CLOUD_RELEASE_EVIDENCE_INVALID")
+    try:
+        canonical = json.dumps(payload, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("CLOUD_RELEASE_EVIDENCE_INVALID") from error
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def verified_release_evidence(version, backup, health, permission_contract):
+    if (not isinstance(version, str)
+            or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", version)
+            or not isinstance(backup, dict)
+            or backup.get("restoreVerified") is not True
+            or not isinstance(health, dict)
+            or health.get("ok") is not True
+            or health.get("businessAuthority") != "cloud"
+            or health.get("version") != version):
+        raise RuntimeError("CLOUD_RELEASE_EVIDENCE_INVALID")
+    try:
+        verified_permission_contract = verify_cloud_business_release.validate(dict(permission_contract))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("CLOUD_RELEASE_EVIDENCE_INVALID") from error
+    return (
+        f"public cloud business health verified at version {version}; "
+        f"public retirement gateway health, four authority tombstones, and websocket rejection verified at version {version}; "
+        f"healthContractSha256={contract_sha256(health)}; "
+        f"authorityContractSha256={contract_sha256(verified_permission_contract)}; "
+        f"pre-migration PostgreSQL backup restore-verified=true at {backup['root']} "
+        f"sha256={backup['sha256']}"
+    )
 
 
 def health_url():
-    return "https://physicsedu.xyz/scheduling/api/health"
+    return "https://physicsedu.xyz/cloud-business/api/health"
+
+
+def gateway_base_url():
+    return "https://physicsedu.xyz/scheduling"
+
+
+def deploy_retirement_gateway():
+    return retirement_gateway.deploy_retired_gateway()
+
+
+def verify_public_gateway_retirement(expected_version):
+    if not isinstance(expected_version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", expected_version):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    ssh = deploy.connect()
+    try:
+        output, _ = deploy.run(
+            ssh,
+            f"curl --fail --silent --show-error --max-time 30 '{gateway_base_url()}/api/health'",
+            timeout=45,
+        )
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError as error:
+            raise RuntimeError("GATEWAY_RETIREMENT_HEALTH_INVALID") from error
+        if (payload.get("ok") is not True
+                or payload.get("version") != expected_version
+                or payload.get("legacyAuthority") != "retired"):
+            raise RuntimeError("GATEWAY_RETIREMENT_HEALTH_INVALID")
+        for route in (
+                "/api/cloud/commands",
+                "/api/auth/login",
+                "/api/admin/users",
+                "/api/permissions/my"):
+            status, _ = deploy.run(
+                ssh,
+                f"curl --silent --output /dev/null --write-out '%{{http_code}}' --max-time 30 "
+                f"'{gateway_base_url()}{route}'",
+                timeout=45,
+            )
+            if status.strip() != "410":
+                raise RuntimeError("GATEWAY_RETIREMENT_TOMBSTONE_INVALID")
+        for route in ("/ws/authority", "/ws/cloud-relay"):
+            status, _ = deploy.run(
+                ssh,
+                f"curl --http1.1 --silent --output /dev/null --write-out '%{{http_code}}' --max-time 30 "
+                f"--header 'Connection: Upgrade' --header 'Upgrade: websocket' "
+                f"'{gateway_base_url()}{route}'",
+                timeout=45,
+            )
+            normalized_status = status.strip()
+            if not re.fullmatch(r"[1-5][0-9]{2}", normalized_status) or normalized_status == "101":
+                raise RuntimeError("GATEWAY_RETIREMENT_WEBSOCKET_INVALID")
+        return payload
+    finally:
+        ssh.close()
 
 
 def verify_public_health(expected_version):
@@ -318,6 +436,7 @@ def verify_public_health(expected_version):
     if (payload.get("ok") is not True or payload.get("businessAuthority") != "cloud"
             or payload.get("version") != expected_version):
         raise RuntimeError("CLOUD_DOCKER_DEPLOY_HEALTH_INVALID")
+    verify_public_gateway_retirement(expected_version)
     return payload
 
 
@@ -390,7 +509,7 @@ def recover_promotion_lock(tag, mode):
     manifest = None
     if mode == "preserve":
         tag = validated_release_tag(tag)
-        manifest = deploy.require_release_manifest("cloud_business", allowed_statuses=("pending", "verified"))
+        manifest = deploy.require_release_manifest("cloud_business", allowed_statuses=("verified",))
     recovery_id = secrets.token_hex(16)
     stale = claim_stale_promotion_lock(tag, recovery_id)
     if mode == "rollback":
@@ -398,12 +517,10 @@ def recover_promotion_lock(tag, mode):
     else:
         verify_current_release_tag(tag)
         verify_public_health(tag.split("-", 1)[0])
+        verify_cloud_business_release.verify()
         heartbeat_promotion_lock(recovery_id, tag)
-        if manifest["targets"]["cloud_business"]["status"] == "pending":
-            deploy.record_release_receipt(
-                "cloud_business",
-                f"recovered promoted cloud business release verified at version {tag.split('-', 1)[0]}",
-            )
+        if manifest["targets"]["cloud_business"]["status"] != "verified":
+            raise RuntimeError("CLOUD_RECOVERY_RECEIPT_REQUIRED")
     release_promotion_lock(recovery_id)
     return {"tag": tag, "mode": mode, "ageSeconds": stale["ageSeconds"]}
 
@@ -416,16 +533,16 @@ def reconcile_uncertain_switch(tag, operation_id):
         ssh.close()
 
 
-def promote_validated_candidate(tag, version, evidence):
+def promote_validated_candidate(tag, version, backup):
     operation_id = secrets.token_hex(16)
     acquire_promotion_lock(operation_id, tag)
     try:
-        return promote_candidate_under_lock(tag, version, evidence, operation_id)
+        return promote_candidate_under_lock(tag, version, backup, operation_id)
     finally:
         release_promotion_lock(operation_id)
 
 
-def promote_candidate_under_lock(tag, version, evidence, operation_id):
+def promote_candidate_under_lock(tag, version, backup, operation_id):
     ssh = deploy.connect()
     switch_error = None
     try:
@@ -446,6 +563,9 @@ def promote_candidate_under_lock(tag, version, evidence, operation_id):
         heartbeat_promotion_lock(operation_id, tag)
         health = verify_public_health(version)
         heartbeat_promotion_lock(operation_id, tag)
+        permission_contract = verify_cloud_business_release.verify()
+        heartbeat_promotion_lock(operation_id, tag)
+        evidence = verified_release_evidence(version, backup, health, permission_contract)
         deploy.record_release_receipt("cloud_business", evidence)
         return health
     except BaseException as primary_error:
@@ -465,6 +585,11 @@ def deploy_release():
     try:
         upload_source(ssh, tag)
         build_image(ssh, tag)
+        backup = create_verified_backup()
+        deploy_retirement_gateway()
+        # The candidate starts with strict schema/invariant verification. Apply
+        # additive migrations only after a fresh, verified recovery point exists.
+        run_cloud_migrations()
         try:
             deploy.run(ssh, candidate_command(tag, candidate_operation_id), timeout=90)
         except Exception:
@@ -476,34 +601,23 @@ def deploy_release():
             except Exception:
                 pass
             raise
-        try:
-            run_cloud_migrations()
-        except Exception:
-            deploy.run(ssh, discard_candidate_command(tag, candidate_operation_id))
-            raise
     finally:
         ssh.close()
     return promote_validated_candidate(
         tag,
         version,
-        f"public cloud business health verified at version {version}",
+        backup,
     )
 
 
 def promote_release(tag):
-    version = source_version()
-    tag = validated_release_tag(tag)
-    deploy.require_release_manifest("cloud_business")
-    return promote_validated_candidate(
-        tag,
-        version,
-        f"promoted cloud business candidate verified at version {version}",
-    )
+    del tag
+    raise RuntimeError("CLOUD_STANDALONE_PROMOTION_RETIRED")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("deploy", "candidate", "promote", "discard", "recover-lock"))
+    parser.add_argument("command", choices=("deploy", "discard", "recover-lock"))
     parser.add_argument("--tag")
     parser.add_argument("--recovery-mode", choices=("rollback", "preserve"))
     args = parser.parse_args()
@@ -515,20 +629,6 @@ def main():
             raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     else:
         tag = validated_release_tag(args.tag)
-    if args.command == "candidate":
-        deploy.require_release_manifest("cloud_business")
-        candidate_operation_id = secrets.token_hex(16)
-        ssh = deploy.connect()
-        try:
-            upload_source(ssh, tag)
-            build_image(ssh, tag)
-            deploy.run(ssh, candidate_command(tag, candidate_operation_id), timeout=90)
-        finally:
-            ssh.close()
-        return
-    if args.command == "promote":
-        print(json.dumps(promote_release(tag), ensure_ascii=True, sort_keys=True))
-        return
     if args.command == "discard":
         ssh = deploy.connect()
         try:

@@ -20,6 +20,21 @@
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],
       "rule": "desktop offline changes are local drafts until confirmed; miniapp does not directly mutate core teaching data"
+    },
+    "desktopCloudSession": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "desktop login verifies the cloud account before silently registering the device and installation; restart challenges and role switching are cloud-authoritative"
+    },
+    "identityRoleModel": {
+      "version": "2",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "formal grants are exactly super_admin, teacher, student, and family_member; visitor has no formal grant; family_member keeps guardian-scoped linked-student data access"
+    },
+    "questionBankBrowse": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "desktop and miniapp render the same cloud-authoritative question structure, option semantics, filters, basket identities, answers, explanations, and source metadata"
     }
   },
   "runtimeReceipts": {
