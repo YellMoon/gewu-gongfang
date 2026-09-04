@@ -15,6 +15,10 @@ assert.match(source, /issueSession: input => registration\.issueSession\(input\)
 assert.match(source, /s\.row_version AS "rowVersion"/,
   'the signed desktop role-elevation proof must bind to the current cloud session version');
 assert.match(source, /desktopCloudIdentity: desktopRuntime\?\.desktopCloudIdentity \|\| null/);
+assert.match(source, /createDesktopPairingCanonicalPhoneReader/);
+assert.match(source, /query: \(text, values\) => writerPool\.query\(text, values\)/);
+assert.doesNotMatch(source, /vnext_read_canonical_account_by_verified_contact\(\$1,\$2\)'\s*,\s*\['phone'/u,
+  'desktop pairing must not pass a phone hash to the WeChat OpenID/UnionID lookup function');
 assert.doesNotMatch(source, /embedded.*desktop-identity|desktop-identity.*embedded/i,
   'removed embedded identity routes must not be restored');
 

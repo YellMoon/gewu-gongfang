@@ -93,6 +93,9 @@ assert.ok(!gateSource.includes('beginPasswordReset'));
 assert.ok(gateSource.includes('beginUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('pollUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('completeUnifiedOnlineRegistration'));
+assert.ok(gateSource.includes("const waitingForVerification = pending?.status === 'awaiting_online_verification'")
+  && gateSource.includes('window.setInterval(() => { void pollRegistration(); }, 3000)'),
+  'a newly started WeChat login must poll automatically instead of waiting for a manual refresh click');
 assert.ok(gateSource.includes("pending?.desktopAccess?.access === 'allowed'"),
   'the verified login state must show the enter action only after cloud confirms a teacher-desktop role');
 assert.ok(gateSource.includes("pending?.desktopAccess?.access === 'teacher_registration_required'"),

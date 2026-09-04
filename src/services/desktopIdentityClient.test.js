@@ -566,6 +566,8 @@ async function main() {
   const unifiedPending = await unifiedCloudClient.beginUnifiedOnlineRegistration({
     baseUrl: 'https://cloud.test', deviceName: 'Unified cloud desktop', idempotencyKey: 'unified-registration-1',
   });
+  assert.strictEqual(unifiedPending.status, 'awaiting_online_verification',
+    'a newly rendered WeChat code must start the desktop gate polling without a manual refresh');
   assert.strictEqual(unifiedPending.qrImageDataUrl, 'data:image/png;base64,cHJvZHVjdGlvbi1xci1jb2Rl');
   assert.strictEqual(unifiedPending.qrValue, undefined);
   const unifiedVerified = await unifiedCloudClient.pollUnifiedOnlineRegistration(unifiedPending);

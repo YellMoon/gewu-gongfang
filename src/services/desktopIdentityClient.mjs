@@ -438,6 +438,7 @@ export function createDesktopIdentityClient({
       baseUrl: normalizedUrl,
       publicIdentity: Object.freeze({ ...publicIdentity }),
       idempotencyKey: normalizedIdempotencyKey,
+      status: 'awaiting_online_verification',
       pairingId: String(started.pairingId),
       pairingSecret: String(started.pairingSecret),
       expiresAt: String(started.expiresAt),

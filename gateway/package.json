@@ -1,6 +1,6 @@
 {
   "name": "edu-platform-gateway",
-  "version": "8.10.0",
+  "version": "8.11.1",
   "description": "教育综合服务平台 — API Gateway",
   "main": "src/app.js",
   "scripts": {
