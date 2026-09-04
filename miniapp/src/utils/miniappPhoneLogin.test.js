@@ -12,6 +12,8 @@ assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'),
 assert.ok(loginPage.includes('handleDesktopSessionLogin'), 'an already authenticated miniapp session must confirm desktop login without requesting the phone again');
 assert.ok(loginPage.includes('authSessionRuntime.capture()'), 'desktop confirmation must read the current trusted miniapp session');
 assert.strictEqual((loginPage.match(/className="wx-login-btn"/g) || []).length, 3, 'the mutually exclusive pairing state must render exactly one of its signed-in or signed-out primary actions');
+assert.ok(loginPage.includes('key="desktop-session-confirm"'), 'the authenticated desktop confirmation button must have its own stable native identity');
+assert.ok(loginPage.includes('key="desktop-phone-login"'), 'the signed-out desktop phone-login button must not reuse the authenticated confirmation node');
 assert.ok(!loginPage.includes('handleCloudLogin(null)'), 'every WeChat login must obtain a current official phone proof');
 assert.ok(loginPage.includes('Taro.login()'), 'login must obtain the official WeChat identity code before calling cloud login');
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');
