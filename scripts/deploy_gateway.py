@@ -107,7 +107,7 @@ def deploy_retired_gateway():
       upload_dir(sftp, ssh, LOCAL_GATEWAY, REMOTE_GATEWAY)
     finally:
       sftp.close()
-    backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=180)
+    backend_deploy.run(ssh, f"cd '{REMOTE_GATEWAY}' && npm install --production 2>&1", timeout=600)
     stop_legacy_gateway_services(ssh)
     restart_gateway(ssh)
     backend_deploy.run(ssh, "pm2 save", timeout=60)

@@ -66,7 +66,7 @@ class DeployRetiredGatewayTests(unittest.TestCase):
         ssh.open_sftp.return_value = sftp
         with mock.patch.object(module.backend_deploy, "require_release_manifest") as require_manifest, mock.patch.object(
             module.backend_deploy, "connect", return_value=ssh
-        ), mock.patch.object(module.backend_deploy, "run", return_value=("", "")), mock.patch.object(
+        ), mock.patch.object(module.backend_deploy, "run", return_value=("", "")) as run, mock.patch.object(
             module, "upload_dir"
         ) as upload_dir, mock.patch.object(module, "stop_legacy_gateway_services"), mock.patch.object(
             module, "restart_gateway"
@@ -76,6 +76,8 @@ class DeployRetiredGatewayTests(unittest.TestCase):
             module.deploy_retired_gateway()
         require_manifest.assert_called_once_with("cloud_business")
         upload_dir.assert_called_once()
+        install_call = next(call for call in run.call_args_list if "npm install --production" in call.args[1])
+        self.assertGreaterEqual(install_call.kwargs.get("timeout", 0), 600)
         receipt.assert_not_called()
         sftp.close.assert_called_once()
         ssh.close.assert_called_once()
