@@ -304,7 +304,6 @@ function checkDesktopReleaseBoundary() {
   const packageJson = readJson('package.json');
   const runtimeConfig = readText('public/runtimeConfig.js');
   const buildFlavor = readText('public/desktopBuildFlavor.js');
-  const directTransport = readText('src/services/authorityTransports.mjs');
   const gatewayApp = readText('gateway/src/app.js');
   const ordinaryFiles = packageJson.build?.files || [];
   const retiredHostFiles = [
@@ -343,11 +342,6 @@ function checkDesktopReleaseBoundary() {
   ]) {
     if (fs.existsSync(path.join(process.cwd(), retiredPath))) {
       issues.push(`retired sync path still exists: ${retiredPath}`);
-    }
-  }
-  for (const forbidden of ['/api/sync/authorize', 'x-sync-authorization', 'syncAuthorizationToken']) {
-    if (directTransport.includes(forbidden)) {
-      issues.push(`direct V2 sync transport still accepts legacy authorization: ${forbidden}`);
     }
   }
   for (const marker of [

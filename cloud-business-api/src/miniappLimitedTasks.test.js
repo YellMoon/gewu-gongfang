@@ -28,8 +28,12 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
     login: async () => { throw new Error('not used'); },
     context: async ({ token }) => {
       if (token === 'miniapp-ticket.signature') return { accountId: 'miniapp-super-admin-1', status: 'active', roles: ['super_admin'], profile: null };
+      if (token === 'miniapp-teacher.signature') return { accountId: 'miniapp-teacher-1', status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-1' } };
       if (token === 'miniapp-student.signature') return { accountId: 'miniapp-student-1', status: 'active', roles: ['student'], profile: { type: 'student', id: 'student-1' } };
+      if (token === 'miniapp-family.signature') return { accountId: 'miniapp-family-1', status: 'active', roles: ['family_member'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } };
       if (token === 'miniapp-visitor.signature') return { accountId: 'miniapp-visitor-1', status: 'visitor', roles: [], profile: null };
+      if (token === 'miniapp-disabled.signature') return { accountId: 'miniapp-disabled-1', status: 'disabled', roles: ['teacher'], profile: { type: 'teacher', id: 'teacher-disabled' } };
+      if (token === 'miniapp-unknown.signature') return { accountId: 'miniapp-unknown-1', status: 'active', roles: ['unknown'], profile: null };
       throw new Error('rejected');
     },
     pendingAccounts: async () => [],
@@ -161,6 +165,21 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   assert.strictEqual(studentPreviews.body.questions.length, 205, 'student browsing must not silently truncate published questions');
   assert.strictEqual(studentPreviews.body.hasMore, false);
   assert.deepStrictEqual(browseQueries.at(-1).values, ['default', null, [], null, null, null, null, null, null, null, null, null, null, null]);
+
+  const teacherPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-teacher.signature' } });
+  assert.strictEqual(teacherPreviews.status, 200, 'a formal teacher with question-bank:view may browse published questions');
+  assert.strictEqual(teacherPreviews.body.questions.length, 205);
+
+  const familyPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-family.signature' } });
+  assert.strictEqual(familyPreviews.status, 200, 'a formal family member with question-bank:view may browse published questions');
+  assert.strictEqual(familyPreviews.body.questions.length, 205);
+
+  const queryCountBeforeDeniedRoles = browseQueries.length;
+  const disabledPreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-disabled.signature' } });
+  assert.strictEqual(disabledPreviews.status, 403, 'a disabled account must not browse published questions');
+  const unknownRolePreviews = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-unknown.signature' } });
+  assert.strictEqual(unknownRolePreviews.status, 403, 'an unknown active role must fail closed');
+  assert.strictEqual(browseQueries.length, queryCountBeforeDeniedRoles, 'denied identities must be rejected before the question query');
 
   const visitorBrowse = await request(app, '/api/business/miniapp-question-previews', { headers: { authorization: 'Bearer miniapp-visitor.signature' } });
   assert.strictEqual(visitorBrowse.status, 200);

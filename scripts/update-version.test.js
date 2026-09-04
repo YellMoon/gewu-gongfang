@@ -122,7 +122,8 @@ assert.ok(source.includes('--bump=patch'), 'update-version should document --bum
 assert.ok(source.includes('VERSION_BUMP_LEVEL'), 'update-version should support env-driven bump level');
 assert.ok(source.includes('COMPONENTS'), 'version tooling must define independently versioned release components');
 assert.ok(source.includes('--component'), 'version tooling must require an explicit component when bumping a non-desktop endpoint');
-assert.ok(!source.includes('syncBackendPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite retired backend package versions');
+assert.ok(source.includes("if (component === 'desktop') syncBackendPackageVersion(version)"),
+  'the embedded desktop cache service must follow the desktop package version');
 assert.ok(!source.includes('syncCloudBusinessApiPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the cloud service version');
 assert.ok(!source.includes('syncStorageAgentPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the storage agent version');
 assert.ok(source.includes("if (component === 'cloud_business') syncGatewayPackageVersion(version)"),

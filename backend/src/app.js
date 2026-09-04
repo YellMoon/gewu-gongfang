@@ -10,7 +10,6 @@ const crypto = require('crypto');
 const { optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
-const HostWebSocketClient = require('./websocket/client');
 
 const opsRouter = require('./routes/ops');
 
@@ -273,4 +272,4 @@ function createApp(options = {}) {
   return app;
 }
 
-module.exports = { createApp, getAppVersion, resolvePackageVersion, HostWebSocketClient };
+module.exports = { createApp, getAppVersion, resolvePackageVersion };

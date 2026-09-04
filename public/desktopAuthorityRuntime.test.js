@@ -23,6 +23,7 @@ function response(status, body) {
     'public/desktopAuthorityRuntime.js',
     'src/services/desktopCommandOutbox.mjs',
     'src/services/desktopAuthorityClient.mjs',
+    'src/services/desktopIdentityClient.mjs',
     'src/services/desktopCloudBusinessDraft.mjs',
   ]) {
     assert.ok(packageJson.build.files.includes(packagedFile), `${packagedFile} must be packaged`);

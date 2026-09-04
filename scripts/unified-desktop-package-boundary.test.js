@@ -6,6 +6,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..');
 const packageJson = require(path.join(root, 'package.json'));
+const packageFiles = packageJson.build?.files || [];
 
 assert.strictEqual(packageJson.desktopBuildFlavor, 'unified-desktop');
 assert.doesNotMatch(packageJson.scripts?.['test:desktop-build-flavor'] || '', /realTwoDesktopE2e/,
@@ -22,5 +23,24 @@ assert.doesNotMatch(electronSource, /ipcMain\.handle\('runtime-config:set'/);
 assert.doesNotMatch(electronSource, /ipcMain\.handle\('dialog:select-folder'/);
 assert.doesNotMatch(preloadSource, /'runtime-config:set'/);
 assert.doesNotMatch(preloadSource, /'dialog:select-folder'/);
+assert.ok(!packageFiles.includes('src/services/authorityWebSocketTransport.mjs'),
+  'the desktop package must not ship the retired authority WebSocket transport');
+assert.ok(!packageFiles.includes('src/services/authorityTransports.mjs'),
+  'the desktop package must not ship the retired LAN or durable-relay authority selector');
+for (const excluded of [
+  '!backend/**/*.test.js',
+  '!backend/data{,/**/*}',
+  '!backend/src/routes/authorityProtocol.js',
+  '!backend/src/routes/miniappAuthorityApplications.js',
+  '!backend/src/routes/miniappAuthorityProjection.js',
+  '!backend/src/services/authorityCloudRuntime.js',
+  '!backend/src/websocket/authorityRelayRouter.js',
+  '!backend/src/websocket/authoritySocketServer.js',
+  '!backend/src/websocket/client.js',
+  '!backend/src/websocket/cloudRelayServer.js',
+  '!backend/src/websocket/hostTaskWakeup.js',
+]) {
+  assert.ok(packageFiles.includes(excluded), `desktop build.files must fail closed with ${excluded}`);
+}
 
 console.log('unified desktop package boundary checks passed');

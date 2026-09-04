@@ -350,10 +350,6 @@ function createDesktopAuthorityRuntime({
           : null;
         return createDesktopAuthorityClient({
           outbox,
-          createEnvelope: async () => { throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED'); },
-          transports: Object.freeze({
-            submit: async () => { throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED'); },
-          }),
           createCloudQuestionCommand: draft => Object.freeze({
             commandId: draft.id,
             payloadHash: crypto.createHash('sha256')

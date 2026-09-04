@@ -1063,7 +1063,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!pagination || !filters) return businessInputInvalid(response);
     try {
       const actor = await miniappBusinessContext(request);
+      const capabilities = miniappCapabilities(actor);
       const isVisitor = actor.status === 'visitor';
+      const requiredCapability = isVisitor ? 'question-preview:read' : 'question-bank:view';
+      if (!capabilities.includes(requiredCapability)) throw businessAccessDenied();
       if (isVisitor && pagination.cursor) return businessInputInvalid(response);
       const values = [
         businessTenantId,

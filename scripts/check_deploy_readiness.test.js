@@ -14,9 +14,10 @@ assert.strictEqual(
   false,
   'deploy readiness must not require the retired one-click transport source'
 );
-assert.ok(
+assert.strictEqual(
   source.includes("readText('src/services/authorityTransports.mjs')"),
-  'deploy readiness must inspect the formal authority transport source'
+  false,
+  'deploy readiness must not require the retired LAN or durable-relay authority selector'
 );
 assert.strictEqual(
   source.includes("readText('gateway/src/routes/cloudRelay.js')"),

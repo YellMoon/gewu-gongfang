@@ -1,20 +1,15 @@
-import { verifyAuthorityReceipt } from './authorityTransports.mjs';
-
 function authorityClientError(code) {
   return Object.assign(new Error(code), { code });
 }
 
 export function createDesktopAuthorityClient({
   outbox,
-  createEnvelope,
-  transports,
   createCloudQuestionCommand = null,
   submitCloudQuestion = null,
   createCloudBusinessCommand = null,
   submitCloudBusiness = null,
 } = {}) {
-  if (!outbox || typeof outbox.append !== 'function' || typeof outbox.get !== 'function'
-    || typeof createEnvelope !== 'function' || typeof transports?.submit !== 'function') {
+  if (!outbox || typeof outbox.append !== 'function' || typeof outbox.get !== 'function') {
     throw authorityClientError('DESKTOP_AUTHORITY_CLIENT_DEPENDENCY_REQUIRED');
   }
   if ((createCloudQuestionCommand !== null && typeof createCloudQuestionCommand !== 'function')
@@ -74,33 +69,7 @@ export function createDesktopAuthorityClient({
     if (unregisteredBusinessMutation(draft)) {
       throw authorityClientError('CLOUD_BUSINESS_DRAFT_MAPPING_REQUIRED');
     }
-    let command;
-    if (draft.status === 'confirmed') {
-      command = await createEnvelope(draft);
-      await outbox.markSubmitted(id, {
-        commandId: command.commandId,
-        payloadHash: command.payloadHash,
-        transportUsed: 'pending',
-        command,
-      });
-    } else if (draft.status === 'submitted' && draft.submission?.command) {
-      command = draft.submission.command;
-    } else {
-      throw authorityClientError('AUTHORITY_DRAFT_NOT_SUBMITTABLE');
-    }
-    const delivered = await transports.submit(command);
-    verifyAuthorityReceipt(command, delivered.receipt);
-    if (typeof outbox.recordTransport === 'function') {
-      await outbox.recordTransport(id, delivered.transportUsed);
-    }
-    const acknowledged = await outbox.acknowledge(id, delivered.receipt);
-    return Object.freeze({
-      command,
-      receipt: delivered.receipt,
-      transportUsed: delivered.transportUsed,
-      rejected: acknowledged?.status === 'conflict'
-        && delivered.receipt?.status === 'rejected',
-    });
+    throw authorityClientError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
   }
 
   async function confirmAndSubmit(id, options = {}) {
