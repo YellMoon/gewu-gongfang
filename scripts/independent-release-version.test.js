@@ -26,8 +26,14 @@ for (const target of matrix.DEFAULT_TARGETS) {
     version: componentVersions[target],
     evidence: `${target} compatible receipt`,
     ...(target === 'storage_proxy' ? {
-      runtimeVersion: '8.8.0',
-      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+      runtimeVersion: '8.8.2',
+      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+      parserSha256: 'f'.repeat(64),
+      runtimeReceipt: {
+        receiptId: 'storage_runtime_receipt_abcdefgh', agentId: 'storage-agent-1', agentVersion: '8.8.2',
+        contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+        parserSha256: 'f'.repeat(64), observedAt: '2026-09-05T00:00:00.000Z',
+      },
     } : {}),
     ...(target === 'miniapp' ? { releaseLevel: 'production' } : {}),
   });

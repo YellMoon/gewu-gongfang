@@ -4,6 +4,16 @@ const os = require('os');
 const path = require('path');
 const matrix = require('./release-matrix');
 
+const runtimeParserSha256 = 'f'.repeat(64);
+const runtimeReceiptEvidence = Object.freeze({
+  receiptId: 'storage_runtime_receipt_abcdefgh',
+  agentId: 'storage-agent-1',
+  agentVersion: '8.8.2',
+  contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+  parserSha256: runtimeParserSha256,
+  observedAt: '2026-09-05T00:00:00.000Z',
+});
+
 const targets = matrix.DEFAULT_TARGETS;
 const versions = {
   desktop: '7.2.0',
@@ -58,7 +68,7 @@ assert.throws(
   () => matrix.recordReceipt(missingStorageRuntimeManifest, {
     target: 'storage_proxy',
     version: versions.storage_proxy,
-    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
     evidence: 'component receipt without live runtime version',
   }),
   /runtime version is required/i,
@@ -80,14 +90,14 @@ assert.match(
   'persisted receipts must be rejected when the declared runtime target lacks a live runtime version',
 );
 const matchingStorageVersionManifest = matrix.createReleaseManifest({
-  componentVersions: { ...versions, storage_proxy: '8.8.0' },
+  componentVersions: { ...versions, storage_proxy: '8.8.2' },
   commit: 'matching-runtime-still-requires-contracts',
 });
 assert.throws(
   () => matrix.recordReceipt(matchingStorageVersionManifest, {
     target: 'storage_proxy',
-    version: '8.8.0',
-    runtimeVersion: '8.8.0',
+    version: '8.8.2',
+    runtimeVersion: '8.8.2',
     evidence: 'matching component and runtime version without contracts',
   }),
   /runtime contract receipt is incompatible/i,
@@ -95,13 +105,13 @@ assert.throws(
 );
 assert.throws(
   () => matrix.recordReceipt(matrix.createReleaseManifest({
-    componentVersions: { ...versions, storage_proxy: '8.8.0' },
+    componentVersions: { ...versions, storage_proxy: '8.8.2' },
     commit: 'matching-runtime-extra-contract',
   }), {
     target: 'storage_proxy',
-    version: '8.8.0',
-    runtimeVersion: '8.8.0',
-    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2', unreviewedContract: '1' },
+    version: '8.8.2',
+    runtimeVersion: '8.8.2',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1', unreviewedContract: '1' },
     evidence: 'matching component and runtime version with an extra contract',
   }),
   /runtime contract receipt is incompatible/i,
@@ -111,22 +121,63 @@ const compatibleRuntimeManifest = matrix.createReleaseManifest({ componentVersio
 matrix.recordReceipt(compatibleRuntimeManifest, {
   target: 'storage_proxy',
   version: versions.storage_proxy,
-  runtimeVersion: '8.8.0',
-  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+  runtimeVersion: '8.8.2',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: runtimeReceiptEvidence,
   evidence: 'storage runtime health and live import acceptance',
 });
 assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.version, versions.storage_proxy,
   'the receipt keeps the source release version distinct from the running storage runtime');
-assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeVersion, '8.8.0',
+assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeVersion, '8.8.2',
   'the receipt records the independently deployed storage runtime version');
+assert.strictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.parserSha256, runtimeParserSha256,
+  'the release receipt must retain the exact parser digest reported by the running storage agent');
+assert.deepStrictEqual(compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeReceipt, runtimeReceiptEvidence,
+  'the release receipt must retain the cloud-issued receipt identity, agent identity, and observation time');
 assert.deepStrictEqual(matrix.validateManifest(compatibleRuntimeManifest).issues, [],
   'an approved storage runtime receipt keeps the release manifest valid');
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'spliced-runtime-version' }), {
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.2',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+    parserSha256: runtimeParserSha256,
+    runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.1' },
+    evidence: 'spliced runtime version',
+  }),
+  /runtime receipt does not match/i,
+  'a receipt id from another runtime version must not be combined with hand-supplied v3 fields',
+);
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'spliced-runtime-contracts' }), {
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.2',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+    parserSha256: runtimeParserSha256,
+    runtimeReceipt: { ...runtimeReceiptEvidence, contracts: { questionPaperExport: 3, storageAgentTransport: 2 } },
+    evidence: 'spliced runtime contracts',
+  }),
+  /runtime receipt does not match/i,
+  'a v2 receipt must not be combined with hand-supplied v3 contracts',
+);
+assert.throws(
+  () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'spliced-parser-proof' }), {
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.2',
+    runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+    parserSha256: runtimeParserSha256,
+    runtimeReceipt: { ...runtimeReceiptEvidence, parserSha256: 'e'.repeat(64) },
+    evidence: 'spliced parser proof',
+  }),
+  /runtime receipt does not match/i,
+  'a runtime receipt must carry the same parser digest recorded at the release boundary',
+);
 const currentStorageRuntimeManifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'current-storage-runtime' });
 matrix.recordReceipt(currentStorageRuntimeManifest, {
   target: 'storage_proxy',
   version: versions.storage_proxy,
-  runtimeVersion: '8.8.0',
-  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+  runtimeVersion: '8.8.2',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: runtimeReceiptEvidence,
   evidence: 'storage runtime health and live import acceptance for the current NAS candidate',
 });
 assert.deepStrictEqual(matrix.validateManifest(currentStorageRuntimeManifest).issues, [],
@@ -135,6 +186,18 @@ compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questio
 assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /runtime contract receipt is incompatible/i,
   'a persisted runtime receipt is revalidated instead of being trusted after record time');
 compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeContracts.questionPaperExport = '3';
+compatibleRuntimeManifest.targets.storage_proxy.receipt.parserSha256 = 'invalid';
+assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /parser sha-256 is invalid/i,
+  'a persisted runtime receipt with a malformed parser digest must be rejected');
+compatibleRuntimeManifest.targets.storage_proxy.receipt.parserSha256 = runtimeParserSha256;
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeReceipt = { ...runtimeReceiptEvidence, receiptId: '' };
+assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /runtime receipt identity is invalid/i,
+  'a persisted release receipt must revalidate the cloud-issued runtime receipt id');
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeReceipt = { ...runtimeReceiptEvidence };
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeReceipt.observedAt = 'not-an-instant';
+assert.match(matrix.validateManifest(compatibleRuntimeManifest).issues.join('; '), /runtime receipt identity is invalid/i,
+  'a persisted release receipt must revalidate the runtime observation timestamp');
+compatibleRuntimeManifest.targets.storage_proxy.receipt.runtimeReceipt = { ...runtimeReceiptEvidence };
 assert.throws(
   () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-incompatible' }), {
     target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.7.25',
@@ -145,8 +208,8 @@ assert.throws(
 );
 assert.throws(
   () => matrix.recordReceipt(matrix.createReleaseManifest({ componentVersions: versions, commit: 'runtime-contract-missing' }), {
-    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.0',
-    runtimeContracts: { questionPaperExport: '2', storageAgentTransport: '2' }, evidence: 'wrong protocol',
+    target: 'storage_proxy', version: versions.storage_proxy, runtimeVersion: '8.8.2',
+    runtimeContracts: { questionPaperExport: '2', storageAgentTransport: '3', questionImportParserProof: '1' }, evidence: 'wrong protocol',
   }),
   /runtime contract receipt is incompatible/i,
   'a matching version alone must not bypass the reviewed protocol contract',
@@ -157,8 +220,10 @@ for (const target of targets) {
     version: versions[target],
     evidence: `${target} receipt`,
     ...(target === 'storage_proxy' ? {
-      runtimeVersion: '8.8.0',
-      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+      runtimeVersion: '8.8.2',
+      runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+      parserSha256: runtimeParserSha256,
+      runtimeReceipt: runtimeReceiptEvidence,
     } : {}),
     ...(target === 'miniapp' ? { releaseLevel: 'development' } : {}),
   });
@@ -300,8 +365,10 @@ try {
       version: versions[target],
       evidence: `${target} compatible`,
       ...(target === 'storage_proxy' ? {
-        runtimeVersion: '8.8.0',
-        runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '2' },
+        runtimeVersion: '8.8.2',
+        runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+        parserSha256: runtimeParserSha256,
+        runtimeReceipt: runtimeReceiptEvidence,
       } : {}),
     });
   }

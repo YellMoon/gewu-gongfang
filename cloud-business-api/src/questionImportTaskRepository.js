@@ -127,22 +127,29 @@ const existingSql = [
 ].join(' ');
 
 const insertSql = [
-  'WITH inserted_storage_task AS (',
-  'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
-  "VALUES($12,$13,$14,$8,$9,$7,'queued') RETURNING task_id",
+  'WITH latest_runtime AS (',
+  'SELECT receipt_id,contracts,parser_sha256,observed_at FROM business.storage_agent_runtime_receipts',
+  'WHERE agent_id=$20 ORDER BY observed_at DESC,receipt_id DESC LIMIT 1',
+  '), trusted_runtime AS (',
+  'SELECT receipt_id,parser_sha256 FROM latest_runtime',
+  "WHERE contracts=jsonb_build_object('questionPaperExport',3,'storageAgentTransport',3,'questionImportParserProof',1)",
+  "AND parser_sha256 ~ '^[0-9a-f]{64}$' AND observed_at >= transaction_timestamp()-($21::integer * interval '1 second')",
   '), inserted_task AS (',
   'INSERT INTO business.question_import_tasks',
-  '(task_id,tenant_id,account_id,idempotency_key,source_type,source_file_name,source_mime_type,source_sha256,source_size_bytes,metadata_json,request_hash,status,phase)',
-  "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'awaiting_source_storage','awaiting_source_storage')",
+  '(task_id,tenant_id,account_id,idempotency_key,source_type,source_file_name,source_mime_type,source_sha256,source_size_bytes,metadata_json,request_hash,parser_contract_version,parser_sha256,parser_runtime_receipt_id,status,phase)',
+  "SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,1,runtime.parser_sha256,runtime.receipt_id,'awaiting_source_storage','awaiting_source_storage' FROM trusted_runtime runtime",
   'RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
+  '), inserted_storage_task AS (',
+  'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
+  "SELECT $12,$13,$14,$8,$9,$7,'queued' FROM inserted_task RETURNING task_id",
   '), inserted_source AS (',
   'INSERT INTO business.import_source_objects',
   '(import_task_id,tenant_id,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
-  "SELECT $1,$2,$13,$14,$12,$8,$9,$7,'queued' FROM inserted_storage_task",
-  'RETURNING import_task_id',
+  "SELECT task.task_id,$2,$13,$14,storage.task_id,$8,$9,$7,'queued' FROM inserted_task task CROSS JOIN inserted_storage_task storage",
+  'RETURNING import_task_id,storage_task_id',
   '), inserted_relay AS (',
   'INSERT INTO business.encrypted_import_source_relays (storage_task_id,import_task_id,tenant_id,actor_account_id,agent_key_fingerprint,envelope_json,ciphertext,ciphertext_sha256,expires_at)',
-  'SELECT $12,$1,$2,$3,$15,$16::jsonb,$17,$18,$19::timestamptz FROM inserted_source',
+  'SELECT source.storage_task_id,source.import_task_id,$2,$3,$15,$16::jsonb,$17,$18,$19::timestamptz FROM inserted_source source',
   'RETURNING storage_task_id',
   ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM inserted_task CROSS JOIN inserted_relay',
 ].join(' ');
@@ -159,41 +166,15 @@ const markSourceVerifiedSql = [
   ') SELECT * FROM advanced_task',
 ].join(' ');
 
-const storeCandidatesSql = [
-  'WITH advanced_task AS (',
-  "UPDATE business.question_import_tasks SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()",
-  "WHERE task_id=$1 AND status IN ('queued_for_parse','parsing')",
-  'RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
-  '), input_items AS (',
-  "SELECT value AS item FROM jsonb_array_elements($2::jsonb)",
-  '), inserted_items AS (',
-  'INSERT INTO business.question_import_items (item_id,import_task_id,item_index,content_hash,candidate_json,validation_json,media_manifest_json,status)',
-  "SELECT item->>'itemId',task.task_id,(item->>'itemIndex')::integer,item->>'contentHash',(item->'candidate'),(item->'validation'),(item->'mediaManifest'),item->'validation'->>'status'",
-  'FROM advanced_task task CROSS JOIN input_items',
-  'RETURNING item_id',
-  '), input_media AS (',
-  "SELECT (item->>'itemIndex')::integer AS item_index,media FROM input_items CROSS JOIN LATERAL jsonb_array_elements(item->'mediaManifest') AS media",
-  '), inserted_storage_tasks AS (',
-  'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
-  "SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued' FROM input_media",
-  'RETURNING task_id',
-  '), inserted_media AS (',
-  'INSERT INTO business.question_import_media_objects (media_id,import_task_id,item_index,asset_index,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
-  "SELECT media->>'mediaId',$1,item_index,(media->>'assetIndex')::integer,media->>'objectId',(media->>'objectVersion')::integer,media->>'storageTaskId',media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued'",
-  "FROM input_media JOIN inserted_storage_tasks storage ON storage.task_id=media->>'storageTaskId'",
-  'RETURNING media_id AS "mediaId",item_index AS "itemIndex",asset_index AS "assetIndex",object_id AS "objectId",object_version AS "objectVersion",storage_task_id AS "storageTaskId",expected_sha256 AS sha256,expected_bytes AS bytes,mime_type AS "mimeType"',
-  ') SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt",',
-  "COALESCE((SELECT jsonb_agg(jsonb_build_object('mediaId',media.\"mediaId\",'itemIndex',media.\"itemIndex\",'assetIndex',media.\"assetIndex\",'objectId',media.\"objectId\",'objectVersion',media.\"objectVersion\",'storageTaskId',media.\"storageTaskId\",'sha256',media.sha256,'bytes',media.bytes,'mimeType',media.\"mimeType\") ORDER BY media.\"itemIndex\",media.\"assetIndex\") FROM inserted_media media),'[]'::jsonb) AS \"mediaTargets\"",
-  'FROM advanced_task',
-].join(' ');
-
 const completeSourceAndStoreCandidatesSql = [
   'WITH completed AS (',
   "UPDATE business.storage_object_tasks storage SET state='verified',updated_at=transaction_timestamp()",
   'FROM business.import_source_objects source',
   "WHERE source.import_task_id=$1 AND storage.task_id=source.storage_task_id AND storage.state='leased' AND storage.lease_agent_id=$2 AND storage.lease_token_sha256=$3",
   'AND storage.lease_expires_at > transaction_timestamp() AND storage.expected_sha256=$4 AND storage.expected_bytes=$5',
-  "AND EXISTS (SELECT 1 FROM business.question_import_tasks expected WHERE expected.task_id=source.import_task_id AND (NOT (expected.metadata_json ? 'parserSha256') OR expected.metadata_json->>'parserSha256'=$8))",
+  'AND EXISTS (SELECT 1 FROM business.question_import_tasks expected WHERE expected.task_id=source.import_task_id AND (',
+  '(expected.parser_contract_version=0 AND $8::text IS NULL)',
+  'OR (expected.parser_contract_version=1 AND expected.parser_sha256=$8::text)))',
   'RETURNING storage.task_id',
   '), receipt AS (',
   'INSERT INTO business.storage_task_receipts (receipt_id,task_id,agent_id,observed_sha256,observed_bytes)',
@@ -218,7 +199,7 @@ const completeSourceAndStoreCandidatesSql = [
   "SELECT (item->>'itemIndex')::integer AS item_index,media FROM input_items CROSS JOIN LATERAL jsonb_array_elements(item->'mediaManifest') AS media",
   '), inserted_storage_tasks AS (',
   'INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)',
-  "SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued' FROM input_media",
+  "SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued' FROM advanced_task task CROSS JOIN input_media",
   'RETURNING task_id',
   '), inserted_media AS (',
   'INSERT INTO business.question_import_media_objects (media_id,import_task_id,item_index,asset_index,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)',
@@ -321,8 +302,15 @@ function candidateRows(value, randomId) {
   });
 }
 
-function createQuestionImportTaskRepository({ query, randomId = () => crypto.randomUUID(), now = () => new Date() } = {}) {
-  if (typeof query !== 'function' || typeof randomId !== 'function' || typeof now !== 'function') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+function createQuestionImportTaskRepository({
+  query, storageAgentId = null, runtimeReceiptMaxAgeSeconds = 900,
+  randomId = () => crypto.randomUUID(), now = () => new Date(),
+} = {}) {
+  if (typeof query !== 'function' || typeof randomId !== 'function' || typeof now !== 'function'
+    || (storageAgentId !== null && (typeof storageAgentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(storageAgentId)))
+    || !Number.isSafeInteger(runtimeReceiptMaxAgeSeconds) || runtimeReceiptMaxAgeSeconds < 600 || runtimeReceiptMaxAgeSeconds > 3600) {
+    throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  }
   return Object.freeze({
     async create(input) {
       const request = exact(input, ['tenantId', 'actor', 'idempotencyKey', 'request']);
@@ -342,6 +330,7 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
         if (row.requestHash !== hash) throw failure('CLOUD_QUESTION_IMPORT_CONFLICT');
         return taskRow(row, true);
       }
+      if (storageAgentId === null) throw failure('CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE');
       const taskId = 'question_import_task_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '');
       if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
       const result = await query(insertSql, [
@@ -349,9 +338,10 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
         source.sourceMimeType, source.sourceSha256, source.sourceBytes, stableJson(source.metadata), hash,
         source.storage.taskId, source.storage.objectId, source.storage.objectVersion,
         source.relay.agentKeyFingerprint, stableJson(source.relay.envelope), source.relay.ciphertext,
-        source.relay.envelope.ciphertextSha256, source.relay.expiresAt,
+        source.relay.envelope.ciphertextSha256, source.relay.expiresAt, storageAgentId, runtimeReceiptMaxAgeSeconds,
       ]);
-      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      if (result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE');
       return taskRow(result.rows[0], false);
     },
     async markSourceVerified(input) {
@@ -375,17 +365,6 @@ function createQuestionImportTaskRepository({ query, randomId = () => crypto.ran
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
       if (result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_NOT_FOUND');
       return readTaskRow(result.rows[0]);
-    },
-    async storeCandidates(input) {
-      const request = exact(input, ['taskId', 'candidates']);
-      const taskId = text(request.taskId, 160);
-      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
-      const candidates = candidateRows(request.candidates, randomId);
-      const result = await query(storeCandidatesSql, [taskId, stableJson(candidates)]);
-      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_SOURCE_UNVERIFIED');
-      const task = taskRow(result.rows[0], false);
-      if (!Array.isArray(result.rows[0].mediaTargets)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
-      return { ...task, mediaTargets: result.rows[0].mediaTargets };
     },
     async completeSourceAndStoreCandidates(input) {
       const request = plainObject(input) && Object.hasOwn(input, 'parserSha256')

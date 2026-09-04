@@ -27,6 +27,36 @@ function sameStringRecord(left, right) {
     && JSON.stringify(normalizedLeft) === JSON.stringify(normalizedRight);
 }
 
+function normalizedRuntimeContractRecord(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.some(([key, item]) => !key
+    || !((typeof item === 'string' && /^\d+$/u.test(item)) || (Number.isSafeInteger(item) && item > 0)))) return null;
+  return Object.fromEntries(entries
+    .map(([key, item]) => [key, String(item)])
+    .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function normalizedRuntimeReceiptIdentity(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || Object.keys(value).length !== 6
+    || !['receiptId', 'agentId', 'agentVersion', 'contracts', 'parserSha256', 'observedAt'].every(key => Object.hasOwn(value, key))
+    || typeof value.receiptId !== 'string' || !/^storage_runtime_receipt_[A-Za-z0-9_-]{8,128}$/u.test(value.receiptId)
+    || typeof value.agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/u.test(value.agentId)
+    || !isVersion(value.agentVersion)
+    || !normalizedRuntimeContractRecord(value.contracts)
+    || typeof value.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(value.parserSha256)
+    || !isIsoTimestamp(value.observedAt)) return null;
+  return {
+    receiptId: value.receiptId,
+    agentId: value.agentId,
+    agentVersion: value.agentVersion,
+    contracts: Object.fromEntries(Object.entries(value.contracts).sort(([left], [right]) => left.localeCompare(right))),
+    parserSha256: value.parserSha256,
+    observedAt: value.observedAt,
+  };
+}
+
 function readCompatibilityDeclaration({ rootDir = path.resolve(__dirname, '..') } = {}) {
   const declarationPath = compatibilityDeclarationPath(rootDir);
   if (!fs.existsSync(declarationPath)) throw new Error(`Release compatibility declaration is required: ${declarationPath}`);
@@ -161,6 +191,8 @@ function validateReceipt({ manifest, target, receipt } = {}) {
       target,
       runtimeVersion: receipt.runtimeVersion,
       runtimeContracts: receipt.runtimeContracts,
+      parserSha256: receipt.parserSha256,
+      runtimeReceipt: receipt.runtimeReceipt,
     });
   } catch (error) {
     issues.push(error.message);
@@ -352,7 +384,7 @@ function resolveTargetVersion({ manifest, target, requestedVersion } = {}) {
   return expectedVersion;
 }
 
-function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts } = {}) {
+function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, runtimeContracts, parserSha256, runtimeReceipt } = {}) {
   const policy = manifest?.compatibility?.runtimeReceipts?.[target];
   const runtimeReceiptRequired = policy !== undefined;
   if (runtimeVersion === undefined || runtimeVersion === null || runtimeVersion === '') {
@@ -370,7 +402,22 @@ function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, r
     if (!sameStringRecord(runtimeContracts, policy.contracts)) {
       throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
     }
-    return { runtimeVersion, runtimeContracts: normalizedStringRecord(runtimeContracts) };
+    if (Object.hasOwn(policy.contracts, 'questionImportParserProof') && (typeof parserSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(parserSha256))) {
+      throw new Error(`Release target ${target} runtime parser SHA-256 is invalid`);
+    }
+    const identity = normalizedRuntimeReceiptIdentity(runtimeReceipt);
+    if (!identity) throw new Error(`Release target ${target} runtime receipt identity is invalid`);
+    if (identity.agentVersion !== runtimeVersion
+      || JSON.stringify(normalizedRuntimeContractRecord(identity.contracts)) !== JSON.stringify(normalizedRuntimeContractRecord(runtimeContracts))
+      || identity.parserSha256 !== parserSha256) {
+      throw new Error(`Release target ${target} runtime receipt does not match its declared runtime evidence`);
+    }
+    return {
+      runtimeVersion,
+      runtimeContracts: normalizedStringRecord(runtimeContracts),
+      ...(parserSha256 === undefined ? {} : { parserSha256 }),
+      runtimeReceipt: identity,
+    };
   }
   const expectedVersion = manifest.componentVersions[target];
   if (runtimeVersion !== expectedVersion) {
@@ -379,7 +426,17 @@ function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, r
   if (runtimeContracts !== undefined && normalizedStringRecord(runtimeContracts) === null) {
     throw new Error(`Release target ${target} runtime contract receipt is incompatible`);
   }
-  return { runtimeVersion, runtimeContracts: runtimeContracts === undefined ? undefined : normalizedStringRecord(runtimeContracts) };
+  if (parserSha256 !== undefined && (typeof parserSha256 !== 'string' || !/^[0-9a-f]{64}$/u.test(parserSha256))) {
+    throw new Error(`Release target ${target} runtime parser SHA-256 is invalid`);
+  }
+  const identity = runtimeReceipt === undefined ? undefined : normalizedRuntimeReceiptIdentity(runtimeReceipt);
+  if (runtimeReceipt !== undefined && !identity) throw new Error(`Release target ${target} runtime receipt identity is invalid`);
+  return {
+    runtimeVersion,
+    runtimeContracts: runtimeContracts === undefined ? undefined : normalizedStringRecord(runtimeContracts),
+    ...(parserSha256 === undefined ? {} : { parserSha256 }),
+    ...(identity === undefined ? {} : { runtimeReceipt: identity }),
+  };
 }
 
 function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifestPath = defaultManifestPath(rootDir), target, requestedVersion } = {}) {
@@ -416,7 +473,9 @@ function assertDesktopReleasePrerequisites({
   return { manifest, version, manifestPath };
 }
 
-function recordReceipt(manifest, { target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel, runtimeVersion, runtimeContracts } = {}) {
+function recordReceipt(manifest, {
+  target, version, verifiedAt = new Date().toISOString(), evidence, releaseLevel, runtimeVersion, runtimeContracts, parserSha256, runtimeReceipt,
+} = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const targetState = manifest?.targets?.[target];
   const resolvedReleaseLevel = target === 'miniapp' && releaseLevel === undefined ? 'development' : releaseLevel;
@@ -431,6 +490,8 @@ function recordReceipt(manifest, { target, version, verifiedAt = new Date().toIS
   const baseReceipt = { version: expectedVersion, verifiedAt, evidence, compatibility: manifest.compatibility.schema };
   if (runtimeVersion !== undefined) baseReceipt.runtimeVersion = runtimeVersion;
   if (runtimeContracts !== undefined) baseReceipt.runtimeContracts = runtimeContracts;
+  if (parserSha256 !== undefined) baseReceipt.parserSha256 = parserSha256;
+  if (runtimeReceipt !== undefined) baseReceipt.runtimeReceipt = runtimeReceipt;
   const receipt = target === 'miniapp'
     ? { ...baseReceipt, releaseLevel: resolvedReleaseLevel }
     : baseReceipt;
@@ -568,6 +629,8 @@ function cli() {
       evidence: option(argv, 'evidence'),
       runtimeVersion: option(argv, 'runtime-version') || undefined,
       runtimeContracts: jsonOption(argv, 'runtime-contracts'),
+      parserSha256: option(argv, 'parser-sha256') || undefined,
+      runtimeReceipt: jsonOption(argv, 'runtime-receipt'),
     });
     writeManifest(manifestPath, manifest);
     console.log(JSON.stringify({ action: 'recorded', target: option(argv, 'target'), version: manifest.componentVersions[option(argv, 'target')], componentVersions: manifest.componentVersions, manifestPath }, null, 2));
@@ -584,7 +647,7 @@ function cli() {
     console.log(JSON.stringify({ action: 'complete', version: manifest.version, componentVersions: manifest.componentVersions, manifestPath }, null, 2));
     return;
   }
-  throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--runtime-version x.y.z] [--runtime-contracts json] [--evidence text] [--reason text]');
+  throw new Error('Usage: release-matrix.js prepare|recover|assert|record|status|complete [--target name] [--version x.y.z] [--runtime-version x.y.z] [--runtime-contracts json] [--parser-sha256 hex] [--runtime-receipt json] [--evidence text] [--reason text]');
 }
 
 if (require.main === module) {

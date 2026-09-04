@@ -2,6 +2,7 @@
 """Deploy the PostgreSQL-backed cloud business API as a verified Docker release."""
 
 import argparse
+import base64
 import errno
 import hashlib
 import json
@@ -32,10 +33,56 @@ TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
 OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 PROMOTION_LOCK_STALE_SECONDS = 900
 CANDIDATE_OPERATION_LABEL = "gewu.candidate-operation"
+DESKTOP_IDENTITY_VAULT_PATH = ROOT / "public" / "desktopIdentityVault.js"
+ED25519_SPKI_DER_PREFIX = bytes.fromhex("302a300506032b6570032100")
 
 
 def failure(code):
     return ValueError(code)
+
+
+def trusted_offline_lease_key_fingerprints(source=None):
+    if source is None:
+        try:
+            source = DESKTOP_IDENTITY_VAULT_PATH.read_text(encoding="utf-8")
+        except OSError as error:
+            raise failure("CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID") from error
+    if not isinstance(source, str):
+        raise failure("CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID")
+    match = re.search(
+        r"const\s+CLOUD_OFFLINE_LEASE_PUBLIC_KEYS_B64\s*=\s*Object\.freeze\(\[(.*?)\]\);",
+        source,
+        re.DOTALL,
+    )
+    encoded_keys = re.findall(r"['\"]([A-Za-z0-9+/]+={0,2})['\"]", match.group(1)) if match else []
+    if not 1 <= len(encoded_keys) <= 4 or len(set(encoded_keys)) != len(encoded_keys):
+        raise failure("CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID")
+    fingerprints = []
+    for encoded in encoded_keys:
+        try:
+            public_der = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as error:
+            raise failure("CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID") from error
+        if (len(public_der) != len(ED25519_SPKI_DER_PREFIX) + 32
+                or not public_der.startswith(ED25519_SPKI_DER_PREFIX)
+                or base64.b64encode(public_der).decode("ascii") != encoded):
+            raise failure("CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID")
+        fingerprints.append(hashlib.sha256(public_der).hexdigest())
+    return tuple(fingerprints)
+
+
+def candidate_lease_key_fingerprint_script():
+    source = """
+const crypto = require('crypto');
+const encoded = String(process.env.CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64 || '');
+const privateDer = Buffer.from(encoded, 'base64');
+if (!encoded || privateDer.toString('base64') !== encoded) process.exit(2);
+const privateKey = crypto.createPrivateKey({ key: privateDer, format: 'der', type: 'pkcs8' });
+if (privateKey.type !== 'private' || privateKey.asymmetricKeyType !== 'ed25519') process.exit(2);
+const publicDer = crypto.createPublicKey(privateKey).export({ format: 'der', type: 'spki' });
+process.stdout.write(crypto.createHash('sha256').update(publicDer).digest('hex'));
+""".strip()
+    return base64.b64encode(source.encode("utf-8")).decode("ascii")
 
 
 def release_tag(version, revision):
@@ -139,6 +186,8 @@ def candidate_command(tag, operation_id):
     candidate = candidate_name(tag)
     env_path = remote_env_path(tag)
     override_path = runtime_override_env_path(tag, operation_id)
+    trusted_lease_key_fingerprints = " ".join(trusted_offline_lease_key_fingerprints())
+    lease_key_script = candidate_lease_key_fingerprint_script()
     return (
         "set -eu; "
         f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; override_path='{override_path}'; owner='{operation_id}'; "
@@ -152,6 +201,8 @@ def candidate_command(tag, operation_id):
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
         f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
+        f"actual_lease_key_fingerprint=$(docker exec \"$candidate\" node -e \"eval(Buffer.from('{lease_key_script}','base64').toString('utf8'))\"); "
+        f"case ' {trusted_lease_key_fingerprints} ' in *\" $actual_lease_key_fingerprint \"*) : ;; *) printf '%s\\n' 'CLOUD_DOCKER_OFFLINE_LEASE_KEY_UNTRUSTED' >&2; exit 3 ;; esac; "
         "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
         "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3003/api/health && exit 0; sleep 1; done; exit 1"
     )

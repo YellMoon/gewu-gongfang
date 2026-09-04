@@ -8,22 +8,33 @@ const { createStorageWorker } = require('./worker');
 const { createQuestionImportParser } = require('./questionImportParser');
 const { createStorageAgentRuntime } = require('./runtime');
 const { runStorageAgentHealthCheck } = require('./health');
-const { createStorageAgentRuntimeManifest } = require('./runtimeManifest');
+const { createStorageAgentRuntimeManifest, createStorageAgentRuntimeReporter } = require('./runtimeManifest');
 
 async function main() {
   const config = loadStorageAgentConfig(process.env);
   await runStorageAgentHealthCheck({ config, version: packageJson.version });
   const client = createStorageCloudClient({ cloudBaseUrl: config.cloudBaseUrl, agentId: config.agentId, token: config.token });
-  await client.reportRuntime(createStorageAgentRuntimeManifest({ version: packageJson.version }));
+  const questionImportParser = createQuestionImportParser({
+    nasRoot: config.nasRoot, parserPath: config.questionImportParserPath, pythonBin: config.questionImportPythonBin,
+  });
+  const runtimeManifest = createStorageAgentRuntimeManifest({
+    version: packageJson.version,
+    parserSha256: questionImportParser.revision,
+  });
+  const reportRuntime = createStorageAgentRuntimeReporter({ parser: questionImportParser, client, manifest: runtimeManifest });
+  await reportRuntime();
   const worker = createStorageWorker({
     agentPrivateKey: config.agentPrivateKey,
     client,
     objectStore: createObjectStore({ nasRoot: config.nasRoot }),
-    questionImportParser: createQuestionImportParser({
-      nasRoot: config.nasRoot, parserPath: config.questionImportParserPath, pythonBin: config.questionImportPythonBin,
-    }),
+    questionImportParser,
   });
-  const runtime = createStorageAgentRuntime({ worker, pollSeconds: config.pollSeconds });
+  const runtime = createStorageAgentRuntime({
+    worker,
+    pollSeconds: config.pollSeconds,
+    heartbeatSeconds: 300,
+    heartbeat: reportRuntime,
+  });
   let running = true;
   const stop = () => { running = false; };
   process.once('SIGINT', stop);

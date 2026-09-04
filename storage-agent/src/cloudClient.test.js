@@ -5,6 +5,7 @@ const assert = require('assert');
 const { createStorageCloudClient } = require('./cloudClient');
 
 async function main() {
+  const parserSha256 = '9'.repeat(64);
   const calls = [];
   const client = createStorageCloudClient({
     cloudBaseUrl: 'https://cloud.example.invalid/cloud-business',
@@ -20,8 +21,9 @@ async function main() {
       }
       if (url.endsWith('/api/storage-agent/runtime-receipts')) {
         return { ok: true, status: 200, json: async () => ({ ok: true, receipt: {
-          receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0',
-          contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z',
+          receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.1',
+          contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+          parserSha256, observedAt: '2026-08-30T00:00:00.000Z',
         } }) };
       }
       if (url.endsWith('/api/storage-agent/tasks/task_12345678/download')) {
@@ -57,9 +59,14 @@ async function main() {
     },
   });
   const task = await client.lease();
-  assert.deepStrictEqual(await client.reportRuntime({ agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }), {
-    receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0',
-    contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z',
+  assert.deepStrictEqual(await client.reportRuntime({
+    agentVersion: '8.8.1',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+    parserSha256,
+  }), {
+    receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.1',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+    parserSha256, observedAt: '2026-08-30T00:00:00.000Z',
   });
   assert.strictEqual(task.taskId, 'task_12345678');
   const relay = await client.download(task);
@@ -70,7 +77,7 @@ async function main() {
   assert.deepStrictEqual(receipt, { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' });
   const importTask = await client.reportSourceCandidates({
     taskId: 'question_import_task_1', leaseToken: task.leaseToken, observedSha256: task.expectedSha256, observedBytes: task.expectedBytes,
-    parserSha256: '9'.repeat(64),
+    parserSha256,
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(importTask.status, 'candidates_ready');
@@ -85,7 +92,11 @@ async function main() {
   assert.deepStrictEqual(JSON.parse(calls[0].options.body), { agentId: 'storage-agent-1' });
   assert.ok(!calls[0].options.body.includes('storage-agent-client-test-token-with-sufficient-length'));
   assert.strictEqual(calls[1].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/runtime-receipts');
-  assert.deepStrictEqual(JSON.parse(calls[1].options.body), { agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } });
+  assert.deepStrictEqual(JSON.parse(calls[1].options.body), {
+    agentId: 'storage-agent-1', agentVersion: '8.8.1',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+    parserSha256,
+  });
   assert.strictEqual(calls[2].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/download');
   assert.deepStrictEqual(JSON.parse(calls[2].options.body), { agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value' });
   assert.strictEqual(calls[3].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/tasks/task_12345678/complete');
@@ -93,7 +104,7 @@ async function main() {
   assert.strictEqual(calls[4].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/question-imports/question_import_task_1/candidates');
   assert.deepStrictEqual(JSON.parse(calls[4].options.body), {
     agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3,
-    parserSha256: '9'.repeat(64),
+    parserSha256,
     candidates: [{ contentHash: 'b'.repeat(64), candidate: { stem: 'Question' }, validation: { status: 'accepted' }, mediaManifest: [] }],
   });
   assert.strictEqual(calls[5].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/artifact-deliveries/lease');
@@ -129,9 +140,31 @@ async function main() {
     fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, receipt: { agentId: 'storage-agent-1' } }) }),
   });
   await assert.rejects(
-    () => malformedRuntimeClient.reportRuntime({ agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }),
+    () => malformedRuntimeClient.reportRuntime({
+      agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+      parserSha256,
+    }),
     /STORAGE_CLOUD_RESPONSE_INVALID/,
     'a malformed runtime receipt must not be accepted as NAS version evidence',
+  );
+  const mismatchedParserClient = createStorageCloudClient({
+    cloudBaseUrl: 'https://cloud.example.invalid/cloud-business', agentId: 'storage-agent-1',
+    token: 'storage-agent-client-test-token-with-sufficient-length',
+    fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, receipt: {
+      receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+      parserSha256: '8'.repeat(64), observedAt: '2026-08-30T00:00:00.000Z',
+    } }) }),
+  });
+  await assert.rejects(
+    () => mismatchedParserClient.reportRuntime({
+      agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 },
+      parserSha256,
+    }),
+    /STORAGE_CLOUD_RESPONSE_INVALID/,
+    'the cloud receipt must prove the exact parser revision reported by this process',
   );
 }
 

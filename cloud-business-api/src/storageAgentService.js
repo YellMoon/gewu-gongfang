@@ -37,9 +37,14 @@ function createStorageAgentService({ repository, runtimeReceipts = null, artifac
       return { agentId };
     },
     async reportRuntime(input) {
-      const request = exact(input, ['agentId', 'token', 'agentVersion', 'contracts']);
+      const request = input && typeof input === 'object' && Object.hasOwn(input, 'parserSha256')
+        ? exact(input, ['agentId', 'token', 'agentVersion', 'contracts', 'parserSha256'])
+        : exact(input, ['agentId', 'token', 'agentVersion', 'contracts']);
       if (request.agentId !== agentId || !sameToken(token, request.token) || !runtimeReceipts) throw rejected();
-      return runtimeReceipts.record({ agentId, agentVersion: request.agentVersion, contracts: request.contracts });
+      return runtimeReceipts.record({
+        agentId, agentVersion: request.agentVersion, contracts: request.contracts,
+        ...(Object.hasOwn(request, 'parserSha256') ? { parserSha256: request.parserSha256 } : {}),
+      });
     },
     async lease(input) {
       authenticate(input);

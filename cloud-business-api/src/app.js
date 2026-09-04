@@ -235,12 +235,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       return response.status(409).json({ ok: false, code: error.code });
     }
     if (error && error.code === 'CLOUD_QUESTION_IMPORT_INPUT_INVALID') return businessInputInvalid(response);
+    if (error && error.code === 'CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE') return response.status(503).json({ ok: false, code: error.code });
     process.stderr.write(`question-import runtime failure: ${String(error?.code || 'UNKNOWN')}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
     return businessUnavailable(response);
   }
   function storageAgentFailure(response, error) {
     if (error && error.code === 'STORAGE_AGENT_REJECTED') return response.status(403).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_REJECTED' });
-    if (error && error.code === 'STORAGE_TASK_INPUT_INVALID') return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
+    if (error && ['STORAGE_TASK_INPUT_INVALID', 'STORAGE_AGENT_RUNTIME_RECEIPT_INVALID'].includes(error.code)) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     if (error && error.code === 'STORAGE_TASK_RECEIPT_MISMATCH') return response.status(409).json({ ok: false, code: 'CLOUD_STORAGE_TASK_RECEIPT_MISMATCH' });
     process.stderr.write(`storage-agent runtime failure: ${String(error?.code || 'UNKNOWN')}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
     return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
@@ -567,6 +568,26 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   function isDesktopProjection(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
       && ['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions', 'assetRecords', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(value[key]));
+  }
+  function scopedDesktopProjection(value) {
+    if (!isMiniappProjection(value)) return null;
+    return {
+      students: value.students,
+      student_contacts: value.studentContacts,
+      teachers: value.teachers,
+      courses: value.courses,
+      schedules: value.schedules,
+      institutions: value.institutions,
+      schools: value.schools,
+      rooms: value.rooms,
+      grades: [],
+      payments: [],
+      consumptions: [],
+      assetRecords: value.assetRecords,
+      assetCategories: value.assetCategories,
+      taxonomy_systems: [],
+      taxonomy_nodes: [],
+    };
   }
   app.post('/api/desktop/online-verification', async (request, response) => {
     if (!desktopRegistration) return desktopUnavailable(response);
@@ -1392,9 +1413,17 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopRegistration || !businessTenantId) return businessUnavailable(response);
     try {
       const context = await desktopQuestionContext(request);
-      if (!Array.isArray(context.roles) || !context.roles.includes('super_admin')) throw businessAccessDenied();
-      const result = await query(desktopProjectionSql, [businessTenantId, context.accountId]);
-      const projection = result?.rows?.[0]?.projection;
+      let result;
+      let projection;
+      if (Array.isArray(context.roles) && context.roles.includes('super_admin')) {
+        result = await query(desktopProjectionSql, [businessTenantId, context.accountId]);
+        projection = result?.rows?.[0]?.projection;
+      } else {
+        const scope = miniappProjectionScope(context);
+        if (scope.role !== 'teacher') throw businessAccessDenied();
+        result = await query(miniappProjectionSql, [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+        projection = scopedDesktopProjection(result?.rows?.[0]?.projection);
+      }
       if (!isDesktopProjection(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });
     } catch (error) {
@@ -1959,7 +1988,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.post('/api/storage-agent/runtime-receipts', async (request, response) => {
     if (!storageAgent || typeof storageAgent.reportRuntime !== 'function') return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
-    const body = exactBody(request.body, ['agentId', 'agentVersion', 'contracts']);
+    const body = exactBody(request.body, ['agentId', 'agentVersion', 'contracts', 'parserSha256'])
+      || exactBody(request.body, ['agentId', 'agentVersion', 'contracts']);
     const token = storageAgentToken(request);
     if (!body || !token) return response.status(400).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
     try {

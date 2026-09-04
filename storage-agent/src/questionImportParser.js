@@ -160,6 +160,37 @@ function executePython({ pythonBin, parserPath, filePath, sourceType, timeoutMs 
   });
 }
 
+function parserBundleRevision(parserPath, errorCode) {
+  try {
+    const parserDirectory = path.dirname(parserPath);
+    function collect(relativeDirectory = '') {
+      const absoluteDirectory = path.join(parserDirectory, relativeDirectory);
+      return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap(entry => {
+        if (entry.isSymbolicLink()) throw failure(errorCode);
+        const relativePath = path.posix.join(relativeDirectory.split(path.sep).join('/'), entry.name);
+        if (entry.isDirectory()) return collect(relativePath);
+        return entry.isFile() && entry.name.endsWith('.py') ? [relativePath] : [];
+      });
+    }
+    const names = collect()
+      .sort((left, right) => Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')));
+    const parserRelativePath = path.relative(parserDirectory, parserPath).split(path.sep).join('/');
+    if (!names.includes(parserRelativePath) || names.length < 1) throw failure(errorCode);
+    const hash = crypto.createHash('sha256');
+    for (const name of names) {
+      const bytes = fs.readFileSync(path.join(parserDirectory, ...name.split('/')));
+      hash.update(Buffer.from(`${Buffer.byteLength(name, 'utf8')}:`, 'ascii'));
+      hash.update(name, 'utf8');
+      hash.update(Buffer.from(`:${bytes.length}:`, 'ascii'));
+      hash.update(bytes);
+    }
+    return hash.digest('hex');
+  } catch (error) {
+    if (error?.code === errorCode) throw error;
+    throw failure(errorCode);
+  }
+}
+
 function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = executePython } = {}) {
   if (typeof nasRoot !== 'string' || !path.isAbsolute(nasRoot) || typeof parserPath !== 'string' || !path.isAbsolute(parserPath)
     || typeof pythonBin !== 'string' || !pythonBin.trim() || typeof execute !== 'function') throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
@@ -174,9 +205,16 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
     if (error?.code === 'QUESTION_IMPORT_PARSE_CONFIG_INVALID') throw error;
     throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
   }
-  const revision = crypto.createHash('sha256').update(fs.readFileSync(script)).digest('hex');
+  const revision = parserBundleRevision(script, 'QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  function assertRevision() {
+    if (parserBundleRevision(script, 'QUESTION_IMPORT_PARSE_REVISION_MISMATCH') !== revision) {
+      throw failure('QUESTION_IMPORT_PARSE_REVISION_MISMATCH');
+    }
+    return revision;
+  }
   return Object.freeze({
     revision,
+    assertRevision,
     async parse(input) {
       const request = exact(input, ['sourceType', 'sourceFileName', 'bytes']);
       if (!['lecture', 'exam'].includes(request.sourceType) || typeof request.sourceFileName !== 'string'
@@ -192,7 +230,9 @@ function createQuestionImportParser({ nasRoot, parserPath, pythonBin, execute = 
       try {
         assertNoReparsePoint(temporaryPath, root);
         await fs.promises.writeFile(temporaryPath, request.bytes, { flag: 'wx', mode: 0o600 });
+        assertRevision();
         const raw = await execute({ pythonBin: pythonBin.trim(), parserPath: script, filePath: temporaryPath, sourceType: request.sourceType });
+        assertRevision();
         if (typeof raw !== 'string' && !Buffer.isBuffer(raw)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
         let output;
         try {

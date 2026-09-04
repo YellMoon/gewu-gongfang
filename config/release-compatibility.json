@@ -44,7 +44,7 @@
   },
   "runtimeReceipts": {
     "storage_proxy": {
-      "approvedRuntimeVersions": ["8.8.1"],
+      "approvedRuntimeVersions": ["8.8.2"],
       "contracts": {
         "questionPaperExport": "3",
         "storageAgentTransport": "3",

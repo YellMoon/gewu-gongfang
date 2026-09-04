@@ -31,13 +31,14 @@ function validTask(task) {
 
 function validRuntimeReceipt(receipt) {
   if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) || Object.getPrototypeOf(receipt) !== Object.prototype) return false;
-  if (Reflect.ownKeys(receipt).length !== 5 || typeof receipt.receiptId !== 'string' || !/^storage_runtime_receipt_[A-Za-z0-9_-]{8,128}$/.test(receipt.receiptId)
+  if (Reflect.ownKeys(receipt).length !== 6 || typeof receipt.receiptId !== 'string' || !/^storage_runtime_receipt_[A-Za-z0-9_-]{8,128}$/.test(receipt.receiptId)
     || typeof receipt.agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(receipt.agentId)
     || typeof receipt.agentVersion !== 'string' || !/^\d+\.\d+\.\d+$/u.test(receipt.agentVersion)
+    || typeof receipt.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.parserSha256)
     || typeof receipt.observedAt !== 'string' || !Number.isFinite(Date.parse(receipt.observedAt))) return false;
   try {
-    const contracts = exact(receipt.contracts, ['questionPaperExport', 'storageAgentTransport']);
-    return contracts.questionPaperExport === 3 && contracts.storageAgentTransport === 2;
+    const contracts = exact(receipt.contracts, ['questionPaperExport', 'storageAgentTransport', 'questionImportParserProof']);
+    return contracts.questionPaperExport === 3 && contracts.storageAgentTransport === 3 && contracts.questionImportParserProof === 1;
   } catch (_) {
     return false;
   }
@@ -156,11 +157,20 @@ function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchIm
       return response.task;
     },
     async reportRuntime(request) {
-      const response = exact(await post('/api/storage-agent/runtime-receipts', request && {
-        agentId, agentVersion: request.agentVersion, contracts: request.contracts,
+      const runtime = exact(request, ['agentVersion', 'contracts', 'parserSha256']);
+      const contracts = exact(runtime.contracts, ['questionPaperExport', 'storageAgentTransport', 'questionImportParserProof']);
+      if (typeof runtime.agentVersion !== 'string' || !/^\d+\.\d+\.\d+$/u.test(runtime.agentVersion)
+        || typeof runtime.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(runtime.parserSha256)
+        || contracts.questionPaperExport !== 3 || contracts.storageAgentTransport !== 3 || contracts.questionImportParserProof !== 1) {
+        throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      }
+      const response = exact(await post('/api/storage-agent/runtime-receipts', {
+        agentId, agentVersion: runtime.agentVersion, contracts, parserSha256: runtime.parserSha256,
       }), ['ok', 'receipt']);
       if (response.ok !== true || !validRuntimeReceipt(response.receipt) || response.receipt.agentId !== agentId
-        || response.receipt.agentVersion !== request.agentVersion) throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+        || response.receipt.agentVersion !== runtime.agentVersion || response.receipt.parserSha256 !== runtime.parserSha256) {
+        throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
+      }
       return response.receipt;
     },
     async leaseArtifactDelivery() {

@@ -42,12 +42,12 @@ function offlineLeaseSignaturePayload(lease) {
   });
 }
 
-function signOfflineLease(lease) {
+function signOfflineLease(lease, keyPair = offlineLeaseSigningKeyPair) {
   const unsigned = { ...lease };
   delete unsigned.signature;
   return {
     ...unsigned,
-    signature: crypto.sign(null, Buffer.from(offlineLeaseSignaturePayload(unsigned), 'utf8'), offlineLeaseSigningKeyPair.privateKey).toString('base64url'),
+    signature: crypto.sign(null, Buffer.from(offlineLeaseSignaturePayload(unsigned), 'utf8'), keyPair.privateKey).toString('base64url'),
   };
 }
 
@@ -68,6 +68,159 @@ function mockSafeStorage() {
       return { decryptCount };
     },
   };
+}
+
+function identityKeyMaterial(deviceKind, deviceId) {
+  const keyPair = crypto.generateKeyPairSync('ed25519');
+  const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const keyFingerprint = crypto.createHash('sha256')
+    .update(keyPair.publicKey.export({ type: 'spki', format: 'der' }))
+    .digest('hex');
+  const publicIdentity = {
+    deviceId,
+    deviceName: 'Retired primary host',
+    deviceKind,
+    publicKey,
+    keyFingerprint,
+  };
+  return { keyPair, publicIdentity };
+}
+
+function historicalV2EncryptedIdentityFixture(safeStorage) {
+  // This is the password-encrypted VAULT_VERSION=2 format from 908145e8^.
+  const password = 'historical-primary-host-password';
+  const { keyPair, publicIdentity } = identityKeyMaterial('primary-host', 'retired-primary-host');
+  const kdf = {
+    algorithm: 'scrypt',
+    salt: crypto.randomBytes(16).toString('base64'),
+    N: 16384,
+    r: 8,
+    p: 1,
+    keyLength: 32,
+  };
+  const payload = {
+    version: 1,
+    publicIdentity,
+    privateKey: keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+    authorization: {
+      id: 'authorization-retired-primary-host',
+      deviceId: publicIdentity.deviceId,
+      deviceName: publicIdentity.deviceName,
+      deviceKind: publicIdentity.deviceKind,
+      userId: 'canonical-human',
+      keyFingerprint: publicIdentity.keyFingerprint,
+      status: 'active',
+      authorizationSource: 'single_user_local_bootstrap',
+      credentialVersion: 1,
+      lastPhoneVerifiedAt: '2026-07-17T10:00:00.000Z',
+      phoneReverifyDueAt: '2026-08-16T10:00:00.000Z',
+    },
+    profile: {
+      userId: 'canonical-human',
+      user: { id: 'canonical-human', name: 'Historical primary host owner' },
+      eligibleRoles: ['super_admin'],
+      activeRole: 'super_admin',
+      teacherId: null,
+      studentId: null,
+    },
+    offlineLease: null,
+    authorityContext: null,
+    sealedAt: '2026-07-17T10:00:00.000Z',
+  };
+  const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(Buffer.from(password, 'utf8'), Buffer.from(kdf.salt, 'base64'), 32, {
+    N: kdf.N,
+    r: kdf.r,
+    p: kdf.p,
+    maxmem: 64 * 1024 * 1024,
+  });
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  cipher.setAAD(Buffer.from(JSON.stringify({ version: 2, publicIdentity, kdf }), 'utf8'));
+  const ciphertext = Buffer.concat([
+    cipher.update(Buffer.from(JSON.stringify(payload), 'utf8')),
+    cipher.final(),
+  ]);
+  const envelope = {
+    version: 2,
+    publicIdentity,
+    kdf,
+    cipher: {
+      algorithm: 'aes-256-gcm',
+      iv: iv.toString('base64'),
+      tag: cipher.getAuthTag().toString('base64'),
+      ciphertext: ciphertext.toString('base64'),
+    },
+  };
+  key.fill(0);
+  return {
+    protectedBytes: safeStorage.encryptString(JSON.stringify(envelope)),
+    publicIdentity,
+    decryptPrivatePayload() {
+      const protectedEnvelope = JSON.parse(safeStorage.decryptString(this.protectedBytes));
+      const decryptKey = crypto.scryptSync(
+        Buffer.from(password, 'utf8'),
+        Buffer.from(protectedEnvelope.kdf.salt, 'base64'),
+        32,
+        { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 },
+      );
+      try {
+        const decipher = crypto.createDecipheriv(
+          'aes-256-gcm',
+          decryptKey,
+          Buffer.from(protectedEnvelope.cipher.iv, 'base64'),
+        );
+        decipher.setAAD(Buffer.from(JSON.stringify({
+          version: 2,
+          publicIdentity: protectedEnvelope.publicIdentity,
+          kdf: protectedEnvelope.kdf,
+        }), 'utf8'));
+        decipher.setAuthTag(Buffer.from(protectedEnvelope.cipher.tag, 'base64'));
+        return JSON.parse(Buffer.concat([
+          decipher.update(Buffer.from(protectedEnvelope.cipher.ciphertext, 'base64')),
+          decipher.final(),
+        ]).toString('utf8'));
+      } finally {
+        decryptKey.fill(0);
+      }
+    },
+  };
+}
+
+function currentEncryptedIdentityFixture(safeStorage, deviceKind, deviceId) {
+  const { keyPair, publicIdentity } = identityKeyMaterial(deviceKind, deviceId);
+  return safeStorage.encryptString(JSON.stringify({
+    version: 3,
+    publicIdentity,
+    payload: {
+      version: 1,
+      publicIdentity,
+      privateKey: keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      authorization: {
+        id: `authorization-${deviceId}`,
+        deviceId,
+        deviceName: publicIdentity.deviceName,
+        deviceKind,
+        userId: 'canonical-human',
+        keyFingerprint: publicIdentity.keyFingerprint,
+        status: 'active',
+        authorizationSource: 'wechat_phone',
+        credentialVersion: 1,
+        lastPhoneVerifiedAt: '2026-07-17T10:00:00.000Z',
+        phoneReverifyDueAt: '2026-08-16T10:00:00.000Z',
+      },
+      profile: {
+        userId: 'canonical-human',
+        user: { id: 'canonical-human', name: 'Current identity owner' },
+        eligibleRoles: ['super_admin'],
+        activeRole: 'super_admin',
+        teacherId: null,
+        studentId: null,
+      },
+      offlineLease: null,
+      authorityContext: null,
+      sealedAt: '2026-07-17T10:00:00.000Z',
+    },
+  }));
 }
 
 function approvedAuthorization(publicIdentity) {
@@ -96,7 +249,7 @@ function approvedProfile() {
   };
 }
 
-function offlineLease(deviceId = 'device-2') {
+function offlineLease(deviceId = 'device-2', keyPair = offlineLeaseSigningKeyPair) {
   const lease = {
     v: 1,
     id: 'lease-device-2',
@@ -112,7 +265,7 @@ function offlineLease(deviceId = 'device-2') {
     activeRole: 'teacher',
     scope: { kind: 'teacher', teacherId: 'teacher-self' },
   };
-  return signOfflineLease(lease);
+  return signOfflineLease(lease, keyPair);
 }
 
 function authorityContext(hostPublicKey, deviceId = 'device-2') {
@@ -184,6 +337,105 @@ async function main() {
     unlocked: false,
     legacyUpgradeRequired: false,
   });
+
+  for (const invalidIdentity of [
+    { deviceKind: 'primary-host', deviceId: 'damaged-current-primary-host' },
+    { deviceKind: 'future-desktop-client', deviceId: 'future-device-kind' },
+  ]) {
+    const invalidIdentityPath = path.join(workspace, `${invalidIdentity.deviceId}.bin`);
+    fs.writeFileSync(
+      invalidIdentityPath,
+      currentEncryptedIdentityFixture(safeStorage, invalidIdentity.deviceKind, invalidIdentity.deviceId),
+    );
+    const invalidIdentityBytes = fs.readFileSync(invalidIdentityPath);
+    const invalidIdentityVault = createDesktopIdentityVault({
+      filePath: invalidIdentityPath,
+      safeStorage,
+      offlineLeasePublicKey,
+      now: () => new Date(clock),
+    });
+    assert.throws(
+      () => invalidIdentityVault.status(),
+      error => error?.code === 'DESKTOP_IDENTITY_DEVICE_KIND_INVALID',
+      `a current vault with ${invalidIdentity.deviceKind} must remain a hard identity error`,
+    );
+    assert.throws(
+      () => invalidIdentityVault.beginUnifiedOnlineRegistration({ deviceName: 'Must not replace identity' }),
+      error => error?.code === 'DESKTOP_IDENTITY_DEVICE_KIND_INVALID',
+      `registration must not reinterpret ${invalidIdentity.deviceKind} as a historical host`,
+    );
+    assert.deepStrictEqual(fs.readFileSync(invalidIdentityPath), invalidIdentityBytes);
+  }
+
+  const incompleteV2Path = path.join(workspace, 'incomplete-v2-primary-host.bin');
+  const incompleteV2Identity = identityKeyMaterial('primary-host', 'incomplete-v2-primary-host').publicIdentity;
+  fs.writeFileSync(incompleteV2Path, safeStorage.encryptString(JSON.stringify({
+    version: 2,
+    publicIdentity: incompleteV2Identity,
+  })));
+  const incompleteV2Vault = createDesktopIdentityVault({
+    filePath: incompleteV2Path,
+    safeStorage,
+    offlineLeasePublicKey,
+    now: () => new Date(clock),
+  });
+  assert.throws(
+    () => incompleteV2Vault.status(),
+    error => error?.code === 'DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID',
+    'a version marker and retired kind alone must not masquerade as a real historical encrypted vault',
+  );
+
+  const retiredDeviceKindPath = path.join(workspace, 'retired-device-kind.bin');
+  const historicalV2Fixture = historicalV2EncryptedIdentityFixture(safeStorage);
+  assert.strictEqual(
+    historicalV2Fixture.decryptPrivatePayload().publicIdentity.deviceKind,
+    'primary-host',
+    'the historical fixture must authenticate and decrypt to a primary-host private identity',
+  );
+  fs.writeFileSync(retiredDeviceKindPath, historicalV2Fixture.protectedBytes);
+  const retiredDeviceVault = createDesktopIdentityVault({
+    filePath: retiredDeviceKindPath,
+    safeStorage,
+    offlineLeasePublicKey,
+    now: () => new Date(clock),
+  });
+  assert.deepStrictEqual(retiredDeviceVault.status(), {
+    state: 'legacy_upgrade_required',
+    sealed: false,
+    unlocked: false,
+    legacyUpgradeRequired: true,
+    deviceName: historicalV2Fixture.publicIdentity.deviceName,
+  }, 'a real historical v2 primary host must enter cloud re-registration');
+  const preservedRetiredEnvelope = fs.readFileSync(retiredDeviceKindPath);
+  const replacementIdentity = retiredDeviceVault.beginUnifiedOnlineRegistration({ deviceName: 'Replacement desktop' });
+  assert.strictEqual(replacementIdentity.deviceKind, 'desktop-client');
+  assert.deepStrictEqual(fs.readFileSync(retiredDeviceKindPath), preservedRetiredEnvelope,
+    'the retired encrypted identity must remain recoverable until cloud login succeeds');
+  const replacementProof = retiredDeviceVault.signChallenge({
+    purpose: 'unified-online-registration',
+    challenge: 'historical-v2-replacement-proof',
+  });
+  assert.ok(verifySignature(
+    replacementIdentity.publicKey,
+    'historical-v2-replacement-proof',
+    replacementProof.signature,
+  ));
+  const replacementAuthorization = approvedAuthorization(replacementIdentity);
+  const replacementCompleted = retiredDeviceVault.completeRegistration({
+    authorization: replacementAuthorization,
+    profile: approvedProfile(),
+    offlineLease: offlineLease(replacementIdentity.deviceId),
+    authorityContext: authorityContext(replacementIdentity.publicKey, replacementIdentity.deviceId),
+  });
+  assert.strictEqual(replacementCompleted.state, 'unlocked');
+  assert.strictEqual(replacementCompleted.deviceId, replacementIdentity.deviceId);
+  assert.notDeepStrictEqual(fs.readFileSync(retiredDeviceKindPath), preservedRetiredEnvelope,
+    'the historical vault may be replaced only after cloud registration completes');
+  retiredDeviceVault.lock();
+  const replacementResumed = await retiredDeviceVault.resume();
+  assert.strictEqual(replacementResumed.state, 'unlocked');
+  assert.strictEqual(replacementResumed.deviceId, replacementIdentity.deviceId);
+  assert.strictEqual(replacementResumed.deviceKind, 'desktop-client');
 
   const unifiedVault = createDesktopIdentityVault({
     filePath: path.join(workspace, 'unified-desktop-identity-v2.bin'),
@@ -271,6 +523,34 @@ async function main() {
     /DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID/,
     'the vault must verify, not merely store, the cloud signature over lease bindings',
   );
+  const extendedLease = offlineLease(publicIdentity.deviceId);
+  extendedLease.unsignedPrivilege = 'super_admin';
+  assert.throws(
+    () => vault.completeRegistration({
+      authorization,
+      profile: approvedProfile(),
+      offlineLease: extendedLease,
+    }),
+    /DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID/,
+    'unsigned extension fields must not survive outside the signed lease schema',
+  );
+  const rotationSigningKeyPair = crypto.generateKeyPairSync('ed25519');
+  const rotationVault = createDesktopIdentityVault({
+    filePath: path.join(workspace, 'rotated-offline-lease-identity.bin'),
+    safeStorage,
+    offlineLeasePublicKey: [rotationSigningKeyPair.publicKey, offlineLeasePublicKey],
+    now: () => new Date(clock),
+  });
+  const rotationIdentity = rotationVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Rotated offline lease desktop',
+  });
+  const rotationCompleted = rotationVault.completeRegistration({
+    authorization: approvedAuthorization(rotationIdentity),
+    profile: approvedProfile(),
+    offlineLease: offlineLease(rotationIdentity.deviceId, rotationSigningKeyPair),
+  });
+  assert.strictEqual(rotationCompleted.state, 'unlocked',
+    'the vault must accept a lease signed by any explicitly trusted rotation key');
   const completed = vault.completeRegistration({
     password: 'local-password-1',
     authorization,
@@ -285,6 +565,71 @@ async function main() {
   assert.strictEqual(completed.teacherId, 'teacher-self');
   assert.ok(!JSON.stringify(completed).includes('PRIVATE KEY'));
   assert.ok(!JSON.stringify(completed).includes('local-password-1'));
+
+  const reauthenticationPath = path.join(workspace, 'reauthentication-desktop-identity-v2.bin');
+  const reauthenticationVault = createDesktopIdentityVault({
+    filePath: reauthenticationPath,
+    safeStorage,
+    offlineLeasePublicKey,
+    now: () => new Date(clock),
+  });
+  const originalReauthenticationIdentity = reauthenticationVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Existing desktop',
+  });
+  reauthenticationVault.completeRegistration({
+    authorization: approvedAuthorization(originalReauthenticationIdentity),
+    profile: approvedProfile(),
+    offlineLease: offlineLease(originalReauthenticationIdentity.deviceId),
+  });
+  reauthenticationVault.lock();
+  const preservedReauthenticationEnvelope = fs.readFileSync(reauthenticationPath);
+  const replacementReauthenticationIdentity = reauthenticationVault.beginUnifiedOnlineRegistration({
+    deviceName: 'Existing desktop',
+  });
+  assert.strictEqual(reauthenticationVault.status().state, 'unified_online_recovery_pending');
+  assert.notStrictEqual(
+    replacementReauthenticationIdentity.deviceId,
+    originalReauthenticationIdentity.deviceId,
+    'online reauthentication must use a fresh installation proof',
+  );
+  assert.deepStrictEqual(
+    fs.readFileSync(reauthenticationPath),
+    preservedReauthenticationEnvelope,
+    'a failed or interrupted login must preserve the prior encrypted identity until cloud registration succeeds',
+  );
+  const replacementReauthenticationProof = reauthenticationVault.signChallenge({
+    purpose: 'unified-online-registration',
+    challenge: 'reauthentication-cloud-challenge',
+  });
+  assert.ok(verifySignature(
+    replacementReauthenticationIdentity.publicKey,
+    'reauthentication-cloud-challenge',
+    replacementReauthenticationProof.signature,
+  ));
+  assert.throws(
+    () => reauthenticationVault.completeRegistration({
+      authorization: approvedAuthorization(replacementReauthenticationIdentity),
+      profile: approvedProfile(),
+      offlineLease: null,
+    }),
+    error => error?.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_REQUIRED',
+    'renderer IPC must not overwrite an existing vault without a cloud-signed lease',
+  );
+  assert.deepStrictEqual(
+    fs.readFileSync(reauthenticationPath),
+    preservedReauthenticationEnvelope,
+    'a rejected recovery completion must preserve every byte of the old vault',
+  );
+  reauthenticationVault.completeRegistration({
+    authorization: approvedAuthorization(replacementReauthenticationIdentity),
+    profile: approvedProfile(),
+    offlineLease: offlineLease(replacementReauthenticationIdentity.deviceId),
+  });
+  assert.notDeepStrictEqual(
+    fs.readFileSync(reauthenticationPath),
+    preservedReauthenticationEnvelope,
+    'the prior identity may be replaced only after verified cloud registration completes',
+  );
 
   const legacyRoleVault = createDesktopIdentityVault({
     filePath: path.join(workspace, 'legacy-role-desktop-identity-v2.bin'),
@@ -414,22 +759,97 @@ async function main() {
     }),
     sessionSignature.signature
   ));
-  const refreshed = await vault.refreshOfflineLease({
-    password: 'local-password-1',
+  const refreshedSession = {
+    id: 'authorization-device-2-refreshed',
+    userId: 'canonical-human',
+    deviceId: publicIdentity.deviceId,
+    eligibleRoles: ['super_admin', 'teacher'],
+    activeRole: 'teacher',
+    teacherId: 'teacher-self',
+    studentId: null,
+    expiresAt: '2026-07-20T09:00:00.000Z',
+    rowVersion: 1,
+  };
+  const refreshed = await vault.acceptIssuedSession({
+    session: refreshedSession,
+    profile: approvedProfile(),
     offlineLease: signOfflineLease({
       ...offlineLease(publicIdentity.deviceId),
       id: 'lease-device-2-refreshed',
-      expiresAt: '2026-07-20T09:00:00.000Z',
+      authorizationId: refreshedSession.id,
+      issuedAt: '2026-07-17T10:00:01.000Z',
+      expiresAt: refreshedSession.expiresAt,
     }),
   });
   assert.strictEqual(refreshed.offlineLease.id, 'lease-device-2-refreshed');
+  assert.strictEqual(refreshed.authorizationId, refreshedSession.id);
+  const replayableAdminSession = {
+    ...refreshedSession,
+    id: 'authorization-device-2-admin',
+    activeRole: 'super_admin',
+    teacherId: null,
+    expiresAt: '2026-07-20T09:30:00.000Z',
+  };
+  const replayableAdminProfile = {
+    ...approvedProfile(),
+    activeRole: 'super_admin',
+    teacherId: null,
+  };
+  const replayableAdminLease = signOfflineLease({
+    ...offlineLease(publicIdentity.deviceId),
+    id: 'lease-device-2-admin',
+    authorizationId: replayableAdminSession.id,
+    issuedAt: '2026-07-17T10:00:02.000Z',
+    expiresAt: replayableAdminSession.expiresAt,
+    activeRole: 'super_admin',
+    teacherId: null,
+    scope: { kind: 'super_admin' },
+  });
+  const replayableAdminInput = {
+    session: replayableAdminSession,
+    profile: replayableAdminProfile,
+    offlineLease: replayableAdminLease,
+  };
+  await vault.acceptIssuedSession(replayableAdminInput);
+  const downgradedTeacherSession = {
+    ...refreshedSession,
+    id: 'authorization-device-2-downgraded-teacher',
+    expiresAt: '2026-07-20T09:45:00.000Z',
+  };
+  await vault.acceptIssuedSession({
+    session: downgradedTeacherSession,
+    profile: approvedProfile(),
+    offlineLease: signOfflineLease({
+      ...offlineLease(publicIdentity.deviceId),
+      id: 'lease-device-2-downgraded-teacher',
+      authorizationId: downgradedTeacherSession.id,
+      issuedAt: '2026-07-17T10:00:03.000Z',
+      expiresAt: downgradedTeacherSession.expiresAt,
+    }),
+  });
+  const downgradedVaultBytes = fs.readFileSync(filePath);
   await assert.rejects(
-    vault.refreshOfflineLease({
-      password: 'local-password-1',
-      offlineLease: {
-        ...offlineLease(publicIdentity.deviceId),
+    vault.acceptIssuedSession(replayableAdminInput),
+    error => error?.code === 'DESKTOP_IDENTITY_ISSUED_SESSION_STALE',
+    'an older signed administrator lease must not roll back a later teacher downgrade',
+  );
+  assert.deepStrictEqual(fs.readFileSync(filePath), downgradedVaultBytes,
+    'rejecting a stale signed lease must preserve the downgraded vault bytes');
+  assert.strictEqual(vault.status().activeRole, 'teacher');
+  await assert.rejects(
+    vault.acceptIssuedSession({
+      session: {
+        ...refreshedSession,
+        id: 'authorization-device-2-too-long',
         expiresAt: '2026-07-31T10:00:00.001Z',
       },
+      profile: approvedProfile(),
+      offlineLease: signOfflineLease({
+        ...offlineLease(publicIdentity.deviceId),
+        id: 'lease-device-2-too-long',
+        authorizationId: 'authorization-device-2-too-long',
+        expiresAt: '2026-07-31T10:00:00.001Z',
+      }),
     }),
     error => error.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID'
   );
@@ -463,12 +883,16 @@ async function main() {
     /DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED/
   );
   await vault.resume();
-  assert.doesNotThrow(() => vault.signChallenge({
-    purpose: 'role-elevation',
-    sessionId: 'desktop-session-teacher-2',
-    activeRole: 'super_admin',
-    sessionVersion: 1,
-  }));
+  assert.throws(
+    () => vault.signChallenge({
+      purpose: 'role-elevation',
+      sessionId: 'desktop-session-teacher-2',
+      activeRole: 'super_admin',
+      sessionVersion: 1,
+    }),
+    /DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED/,
+    'passive resume must not refresh the user-presence window for privileged role elevation',
+  );
 
   vault.lock();
   const originalFile = fs.readFileSync(filePath);
@@ -515,7 +939,7 @@ async function main() {
     activeRole: 'teacher',
     teacherId: 'teacher-atomic',
   };
-  atomicVault.completeRegistration({
+  atomicVault.seal({
     password: 'atomic-old-password',
     authorization: atomicAuthorization,
     profile: atomicProfile,
@@ -589,8 +1013,8 @@ async function main() {
   assert.deepStrictEqual(
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
-      'beginUnifiedOnlineRegistration', 'completeRegistration',
-      'lock', 'refreshOfflineLease', 'resume', 'signChallenge', 'status',
+      'acceptIssuedSession', 'beginUnifiedOnlineRegistration',
+      'completeRegistration', 'lock', 'resume', 'signChallenge', 'status',
     ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));
@@ -615,7 +1039,7 @@ async function main() {
     'desktop-identity:complete-registration',
     'desktop-identity:resume',
     'desktop-identity:lock',
-    'desktop-identity:refresh-offline-lease',
+    'desktop-identity:accept-issued-session',
     'desktop-identity:sign-challenge',
   ]) {
     assert.ok(electronSource.includes(`ipcMain.handle('${channel}'`), `electron main process must register ${channel}`);

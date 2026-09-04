@@ -428,6 +428,7 @@ const questionAuthority = createQuestionAuthorityRuntime({
 });
 const questionImportTasks = createQuestionImportTaskRepository({
   query: (text, values) => pool.query(text, values),
+  storageAgentId: process.env.CLOUD_STORAGE_AGENT_ID,
 });
 const paperExportTasks = createPaperExportTaskRepository({
   query: (text, values) => pool.query(text, values),

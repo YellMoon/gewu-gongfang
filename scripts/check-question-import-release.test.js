@@ -7,6 +7,8 @@ const os = require('os');
 const path = require('path');
 const { verifyImportRelease, main } = require('./check-question-import-release');
 
+const parserSha256 = 'f'.repeat(64);
+
 const compatibility = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'release-compatibility.json'), 'utf8'));
 assert.strictEqual(compatibility.contracts.storageAgentTransport.version, '3');
 assert.deepStrictEqual(compatibility.contracts.questionImportParserProof, {
@@ -15,22 +17,23 @@ assert.deepStrictEqual(compatibility.contracts.questionImportParserProof, {
   rule: 'storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates',
 });
 assert.deepStrictEqual(compatibility.runtimeReceipts.storage_proxy, {
-  approvedRuntimeVersions: ['8.8.1'],
+  approvedRuntimeVersions: ['8.8.2'],
   contracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
 });
 
 const evidence = {
   expectedCloudVersion: '8.9.2',
-  expectedStorageRuntimeVersion: '8.8.1',
+  expectedStorageRuntimeVersion: '8.8.2',
   cloudHealth: { ok: true, database: 'postgresql', businessAuthority: 'cloud', version: '8.9.2' },
-  storageHealth: { agentId: 'nas-agent-1', version: '8.8.1', writableAuthority: false, rootProbe: true },
+  storageHealth: { agentId: 'nas-agent-1', version: '8.8.2', writableAuthority: false, rootProbe: true },
   storageRuntimeReceipt: {
-    receiptId: 'storage_runtime_receipt_abcdefgh', agentId: 'nas-agent-1', agentVersion: '8.8.1',
+    receiptId: 'storage_runtime_receipt_abcdefgh', agentId: 'nas-agent-1', agentVersion: '8.8.2',
     contracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+    parserSha256,
     observedAt: '2026-09-04T00:00:00.000Z',
   },
-  parserProof: { version: '1', expectedSha256: 'f'.repeat(64), observedSha256: 'f'.repeat(64) },
-  task: { taskId: 'question_import_task_abcdefgh', status: 'submitted', phase: 'submitted', parserSha256: 'f'.repeat(64) },
+  parserProof: { version: '1', expectedSha256: parserSha256, observedSha256: parserSha256 },
+  task: { taskId: 'question_import_task_abcdefgh', status: 'submitted', phase: 'submitted', parserSha256 },
   sourceReceipt: { receiptId: 'storage_receipt_source_abcdefgh', taskId: 'task_source_abcdefgh', state: 'verified', verifiedAt: '2026-08-23T00:01:00.000Z' },
   expectedMediaCount: 1,
   derivedMediaReceipts: [{ receiptId: 'storage_receipt_media_abcdefgh', taskId: 'task_media_abcdefgh', state: 'verified', verifiedAt: '2026-08-23T00:02:00.000Z' }],
@@ -78,6 +81,18 @@ assert.throws(
   () => verifyImportRelease({ ...evidence, parserProof: { ...evidence.parserProof, observedSha256: 'e'.repeat(64) } }),
   /QUESTION_IMPORT_RELEASE_INVALID/,
   'candidate acceptance from different parser bytes must never be release evidence',
+);
+assert.throws(
+  () => verifyImportRelease({ ...evidence, storageRuntimeReceipt: { ...evidence.storageRuntimeReceipt, parserSha256: 'e'.repeat(64) } }),
+  /QUESTION_IMPORT_RELEASE_INVALID/,
+  'the release gate must bind the persisted runtime receipt to the parser proof used by the task',
+);
+const { parserSha256: omittedRuntimeParserSha256, ...runtimeReceiptWithoutParserProof } = evidence.storageRuntimeReceipt;
+assert.strictEqual(omittedRuntimeParserSha256, parserSha256);
+assert.throws(
+  () => verifyImportRelease({ ...evidence, storageRuntimeReceipt: runtimeReceiptWithoutParserProof }),
+  /QUESTION_IMPORT_RELEASE_INVALID/,
+  'transport v3 without its parser digest is not a complete runtime receipt',
 );
 assert.throws(() => main(['--evidence', 'relative-evidence.json']), /QUESTION_IMPORT_RELEASE_INVALID/);
 const evidencePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-question-import-release-')), 'evidence.json');

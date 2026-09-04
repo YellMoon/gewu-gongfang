@@ -74,10 +74,12 @@ function verifyImportRelease(evidence) {
     || !runtimePolicy.approvedRuntimeVersions.includes(evidence.expectedStorageRuntimeVersion)) throw failure();
   if (!receipt(storageRuntimeReceipt) || storageRuntimeReceipt.agentId !== storageHealth.agentId
     || storageRuntimeReceipt.agentVersion !== evidence.expectedStorageRuntimeVersion || !isoTimestamp(storageRuntimeReceipt.observedAt)
+    || !sha256(storageRuntimeReceipt.parserSha256)
     || JSON.stringify(normalizedContracts(storageRuntimeReceipt.contracts)) !== JSON.stringify(expectedContracts)) throw failure();
   if (!object(parserProof) || parserProof.version !== compatibility.contracts.questionImportParserProof.version
     || !sha256(parserProof.expectedSha256) || !sha256(parserProof.observedSha256)
-    || parserProof.expectedSha256 !== parserProof.observedSha256) throw failure();
+    || parserProof.expectedSha256 !== parserProof.observedSha256
+    || storageRuntimeReceipt.parserSha256 !== parserProof.expectedSha256) throw failure();
   if (!object(task) || typeof task.taskId !== 'string' || !task.taskId.trim()
     || task.status !== 'submitted' || task.phase !== 'submitted' || task.parserSha256 !== parserProof.expectedSha256) throw failure();
   if (!verifiedStorageReceipt(evidence.sourceReceipt) || !Number.isSafeInteger(evidence.expectedMediaCount) || evidence.expectedMediaCount < 0

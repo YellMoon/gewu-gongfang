@@ -48,19 +48,29 @@ async function request(app, path) {
   assert.strictEqual(schedules.status, 200);
   assert.deepStrictEqual(queries[0][1], ['default', 'teacher', 'teacher-1'], 'the selected desktop role must constrain schedule reads');
 
-  let projectionQueried = false;
+  const projectionQueries = [];
   const projectionApp = createCloudBusinessApp({
-    query: async () => { projectionQueried = true; return { rows: [] }; },
+    query: async (text, values) => {
+      projectionQueries.push([text, values]);
+      return { rows: [{ projection: {
+        students: [], studentContacts: [], teachers: [], courses: [], schedules: [],
+        institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
+      } }] };
+    },
     desktopRegistration,
     businessTenantId: 'default',
   });
   const projection = await request(projectionApp, '/api/business/desktop-projection');
-  assert.deepStrictEqual(
-    { status: projection.status, body: projection.body },
-    { status: 403, body: { ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' } },
-    'selecting the teacher role must not retain super-admin projection access',
-  );
-  assert.strictEqual(projectionQueried, false, 'a downgraded desktop session must be rejected before a privileged query runs');
+  assert.strictEqual(projection.status, 200,
+    'a desktop teacher needs its role-scoped projection to operate the teacher client');
+  assert.deepStrictEqual(projectionQueries[0][1], ['default', 'teacher', 'teacher-1', 'account-1']);
+  assert.ok(projectionQueries[0][0].includes('WITH scoped_schedules AS ('),
+    'a desktop teacher must use the scoped projection query, never the tenant-wide desktop projection');
+  assert.deepStrictEqual(projection.body.projection, {
+    students: [], student_contacts: [], teachers: [], courses: [], schedules: [],
+    institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [],
+    assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [],
+  });
 
   console.log('desktop active-role authorization tests passed');
 })().catch(error => {

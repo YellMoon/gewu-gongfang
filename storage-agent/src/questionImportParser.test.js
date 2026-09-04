@@ -8,22 +8,52 @@ const path = require('path');
 
 const { createQuestionImportParser, executePython } = require('./questionImportParser');
 
+function expectedBundleRevision(directory) {
+  function collect(relativeDirectory = '') {
+    const absoluteDirectory = path.join(directory, relativeDirectory);
+    return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap(entry => {
+      const relativePath = path.posix.join(relativeDirectory.replace(/\\/g, '/'), entry.name);
+      if (entry.isDirectory()) return collect(relativePath);
+      return entry.isFile() && entry.name.endsWith('.py') ? [relativePath] : [];
+    });
+  }
+  const names = collect()
+    .sort((left, right) => Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')));
+  const hash = crypto.createHash('sha256');
+  for (const name of names) {
+    const bytes = fs.readFileSync(path.join(directory, name));
+    hash.update(Buffer.from(`${Buffer.byteLength(name, 'utf8')}:`, 'ascii'));
+    hash.update(name, 'utf8');
+    hash.update(Buffer.from(`:${bytes.length}:`, 'ascii'));
+    hash.update(bytes);
+  }
+  return hash.digest('hex');
+}
+
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-import-parser-outside-'));
   const parserPath = path.join(root, 'parse_word.py');
+  const helperPath = path.join(root, 'formula_omml.py');
+  const nestedHelperDirectory = path.join(root, 'support');
+  const nestedHelperPath = path.join(nestedHelperDirectory, 'normalizer.py');
   const hangingParserPath = path.join(root, 'hang-forever.js');
   fs.writeFileSync(parserPath, '# parser fixture\n');
+  fs.writeFileSync(helperPath, '# parser helper fixture\n');
+  fs.mkdirSync(nestedHelperDirectory);
+  fs.writeFileSync(nestedHelperPath, '# nested parser helper fixture\n');
   fs.writeFileSync(hangingParserPath, 'setInterval(() => {}, 1000);\n');
   const assetBytes = Buffer.from('image-fixture');
   const assetHash = crypto.createHash('sha256').update(assetBytes).digest('hex');
   let temporaryPath = null;
   try {
+    let executeCount = 0;
     const parser = createQuestionImportParser({
       nasRoot: root,
       parserPath,
       pythonBin: 'python3',
       execute: async input => {
+        executeCount += 1;
         temporaryPath = input.filePath;
         assert.deepStrictEqual(await fs.promises.readFile(input.filePath), Buffer.from('word-fixture'));
         assert.strictEqual(input.sourceType, 'lecture');
@@ -34,8 +64,8 @@ async function main() {
         }] });
       },
     });
-    const parserSha256 = crypto.createHash('sha256').update('# parser fixture\n', 'utf8').digest('hex');
-    assert.strictEqual(parser.revision, parserSha256, 'the parser exposed to the worker must identify the exact deployed parser bytes');
+    const parserSha256 = expectedBundleRevision(root);
+    assert.strictEqual(parser.revision, parserSha256, 'the parser exposed to the worker must identify the deterministic production Python bundle');
     await assert.rejects(
       () => executePython({
         pythonBin: process.execPath,
@@ -57,6 +87,40 @@ async function main() {
     assert.ok(!JSON.stringify(parsed.candidates).includes('data:image/png'), 'cloud candidates must never receive media bytes');
     assert.ok(temporaryPath.startsWith(path.join(root, '.gewu-storage-agent', 'parser-')));
     assert.ok(!fs.existsSync(path.dirname(temporaryPath)), 'the transient parser directory must be removed after parsing');
+    fs.appendFileSync(helperPath, '# changed after startup\n');
+    assert.throws(() => parser.assertRevision(), /QUESTION_IMPORT_PARSE_REVISION_MISMATCH/,
+      'runtime heartbeats must be able to reject a changed helper before reporting the cached startup digest');
+    await assert.rejects(
+      () => parser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') }),
+      /QUESTION_IMPORT_PARSE_REVISION_MISMATCH/,
+      'changing only an imported parser helper must fail closed before executing Python under the startup revision',
+    );
+    assert.strictEqual(executeCount, 1, 'a changed parser bundle must never be executed');
+    fs.writeFileSync(helperPath, '# parser helper fixture\n');
+    assert.strictEqual(expectedBundleRevision(root), parser.revision, 'restoring the exact helper bytes restores the startup revision');
+    assert.strictEqual(parser.assertRevision(), parser.revision);
+    fs.appendFileSync(nestedHelperPath, '# nested helper changed after startup\n');
+    assert.throws(() => parser.assertRevision(), /QUESTION_IMPORT_PARSE_REVISION_MISMATCH/,
+      'the proof must cover recursively imported Python helpers, not only the entrypoint directory');
+    fs.writeFileSync(nestedHelperPath, '# nested parser helper fixture\n');
+    assert.strictEqual(parser.assertRevision(), parser.revision);
+    const mutationDuringExecutionParser = createQuestionImportParser({
+      nasRoot: root,
+      parserPath,
+      pythonBin: 'python3',
+      execute: async () => {
+        fs.appendFileSync(nestedHelperPath, '# changed while Python was running\n');
+        return JSON.stringify({ success: true, questions: [{
+          id: 'parser-mutation-id', stem: 'Question', answer: 'Answer', options: [], assets: [],
+        }] });
+      },
+    });
+    await assert.rejects(
+      () => mutationDuringExecutionParser.parse({ sourceType: 'lecture', sourceFileName: 'fixture.docx', bytes: Buffer.from('word-fixture') }),
+      /QUESTION_IMPORT_PARSE_REVISION_MISMATCH/,
+      'a parser bundle changed during execution must fail before candidates are returned to the cloud',
+    );
+    fs.writeFileSync(nestedHelperPath, '# nested parser helper fixture\n');
     const reviewParser = createQuestionImportParser({
       nasRoot: root,
       parserPath,

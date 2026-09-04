@@ -2,9 +2,9 @@
 
 const { createQuestionImportTaskRepository } = require('./questionImportTaskRepository');
 
-function createQuestionImportTaskRuntime({ taskQuery } = {}) {
-  if (typeof taskQuery !== 'function') return null;
-  return createQuestionImportTaskRepository({ query: taskQuery });
+function createQuestionImportTaskRuntime({ taskQuery, storageAgentId, runtimeReceiptMaxAgeSeconds } = {}) {
+  if (typeof taskQuery !== 'function' || typeof storageAgentId !== 'string') return null;
+  return createQuestionImportTaskRepository({ query: taskQuery, storageAgentId, runtimeReceiptMaxAgeSeconds });
 }
 
 module.exports = Object.freeze({ createQuestionImportTaskRuntime });

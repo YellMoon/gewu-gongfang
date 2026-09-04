@@ -34,6 +34,8 @@ function baseRequest() {
 async function main() {
   const calls = [];
   const repository = createQuestionImportTaskRepository({
+    storageAgentId: 'storage-agent-1',
+    runtimeReceiptMaxAgeSeconds: 900,
     randomId: () => 'fixed-import-id',
     now: () => new Date('2026-08-23T00:00:00.000Z'),
     query: async (text, values) => {
@@ -85,6 +87,16 @@ async function main() {
     requestHash: created.requestHash, createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z', replayed: false,
   });
   assert.match(created.requestHash, /^[0-9a-f]{64}$/);
+  const creationCall = calls.find(([text]) => text.includes('INSERT INTO business.question_import_tasks'));
+  assert.ok(creationCall[0].includes('latest_runtime') && creationCall[0].includes('trusted_runtime')
+    && creationCall[0].includes('ORDER BY observed_at DESC,receipt_id DESC LIMIT 1'),
+  'new task creation must inspect the latest overall receipt for the configured storage agent');
+  assert.ok(creationCall[0].includes("contracts=jsonb_build_object('questionPaperExport',3,'storageAgentTransport',3,'questionImportParserProof',1)")
+    && creationCall[0].includes("observed_at >= transaction_timestamp()-($21::integer * interval '1 second')"),
+  'new task creation must require a fresh v3 parser-proof receipt');
+  assert.ok(creationCall[0].includes('parser_contract_version,parser_sha256,parser_runtime_receipt_id')
+    && creationCall[1][19] === 'storage-agent-1' && creationCall[1][20] === 900,
+  'trusted parser proof must be stored in dedicated columns and come from server configuration');
   assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.storage_object_tasks')),
     'creating an import task must atomically reserve an immutable NAS storage task');
   assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.import_source_objects')),
@@ -114,25 +126,10 @@ async function main() {
     && values[0] === created.taskId && values[1] === 'task_12345678'),
   'only the source object bound to this import task can unlock parsing');
 
-  const candidates = await repository.storeCandidates({
-    taskId: created.taskId,
-    candidates: [{
-      contentHash: 'c'.repeat(64),
-      candidate: { subject: 'physics', stem: 'What is force?', options: [], answer: 'mass times acceleration' },
-      validation: { status: 'accepted' },
-      mediaManifest: [{ sha256: 'd'.repeat(64), bytes: 3, mimeType: 'image/png' }],
-    }],
-  });
-  assert.strictEqual(candidates.status, 'candidates_ready');
-  assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.question_import_items')),
-    'parsed text candidates must be persisted as cloud task items');
-  assert.deepStrictEqual(candidates.mediaTargets, [{ mediaId: 'question_import_media_fixed-import-id_0_0', itemIndex: 0, assetIndex: 0,
-    objectId: 'obj_import_media_fixed-import-id_0_0', objectVersion: 1, storageTaskId: 'task_import_media_fixed-import-id_0_0',
-    sha256: 'd'.repeat(64), bytes: 3, mimeType: 'image/png' }]);
-  assert.ok(calls.some(([text]) => text.includes('INSERT INTO business.question_import_media_objects') && text.includes('INSERT INTO business.storage_object_tasks')),
-    'candidate persistence must atomically create NAS media object tasks and their cloud references');
+  assert.strictEqual(repository.storeCandidates, undefined,
+    'there must be no unauthenticated candidate-storage method that bypasses the source lease and parser proof');
   assert.ok(!calls.some(([text]) => /INSERT INTO business\.questions|INSERT INTO business\.question_contents/u.test(text)),
-    'candidate storage must not create a cloud question before explicit confirmation');
+    'creating an import task must not create a cloud question before explicit confirmation');
 
   const atomicCandidates = await repository.completeSourceAndStoreCandidates({
     taskId: created.taskId, agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value',
@@ -145,8 +142,16 @@ async function main() {
     'source receipt, candidate storage, and encrypted relay deletion must occur in one cloud transaction');
   assert.ok(atomicCall[0].includes("storage.state='leased'") && atomicCall[0].includes('lease_token_sha256=$3'),
     'an agent may report source candidates only while it owns an unexpired lease');
-  assert.ok(atomicCall[0].includes("metadata_json->>'parserSha256'=$8") && atomicCall[1][7] === '9'.repeat(64),
-    'a revision-marked import may accept candidates only from the exact parser bytes requested by the task');
+  assert.ok(atomicCall[0].includes('expected.parser_contract_version=0 AND $8::text IS NULL')
+    && atomicCall[0].includes('expected.parser_contract_version=1 AND expected.parser_sha256=$8::text')
+    && !atomicCall[0].includes("metadata_json->>'parserSha256'") && atomicCall[1][7] === '9'.repeat(64),
+  'candidate acceptance must use the immutable server-bound proof while keeping explicit legacy tasks compatible');
+  const mediaStorageCte = atomicCall[0].slice(
+    atomicCall[0].indexOf('inserted_storage_tasks AS ('),
+    atomicCall[0].indexOf('), inserted_media AS ('),
+  );
+  assert.ok(mediaStorageCte.includes('FROM advanced_task task CROSS JOIN input_media'),
+    'media storage rows must be gated by the successfully advanced import task');
   assert.ok(!atomicCall[1].includes('lease-token-test-value'), 'raw source lease tokens must never reach PostgreSQL');
 
   const prepared = await repository.prepareDrafts({
@@ -175,6 +180,22 @@ async function main() {
   assert.ok(calls.some(([text, values]) => text.includes('LEFT JOIN business.import_source_objects source')
     && values[0] === 'default' && values[1] === 'teacher-1' && values[2] === created.taskId),
   'cloud task reads must remain scoped to the owning account');
+
+  const unavailableCalls = [];
+  const unavailable = createQuestionImportTaskRepository({
+    storageAgentId: 'storage-agent-1', runtimeReceiptMaxAgeSeconds: 900,
+    randomId: () => 'unavailable-import-id', now: () => new Date('2026-08-23T00:00:00.000Z'),
+    query: async (text, values) => {
+      unavailableCalls.push([text, values]);
+      if (text.includes('idempotency_key=$3')) return { rows: [] };
+      return { rows: [] };
+    },
+  });
+  await assert.rejects(() => unavailable.create({
+    tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, idempotencyKey: 'import-key-no-proof', request: baseRequest(),
+  }), /CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE/,
+  'no task or storage relay may be created when the latest configured-agent receipt is absent, stale, v2, or malformed');
+  assert.strictEqual(unavailableCalls.length, 2, 'the proof lookup and all inserts must remain one atomic SQL statement after the idempotency check');
 
   console.log('cloud question import task repository checks passed');
 }

@@ -721,7 +721,13 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
     storageAgentKeyFingerprint: 'a'.repeat(64), storageAgentPublicKey: Buffer.alloc(44, 1).toString('base64url'),
     questionImportTasks: {
-      create: async input => { questionImportCalls.push(['create', input]); return { taskId: 'question_import_task_1', status: 'awaiting_source_storage', phase: 'awaiting_source_storage' }; },
+      create: async input => {
+        questionImportCalls.push(['create', input]);
+        if (input.idempotencyKey === 'import-request-no-parser-proof') {
+          throw Object.assign(new Error('no fresh parser proof'), { code: 'CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE' });
+        }
+        return { taskId: 'question_import_task_1', status: 'awaiting_source_storage', phase: 'awaiting_source_storage' };
+      },
       read: async input => { questionImportCalls.push(['read', input]); return { taskId: input.taskId, status: 'candidates_ready', phase: 'candidates_ready', sourceStorageState: 'verified', items: [] }; },
       prepareDrafts: async input => { questionImportCalls.push(['prepare', input]); return { taskId: input.taskId, status: 'drafts_prepared', phase: 'drafts_prepared', items: [] }; },
       completeSourceAndStoreCandidates: async () => ({}),
@@ -744,6 +750,15 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(questionImportCalls[0][1].actor.accountId, 'account-1');
   assert.ok(Buffer.isBuffer(questionImportCalls[0][1].request.relay.ciphertext), 'desktop source ciphertext must be decoded only for the relay repository');
   assert.deepStrictEqual(Object.keys(questionImportCalls[0][1].request.relay).sort(), ['agentKeyFingerprint', 'ciphertext', 'envelope', 'expiresAt'], 'the transport-only ciphertextBase64 field must not cross the cloud repository boundary');
+  const importWithoutFreshParser = await request(questionImportApp, '/api/desktop/question-imports', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'import-request-no-parser-proof' }, body: {
+      sourceType: 'lecture', sourceFileName: 'mechanics.docx', sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      sourceSha256: 'b'.repeat(64), sourceBytes: 3, metadata: {}, storage: { taskId: 'task_12345678', objectId: 'obj_source_1', objectVersion: 1 },
+      relay: { agentKeyFingerprint: 'a'.repeat(64), envelope: {}, ciphertextBase64: Buffer.from('abc').toString('base64url'), expiresAt: '2026-08-23T00:05:00.000Z' },
+    },
+  });
+  assert.strictEqual(importWithoutFreshParser.status, 503);
+  assert.deepStrictEqual(importWithoutFreshParser.body, { ok: false, code: 'CLOUD_QUESTION_IMPORT_PARSER_UNAVAILABLE' });
   const importRead = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(importRead.status, 200);
   assert.strictEqual(importRead.body.task.sourceStorageState, 'verified');
@@ -885,7 +900,12 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     reportRuntime: async input => {
       storageCalls.push(['runtime', input]);
       if (input.token !== 'storage-agent-test-token') throw Object.assign(new Error('rejected'), { code: 'STORAGE_AGENT_REJECTED' });
-      return { receiptId: 'storage_runtime_receipt_12345678', agentId: input.agentId, agentVersion: input.agentVersion, contracts: input.contracts, observedAt: '2026-08-30T00:00:00.000Z' };
+      return {
+        receiptId: 'storage_runtime_receipt_12345678', agentId: input.agentId, agentVersion: input.agentVersion,
+        contracts: input.contracts,
+        ...(typeof input.parserSha256 === 'string' ? { parserSha256: input.parserSha256 } : {}),
+        observedAt: '2026-08-30T00:00:00.000Z',
+      };
     },
   };
   const storageApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), storageAgent });
@@ -907,10 +927,45 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(completedStorageTask.body, { ok: true, receipt: { taskId: 'task_12345678', state: 'verified', verifiedAt: '2026-08-22T00:00:00.000Z' } });
   const reportedStorageRuntime = await request(storageApp, '/api/storage-agent/runtime-receipts', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
-    body: { agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } },
+    body: {
+      agentId: 'storage-agent-1', agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 }, parserSha256: '9'.repeat(64),
+    },
   });
   assert.strictEqual(reportedStorageRuntime.status, 200);
-  assert.deepStrictEqual(reportedStorageRuntime.body, { ok: true, receipt: { receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z' } });
+  assert.deepStrictEqual(reportedStorageRuntime.body, { ok: true, receipt: {
+    receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.1',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 }, parserSha256: '9'.repeat(64),
+    observedAt: '2026-08-30T00:00:00.000Z',
+  } });
+  const reportedLegacyStorageRuntime = await request(storageApp, '/api/storage-agent/runtime-receipts', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
+    body: {
+      agentId: 'storage-agent-1', agentVersion: '8.8.0',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 2 },
+    },
+  });
+  assert.strictEqual(reportedLegacyStorageRuntime.status, 200);
+  assert.deepStrictEqual(reportedLegacyStorageRuntime.body, { ok: true, receipt: {
+    receiptId: 'storage_runtime_receipt_12345678', agentId: 'storage-agent-1', agentVersion: '8.8.0',
+    contracts: { questionPaperExport: 3, storageAgentTransport: 2 }, observedAt: '2026-08-30T00:00:00.000Z',
+  } });
+  const malformedRuntimeApp = createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+    storageAgent: {
+      lease: async () => null, download: async () => ({}), complete: async () => ({}),
+      reportRuntime: async () => { throw Object.assign(new Error('invalid receipt'), { code: 'STORAGE_AGENT_RUNTIME_RECEIPT_INVALID' }); },
+    },
+  });
+  const malformedRuntimeReceipt = await request(malformedRuntimeApp, '/api/storage-agent/runtime-receipts', {
+    method: 'POST', headers: { 'x-gewu-storage-agent-token': 'storage-agent-test-token' },
+    body: {
+      agentId: 'storage-agent-1', agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 }, parserSha256: 'A'.repeat(64),
+    },
+  });
+  assert.strictEqual(malformedRuntimeReceipt.status, 400, 'an authenticated but malformed runtime receipt is a client error, not cloud unavailability');
+  assert.deepStrictEqual(malformedRuntimeReceipt.body, { ok: false, code: 'CLOUD_STORAGE_AGENT_INPUT_INVALID' });
   const rejectedStorageTask = await request(storageApp, '/api/storage-agent/lease', {
     method: 'POST', headers: { 'x-gewu-storage-agent-token': 'wrong-token' }, body: { agentId: 'storage-agent-1' },
   });
@@ -920,7 +975,14 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     ['lease', { agentId: 'storage-agent-1', token: 'storage-agent-test-token' }],
     ['download', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value' }],
     ['complete', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', taskId: 'task_12345678', leaseToken: 'lease-token-test-value', observedSha256: 'a'.repeat(64), observedBytes: 3 }],
-    ['runtime', { agentId: 'storage-agent-1', token: 'storage-agent-test-token', agentVersion: '8.8.0', contracts: { questionPaperExport: 3, storageAgentTransport: 2 } }],
+    ['runtime', {
+      agentId: 'storage-agent-1', token: 'storage-agent-test-token', agentVersion: '8.8.1',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 3, questionImportParserProof: 1 }, parserSha256: '9'.repeat(64),
+    }],
+    ['runtime', {
+      agentId: 'storage-agent-1', token: 'storage-agent-test-token', agentVersion: '8.8.0',
+      contracts: { questionPaperExport: 3, storageAgentTransport: 2 },
+    }],
     ['lease', { agentId: 'storage-agent-1', token: 'wrong-token' }],
   ]);
 

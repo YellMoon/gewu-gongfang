@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import unittest
 from unittest import mock
 
@@ -71,6 +73,48 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         command = candidate_command("8.1.0-8c425eab", "a" * 32)
         self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
         self.assertIn("sleep 1", command)
+
+    def test_trusted_offline_lease_key_fingerprints_are_derived_from_desktop_public_keys(self):
+        first = "MCowBQYDK2VwAyEAdHtPZNmNeiLxZgrr7u5TlhUQPY32IRFZm2jhRABGthY="
+        second = "MCowBQYDK2VwAyEAGY4DlhDvEsOwR7mXM23i+P+lT2n0ZVXKVQXbSZfFR/c="
+        source = (
+            "const CLOUD_OFFLINE_LEASE_PUBLIC_KEYS_B64 = Object.freeze([\n"
+            f"  '{first}',\n  '{second}',\n]);\n"
+        )
+        self.assertEqual(
+            module.trusted_offline_lease_key_fingerprints(source),
+            (
+                hashlib.sha256(base64.b64decode(first)).hexdigest(),
+                hashlib.sha256(base64.b64decode(second)).hexdigest(),
+            ),
+        )
+        for invalid in (
+            "",
+            "const CLOUD_OFFLINE_LEASE_PUBLIC_KEYS_B64 = Object.freeze([]);",
+            "const CLOUD_OFFLINE_LEASE_PUBLIC_KEYS_B64 = Object.freeze(['not-base64']);",
+        ):
+            with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_OFFLINE_LEASE_KEY_CONFIG_INVALID"):
+                module.trusted_offline_lease_key_fingerprints(invalid)
+
+    def test_candidate_fails_closed_unless_its_private_key_derives_a_desktop_trusted_public_key(self):
+        command = candidate_command("8.1.0-8c425eab", "a" * 32)
+        trusted = module.trusted_offline_lease_key_fingerprints()
+        guard_script_b64 = module.candidate_lease_key_fingerprint_script()
+        guard_script = base64.b64decode(guard_script_b64).decode("utf-8")
+        self.assertEqual(len(trusted), 2)
+        self.assertTrue(all(fingerprint in command for fingerprint in trusted))
+        self.assertIn(guard_script_b64, command)
+        self.assertIn("CLOUD_IDENTITY_LEASE_PRIVATE_KEY_B64", guard_script)
+        self.assertIn("createPrivateKey", guard_script)
+        self.assertIn("createPublicKey", guard_script)
+        self.assertNotIn("console.log", guard_script)
+        self.assertIn("actual_lease_key_fingerprint=$(", command)
+        self.assertIn("CLOUD_DOCKER_OFFLINE_LEASE_KEY_UNTRUSTED", command)
+        self.assertNotIn('echo "$actual_lease_key_fingerprint"', command)
+        self.assertLess(
+            command.index("actual_lease_key_fingerprint=$("),
+            command.index("for attempt in 1 2 3 4 5 6 7 8 9 10"),
+        )
 
     def test_candidate_binds_cleanup_to_its_own_operation_and_always_removes_env_file(self):
         operation_id = "a" * 32
