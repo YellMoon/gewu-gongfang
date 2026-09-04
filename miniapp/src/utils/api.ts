@@ -263,7 +263,7 @@ export const miniappCloudBusinessApi = {
   }>> {
     if (typeof token !== 'string' || !token.trim()) return { success: false, error: 'Cloud session required' };
     const result = await fetchQuestionPreviewsByIds(questionIds, {
-      pageSize: 200,
+      pageSize: 40,
       fetchPage: options => miniappCloudBusinessApi.listQuestionPreviews(token, options),
     });
     if (!result.success) {

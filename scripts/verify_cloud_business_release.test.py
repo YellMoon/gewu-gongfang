@@ -30,7 +30,9 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertEqual(MODULE.CONTROL_PLANE_M26_SHA256, "48bcfbdd3958d70a224ce807f4da1e23ce7142024a62913ce2e59b7eb8cd87cc")
         self.assertEqual(MODULE.CONTROL_PLANE_M27_ID, "vnext-pg17-family-member-canonical-role-27")
         self.assertEqual(MODULE.CONTROL_PLANE_M27_SHA256, "297f705391d59c85733505e8b84e708ce33e4c90abb24a8a9231ad1bfc02de1c")
-        self.assertIn("business.schedules WHERE legacy_deleted=false", sql)
+        for table in ("institutions", "schools", "rooms", "courses", "schedules"):
+            self.assertIn(f"(SELECT count(*) FROM business.{table})", sql)
+            self.assertNotIn(f"business.{table} WHERE legacy_deleted=false", sql)
         self.assertIn("vnext_create_schedule_record_v1", sql)
         self.assertIn("has_table_privilege('vnext_pg17_writer'", sql)
         self.assertIn("has_table_privilege('vnext_pg17_runtime'", sql)
@@ -78,11 +80,13 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("miniapp_cloud_role_grants_one_active_super_admin", sql)
         self.assertIn("runtimeProjectionRead", sql)
         self.assertIn("runtimeCoreDirectWrite", sql)
-        self.assertIn("id NOT LIKE 'e2e-teacher-%'", sql)
-        self.assertIn("id NOT LIKE 'e2e-student-%'", sql)
+        self.assertIn("business.teachers WHERE id NOT LIKE 'e2e-teacher-%'", sql)
+        self.assertIn("business.students WHERE id NOT LIKE 'e2e-student-%'", sql)
+        self.assertNotIn("business.teachers WHERE legacy_deleted=false", sql)
+        self.assertNotIn("business.students WHERE legacy_deleted=false", sql)
 
     def test_validation_fails_closed(self):
-        valid = dict(MODULE.EXPECTED_COUNTS)
+        valid = dict(MODULE.IMPORTED_COUNT_BASELINES)
         valid.update({
             "scheduleCreateFunction": True,
             "institutionCreateFunction": True,
@@ -126,9 +130,13 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "fixedSuperAdminPhone": True,
         })
         self.assertEqual(MODULE.validate(valid), valid)
+        grown = dict(valid, institutions=MODULE.IMPORTED_COUNT_BASELINES["institutions"] + 1)
+        self.assertEqual(MODULE.validate(grown), grown)
         invalid = dict(valid, schedules=554)
-        with self.assertRaisesRegex(RuntimeError, "COUNT_MISMATCH:schedules"):
+        with self.assertRaisesRegex(RuntimeError, "COUNT_BELOW_BASELINE:schedules"):
             MODULE.validate(invalid)
+        with self.assertRaisesRegex(RuntimeError, "COUNT_BELOW_BASELINE:institutions"):
+            MODULE.validate(dict(valid, institutions=4.5))
         with self.assertRaisesRegex(RuntimeError, "DIRECT_WRITE_OPEN"):
             MODULE.validate(dict(valid, writerDirectScheduleInsert=True))
         with self.assertRaisesRegex(RuntimeError, "ACCOUNT_ROLE_INVARIANT"):

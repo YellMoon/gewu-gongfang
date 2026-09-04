@@ -82,6 +82,8 @@ assert.match(downloadBlock[1], /finally \{ setTaskBusyId\(''\); \}/, 'download m
 
 assert.match(apiSource, /listQuestionPreviewsByIds/, 'the miniapp API must expose exact basket hydration over the cloud authority');
 assert.match(apiSource, /fetchQuestionPreviewsByIds/, 'exact basket hydration must paginate instead of trusting the current browse page');
+assert.match(apiSource, /pageSize:\s*40/, 'exact basket hydration must use the proven bounded browse page size instead of a 200-question request that times out in WeChat');
+assert.doesNotMatch(apiSource, /pageSize:\s*200/, 'exact basket hydration must not issue the 200-question request that timed out in the real WeChat runtime');
 assert.match(source, /miniappCloudBusinessApi\.listQuestionPreviewsByIds/, 'question-paper content must restore the complete selected id set from cloud authority');
 assert.doesNotMatch(source, /questionBasketStore\.replaceQuestions\(listed\)/, 'a paper reload must not prune basket metadata to one cloud page');
 assert.match(basketSource, /onResolveQuestions/, 'the floating basket must support cloud hydration after app restart or filter changes');

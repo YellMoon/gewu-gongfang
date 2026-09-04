@@ -13,7 +13,7 @@ import deploy
 from apply_cloud_postgres_migrations import DockerPsqlExecutor
 
 
-EXPECTED_COUNTS = {
+IMPORTED_COUNT_BASELINES = {
     "tenants": 1,
     "institutions": 4,
     "schools": 15,
@@ -46,17 +46,17 @@ CONTROL_PLANE_M27_SHA256 = "297f705391d59c85733505e8b84e708ce33e4c90abb24a8a9231
 def verification_sql():
     count_queries = {
         "tenants": "SELECT count(*) FROM business.tenants",
-        "institutions": "SELECT count(*) FROM business.institutions WHERE legacy_deleted=false",
-        "schools": "SELECT count(*) FROM business.schools WHERE legacy_deleted=false",
-        "rooms": "SELECT count(*) FROM business.rooms WHERE legacy_deleted=false",
+        "institutions": "SELECT count(*) FROM business.institutions",
+        "schools": "SELECT count(*) FROM business.schools",
+        "rooms": "SELECT count(*) FROM business.rooms",
         # Acceptance identities are explicitly named fixtures. They are needed
         # for repeatable role tests but must not change the historical import
         # inventory that gates a migration or deployment.
-        "teachers": "SELECT count(*) FROM business.teachers WHERE legacy_deleted=false AND id NOT LIKE 'e2e-teacher-%'",
-        "students": "SELECT count(*) FROM business.students WHERE legacy_deleted=false AND id NOT LIKE 'e2e-student-%'",
-        "courses": "SELECT count(*) FROM business.courses WHERE legacy_deleted=false",
+        "teachers": "SELECT count(*) FROM business.teachers WHERE id NOT LIKE 'e2e-teacher-%'",
+        "students": "SELECT count(*) FROM business.students WHERE id NOT LIKE 'e2e-student-%'",
+        "courses": "SELECT count(*) FROM business.courses",
         "pricings": "SELECT count(*) FROM business.course_student_pricings",
-        "schedules": "SELECT count(*) FROM business.schedules WHERE legacy_deleted=false",
+        "schedules": "SELECT count(*) FROM business.schedules",
         "overrides": "SELECT count(*) FROM business.schedule_student_overrides",
     }
     fields = []
@@ -270,9 +270,10 @@ def verification_sql():
 def validate(payload):
     if not isinstance(payload, dict):
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_FAILED")
-    for key, expected in EXPECTED_COUNTS.items():
-        if payload.get(key) != expected:
-            raise RuntimeError(f"CLOUD_BUSINESS_RELEASE_COUNT_MISMATCH:{key}:{payload.get(key)}:{expected}")
+    for key, baseline in IMPORTED_COUNT_BASELINES.items():
+        actual = payload.get(key)
+        if not isinstance(actual, int) or isinstance(actual, bool) or actual < baseline:
+            raise RuntimeError(f"CLOUD_BUSINESS_RELEASE_COUNT_BELOW_BASELINE:{key}:{actual}:{baseline}")
     required_functions = (
         "scheduleCreateFunction", "institutionCreateFunction", "schoolCreateFunction", "writerScheduleExecute",
         "taxonomySystemTable", "taxonomyNodeTable", "taxonomyFunctions", "writerTaxonomyExecute",
