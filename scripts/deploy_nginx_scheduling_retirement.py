@@ -28,6 +28,36 @@ def quote(value):
     return shlex.quote(value)
 
 
+def _server_blocks(source):
+    blocks = []
+    for match in re.finditer(r"\bserver\s*\{", source):
+        opening = source.find("{", match.start())
+        depth = 0
+        for index in range(opening, len(source)):
+            if source[index] == "{":
+                depth += 1
+            elif source[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks.append((match.start(), index + 1, source[match.start():index + 1]))
+                    break
+        else:
+            raise ValueError("NGINX_SCHEDULING_CONFIG_INVALID")
+    return blocks
+
+
+def _https_server(source):
+    matches = [
+        block
+        for block in _server_blocks(source)
+        if re.search(r"\blisten\s+443(?:\s+ssl)?\s*;", block[2])
+        and re.search(r"\blocation\s+/scheduling/\s*\{", block[2])
+    ]
+    if len(matches) != 1:
+        raise ValueError("NGINX_SCHEDULING_HTTPS_SERVER_INVALID")
+    return matches[0]
+
+
 def _location_match(source, path):
     pattern = re.compile(rf"location\s+{re.escape(path)}\s*\{{(?P<body>[\s\S]*?)\n\s*\}}")
     matches = list(pattern.finditer(source))
@@ -46,8 +76,9 @@ def _upstream(block):
 def patch_nginx_config(source):
     if not isinstance(source, str) or not source.strip():
         raise ValueError("NGINX_SCHEDULING_CONFIG_INVALID")
-    scheduling = _location_match(source, SCHEDULING_PATH)
-    cloud_business = _location_match(source, CLOUD_BUSINESS_PATH)
+    server_start, server_end, server_source = _https_server(source)
+    scheduling = _location_match(server_source, SCHEDULING_PATH)
+    cloud_business = _location_match(server_source, CLOUD_BUSINESS_PATH)
     scheduling_upstream = _upstream(scheduling.group(0))
     cloud_business_upstream = _upstream(cloud_business.group(0))
     if cloud_business_upstream != CLOUD_BUSINESS_UPSTREAM:
@@ -64,7 +95,8 @@ def patch_nginx_config(source):
     )
     if updated_block == scheduling_block:
         raise ValueError("NGINX_SCHEDULING_UPSTREAM_INVALID")
-    return source[:scheduling.start()] + updated_block + source[scheduling.end():]
+    updated_server = server_source[:scheduling.start()] + updated_block + server_source[scheduling.end():]
+    return source[:server_start] + updated_server + source[server_end:]
 
 
 def verify_public_contract(ssh):

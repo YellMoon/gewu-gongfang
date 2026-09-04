@@ -11,6 +11,13 @@ SPEC.loader.exec_module(MODULE)
 
 
 SOURCE = """server {
+    listen 80;
+    location /cloud-business/ {
+        proxy_pass http://127.0.0.1:3002/;
+    }
+}
+server {
+    listen 443 ssl;
     location /scheduling/ {
         proxy_pass http://127.0.0.1:3002/;
         proxy_http_version 1.1;
@@ -23,8 +30,9 @@ SOURCE = """server {
 """
 
 patched = MODULE.patch_nginx_config(SOURCE)
-scheduling = MODULE._location_match(patched, "/scheduling/").group(0)
-cloud_business = MODULE._location_match(patched, "/cloud-business/").group(0)
+_start, _end, https_server = MODULE._https_server(patched)
+scheduling = MODULE._location_match(https_server, "/scheduling/").group(0)
+cloud_business = MODULE._location_match(https_server, "/cloud-business/").group(0)
 assert "proxy_pass http://127.0.0.1:3001/;" in scheduling
 assert "proxy_pass http://127.0.0.1:3002/;" not in scheduling
 assert "proxy_pass http://127.0.0.1:3002/;" in cloud_business
@@ -32,14 +40,15 @@ assert "proxy_set_header Upgrade $http_upgrade;" in scheduling
 assert MODULE.patch_nginx_config(patched) == patched
 assert MODULE.EXPECTED_GATEWAY_VERSION == "8.9.1"
 
+https_start = SOURCE.index("server {\n    listen 443 ssl;")
 for invalid in (
-    SOURCE.replace("location /scheduling/", "location /other/"),
+    SOURCE.replace("location /scheduling/", "location /other/", 1),
     SOURCE.replace(
         "location /cloud-business/ {",
         "location /scheduling/ {\n        proxy_pass http://127.0.0.1:3002/;\n    }\n    location /cloud-business/ {",
     ),
-    SOURCE.replace("http://127.0.0.1:3002/;", "http://127.0.0.1:3999/;", 1),
     SOURCE.replace("http://127.0.0.1:3002/;", "http://127.0.0.1:3999/;", 2),
+    SOURCE + "\n" + SOURCE[https_start:],
 ):
     try:
         MODULE.patch_nginx_config(invalid)
