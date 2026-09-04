@@ -2,6 +2,7 @@
 """Deploy the PostgreSQL-backed cloud business API as a verified Docker release."""
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -63,20 +64,91 @@ def remote_env_path(tag):
     return f"/tmp/gewu-cloud-business-{tag}.env"
 
 
+def runtime_override_env_path(tag, operation_id):
+    if not isinstance(tag, str) or not TAG_PATTERN.fullmatch(tag):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
+        raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
+    return f"/tmp/gewu-cloud-business-{tag}-{operation_id}.override.env"
+
+
+def cloud_runtime_overrides(environ=None, *, expected_appid=None):
+    env = os.environ if environ is None else environ
+    if expected_appid is None:
+        try:
+            expected_appid = json.loads((ROOT / "miniapp" / "project.config.json").read_text(encoding="utf-8"))["appid"]
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise failure("CLOUD_DOCKER_WECHAT_CONFIG_INVALID") from error
+    appid = str(env.get("WECHAT_APPID") or "").strip()
+    appsecret = str(env.get("WECHAT_APPSECRET") or "").strip()
+    env_version = str(env.get("WECHAT_MINIAPP_LOGIN_ENV_VERSION") or env.get("WECHAT_MINIAPP_ENV_VERSION") or "release").strip()
+    if (not isinstance(expected_appid, str)
+            or not re.fullmatch(r"wx[0-9a-f]{16}", expected_appid)
+            or appid != expected_appid
+            or not re.fullmatch(r"[A-Za-z0-9]{32}", appsecret)
+            or env_version not in {"develop", "trial", "release"}):
+        raise failure("CLOUD_DOCKER_WECHAT_CONFIG_INVALID")
+    return {
+        "WECHAT_APPID": appid,
+        "WECHAT_APPSECRET": appsecret,
+        "WECHAT_MINIAPP_LOGIN_ENV_VERSION": env_version,
+    }
+
+
+def upload_runtime_override_file(ssh, tag, operation_id, values=None):
+    override_path = runtime_override_env_path(tag, operation_id)
+    runtime_values = cloud_runtime_overrides() if values is None else values
+    if set(runtime_values) != {"WECHAT_APPID", "WECHAT_APPSECRET", "WECHAT_MINIAPP_LOGIN_ENV_VERSION"}:
+        raise failure("CLOUD_DOCKER_WECHAT_CONFIG_INVALID")
+    if (not re.fullmatch(r"wx[0-9a-f]{16}", str(runtime_values["WECHAT_APPID"]))
+            or not re.fullmatch(r"[A-Za-z0-9]{32}", str(runtime_values["WECHAT_APPSECRET"]))
+            or runtime_values["WECHAT_MINIAPP_LOGIN_ENV_VERSION"] not in {"develop", "trial", "release"}):
+        raise failure("CLOUD_DOCKER_WECHAT_CONFIG_INVALID")
+    payload = "".join(f"{key}={runtime_values[key]}\n" for key in (
+        "WECHAT_APPID", "WECHAT_APPSECRET", "WECHAT_MINIAPP_LOGIN_ENV_VERSION",
+    ))
+    if "\r" in payload or "\x00" in payload:
+        raise failure("CLOUD_DOCKER_WECHAT_CONFIG_INVALID")
+    sftp = ssh.open_sftp()
+    try:
+        with sftp.open(override_path, "w") as handle:
+            handle.write(payload)
+        sftp.chmod(override_path, 0o600)
+    finally:
+        sftp.close()
+    return override_path
+
+
+def remove_runtime_override_file(ssh, tag, operation_id):
+    override_path = runtime_override_env_path(tag, operation_id)
+    sftp = ssh.open_sftp()
+    try:
+        try:
+            sftp.remove(override_path)
+        except OSError as error:
+            if getattr(error, "errno", None) != errno.ENOENT:
+                raise
+    finally:
+        sftp.close()
+
+
 def candidate_command(tag, operation_id):
     if not isinstance(operation_id, str) or not OPERATION_ID_PATTERN.fullmatch(operation_id):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
     image = f"gewu-cloud-business-api:{tag}"
     candidate = candidate_name(tag)
     env_path = remote_env_path(tag)
+    override_path = runtime_override_env_path(tag, operation_id)
     return (
         "set -eu; "
-        f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; owner='{operation_id}'; "
-        "trap 'rm -f -- \"$env_path\"' EXIT; "
+        f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; override_path='{override_path}'; owner='{operation_id}'; "
+        "trap 'rm -f -- \"$env_path\" \"$override_path\"' EXIT; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
+        "test -f \"$override_path\" && test ! -L \"$override_path\"; "
         "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$current\" > \"$env_path\"; "
-        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d' \"$env_path\"; printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' >> \"$env_path\"; "
+        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d;/^WECHAT_APPID=/d;/^WECHAT_APPSECRET=/d;/^WECHAT_MINIAPP_LOGIN_ENV_VERSION=/d' \"$env_path\"; "
+        "printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' >> \"$env_path\"; cat \"$override_path\" >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
         f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
@@ -180,7 +252,9 @@ def switch_command(tag, operation_id):
         f"exec 9>'{SWITCH_LOCK_PATH}'; flock -x 9; "
         "network=$(docker inspect -f '{{range $key, $_ := .NetworkSettings.Networks}}{{$key}}{{end}}' \"$current\"); "
         "test -n \"$network\"; "
-        "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$current\" > \"$env_path\"; "
+        # Promote the exact environment that passed candidate health checks,
+        # including the securely supplied WeChat runtime identity.
+        "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$candidate\" > \"$env_path\"; "
         "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d' \"$env_path\"; printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$rollback\" >/dev/null 2>&1; then exit 2; fi; "
@@ -582,6 +656,7 @@ def deploy_release():
     tag = validated_release_tag()
     candidate_operation_id = secrets.token_hex(16)
     ssh = deploy.connect()
+    runtime_override_uploaded = False
     try:
         upload_source(ssh, tag)
         build_image(ssh, tag)
@@ -590,6 +665,8 @@ def deploy_release():
         # The candidate starts with strict schema/invariant verification. Apply
         # additive migrations only after a fresh, verified recovery point exists.
         run_cloud_migrations()
+        upload_runtime_override_file(ssh, tag, candidate_operation_id)
+        runtime_override_uploaded = True
         try:
             deploy.run(ssh, candidate_command(tag, candidate_operation_id), timeout=90)
         except Exception:
@@ -602,7 +679,11 @@ def deploy_release():
                 pass
             raise
     finally:
-        ssh.close()
+        try:
+            if runtime_override_uploaded:
+                remove_runtime_override_file(ssh, tag, candidate_operation_id)
+        finally:
+            ssh.close()
     return promote_validated_candidate(
         tag,
         version,

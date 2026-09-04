@@ -8,7 +8,7 @@ assert.ok(MARKER.test(marker));
 assert.ok(!MARKER.test('teacher-test'));
 const specs = roleSpecs(marker);
 assert.deepStrictEqual(specs.map(spec => spec.key), ['visitor', 'teacher', 'student', 'family']);
-assert.deepStrictEqual(specs.map(spec => spec.role), [null, 'teacher', 'student', 'student']);
+assert.deepStrictEqual(specs.map(spec => spec.role), [null, 'teacher', 'student', 'family_member']);
 assert.strictEqual(specs[2].profileId, specs[3].profileId, 'student and family must target the same student profile');
 assert.strictEqual(specs[2].relationship, 'student');
 assert.strictEqual(specs[3].relationship, 'guardian');

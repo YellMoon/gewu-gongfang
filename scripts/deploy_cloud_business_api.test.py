@@ -5,6 +5,7 @@ import deploy_cloud_business_api as module
 from deploy_cloud_business_api import (
     candidate_command,
     candidate_name,
+    cloud_runtime_overrides,
     promotion_lock_acquire_command,
     promotion_lock_heartbeat_command,
     promotion_lock_recovery_claim_command,
@@ -12,6 +13,7 @@ from deploy_cloud_business_api import (
     reconcile_switch_failure_command,
     release_tag,
     rollback_command,
+    runtime_override_env_path,
     switch_command,
 )
 
@@ -74,7 +76,66 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         operation_id = "a" * 32
         command = candidate_command("8.1.0-8c425eab", operation_id)
         self.assertIn(f'--label gewu.candidate-operation="{operation_id}"', command)
-        self.assertIn("trap 'rm -f -- \"$env_path\"' EXIT", command)
+        self.assertIn("trap 'rm -f -- \"$env_path\" \"$override_path\"' EXIT", command)
+
+    def test_cloud_runtime_overrides_require_the_project_appid_and_matching_secret(self):
+        appid = "wx" + "a" * 16
+        values = cloud_runtime_overrides({
+            "WECHAT_APPID": appid,
+            "WECHAT_APPSECRET": "b" * 32,
+            "WECHAT_MINIAPP_ENV_VERSION": "develop",
+        }, expected_appid=appid)
+        self.assertEqual(values, {
+            "WECHAT_APPID": appid,
+            "WECHAT_APPSECRET": "b" * 32,
+            "WECHAT_MINIAPP_LOGIN_ENV_VERSION": "develop",
+        })
+        with self.assertRaisesRegex(ValueError, "CLOUD_DOCKER_WECHAT_CONFIG_INVALID"):
+            cloud_runtime_overrides({
+                "WECHAT_APPID": "wx" + "c" * 16,
+                "WECHAT_APPSECRET": "b" * 32,
+            }, expected_appid=appid)
+
+    def test_candidate_securely_merges_wechat_overrides_and_promotion_reuses_candidate_env(self):
+        tag = "8.1.0-8c425eab"
+        operation_id = "a" * 32
+        override_path = runtime_override_env_path(tag, operation_id)
+        candidate = candidate_command(tag, operation_id)
+        promoted = switch_command(tag, operation_id)
+        self.assertIn(f"override_path='{override_path}'", candidate)
+        self.assertIn("/^WECHAT_APPID=/d", candidate)
+        self.assertIn("/^WECHAT_APPSECRET=/d", candidate)
+        self.assertIn("/^WECHAT_MINIAPP_LOGIN_ENV_VERSION=/d", candidate)
+        self.assertIn('cat "$override_path" >> "$env_path"', candidate)
+        self.assertIn('rm -f -- "$env_path" "$override_path"', candidate)
+        self.assertIn('docker inspect -f', promoted)
+        self.assertIn('"$candidate" > "$env_path"', promoted)
+
+    def test_runtime_override_upload_is_private_and_contains_only_validated_wechat_values(self):
+        tag = "8.1.0-8c425eab"
+        operation_id = "a" * 32
+        ssh = mock.Mock()
+        sftp = mock.MagicMock()
+        handle = mock.MagicMock()
+        ssh.open_sftp.return_value = sftp
+        sftp.open.return_value.__enter__.return_value = handle
+        expected_path = runtime_override_env_path(tag, operation_id)
+
+        actual_path = module.upload_runtime_override_file(ssh, tag, operation_id, {
+            "WECHAT_APPID": "wx" + "a" * 16,
+            "WECHAT_APPSECRET": "b" * 32,
+            "WECHAT_MINIAPP_LOGIN_ENV_VERSION": "develop",
+        })
+
+        self.assertEqual(actual_path, expected_path)
+        sftp.open.assert_called_once_with(expected_path, "w")
+        sftp.chmod.assert_called_once_with(expected_path, 0o600)
+        handle.write.assert_called_once_with(
+            f"WECHAT_APPID={'wx' + 'a' * 16}\n"
+            f"WECHAT_APPSECRET={'b' * 32}\n"
+            "WECHAT_MINIAPP_LOGIN_ENV_VERSION=develop\n"
+        )
+        sftp.close.assert_called_once_with()
 
     def test_candidate_and_promoted_cloud_service_enable_the_paper_export_worker(self):
         for command in (candidate_command("8.1.0-8c425eab", "a" * 32), switch_command("8.1.0-8c425eab", "b" * 32)):
@@ -376,12 +437,14 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(
             module, "create_verified_backup", side_effect=lambda: events.append("backup") or VERIFIED_BACKUP
         ), mock.patch.object(
-            module, "deploy_retirement_gateway", side_effect=lambda: events.append("gateway") or {"ok": True}
+             module, "deploy_retirement_gateway", side_effect=lambda: events.append("gateway") or {"ok": True}
         ), mock.patch.object(module, "run_cloud_migrations", side_effect=lambda: events.append("migrate") or 0), mock.patch.object(
+            module, "upload_runtime_override_file", side_effect=lambda *_args: events.append("runtime") or "/tmp/runtime.env"
+        ), mock.patch.object(
             module.deploy, "run", side_effect=lambda *_args, **_kwargs: events.append("candidate") or ("", "")
         ), mock.patch.object(module, "promote_validated_candidate", side_effect=lambda *_args: events.append("promote") or {"ok": True}):
             self.assertEqual(module.deploy_release(), {"ok": True})
-        self.assertEqual(events, ["upload", "build", "backup", "gateway", "migrate", "candidate", "promote"])
+        self.assertEqual(events, ["upload", "build", "backup", "gateway", "migrate", "runtime", "candidate", "promote"])
 
     def test_backup_failure_blocks_migrations_candidate_and_promotion(self):
         ssh = mock.Mock()
@@ -484,6 +547,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(module, "build_image"), mock.patch.object(
             module, "create_verified_backup", return_value=VERIFIED_BACKUP
         ), mock.patch.object(module, "deploy_retirement_gateway") as deploy_gateway, mock.patch.object(
+            module, "upload_runtime_override_file", return_value="/tmp/runtime.env"
+        ), mock.patch.object(
             module.deploy, "run"
         ), mock.patch.object(module, "run_cloud_migrations", return_value=0), mock.patch.object(
             module, "verify_public_health", return_value=health
@@ -519,6 +584,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ), mock.patch.object(module, "upload_source"), mock.patch.object(module, "build_image"), mock.patch.object(
             module, "create_verified_backup", return_value=VERIFIED_BACKUP
         ), mock.patch.object(module, "deploy_retirement_gateway"), mock.patch.object(module, "run_cloud_migrations", return_value=0
+        ), mock.patch.object(module, "upload_runtime_override_file", return_value=module.runtime_override_env_path(tag, operation_id)
         ), mock.patch.object(
             module.deploy, "run", side_effect=RuntimeError("candidate bind failed")
         ) as run, mock.patch.object(module, "promote_validated_candidate") as promote:

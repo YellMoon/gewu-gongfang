@@ -6,6 +6,31 @@ const MINIAPP_VISITOR_QUESTION_LIMIT = 20;
 const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
 const MINIAPP_QUESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MINIAPP_QUESTION_ORDER_SQL = 'c.updated_at DESC,q.id ASC';
+const DESKTOP_RENDERER_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+]);
+const DESKTOP_RENDERER_CORS_METHODS = 'GET,POST,PUT,DELETE,OPTIONS';
+const DESKTOP_RENDERER_CORS_HEADERS = [
+  'Accept',
+  'Authorization',
+  'Content-Type',
+  'X-Device-Id',
+  'X-Idempotency-Key',
+  'X-Gewu-Artifact-Token',
+].join(', ');
+
+function desktopRendererCors(request, response, next) {
+  const origin = typeof request.headers.origin === 'string' ? request.headers.origin : '';
+  if (!DESKTOP_RENDERER_ORIGINS.has(origin)) return next();
+  response.setHeader('Access-Control-Allow-Origin', origin);
+  response.setHeader('Access-Control-Allow-Methods', DESKTOP_RENDERER_CORS_METHODS);
+  response.setHeader('Access-Control-Allow-Headers', DESKTOP_RENDERER_CORS_HEADERS);
+  response.setHeader('Access-Control-Max-Age', '600');
+  response.vary('Origin');
+  if (request.method === 'OPTIONS') return response.status(204).end();
+  return next();
+}
 
 function normalizedCursorInstant(value) {
   const parsed = value instanceof Date ? value : new Date(value);
@@ -111,6 +136,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   if (businessTenantId !== null && (typeof businessTenantId !== 'string' || !businessTenantId.trim())) throw new TypeError('businessTenantId is invalid');
   const app = express();
   app.disable('x-powered-by');
+  app.use(desktopRendererCors);
   app.use('/api/desktop/question-bank/assets/relay', express.json({ limit: '90mb' }));
   app.use('/api/desktop/question-imports', express.json({ limit: '90mb' }));
   app.use('/api/storage-agent/question-imports', express.json({ limit: '90mb' }));

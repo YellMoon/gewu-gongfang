@@ -38,7 +38,7 @@ function roleSpecs(marker) {
     Object.freeze({ key: 'visitor', accountId: fixtureId('e2e-account-visitor', marker), role: null, profileId: null, relationship: null }),
     Object.freeze({ key: 'teacher', accountId: fixtureId('e2e-account-teacher', marker), role: 'teacher', profileId: fixtureId('e2e-teacher', marker), relationship: null }),
     Object.freeze({ key: 'student', accountId: fixtureId('e2e-account-student', marker), role: 'student', profileId: fixtureId('e2e-student', marker), relationship: 'student' }),
-    Object.freeze({ key: 'family', accountId: fixtureId('e2e-account-family', marker), role: 'student', profileId: fixtureId('e2e-student', marker), relationship: 'guardian' }),
+    Object.freeze({ key: 'family', accountId: fixtureId('e2e-account-family', marker), role: 'family_member', profileId: fixtureId('e2e-student', marker), relationship: 'guardian' }),
   ]);
 }
 
@@ -75,12 +75,12 @@ async function provisionBusinessProfiles(writerPool, appPool, tenantId, marker, 
       [spec.accountId, phoneHashes[spec.key]],
     );
   }
-  for (const spec of specs.filter(item => item.role === 'student')) {
+  for (const spec of specs.filter(item => item.role === 'student' || item.role === 'family_member')) {
     await appPool.query(
       `INSERT INTO business.miniapp_cloud_role_grants(account_id,role,status,profile_type,profile_id,student_relationship)
-       VALUES($1,'student','active','student',$2,$3)
+       VALUES($1,$2,'active','student',$3,$4)
        ON CONFLICT (account_id,role) DO UPDATE SET status='active',profile_type='student',profile_id=EXCLUDED.profile_id,student_relationship=EXCLUDED.student_relationship,updated_at=transaction_timestamp()`,
-      [spec.accountId, spec.profileId, spec.relationship],
+      [spec.accountId, spec.role, spec.profileId, spec.relationship],
     );
   }
 }

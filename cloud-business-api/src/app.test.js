@@ -18,13 +18,62 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     } catch (_) {
       responseBody = null;
     }
-    return { status: response.status, body: responseBody };
+    return {
+      status: response.status,
+      body: responseBody,
+      headers: Object.fromEntries(response.headers.entries()),
+    };
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
 }
 
 (async () => {
+  const desktopPreflight = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+  }), '/api/desktop/pairing/start', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'http://localhost:3000',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,authorization,x-idempotency-key,x-device-id,x-gewu-artifact-token',
+    },
+  });
+  assert.strictEqual(desktopPreflight.status, 204);
+  assert.strictEqual(desktopPreflight.headers['access-control-allow-origin'], 'http://localhost:3000');
+  assert.strictEqual(desktopPreflight.headers['access-control-allow-methods'], 'GET,POST,PUT,DELETE,OPTIONS');
+  assert.deepStrictEqual(
+    desktopPreflight.headers['access-control-allow-headers'].split(/,\s*/u).sort(),
+    ['Accept', 'Authorization', 'Content-Type', 'X-Device-Id', 'X-Gewu-Artifact-Token', 'X-Idempotency-Key'].sort(),
+  );
+  assert.strictEqual(desktopPreflight.headers['access-control-expose-headers'], undefined);
+
+  // Packaged Electron loads file:// and its real requests carry no Origin header.
+  // Do not broaden browser access by treating the synthetic "null" origin as trusted.
+  const opaqueOriginPreflight = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+  }), '/api/business/desktop-projection', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'null',
+      'access-control-request-method': 'GET',
+      'access-control-request-headers': 'authorization',
+    },
+  });
+  assert.strictEqual(opaqueOriginPreflight.headers['access-control-allow-origin'], undefined);
+
+  const untrustedBrowserPreflight = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }),
+  }), '/api/desktop/pairing/start', {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://untrusted.example',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type',
+    },
+  });
+  assert.strictEqual(untrustedBrowserPreflight.headers['access-control-allow-origin'], undefined);
+
   const healthy = await request(createCloudBusinessApp({
     query: async () => ({ rows: [{ ok: 1 }] }),
     releaseVersion: '8.0.6-test',

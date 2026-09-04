@@ -64,7 +64,7 @@ def parse_receipt(output):
             raise ValueError("REAL_TEST_IDENTITY_RECEIPT_INVALID")
     if identities["visitor"].get("roles") != [] or identities["teacher"].get("roles") != ["teacher"]:
         raise ValueError("REAL_TEST_IDENTITY_RECEIPT_INVALID")
-    if identities["student"].get("roles") != ["student"] or identities["family"].get("roles") != ["student"]:
+    if identities["student"].get("roles") != ["student"] or identities["family"].get("roles") != ["family_member"]:
         raise ValueError("REAL_TEST_IDENTITY_RECEIPT_INVALID")
     if identities["student"].get("relationship") != "student" or identities["family"].get("relationship") != "guardian":
         raise ValueError("REAL_TEST_IDENTITY_RECEIPT_INVALID")

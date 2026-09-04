@@ -16,7 +16,7 @@ function expectedRole(key) {
   if (key === 'visitor') return { roles: [], profileType: null, relationship: null };
   if (key === 'teacher') return { roles: ['teacher'], profileType: 'teacher', relationship: null };
   if (key === 'student') return { roles: ['student'], profileType: 'student', relationship: 'student' };
-  if (key === 'family') return { roles: ['student'], profileType: 'student', relationship: 'guardian' };
+  if (key === 'family') return { roles: ['family_member'], profileType: 'student', relationship: 'guardian' };
   throw failure('REAL_MINIAPP_ROLE_SESSION_INPUT_INVALID');
 }
 
@@ -42,28 +42,50 @@ async function loadRoleSessions({ query, ticketSecret, now = new Date() }) {
   if (typeof query !== 'function' || typeof ticketSecret !== 'string' || ticketSecret.length < 24 || !(now instanceof Date) || !Number.isFinite(now.getTime())) {
     throw failure('REAL_MINIAPP_ROLE_SESSION_INPUT_INVALID');
   }
-  const sessions = {};
-  let marker = null;
+  const candidatesByRole = {};
   for (const key of ROLE_KEYS) {
     const result = await query(
       `SELECT accounts.account_id AS "accountId", accounts.status,
         COALESCE(array_agg(grants.role ORDER BY grants.role) FILTER (WHERE grants.status='active'), ARRAY[]::text[]) AS roles,
         MAX(grants.profile_type) FILTER (WHERE grants.status='active') AS "profileType",
         MAX(grants.profile_id) FILTER (WHERE grants.status='active') AS "profileId",
-        MAX(grants.student_relationship) FILTER (WHERE grants.status='active') AS relationship
+        MAX(grants.student_relationship) FILTER (WHERE grants.status='active') AS relationship,
+        MAX(accounts.updated_at) AS "updatedAt"
        FROM business.miniapp_cloud_accounts accounts
        LEFT JOIN business.miniapp_cloud_role_grants grants ON grants.account_id=accounts.account_id
        WHERE accounts.account_id LIKE $1
        GROUP BY accounts.account_id,accounts.status`,
       [`e2e-account-${key}-e2e-role-test-%`],
     );
-    if (!Array.isArray(result?.rows) || result.rows.length !== 1) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
-    const row = result.rows[0];
-    const rowMarker = validateRow(key, row);
-    if (marker !== null && marker !== rowMarker) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
-    marker = rowMarker;
-    sessions[key] = Object.freeze({ accountId: row.accountId, token: makeMiniappSessionToken(ticketSecret, row.accountId, now) });
+    if (!Array.isArray(result?.rows)) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
+    candidatesByRole[key] = result.rows.flatMap(row => {
+      try {
+        const rowMarker = validateRow(key, row);
+        const updatedAt = Date.parse(row.updatedAt);
+        if (!Number.isFinite(updatedAt)) return [];
+        return [{ marker: rowMarker, row, updatedAt }];
+      } catch (error) {
+        if (error?.code === 'REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID') return [];
+        throw error;
+      }
+    });
+    if (candidatesByRole[key].length === 0) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
   }
+  const commonMarkers = candidatesByRole.visitor
+    .map(candidate => candidate.marker)
+    .filter(candidateMarker => ROLE_KEYS.every(key => candidatesByRole[key].some(candidate => candidate.marker === candidateMarker)));
+  const rankedMarkers = [...new Set(commonMarkers)].map(candidateMarker => ({
+    marker: candidateMarker,
+    updatedAt: Math.min(...ROLE_KEYS.map(key => candidatesByRole[key].find(candidate => candidate.marker === candidateMarker).updatedAt)),
+  })).sort((left, right) => right.updatedAt - left.updatedAt || left.marker.localeCompare(right.marker));
+  if (rankedMarkers.length === 0) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
+  const marker = rankedMarkers[0].marker;
+  const selected = Object.fromEntries(ROLE_KEYS.map(key => [key, candidatesByRole[key].find(candidate => candidate.marker === marker).row]));
+  if (selected.student.profileId !== selected.family.profileId) throw failure('REAL_MINIAPP_ROLE_SESSION_IDENTITY_INVALID');
+  const sessions = Object.fromEntries(ROLE_KEYS.map(key => [key, Object.freeze({
+    accountId: selected[key].accountId,
+    token: makeMiniappSessionToken(ticketSecret, selected[key].accountId, now),
+  })]));
   return Object.freeze({ ok: true, marker, sessions: Object.freeze(sessions) });
 }
 
