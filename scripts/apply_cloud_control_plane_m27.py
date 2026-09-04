@@ -33,14 +33,19 @@ def validate_upgrade(upgrade):
 
 def state_sql(upgrade):
     statement = (
+        "WITH role_constraint AS ("
+        "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint "
+        "WHERE conrelid='vnext_control_plane.vnext_role_grants'::regclass "
+        "AND conname='vnext_role_grants_role_check'),"
+        "constraint_roles AS (SELECT role_match[1] AS role_name FROM role_constraint "
+        "CROSS JOIN LATERAL regexp_matches(definition,$role$'([^']+)'$role$,'g') AS matched_roles(role_match)) "
         "SELECT json_build_object("
         "'ledgerCount',(SELECT count(*) FROM vnext_control_plane.vnext_schema_migrations),"
         "'targetCount',(SELECT count(*) FROM vnext_control_plane.vnext_schema_migrations WHERE migration_id='"
         + upgrade["migrationId"] + "' AND semantic_version=27 AND manifest_sha256='" + upgrade["manifestSha256"] + "'),"
-        "'familyMemberRole',COALESCE((SELECT position('super_admin' in definition)>0 AND position('teacher' in definition)>0 "
-        "AND position('student' in definition)>0 AND position('family_member' in definition)>0 FROM ("
-        "SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid='vnext_control_plane.vnext_role_grants'::regclass "
-        "AND conname='vnext_role_grants_role_check') role_constraint),false)"
+        "'familyMemberRole',COALESCE((SELECT "
+        "array_agg(role_name ORDER BY role_name)=ARRAY['family_member','student','super_admin','teacher']::text[] "
+        "FROM constraint_roles),false)"
         ")::text;"
     )
     return "\n".join(("\\set ON_ERROR_STOP on", "BEGIN;", "GRANT vnext_pg17_owner TO gewu_app;", "SET LOCAL ROLE vnext_pg17_owner;", statement, "RESET ROLE;", "REVOKE vnext_pg17_owner FROM gewu_app;", "COMMIT;", ""))

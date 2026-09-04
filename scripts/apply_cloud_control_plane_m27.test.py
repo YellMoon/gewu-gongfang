@@ -44,6 +44,20 @@ class Tests(unittest.TestCase):
         self.assertIn("family_member", sql)
         self.assertIn("vnext_role_grants_role_check", sql)
 
+    def test_role_constraint_verification_does_not_parse_function_formatting(self):
+        sql = state_sql(UPGRADE)
+        self.assertNotIn("pg_get_functiondef", sql)
+        self.assertIn("pg_get_constraintdef", sql)
+
+    def test_role_constraint_verification_extracts_the_exact_semantic_role_set(self):
+        sql = state_sql(UPGRADE)
+        self.assertIn("regexp_matches(definition,$role$'([^']+)'$role$,'g')", sql)
+        self.assertIn(
+            "array_agg(role_name ORDER BY role_name)=ARRAY['family_member','student','super_admin','teacher']::text[]",
+            sql,
+        )
+        self.assertNotIn("position('super_admin' in definition)", sql)
+
     def test_rejects_invalid_configuration(self):
         with self.assertRaisesRegex(RuntimeError, "M27_CONFIG_INVALID"):
             validate_upgrade({**UPGRADE, "semanticVersion": 26})

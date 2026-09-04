@@ -53,8 +53,8 @@ def validate_upgrade(upgrade):
 
 def state_sql(upgrade):
     definition = (
-        "regexp_replace(pg_get_functiondef('" + REVOKE_SIGNATURE
-        + "'::regprocedure),'[[:space:]]+','','g')"
+        "lower(regexp_replace(pg_get_functiondef('" + REVOKE_SIGNATURE
+        + "'::regprocedure),'[[:space:]]+','','g'))"
     )
     statement = (
         "WITH revoke_function AS (SELECT " + definition + " AS definition) "
@@ -63,12 +63,12 @@ def state_sql(upgrade):
         "'targetCount',(SELECT count(*) FROM vnext_control_plane.vnext_schema_migrations WHERE migration_id='"
         + upgrade["migrationId"] + "' AND semantic_version=26 AND manifest_sha256='" + upgrade["manifestSha256"] + "'),"
         "'actorSessionLocked',COALESCE((SELECT "
-        "position($lock$SELECTs.*INTOactor_sessionFROMvnext_control_plane.vnext_sessionsASsWHEREs.authority_id=p_authority_idANDs.account_id=p_actor_account_idANDs.session_id=p_actor_session_idFORUPDATE;$lock$ in definition)>0 AND "
+        "position($lock$selects.*intoactor_sessionfromvnext_control_plane.vnext_sessionsasswheres.authority_id=p_authority_idands.account_id=p_actor_account_idands.session_id=p_actor_session_idforupdate;$lock$ in definition)>0 AND "
         "position($lock$actor_session.status<>'active'$lock$ in definition)>0 AND "
         "position($lock$actor_session.session_kind<>'online'$lock$ in definition)>0 AND "
         "position($lock$actor_session.expires_at<=now_at$lock$ in definition)>0 FROM revoke_function),false),"
         "'accountParentLocked',COALESCE((SELECT "
-        "position($lock$SELECTa.*INTOactor_accountFROMvnext_control_plane.vnext_accountsASaWHEREa.authority_id=p_authority_idANDa.account_id=p_actor_account_idANDa.status='active'FORSHARE;$lock$ in definition)>0 AND "
+        "position($lock$selecta.*intoactor_accountfromvnext_control_plane.vnext_accountsasawherea.authority_id=p_authority_idanda.account_id=p_actor_account_idanda.status='active'forshare;$lock$ in definition)>0 AND "
         "position($lock$actor_session.account_auth_version$lock$ in definition)>0 AND "
         "position($lock$actor_session.account_access_version$lock$ in definition)>0 AND "
         "position($lock$actor_session.account_revocation_version$lock$ in definition)>0 AND "
@@ -76,17 +76,17 @@ def state_sql(upgrade):
         "position($lock$actor_account.access_version$lock$ in definition)>0 AND "
         "position($lock$actor_account.revocation_version$lock$ in definition)>0 FROM revoke_function),false),"
         "'deviceParentLocked',COALESCE((SELECT "
-        "position($lock$SELECTd.*INTOactor_deviceFROMvnext_control_plane.vnext_trusted_devicesASdWHEREd.authority_id=p_authority_idANDd.device_id=actor_session.device_idANDd.status='active'FORSHARE;$lock$ in definition)>0 AND "
+        "position($lock$selectd.*intoactor_devicefromvnext_control_plane.vnext_trusted_devicesasdwhered.authority_id=p_authority_idandd.device_id=actor_session.device_idandd.status='active'forshare;$lock$ in definition)>0 AND "
         "position($lock$actor_session.device_credential_version$lock$ in definition)>0 AND "
         "position($lock$actor_session.device_risk_version$lock$ in definition)>0 AND "
         "position($lock$actor_device.credential_version$lock$ in definition)>0 AND "
         "position($lock$actor_device.risk_version$lock$ in definition)>0 FROM revoke_function),false),"
         "'installationParentLocked',COALESCE((SELECT "
-        "position($lock$SELECTi.*INTOactor_installationFROMvnext_control_plane.vnext_device_installationsASiWHEREi.authority_id=p_authority_idANDi.device_id=actor_session.device_idANDi.installation_id=actor_session.installation_idANDi.status='active'FORSHARE;$lock$ in definition)>0 AND "
+        "position($lock$selecti.*intoactor_installationfromvnext_control_plane.vnext_device_installationsasiwherei.authority_id=p_authority_idandi.device_id=actor_session.device_idandi.installation_id=actor_session.installation_idandi.status='active'forshare;$lock$ in definition)>0 AND "
         "position($lock$actor_session.installation_credential_version$lock$ in definition)>0 AND "
         "position($lock$actor_installation.credential_version$lock$ in definition)>0 FROM revoke_function),false),"
         "'linkParentLocked',COALESCE((SELECT "
-        "position($lock$SELECTl.*INTOactor_linkFROMvnext_control_plane.vnext_account_device_linksASlWHEREl.authority_id=p_authority_idANDl.account_id=p_actor_account_idANDl.device_id=actor_session.device_idANDl.installation_id=actor_session.installation_idANDl.link_id=actor_session.link_idANDl.status='active'FORSHARE;$lock$ in definition)>0 AND "
+        "position($lock$selectl.*intoactor_linkfromvnext_control_plane.vnext_account_device_linksaslwherel.authority_id=p_authority_idandl.account_id=p_actor_account_idandl.device_id=actor_session.device_idandl.installation_id=actor_session.installation_idandl.link_id=actor_session.link_idandl.status='active'forshare;$lock$ in definition)>0 AND "
         "position($lock$actor_session.link_auth_version$lock$ in definition)>0 AND "
         "position($lock$actor_session.link_access_version$lock$ in definition)>0 AND "
         "position($lock$actor_session.link_row_version$lock$ in definition)>0 AND "
@@ -94,8 +94,8 @@ def state_sql(upgrade):
         "position($lock$actor_link.access_version$lock$ in definition)>0 AND "
         "position($lock$actor_link.row_version$lock$ in definition)>0 FROM revoke_function),false),"
         "'activeSuperAdminLocked',COALESCE((SELECT "
-        "position($lock$SELECTg.*INTOactor_grantFROMvnext_control_plane.vnext_role_grantsASgWHEREg.authority_id=p_authority_idANDg.account_id=p_actor_account_idANDg.role='super_admin'ANDg.status='active'ANDg.starts_at<=now_atAND(g.ends_atISNULLORg.ends_at>now_at)FORSHARE;$lock$ in definition)>0 AND "
-        "position($lock$VNEXT_DESKTOP_SUPER_ADMIN_REQUIRED$lock$ in definition)>0 FROM revoke_function),false),"
+        "position($lock$selectg.*intoactor_grantfromvnext_control_plane.vnext_role_grantsasgwhereg.authority_id=p_authority_idandg.account_id=p_actor_account_idandg.role='super_admin'andg.status='active'andg.starts_at<=now_atand(g.ends_atisnullorg.ends_at>now_at)forshare;$lock$ in definition)>0 AND "
+        "position($lock$vnext_desktop_super_admin_required$lock$ in definition)>0 FROM revoke_function),false),"
         "'writerRevoke',has_function_privilege('vnext_pg17_writer','" + REVOKE_SIGNATURE + "','EXECUTE'),"
         "'publicRevoke',has_function_privilege('public','" + REVOKE_SIGNATURE + "','EXECUTE')"
         ")::text;"

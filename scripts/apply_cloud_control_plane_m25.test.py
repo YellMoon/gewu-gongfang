@@ -11,6 +11,21 @@ class Fake:
     def run(self, sql): self.sql.append(sql); return self.outputs.pop(0)
 
 class Tests(unittest.TestCase):
+    def test_state_sql_normalizes_equivalent_production_function_format(self):
+        sql = state_sql(UPGRADE)
+        self.assertIn("lower(regexp_replace(pg_get_functiondef(p.oid),'[[:space:]]+','','g'))", sql)
+        for marker in (
+            "s.status=''active''",
+            "s.expires_at>now_at",
+            "forshareofs",
+            "source_sessionvnext_control_plane.vnext_sessions%rowtype",
+            "source_session.status<>''active''",
+            "forupdate",
+        ):
+            self.assertIn(marker, sql)
+        self.assertNotIn("position('s.status = ''active''' in pg_get_functiondef(p.oid))", sql)
+        self.assertNotIn("position('source_session.status <> ''active''' in pg_get_functiondef(p.oid))", sql)
+
     def test_apply(self):
         fake = Fake([json.dumps(BEFORE), '', json.dumps(READY)])
         self.assertEqual(apply_control_plane_m25(fake, UPGRADE)["applied"], [UPGRADE["migrationId"]])

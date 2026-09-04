@@ -86,7 +86,7 @@ class Tests(unittest.TestCase):
         self.assertIn(UPGRADE["migrationId"], sql)
         self.assertIn("semantic_version=26", sql)
         self.assertIn(UPGRADE["manifestSha256"], sql)
-        self.assertIn("s.session_id=p_actor_session_idFORUPDATE", sql)
+        self.assertIn("s.session_id=p_actor_session_idforupdate", sql)
         self.assertIn("actor_session.account_auth_version", sql)
         self.assertIn("actor_account.auth_version", sql)
         self.assertIn("actor_session.device_credential_version", sql)
@@ -98,9 +98,23 @@ class Tests(unittest.TestCase):
         self.assertIn("g.role='super_admin'", sql)
         self.assertIn("g.status='active'", sql)
         self.assertIn("g.starts_at<=now_at", sql)
-        self.assertIn("g.ends_atISNULLORg.ends_at>now_at", sql)
+        self.assertIn("g.ends_atisnullorg.ends_at>now_at", sql)
         self.assertIn("has_function_privilege('vnext_pg17_writer'", sql)
         self.assertIn("has_function_privilege('public'", sql)
+
+    def test_state_sql_normalizes_equivalent_postgres_function_formatting(self):
+        sql = state_sql(UPGRADE)
+        self.assertIn(
+            "lower(regexp_replace(pg_get_functiondef('",
+            sql,
+            "pg_get_functiondef verification must ignore PostgreSQL keyword case as well as whitespace",
+        )
+        lock_needles = re.findall(r"position\(\$lock\$(.*?)\$lock\$ in definition\)", sql)
+        self.assertGreaterEqual(len(lock_needles), 20)
+        self.assertTrue(
+            all(needle == needle.lower() for needle in lock_needles),
+            "every comparison must target the normalized lowercase function definition",
+        )
 
     def test_reject_config(self):
         with self.assertRaisesRegex(RuntimeError, "M26_CONFIG_INVALID"):
@@ -113,7 +127,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(loaded["migrationId"], UPGRADE["migrationId"])
         self.assertEqual(loaded["semanticVersion"], 26)
         self.assertRegex(loaded["manifestSha256"], r"^[0-9a-f]{64}$")
-        compact_upgrade = re.sub(r"\s+", "", loaded["sql"])
+        compact_upgrade = re.sub(r"\s+", "", loaded["sql"]).lower()
         lock_needles = re.findall(r"position\(\$lock\$(.*?)\$lock\$ in definition\)", state_sql(loaded))
         self.assertGreaterEqual(len(lock_needles), 20)
         for needle in lock_needles:
