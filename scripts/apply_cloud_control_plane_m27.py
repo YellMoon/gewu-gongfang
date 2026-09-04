@@ -66,7 +66,7 @@ def apply_control_plane_m27(executor, upgrade):
     before = read_state(executor, upgrade)
     pending = {"ledgerCount": 26, "targetCount": 0, "familyMemberRole": False}
     def ready(state):
-        return (isinstance(state.get("ledgerCount"), int) and state["ledgerCount"] >= 27
+        return (type(state.get("ledgerCount")) is int and state["ledgerCount"] >= 27
                 and state.get("targetCount") == 1 and state.get("familyMemberRole") is True)
     if ready(before):
         return {"applied": [], "skipped": [upgrade["migrationId"]]}

@@ -141,15 +141,17 @@ def read_state(executor, upgrade):
 def apply_control_plane_m28(executor, upgrade):
     upgrade = validate_upgrade(upgrade)
     before = read_state(executor, upgrade)
-    ready = {"ledgerCount": 28, "targetCount": 1, "conflictTargetFixed": True}
     pending = {"ledgerCount": 27, "targetCount": 0, "conflictTargetFixed": False}
-    if before == ready:
+    def ready(state):
+        return (type(state.get("ledgerCount")) is int and state["ledgerCount"] >= 28
+                and state.get("targetCount") == 1 and state.get("conflictTargetFixed") is True)
+    if ready(before):
         executor.run(behavior_sql())
         return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != pending:
         raise RuntimeError("CLOUD_CONTROL_PLANE_M28_STATE_INVALID")
     executor.run(upgrade["sql"])
-    if read_state(executor, upgrade) != ready:
+    if not ready(read_state(executor, upgrade)):
         raise RuntimeError("CLOUD_CONTROL_PLANE_M28_VERIFICATION_FAILED")
     executor.run(behavior_sql())
     return {"applied": [upgrade["migrationId"]], "skipped": []}

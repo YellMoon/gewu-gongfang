@@ -49,9 +49,17 @@ class Tests(unittest.TestCase):
         self.assertEqual(len(fake.sql), 2)
         self.assertIn("vnext_set_desktop_password_credential", fake.sql[-1])
 
-    def test_skips_only_exact_ready_state(self):
+    def test_skips_ready_state_after_later_migrations(self):
+        after_m29 = {**READY, "ledgerCount": 29}
+        fake = Fake([json.dumps(after_m29), ""])
+        self.assertEqual(
+            apply_control_plane_m28(fake, UPGRADE),
+            {"applied": [], "skipped": [UPGRADE["migrationId"]]},
+        )
+        self.assertIn("vnext_set_desktop_password_credential", fake.sql[-1])
         for mutation in (
-            {"ledgerCount": 29},
+            {"ledgerCount": 27},
+            {"ledgerCount": True},
             {"targetCount": 0},
             {"conflictTargetFixed": False},
         ):
