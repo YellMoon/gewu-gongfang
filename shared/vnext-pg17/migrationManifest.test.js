@@ -29,6 +29,7 @@ const {
   DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
   DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
+  DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,
@@ -68,7 +69,7 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]);
   assert.strictEqual(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.semanticVersion, 20);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /vnext_role_grants_one_active_super_admin/);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /role='super_admin' AND status='active'/);
@@ -107,6 +108,22 @@ async function runManifestCases() {
     /SELECT a\.\* INTO actor_account[\s\S]*IF NOT FOUND THEN RAISE EXCEPTION 'VNEXT_DESKTOP_ACTOR_ACCOUNT_INVALID'[\s\S]*SELECT d\.\* INTO target_device/);
   assert.strictEqual(FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION.semanticVersion, 27);
   assert.match(FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION.sql, /role IN \('super_admin','teacher','student','family_member'\)/);
+  assert.strictEqual(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION.semanticVersion, 28);
+  assert.strictEqual(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION.migrationId, 'vnext-pg17-desktop-password-conflict-target-fix-28');
+  assert.match(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION.sql,
+    /CREATE OR REPLACE FUNCTION vnext_control_plane\.vnext_set_desktop_password_credential/);
+  assert.match(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION.sql,
+    /ON CONFLICT ON CONSTRAINT vnext_desktop_password_credentials_pkey DO UPDATE/);
+  assert.match(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION.sql,
+    /UPDATE vnext_control_plane\.vnext_accounts AS a[\s\S]*WHERE a\.authority_id = p_authority_id AND a\.account_id = p_account_id/,
+    'the same forward fix must qualify RETURNS TABLE output names in the account-version update');
+  assert.doesNotMatch(DESKTOP_PASSWORD_CREDENTIALS_MIGRATION.sql,
+    /ON CONFLICT ON CONSTRAINT vnext_desktop_password_credentials_pkey/,
+    'the applied M18 manifest and checksum must stay byte-for-byte stable');
+  assert.strictEqual(
+    expectedCatalog.functionDefinitionSha256.vnext_set_desktop_password_credential,
+    '29fe7193b178f3e564daa81422612484fe6a6ee79aa2462d20ab89c3fb204331',
+  );
   assert.strictEqual(FOUNDATION_IDENTITY_DEVICE_MIGRATION.migrationId, 'vnext-pg17-foundation-identity-device-2');
   assert.match(FOUNDATION_IDENTITY_DEVICE_MIGRATION.manifestSha256, /^[0-9a-f]{64}$/);
   assert.strictEqual(

@@ -1808,6 +1808,62 @@ const FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION = Object.freeze({
   manifestSha256: sha256(FAMILY_MEMBER_CANONICAL_ROLE_SQL),
 });
 
+const DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_SQL = `CREATE OR REPLACE FUNCTION vnext_control_plane.vnext_set_desktop_password_credential(p_authority_id text, p_account_id text, p_login_name text, p_password_algorithm text, p_password_salt_base64 text, p_password_hash_base64 text)
+RETURNS TABLE(authority_id text, account_id text, credential_version bigint)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE current_account record;
+DECLARE existing_account_id text;
+DECLARE next_credential_version bigint;
+DECLARE now_at timestamptz := transaction_timestamp();
+BEGIN
+  IF p_authority_id IS NULL OR p_account_id IS NULL OR btrim(p_authority_id) = '' OR btrim(p_account_id) = ''
+    OR (p_login_name IS NOT NULL AND (btrim(p_login_name) = '' OR p_login_name !~ '^[A-Za-z][A-Za-z0-9._-]{2,63}$'))
+    OR p_password_algorithm <> 'scrypt-v1'
+    OR p_password_salt_base64 IS NULL OR p_password_salt_base64 !~ '^[A-Za-z0-9+/]+={0,2}$'
+    OR p_password_hash_base64 IS NULL OR p_password_hash_base64 !~ '^[A-Za-z0-9+/]+={0,2}$' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_CREDENTIAL_INVALID' USING ERRCODE = 'P0001';
+  END IF;
+  SELECT a.* INTO current_account
+    FROM vnext_control_plane.vnext_accounts AS a
+    WHERE a.authority_id = p_authority_id AND a.account_id = p_account_id
+    FOR UPDATE;
+  IF NOT FOUND OR current_account.status <> 'active' THEN
+    RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_CREDENTIAL_UNAVAILABLE' USING ERRCODE = 'P0001';
+  END IF;
+  IF p_login_name IS NOT NULL THEN
+    SELECT c.account_id INTO existing_account_id
+      FROM vnext_control_plane.vnext_desktop_password_credentials AS c
+      WHERE c.authority_id = p_authority_id AND c.login_name = p_login_name
+      FOR UPDATE;
+    IF FOUND AND existing_account_id <> p_account_id THEN
+      RAISE EXCEPTION 'VNEXT_DESKTOP_PASSWORD_LOGIN_CONFLICT' USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+  INSERT INTO vnext_control_plane.vnext_desktop_password_credentials(authority_id, account_id, login_name, password_algorithm, password_salt_base64, password_hash_base64, credential_version, created_at, updated_at)
+  VALUES (p_authority_id, p_account_id, p_login_name, p_password_algorithm, p_password_salt_base64, p_password_hash_base64, 1, now_at, now_at)
+  ON CONFLICT ON CONSTRAINT vnext_desktop_password_credentials_pkey DO UPDATE
+    SET login_name = EXCLUDED.login_name,
+        password_algorithm = EXCLUDED.password_algorithm,
+        password_salt_base64 = EXCLUDED.password_salt_base64,
+        password_hash_base64 = EXCLUDED.password_hash_base64,
+        credential_version = vnext_control_plane.vnext_desktop_password_credentials.credential_version + 1,
+        updated_at = now_at
+  RETURNING vnext_desktop_password_credentials.credential_version INTO next_credential_version;
+  UPDATE vnext_control_plane.vnext_accounts AS a
+    SET auth_version = a.auth_version + 1, row_version = a.row_version + 1, updated_at = now_at
+    WHERE a.authority_id = p_authority_id AND a.account_id = p_account_id;
+  RETURN QUERY SELECT p_authority_id, p_account_id, next_credential_version;
+END;
+$$;`;
+const DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-password-conflict-target-fix-28', semanticVersion: 28,
+  sql: DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_SQL,
+  manifestSha256: sha256(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1836,6 +1892,7 @@ const MIGRATIONS = Object.freeze([
   DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
   DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
+  DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -1970,7 +2027,7 @@ $function$
   vnext_register_unified_desktop_online: '921f62d7e5b901738525262cfc4610edbfb52d3f1ab8fca4694a2f728dcae65a',
   vnext_read_desktop_password_by_login_name: 'c76a34d05eb52d292fa802aefc76965dedcc07afa5fcddb385bff1c6e01d53aa',
   vnext_read_desktop_password_by_phone_hash: '1fdff74380576b833bdf22b7c301986da786743f4b3be6fd930b19bae32a72cd',
-  vnext_set_desktop_password_credential: '13331367db0aa7f179df18e8c751b2814772c2bc1733706146df5c133e8503ab',
+  vnext_set_desktop_password_credential: '29fe7193b178f3e564daa81422612484fe6a6ee79aa2462d20ab89c3fb204331',
   vnext_bind_canonical_wechat_identity: '1c4eb7ed548e1a5b3547edf1001630507763bc85a923fee4a9d4ec8d9df17db4',
   vnext_read_canonical_account_by_verified_contact: '19936f7f3f7bb08798ef064b51a321d07e132287a5c254cb2c09b5136b69f872',
   vnext_exchange_desktop_session_challenge: 'ea2c2d275682e8e24510f9c994bd90dbae0ffb08dbcb281e00b2ef0c2d707554',
@@ -2069,6 +2126,7 @@ module.exports = {
   DESKTOP_SESSION_SOURCE_LOCK_MIGRATION,
   DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
+  DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

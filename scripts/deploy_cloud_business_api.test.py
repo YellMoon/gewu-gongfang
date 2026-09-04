@@ -382,7 +382,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
             self.assertEqual(REAL_RUN_CLOUD_MIGRATIONS(), 0)
-        self.assertEqual(len(run.call_args_list), 9)
+        self.assertEqual(len(run.call_args_list), 10)
         self.assertTrue(str(run.call_args_list[0].args[0][1]).endswith("apply_cloud_control_plane_m20.py"))
         self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_control_plane_m21.py"))
         self.assertTrue(str(run.call_args_list[2].args[0][1]).endswith("apply_cloud_control_plane_m22.py"))
@@ -391,7 +391,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertTrue(str(run.call_args_list[5].args[0][1]).endswith("apply_cloud_control_plane_m25.py"))
         self.assertTrue(str(run.call_args_list[6].args[0][1]).endswith("apply_cloud_control_plane_m26.py"))
         self.assertTrue(str(run.call_args_list[7].args[0][1]).endswith("apply_cloud_control_plane_m27.py"))
-        self.assertTrue(str(run.call_args_list[8].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
+        self.assertTrue(str(run.call_args_list[8].args[0][1]).endswith("apply_cloud_control_plane_m28.py"))
+        self.assertTrue(str(run.call_args_list[9].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
     def test_verified_backup_requires_exact_recovery_artifacts_and_checksum(self):
         with mock.patch.object(module.backup_cloud_postgres, "create_backup", return_value=VERIFIED_BACKUP) as create:

@@ -381,8 +381,9 @@ def run_cloud_migrations():
     control_m25 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m25.py")], cwd=ROOT, check=True, text=True)
     control_m26 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m26.py")], cwd=ROOT, check=True, text=True)
     control_m27 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m27.py")], cwd=ROOT, check=True, text=True)
+    control_m28 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m28.py")], cwd=ROOT, check=True, text=True)
     business = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_postgres_migrations.py")], cwd=ROOT, check=True, text=True)
-    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, control_m23.returncode, control_m24.returncode, control_m25.returncode, control_m26.returncode, control_m27.returncode, business.returncode)
+    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, control_m23.returncode, control_m24.returncode, control_m25.returncode, control_m26.returncode, control_m27.returncode, control_m28.returncode, business.returncode)
 
 
 def create_verified_backup():

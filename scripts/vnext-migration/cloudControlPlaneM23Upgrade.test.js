@@ -1,0 +1,12 @@
+'use strict';
+const assert = require('assert');
+const { buildCloudControlPlaneM23UpgradeSql } = require('./cloudControlPlaneM23Upgrade');
+const result = buildCloudControlPlaneM23UpgradeSql();
+assert.strictEqual(result.migrationId, 'vnext-pg17-desktop-cloud-session-control-23');
+assert.strictEqual(result.semanticVersion, 23);
+assert.match(result.manifestSha256, /^[0-9a-f]{64}$/);
+assert.match(result.sql, /VNEXT_CLOUD_CONTROL_PLANE_M22_PREFIX_INVALID/);
+assert.match(result.sql, /CREATE TABLE vnext_control_plane\.vnext_desktop_session_challenges/);
+assert.match(result.sql, /GRANT EXECUTE ON FUNCTION vnext_control_plane\.vnext_revoke_desktop_device[\s\S]*TO vnext_pg17_writer/);
+assert.doesNotMatch(result.sql, /GRANT (?:INSERT|UPDATE|DELETE) ON (?:TABLE )?vnext_control_plane\.vnext_desktop_session_challenges/);
+console.log('cloud control-plane M23 upgrade tests passed');
