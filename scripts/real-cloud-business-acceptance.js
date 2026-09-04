@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const PUBLIC_BASE_URL = 'https://physicsedu.xyz/scheduling';
+const PUBLIC_BASE_URL = 'https://physicsedu.xyz/cloud-business';
 const LOCAL_BASE_URL = 'http://127.0.0.1:3002';
 const MARKER_PATTERN = /^codex-e2e-[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9]{4,32}$/;
 const ROLE_TEACHING_ACCOUNT_PATTERN = /^e2e-account-(visitor|teacher|student|family)-(e2e-role-test-[a-z0-9-]{12,64})$/u;
@@ -452,7 +452,7 @@ function validRoleTeachingRow(key, marker, row) {
     visitor: { roles: [], profileType: null, profileId: null, relationship: null },
     teacher: { roles: ['teacher'], profileType: 'teacher', profileId: `e2e-teacher-${marker}`, relationship: null },
     student: { roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'student' },
-    family: { roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian' },
+    family: { roles: ['family_member'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian' },
   }[key];
   return Boolean(expected) && row?.status === 'active' && Array.isArray(row.roles)
     && JSON.stringify(row.roles) === JSON.stringify(expected.roles)

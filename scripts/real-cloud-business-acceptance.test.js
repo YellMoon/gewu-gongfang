@@ -54,7 +54,7 @@ async function successfulAcceptance() {
   const result = await runPublicAcceptance({
     fetchImpl,
     sessionToken: 'payload.signature',
-    baseUrl: 'https://physicsedu.xyz/scheduling',
+    baseUrl: 'https://physicsedu.xyz/cloud-business',
     version: '8.4.1',
     now: () => new Date('2026-08-24T14:30:00.000Z'),
     randomUUID: () => 'fixed',
@@ -96,7 +96,7 @@ async function cleanupOnFailure() {
     runPublicAcceptance({
       fetchImpl,
       sessionToken: 'payload.signature',
-      baseUrl: 'https://physicsedu.xyz/scheduling',
+      baseUrl: 'https://physicsedu.xyz/cloud-business',
       version: '8.4.1',
       now: () => new Date('2026-08-24T14:30:00.000Z'),
       randomUUID: () => 'fixed',
@@ -165,7 +165,7 @@ async function teachingLoopCreatesReadsConflictsAndCleans() {
     throw new Error(`unexpected ${method} ${path}`);
   };
   const result = await runTeachingLoopAcceptance({
-    fetchImpl, sessionToken: 'payload.signature', baseUrl: 'https://physicsedu.xyz/scheduling', version: '8.7.3', marker,
+    fetchImpl, sessionToken: 'payload.signature', baseUrl: 'https://physicsedu.xyz/cloud-business', version: '8.7.3', marker,
   });
   assert.deepStrictEqual(result, {
     teachingLoopCreated: 7,
@@ -222,7 +222,7 @@ async function roleTeachingBindingsRequireOneCoherentFixture() {
     { accountId: `e2e-account-visitor-${marker}`, status: 'active', roles: [], profileType: null, profileId: null, relationship: null, updatedAt: '2026-08-30T01:00:00.000Z' },
     { accountId: `e2e-account-teacher-${marker}`, status: 'active', roles: ['teacher'], profileType: 'teacher', profileId: `e2e-teacher-${marker}`, relationship: null, updatedAt: '2026-08-30T01:00:01.000Z' },
     { accountId: `e2e-account-student-${marker}`, status: 'active', roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'student', updatedAt: '2026-08-30T01:00:02.000Z' },
-    { accountId: `e2e-account-family-${marker}`, status: 'active', roles: ['student'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian', updatedAt: '2026-08-30T01:00:03.000Z' },
+    { accountId: `e2e-account-family-${marker}`, status: 'active', roles: ['family_member'], profileType: 'student', profileId: `e2e-student-${marker}`, relationship: 'guardian', updatedAt: '2026-08-30T01:00:03.000Z' },
   ];
   const calls = [];
   const bindings = await loadRoleTeachingBindings({
@@ -309,7 +309,7 @@ async function roleScopedTeachingCreatesReadsAndCleans() {
     sessionToken: 'payload.signature',
     miniappTicketSecret: 'miniapp-ticket-secret-for-real-role-tests',
     bindings,
-    baseUrl: 'https://physicsedu.xyz/scheduling',
+    baseUrl: 'https://physicsedu.xyz/cloud-business',
     version: '8.9.0',
     marker,
   });
@@ -414,7 +414,7 @@ async function miniappLimitedWriteIsRealReplayedReadableAndCleaned() {
     fetchImpl,
     sessionToken: token,
     accountId: 'canonical-admin',
-    baseUrl: 'https://physicsedu.xyz/scheduling',
+    baseUrl: 'https://physicsedu.xyz/cloud-business',
     version: '8.4.1',
     marker: 'codex-e2e-8.4.1-fixed',
     cleanup: async fixture => {
@@ -495,11 +495,11 @@ async function tokenIsAcceptedByDesktopSessionContract() {
     leasePrivateKey: crypto.generateKeyPairSync('ed25519').privateKey,
     issueAssertion: async () => {},
     register: async () => null,
-    readSessionContext: async input => ({ ...input, roles: ['super_admin'], teacherId: null, studentId: null }),
+    readSessionContext: async input => ({ ...input, rowVersion: 1, roles: ['super_admin'], teacherId: null, studentId: null }),
   });
   assert.deepStrictEqual(
     await service.sessionContext({ sessionToken: makeSessionToken(secret, session) }),
-    { ...session, roles: ['super_admin'], teacherId: null, studentId: null },
+    { ...session, rowVersion: 1, roles: ['super_admin'], teacherId: null, studentId: null, activeRole: 'super_admin' },
   );
 }
 
@@ -640,10 +640,10 @@ async function onlineRegistrationIsRealAndTokenFreeInEvidence() {
     runtimeModules,
     ticketSecret,
     identity,
-    baseUrl: 'https://physicsedu.xyz/scheduling',
+    baseUrl: 'https://physicsedu.xyz/cloud-business',
     randomUUID: () => 'fixed-registration',
   });
-  assert.strictEqual(calls[0].path, '/scheduling/api/desktop/online-registration');
+  assert.strictEqual(calls[0].path, '/cloud-business/api/desktop/online-registration');
   assert.strictEqual(calls[0].authorization, null, 'registration must use the verification ticket, not an existing session');
   assert.strictEqual(calls[1].authorization, `Bearer ${accepted.sessionToken}`);
   assert.strictEqual(accepted.evidence.onlineRegistrationStatus, 200);
@@ -746,7 +746,7 @@ async function onlineRegistrationCleanupHandleSurvivesContextFailure() {
       runtimeModules,
       ticketSecret,
       identity,
-      baseUrl: 'https://physicsedu.xyz/scheduling',
+      baseUrl: 'https://physicsedu.xyz/cloud-business',
       randomUUID: () => 'fixed-cleanup',
       onRegistrationPersisted: fixture => { cleanupFixture = fixture; },
     }),
@@ -772,7 +772,7 @@ async function onlineRegistrationCleanupHandlePrecedesPayloadValidation() {
       runtimeModules,
       ticketSecret,
       identity,
-      baseUrl: 'https://physicsedu.xyz/scheduling',
+      baseUrl: 'https://physicsedu.xyz/cloud-business',
       randomUUID: () => 'fixed-malformed',
       onRegistrationPrepared: fixture => { cleanupFixture = fixture; },
     }),
@@ -813,7 +813,7 @@ async function unverifiedReceiptSessionIdNeverReplacesPreparedCleanupHandle() {
       runtimeModules,
       ticketSecret,
       identity,
-      baseUrl: 'https://physicsedu.xyz/scheduling',
+      baseUrl: 'https://physicsedu.xyz/cloud-business',
       randomUUID: () => 'fixed-wrong-session',
       onRegistrationPrepared: fixture => { preparedFixture = fixture; },
       onRegistrationPersisted: fixture => { persistedFixture = fixture; },
