@@ -54,13 +54,25 @@ class Tests(unittest.TestCase):
         self.assertEqual(apply_control_plane_m26(fake, UPGRADE)["applied"], [UPGRADE["migrationId"]])
         self.assertEqual(len(fake.sql), 3)
 
-    def test_skip_only_exact_ready_state(self):
-        self.assertEqual(
-            apply_control_plane_m26(Fake([json.dumps(READY)]), UPGRADE)["skipped"],
-            [UPGRADE["migrationId"]],
-        )
-        with self.assertRaisesRegex(RuntimeError, "M26_STATE_INVALID"):
-            apply_control_plane_m26(Fake([json.dumps({**READY, "ledgerCount": 27})]), UPGRADE)
+    def test_skip_ready_state_after_m26_or_later_migrations(self):
+        for ledger_count in (26, 27, 40):
+            with self.subTest(ledger_count=ledger_count):
+                self.assertEqual(
+                    apply_control_plane_m26(
+                        Fake([json.dumps({**READY, "ledgerCount": ledger_count})]),
+                        UPGRADE,
+                    )["skipped"],
+                    [UPGRADE["migrationId"]],
+                )
+
+    def test_rejects_ready_semantics_without_valid_m26_ledger(self):
+        for mutation in (
+            {"ledgerCount": 25},
+            {"targetCount": 0},
+            {"targetCount": 2},
+        ):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(RuntimeError, "M26_STATE_INVALID"):
+                apply_control_plane_m26(Fake([json.dumps({**READY, **mutation})]), UPGRADE)
 
     def test_rejects_each_partial_lock_or_privilege_state(self):
         for key in (

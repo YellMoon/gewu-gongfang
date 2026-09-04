@@ -150,13 +150,26 @@ def apply_control_plane_m26(executor, upgrade):
         "writerRevoke": True,
         "publicRevoke": False,
     }
-    if before == ready:
+
+    def is_ready(state):
+        ledger_count = state["ledgerCount"]
+        return (
+            type(ledger_count) is int
+            and ledger_count >= ready["ledgerCount"]
+            and all(
+                type(state[key]) is type(expected) and state[key] == expected
+                for key, expected in ready.items()
+                if key != "ledgerCount"
+            )
+        )
+
+    if is_ready(before):
         return {"applied": [], "skipped": [upgrade["migrationId"]]}
     if before != pending:
         raise RuntimeError("CLOUD_CONTROL_PLANE_M26_STATE_INVALID")
     executor.run(upgrade["sql"])
     after = read_state(executor, upgrade)
-    if after != ready:
+    if not is_ready(after):
         raise RuntimeError("CLOUD_CONTROL_PLANE_M26_VERIFICATION_FAILED")
     return {"applied": [upgrade["migrationId"]], "skipped": []}
 
