@@ -78,17 +78,37 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def parser_bundle_sha256(directory):
+    root = Path(directory)
+    sources = sorted(
+        (path for path in root.iterdir() if path.is_file() and not path.is_symlink() and path.suffix == ".py"),
+        key=lambda path: path.name.encode("utf-8"),
+    )
+    if not sources or not any(path.name == "parse_word.py" for path in sources):
+        raise ValueError("REAL_QUESTION_IMPORT_PARSER_REVISION_INVALID")
+    digest = hashlib.sha256()
+    for source in sources:
+        name = source.name.encode("utf-8")
+        contents = source.read_bytes()
+        digest.update(f"{len(name)}:".encode("ascii"))
+        digest.update(name)
+        digest.update(f":{len(contents)}:".encode("ascii"))
+        digest.update(contents)
+    return digest.hexdigest()
+
+
 def import_command(parser_sha256):
     value = str(parser_sha256 or "").strip().lower()
     if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
         raise ValueError("REAL_QUESTION_IMPORT_PARSER_REVISION_INVALID")
-    return f"docker exec -e REAL_QUESTION_IMPORT_PARSER_SHA256='{value}' {CONTAINER} node {CONTAINER_SCRIPT}"
+    return (f"docker exec -e REAL_QUESTION_IMPORT_PARSER_SHA256='{value}' "
+            f"-e REAL_QUESTION_IMPORT_BASE_URL='http://127.0.0.1:3002' {CONTAINER} node {CONTAINER_SCRIPT}")
 
 
 def run():
     if not all(path.is_file() for path in (LOCAL_SCRIPT, LOCAL_CLOUD_HELPER, LOCAL_EXAM, LOCAL_LECTURE, LOCAL_PARSER)):
         raise RuntimeError("REAL_QUESTION_IMPORT_SOURCE_MISSING")
-    command = import_command(sha256_file(LOCAL_PARSER))
+    command = import_command(parser_bundle_sha256(LOCAL_PARSER.parent))
     ssh = deploy.connect()
     owner_granted = False
     uploaded = False

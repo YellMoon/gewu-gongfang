@@ -24,6 +24,7 @@ export function installDesktopLoginChromeFixture(globalObject = globalThis.windo
           primaryHostGeneration: null,
           hostBaseUrl: 'http://127.0.0.1:3001',
           cloudBaseUrl: 'http://127.0.0.1:3001',
+          cloudBusinessIdentityBaseUrl: 'http://127.0.0.1:3001',
           desktopSyncToken: '',
           mainDbPath: '',
           questionBankPath: '',
@@ -56,6 +57,7 @@ export function installDesktopLoginChromeFixture(globalObject = globalThis.windo
           pairingId: 'chrome-ui-pairing',
           pairingSecret: 'chrome-ui-secret',
           expiresAt: new Date(Date.now() + 600000).toISOString(),
+          qrImageDataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
         },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }

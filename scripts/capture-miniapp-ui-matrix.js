@@ -31,6 +31,26 @@ function resolveFixturePort(value = process.env.MINIAPP_UI_FIXTURE_PORT || '3019
   return port;
 }
 
+function resolveStandaloneFixtureScenario({ scenarioId = '', fixtureMode = '' } = {}) {
+  const normalizedScenarioId = String(scenarioId || '').trim();
+  const normalizedFixtureMode = String(fixtureMode || '').trim();
+  if (normalizedScenarioId && normalizedFixtureMode) {
+    throw new Error('miniapp fixture scenario id and fixture mode are mutually exclusive');
+  }
+  if (normalizedScenarioId) {
+    const scenario = runtimeScenarios.find(item => item.id === normalizedScenarioId);
+    if (!scenario) throw new Error(`miniapp fixture scenario is unknown: ${normalizedScenarioId}`);
+    return scenario;
+  }
+  if (normalizedFixtureMode) {
+    if (normalizedFixtureMode !== 'question-rich') {
+      throw new Error(`miniapp fixture mode is unknown: ${normalizedFixtureMode}`);
+    }
+    return Object.freeze({ id: 'standalone-question-rich', fixtureMode: normalizedFixtureMode });
+  }
+  return null;
+}
+
 const FIXTURE_PORT = resolveFixturePort();
 const FIXTURE_BASE = `http://127.0.0.1:${FIXTURE_PORT}`;
 const SCREENSHOT_WAIT_MS = 1100;
@@ -82,6 +102,7 @@ const capabilitiesByRole = Object.freeze({
   super_admin: ['business:all', 'question-bank:view'],
   teacher: ['business:teacher-scope', 'question-bank:view'],
   student: ['question-bank:view'],
+  family_member: ['question-bank:view'],
 });
 
 function normalIdentity(role) {
@@ -108,10 +129,14 @@ function normalIdentity(role) {
     identity.teacher_id = 'fixture-teacher';
     identity.profile = { type: 'teacher', id: 'fixture-teacher' };
   }
-  if (role === 'student') {
+  if (role === 'student' || role === 'family_member') {
     identity.student_id = 'fixture-student';
     identity.linked_student_ids = ['fixture-student'];
-    identity.profile = { type: 'student', id: 'fixture-student' };
+    identity.profile = { type: 'student', id: 'fixture-student', relationship: role === 'family_member' ? 'guardian' : 'student' };
+    if (role === 'family_member') {
+      identity.identity_kind = 'family_member';
+      identity.student_relationship = 'guardian';
+    }
   }
   return identity;
 }
@@ -126,7 +151,7 @@ const identities = Object.freeze({
   },
   student: normalIdentity('student'),
   guardian: {
-    ...normalIdentity('student'),
+    ...normalIdentity('family_member'),
     accountId: 'fixture-guardian', id: 'fixture-guardian',
     name: '家庭成员验收账号',
     profile: { type: 'student', id: 'fixture-student', relationship: 'guardian' },
@@ -140,6 +165,128 @@ const identities = Object.freeze({
     capabilities: ['projection:read', 'role-application:read', 'role-application:submit', 'question-preview:read'],
   },
 });
+
+const RICH_VISITOR_QUESTION_LIMIT = 3;
+const richPhysicsQuestions = Object.freeze([
+  Object.freeze({
+    id: 'fixture-rich-physics-1',
+    subject: 'physics',
+    type: 'single_choice',
+    stemPreview: '水平地面上的木块受到 6 N 的水平拉力，滑动摩擦力为 4 N。木块所受合力大小为（ ）',
+    options: ['A. 0 N', 'B. 2 N', 'C. 4 N', 'D. 10 N'],
+    answer: 'B',
+    explanation: '拉力与滑动摩擦力方向相反，合力大小为 6 N - 4 N = 2 N。',
+    difficulty: 1,
+    source: '格物工坊·力学基础测试',
+    knowledgeLabels: ['受力分析', '滑动摩擦力'],
+    status: 'published',
+  }),
+  Object.freeze({
+    id: 'fixture-rich-physics-2',
+    subject: 'physics',
+    type: 'single_choice',
+    stemPreview: '一辆小车沿直线运动，前 4 s 速度均匀增大，随后 2 s 速度保持不变。下列描述正确的是（ ）',
+    options: [
+      'A. 先做匀加速直线运动，再做匀速直线运动',
+      'B. 始终做速度越来越大的直线运动',
+      'C. 先静止不动，再做匀速直线运动',
+      'D. 运动方向先改变，随后保持不变',
+    ],
+    answer: 'A',
+    explanation: '速度均匀增大对应匀加速直线运动，速度保持不变对应匀速直线运动。',
+    difficulty: 2,
+    source: '2026 年九年级物理阶段练习',
+    knowledgeLabels: ['速度—时间图像', '运动状态'],
+    status: 'published',
+  }),
+  Object.freeze({
+    id: 'fixture-rich-physics-3',
+    subject: 'physics',
+    type: 'single_choice',
+    stemPreview: '关于惯性和力与运动的关系，下列说法正确的是（ ）',
+    options: [
+      'A. 物体只有在受到力的作用时才具有惯性，撤去外力后惯性会立即消失',
+      'B. 物体运动速度越大，维持运动所需的合力一定越大，合力方向与速度方向始终相同',
+      'C. 一切物体都具有惯性，质量是惯性大小的量度，物体不受力时也可能保持匀速直线运动',
+      'D. 静止物体没有惯性，运动物体才有惯性，因此惯性大小由物体的速度决定',
+    ],
+    answer: 'C',
+    explanation: '惯性是物体固有的属性，质量是惯性大小的量度；合力为零时物体可以静止，也可以做匀速直线运动。',
+    difficulty: 3,
+    source: '格物工坊·牛顿运动定律讲义',
+    knowledgeLabels: ['惯性', '牛顿第一定律'],
+    status: 'published',
+  }),
+  Object.freeze({
+    id: 'fixture-rich-physics-4',
+    subject: 'physics',
+    type: 'calculation',
+    stemPreview: '质量为 m 的小车在恒力 F 作用下从静止开始做匀加速直线运动，求加速度和 t 秒内的位移。',
+    options: [],
+    answer: 'a = F/m；s = 1/2 at^2',
+    explanation: '由牛顿第二定律 F = ma 求出加速度，再由初速度为零的匀变速直线运动位移公式求位移。',
+    richContent: {
+      version: 1,
+      type: 'question-document',
+      sections: {
+        stem: {
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: '质量为 m 的小车在水平恒力 F 作用下做匀加速直线运动，初速度 ' },
+              { type: 'formula', attrs: { canonicalLatex: 'v_{0}=0' } },
+              { type: 'text', text: '，经过时间 t 后速度满足 ' },
+              { type: 'formula', attrs: { canonicalLatex: 'v=at' } },
+              { type: 'text', text: '。回答下列问题：' },
+            ],
+          }],
+        },
+        options: [],
+        subQuestions: [
+          {
+            id: 'fixture-rich-physics-4-sub-1',
+            label: '(1)',
+            content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '写出加速度 a 与 F、m 的关系。' }] }] },
+            answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: 'a=\\frac{F}{m}' } }] }] },
+          },
+          {
+            id: 'fixture-rich-physics-4-sub-2',
+            label: '(2)',
+            content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '写出小车在 t 秒内位移 s 的表达式。' }] }] },
+            answer: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: 's=\\frac{1}{2}at^{2}' } }] }] },
+          },
+        ],
+        answer: {
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'formula', attrs: { canonicalLatex: 'a=\\frac{F}{m}' } },
+              { type: 'text', text: '，' },
+              { type: 'formula', attrs: { canonicalLatex: 's=\\frac{1}{2}at^{2}' } },
+            ],
+          }],
+        },
+        analysis: {
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: '由牛顿第二定律 ' },
+              { type: 'formula', attrs: { canonicalLatex: 'F=ma' } },
+              { type: 'text', text: '，结合初速度为零的位移公式即可得到结果。' },
+            ],
+          }],
+        },
+      },
+    },
+    difficulty: 4,
+    source: '格物工坊·动力学专题讲义',
+    knowledgeLabels: ['牛顿第二定律', '匀变速直线运动'],
+    status: 'published',
+  }),
+]);
 
 function fixtureIdentityFromRequest(request) {
   const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -201,6 +348,17 @@ function fixtureResponse(request, scenario) {
     return { statusCode: 200, body: { ok: true, projection } };
   }
   if (pathname === '/api/business/miniapp-question-previews') {
+    if (scenario?.fixtureMode === 'question-rich') {
+      const isVisitor = identity?.status === 'visitor' || identity?.account_state === 'visitor';
+      return {
+        statusCode: 200,
+        body: {
+          ok: true,
+          questions: isVisitor ? richPhysicsQuestions.slice(0, RICH_VISITOR_QUESTION_LIMIT) : richPhysicsQuestions,
+          hasMore: isVisitor,
+        },
+      };
+    }
     const questions = identity?.status === 'visitor' || identity?.accountId === 'fixture-paper-teacher' ? [{
       id: 'fixture-question-1',
       subject: 'physics',
@@ -256,6 +414,7 @@ function sha256(file) {
 }
 
 function launchRoute(scenario) {
+  if (scenario.id === 'desktop-login-confirmation') return `${scenario.route}?desktopLogin=1&pairingId=fixture-pairing&secret=fixture-secret`;
   if (scenario.route === 'pages/schedule/detail/index') return `${scenario.route}?id=missing-fixture-schedule`;
   if (scenario.route === 'pages/student-detail/index') return `${scenario.route}?id=missing-fixture-student`;
   return scenario.route;
@@ -305,7 +464,37 @@ async function launchScenarioPage(miniProgram, scenario) {
     await wait(350);
     return miniProgram.currentPage();
   }
-  return reLaunchPage(miniProgram, `/${launchRoute(scenario)}`);
+  const page = await reLaunchPage(miniProgram, `/${launchRoute(scenario)}`);
+  if (!scenario.interaction) return page;
+
+  const waitForElement = async (selector, description) => {
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const current = await miniProgram.currentPage();
+      const element = await current?.$(selector);
+      if (element) return element;
+      await wait(250);
+    }
+    assert.fail(`${scenario.id} could not find ${description} (${selector})`);
+  };
+
+  if (scenario.interaction === 'expand-first-answer') {
+    const answerToggle = await waitForElement('.question-answer-toggle', 'the first answer toggle');
+    await answerToggle.tap();
+    await wait(350);
+    return miniProgram.currentPage();
+  }
+
+  if (scenario.interaction === 'open-first-question-basket') {
+    const basketToggle = await waitForElement('.basket-toggle', 'the first add-to-basket action');
+    await basketToggle.tap();
+    const floatingBasket = await waitForElement('.global-question-basket', 'the global floating question basket');
+    await floatingBasket.tap();
+    await waitForElement('.question-basket-drawer', 'the question basket drawer');
+    await wait(350);
+    return miniProgram.currentPage();
+  }
+
+  assert.fail(`${scenario.id} declares an unsupported interaction: ${scenario.interaction}`);
 }
 
 async function run() {
@@ -432,13 +621,10 @@ async function run() {
 
 if (require.main === module) {
   if (process.env.MINIAPP_UI_FIXTURE_SERVER === '1') {
-    const standaloneScenarioId = String(process.env.MINIAPP_UI_FIXTURE_SCENARIO_ID || '').trim();
-    const standaloneScenario = standaloneScenarioId
-      ? runtimeScenarios.find(scenario => scenario.id === standaloneScenarioId)
-      : null;
-    if (standaloneScenarioId && !standaloneScenario) {
-      throw new Error(`miniapp fixture scenario is unknown: ${standaloneScenarioId}`);
-    }
+    const standaloneScenario = resolveStandaloneFixtureScenario({
+      scenarioId: process.env.MINIAPP_UI_FIXTURE_SCENARIO_ID,
+      fixtureMode: process.env.MINIAPP_UI_FIXTURE_MODE,
+    });
     startFixtureServer(FIXTURE_PORT, standaloneScenario).then(({ server }) => {
       console.log(`[miniapp-ui] fixture server listening at ${FIXTURE_BASE}`);
       const close = () => server.close(() => process.exit(0));
@@ -456,4 +642,12 @@ if (require.main === module) {
   }
 }
 
-module.exports = { startFixtureServer, fixtureResponse, validPdfFixture, resolveFixturePort };
+module.exports = {
+  startFixtureServer,
+  fixtureResponse,
+  validPdfFixture,
+  resolveFixturePort,
+  resolveStandaloneFixtureScenario,
+  richPhysicsQuestions,
+  RICH_VISITOR_QUESTION_LIMIT,
+};

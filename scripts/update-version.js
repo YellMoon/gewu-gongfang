@@ -244,6 +244,7 @@ function updateComponentVersion(component, version, { now } = {}) {
   if (!config) throw new Error(`Invalid release component: ${component || '<empty>'}`);
   const pkg = writePackageVersion(config.packagePath, version);
   if (config.lockPath) syncPackageLockVersion(config.lockPath, version);
+  if (component === 'cloud_business') syncGatewayPackageVersion(version);
   if (config.generatesDesktopVersion) writeGeneratedVersion(pkg, now);
   return pkg;
 }

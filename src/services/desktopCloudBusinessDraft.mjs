@@ -20,6 +20,29 @@ function nullable(value) {
   return value === undefined || value === '' ? null : value;
 }
 
+function scheduleInstant(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+  }
+  const local = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(value);
+  let parsed;
+  if (local && !/[zZ]|[+-]\d{2}:\d{2}$/.test(value)) {
+    parsed = new Date(
+      Number(local[1]), Number(local[2]) - 1, Number(local[3]), Number(local[4]),
+      Number(local[5]), Number(local[6] || 0), Number(String(local[7] || '').padEnd(3, '0') || 0),
+    );
+    if (parsed.getFullYear() !== Number(local[1]) || parsed.getMonth() !== Number(local[2]) - 1
+      || parsed.getDate() !== Number(local[3]) || parsed.getHours() !== Number(local[4])
+      || parsed.getMinutes() !== Number(local[5])) {
+      throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+    }
+  } else {
+    parsed = new Date(value);
+  }
+  if (!Number.isFinite(parsed.getTime())) throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+  return parsed.toISOString();
+}
+
 function expectedVersion(payload) {
   return requiredText(payload?.expectedVersion, 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED');
 }
@@ -124,10 +147,13 @@ function courseInput(record) {
 
 function scheduleInput(record) {
   return {
-    startAt: record.start_time,
-    endAt: record.end_time,
+    courseId: record.course_id,
+    startAt: scheduleInstant(record.start_time),
+    endAt: scheduleInstant(record.end_time),
+    recurringRule: nullable(record.recurring_rule),
     status: record.status,
     roomDisplay: nullable(record.room),
+    serviceType: nullable(record.service_type),
     tuition: record.calculated_tuition,
     teacherFee: record.calculated_teacher_fee,
     notes: nullable(record.notes),
@@ -144,10 +170,7 @@ function scheduleInput(record) {
 
 function scheduleCreateInput(record) {
   return {
-    courseId: record.course_id,
     ...scheduleInput(record),
-    recurringRule: nullable(record.recurring_rule),
-    serviceType: nullable(record.service_type),
     pricings: Array.isArray(record.student_pricings)
       ? record.student_pricings.map(item => ({
         studentId: item.student_id,

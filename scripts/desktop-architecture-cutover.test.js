@@ -30,15 +30,11 @@ assert.ok(!packageJson.includes('singleUserPairingClient'), 'test commands must 
 assert.ok(!read('backend/src/schema.sql').includes('desktop_single_user_pairing_'),
   'new databases must not create retired pairing tables');
 
-for (const relativePath of [
-  'backend/src/routes/cloudRelay.js',
-  'gateway/src/routes/cloudRelay.js',
-]) {
-  const source = read(relativePath);
-  assert.ok(!source.includes('createDesktopSessionRelayService'), `${relativePath} must not retain the retired session relay implementation`);
-  assert.ok(!source.includes("router.post('/desktop-session"), `${relativePath} must not retain an executable desktop-session route`);
-  assert.ok(!source.includes("router.post('/desktop-sync"), `${relativePath} must not retain an executable raw desktop-sync route`);
-}
+const backendCloudRelay = read('backend/src/routes/cloudRelay.js');
+assert.ok(!backendCloudRelay.includes('createDesktopSessionRelayService'), 'backend cloud relay tombstones must not retain the retired session relay implementation');
+assert.ok(!backendCloudRelay.includes("router.post('/desktop-session"), 'backend must not retain an executable desktop-session route');
+assert.ok(!backendCloudRelay.includes("router.post('/desktop-sync"), 'backend must not retain an executable raw desktop-sync route');
+absent('gateway/src/routes/cloudRelay.js');
 
 [
   'backend/src/services/singleUserDesktopIdentityService.js',

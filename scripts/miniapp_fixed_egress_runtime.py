@@ -329,7 +329,7 @@ def run_receipt_reconciliation(
         upload_lock = lock_factory(lock_path)
         receipt_validator()
         for health_url in config.health_urls:
-            health_checker(health_url, config.expected_version)
+            health_checker(health_url, config.expected_cloud_business_version)
         receipt_finalizer()
     except BaseException as error:
         primary_error = error
@@ -364,7 +364,7 @@ def run_lifecycle(
     if local_preflight is None:
         local_preflight = lambda current_env: verify_local_upload_inputs(
             current_env,
-            expected_version=config.expected_version,
+            expected_miniapp_version=config.expected_miniapp_version,
         )
     if proxy_factory is None:
         proxy_factory = lambda transport, allowlist: SshConnectProxy(
@@ -379,7 +379,7 @@ def run_lifecycle(
     try:
         upload_lock = lock_factory(lock_path)
         for health_url in config.health_urls:
-            health_checker(health_url, config.expected_version)
+            health_checker(health_url, config.expected_cloud_business_version)
 
         if not probe_only:
             command_runner(
@@ -415,7 +415,7 @@ def run_lifecycle(
             )
 
         for health_url in config.health_urls:
-            health_checker(health_url, config.expected_version)
+            health_checker(health_url, config.expected_cloud_business_version)
         if not probe_only and receipt_finalizer is not None:
             receipt_finalizer()
     except BaseException as error:

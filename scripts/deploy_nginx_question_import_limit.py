@@ -24,16 +24,22 @@ def quote(value):
 def patch_nginx_config(source):
     updated = source
     for location in LOCATIONS:
-        pattern = rf"(location\s+{re.escape(location)}\s*\{{)([\s\S]*?\n\s*\}})"
-        match = re.search(pattern, updated)
-        if not match:
+        pattern = re.compile(
+            rf"(?P<header>(?P<indent>^[ \t]*)location\s+{re.escape(location)}\s*\{{)"
+            rf"(?P<body>[\s\S]*?\n(?P=indent)\}})",
+            re.MULTILINE,
+        )
+        if not pattern.search(updated):
             raise ValueError("NGINX_QUESTION_IMPORT_LOCATION_MISSING")
-        block = match.group(0)
-        if LIMIT in block:
-            continue
-        indent = re.match(r"(\s*)", match.group(0)).group(1) + "    "
-        replacement = match.group(1) + "\n" + indent + LIMIT + match.group(2)
-        updated = updated[:match.start()] + replacement + updated[match.end():]
+
+        def add_limit(match):
+            block = match.group(0)
+            if LIMIT in block:
+                return block
+            indent = match.group("indent") + "    "
+            return match.group("header") + "\n" + indent + LIMIT + match.group("body")
+
+        updated = pattern.sub(add_limit, updated)
     return updated
 
 

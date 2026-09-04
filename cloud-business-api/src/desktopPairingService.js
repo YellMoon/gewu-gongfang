@@ -3,8 +3,8 @@
 const crypto = require('crypto');
 const { types } = require('util');
 
-function pairingError() {
-  return Object.assign(new Error('desktop pairing was rejected'), { code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
+function pairingError(code = 'CLOUD_DESKTOP_PAIRING_REJECTED') {
+  return Object.assign(new Error(code), { code });
 }
 
 function exact(value, keys) {
@@ -47,14 +47,20 @@ function constantTimeMatch(expected, supplied) {
 function createDesktopPairingService(config) {
   const settings = exact(config, [
     'now', 'randomId', 'resolveWechatIdentity', 'issueVerificationForVerifiedAccount',
-    'inspectVerificationToken', 'generateLoginScheme',
+    'inspectVerificationToken', 'generateLoginCode',
   ]);
   if (typeof settings.now !== 'function' || typeof settings.randomId !== 'function'
     || typeof settings.resolveWechatIdentity !== 'function'
     || typeof settings.issueVerificationForVerifiedAccount !== 'function'
     || typeof settings.inspectVerificationToken !== 'function'
-    || typeof settings.generateLoginScheme !== 'function') throw pairingError();
+    || typeof settings.generateLoginCode !== 'function') throw pairingError();
   const attempts = new Map();
+  const pairingIdsByScene = new Map();
+
+  function removeAttempt(attempt) {
+    attempts.delete(attempt.pairingId);
+    pairingIdsByScene.delete(attempt.scene);
+  }
 
   function authorize(input) {
     const request = exact(input, ['pairingId', 'pairingSecret']);
@@ -64,7 +70,7 @@ function createDesktopPairingService(config) {
     const now = currentDate(settings.now);
     if (!attempt || !pairingSecret || !constantTimeMatch(attempt.secret, pairingSecret)
       || now.getTime() >= attempt.expiresAt) {
-      if (attempt && now.getTime() >= attempt.expiresAt) attempts.delete(pairingId);
+      if (attempt && now.getTime() >= attempt.expiresAt) removeAttempt(attempt);
       throw pairingError();
     }
     return { attempt, now };
@@ -83,22 +89,29 @@ function createDesktopPairingService(config) {
       if (!pairingId || !pairingSecret || attempts.has(pairingId)) throw pairingError();
       const expiresAt = now.getTime() + 5 * 60 * 1000;
       const expiresAtIso = new Date(expiresAt).toISOString();
-      let qrValue;
+      const scene = `d_${crypto.createHash('sha256').update(`${pairingId}\0${pairingSecret}`, 'utf8').digest('base64url').slice(0, 30)}`;
+      if (pairingIdsByScene.has(scene)) throw pairingError();
+      let qrImageDataUrl;
       try {
-        qrValue = text(await settings.generateLoginScheme({ pairingId, pairingSecret, expiresAt: expiresAtIso }), 4096);
+        qrImageDataUrl = text(await settings.generateLoginCode({ scene }), 8 * 1024 * 1024);
       } catch (_) {
-        throw pairingError();
+        throw pairingError('CLOUD_DESKTOP_PAIRING_UNAVAILABLE');
       }
-      if (!qrValue || !qrValue.startsWith('weixin://')) throw pairingError();
-      attempts.set(pairingId, Object.freeze({
+      if (!qrImageDataUrl || !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/u.test(qrImageDataUrl)) {
+        throw pairingError('CLOUD_DESKTOP_PAIRING_UNAVAILABLE');
+      }
+      const attempt = Object.freeze({
         pairingId,
+        scene,
         secret: pairingSecret,
         expiresAt,
         registration: Object.freeze({ installationId, installationPublicKey, idempotencyKey }),
         verificationToken: null,
         deviceChallenge: null,
-      }));
-      return Object.freeze({ pairingId, pairingSecret, expiresAt: expiresAtIso, qrValue });
+      });
+      attempts.set(pairingId, attempt);
+      pairingIdsByScene.set(scene, pairingId);
+      return Object.freeze({ pairingId, pairingSecret, expiresAt: expiresAtIso, qrImageDataUrl });
     },
     read(input) {
       const { attempt } = authorize(input);
@@ -107,8 +120,16 @@ function createDesktopPairingService(config) {
         : Object.freeze({ status: 'awaiting_online_verification' });
     },
     async confirm(input) {
-      const request = exact(input, ['pairingId', 'pairingSecret', 'loginCode', 'phoneCode']);
-      const { attempt } = authorize({ pairingId: request.pairingId, pairingSecret: request.pairingSecret });
+      const request = exact(input, ['scene', 'loginCode', 'phoneCode']);
+      const scene = text(request.scene, 32);
+      if (!scene || !/^d_[A-Za-z0-9_-]{30}$/u.test(scene)) throw pairingError();
+      const pairingId = pairingIdsByScene.get(scene);
+      const attempt = pairingId && attempts.get(pairingId);
+      const now = currentDate(settings.now);
+      if (!attempt || now.getTime() >= attempt.expiresAt) {
+        if (attempt) removeAttempt(attempt);
+        throw pairingError();
+      }
       if (attempt.verificationToken) return Object.freeze({ status: 'verified' });
       const loginCode = text(request.loginCode, 512);
       const phoneCode = text(request.phoneCode, 512);

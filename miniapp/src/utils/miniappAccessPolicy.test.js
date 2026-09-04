@@ -12,13 +12,13 @@ const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf8');
 const login = fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf8');
 const application = fs.readFileSync('miniapp/src/pages/account-application/index.tsx', 'utf8');
 
-assert.ok(permission.includes("'super_admin' | 'teacher' | 'student' | 'visitor'"));
+assert.ok(permission.includes("'super_admin' | 'teacher' | 'student' | 'family_member' | 'visitor'"));
 assert.ok(!permission.includes("'super_admin' | 'admin'"));
 assert.ok(!permission.includes("role: 'pending'"));
 assert.ok(!permission.includes('studentWriteTasks'),
   'student policy must not advertise paper building or export when the cloud rejects those tasks');
-assert.match(permission, /role: 'student',[\s\S]{0,420}allowedWriteTasks: \[\]/,
-  'student policy must remain read-only until the cloud grants a matching task permission');
+assert.match(permission, /if \(user\?\.user_type === 'student' \|\| user\?\.user_type === 'family_member'\)[\s\S]{0,520}allowedWriteTasks: \[\]/,
+  'student and family-member policies must remain read-only until the cloud grants a matching task permission');
 assert.ok(!permission.includes('moduleApi'), 'miniapp authorization refresh must not call the retired local permission API');
 assert.ok(permission.includes('miniappCloudBusinessApi.readAuthorization'), 'miniapp authorization refresh must read the cloud authority context');
 assert.ok(api.includes("'/api/miniapp/role-applications'"));

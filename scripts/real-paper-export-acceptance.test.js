@@ -43,8 +43,12 @@ assert.throws(() => artifactEvidence('word', Buffer.from('%PDF-1.7')), /REAL_PAP
   assert.deepStrictEqual(queries[0].values, ['default', 'a'.repeat(64), 'b'.repeat(64)]);
   assert.match(queries[0].sql, /source_sha256/u);
   assert.match(queries[0].sql, /item_index=0/u);
+  assert.match(queries[0].sql, /item\.status='submitted'/u);
   assert.match(queries[0].sql, /question\.status='published'/u);
-  assert.match(queries[0].sql, /content\.content_hash=item\.content_hash/u);
+  assert.doesNotMatch(queries[0].sql, /task\.status='submitted'/u,
+    'publishing one selected import item must not require every other item in the source document to be submitted');
+  assert.doesNotMatch(queries[0].sql, /content\.content_hash=item\.content_hash/u,
+    'the authority content hash is recomputed from the canonical question record and must not be confused with the import candidate hash');
   assert.ok(queries[0].sql.indexOf('WHERE rank=1') < queries[0].sql.indexOf('JOIN business.questions'),
     'the latest matching submitted task must be fixed before publication/content checks so the acceptance cannot fall back to an older import');
   await assert.rejects(

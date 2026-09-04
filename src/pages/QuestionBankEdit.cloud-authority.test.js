@@ -13,5 +13,9 @@ assert.ok(!source.includes('deleteQuestionViaApi'),
   'question deletes must create cloud-bound encrypted drafts instead of calling the retired embedded backend');
 assert.ok(!source.includes("getApiBase('/api/question-bank')"),
   'question editing must not retain a local question-bank API base');
+assert.ok(!source.includes('/api/permissions/my'),
+  'question editing must derive permissions from the verified cloud desktop session, not the embedded identity database');
+assert.ok(source.includes('normalizeDesktopQuestionDeleteContext(readDesktopAuthorizationSession())'),
+  'question editing must derive its delete context directly from the current cloud desktop session');
 
 console.log('question bank edit cloud authority checks passed');

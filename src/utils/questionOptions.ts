@@ -3,16 +3,31 @@ export interface NormalizedQuestionOption {
   content: string;
 }
 
+export type QuestionOptionLengthClass = 'short' | 'medium' | 'long';
+
+export const OPTION_SHORT_TEXT_LIMIT = 12;
+export const OPTION_MEDIUM_TEXT_LIMIT = 28;
+
+const OPTION_PREFIX = /^([A-G])(?:[.\uff0e\u3001\u3002:\uff1a)\uff09])\s*([\s\S]*)$/i;
+const OPTION_LABEL = /^\s*([A-G])(?:[.\uff0e\u3001\u3002:\uff1a)\uff09])?\s*$/i;
+
+export function normalizeOptionLabel(value: unknown, index: number): string {
+  const raw = String(value || '').trim();
+  const match = raw.match(OPTION_LABEL);
+  if (match) return match[1].toUpperCase();
+  return raw ? raw.toUpperCase() : String.fromCharCode(65 + index);
+}
+
 export function normalizeOption(option: any, index: number): NormalizedQuestionOption {
   if (typeof option === 'string') {
-    const match = option.trim().match(/^([A-G])[\.\uff0e]\s*([\s\S]*)$/i);
+    const match = option.trim().match(OPTION_PREFIX);
     return {
-      label: (match?.[1] || String.fromCharCode(65 + index)).toUpperCase(),
+      label: normalizeOptionLabel(match?.[1], index),
       content: (match?.[2] || option).trim(),
     };
   }
   return {
-    label: String(option?.label || String.fromCharCode(65 + index)).toUpperCase(),
+    label: normalizeOptionLabel(option?.label, index),
     content: String(option?.content || option?.text || '').trim(),
   };
 }
@@ -24,14 +39,14 @@ export function splitPackedOptions(options: NormalizedQuestionOption[]): Normali
 
 function splitPackedOption(option: NormalizedQuestionOption): NormalizedQuestionOption[] {
   const raw = `${option.label}. ${option.content}`;
-  const labelPattern = /(^|[\r\n\t\f])\s*([A-G])[\.\uff0e]\s*/g;
+  const labelPattern = /(^|[\r\n\t\f])\s*([A-G])(?:[.\uff0e\u3001\u3002:\uff1a)\uff09])\s*/g;
   const labels = Array.from(raw.matchAll(labelPattern)).map(match => {
     const prefix = match[1] || '';
     const labelStart = (match.index || 0) + prefix.length;
     return {
-      label: match[2].toUpperCase(),
+      label: normalizeOptionLabel(match[2], 0),
       labelStart,
-      contentStart: labelStart + match[2].length + match[0].slice(prefix.length + match[2].length).length,
+      contentStart: (match.index || 0) + match[0].length,
     };
   });
   if (labels.length < 2) return [option];
@@ -63,17 +78,37 @@ export function isImageOnlyOption(value: string): boolean {
   return html.replace(/<img\b[^>]*>/gi, '').replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/gi, '').trim() === '';
 }
 
+function visibleOptionText(value: string): string {
+  return String(value || '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;|&#160;|&#xa0;/gi, ' ')
+    .replace(/&(?:amp|lt|gt|quot|apos);/gi, 'x')
+    .replace(/&#x[0-9a-f]+;|&#\d+;/gi, 'x')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function classifyOptionLength(options: NormalizedQuestionOption[]): QuestionOptionLengthClass {
+  let maxLength = 0;
+  for (const option of options) {
+    maxLength = Math.max(maxLength, Array.from(visibleOptionText(option.content)).length);
+  }
+  if (maxLength <= OPTION_SHORT_TEXT_LIMIT) return 'short';
+  if (maxLength <= OPTION_MEDIUM_TEXT_LIMIT) return 'medium';
+  return 'long';
+}
+
 export function columnsForOptions(options: NormalizedQuestionOption[]): number {
   if (options.length > 4) return 1;
   if (options.length < 2) return 1;
   if (options.length === 3) return 1;
   if (options.length === 4 && options.every(option => isImageOnlyOption(option.content))) return 4;
-  const maxLen = Math.max(...options.map(option => option.content.replace(/<[^>]+>/g, '').length));
+  const lengthClass = classifyOptionLength(options);
   if (options.length === 4) {
-    if (maxLen <= 12) return 4;
-    if (maxLen <= 28) return 2;
+    if (lengthClass === 'short') return 4;
+    if (lengthClass === 'medium') return 2;
     return 1;
   }
-  if (options.length === 2 && maxLen <= 28) return 2;
+  if (options.length === 2 && lengthClass !== 'long') return 2;
   return 1;
 }

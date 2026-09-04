@@ -37,7 +37,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         }
 
     def test_config_requires_canonical_ipv4_and_https_port_443(self):
-        config = target.config_from_env(self.base_env(), expected_version="7.2.10")
+        config = target.config_from_env(self.base_env(), expected_miniapp_version="7.2.10")
         self.assertEqual(config.fixed_egress_ip, "203.0.113.17")
         self.assertIn(("echo.example", 443), config.allowlist)
         self.assertIn(("servicewechat.com", 443), config.allowlist)
@@ -57,20 +57,66 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
         for environment in invalid_environments:
             with self.subTest(environment=environment):
                 with self.assertRaises(FixedEgressError):
-                    target.config_from_env(environment, expected_version="7.2.10")
+                    target.config_from_env(environment, expected_miniapp_version="7.2.10")
 
     def test_default_echo_url_uses_reachable_aws_checkip_endpoint(self):
         environment = self.base_env()
         environment.pop("WECHAT_MINIAPP_FIXED_EGRESS_ECHO_URL")
-        config = target.config_from_env(environment, expected_version="7.2.10")
+        config = target.config_from_env(environment, expected_miniapp_version="7.2.10")
         self.assertEqual(config.echo_url, "https://checkip.amazonaws.com/")
         self.assertIn(("checkip.amazonaws.com", 443), config.allowlist)
 
     def test_default_health_target_is_the_cloud_business_authority(self):
         environment = self.base_env()
         environment.pop("WECHAT_MINIAPP_CLOUD_BUSINESS_HEALTH_URL")
-        config = target.config_from_env(environment, expected_version="7.2.10")
+        config = target.config_from_env(environment, expected_miniapp_version="7.2.10")
         self.assertEqual(config.health_urls, ("https://physicsedu.xyz/cloud-business/api/health",))
+
+    def test_config_separates_miniapp_upload_and_cloud_health_versions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "miniapp").mkdir()
+            (root / "cloud-business-api").mkdir()
+            (root / "config").mkdir()
+            (root / "miniapp" / "package.json").write_text(
+                '{"version":"7.2.10"}', encoding="utf-8"
+            )
+            (root / "cloud-business-api" / "package.json").write_text(
+                '{"version":"9.4.3"}', encoding="utf-8"
+            )
+            (root / "config" / "release-compatibility.json").write_text(
+                '{"schema":"gewu.protocol-data-compatibility.v1","contracts":'
+                '{"cloudBusinessRest":{"version":"1","participants":'
+                '["desktop","cloud_business","miniapp"]}}}',
+                encoding="utf-8",
+            )
+
+            config = target.config_from_env(self.base_env(), root=root)
+
+            self.assertEqual(config.expected_miniapp_version, "7.2.10")
+            self.assertEqual(config.expected_cloud_business_version, "9.4.3")
+
+    def test_config_rejects_cloud_business_target_without_reviewed_miniapp_contract(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "miniapp").mkdir()
+            (root / "cloud-business-api").mkdir()
+            (root / "config").mkdir()
+            (root / "miniapp" / "package.json").write_text(
+                '{"version":"7.2.10"}', encoding="utf-8"
+            )
+            (root / "cloud-business-api" / "package.json").write_text(
+                '{"version":"9.4.3"}', encoding="utf-8"
+            )
+            (root / "config" / "release-compatibility.json").write_text(
+                '{"schema":"gewu.protocol-data-compatibility.v1","contracts":'
+                '{"cloudBusinessRest":{"version":"1","participants":'
+                '["desktop","cloud_business"]}}}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(FixedEgressError):
+                target.config_from_env(self.base_env(), root=root)
 
     def test_health_requires_ok_true_and_exact_version(self):
         target.check_health(
@@ -127,7 +173,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
             environment = {"WECHAT_MINIAPP_PRIVATE_KEY_PATH": str(key_path)}
             target.verify_local_upload_inputs(
                 environment,
-                expected_version="7.2.10",
+                expected_miniapp_version="7.2.10",
                 root=root,
             )
             miniapp_package.write_text(
@@ -137,7 +183,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
             with self.assertRaises(FixedEgressError):
                 target.verify_local_upload_inputs(
                     environment,
-                    expected_version="7.2.10",
+                    expected_miniapp_version="7.2.10",
                     root=root,
                 )
             miniapp_package.write_text(
@@ -147,7 +193,7 @@ class ConfigurationHealthAndProbeTests(unittest.TestCase):
             with self.assertRaises(FixedEgressError):
                 target.verify_local_upload_inputs(
                     environment,
-                    expected_version="7.2.10",
+                    expected_miniapp_version="7.2.10",
                     root=root,
                 )
 

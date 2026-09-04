@@ -207,7 +207,7 @@ function checkIdentitySourceSafety() {
   const sourceFiles = [
     'public/electron.js',
     'public/desktopIdentityVault.js',
-    'backend/src/routes/desktopIdentity.js',
+    'cloud-business-api/src/desktopRegistrationService.js',
     'src/components/DesktopIdentityGate.tsx',
     'src/pages/IdentityDeviceCenter.tsx',
   ];
@@ -305,7 +305,7 @@ function checkDesktopReleaseBoundary() {
   const runtimeConfig = readText('public/runtimeConfig.js');
   const buildFlavor = readText('public/desktopBuildFlavor.js');
   const directTransport = readText('src/services/authorityTransports.mjs');
-  const relayRoute = readText('gateway/src/routes/cloudRelay.js');
+  const gatewayApp = readText('gateway/src/app.js');
   const ordinaryFiles = packageJson.build?.files || [];
   const retiredHostFiles = [
     'public/primaryHostCredentialStore.js',
@@ -350,8 +350,28 @@ function checkDesktopReleaseBoundary() {
       issues.push(`direct V2 sync transport still accepts legacy authorization: ${forbidden}`);
     }
   }
-  if (!relayRoute.includes("'pairingcode'") || !relayRoute.includes("'pairing_code'")) {
-    issues.push('cloud relay must reject pairing-code response fields');
+  for (const marker of [
+    "legacyAuthority: 'retired'",
+    "'CLOUD_RELAY_RETIRED'",
+    "'GATEWAY_AUTH_RETIRED'",
+    "'GATEWAY_ADMIN_RETIRED'",
+    "'GATEWAY_PERMISSIONS_RETIRED'",
+  ]) {
+    if (!gatewayApp.includes(marker)) {
+      issues.push(`gateway retirement boundary is missing marker: ${marker}`);
+    }
+  }
+  for (const forbidden of [
+    "require('./routes/cloudRelay')",
+    "require('./routes/auth')",
+    "require('./routes/admin')",
+    "require('./routes/permissions')",
+    'CloudWebSocketServer',
+    "require('./db/database')",
+  ]) {
+    if (gatewayApp.includes(forbidden)) {
+      issues.push(`gateway formal runtime still loads retired authority code: ${forbidden}`);
+    }
   }
   const clientFeed = /desktop\/['"]/.test(buildFlavor);
   if (!clientFeed) issues.push('the unified desktop update feed is missing');

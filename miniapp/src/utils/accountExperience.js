@@ -6,7 +6,7 @@ const VISITOR_CAPABILITIES = Object.freeze([
   'role-application:submit',
   'question-preview:read',
 ]);
-const FORMAL_ROLES = new Set(['super_admin', 'teacher', 'student']);
+const FORMAL_ROLES = new Set(['super_admin', 'teacher', 'student', 'family_member']);
 
 const SESSION_CLEANUP_KEYS = Object.freeze([
   'auth_token',

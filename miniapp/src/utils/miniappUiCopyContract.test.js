@@ -58,8 +58,22 @@ assert.ok(!applicationConfig.includes(String.fromCharCode(30003, 35831, 36523, 2
 assert.ok(applicationRuntime.includes(String.fromCharCode(25945, 24072, 12289, 23398, 29983, 25110, 23478, 24237, 25104, 21592)), 'the visitor action must describe every selectable identity');
 assert.ok(applicationPage.includes(String.fromCharCode(25552, 20132, 30003, 35831)), 'the primary visitor action must stay clear and short');
 assert.ok(applicationRuntime.includes(String.fromCharCode(31561, 24453, 23457, 26680)), 'application status must explain the neutral review state');
+/* Retired wording contract kept below only as historical test context.
 assert.ok(!applicationPage.includes('档案方式') && !applicationPage.includes('关联已有档案') && !applicationPage.includes('新建档案'), 'role application must not expose internal archive terminology');
 assert.ok(applicationPage.includes('申请方式') && applicationPage.includes('关联已有身份') && applicationPage.includes('创建新身份'), 'role application must use user-facing identity wording');
+
+*/
+assert.ok(
+  applicationPage.includes(String.fromCharCode(30003, 35831, 26041, 24335))
+    && applicationPage.includes(String.fromCharCode(25105, 24050, 26377, 30456, 20851, 36164, 26009))
+    && applicationPage.includes(String.fromCharCode(39318, 27425, 30331, 35760)),
+  'role application must use ordinary user-facing choices',
+);
+assert.ok(
+  !applicationPage.includes(String.fromCharCode(26032, 36523, 20221))
+    && !applicationPage.includes(String.fromCharCode(20851, 32852, 23545, 35937)),
+  'role application must not expose internal identity terminology',
+);
 
 assert.ok(!settingsPage.includes('getApiBaseUrl') && !settingsPage.includes('setApiBaseUrl'), 'end users must not edit the service endpoint');
 assert.ok(!settingsPage.includes(String.fromCharCode(65, 80, 73, 32, 26381, 21153, 22120, 22336)) && !settingsPage.includes(String.fromCharCode(26381, 21153, 22120, 32622)), 'settings must not leak implementation configuration');
@@ -111,6 +125,8 @@ assert.ok(!questionBankPage.includes('关联身份后可组卷') && questionBank
 assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和导出') && questionPaperPage.includes('组卷和导出需要教师角色'), 'paper access guidance must use the same direct role wording');
 assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请角色'), 'the schedule empty state must give a concise, user-facing next step without labeling the account as a visitor');
 assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
+assert.ok(schedulePage.includes('const isStudent = isStudentScopedUser(identity);') && schedulePage.includes('{!isStudent && students.length > 0 && ('), 'student and household-member schedules must not expose the teacher student-filter controls');
+assert.ok(schedulePage.includes('useDidShow') && schedulePage.includes('setIdentity(Taro.getStorageSync'), 'the tabbed schedule page must refresh its identity when a different account opens an already-mounted tab');
 assert.ok(!homePage.includes('申请关联身份') && homePage.includes('申请角色'), 'the visitor home must not expose internal identity-binding language');
 assert.ok(homePage.includes('查看课程安排。') && !homePage.includes('已关联的课程安排'), 'the visitor schedule entry must not imply an existing relationship before one exists');
 assert.ok(homePage.includes('教师、学生或家庭成员') && !homePage.includes('申请老师、学生或家庭成员'), 'the visitor application entry must use a concise action title rather than a sentence-length button');
@@ -121,8 +137,8 @@ assert.ok(!homePage.includes('\u7ef4\u62a4\u5b66\u5458\u4e0e\u8bfe\u7a0b\u5173\u
 assert.ok(homePage.includes('\u5b66\u751f\u8d44\u6599') && homePage.includes('\u8bfe\u7a0b\u8d44\u6599'), 'read-only miniapp shortcuts must name the information they show');
 assert.ok(!homePage.includes('\u6301\u4e45\u547d\u4ee4'), 'visitor role applications must not expose an implementation term as user-facing copy');
 assert.ok(scheduleEditConfig.includes('\u6392\u8bfe\u8bf4\u660e'), 'the read-only scheduling boundary must not be titled as schedule creation');
-assert.ok(scheduleDetailPage.includes('isStudentUser') && scheduleDetailPage.includes('{!isStudent &&'), 'student schedule details must not expose staff-only fee information');
-assert.ok(studentDetailPage.includes('const isStudent = isStudentUser();'), 'student detail must identify a student/guardian view');
+assert.ok(scheduleDetailPage.includes('isStudentScopedUser') && scheduleDetailPage.includes('{!isStudent &&'), 'student schedule details must not expose staff-only fee information');
+assert.ok(studentDetailPage.includes('const isStudent = isStudentScopedUser();'), 'student detail must identify a student/guardian view');
 assert.strictEqual((studentDetailPage.match(/\{!isStudent && <View className='info-row'>/g) || []).length, 3, 'student detail must keep internal source, notes, and creation rows off student/guardian views');
 assert.ok(coursesPage.includes('{!isStudent && <Text className="price-teacher">'), 'student course views must not render a null or internal teacher-fee amount');
 assert.ok(studentsConfig.includes('\u5b66\u751f\u8d44\u6599') && coursesConfig.includes('\u8bfe\u7a0b\u8d44\u6599') && teachersConfig.includes('\u6559\u5e08\u8d44\u6599'), 'read-only miniapp titles must describe records instead of management');

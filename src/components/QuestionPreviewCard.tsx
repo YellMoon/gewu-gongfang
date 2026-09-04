@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { useEffect, useState } from 'react';
 import { Button, Checkbox, Popconfirm, Space } from 'antd';
-import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, EyeOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
@@ -11,6 +11,8 @@ import { assetRef, getQuestionAssetDataUrl, isAssetRef } from '../services/quest
 import './QuestionPreviewCard.css';
 
 const resolvedQuestionCache = new Map<string, Question>();
+const EXPAND_ANSWER_LABEL = String.fromCharCode(26597, 30475, 31572, 26696, 19982, 35299, 26512);
+const COLLAPSE_ANSWER_LABEL = String.fromCharCode(25910, 36215, 31572, 26696, 19982, 35299, 26512);
 
 function contentWithInlineAssets(question: Question): string {
   let content = question.content || question.stem || '未填写题干';
@@ -33,6 +35,24 @@ function contentWithInlineAssets(question: Question): string {
       });
     });
   return content;
+}
+
+function richDocHasContent(value: any): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (value.type === 'text') return Boolean(String(value.text || '').trim());
+  if (value.type === 'formula' || value.type === 'image') return true;
+  return (Array.isArray(value.content) ? value.content : []).some(richDocHasContent);
+}
+
+function questionHasAnswerContent(question: Question): boolean {
+  const richContent = (question as any).rich_content;
+  if (richContent?.type === 'question-document') {
+    const sections = richContent.sections || {};
+    return richDocHasContent(sections.answer)
+      || richDocHasContent(sections.analysis)
+      || (Array.isArray(sections.subQuestions) && sections.subQuestions.some((sub: any) => richDocHasContent(sub?.answer)));
+  }
+  return Boolean(String(question.answer || '').trim() || String(question.analysis || question.explanation || '').trim());
 }
 
 const QuestionPreviewCard: React.FC<{
@@ -59,7 +79,7 @@ const QuestionPreviewCard: React.FC<{
   inBasket = false,
   selectable = false,
   checked = false,
-  showAnswer = true,
+  showAnswer = false,
   onCheckChange,
   onEdit,
   editLabel = '编辑',
@@ -72,6 +92,11 @@ const QuestionPreviewCard: React.FC<{
   const knowledgeText = knowledgeNames.join('、') || question.knowledge_point || '知识点未标注';
   const modelText = modelNames.join('、') || question.model_point || '';
   const [resolvedQuestion, setResolvedQuestion] = useState<Question>(question);
+  const [answerExpanded, setAnswerExpanded] = useState(showAnswer);
+
+  useEffect(() => {
+    setAnswerExpanded(showAnswer);
+  }, [question.id, showAnswer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +174,7 @@ const QuestionPreviewCard: React.FC<{
   }, [question]);
 
   const displayContent = contentWithInlineAssets(resolvedQuestion);
+  const hasAnswerContent = questionHasAnswerContent(resolvedQuestion);
 
   return (
     <article id={`question-card-${question.id}`} className="qb-question-card">
@@ -163,12 +189,13 @@ const QuestionPreviewCard: React.FC<{
         )}
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">
-          {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} showAnswer={showAnswer} /> : <><QuestionRenderer
+          {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} showAnswer={answerExpanded} /> : <><QuestionRenderer
             content={displayContent}
             options={resolvedQuestion.options as any[]}
             questionType={resolvedQuestion.type}
-            answer={resolvedQuestion.answer}
-            analysis={resolvedQuestion.analysis || resolvedQuestion.explanation}
+            answer={answerExpanded ? resolvedQuestion.answer : undefined}
+            analysis={answerExpanded ? resolvedQuestion.analysis || resolvedQuestion.explanation : undefined}
+            showAnalysis={answerExpanded}
             terms={terms}
           /><QuestionRichContent question={resolvedQuestion} terms={terms} /></>}
         </div>
@@ -181,6 +208,17 @@ const QuestionPreviewCard: React.FC<{
           {modelText && <span>模型：<QuestionRichText terms={terms}>{modelText}</QuestionRichText></span>}
         </div>
         <Space className="qb-card-footer-actions" size={8}>
+          {hasAnswerContent && (
+            <Button
+              className="qb-answer-button"
+              type="text"
+              icon={<EyeOutlined />}
+              aria-expanded={answerExpanded}
+              onClick={() => setAnswerExpanded(expanded => !expanded)}
+            >
+              {answerExpanded ? COLLAPSE_ANSWER_LABEL : EXPAND_ANSWER_LABEL}
+            </Button>
+          )}
           {onDelete && (
             <Popconfirm
               title="确定删除这道题？"

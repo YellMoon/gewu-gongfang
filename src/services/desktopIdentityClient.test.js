@@ -1,23 +1,63 @@
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const {
   createUnifiedDesktopRegistrationCommand,
 } = require('../../shared/vnext-pg17/unifiedDesktopRegistrationCommand');
+const { createDesktopIdentityVault } = require('../../public/desktopIdentityVault');
+
+function mockSafeStorage() {
+  return {
+    isEncryptionAvailable: () => true,
+    encryptString: value => Buffer.from(String(value), 'utf8'),
+    decryptString: value => Buffer.from(value).toString('utf8'),
+  };
+}
+
+function signedOfflineLease(privateKey, input) {
+  const lease = {
+    v: 1,
+    id: input.id,
+    userId: input.userId,
+    deviceId: input.deviceId,
+    authorizationId: input.authorizationId,
+    credentialVersion: input.credentialVersion,
+    eligibleRoles: input.eligibleRoles,
+    activeRole: input.activeRole,
+    teacherId: input.teacherId ?? null,
+    studentId: input.studentId ?? null,
+    issuedAt: input.issuedAt,
+    expiresAt: input.expiresAt,
+    scope: input.activeRole === 'teacher'
+      ? { kind: 'teacher', teacherId: input.teacherId }
+      : { kind: input.activeRole },
+  };
+  return {
+    ...lease,
+    signature: crypto.sign(null, Buffer.from(JSON.stringify(lease), 'utf8'), privateKey).toString('base64url'),
+  };
+}
 
 async function main() {
   const source = fs.readFileSync('src/services/desktopIdentityClient.mjs', 'utf8');
   const {
     canStartBusinessRuntime,
     createDesktopIdentityClient,
+    isDesktopIdentityNetworkFailure,
     partitionKeyForIdentity,
     preferredActiveRole,
     resolveDesktopGateState,
   } = await import('./desktopIdentityClient.mjs');
+  const { normalizeDesktopAuthorizationSession } = await import('./desktopAuthorizationSession.mjs');
   assert.ok(!source.includes('desktopSessionRelayClient'));
   assert.ok(!source.includes('exchangeDesktopSessionThroughRelay'));
   assert.ok(!source.includes('ensureHostSyncSession'));
   assert.strictEqual(preferredActiveRole(['admin']), null, 'retired ordinary-admin roles must never become an active desktop role');
   assert.strictEqual(preferredActiveRole(['parent']), null, 'family members bind to a student and do not become a separate desktop role');
+  assert.strictEqual(preferredActiveRole(['visitor']), null, 'visitors must not become a desktop role');
+  assert.strictEqual(preferredActiveRole(['student']), null, 'students must not become a role in the teacher desktop');
 
   assert.deepStrictEqual(resolveDesktopGateState({ vaultStatus: { state: 'empty' } }), {
     kind: 'registration-required',
@@ -25,6 +65,87 @@ async function main() {
   assert.deepStrictEqual(resolveDesktopGateState({
     vaultStatus: { state: 'sealed', unlocked: false, deviceId: 'device-1' },
   }), { kind: 'locked', deviceId: 'device-1' });
+
+  const currentAdminVault = {
+    state: 'unlocked', unlocked: true,
+    user: { id: 'scope-user-1' }, deviceId: 'scope-device-1', authorizationId: 'scope-admin-session-current',
+    activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'], teacherId: null, studentId: null,
+  };
+  const currentAdminRenderer = {
+    token: 'scope-admin-token', expiresAt: '2026-09-02T00:00:00.000Z',
+    session: {
+      id: 'scope-admin-session-current', userId: 'scope-user-1', deviceId: 'scope-device-1',
+      activeRole: 'super_admin', eligibleRoles: ['teacher', 'super_admin'], teacherId: null, studentId: null,
+      expiresAt: '2026-09-02T00:00:00.000Z',
+    },
+    profile: {
+      userId: 'scope-user-1', activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'],
+      teacherId: null, studentId: null,
+    },
+  };
+  assert.strictEqual(resolveDesktopGateState({
+    vaultStatus: currentAdminVault, online: true, onlineSession: currentAdminRenderer,
+    now: new Date('2026-09-01T00:00:00.000Z'),
+  }).kind, 'online-unlocked', 'eligible role order must not invalidate an otherwise identical cloud session');
+  const staleSessionCases = [
+    {
+      name: 'authorization id',
+      onlineSession: {
+        ...currentAdminRenderer,
+        session: { ...currentAdminRenderer.session, id: 'scope-teacher-session-old' },
+      },
+    },
+    {
+      name: 'active role',
+      onlineSession: {
+        ...currentAdminRenderer,
+        session: {
+          ...currentAdminRenderer.session, activeRole: 'teacher', teacherId: 'scope-teacher-1', studentId: null,
+        },
+        profile: {
+          ...currentAdminRenderer.profile, activeRole: 'teacher', teacherId: 'scope-teacher-1', studentId: null,
+        },
+      },
+    },
+    {
+      name: 'eligible roles',
+      onlineSession: {
+        ...currentAdminRenderer,
+        session: { ...currentAdminRenderer.session, eligibleRoles: ['super_admin'] },
+      },
+    },
+    {
+      name: 'admin scope',
+      onlineSession: {
+        ...currentAdminRenderer,
+        session: { ...currentAdminRenderer.session, teacherId: 'scope-teacher-stale' },
+      },
+    },
+  ];
+  for (const scenario of staleSessionCases) {
+    assert.strictEqual(resolveDesktopGateState({
+      vaultStatus: currentAdminVault, online: true, onlineSession: scenario.onlineSession,
+      now: new Date('2026-09-01T00:00:00.000Z'),
+    }).kind, 'online-authentication-required', `renderer session with stale ${scenario.name} must be rejected`);
+  }
+  const currentTeacherVault = {
+    ...currentAdminVault, authorizationId: 'scope-teacher-session-current', activeRole: 'teacher',
+    teacherId: 'scope-teacher-current', studentId: null,
+  };
+  const currentTeacherRenderer = {
+    ...currentAdminRenderer,
+    session: {
+      ...currentAdminRenderer.session, id: 'scope-teacher-session-current', activeRole: 'teacher',
+      teacherId: 'scope-teacher-old', studentId: null,
+    },
+    profile: {
+      ...currentAdminRenderer.profile, activeRole: 'teacher', teacherId: 'scope-teacher-old', studentId: null,
+    },
+  };
+  assert.strictEqual(resolveDesktopGateState({
+    vaultStatus: currentTeacherVault, online: true, onlineSession: currentTeacherRenderer,
+    now: new Date('2026-09-01T00:00:00.000Z'),
+  }).kind, 'online-authentication-required', 'teacher sessions must match the vault teacher scope exactly');
 
   const offlineLease = {
     userId: 'user-1',
@@ -55,10 +176,10 @@ async function main() {
     'unbound-teacher:teacher:unbound',
     'a role may exist before a local teacher profile is bound',
   );
-  assert.strictEqual(
-    partitionKeyForIdentity({ userId: 'unbound-student', activeRole: 'student', studentId: null }),
-    'unbound-student:student:unbound',
-    'a role may exist before a local student profile is bound',
+  assert.throws(
+    () => partitionKeyForIdentity({ userId: 'student-only', activeRole: 'student', studentId: 'student-1' }),
+    error => error.code === 'DESKTOP_IDENTITY_PARTITION_INVALID',
+    'student identities must never create a teacher-desktop data partition',
   );
 
   const client = createDesktopIdentityClient({
@@ -70,6 +191,47 @@ async function main() {
   assert.ok(source.includes('/api/desktop/online-registration')
     && source.includes("purpose: 'unified-online-registration'"),
   'registration must use the cloud verification ticket and device proof before saving an online session');
+  assert.strictEqual(
+    isDesktopIdentityNetworkFailure(Object.assign(new Error('service unavailable'), {
+      code: 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE',
+    })),
+    true,
+    'a cloud 503 during cold-start session recovery must allow a still-valid offline lease fallback',
+  );
+  assert.strictEqual(
+    isDesktopIdentityNetworkFailure(Object.assign(new Error('device revoked'), {
+      code: 'DESKTOP_DEVICE_NOT_ACTIVE',
+    })),
+    false,
+    'an explicit device revocation must never be mistaken for a network outage',
+  );
+  assert.strictEqual(
+    isDesktopIdentityNetworkFailure(Object.assign(new Error('authorization revoked'), {
+      code: 'VNEXT_DESKTOP_AUTHORIZATION_INVALID',
+    })),
+    false,
+    'the stable cloud authorization-revoked code must never be treated as an outage',
+  );
+  let insecurePasswordRequests = 0;
+  const insecurePasswordClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => ({ state: 'empty' }),
+      beginUnifiedOnlineRegistration: async () => { throw new Error('must not create a local key'); },
+    },
+    fetchImpl: async () => { insecurePasswordRequests += 1; throw new Error('must not send credentials'); },
+  });
+  await assert.rejects(
+    () => insecurePasswordClient.beginPasswordVerification({
+      baseUrl: 'http://identity.example.test',
+      idempotencyKey: 'insecure-password-login',
+      loginType: 'account_name',
+      login: 'fixture-user',
+      password: 'fixture-password',
+    }),
+    error => error.code === 'DESKTOP_IDENTITY_INSECURE_BASE_URL',
+    'password credentials must never be sent over cleartext HTTP to a remote host',
+  );
+  assert.strictEqual(insecurePasswordRequests, 0);
 
   const resumedOfflineLease = { id: 'lease-resume-1' };
   const resumeEvents = [];
@@ -89,8 +251,17 @@ async function main() {
         resumeEvents.push({ action: 'sign', input });
         return { signature: 'resume-signature-1' };
       },
-      refreshOfflineLease: async input => {
-        resumeEvents.push({ action: 'refresh-offline-lease', input });
+      acceptIssuedSession: async input => {
+        resumeEvents.push({ action: 'accept-issued-session', input });
+        return {
+          ...resumedVaultStatus,
+          authorizationId: input.session.id,
+          activeRole: input.session.activeRole,
+          eligibleRoles: input.session.eligibleRoles,
+          teacherId: input.session.teacherId ?? null,
+          studentId: input.session.studentId ?? null,
+          offlineLease: input.offlineLease,
+        };
       },
     },
     sessionStore: {
@@ -109,12 +280,13 @@ async function main() {
         token: 'session-token-resume-1',
         session: {
           id: 'session-resume-1', userId: 'user-resume-1', deviceId: 'device-resume-1',
-          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-1',
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-session', studentId: null,
           expiresAt: '2026-08-25T11:00:00.000Z',
         },
         profile: {
           userId: 'user-resume-1', user: { id: 'user-resume-1', name: 'Resume User' },
-          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-1',
+          activeRole: 'teacher', eligibleRoles: ['teacher'], teacherId: 'teacher-resume-profile-stale',
+          studentId: 'student-resume-profile-stale',
         },
         offlineLease: resumedOfflineLease,
       } }) };
@@ -123,11 +295,19 @@ async function main() {
   const resumed = await resumeClient.resume({ baseUrl: 'https://cloud.test', online: true });
   assert.strictEqual(resumed.gateState.kind, 'online-unlocked');
   assert.strictEqual(resumedSessionStored.token, 'session-token-resume-1');
-  assert.deepStrictEqual(
-    resumeEvents.find(event => event.action === 'refresh-offline-lease').input,
-    { offlineLease: resumedOfflineLease },
-    'online resume must refresh the offline lease without an undefined legacy password',
-  );
+  assert.strictEqual(resumedSessionStored.profile.teacherId, 'teacher-resume-session',
+    'online recovery must prefer the new session scope over a stale returned profile scope');
+  assert.strictEqual(resumedSessionStored.profile.studentId, null,
+    'online recovery must clear the non-active student scope');
+  const resumedIssuedAcceptance = resumeEvents.find(event => event.action === 'accept-issued-session').input;
+  assert.deepStrictEqual(resumedIssuedAcceptance.session, resumed.session);
+  assert.strictEqual(resumedIssuedAcceptance.profile.activeRole, 'teacher');
+  assert.deepStrictEqual(resumedIssuedAcceptance.profile.eligibleRoles, ['teacher']);
+  assert.strictEqual(resumedIssuedAcceptance.profile.teacherId, 'teacher-resume-session');
+  assert.strictEqual(resumedIssuedAcceptance.profile.studentId, null,
+    'the real vault must receive the normalized session scope rather than stale raw profile fields');
+  assert.deepStrictEqual(resumedIssuedAcceptance.offlineLease, resumedOfflineLease,
+    'online resume must atomically accept the cloud-issued session, profile, and signed lease');
   assert.deepStrictEqual(
     resumeEvents.filter(event => event.action === 'request').map(event => event.url),
     [
@@ -178,7 +358,7 @@ async function main() {
     fetchImpl: async (url, options = {}) => {
       unifiedCloudRequests.push({ url, method: options.method, body: options.body ? JSON.parse(options.body) : null });
       if (url === 'https://cloud.test/api/desktop/pairing/start') {
-        return { ok: true, json: async () => ({ ok: true, pairingId: 'pairing-cloud-1', pairingSecret: 'pairing-secret-1', expiresAt: '2026-08-21T12:05:00.000Z' }) };
+        return { ok: true, json: async () => ({ ok: true, pairingId: 'pairing-cloud-1', pairingSecret: 'pairing-secret-1', expiresAt: '2026-08-21T12:05:00.000Z', qrImageDataUrl: 'data:image/png;base64,cHJvZHVjdGlvbi1xci1jb2Rl' }) };
       }
       if (url === 'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1') {
         return { ok: true, json: async () => ({ ok: true, status: 'verified', verificationToken: 'verification-token-1', deviceChallenge: 'cloud-device-proof-1' }) };
@@ -189,6 +369,11 @@ async function main() {
           verificationToken: 'verification-token-1', name: 'Cloud Teacher', subject: 'Math',
         });
         return { ok: true, json: async () => ({ ok: true, teacherId: 'teacher-cloud-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false }) };
+      }
+      if (url === 'https://cloud.test/api/desktop/verified-access') {
+        assert.strictEqual(options.method, 'POST');
+        assert.deepStrictEqual(JSON.parse(options.body), { verificationToken: 'verification-token-1' });
+        return { ok: true, json: async () => ({ ok: true, access: 'teacher_registration_required', roles: [], teacherId: null }) };
       }
       if (url === 'https://cloud.test/api/desktop/online-registration') {
         return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1', offlineLease: {
@@ -202,7 +387,7 @@ async function main() {
         return { ok: true, json: async () => ({ ok: true,
           authorityId: 'authority-cloud-1', accountId: 'account-cloud-1',
           deviceId: 'desktop-device-a1b2c3d4e5f60708', installationId: 'desktop-device-a1b2c3d4e5f60708',
-          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['teacher'], teacherId: 'teacher-cloud-1', studentId: null,
+          sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', rowVersion: 1, activeRole: 'teacher', roles: ['teacher'], teacherId: 'teacher-cloud-1', studentId: null,
         }) };
       }
       if (url === 'https://cloud.test/api/business/schedules') {
@@ -247,8 +432,10 @@ async function main() {
         assert.strictEqual(options.method, 'PUT');
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         assert.deepStrictEqual(JSON.parse(options.body), {
-          expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',
-          status: 2, roomDisplay: 'Cloud room', tuition: 120, teacherFee: 60, notes: 'cloud update',
+          expectedUpdatedAt: '2026-08-21T01:00:00.000Z', courseId: 'course-cloud-2',
+          startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',
+          recurringRule: '{"frequency":"weekly"}', status: 2, roomDisplay: 'Cloud room', serviceType: 2,
+          tuition: 120, teacherFee: 60, notes: 'cloud update',
           pricings: [{ studentId: 'student-cloud-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
         });
         return { ok: true, json: async () => ({ ok: true, schedule: { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' } }) };
@@ -379,8 +566,15 @@ async function main() {
   const unifiedPending = await unifiedCloudClient.beginUnifiedOnlineRegistration({
     baseUrl: 'https://cloud.test', deviceName: 'Unified cloud desktop', idempotencyKey: 'unified-registration-1',
   });
-  assert.strictEqual(unifiedPending.qrValue, 'gewu://desktop-pairing?pairingId=pairing-cloud-1&secret=pairing-secret-1');
+  assert.strictEqual(unifiedPending.qrImageDataUrl, 'data:image/png;base64,cHJvZHVjdGlvbi1xci1jb2Rl');
+  assert.strictEqual(unifiedPending.qrValue, undefined);
   const unifiedVerified = await unifiedCloudClient.pollUnifiedOnlineRegistration(unifiedPending);
+  assert.deepStrictEqual(unifiedVerified.desktopAccess, { access: 'teacher_registration_required', roles: [], teacherId: null });
+  await assert.rejects(
+    () => unifiedCloudClient.completeUnifiedOnlineRegistration({ pending: unifiedVerified }),
+    error => error.code === 'DESKTOP_TEACHER_REGISTRATION_REQUIRED',
+    'a verified visitor or student must not silently register a desktop device before becoming a teacher',
+  );
   const selfRegisteredTeacher = await unifiedCloudClient.registerTeacherForVerifiedRegistration({
     pending: unifiedVerified,
     name: 'Cloud Teacher',
@@ -388,14 +582,17 @@ async function main() {
   });
   assert.deepStrictEqual(selfRegisteredTeacher, {
     teacherId: 'teacher-cloud-1', updatedAt: '2026-08-21T12:00:00.000Z', replayed: false,
+    desktopAccess: { access: 'allowed', roles: ['teacher'], teacherId: 'teacher-cloud-1' },
   });
   const unifiedCompleted = await unifiedCloudClient.completeUnifiedOnlineRegistration({
-    pending: unifiedVerified,
+    pending: { ...unifiedVerified, desktopAccess: selfRegisteredTeacher.desktopAccess },
     password: 'unified-local-password',
   });
+  assert.strictEqual(unifiedCompleted.session.rowVersion, 1, 'cloud session row version is required for signed role elevation');
   assert.deepStrictEqual(unifiedCloudRequests.map(entry => entry.url), [
     'https://cloud.test/api/desktop/pairing/start',
     'https://cloud.test/api/desktop/pairing/pairing-cloud-1?secret=pairing-secret-1',
+    'https://cloud.test/api/desktop/verified-access',
     'https://cloud.test/api/desktop/teacher-self-registration',
     'https://cloud.test/api/desktop/online-registration',
     'https://cloud.test/api/desktop/session-context',
@@ -403,10 +600,11 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudRequests[0].body, {
     installationId: 'desktop-device-a1b2c3d4e5f60708', installationPublicKey: 'unified-public-key', idempotencyKey: 'unified-registration-1',
   });
-  assert.deepStrictEqual(unifiedCloudRequests[2].body, {
+  assert.deepStrictEqual(unifiedCloudRequests[2].body, { verificationToken: 'verification-token-1' });
+  assert.deepStrictEqual(unifiedCloudRequests[3].body, {
     verificationToken: 'verification-token-1', name: 'Cloud Teacher', subject: 'Math',
   });
-  assert.deepStrictEqual(unifiedCloudRequests[3].body, {
+  assert.deepStrictEqual(unifiedCloudRequests[4].body, {
     verificationToken: 'verification-token-1', installationId: 'desktop-device-a1b2c3d4e5f60708',
     installationPublicKey: 'unified-public-key', deviceProof: 'unified-device-proof', idempotencyKey: 'unified-registration-1',
   });
@@ -424,6 +622,8 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudEvents, ['sign:unified-online-registration', 'seal-unified-cloud-vault', 'save-unified-cloud-session']);
   assert.strictEqual(unifiedCloudStored.token, 'session-token-cloud-1');
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
+  assert.strictEqual(unifiedCompleted.profile.user.name, '\u6211\u7684\u8d26\u53f7',
+    'the desktop shell must use natural Chinese when the cloud session has no display name');
 
   const recoveryRequests = [];
   let passwordRegistrationPending = false;
@@ -443,6 +643,12 @@ async function main() {
     sessionStore: { save: async () => { passwordClientStored = true; }, clear: async () => {} },
     fetchImpl: async (url, options) => {
       passwordVerificationRequests.push({ url, body: JSON.parse(options.body) });
+      if (url.endsWith('/api/desktop/verified-access')) {
+        const verificationToken = JSON.parse(options.body).verificationToken;
+        return verificationToken === 'password-verification-ticket'
+          ? { ok: true, json: async () => ({ ok: true, access: 'allowed', roles: ['teacher'], teacherId: 'teacher-password-1' }) }
+          : { ok: true, json: async () => ({ ok: true, access: 'teacher_registration_required', roles: [], teacherId: null }) };
+      }
       if (url.endsWith('/api/desktop/password-enrollment-from-verification')) {
         return { ok: true, json: async () => ({ ok: true, verificationToken: 'already-verified-ticket', deviceChallenge: 'existing-device-proof' }) };
       }
@@ -465,11 +671,12 @@ async function main() {
     },
     idempotencyKey: 'password-registration-1', status: 'verified',
     verificationToken: 'password-verification-ticket', deviceChallenge: 'cloud-password-device-proof',
+    desktopAccess: { access: 'allowed', roles: ['teacher'], teacherId: 'teacher-password-1' },
   });
-  assert.deepStrictEqual(passwordVerificationRequests, [{
-    url: 'https://cloud.test/api/desktop/password-verification',
-    body: { loginType: 'phone', login: '13800138000', password: 'correct horse battery staple' },
-  }]);
+  assert.deepStrictEqual(passwordVerificationRequests, [
+    { url: 'https://cloud.test/api/desktop/password-verification', body: { loginType: 'phone', login: '13800138000', password: 'correct horse battery staple' } },
+    { url: 'https://cloud.test/api/desktop/verified-access', body: { verificationToken: 'password-verification-ticket' } },
+  ]);
   assert.strictEqual(passwordClientStored, false, 'password verification must only produce an online registration pending state, never a local session or vault write');
   const enrollmentPending = await passwordVerificationClient.beginPasswordEnrollment({
     baseUrl: 'https://cloud.test', deviceName: 'Password enrollment desktop', idempotencyKey: 'password-enrollment-1',
@@ -478,9 +685,13 @@ async function main() {
   assert.strictEqual(enrollmentPending.status, 'verified');
   assert.strictEqual(enrollmentPending.verificationToken, 'password-enrollment-ticket');
   assert.strictEqual(enrollmentPending.deviceChallenge, 'cloud-password-enrollment-proof');
-  assert.deepStrictEqual(passwordVerificationRequests.at(-1), {
+  assert.deepStrictEqual(enrollmentPending.desktopAccess, { access: 'teacher_registration_required', roles: [], teacherId: null });
+  assert.deepStrictEqual(passwordVerificationRequests.at(-2), {
     url: 'https://cloud.test/api/desktop/password-enrollment',
     body: { phoneCode: 'wechat-phone-proof', loginName: 'teacher.a', password: 'correct horse battery staple' },
+  });
+  assert.deepStrictEqual(passwordVerificationRequests.at(-1), {
+    url: 'https://cloud.test/api/desktop/verified-access', body: { verificationToken: 'password-enrollment-ticket' },
   });
   assert.strictEqual(passwordClientStored, false, 'password enrollment must also stop before any local vault or session persistence');
   const ticketEnrollmentPending = await passwordVerificationClient.enrollPasswordForVerifiedRegistration({
@@ -524,8 +735,9 @@ async function main() {
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/desktop/question-bank/asset-deliveries/question_asset_delivery_12345678/download');
   const updatedCloudSchedule = await unifiedCloudClient.updateCloudSchedule({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, scheduleId: 'schedule-cloud-1',
-    expectedUpdatedAt: '2026-08-21T01:00:00.000Z', startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z',
-    status: 2, roomDisplay: 'Cloud room', tuition: 120, teacherFee: 60, notes: 'cloud update',
+    expectedUpdatedAt: '2026-08-21T01:00:00.000Z', courseId: 'course-cloud-2',
+    startAt: '2026-08-22T01:00:00.000Z', endAt: '2026-08-22T02:00:00.000Z', recurringRule: '{"frequency":"weekly"}',
+    status: 2, roomDisplay: 'Cloud room', serviceType: 2, tuition: 120, teacherFee: 60, notes: 'cloud update',
     pricings: [{ studentId: 'student-cloud-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
   });
   assert.deepStrictEqual(updatedCloudSchedule, { id: 'schedule-cloud-1', updatedAt: '2026-08-22T00:00:00.000Z' });
@@ -663,6 +875,215 @@ async function main() {
   });
   assert.strictEqual(unexpectedNetworkCalls, 0,
     'the command bridge must remain transport-injected until a reviewed cloud endpoint exists');
+
+  const roleSwitchEvents = [];
+  const roleSwitchClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => ({ state: 'unlocked' }),
+      acceptIssuedSession: async input => {
+        roleSwitchEvents.push(['issued', input]);
+        return { state: 'unlocked', authorizationId: input.session.id, activeRole: input.session.activeRole };
+      },
+    },
+    sessionStore: {
+      save: async value => { roleSwitchEvents.push(['save', value]); },
+      clear: async () => {},
+    },
+    clearRoleCache: async partition => { roleSwitchEvents.push(['clear', partition]); },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, data: {
+      token: 'teacher-token-after-role-switch',
+      session: {
+        id: 'teacher-session-after-role-switch', userId: 'role-user-1', deviceId: 'role-device-1',
+        activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'role-teacher-1',
+        expiresAt: '2026-09-01T12:00:00.000Z', rowVersion: 1,
+      },
+      profile: {
+        userId: 'role-user-1', activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'role-teacher-1',
+      },
+      offlineLease: { id: 'teacher-lease-after-role-switch' },
+    } }) }),
+  });
+  await roleSwitchClient.switchRole({
+    baseUrl: 'https://cloud.test',
+    currentSession: {
+      token: 'admin-token-before-role-switch', offline: false,
+      session: {
+        id: 'admin-session-before-role-switch', userId: 'role-user-1', deviceId: 'role-device-1',
+        activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'role-teacher-1', rowVersion: 7,
+      },
+      profile: { userId: 'role-user-1', activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'role-teacher-1' },
+    },
+    activeRole: 'teacher',
+  });
+  assert.strictEqual(roleSwitchEvents[1][0], 'issued');
+  assert.deepStrictEqual(roleSwitchEvents[1][1].session, roleSwitchEvents[2][1].session);
+  assert.strictEqual(roleSwitchEvents[1][1].profile.activeRole, 'teacher');
+  assert.deepStrictEqual(roleSwitchEvents[1][1].offlineLease, { id: 'teacher-lease-after-role-switch' },
+    'a cloud role switch must atomically replace the session identity and role-bound lease before persistence');
+  assert.strictEqual(roleSwitchEvents[2][0], 'save');
+
+  let adminSwitchStored = null;
+  let passiveResumeCalls = 0;
+  const adminSwitchClient = createDesktopIdentityClient({
+    desktopIdentity: {
+      status: async () => ({ state: 'unlocked' }),
+      resume: async () => { passiveResumeCalls += 1; return { state: 'unlocked' }; },
+      signChallenge: async () => ({
+        elevationIssuedAt: '2026-09-01T10:15:00.000Z',
+        signature: 'admin-elevation-signature',
+      }),
+      acceptIssuedSession: async input => ({
+        state: 'unlocked', authorizationId: input.session.id, activeRole: input.session.activeRole,
+      }),
+    },
+    sessionStore: { save: async value => { adminSwitchStored = value; }, clear: async () => {} },
+    clearRoleCache: async () => {},
+    fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, data: {
+      token: 'admin-token-after-role-switch',
+      session: {
+        id: 'admin-session-after-role-switch', userId: 'role-user-1', deviceId: 'role-device-1',
+        activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'],
+        teacherId: null, studentId: null, expiresAt: '2026-09-01T12:15:00.000Z', rowVersion: 8,
+      },
+      profile: {
+        userId: 'role-user-1', user: { id: 'role-user-1', name: 'Fresh Cloud Profile' },
+        activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'], teacherId: null, studentId: null,
+      },
+      offlineLease: { id: 'admin-lease-after-role-switch' },
+    } }) }),
+  });
+  const switchedAdminSession = await adminSwitchClient.switchRole({
+    baseUrl: 'https://cloud.test',
+    currentSession: {
+      token: 'teacher-token-before-admin-switch', offline: false,
+      session: {
+        id: 'teacher-session-before-admin-switch', userId: 'role-user-1', deviceId: 'role-device-1',
+        activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'],
+        teacherId: 'role-teacher-1', studentId: null, rowVersion: 7,
+      },
+      profile: {
+        userId: 'role-user-1', user: { id: 'role-user-1', name: 'Stale Teacher Profile' },
+        activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'],
+        teacherId: 'role-teacher-1', studentId: 'stale-student-scope',
+      },
+    },
+    activeRole: 'super_admin',
+  });
+  assert.strictEqual(switchedAdminSession.profile.user.name, 'Fresh Cloud Profile',
+    'role exchange must build the renderer profile from exchanged.profile instead of the old fallback');
+  assert.strictEqual(switchedAdminSession.profile.teacherId, null);
+  assert.strictEqual(switchedAdminSession.profile.studentId, null);
+  assert.strictEqual(adminSwitchStored.profile.teacherId, null);
+  assert.strictEqual(adminSwitchStored.profile.studentId, null);
+  assert.strictEqual(passiveResumeCalls, 0,
+    'privileged role elevation must not renew user-presence freshness through passive vault resume');
+  const adminAuthorization = normalizeDesktopAuthorizationSession(adminSwitchStored);
+  assert.strictEqual(adminAuthorization.authContext.teacherId, null);
+  assert.strictEqual(adminAuthorization.authContext.studentId, null);
+
+  const integrationWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-issued-session-'));
+  const leaseKeys = crypto.generateKeyPairSync('ed25519');
+  let integrationClock = new Date('2026-09-01T10:00:00.000Z');
+  const integrationVault = createDesktopIdentityVault({
+    filePath: path.join(integrationWorkspace, 'identity.bin'),
+    safeStorage: mockSafeStorage(),
+    offlineLeasePublicKey: leaseKeys.publicKey,
+    now: () => new Date(integrationClock),
+  });
+  const integrationIdentity = integrationVault.beginUnifiedOnlineRegistration({ deviceName: 'Issued session test' });
+  const baseLeaseInput = {
+    userId: 'issued-user-1', deviceId: integrationIdentity.deviceId, credentialVersion: 1,
+    eligibleRoles: ['super_admin', 'teacher'], activeRole: 'teacher', teacherId: 'issued-teacher-1',
+    issuedAt: '2026-09-01T10:00:00.000Z', expiresAt: '2026-09-01T11:00:00.000Z',
+  };
+  integrationVault.completeRegistration({
+    authorization: {
+      id: 'issued-session-old', deviceId: integrationIdentity.deviceId,
+      deviceName: integrationIdentity.deviceName, deviceKind: integrationIdentity.deviceKind,
+      userId: 'issued-user-1', keyFingerprint: integrationIdentity.keyFingerprint,
+      status: 'active', authorizationSource: 'wechat_phone', credentialVersion: 1,
+      lastPhoneVerifiedAt: '2026-09-01T10:00:00.000Z', phoneReverifyDueAt: '2026-09-01T11:00:00.000Z',
+    },
+    profile: {
+      userId: 'issued-user-1', user: { id: 'issued-user-1', name: 'Issued User' },
+      eligibleRoles: ['super_admin', 'teacher'], activeRole: 'teacher', teacherId: 'issued-teacher-1', studentId: null,
+    },
+    offlineLease: signedOfflineLease(leaseKeys.privateKey, {
+      ...baseLeaseInput, id: 'issued-lease-old', authorizationId: 'issued-session-old',
+    }),
+  });
+  integrationVault.lock();
+  integrationClock = new Date('2026-09-01T10:00:01.000Z');
+  const renewedSession = {
+    id: 'issued-session-renewed', userId: 'issued-user-1', deviceId: integrationIdentity.deviceId,
+    activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'issued-teacher-1', studentId: null,
+    expiresAt: '2026-09-01T12:00:00.000Z', rowVersion: 1,
+  };
+  const renewedProfile = {
+    userId: 'issued-user-1', user: { id: 'issued-user-1', name: 'Unsigned replacement name' },
+    activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'], teacherId: 'stale-teacher-scope', studentId: 'stale-student-scope',
+  };
+  const renewedLease = signedOfflineLease(leaseKeys.privateKey, {
+    ...baseLeaseInput, id: 'issued-lease-renewed', authorizationId: renewedSession.id,
+    issuedAt: integrationClock.toISOString(), expiresAt: renewedSession.expiresAt,
+  });
+  let integrationStored = null;
+  const integrationClient = createDesktopIdentityClient({
+    desktopIdentity: integrationVault,
+    now: () => new Date(integrationClock),
+    sessionStore: {
+      save: async value => { integrationStored = value; },
+      clear: async () => {},
+    },
+    fetchImpl: async url => {
+      if (url.endsWith('/api/desktop-identity/session/challenges/start')) {
+        return { ok: true, json: async () => ({ success: true, data: { challenge: {
+          id: 'issued-challenge-1', authorizationId: 'issued-session-old', credentialVersion: 1,
+          nonce: 'issued-nonce-1', nonceIssuedAt: integrationClock.toISOString(), rowVersion: 1,
+        } } }) };
+      }
+      return { ok: true, json: async () => ({ success: true, data: {
+        token: 'issued-token-renewed', session: renewedSession, profile: renewedProfile, offlineLease: renewedLease,
+      } }) };
+    },
+  });
+  const integratedResume = await integrationClient.resume({ baseUrl: 'https://cloud.test', online: true });
+  assert.strictEqual(integrationVault.status().authorizationId, renewedSession.id);
+  assert.strictEqual(integrationVault.status().offlineLease.id, renewedLease.id);
+  assert.strictEqual(integrationVault.status().user.name, 'Issued User',
+    'unsigned display fields must not replace the locally verified identity');
+  assert.strictEqual(integrationStored.session.id, renewedSession.id);
+  assert.strictEqual(integratedResume.gateState.kind, 'online-unlocked');
+
+  integrationClock = new Date('2026-09-01T10:05:00.000Z');
+  const switchedSession = {
+    ...renewedSession, id: 'issued-session-admin', activeRole: 'super_admin', teacherId: null,
+    expiresAt: '2026-09-01T12:05:00.000Z', rowVersion: 1,
+  };
+  const switchedProfile = {
+    ...renewedProfile, activeRole: 'super_admin', teacherId: null,
+  };
+  const switchedLease = signedOfflineLease(leaseKeys.privateKey, {
+    ...baseLeaseInput, id: 'issued-lease-admin', authorizationId: switchedSession.id,
+    activeRole: 'super_admin', teacherId: null, expiresAt: switchedSession.expiresAt,
+    issuedAt: integrationClock.toISOString(),
+  });
+  const roleIntegrationClient = createDesktopIdentityClient({
+    desktopIdentity: integrationVault,
+    now: () => new Date(integrationClock),
+    sessionStore: { save: async value => { integrationStored = value; }, clear: async () => {} },
+    clearRoleCache: async () => {},
+    fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, data: {
+      token: 'issued-token-admin', session: switchedSession, profile: switchedProfile, offlineLease: switchedLease,
+    } }) }),
+  });
+  await assert.rejects(
+    () => roleIntegrationClient.switchRole({ baseUrl: 'https://cloud.test', currentSession: integratedResume, activeRole: 'super_admin' }),
+    error => error.code === 'DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED',
+    'a passive cold-start resume must not count as recent interactive authentication for administrator elevation',
+  );
+  assert.strictEqual(integrationVault.status().authorizationId, renewedSession.id);
+  assert.strictEqual(integrationVault.status().activeRole, 'teacher');
 
   console.log('desktop identity client checks passed');
 }

@@ -18,6 +18,24 @@ assert.ok(
   source.includes("readText('src/services/authorityTransports.mjs')"),
   'deploy readiness must inspect the formal authority transport source'
 );
+assert.strictEqual(
+  source.includes("readText('gateway/src/routes/cloudRelay.js')"),
+  false,
+  'deploy readiness must not inspect the retired gateway cloud-relay implementation'
+);
+assert.ok(
+  source.includes("readText('gateway/src/app.js')"),
+  'deploy readiness must inspect the formal gateway runtime boundary'
+);
+for (const marker of [
+  "legacyAuthority: 'retired'",
+  "'CLOUD_RELAY_RETIRED'",
+  "'GATEWAY_AUTH_RETIRED'",
+  "'GATEWAY_ADMIN_RETIRED'",
+  "'GATEWAY_PERMISSIONS_RETIRED'",
+]) {
+  assert.ok(source.includes(marker), `deploy readiness must gate gateway retirement marker: ${marker}`);
+}
 
 for (const name of ['DEPLOY_HOST', 'DEPLOY_PASSWORD', 'DEPLOY_KEY_PATH', 'BACKEND_JWT_SECRET', 'WECHAT_APPID', 'WECHAT_APPSECRET']) {
   assert.ok(source.includes(name), `deploy readiness should check ${name}`);

@@ -74,8 +74,13 @@ function checkBuiltDist() {
 function checkLoginContract() {
   const loginSource = readText(path.join(miniappDir, 'src', 'pages', 'login', 'index.tsx'), 'miniapp login page');
   const runtimeSource = readText(path.join(miniappDir, 'src', 'pages', 'login', 'manualPhoneLoginRuntime.js'), 'miniapp login runtime');
-  const backendAuthSource = readText(path.join(rootDir, 'backend', 'src', 'routes', 'auth.js'), 'backend auth route');
-  if (containsRetiredBindingReviewLoginFlow(`${loginSource}\n${runtimeSource}\n${backendAuthSource}`)) {
+  const retiredBackendAuthPath = path.join(rootDir, 'backend', 'src', 'routes', 'auth.js');
+  if (fs.existsSync(retiredBackendAuthPath)) fail('retired local backend auth route must stay deleted');
+  const cloudAuthSource = readText(path.join(rootDir, 'cloud-business-api', 'src', 'app.js'), 'cloud business auth route');
+  if (!cloudAuthSource.includes("app.post('/api/miniapp/cloud-login'")) {
+    fail('cloud business authority must expose the miniapp login route');
+  }
+  if (containsRetiredBindingReviewLoginFlow(`${loginSource}\n${runtimeSource}\n${cloudAuthSource}`)) {
     fail('manual-phone login must not contain the retired binding-review outcome');
   }
 }

@@ -6,9 +6,10 @@ const apiClient = fs.readFileSync('miniapp/src/utils/api.ts', 'utf-8');
 const { pageInventory } = require('./miniappUiPageInventory');
 const loginInventory = pageInventory.find(entry => entry.route === 'pages/login/index');
 
-assert.strictEqual((loginPage.match(/openType="getPhoneNumber"/g) || []).length, 1, 'login page must use the official one-time phone proof');
+assert.strictEqual((loginPage.match(/openType="getPhoneNumber"/g) || []).length, 2, 'normal sign-in and desktop confirmation must each use an official one-time phone proof');
+assert.ok(loginPage.includes('if (desktopLogin)') && loginPage.includes("Taro.reLaunch({ url: '/pages/login/index' })"), 'desktop confirmation must be a mutually exclusive login-page state with a way back to normal sign-in');
 assert.ok(loginPage.includes('miniappCloudAuthApi.login(loginCode, phoneCode)'), 'login must use the dedicated cloud account client with both official identity proofs');
-assert.strictEqual((loginPage.match(/className="wx-login-btn"/g) || []).length, 1, 'login page must expose one clear WeChat login action');
+assert.strictEqual((loginPage.match(/className="wx-login-btn"/g) || []).length, 2, 'each mutually exclusive login-page state must expose one clear primary action');
 assert.ok(!loginPage.includes('handleCloudLogin(null)'), 'every WeChat login must obtain a current official phone proof');
 assert.ok(loginPage.includes('Taro.login()'), 'login must obtain the official WeChat identity code before calling cloud login');
 assert.ok(loginPage.includes('event?.detail?.code'), 'login must pass only the official one-time phone proof');

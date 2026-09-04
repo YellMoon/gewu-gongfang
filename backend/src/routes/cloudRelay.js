@@ -10,7 +10,6 @@ const { roleForUser } = require('../services/authorizationPolicy');
 const { actorGrantFromSyncActor, resolveTaskActorGrant } = require('../services/cloudRelayActorGrant');
 const { createPrimaryHostIdentityService } = require('../services/primaryHostIdentityService');
 const taskService = require('../services/cloudRelayTaskService');
-const { createMiniappProvisioningReconciler } = require('../services/miniappProvisioningReconciler');
 const { buildQuestionPreviewIndex, safeHostBaseUrl } = require('../services/questionPreviewIndex');
 const { createLegacyArchitectureGate } = require('../services/legacyArchitectureGate');
 
@@ -387,10 +386,7 @@ router.post('/tasks/:id/complete', requireHostWrite, (req, res) => {
   if (Number(row.protocol_version || 1) >= 2) {
     try {
       const task = taskService.completeV2Task(db, req.params.id, req.body || {});
-      const reconciliation = task.task_type === 'identity-provisioning'
-        ? createMiniappProvisioningReconciler({ db }).reconcileCompletedTask(task.id)
-        : null;
-      return res.json({ success: true, task, reconciliation });
+      return res.json({ success: true, task });
     }
     catch (error) { return taskRouteError(res, error); }
   }

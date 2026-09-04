@@ -15,12 +15,12 @@ type ProfileMode = 'existing' | 'new';
 
 const ROLE_OPTIONS = [
   { value: 'student' as RequestedIdentity, label: '\u5b66\u751f' },
-  { value: 'teacher' as RequestedIdentity, label: '\u8001\u5e08' },
+  { value: 'teacher' as RequestedIdentity, label: '\u6559\u5e08' },
   { value: 'family_member' as RequestedIdentity, label: '\u5bb6\u5ead\u6210\u5458' },
 ];
 const PROFILE_MODE_OPTIONS = [
-  { value: 'existing' as ProfileMode, label: '\u5173\u8054\u5df2\u6709\u8eab\u4efd' },
-  { value: 'new' as ProfileMode, label: '\u521b\u5efa\u65b0\u8eab\u4efd' },
+  { value: 'existing' as ProfileMode, label: '\u6211\u5df2\u6709\u76f8\u5173\u8d44\u6599' },
+  { value: 'new' as ProfileMode, label: '\u9996\u6b21\u767b\u8bb0' },
 ];
 
 function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode): string {
@@ -33,7 +33,13 @@ function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity
 }
 
 function responseData(response: any): any {
-  if (!response?.success) throw new Error(response?.error || '\u8bf7\u6c42\u5931\u8d25');
+  if (!response?.success) {
+    const messages: Record<string, string> = {
+      CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED: '\u586b\u5199\u7684\u624b\u673a\u53f7\u4e0e\u5f53\u524d\u8d26\u53f7\u5df2\u9a8c\u8bc1\u624b\u673a\u53f7\u4e0d\u4e00\u81f4',
+      CLOUD_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT: '\u7533\u8bf7\u5185\u5bb9\u5df2\u53d8\u66f4\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u540e\u91cd\u65b0\u63d0\u4ea4',
+    };
+    throw new Error(messages[response?.code] || response?.error || '\u8bf7\u6c42\u5931\u8d25');
+  }
   return response.data || response;
 }
 
@@ -87,7 +93,8 @@ export default function AccountApplicationPage() {
       const request = buildRoleApplicationRequest({ requestedIdentity, profileMode, profileName, contactPhone }) as {
         requestedIdentity: RequestedIdentity;
         profileMode: ProfileMode;
-        bindingHint: string;
+        profileName: string;
+        profilePhone: string;
       };
       const token = String(Taro.getStorageSync('auth_token') || '').trim();
       const result = responseData(await miniappCloudBusinessApi.submitRoleApplication(
@@ -114,10 +121,8 @@ export default function AccountApplicationPage() {
     : PROFILE_MODE_OPTIONS[profileModeIndex].value;
   const nameLabel = requestedIdentity === 'family_member'
     ? '\u5b66\u751f\u59d3\u540d'
-    : (profileMode === 'new' ? '\u65b0\u8eab\u4efd\u59d3\u540d' : '\u5173\u8054\u5bf9\u8c61\u59d3\u540d');
-  const phoneLabel = requestedIdentity === 'family_member'
-    ? '\u5b66\u751f\u6216\u76d1\u62a4\u4eba\u624b\u673a\u53f7'
-    : (profileMode === 'new' ? '\u65b0\u8eab\u4efd\u5e38\u7528\u624b\u673a\u53f7' : '\u5173\u8054\u5bf9\u8c61\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7');
+    : '\u59d3\u540d';
+  const phoneLabel = '\u5f53\u524d\u8d26\u53f7\u624b\u673a\u53f7';
 
   return (
       <View className='application-page'>
@@ -174,7 +179,7 @@ export default function AccountApplicationPage() {
               onInput={event => setContactPhone(event.detail.value)}
               placeholder='请输入 11 位手机号'
             />
-            <Text className='field-tip'>{profileMode === 'new' ? '\u5ba1\u6838\u901a\u8fc7\u540e\u4f1a\u5efa\u7acb\u8eab\u4efd\u5e76\u5b8c\u6210\u7ed1\u5b9a\u3002' : '\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u4e0e\u5df2\u7ed1\u5b9a\u624b\u673a\u53f7\uff0c\u4e0d\u9700\u8981\u8f93\u5165\u7cfb\u7edf\u7f16\u53f7\u3002'}</Text>
+            <Text className='field-tip'>{profileMode === 'new' ? '\u5fc5\u987b\u4e0e\u672c\u6b21\u767b\u5f55\u5df2\u9a8c\u8bc1\u7684\u624b\u673a\u53f7\u4e00\u81f4\uff1b\u901a\u8fc7\u540e\u4f1a\u81ea\u52a8\u5b8c\u6210\u767b\u8bb0\u3002' : '\u5fc5\u987b\u4e0e\u672c\u6b21\u767b\u5f55\u5df2\u9a8c\u8bc1\u7684\u624b\u673a\u53f7\u4e00\u81f4\uff1b\u5ba1\u6838\u65f6\u4f1a\u6838\u5bf9\u59d3\u540d\u548c\u5df2\u6709\u8d44\u6599\u3002'}</Text>
           </View>
 
           <Button

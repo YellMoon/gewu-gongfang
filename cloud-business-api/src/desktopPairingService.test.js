@@ -7,7 +7,7 @@ let now = new Date('2026-08-21T12:00:00.000Z');
 let serial = 0;
 const verificationInputs = [];
 const issuedIdentities = [];
-const schemeInputs = [];
+const codeInputs = [];
 const service = createDesktopPairingService({
   now: () => now,
   randomId: prefix => `${prefix}-${++serial}`,
@@ -22,9 +22,9 @@ const service = createDesktopPairingService({
   inspectVerificationToken: token => token === 'verification-token-1'
     ? { challenge: 'desktop-proof-challenge-1' }
     : null,
-  generateLoginScheme: async input => {
-    schemeInputs.push(input);
-    return 'weixin://dl/business/?t=pairing-1';
+  generateLoginCode: async input => {
+    codeInputs.push(input);
+    return 'data:image/png;base64,cHJvZHVjdGlvbi1taW5pYXBwLXFy';
   },
 });
 
@@ -34,14 +34,17 @@ const service = createDesktopPairingService({
     installationPublicKey: 'public-key-1',
     idempotencyKey: 'register-1',
   });
-  assert.deepStrictEqual(Object.keys(started).sort(), ['expiresAt', 'pairingId', 'pairingSecret', 'qrValue']);
-  assert.strictEqual(started.qrValue, 'weixin://dl/business/?t=pairing-1');
-  assert.deepStrictEqual(schemeInputs, [{ pairingId: started.pairingId, pairingSecret: started.pairingSecret, expiresAt: started.expiresAt }]);
+  assert.deepStrictEqual(Object.keys(started).sort(), ['expiresAt', 'pairingId', 'pairingSecret', 'qrImageDataUrl']);
+  assert.strictEqual(started.qrImageDataUrl, 'data:image/png;base64,cHJvZHVjdGlvbi1taW5pYXBwLXFy');
+  assert.strictEqual(codeInputs.length, 1);
+  assert.match(codeInputs[0].scene, /^d_[A-Za-z0-9_-]{30}$/u);
+  assert.ok(!codeInputs[0].scene.includes(started.pairingId));
+  assert.ok(!codeInputs[0].scene.includes(started.pairingSecret));
+  assert.deepStrictEqual(Object.keys(codeInputs[0]), ['scene']);
   assert.strictEqual(service.read({ pairingId: started.pairingId, pairingSecret: started.pairingSecret }).status, 'awaiting_online_verification');
 
   const verified = await service.confirm({
-    pairingId: started.pairingId,
-    pairingSecret: started.pairingSecret,
+    scene: codeInputs[0].scene,
     loginCode: 'wechat-login-code',
     phoneCode: 'wechat-phone-code',
   });
@@ -54,11 +57,16 @@ const service = createDesktopPairingService({
     deviceChallenge: 'desktop-proof-challenge-1',
   });
 
-  await service.confirm({ pairingId: started.pairingId, pairingSecret: started.pairingSecret, loginCode: 'unused-login-code', phoneCode: 'unused-replay-code' });
+  await service.confirm({ scene: codeInputs[0].scene, loginCode: 'unused-login-code', phoneCode: 'unused-replay-code' });
   assert.strictEqual(verificationInputs.length, 1, 'a verified attempt must not consume another phone proof');
   assert.throws(
     () => service.read({ pairingId: started.pairingId, pairingSecret: 'wrong-secret' }),
     error => error?.code === 'CLOUD_DESKTOP_PAIRING_REJECTED',
+  );
+  await assert.rejects(
+    () => service.confirm({ pairingId: started.pairingId, pairingSecret: started.pairingSecret, loginCode: 'legacy-login-code', phoneCode: 'legacy-phone-code' }),
+    error => error?.code === 'CLOUD_DESKTOP_PAIRING_REJECTED',
+    'the miniapp confirmation endpoint must no longer accept pairing secrets embedded in legacy links',
   );
 
   const expiring = await service.start({ installationId: 'installation-2', installationPublicKey: 'public-key-2', idempotencyKey: 'register-2' });

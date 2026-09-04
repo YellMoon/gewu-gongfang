@@ -1,9 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const {
-  verifySignedAuthorityProjection,
-} = require('../shared/authorityProjectionProtocol');
 const { stableJson } = require('../shared/authorityProtocol');
 
 function runtimeError(code) {
@@ -19,25 +16,17 @@ function createDesktopAuthorityRuntime({
   filePath,
   safeStorage,
   vault,
-  durableRelayBaseUrl,
   cloudBusinessBaseUrl,
-  relayWebSocketBaseUrl,
-  relayWebSocketTransport,
-  WebSocketImpl,
   fetchImpl = fetch,
   requestTimeoutMs = 5_000,
   AbortControllerImpl = globalThis.AbortController,
-  sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
-  receiptPollAttempts = 30,
-  receiptPollIntervalMs = 1000,
   createId,
   now,
   isOnline = () => true,
   fsImpl = fs,
 } = {}) {
   if (!filePath || !safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function'
-    || typeof vault?.createAuthorityCommand !== 'function'
-    || typeof vault?.signAuthorityHttpRequest !== 'function'
+    || typeof vault?.status !== 'function'
     || typeof isOnline !== 'function') {
     throw runtimeError('DESKTOP_AUTHORITY_RUNTIME_CONFIG_REQUIRED');
   }
@@ -92,6 +81,9 @@ function createDesktopAuthorityRuntime({
       || Array.isArray(input.payload)) {
       throw runtimeError('AUTHORITY_DRAFT_INVALID');
     }
+    if (!isCloudQuestionDraft(input) && !isCloudBusinessDraft(input)) {
+      throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
+    }
   }
 
   function currentTimeMs() {
@@ -126,6 +118,7 @@ function createDesktopAuthorityRuntime({
       || Number(lease.credentialVersion) !== Number(status.credentialVersion)) {
       throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
     }
+    return status;
   }
 
   function assertOnlineSubmission() {
@@ -157,8 +150,63 @@ function createDesktopAuthorityRuntime({
     return value.sessionToken;
   }
 
+  function businessDraftDescriptor(input) {
+    const match = /^(student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.(v[1-9][0-9]*)$/.exec(String(input?.type || ''));
+    if (!match) return null;
+    const rawRecordId = match[2] === 'create' ? input.payload?.record?.id : input.payload?.id;
+    if (typeof rawRecordId !== 'string') return null;
+    const recordId = rawRecordId.trim();
+    return recordId ? { entity: match[1], action: match[2], version: match[3], recordId } : null;
+  }
+
+  function mergePendingBusinessDraft(state, input, updatedAt, draftScope) {
+    const incoming = businessDraftDescriptor(input);
+    if (!incoming) return undefined;
+    const existing = Object.values(state.items).find(item => (
+      item?.status === 'awaiting_confirmation'
+      && item.draftScope?.userId === draftScope.userId
+      && item.draftScope?.businessAuthority === draftScope.businessAuthority
+      && businessDraftDescriptor(item)?.entity === incoming.entity
+      && businessDraftDescriptor(item)?.recordId === incoming.recordId
+    ));
+    if (!existing) return undefined;
+    const previous = businessDraftDescriptor(existing);
+    if (previous.action === 'update' && incoming.action === 'update') {
+      existing.payload = {
+        id: incoming.recordId,
+        expectedVersion: existing.payload.expectedVersion || input.payload.expectedVersion,
+        changes: {
+          ...(existing.payload.changes || {}),
+          ...(input.payload.changes || {}),
+        },
+      };
+    } else if (previous.action === 'create' && incoming.action === 'update') {
+      existing.payload = {
+        record: {
+          ...(existing.payload.record || {}),
+          ...(input.payload.changes || {}),
+          id: incoming.recordId,
+        },
+      };
+    } else if (previous.action === 'create' && incoming.action === 'delete') {
+      delete state.items[existing.id];
+      return null;
+    } else if (previous.action === 'update' && incoming.action === 'delete') {
+      existing.type = `${incoming.entity}.delete.${incoming.version}`;
+      existing.payload = {
+        id: incoming.recordId,
+        expectedVersion: existing.payload.expectedVersion || input.payload.expectedVersion,
+      };
+    } else {
+      return undefined;
+    }
+    existing.preview = JSON.parse(JSON.stringify(input.preview || existing.preview || {}));
+    existing.updatedAt = updatedAt;
+    return existing;
+  }
+
   function appendDraftBatchSync(inputs) {
-    assertLocalDraftSession();
+    const localDraftStatus = assertLocalDraftSession();
     if (!Array.isArray(inputs) || inputs.length === 0) {
       throw runtimeError('AUTHORITY_DRAFT_BATCH_INVALID');
     }
@@ -178,9 +226,15 @@ function createDesktopAuthorityRuntime({
       || !state.items || typeof state.items !== 'object' || Array.isArray(state.items)) {
       throw runtimeError('AUTHORITY_OUTBOX_CORRUPT');
     }
+    const draftScope = Object.freeze({
+      userId: String(localDraftStatus.user.id),
+      businessAuthority: String(cloudBusinessBaseUrl || '').replace(/\/+$/, ''),
+    });
     const appended = inputs.map(input => {
-      const id = String(createId ? createId() : createSecureOutboxId()).trim();
       const createdAt = new Date(now ? now() : new Date().toISOString()).toISOString();
+      const merged = mergePendingBusinessDraft(state, input, createdAt, draftScope);
+      if (merged !== undefined) return merged;
+      const id = String(createId ? createId() : createSecureOutboxId()).trim();
       if (!id || !Number.isFinite(Date.parse(createdAt))) {
         throw runtimeError('AUTHORITY_DRAFT_ID_OR_CLOCK_INVALID');
       }
@@ -190,6 +244,7 @@ function createDesktopAuthorityRuntime({
         type: input.type,
         payload: JSON.parse(JSON.stringify(input.payload)),
         preview: JSON.parse(JSON.stringify(input.preview || {})),
+        draftScope,
         status: 'awaiting_confirmation',
         createdAt,
         updatedAt: createdAt,
@@ -200,7 +255,7 @@ function createDesktopAuthorityRuntime({
       };
       state.items[id] = item;
       return item;
-    });
+    }).filter(Boolean);
     const sealed = safeStorage.encryptString(JSON.stringify(state)).toString('base64');
     const temporary = `${filePath}.tmp`;
     fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -259,70 +314,14 @@ function createDesktopAuthorityRuntime({
     return body;
   }
 
-  function durableTransport() {
-    const baseUrl = String(durableRelayBaseUrl || '').replace(/\/+$/, '');
-    return Object.freeze({
-      name: 'durable-relay',
-      isReady: async () => Boolean(baseUrl),
-      async submit(envelope) {
-        if (!baseUrl) throw runtimeError('HOST_TRANSPORT_UNAVAILABLE');
-        const submitPath = '/api/authority/commands';
-        const submitAuth = vault.signAuthorityHttpRequest({
-          method: 'POST',
-          path: submitPath,
-          body: envelope,
-        });
-        try {
-          await requestJson(`${baseUrl}${submitPath}`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              ...(submitAuth.headers || {}),
-            },
-            body: JSON.stringify(envelope),
-          });
-        } catch (error) {
-          // A timeout can happen after the cloud has durably accepted the
-          // idempotent command. Continue by reading its receipt; never submit
-          // a second envelope from inside this transport attempt.
-          if (error?.code !== 'AUTHORITY_HTTP_TIMEOUT') throw error;
-        }
-        const receiptPath = `/api/authority/commands/${encodeURIComponent(envelope.commandId)}/receipt`;
-        const attempts = Math.max(1, Number(receiptPollAttempts) || 1);
-        for (let attempt = 0; attempt < attempts; attempt += 1) {
-          const readAuth = vault.signAuthorityHttpRequest({
-            method: 'GET',
-            path: receiptPath,
-            body: null,
-          });
-          try {
-            const body = await requestJson(`${baseUrl}${receiptPath}`, {
-              method: 'GET',
-              headers: { ...(readAuth.headers || {}) },
-            });
-            if (body?.receipt) return body.receipt;
-          } catch (error) {
-            if (error?.statusCode !== 404 && error?.code !== 'AUTHORITY_HTTP_TIMEOUT') throw error;
-          }
-          if (attempt + 1 < attempts) await sleep(receiptPollIntervalMs);
-        }
-        throw runtimeError('AUTHORITY_RECEIPT_PENDING');
-      },
-    });
-  }
-
   async function getClient() {
     if (!clientPromise) {
       clientPromise = (async () => {
         const [{ createDesktopCommandOutbox }, { createDesktopAuthorityClient },
-          { createAuthorityTransportSelector },
-          { authorityWebSocketUrl, createAuthorityWebSocketTransport },
           { createDesktopIdentityClient },
           { createDesktopCloudBusinessDraftAdapter }] = await Promise.all([
           import('../src/services/desktopCommandOutbox.mjs'),
           import('../src/services/desktopAuthorityClient.mjs'),
-          import('../src/services/authorityTransports.mjs'),
-          import('../src/services/authorityWebSocketTransport.mjs'),
           import('../src/services/desktopIdentityClient.mjs'),
           import('../src/services/desktopCloudBusinessDraft.mjs'),
         ]);
@@ -336,22 +335,6 @@ function createDesktopAuthorityRuntime({
           createId: createId || createSecureOutboxId,
           ...(now ? { now } : {}),
         });
-        const socketTransport = (name, baseUrl) => {
-          const normalized = String(baseUrl || '').trim();
-          if (!normalized || typeof WebSocketImpl !== 'function') return null;
-          return createAuthorityWebSocketTransport({
-            name,
-            url: authorityWebSocketUrl(normalized),
-            WebSocketImpl,
-            signRequest: input => vault.signAuthorityHttpRequest(input),
-          });
-        };
-        const transports = createAuthorityTransportSelector({
-          relayWebSocketTransport: relayWebSocketTransport
-            || socketTransport('relay-websocket', relayWebSocketBaseUrl),
-          durableRelayTransport: durableTransport(),
-        });
-        const baseUrl = String(durableRelayBaseUrl || '').replace(/\/+$/, '');
         const normalizedCloudBusinessBaseUrl = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
         const cloudBusinessAdapter = normalizedCloudBusinessBaseUrl
           ? createDesktopCloudBusinessDraftAdapter({
@@ -367,11 +350,10 @@ function createDesktopAuthorityRuntime({
           : null;
         return createDesktopAuthorityClient({
           outbox,
-          createEnvelope: async draft => vault.createAuthorityCommand({
-            type: draft.type,
-            payload: draft.payload,
-          }).envelope,
-          transports,
+          createEnvelope: async () => { throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED'); },
+          transports: Object.freeze({
+            submit: async () => { throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED'); },
+          }),
           createCloudQuestionCommand: draft => Object.freeze({
             commandId: draft.id,
             payloadHash: crypto.createHash('sha256')
@@ -381,8 +363,8 @@ function createDesktopAuthorityRuntime({
           }),
           submitCloudQuestion: async (command, input) => {
             const token = cloudSessionToken(input);
-            if (!baseUrl) throw runtimeError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
-            const body = await requestJson(`${baseUrl}/api/desktop/question-bank/commands`, {
+            if (!normalizedCloudBusinessBaseUrl) throw runtimeError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
+            const body = await requestJson(`${normalizedCloudBusinessBaseUrl}/api/desktop/question-bank/commands`, {
               method: 'POST',
               headers: {
                 'content-type': 'application/json',
@@ -409,67 +391,6 @@ function createDesktopAuthorityRuntime({
     return clientPromise;
   }
 
-  async function readProjection({ minSourceVersion = 0 } = {}) {
-    const minimumVersion = Number(minSourceVersion || 0);
-    if (!Number.isSafeInteger(minimumVersion) || minimumVersion < 0) {
-      throw runtimeError('AUTHORITY_PROJECTION_VERSION_INVALID');
-    }
-    const projectionPath = '/api/authority/projections/current';
-    const requestAuth = vault.signAuthorityHttpRequest({
-      method: 'GET',
-      path: projectionPath,
-      body: null,
-    });
-    const headers = {
-      ...(requestAuth.headers || {}),
-      'x-gewu-authority-id': requestAuth.authorityId,
-      'x-gewu-authority-lease-id': requestAuth.leaseId,
-      'x-gewu-authority-grant-version': String(requestAuth.grantVersion),
-    };
-    const bases = Array.from(new Set(
-      [durableRelayBaseUrl]
-        .map(value => String(value || '').replace(/\/+$/, ''))
-        .filter(Boolean)
-    ));
-    let lastError = null;
-    const attempts = minimumVersion > 0
-      ? Math.max(1, Number(receiptPollAttempts) || 1)
-      : 1;
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      for (const base of bases) {
-        try {
-          const body = await requestJson(`${base}${projectionPath}`, {
-            method: 'GET',
-            headers,
-          });
-          const projection = verifySignedAuthorityProjection({
-            projection: body?.projection,
-            publicKey: requestAuth.hostPublicKey,
-          });
-          if (projection.authorityId !== requestAuth.authorityId
-            || projection.hostEpochId !== requestAuth.hostEpochId
-            || projection.userId !== requestAuth.actor?.userId
-            || projection.role !== requestAuth.actor?.role) {
-            throw runtimeError('AUTHORITY_PROJECTION_SCOPE_MISMATCH');
-          }
-          if (Number(projection.sourceVersion) < minimumVersion) {
-            lastError = runtimeError('AUTHORITY_PROJECTION_VERSION_PENDING');
-            continue;
-          }
-          return projection;
-        } catch (error) {
-          lastError = error;
-          if (Number(error?.statusCode) > 0 && Number(error.statusCode) < 500
-            && error.statusCode !== 404) {
-            throw error;
-          }
-        }
-      }
-      if (attempt + 1 < attempts) await sleep(receiptPollIntervalMs);
-    }
-    throw lastError || runtimeError('AUTHORITY_PROJECTION_UNAVAILABLE');
-  }
-
   function cloudBusinessUrl(pathname) {
     const base = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
     if (!base) throw runtimeError('CLOUD_ROLE_APPLICATION_AUTHORITY_UNAVAILABLE');
@@ -492,7 +413,8 @@ function createDesktopAuthorityRuntime({
     const decision = String(review?.decision || '').trim();
     const profileId = review?.profileId === null ? null : String(review?.profileId || '').trim();
     if (!/^[A-Za-z0-9._-]{1,128}$/.test(id) || !['approved', 'rejected'].includes(decision)
-      || (decision === 'approved' && !profileId) || (decision === 'rejected' && review?.profileId !== null)) {
+      || !Object.hasOwn(review || {}, 'profileId') || (decision === 'approved' && review.profileId !== null && !profileId)
+      || (decision === 'rejected' && review?.profileId !== null)) {
       throw runtimeError('CLOUD_ROLE_APPLICATION_INPUT_INVALID');
     }
     const token = cloudSessionToken(input);
@@ -506,29 +428,31 @@ function createDesktopAuthorityRuntime({
   }
 
   return Object.freeze({
-    appendDraft: async input => {
-      assertLocalDraftSession();
-      return (await getClient()).appendDraft(input);
-    },
+    appendDraft: async input => appendDraftSync(input),
     appendDraftSync,
     appendDraftBatchSync,
     confirmAndSubmit: async (id, input) => {
       assertOnlineSubmission();
       const client = await getClient();
       const draft = await client.get(id);
-      if (isCloudQuestionDraft(draft) || isCloudBusinessDraft(draft)) cloudSessionToken(input);
+      if (!isCloudQuestionDraft(draft) && !isCloudBusinessDraft(draft)) {
+        throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
+      }
+      cloudSessionToken(input);
       return client.confirmAndSubmit(id, input);
     },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
     listRoleApplications,
-    readProjection,
     reviewRoleApplication,
     submit: async (id, input) => {
       assertOnlineSubmission();
       const client = await getClient();
       const draft = await client.get(id);
-      if (isCloudQuestionDraft(draft) || isCloudBusinessDraft(draft)) cloudSessionToken(input);
+      if (!isCloudQuestionDraft(draft) && !isCloudBusinessDraft(draft)) {
+        throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
+      }
+      cloudSessionToken(input);
       return client.submit(id, input);
     },
   });

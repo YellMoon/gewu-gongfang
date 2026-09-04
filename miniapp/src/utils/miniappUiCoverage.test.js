@@ -226,13 +226,14 @@ for (const category of REQUIRED_COVERAGE_CATEGORIES) {
   assert.ok(runtimeCategories.has(category), `runtime screenshot matrix missing category ${category}`);
 }
 for (const [route, roles] of Object.entries({
-  'pages/index/index': ['super_admin', 'teacher', 'student', 'visitor'],
-  'pages/schedule/index': ['student', 'visitor'],
-  'pages/schedule/detail/index': ['student'],
-  'pages/schedule/edit/index': ['student'],
-  'pages/student-detail/index': ['student'],
-  'pages/question-bank/index': ['super_admin', 'student'],
-  'pages/settings/index': ['student'],
+  'pages/index/index': ['super_admin', 'teacher', 'student', 'family_member', 'visitor'],
+  'pages/schedule/index': ['student', 'family_member', 'visitor'],
+  'pages/schedule/detail/index': ['student', 'family_member'],
+  'pages/schedule/edit/index': ['student', 'family_member'],
+  'pages/student-detail/index': ['student', 'family_member'],
+  'pages/question-bank/index': ['super_admin', 'student', 'family_member'],
+  'pages/settings/index': ['student', 'family_member'],
+  'pages/forbidden/index': ['family_member'],
 })) {
   const covered = new Set(runtimeScenarios.filter(item => item.route === route).map(item => item.roleView));
   roles.forEach(role => assert.ok(covered.has(role), `${route} runtime matrix missing ${role}`));
@@ -240,6 +241,31 @@ for (const [route, roles] of Object.entries({
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-offline'), 'runtime matrix must capture an offline state');
 assert.ok(runtimeScenarios.some(item => item.state === 'preview-forbidden'), 'runtime matrix must capture a permission-denied state');
 assert.ok(runtimeScenarios.some(item => item.state === 'miniapp-readonly-boundary'), 'runtime matrix must capture the limited-write boundary');
+const questionRuntimeScenarios = runtimeScenarios.filter(item => item.route === 'pages/question-bank/index');
+for (const [scenarioId, roleView, interaction] of [
+  ['question-super-admin-rich', 'super_admin', ''],
+  ['question-teacher-rich-basket', 'teacher', 'open-first-question-basket'],
+  ['question-student-rich', 'student', ''],
+  ['question-family-member-rich', 'family_member', ''],
+  ['question-visitor-rich-answer', 'visitor', 'expand-first-answer'],
+]) {
+  const richScenario = questionRuntimeScenarios.find(item => item.id === scenarioId);
+  assert.ok(richScenario, `runtime matrix must include ${scenarioId}`);
+  assert.strictEqual(richScenario.roleView, roleView, `${scenarioId} must exercise the intended role view`);
+  assert.strictEqual(richScenario.fixtureMode, 'question-rich', `${scenarioId} must render complete question cards rather than an empty shell`);
+  assert.strictEqual(richScenario.interaction, interaction, `${scenarioId} must preserve its interaction contract`);
+  assert.notStrictEqual(richScenario.expectedText, '\u9898\u5e93', `${scenarioId} needs page-content evidence, not the native navigation title`);
+}
+assert.strictEqual(
+  questionRuntimeScenarios.find(item => item.id === 'question-super-admin-empty')?.expectedText,
+  '\u9898\u5e93\u4e2d\u6682\u65e0\u9898\u76ee',
+  'question empty-state evidence must follow the current user-facing copy',
+);
+assert.strictEqual(
+  questionRuntimeScenarios.find(item => item.id === 'question-student-offline')?.expectedText,
+  '\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d\u9898\u5e93',
+  'question offline evidence must follow the current user-facing copy',
+);
 assert.strictEqual(
   runtimeScenarios.find(item => item.id === 'privacy-guest')?.interaction,
   'tap-privacy-link',
@@ -247,7 +273,8 @@ assert.strictEqual(
 );
 const guardianScenarios = runtimeScenarios.filter(item => item.identity === 'guardian');
 assert.ok(guardianScenarios.length >= 5, 'runtime matrix must separately exercise the household-member fixture across its student-scoped pages');
-assert.ok(guardianScenarios.every(item => item.roleView === 'student'), 'a household member is a student-scope relationship, not a separate runtime role');
+assert.ok(guardianScenarios.every(item => item.roleView === 'family_member'), 'a household member must use the canonical family_member runtime role');
+assert.ok(guardianScenarios.every(item => item.categories.includes('family-member-path')), 'family-member scenarios must be credited to their own role path');
 const teacherScenarios = runtimeScenarios.filter(item => item.roleView === 'teacher');
 assert.ok(teacherScenarios.some(item => item.route === 'pages/index/index' && item.categories.includes('teacher-path')), 'runtime matrix must separately exercise the teacher dashboard');
 assert.ok(teacherScenarios.length > 0 && teacherScenarios.every(item => (
@@ -265,6 +292,7 @@ assert.ok(pageInventory.every(entry => !entry.roleViews.includes('super-admin'))
 const coveredRoles = new Set(pageInventory.flatMap((entry) => entry.roleViews));
 assert.ok(!coveredRoles.has('admin'), 'miniapp UI inventory must not retain the retired admin role');
 assert.ok(coveredRoles.has('student'), 'miniapp UI inventory must cover student UI');
+assert.ok(coveredRoles.has('family_member'), 'miniapp UI inventory must cover the canonical family-member UI');
 assert.ok(coveredRoles.has('guest'), 'miniapp UI inventory must cover login/guest UI');
 
 assert.strictEqual(

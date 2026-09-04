@@ -50,7 +50,7 @@ function fingerprint(identity) {
 
 function isActive(identity) {
   if (identity && identity.account_state === 'formal' && identity.token_use === 'miniapp-cloud') {
-    return Boolean(identity.id && ['super_admin', 'teacher', 'student'].includes(roleOf(identity)) && !isRetiredIdentity(identity));
+    return Boolean(identity.id && ['super_admin', 'teacher', 'student', 'family_member'].includes(roleOf(identity)) && !isRetiredIdentity(identity));
   }
   const reviewStatus = firstDefined(identity, 'review_status', 'reviewStatus');
   const loginEnabled = firstDefined(identity, 'login_enabled', 'loginEnabled');

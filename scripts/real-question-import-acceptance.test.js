@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const cloudAcceptance = require('./real-cloud-business-acceptance');
 const {
   importSource,
   waitForCandidates,
@@ -13,7 +14,12 @@ const {
   importIdempotencyKey,
   findReusableImport,
   createWordImport,
+  acceptanceBaseUrl,
 } = require('./real-question-import-acceptance');
+
+assert.strictEqual(acceptanceBaseUrl({}), cloudAcceptance.PUBLIC_BASE_URL);
+assert.strictEqual(acceptanceBaseUrl({ REAL_QUESTION_IMPORT_BASE_URL: 'http://127.0.0.1:3002' }), 'http://127.0.0.1:3002');
+assert.throws(() => acceptanceBaseUrl({ REAL_QUESTION_IMPORT_BASE_URL: 'http://evil.invalid' }), /REAL_QUESTION_IMPORT_BASE_URL_INVALID/);
 
 assert.deepStrictEqual(importSource('exam', '/tmp/exam.docx'), {
   sourceType: 'exam',

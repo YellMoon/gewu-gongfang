@@ -110,6 +110,14 @@ async function waitForCandidates({ read, sleep = ms => new Promise(resolve => se
 
 function hash(value) { return crypto.createHash('sha256').update(value, 'utf8').digest('hex'); }
 
+function acceptanceBaseUrl(env = process.env) {
+  const value = String(env.REAL_QUESTION_IMPORT_BASE_URL || cloudAcceptance.PUBLIC_BASE_URL).replace(/\/$/u, '');
+  if (![cloudAcceptance.PUBLIC_BASE_URL, 'http://127.0.0.1:3002'].includes(value)) {
+    throw failure('REAL_QUESTION_IMPORT_BASE_URL_INVALID');
+  }
+  return value;
+}
+
 async function preflightPayload(request) {
   const { createQuestionImportTaskRepository } = require('/app/src/questionImportTaskRepository');
   const stop = failure('REAL_QUESTION_IMPORT_PREFLIGHT_COMPLETE');
@@ -208,6 +216,7 @@ async function runFromEnvironment(env = process.env) {
     stage = 'identity-loading';
     const loaded = await cloudAcceptance.loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
     const tenantId = env.CLOUD_BUSINESS_TENANT_ID || 'default';
+    const baseUrl = acceptanceBaseUrl(env);
     const plans = [];
     for (const current of sources) {
       stage = `reuse-audit-${current.source.sourceType}`;
@@ -238,15 +247,15 @@ async function runFromEnvironment(env = process.env) {
       }
       stage = `create-${source.sourceType}`;
       const created = plan.existing || await createWordImport({
-        fetchImpl: fetch, sessionToken, deviceId, baseUrl: cloudAcceptance.PUBLIC_BASE_URL,
+        fetchImpl: fetch, sessionToken, deviceId, baseUrl,
         source, sourceEvidence: plan.evidence, parserSha256: revision,
       });
       stage = `parse-${source.sourceType}`;
       const ready = await waitForCandidates({
-        read: async () => (await request(fetch, sessionToken, deviceId, `${cloudAcceptance.PUBLIC_BASE_URL}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}`)).task,
+        read: async () => (await request(fetch, sessionToken, deviceId, `${baseUrl}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}`)).task,
       });
       stage = `prepare-${source.sourceType}`;
-      const prepared = await request(fetch, sessionToken, deviceId, `${cloudAcceptance.PUBLIC_BASE_URL}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}/prepare-drafts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const prepared = await request(fetch, sessionToken, deviceId, `${baseUrl}/api/desktop/question-imports/${encodeURIComponent(created.taskId)}/prepare-drafts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       results.push(Object.freeze({
         ...common, reused: Boolean(plan.existing), ready: taskEvidence(ready),
         prepared: taskEvidence(prepared.task), final: taskEvidence(prepared.task),
@@ -264,7 +273,7 @@ async function runFromEnvironment(env = process.env) {
 
 module.exports = Object.freeze({
   importSource, parserRevision, sourceFileEvidence, importIdempotencyKey, findReusableImport,
-  taskEvidence, waitForCandidates, preflightPayload, createWordImport, runFromEnvironment,
+  taskEvidence, waitForCandidates, acceptanceBaseUrl, preflightPayload, createWordImport, runFromEnvironment,
 });
 
 if (require.main === module) runFromEnvironment()

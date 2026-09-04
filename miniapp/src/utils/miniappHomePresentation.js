@@ -20,6 +20,7 @@ function getMiniappHomeRoleLabel(identityOrRole) {
     super_admin: '\u8d85\u7ea7\u7ba1\u7406\u5458',
     teacher: '\u6559\u5e08',
     student: '\u5b66\u751f',
+    family_member: '\u5bb6\u5ead\u6210\u5458',
     visitor: '',
   };
   return Object.hasOwn(labels, normalizedRole) ? labels[normalizedRole] : normalizedRole;

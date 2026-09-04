@@ -46,6 +46,64 @@
   margin-top: 186rpx;
 }
 
+.desktop-login-card {
+  width: 100%;
+  margin-top: 128rpx;
+  padding: 42rpx 36rpx 36rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 16rpx 36rpx rgba(8, 36, 33, 0.22);
+}
+
+.desktop-login-title {
+  color: #143a36;
+  font-size: 36rpx;
+  line-height: 48rpx;
+  font-weight: 700;
+}
+
+.desktop-login-copy {
+  color: #60716f;
+  font-size: 27rpx;
+  line-height: 40rpx;
+}
+
+.desktop-login-error {
+  padding: 18rpx 20rpx;
+  border-radius: 14rpx;
+  background: #fff2f0;
+  color: #b42318;
+  font-size: 25rpx;
+  line-height: 36rpx;
+}
+
+.desktop-login-card .wx-login-btn {
+  margin-top: 8rpx !important;
+  background: #1a514b !important;
+  color: #ffffff !important;
+  box-shadow: none;
+}
+
+.desktop-login-secondary {
+  width: 100% !important;
+  height: 88rpx !important;
+  line-height: 88rpx !important;
+  margin: 0 !important;
+  border-radius: 18rpx !important;
+  background: #f0f4f3 !important;
+  color: #284a46 !important;
+  font-size: 28rpx !important;
+  font-weight: 600 !important;
+}
+
+.desktop-login-secondary::after {
+  border: 0;
+}
+
 .wx-login-btn {
   width: 100% !important;
   height: 96rpx !important;

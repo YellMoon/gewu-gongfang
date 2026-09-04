@@ -34,6 +34,8 @@ const fs = require('fs');
   assert.ok(source.includes('App as AntdApp'), 'page messages must use antd App context');
   assert.ok(source.includes('const { message: messageApi } = AntdApp.useApp()'), 'page must bind context-aware message API');
   assert.ok(!source.includes('  message,') && !source.includes('const message = messageApi') && !source.includes('message.success('), 'all notifications must call the context-aware message API directly');
+  assert.ok(source.includes('const FORMULA_RENDERING_LABEL = String.fromCharCode(20844, 24335, 65306, 20860, 23481, 25490, 29256)'), 'paper editor must describe the actual Word/PDF-compatible formula rendering instead of promising vector output');
+  assert.ok(!source.includes('String.fromCharCode(20844, 24335, 65306, 30690, 37327, 25490, 29256)'), 'paper editor must not claim vector output while Word deliberately embeds compatible PNG formula runs');
   assert.ok(indexSource.includes('<AntdApp>') && indexSource.includes('</AntdApp>'), 'root must provide the antd App message context');
   console.log('paper export task UI regression checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

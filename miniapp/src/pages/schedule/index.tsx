@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
-import Taro from '@tarojs/taro';
+import Taro, { useDidShow } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList } from '../../utils/storage';
 import { pullFromCloudBusinessProjection } from '../../utils/sync';
@@ -12,6 +12,7 @@ import {
 } from '../../utils/cloudBusinessProjection';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import { isVisitorIdentity } from '../../utils/accountExperience';
+import { isStudentScopedUser } from '../../utils/permission';
 import './index.scss';
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
@@ -31,8 +32,9 @@ function displayStudentName(student: Student) {
 }
 
 export default function SchedulePage() {
-  const identity = Taro.getStorageSync('user_info');
+  const [identity, setIdentity] = useState<any>(() => Taro.getStorageSync('user_info'));
   const isVisitor = isVisitorIdentity(identity);
+  const isStudent = isStudentScopedUser(identity);
   const isLimitedIdentity = isVisitor;
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDateKey, setCurrentDateKey] = useState(() => shanghaiDateKey(new Date()));
@@ -43,9 +45,21 @@ export default function SchedulePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  useDidShow(() => {
+    setIdentity(Taro.getStorageSync('user_info'));
+  });
+
+  useEffect(() => {
+    setSelectedStudentId('');
+    setSchedules([]);
+    setCourses([]);
+    setStudents([]);
+    setLoading(true);
+  }, [identity?.id, identity?.user_type, identity?.identity_kind]);
+
   useEffect(() => {
     void handleRefresh();
-  }, [currentDateKey]);
+  }, [currentDateKey, identity?.id, identity?.user_type, identity?.identity_kind]);
 
   const loadData = () => {
     if (isLimitedIdentity) {
@@ -88,7 +102,7 @@ export default function SchedulePage() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [isLimitedIdentity]);
 
   const weekRange = useMemo(() => {
     if (viewMode === 'day') return null;
@@ -134,7 +148,7 @@ export default function SchedulePage() {
       if (!schedule.start_time?.startsWith(dateKey)) return false;
       
       // 如果选中了学生，筛选该学生的课程，但排除请假和取消的
-      if (selectedStudentId) {
+      if (!isStudent && selectedStudentId) {
         if (schedule.status === SCHEDULE_STATUS_CANCELLED || schedule.status === SCHEDULE_STATUS_LEAVE) {
           return false;
         }
@@ -204,7 +218,7 @@ export default function SchedulePage() {
       </View>
 
       {/* 学生筛选栏 */}
-      {students.length > 0 && (
+      {!isStudent && students.length > 0 && (
         <ScrollView scrollX className="filter-bar">
           <View
             className={`filter-tag ${!selectedStudentId ? 'active' : ''}`}

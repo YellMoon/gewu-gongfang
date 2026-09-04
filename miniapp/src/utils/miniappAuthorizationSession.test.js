@@ -21,6 +21,47 @@ function identity(overrides = {}) {
   const refreshed = await session.refresh({ id: 'user-1', user_type: 'teacher', teacher_id: 'teacher-1' }, { force: true });
   assert.strictEqual(session.getFetchCount(), 1, 'cold start must request the server even when a fresh persistent cache exists');
   assert.strictEqual(refreshed.status, 'loaded');
+
+  let familyWrittenUser;
+  const familyIdentity = identity({
+    role: 'family_member', user_type: 'family_member', teacher_id: null,
+    student_id: 'student-1', linked_student_ids: ['student-1'],
+    identity_kind: 'family_member', student_relationship: 'guardian',
+    account_state: 'formal', token_use: 'miniapp-cloud',
+  });
+  const familySession = createAuthorizationSession({
+    readCache: () => null,
+    writeCache: () => {},
+    clearPermissionCache: () => {},
+    clearBusinessCache: () => {},
+    setBusinessCacheIdentity: () => {},
+    writeUser: user => { familyWrittenUser = user; },
+    fetchRemote: async () => ({ identity: familyIdentity, capabilities: ['question-bank:view'] }),
+  });
+  const familyResult = await familySession.refresh(familyIdentity, { force: true });
+  assert.strictEqual(familyResult.status, 'loaded', 'a formal family member must remain an active cloud identity');
+  assert.deepStrictEqual(familyResult.capabilities, ['question-bank:view'], 'a formal family member must retain the server-authorized read capability');
+  assert.strictEqual(familyWrittenUser.role, 'family_member');
+  assert.strictEqual(familyWrittenUser.student_id, 'student-1');
+  assert.deepStrictEqual(familyWrittenUser.linked_student_ids, ['student-1']);
+  assert.strictEqual(familyWrittenUser.student_relationship, 'guardian');
+
+  const visitorIdentity = identity({
+    role: 'visitor', user_type: 'visitor', teacher_id: null,
+    account_state: 'formal', token_use: 'miniapp-cloud',
+  });
+  const visitorSession = createAuthorizationSession({
+    readCache: () => null,
+    writeCache: () => {},
+    clearPermissionCache: () => {},
+    clearBusinessCache: () => {},
+    setBusinessCacheIdentity: () => {},
+    writeUser: () => {},
+    fetchRemote: async () => ({ identity: visitorIdentity, capabilities: ['question-bank:view'] }),
+  });
+  const visitorResult = await visitorSession.refresh(visitorIdentity, { force: true });
+  assert.deepStrictEqual(visitorResult.capabilities, [], 'visitor must not enter the formal cloud-identity allowlist');
+
   assert.strictEqual(
     fingerprint(identity({ tenant_id: 'tenant-a', linked_student_ids: ['student-b', 'student-a'] })),
     permissionIdentityKey(identity({ tenantId: 'tenant-a', linkedStudentIds: ['student-a', 'student-b', 'student-a'] })),

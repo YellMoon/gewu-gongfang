@@ -45,6 +45,44 @@ async function main() {
   assert.deepStrictEqual(storageWrites, [], 'short desktop sessions must remain in memory only');
   assert.strictEqual(ipcCalls.length, 0, 'saving a short session must not use raw credential IPC');
 
+  const refreshedTeacher = service.normalizeDesktopAuthorizationSession({
+    token: 'teacher-refresh-token',
+    session: {
+      id: 'sid-teacher-refresh', userId: 'u1', deviceId: 'd1', activeRole: 'teacher',
+      eligibleRoles: ['super_admin', 'teacher'], teacherId: 'teacher-session-current', studentId: null,
+    },
+    profile: {
+      userId: 'u1', activeRole: 'teacher', eligibleRoles: ['super_admin', 'teacher'],
+      teacherId: 'teacher-profile-stale', studentId: 'student-profile-stale',
+    },
+    teacherId: 'teacher-top-level-stale',
+    studentId: 'student-top-level-stale',
+  });
+  assert.strictEqual(refreshedTeacher.authContext.teacherId, 'teacher-session-current',
+    'the newly issued session scope must win over stale profile and top-level fallbacks');
+  assert.strictEqual(refreshedTeacher.authContext.studentId, null,
+    'a teacher session must never retain a student scope');
+  assert.strictEqual(refreshedTeacher.profile.teacherId, 'teacher-session-current');
+  assert.strictEqual(refreshedTeacher.profile.studentId, null);
+
+  const switchedAdmin = service.normalizeDesktopAuthorizationSession({
+    token: 'admin-switch-token',
+    session: {
+      id: 'sid-admin-switch', userId: 'u1', deviceId: 'd1', activeRole: 'super_admin',
+      eligibleRoles: ['super_admin', 'teacher'], teacherId: null, studentId: null,
+    },
+    profile: {
+      userId: 'u1', activeRole: 'super_admin', eligibleRoles: ['super_admin', 'teacher'],
+      teacherId: 'teacher-profile-stale', studentId: 'student-profile-stale',
+    },
+    teacherId: 'teacher-top-level-stale',
+    studentId: 'student-top-level-stale',
+  });
+  assert.strictEqual(switchedAdmin.authContext.teacherId, null);
+  assert.strictEqual(switchedAdmin.authContext.studentId, null);
+  assert.strictEqual(switchedAdmin.profile.teacherId, null);
+  assert.strictEqual(switchedAdmin.profile.studentId, null);
+
   await service.clearDesktopAuthorizationSession({ storage, desktopIdentity, lockVault: true });
   assert.deepStrictEqual(ipcCalls, ['lock']);
   assert.throws(

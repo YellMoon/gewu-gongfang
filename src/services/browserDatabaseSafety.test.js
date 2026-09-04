@@ -17,8 +17,9 @@ assert.ok(source.includes('nativeVerified !== true') && !source.includes('questi
   'local draft authorization must fail closed and must not register renderer-selected ids');
 const preload = fs.readFileSync('public/preload.js', 'utf-8');
 const electronMain = fs.readFileSync('public/electron.js', 'utf-8');
+const provenanceRegistry = fs.readFileSync('public/questionDraftProvenanceRegistry.js', 'utf-8');
 assert.ok(preload.includes("exposeInMainWorld('questionDraftProvenance'") && preload.includes('issue-question-draft') && !preload.includes('register-question-draft'));
-assert.ok(electronMain.includes('QuestionDraftProvenanceRegistry') && electronMain.includes('/api/auth/desktop-session') && !electronMain.includes('JWT_SECRET'));
+assert.ok(electronMain.includes('QuestionDraftProvenanceRegistry') && provenanceRegistry.includes('/api/desktop/session-context') && !electronMain.includes('/api/auth/desktop-session') && !electronMain.includes('JWT_SECRET'));
 assert.ok(
   source.includes('business_data_safety_backups_v1'),
   'browser database should store non-question-bank safety backups in localStorage'

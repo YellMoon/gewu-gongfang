@@ -19,5 +19,7 @@ for (const field of ['student_wechat', 'parent_phone', 'parent_wechat', 'second_
 assert.ok(source.includes('phone: null, wechat: null'), 'clearing an existing student contact must submit a versioned unbind command');
 assert.ok(source.includes('refreshAuthorityProjection'), 'a successful command must refresh the cloud projection before rendering');
 assert.ok(source.includes('CLOUD_BUSINESS_STUDENT_CONFLICT'), 'the UI must surface concurrent changes instead of overwriting them');
+assert.ok(!source.includes('dbService.addOrUpdateSchool(values.school)'),
+  'student draft staging must let browserDatabase create exactly one dependent school draft');
 
 console.log('student list cloud-write source checks passed');

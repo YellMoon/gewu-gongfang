@@ -18,7 +18,12 @@ process.env.JWT_SECRET = 'authority-app-http-test-secret';
 
 const { DatabaseService } = require('../database');
 const database = new DatabaseService();
-const testUser = database.db.prepare('SELECT id FROM users ORDER BY created_at LIMIT 1').get();
+const fixtureCreatedAt = '2026-07-28T00:00:00.000Z';
+const testUser = { id: 'authority-app-test-user' };
+database.db.prepare(`INSERT INTO users
+  (id,phone,name,role,status,login_enabled,review_status,auth_version,deleted,created_at,updated_at)
+  VALUES (?, '13000000000', 'Authority App Test User', 'teacher', 1, 1, 'approved', 1, 0, ?, ?)`)
+  .run(testUser.id, fixtureCreatedAt, fixtureCreatedAt);
 const token = jwt.sign({ id: testUser.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
 const keyPair = crypto.generateKeyPairSync('ed25519');
 const publicKey = keyPair.publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -108,8 +113,8 @@ const { createApp } = require('../app');
     } catch (_error) {
       body = null;
     }
-    assert.strictEqual(response.status, 401, 'the formal app route must exist and reject an unauthenticated actor');
-    assert.strictEqual(body.error.code, 'AUTHORITY_ACTOR_REQUIRED');
+    assert.strictEqual(response.status, 410, 'the retired local authority route must never accept writes');
+    assert.strictEqual(body.error.code, 'AUTHORITY_ENDPOINT_RETIRED');
     assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM authority_command_ledger').get().count, 0);
 
     const requestPath = '/api/authority/commands';
@@ -131,10 +136,10 @@ const { createApp } = require('../app');
       body: JSON.stringify(envelope),
     });
     const signedBody = await signedResponse.json();
-    assert.strictEqual(signedResponse.status, 200, JSON.stringify(signedBody));
-    assert.strictEqual(signedBody.command.id, envelope.commandId);
-    assert.strictEqual(signedBody.receipt.commandId, envelope.commandId);
-    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM authority_command_ledger').get().count, 1);
+    assert.strictEqual(signedResponse.status, 410, JSON.stringify(signedBody));
+    assert.strictEqual(signedBody.error.code, 'AUTHORITY_ENDPOINT_RETIRED');
+    assert.strictEqual(database.db.prepare('SELECT COUNT(*) AS count FROM authority_command_ledger').get().count, 0,
+      'even a valid historical device signature must not mutate the local ledger');
 
     const retiredHostRoute = await fetch(`${baseUrl}/api/authority/host/commands/claim`, {
       method: 'POST',
@@ -144,8 +149,8 @@ const { createApp } = require('../app');
       },
       body: JSON.stringify({ limit: 1 }),
     });
-    assert.strictEqual(retiredHostRoute.status, 404,
-      'the cloud app must not retain a host command-claim compatibility route');
+    assert.strictEqual(retiredHostRoute.status, 410,
+      'the entire local authority namespace must be terminal, including old host claim URLs');
 
     const directGrantPayload = Object.freeze({ userId: 'admin-target-app-1' });
     const directGrant = Object.freeze({
@@ -171,9 +176,8 @@ const { createApp } = require('../app');
       body: JSON.stringify(directGrant),
     });
     const forbiddenGrantBody = await forbiddenGrant.json();
-    assert.strictEqual(forbiddenGrant.status, 200);
-    assert.strictEqual(forbiddenGrantBody.receipt.status, 'rejected');
-    assert.strictEqual(forbiddenGrantBody.receipt.result.error.code, 'COMMAND_TYPE_UNSUPPORTED');
+    assert.strictEqual(forbiddenGrant.status, 410);
+    assert.strictEqual(forbiddenGrantBody.error.code, 'AUTHORITY_ENDPOINT_RETIRED');
     const projection = createSignedAuthorityProjection({
       authorityId: envelope.authorityId,
       hostEpochId: envelope.hostEpochId,
@@ -204,8 +208,13 @@ const { createApp } = require('../app');
       },
     });
     const projectionBody = await projectionResponse.json();
-    assert.strictEqual(projectionResponse.status, 200, JSON.stringify(projectionBody));
-    assert.deepStrictEqual(projectionBody.projection, projection);
+    assert.strictEqual(projectionResponse.status, 410, JSON.stringify(projectionBody));
+    assert.strictEqual(projectionBody.error.code, 'AUTHORITY_ENDPOINT_RETIRED');
+    const retiredRelayResponse = await fetch(`${baseUrl}/api/cloud/tasks`);
+    const retiredRelayBody = await retiredRelayResponse.json();
+    assert.strictEqual(retiredRelayResponse.status, 410,
+      'the old HTTP relay must not remain reachable after cloud authority cutover');
+    assert.strictEqual(retiredRelayBody.error.code, 'CLOUD_RELAY_RETIRED');
     console.log('authorityProtocol formal app HTTP tests passed');
   } finally {
     await new Promise(resolve => server.close(resolve));

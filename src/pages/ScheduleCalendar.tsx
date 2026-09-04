@@ -185,9 +185,8 @@ const DailyView: React.FC<DailyViewProps> = ({
   const effectiveMaxEndSlot = timeToSlot(maxHour, 0);
   let maxEndSlot = effectiveMaxEndSlot;
   daySchedules.forEach(s => {
-    const [, timeStr] = s.end_time.split(' ');
-    const [endH, endM] = timeStr.split(':').map(Number);
-    const endSlot = timeToSlot(endH, endM) + 1;
+    const endTime = dayjs(s.end_time);
+    const endSlot = timeToSlot(endTime.hour(), endTime.minute()) + 1;
     if (endSlot > maxEndSlot) maxEndSlot = endSlot;
   });
   const bodyHeight = Math.max(SLOT_HEIGHT, (maxEndSlot - minStartSlot) * SLOT_HEIGHT);
@@ -227,22 +226,18 @@ const DailyView: React.FC<DailyViewProps> = ({
   }
 
   function getCoursePosition(schedule: ScheduleEvent) {
-    const [, startTime] = schedule.start_time.split(' ');
-    const [, endTime] = schedule.end_time.split(' ');
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [endH, endM] = endTime.split(':').map(Number);
-    const startSlot = timeToSlot(startH, startM);
-    const endSlot = timeToSlot(endH, endM);
+    const startTime = dayjs(schedule.start_time);
+    const endTime = dayjs(schedule.end_time);
+    const startSlot = timeToSlot(startTime.hour(), startTime.minute());
+    const endSlot = timeToSlot(endTime.hour(), endTime.minute());
     return { top: slotToDisplayTop(startSlot), height: (endSlot - startSlot) * SLOT_HEIGHT, startSlot, endSlot };
   }
 
   function getCurrentDragPosition(schedule: ScheduleEvent) {
-    const [, startTime] = schedule.start_time.split(' ');
-    const [, endTime] = schedule.end_time.split(' ');
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [endH, endM] = endTime.split(':').map(Number);
-    let startSlot = timeToSlot(startH, startM);
-    let endSlot = timeToSlot(endH, endM);
+    const startTime = dayjs(schedule.start_time);
+    const endTime = dayjs(schedule.end_time);
+    let startSlot = timeToSlot(startTime.hour(), startTime.minute());
+    let endSlot = timeToSlot(endTime.hour(), endTime.minute());
     
     if (dragState && dragState.schedule.id === schedule.id) {
       // Ctrl+鎷栨嫿锛堝鍒讹級锛氬師课程妗嗕綅缃浐瀹氫笉鍔紝鍙湁铏氬奖璺熼殢榧犳爣
@@ -315,12 +310,10 @@ const DailyView: React.FC<DailyViewProps> = ({
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     hasDraggedRef.current = false;
     
-    const [, startTime] = schedule.start_time.split(' ');
-    const [, endTime] = schedule.end_time.split(' ');
-    const [startH, startM] = startTime.split(':').map(Number);
-    const [endH, endM] = endTime.split(':').map(Number);
-    const startSlot = timeToSlot(startH, startM);
-    const endSlot = timeToSlot(endH, endM);
+    const startTime = dayjs(schedule.start_time);
+    const endTime = dayjs(schedule.end_time);
+    const startSlot = timeToSlot(startTime.hour(), startTime.minute());
+    const endSlot = timeToSlot(endTime.hour(), endTime.minute());
     
     // 鈶?鍗曞嚮鏃朵笉鏄剧ず铏氬奖锛実hostVisible=false锛岀瓑榧犳爣绉诲姩瓒呰繃闃堝€兼墠鏄剧ず
     if (hitZone === 'top') {
@@ -697,7 +690,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
                         </>;
                       })() : (
                         <>
-                          {schedule.start_time.split(' ')[1].substr(0, 5)}-{schedule.end_time.split(' ')[1].substr(0, 5)}
+                          {dayjs(schedule.start_time).format('HH:mm')}-{dayjs(schedule.end_time).format('HH:mm')}
                         </>
                       )}
                     </div>
@@ -891,18 +884,16 @@ const OneWeekRow: React.FC<{
   const nextMondayStr = startMonday.add(7, 'day').format('YYYY-MM-DD');
   const visibleSchedules = schedules.filter(s => {
     if (s.status === ScheduleStatus.CANCELLED || s.status === ScheduleStatus.LEAVE) return false;
-    const sDate = s.start_time.substring(0, 10);
+    const sDate = dayjs(s.start_time).format('YYYY-MM-DD');
     return sDate >= weekDateStr && sDate < nextMondayStr;
   });
   
   let dynMinHour = 8, dynMaxHour = 23;
   visibleSchedules.forEach(s => {
-    const [, startT] = s.start_time.split(' ');
-    const [, endT] = s.end_time.split(' ');
-    const [sh, sm] = startT.split(':').map(Number);
-    const [eh, em] = endT.split(':').map(Number);
-    const startHour = sh + sm / 60;
-    const endHour = eh + em / 60;
+    const startT = dayjs(s.start_time);
+    const endT = dayjs(s.end_time);
+    const startHour = startT.hour() + startT.minute() / 60;
+    const endHour = endT.hour() + endT.minute() / 60;
     if (startHour < dynMinHour) dynMinHour = Math.floor(startHour);
     if (endHour > dynMaxHour) dynMaxHour = Math.ceil(endHour);
   });
@@ -1425,10 +1416,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 
   function handleDoubleClickSchedule(schedule: ScheduleEvent) {
     setEditingSchedule(schedule);
-    const [dateStr, timeStr] = schedule.start_time.split(' ');
-    const [, endTimeStr] = schedule.end_time.split(' ');
-    const startTimeDayjs = dayjs(`1970-01-01 ${timeStr}`);
-    const endTimeDayjs = dayjs(`1970-01-01 ${endTimeStr}`);
+    const scheduleStart = dayjs(schedule.start_time);
+    const scheduleEnd = dayjs(schedule.end_time);
+    const startTimeDayjs = dayjs().hour(scheduleStart.hour()).minute(scheduleStart.minute()).second(0).millisecond(0);
+    const endTimeDayjs = dayjs().hour(scheduleEnd.hour()).minute(scheduleEnd.minute()).second(0).millisecond(0);
     const diffMinutes = endTimeDayjs.diff(startTimeDayjs, 'minute');
     const durationHours = diffMinutes / 60;
     const course = courses.find(c => c.id === schedule.course_id);
@@ -1436,7 +1427,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     form.resetFields();
     setModalTeacherId(course?.teacher_id);
     form.setFieldsValue({
-      date: dayjs(dateStr),
+      date: scheduleStart.startOf('day'),
       startTime: startTimeDayjs,
       endTime: endTimeDayjs,
       duration: durationHours,
@@ -1447,7 +1438,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       room: (course?.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === schedule.room)?.id) || schedule.room,
       notes: schedule.notes,
     });
-    setBatchDates([dayjs(dateStr)]);
+    setBatchDates([scheduleStart.startOf('day')]);
     setModalVisible(true);
   }
 
@@ -1595,7 +1586,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     // 有默认时长：直接创建课程框，不弹窗
     if (course.default_duration_minutes) {
       const endTime = startTime.add(course.default_duration_minutes, 'minute');
-      const overlap = checkOverlap('', startTime.format('YYYY-MM-DD HH:mm'), endTime.format('YYYY-MM-DD HH:mm'));
+      const overlap = checkOverlap('', startTime.toISOString(), endTime.toISOString());
       if (overlap) {
         message.warning(`与「${overlap.course_name}」时间冲突，请调整位置`);
         return;
@@ -1605,8 +1596,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         course_id: course.id,
         course_name: displayCourseName,
         course_type: course.type,
-        start_time: startTime.format('YYYY-MM-DD HH:mm'),
-        end_time: endTime.format('YYYY-MM-DD HH:mm'),
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
         status: ScheduleStatus.PLANNED,
         room: course.room_id || course.room_name || '',
         course_year: course.year !== undefined ? String(course.year) : undefined,
@@ -1643,19 +1634,19 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   }
 
   function checkOverlap(scheduleId: string, newStart: string, newEnd: string): ScheduleEvent | null {
+    const newStartMs = dayjs(newStart).valueOf();
+    const newEndMs = dayjs(newEnd).valueOf();
     return schedules.find(s => {
       if (s.id === scheduleId) return false;
       if (s.status === ScheduleStatus.CANCELLED || s.status === ScheduleStatus.LEAVE) return false;
-      return s.start_time < newEnd && s.end_time > newStart;
+      return dayjs(s.start_time).valueOf() < newEndMs && dayjs(s.end_time).valueOf() > newStartMs;
     }) || null;
   }
 
   function handleDragSchedule(schedule: ScheduleEvent, newDay: Dayjs, newSlot: number, ctrlKey: boolean) {
     const { hour: startH, minute: startM } = slotToTime(newSlot);
-    const [, oldStartTimeStr] = schedule.start_time.split(' ');
-    const [, oldEndTimeStr] = schedule.end_time.split(' ');
-    const oldStartDayjs = dayjs(`1970-01-01 ${oldStartTimeStr}`);
-    const oldEndDayjs = dayjs(`1970-01-01 ${oldEndTimeStr}`);
+    const oldStartDayjs = dayjs(schedule.start_time);
+    const oldEndDayjs = dayjs(schedule.end_time);
     const durationMinutes = oldEndDayjs.diff(oldStartDayjs, 'minute');
     
     const newStartTime = dayjs(newDay).hour(startH).minute(startM).second(0);
@@ -1664,13 +1655,13 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     if (newEndTime.format('YYYY-MM-DD') !== newStartTime.format('YYYY-MM-DD')) {
       newEndTime = newStartTime.hour(23).minute(55);
     }
-    const newStartTimeStr = newStartTime.format('YYYY-MM-DD HH:mm');
-    const newEndTimeStr = newEndTime.format('YYYY-MM-DD HH:mm');
+    const newStartTimeStr = newStartTime.toISOString();
+    const newEndTimeStr = newEndTime.toISOString();
     
     if (!ctrlKey) {
       const overlap = checkOverlap(schedule.id, newStartTimeStr, newEndTimeStr);
       if (overlap) {
-        message.warning(`时间重叠：与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+        message.warning(`时间重叠：与「${overlap.course_name}」(${dayjs(overlap.start_time).format('HH:mm')}-${dayjs(overlap.end_time).format('HH:mm')})冲突，已恢复`);
         return;
       }
     }
@@ -1690,7 +1681,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       };
       setSchedulesWithHistory(prev => [...prev, newSchedule]);
       message.success('课程已复制');
-      (window as any).operateLogger?.log('复制', `复制排课「${schedule.course_name}」到 ${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
+      (window as any).operateLogger?.log('复制', `复制排课「${schedule.course_name}」到 ${newStartTime.format('YYYY-MM-DD HH:mm')}-${newEndTime.format('HH:mm')}`, '课程表');
     } else {
       setSchedulesWithHistory(prev => prev.map(s => 
         s.id === schedule.id 
@@ -1702,15 +1693,17 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           : s
       ));
       message.success('课程已移动');
-      (window as any).operateLogger?.log('移动', `移动排课「${schedule.course_name}」到 ${newStartTimeStr.substring(0,10)} ${newStartTimeStr.substring(11,16)}-${newEndTimeStr.substring(11,16)}`, '课程表');
+      (window as any).operateLogger?.log('移动', `移动排课「${schedule.course_name}」到 ${newStartTime.format('YYYY-MM-DD HH:mm')}-${newEndTime.format('HH:mm')}`, '课程表');
     }
   }
 
   function handleResizeSchedule(schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) {
-    const [, oldStartTimeStr] = schedule.start_time.split(' ');
-    const [, oldEndTimeStr] = schedule.end_time.split(' ');
-    let [startH, startM] = oldStartTimeStr.split(':').map(Number);
-    let [endH, endM] = oldEndTimeStr.split(':').map(Number);
+    const oldStartTime = dayjs(schedule.start_time);
+    const oldEndTime = dayjs(schedule.end_time);
+    let startH = oldStartTime.hour();
+    let startM = oldStartTime.minute();
+    let endH = oldEndTime.hour();
+    let endM = oldEndTime.minute();
     
     if (newStartSlot !== null) {
       const { hour, minute } = slotToTime(newStartSlot);
@@ -1724,13 +1717,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       endM = minute;
     }
     
-    const dateStr = schedule.start_time.split(' ')[0];
-    const newStartTime = `${dateStr} ${formatTime(startH, startM)}`;
-    const newEndTime = `${dateStr} ${formatTime(endH, endM)}`;
+    const newStartTime = oldStartTime.hour(startH).minute(startM).second(0).millisecond(0).toISOString();
+    const newEndTime = oldStartTime.hour(endH).minute(endM).second(0).millisecond(0).toISOString();
     
     const overlap = checkOverlap(schedule.id, newStartTime, newEndTime);
     if (overlap) {
-      message.warning(`时间重叠：与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+      message.warning(`时间重叠：与「${overlap.course_name}」(${dayjs(overlap.start_time).format('HH:mm')}-${dayjs(overlap.end_time).format('HH:mm')})冲突，已恢复`);
       return;
     }
     
@@ -1766,7 +1758,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     form.validateFields().then(values => {
       const startDayjs = values.startTime;
       const durationHours = values.duration || DEFAULT_DURATION_HOURS;
-      const endDayjs = startDayjs.add(durationHours * 60, 'minute');
       
       const course = courses.find(c => c.id === values.courseId);
       const courseName = getCourseDisplayName(course, values.courseName);
@@ -1776,8 +1767,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       
       datesToSave.forEach((dateDayjs, index) => {
         const dateStr = dateDayjs.format('YYYY-MM-DD');
-        const startTimeStr = `${dateStr} ${startDayjs.format('HH:mm')}`;
-        const endTimeStr = `${dateStr} ${endDayjs.format('HH:mm')}`;
+        const localStart = dayjs(dateDayjs).hour(startDayjs.hour()).minute(startDayjs.minute()).second(0).millisecond(0);
+        const localEnd = localStart.add(durationHours * 60, 'minute');
+        const startTimeStr = localStart.toISOString();
+        const endTimeStr = localEnd.toISOString();
         
         const eId = editingSchedule?.id || '';
         const overlap = checkOverlap(eId, startTimeStr, endTimeStr);
@@ -1888,7 +1881,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const db = (window as any).dbService;
     let count = 0;
     const updated = schedules.map(s => {
-      const sDate = dayjs(s.start_time.split(' ')[0]);
+      const sDate = dayjs(s.start_time);
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
@@ -2294,6 +2287,3 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
 };
 
 export default ScheduleCalendar;
-
-
-

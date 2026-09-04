@@ -8,6 +8,9 @@ const identityErrorSource = fs.readFileSync('src/services/desktopIdentityError.m
 const decodedGateSource = gateSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => (
   String.fromCharCode(Number.parseInt(hex, 16))
 ));
+const decodedIdentityErrorSource = identityErrorSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => (
+  String.fromCharCode(Number.parseInt(hex, 16))
+));
 const gateStyle = fs.readFileSync('src/components/DesktopIdentityGate.css', 'utf8');
 const appSource = fs.readFileSync('src/App.tsx', 'utf8');
 const electronSource = fs.readFileSync('public/electron.js', 'utf8');
@@ -46,6 +49,7 @@ for (const internalLoginCopy of [
   '格物工坊身份验证', '核验账号并登记此电脑', '设备名称', '开始微信身份注册',
   '静默登记这台电脑', '云端账号已核验', '请完成微信身份验证', '此电脑将自动登记',
   '正在检查本机身份', '当前身份验证不能设置云端账号密码',
+  '身份验证未完成', '设备核验', '开发者',
 ]) assert.ok(!decodedGateSource.includes(internalLoginCopy),
   `silent device registration must not leak implementation copy into login: ${internalLoginCopy}`);
 assert.ok(!gateSource.includes('setDeviceName'), 'device naming must be derived silently by the Electron main process');
@@ -79,6 +83,8 @@ assert.ok(gateSource.includes("gateState.kind === 'offline-unlocked'"));
 assert.ok(gateSource.includes("{ kind: 'offline-blocked' }"));
 assert.ok(gateSource.includes('pending.qrImageDataUrl') && gateSource.includes('<img'),
   'new-device registration must render an official mini-program code image fallback');
+assert.ok(!gateSource.includes('pending.qrValue') && !gateSource.includes('<QRCode'),
+  'the retired URL Scheme QR path must not remain as a hidden fallback');
 assert.ok(gateSource.includes('enrollPasswordForVerifiedRegistration'), 'verified QR registration must support optional cloud password enrollment without exposing a phone code');
 assert.ok(identityClientSource.includes('body: { verificationToken: pending.verificationToken, loginName, password }'), 'cloud password enrollment must use only the existing short-lived verification ticket');
 assert.ok(gateSource.includes('setCloudPassword(\'\')'), 'cloud password input must be cleared after every enrollment attempt');
@@ -87,9 +93,21 @@ assert.ok(!gateSource.includes('beginPasswordReset'));
 assert.ok(gateSource.includes('beginUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('pollUnifiedOnlineRegistration'));
 assert.ok(gateSource.includes('completeUnifiedOnlineRegistration'));
+assert.ok(gateSource.includes("pending?.desktopAccess?.access === 'allowed'"),
+  'the verified login state must show the enter action only after cloud confirms a teacher-desktop role');
+assert.ok(gateSource.includes("pending?.desktopAccess?.access === 'teacher_registration_required'"),
+  'a verified visitor or student must see only the teacher registration path');
+assert.ok(gateSource.includes("setPending({ ...pending, desktopAccess: registered.desktopAccess })"),
+  'successful teacher registration must promote the same verified login flow before silent device registration');
 assert.ok(!gateSource.includes('beginUnifiedOnlineRecovery'));
 assert.ok(gateSource.includes('beginPasswordVerification'));
 assert.ok(gateSource.includes("accountLoginType === 'phone'"));
+assert.ok(gateSource.includes("const showLoginMethods = ['registration-required', 'registration-active', 'registration-interrupted', 'upgrade-required',")
+  && gateSource.includes("'online-authentication-required',")
+  && gateSource.includes('showLoginMethods && renderRegistration()'),
+  'an expired online session must return directly to the normal password/WeChat login choices');
+assert.ok(gateSource.includes("const locked = ['locked', 'offline-blocked'].includes(gateState.kind)"),
+  'online reauthentication must not strand the user behind a retry-session-only screen');
 const retiredApprovalText = String.fromCharCode(30001, 19968, 21478, 19968, 21488, 24050, 25480, 26435, 35774, 22791, 25209, 20934);
 assert.ok(!decodedGateSource.includes(retiredApprovalText), 'desktop recovery must not require another device approval');
 assert.ok(!gateSource.includes('identity_verified_pending_approval'));
@@ -117,6 +135,12 @@ assert.ok(decodedGateSource.includes(String.fromCharCode(27491, 22312, 24674, 22
   'desktop session recovery must use familiar login language rather than internal cloud-session wording');
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));
 assert.ok(gateStyle.includes('.desktop-identity-runtime--offline .desktop-identity-runtime-bar'));
+assert.ok(gateStyle.includes('.desktop-identity-runtime .app-shell__topbar')
+  && gateStyle.includes('padding-right: 350px'),
+  'the application top bar must reserve space so fixed identity controls cannot cover page actions');
+assert.ok(gateStyle.includes(':has(.desktop-identity-runtime-bar .ant-btn:nth-of-type(2))')
+  && gateStyle.includes('padding-right: 540px'),
+  'the top bar must reserve the wider identity-control footprint when role switching is available');
 assert.ok(
   !appSource.includes('processMiniappCloudTasks'),
   'business renderer must not own primary-host cloud task execution'
@@ -161,11 +185,41 @@ assert.ok(gateSource.includes("{ kind: 'initialization-failed' }"),
   'a bootstrap failure must leave the loading state instead of showing a blank login screen');
 assert.ok(gateSource.includes('retryInitialization'),
   'a bootstrap failure must provide a retry action');
-assert.ok(decodedGateSource.includes('暂时无法打开登录'),
-  'bootstrap failures must have a clear, user-facing state');
-assert.ok(!decodedGateSource.includes('身份验证未完成，请重试。'),
-  'the opaque generic identity verification message must not be shown to users');
+assert.ok((gateSource.match(/resumeOfflineAfterNetworkFailure\(/g) || []).length >= 2,
+  'cold-start and manual recovery must both call the shared offline resume path after a cloud outage');
+assert.ok(gateSource.includes('acceptRuntime(offlineResumed)'),
+  'offline recovery must accept the result returned by the offline resume, which clears the online session store');
+assert.ok(decodedGateSource.includes('登录遇到问题') && decodedGateSource.includes('请重试'),
+  'bootstrap failures must use concise, familiar login recovery copy');
+for (const rejectedFailureCopy of ['暂时无法打开登录', '身份验证未完成', '重新检查', '重新打开']) {
+  assert.ok(!decodedGateSource.includes(rejectedFailureCopy),
+    `login recovery must not expose awkward implementation copy: ${rejectedFailureCopy}`);
+}
 assert.ok(!identityErrorSource.includes('Error invoking remote method'));
+for (const rejectedErrorCopy of [
+  '\u767b\u5f55\u6682\u65f6\u65e0\u6cd5\u6253\u5f00',
+  '\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\u767b\u5f55',
+  '\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00',
+  '\u8eab\u4efd\u9a8c\u8bc1\u672a\u5b8c\u6210',
+  '\u8bbe\u5907\u6838\u9a8c',
+  '\u5f00\u53d1\u8005',
+]) assert.ok(!decodedGateSource.includes(rejectedErrorCopy) && !decodedIdentityErrorSource.includes(rejectedErrorCopy),
+  `desktop login must not expose internal recovery copy: ${rejectedErrorCopy}`);
+assert.ok(!/关闭.{0,8}(?:再|重新)打开/.test(`${decodedGateSource}\n${decodedIdentityErrorSource}`),
+  'desktop login recovery must never instruct the user to close and reopen the app');
+assert.ok(gateSource.includes('const clearPendingVerificationState = useCallback'),
+  'runtime acceptance and relocking must share one verification-secret cleanup boundary');
+assert.ok((gateSource.match(/clearPendingVerificationState\(\);/g) || []).length >= 2,
+  'both successful runtime acceptance and secure relock must clear pending verification state');
+for (const cleanupAction of [
+  'registrationFlowRef.current += 1', 'pollingFlowRef.current = null', 'setPolling(false)',
+  'setPending(null)', "setAccountPassword('')", "setCloudPassword('')", "setCloudPasswordAgain('')",
+]) assert.ok(gateSource.includes(cleanupAction), `verification cleanup must include: ${cleanupAction}`);
+assert.ok(gateSource.includes('pending?.status === \'verified\'')
+  && (gateSource.match(/onClick=\{returnToPasswordLogin\}/g) || []).length >= 2,
+  'the verified state must still offer a safe return to password login/reset');
+assert.ok(gateSource.includes('commitRoleSwitchRuntime({'),
+  'role switching must use the ordering helper before installing the next identity partition');
 assert.ok(
   gateSource.includes("console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'))"),
   'registration failures must retain only a stable local error code for Electron support diagnostics'
@@ -177,4 +231,48 @@ assert.ok(!decodedGateSource.includes('忘记本机密码？重新核验身份�
 assert.ok(!gateSource.includes('beginUnifiedOnlineRecovery'),
   'cloud reauthentication replaces legacy local-password recovery');
 
-console.log('desktop identity gate source checks passed');
+(async () => {
+  const {
+    commitRoleSwitchRuntime,
+    resumeOfflineAfterNetworkFailure,
+  } = await import('../services/desktopIdentityGateRuntime.mjs');
+
+  const offlineCalls = [];
+  const offlineResult = { gateState: { kind: 'offline-unlocked' } };
+  const resumed = await resumeOfflineAfterNetworkFailure({
+    client: { resume: async input => { offlineCalls.push(input); return offlineResult; } },
+    baseUrl: 'http://127.0.0.1:3001',
+  });
+  assert.deepStrictEqual(offlineCalls, [{ baseUrl: 'http://127.0.0.1:3001', online: false }]);
+  assert.strictEqual(resumed, offlineResult);
+
+  const switched = { token: 'next-session' };
+  const events = [];
+  let currentSession = null;
+  const onlineSessionRef = {};
+  Object.defineProperty(onlineSessionRef, 'current', {
+    get: () => currentSession,
+    set: value => { currentSession = value; events.push('ref'); },
+  });
+  await commitRoleSwitchRuntime({
+    switched,
+    onlineSessionRef,
+    resolveNext: async () => {
+      assert.strictEqual(currentSession, switched);
+      events.push('resolve');
+      return { kind: 'online-unlocked', partitionKey: 'user:teacher' };
+    },
+    setOnlineSession: value => { assert.strictEqual(currentSession, switched); events.push('state'); },
+    installIdentityContext: () => { assert.strictEqual(currentSession, switched); events.push('partition'); },
+    setGateState: () => { assert.strictEqual(currentSession, switched); events.push('gate'); },
+    setRuntimeSuspended: () => { assert.strictEqual(currentSession, switched); events.push('runtime'); },
+  });
+  assert.strictEqual(events[0], 'ref', 'the session ref must update before any state/provider/partition consumer');
+  assert.ok(events.indexOf('ref') < events.indexOf('resolve'));
+  assert.ok(events.indexOf('ref') < events.indexOf('partition'));
+
+  console.log('desktop identity gate source and behavior checks passed');
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

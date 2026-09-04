@@ -19,13 +19,16 @@ const hash = character => character.repeat(64);
   const handle = await runtime.createIsolatedHandle();
   try {
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
-      await facade.query('CREATE SCHEMA business');
+      await facade.query('CREATE SCHEMA business AUTHORIZATION vnext_pg17_business_owner');
       await facade.query('GRANT USAGE ON SCHEMA business TO vnext_pg17_writer');
+      await facade.query('SET ROLE vnext_pg17_business_owner');
       await facade.query('CREATE TABLE business.miniapp_cloud_accounts (account_id text PRIMARY KEY,phone_hmac char(64) NOT NULL UNIQUE,status text NOT NULL)');
       await facade.query('CREATE TABLE business.miniapp_cloud_role_grants (account_id text NOT NULL,role text NOT NULL,status text NOT NULL,profile_type text NULL,profile_id text NULL,student_relationship text NULL,updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),PRIMARY KEY(account_id,role))');
       await facade.query('CREATE TABLE business.teachers (id text PRIMARY KEY,tenant_id text NOT NULL,name text NOT NULL,phone_legacy text NULL,subject text NULL,hourly_rate numeric NULL,notes text NULL,legacy_deleted boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),updated_at timestamptz NOT NULL DEFAULT transaction_timestamp())');
       await facade.query('CREATE TABLE business.students (id text PRIMARY KEY,tenant_id text NOT NULL,name text NOT NULL,phone_legacy text NULL,legacy_is_institution_student boolean NOT NULL DEFAULT false,legacy_deleted boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),updated_at timestamptz NOT NULL DEFAULT transaction_timestamp())');
       await facade.query("CREATE TABLE business.student_contact_directory (contact_id text PRIMARY KEY,student_id text NOT NULL REFERENCES business.students(id),contact_slot smallint NOT NULL,relationship text NOT NULL,phone_value text NOT NULL,phone_hmac char(64) NULL,wechat_handle text NULL,status text NOT NULL,created_at timestamptz NOT NULL DEFAULT transaction_timestamp(),updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),UNIQUE(student_id,contact_slot))");
+      await facade.query("CREATE FUNCTION business.miniapp_cloud_role_grant_profile_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$");
+      await facade.query("CREATE FUNCTION business.miniapp_cloud_student_access_guard() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$");
       await facade.query(BASE_SQL);
       await facade.query(LEAST_PRIVILEGE_SQL);
       await facade.query(NEW_PROFILE_MODE_SQL);
@@ -59,6 +62,7 @@ const hash = character => character.repeat(64);
         ) $$`);
       await facade.query('REVOKE EXECUTE ON FUNCTION business.test_role_state(text,text,text) FROM PUBLIC');
       await facade.query('GRANT EXECUTE ON FUNCTION business.test_role_state(text,text,text) TO vnext_pg17_identity_verifier');
+      await facade.query('RESET ROLE');
     });
 
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {

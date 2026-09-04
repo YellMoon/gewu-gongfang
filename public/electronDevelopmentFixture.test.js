@@ -35,6 +35,10 @@ assert.strictEqual(preloadLoginFixtureEnabled(['electron', LOGIN_FIXTURE_RENDERE
 assert.strictEqual(preloadLoginFixtureEnabled(['electron', '--gewu-desktop-login-fixture=0']), false);
 assert.strictEqual(preloadLoginFixtureEnabled([]), false);
 
+const chromeFixtureSource = fs.readFileSync('src/services/desktopLoginChromeFixture.mjs', 'utf8');
+assert.ok(chromeFixtureSource.includes("cloudBusinessIdentityBaseUrl: 'http://127.0.0.1:3001'"),
+  'the isolated login fixture must never resolve its identity API to the production cloud endpoint');
+
 function exposedByPreload(argv) {
   const exposed = {};
   const source = fs.readFileSync('public/preload.js', 'utf8');

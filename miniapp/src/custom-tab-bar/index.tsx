@@ -63,7 +63,7 @@ export default function RoleTabBar() {
   const tabs = useMemo(() => (
     navigationMode === 'visitor'
       ? VISITOR_TABS
-      : (userType === 'student' ? STUDENT_TABS : STAFF_TABS)
+      : (['student', 'family_member'].includes(userType) ? STUDENT_TABS : STAFF_TABS)
   ), [navigationMode, userType]);
 
   const isTabPage = tabs.some((item) => item.pagePath === currentRoute);

@@ -663,6 +663,11 @@ select,
   background: var(--app-bg, #f5f7fb);
 }
 
+.app-shell--nav-pinned .app-shell__main {
+  margin-left: 236px;
+  width: calc(100% - 236px);
+}
+
 .app-shell__topbar {
   position: sticky;
   top: 0;

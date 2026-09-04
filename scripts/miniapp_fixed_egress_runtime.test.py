@@ -105,7 +105,8 @@ class LifecycleCleanupTests(unittest.TestCase):
             echo_url="https://echo.example/ip",
             allowlist=frozenset({("echo.example", 443)}),
             health_urls=("https://health.example/check",),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
 
     def run_with(self, events, *, wait_error=None, probe_error=None):
@@ -441,10 +442,12 @@ class FullLifecycleUnitTests(unittest.TestCase):
             echo_url="https://echo.example/ip",
             allowlist=frozenset({("echo.example", 443)}),
             health_urls=("https://health.example/check",),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
         ssh = RecordingSsh(events)
         proxy = TwoPhaseProxy(events)
+        health_versions = []
 
         def command_runner(argv, **_kwargs):
             if "miniapp:release-check" in argv:
@@ -462,7 +465,9 @@ class FullLifecycleUnitTests(unittest.TestCase):
             env={},
             lock_path=Path("unused.lock"),
             lock_factory=lambda _path: RecordingLock(events),
-            health_checker=lambda *_args: events.append("health"),
+            health_checker=lambda _url, version: (
+                events.append("health"), health_versions.append(version)
+            ),
             local_preflight=lambda _env: events.append("local-preflight"),
             ssh_connector=lambda: ssh,
             proxy_factory=lambda *_args: proxy,
@@ -473,6 +478,7 @@ class FullLifecycleUnitTests(unittest.TestCase):
         self.assertLess(events.index("build"), events.index("proxy-start"))
         self.assertLess(events.index("probe"), events.index("upload"))
         self.assertLess(events.index("upload"), events.index("receipt"))
+        self.assertEqual(health_versions, ["9.4.3", "9.4.3"])
         self.assertEqual(
             events[-4:],
             [
@@ -494,7 +500,8 @@ class ReceiptReconciliationTests(unittest.TestCase):
                 "https://health.example/backend",
                 "https://health.example/gateway",
             ),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
 
     def test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes(self):
@@ -579,7 +586,8 @@ class ReceiptReconciliationTests(unittest.TestCase):
             echo_url="https://echo.example/ip",
             allowlist=frozenset({("echo.example", 443)}),
             health_urls=("https://health.example/check",),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
         ssh = RecordingSsh(events)
         proxy = TwoPhaseProxy(events)

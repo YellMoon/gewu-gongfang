@@ -30,6 +30,15 @@ export const storage = {
     }
   },
 
+  setChecked<T>(key: string, value: T): boolean {
+    try {
+      Taro.setStorageSync(PREFIX + key, value);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   remove(key: string): void {
     try {
       Taro.removeStorageSync(PREFIX + key);

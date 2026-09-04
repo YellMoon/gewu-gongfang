@@ -10,6 +10,78 @@ page {
   letter-spacing: 0;
 }
 
+.question-formula {
+  display: inline;
+  color: inherit;
+  font-family: 'Times New Roman', serif;
+  white-space: nowrap;
+}
+
+.question-formula-block {
+  display: block;
+  max-width: 100%;
+  margin: 10rpx 0;
+  overflow-x: auto;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.question-formula-fraction {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  margin: 0 3rpx;
+  vertical-align: middle;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.question-formula-numerator {
+  padding: 0 4rpx 2rpx;
+  border-bottom: 1rpx solid currentColor;
+}
+
+.question-formula-denominator {
+  padding: 2rpx 4rpx 0;
+}
+
+.question-formula-radicand {
+  padding: 0 3rpx;
+  border-top: 1rpx solid currentColor;
+}
+
+.question-formula-overline {
+  text-decoration: overline;
+}
+
+.question-formula-underline {
+  text-decoration: underline;
+}
+
+.question-formula-accent,
+.question-formula-function {
+  display: inline;
+}
+
+.question-formula-function {
+  margin: 0 2rpx;
+  font-style: normal;
+}
+
+.question-media-placeholder {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44rpx;
+  padding: 4rpx 12rpx;
+  border: 1rpx dashed rgba(89, 101, 121, 0.3);
+  border-radius: 10rpx;
+  background: #f3f0e9;
+  color: #657184;
+  font-size: 22rpx;
+  line-height: 32rpx;
+}
+
 .container {
   min-height: 100vh;
   padding: 24rpx;

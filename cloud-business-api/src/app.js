@@ -202,8 +202,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     return response.status(503).json({ success: false, code: 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE' });
   }
-  function pairingFailure(response) {
-    response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
+  function pairingFailure(response, error) {
+    const code = String(error?.code || '');
+    if (code === 'CLOUD_DESKTOP_PAIRING_UNAVAILABLE') {
+      return response.status(503).json({ ok: false, code });
+    }
+    return response.status(403).json({ ok: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED' });
   }
   function businessUnavailable(response) {
     response.status(503).json({ ok: false, code: 'CLOUD_BUSINESS_UNAVAILABLE' });
@@ -2081,9 +2085,9 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!desktopPairing) return desktopUnavailable(response);
     try {
       const result = await desktopPairing.start(request.body);
-      response.json({ ok: true, pairingId: result.pairingId, pairingSecret: result.pairingSecret, expiresAt: result.expiresAt, qrValue: result.qrValue });
-    } catch (_) {
-      pairingFailure(response);
+      response.json({ ok: true, pairingId: result.pairingId, pairingSecret: result.pairingSecret, expiresAt: result.expiresAt, qrImageDataUrl: result.qrImageDataUrl });
+    } catch (error) {
+      pairingFailure(response, error);
     }
   });
   app.post('/api/desktop/pairing/confirm', async (request, response) => {
@@ -2091,8 +2095,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const result = await desktopPairing.confirm(request.body);
       response.json({ ok: true, status: result.status });
-    } catch (_) {
-      pairingFailure(response);
+    } catch (error) {
+      pairingFailure(response, error);
     }
   });
   app.get('/api/desktop/pairing/:pairingId', (request, response) => {
@@ -2100,8 +2104,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const result = desktopPairing.read({ pairingId: request.params.pairingId, pairingSecret: request.query.secret });
       response.json({ ok: true, ...result });
-    } catch (_) {
-      pairingFailure(response);
+    } catch (error) {
+      pairingFailure(response, error);
     }
   });
   return app;

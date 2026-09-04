@@ -22,7 +22,7 @@ const { createMiniappCloudAccountRepository } = require('./src/miniappCloudAccou
 const { createMiniappRoleApplicationRepository } = require('./src/miniappRoleApplicationRepository');
 const { createWechatPhoneVerifier } = require('./src/wechatPhoneVerifier');
 const { createWechatIdentityVerifier } = require('./src/wechatIdentityVerifier');
-const { createWechatMiniappSchemeService } = require('./src/wechatMiniappSchemeService');
+const { createWechatMiniappCodeService } = require('./src/wechatMiniappCodeService');
 const { createCanonicalAccountProvisioningService } = require('./src/canonicalAccountProvisioningService');
 const { createCanonicalWechatIdentityService } = require('./src/canonicalWechatIdentityService');
 const { createDesktopPasswordIdentityService } = require('./src/desktopPasswordIdentityService');
@@ -458,8 +458,8 @@ const paperExportWorker = process.env.CLOUD_PAPER_EXPORT_WORKER_ENABLED === '1' 
     log: message => console.error(message),
   })
   : null;
-const desktopLoginScheme = desktopRuntime?.registration
-  ? createWechatMiniappSchemeService({
+const desktopLoginCode = desktopRuntime?.registration
+  ? createWechatMiniappCodeService({
     appId: process.env.WECHAT_APPID,
     appSecret: process.env.WECHAT_APPSECRET,
     envVersion: process.env.WECHAT_MINIAPP_LOGIN_ENV_VERSION || 'release',
@@ -467,7 +467,7 @@ const desktopLoginScheme = desktopRuntime?.registration
     now: () => new Date(),
   })
   : null;
-const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonicalWechatIdentity && desktopLoginScheme
+const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonicalWechatIdentity && desktopLoginCode
   ? createDesktopPairingService({
     now: () => new Date(),
     randomId: prefix => `${prefix}-${require('crypto').randomUUID()}`,
@@ -477,7 +477,7 @@ const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonical
     },
     issueVerificationForVerifiedAccount: input => desktopRuntime.registration.issueVerificationForVerifiedAccount(input),
     inspectVerificationToken: token => desktopRuntime.registration.inspectVerificationToken(token),
-    generateLoginScheme: input => desktopLoginScheme.generateDesktopLoginScheme(input),
+    generateLoginCode: input => desktopLoginCode.generateDesktopLoginCode(input),
   })
   : null;
 const app = createCloudBusinessApp({

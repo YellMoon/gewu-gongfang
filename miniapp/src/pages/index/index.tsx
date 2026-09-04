@@ -206,11 +206,11 @@ export default function Index() {
         s.start_time?.startsWith(today) && s.status === ScheduleStatus.PLANNED
       ).length;
 
-      const todayRevenue = rolePolicy.role === 'student' ? 0 : scopedSchedules
+      const todayRevenue = ['student', 'family_member'].includes(rolePolicy.role) ? 0 : scopedSchedules
         .filter(s => s.start_time?.startsWith(today) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
-      const monthRevenue = rolePolicy.role === 'student' ? 0 : scopedSchedules
+      const monthRevenue = ['student', 'family_member'].includes(rolePolicy.role) ? 0 : scopedSchedules
         .filter(s => s.start_time?.startsWith(thisMonth) && s.status === ScheduleStatus.COMPLETED)
         .reduce((sum, s) => sum + (s.calculated_tuition || 0), 0);
 
@@ -276,8 +276,8 @@ export default function Index() {
     });
   };
 
-  const isStudent = user?.user_type === 'student';
-  const showStaffShortcuts = access.modules.includes('scheduling') && !['student', 'visitor'].includes(access.role);
+  const isStudent = user?.user_type === 'student' || user?.user_type === 'family_member';
+  const showStaffShortcuts = access.modules.includes('scheduling') && !['student', 'family_member', 'visitor'].includes(access.role);
   const roleLabel = user ? getMiniappHomeRoleLabel(user.user_type) : '未登录';
   const greeting = user?.user_type === "super_admin" ? "运营面板" : isStudent ? "学习面板" : "教学面板";
   const visibleRoleLabel = user ? getMiniappHomeRoleLabel(user) : roleLabel;

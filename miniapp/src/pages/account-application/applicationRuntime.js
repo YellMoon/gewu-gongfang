@@ -47,10 +47,8 @@ function buildRoleApplicationRequest(input = {}) {
   return {
     requestedIdentity,
     profileMode,
-    // The cloud repository currently records a single review note. Keep the
-    // storage detail private to the client while requiring human-recognizable
-    // information instead of an internal profile identifier.
-    bindingHint: `\u59d3\u540d\uff1a${profileName}\uff1b\u624b\u673a\u53f7\uff1a${contactPhone}`,
+    profileName,
+    profilePhone: contactPhone,
   };
 }
 

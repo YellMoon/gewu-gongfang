@@ -2,15 +2,13 @@ const { app, BrowserWindow, Menu, ipcMain, screen, shell, safeStorage, net } = r
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const WebSocket = require('ws');
 const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
 const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
-const { QuestionDraftProvenanceRegistry } = require('./questionDraftProvenanceRegistry');
+const { QuestionDraftProvenanceRegistry, verifyCloudDesktopSession } = require('./questionDraftProvenanceRegistry');
 const { sealQuestionImportSource, sealQuestionAsset } = require('./questionImportRelay');
 const {
   ensureRuntimeConfig,
   applyRuntimeConfigToEnv,
-  MANAGED_CLOUD_BASE_URL,
   MANAGED_CLOUD_BUSINESS_BASE_URL,
 } = require('./runtimeConfig');
 const { createDesktopIdentityVault, recoverUnreadableDesktopIdentityVault } = require('./desktopIdentityVault');
@@ -121,10 +119,7 @@ function getDesktopAuthorityRuntime() {
       filePath: path.join(app.getPath('userData'), 'desktop-authority-outbox.bin'),
       safeStorage,
       vault: getDesktopIdentityVault(),
-      durableRelayBaseUrl: String(config.cloudBaseUrl || MANAGED_CLOUD_BASE_URL),
       cloudBusinessBaseUrl: String(config.cloudBusinessIdentityBaseUrl || MANAGED_CLOUD_BUSINESS_BASE_URL),
-      relayWebSocketBaseUrl: String(config.cloudBaseUrl || MANAGED_CLOUD_BASE_URL),
-      WebSocketImpl: WebSocket,
       isOnline: () => net.isOnline(),
     });
   }
@@ -262,12 +257,12 @@ app.on('before-quit', () => { void crossInstallInstanceLock?.close(); stopServic
 const questionDraftRegistry = new QuestionDraftProvenanceRegistry({
   filePath: path.join(app.getPath('userData'), 'question-draft-provenance.json'),
   tokenVerifier: async authorization => {
-    const response = await fetch(`http://127.0.0.1:${process.env.PORT || 3001}/api/auth/desktop-session`, {
-      headers: { authorization: String(authorization || ''), 'x-device-id': process.env.GEWU_DEVICE_ID || '' },
+    const config = loadRuntimeConfig();
+    return verifyCloudDesktopSession({
+      baseUrl: String(config.cloudBusinessIdentityBaseUrl || MANAGED_CLOUD_BUSINESS_BASE_URL),
+      authorization,
+      fetchImpl: fetch,
     });
-    const data = await response.json();
-    if (!response.ok || !data.success) throw new Error(data.code || 'DESKTOP_SESSION_INTROSPECTION_FAILED');
-    return data.session;
   },
 });
 
@@ -275,11 +270,11 @@ ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('get-user-data-path', () => app.getPath('userData'));
 ipcMain.handle('runtime-config:get', () => ({ ...loadRuntimeConfig(), buildFlavor: DESKTOP_BUILD_FLAVOR }));
 ipcMain.handle('desktop-identity:status', () => readDesktopIdentityStatus());
-ipcMain.handle('desktop-identity:begin-unified-online-registration', (_event, input) => getDesktopIdentityVault().beginUnifiedOnlineRegistration(input));
+ipcMain.handle('desktop-identity:begin-unified-online-registration', (_event, input) => getDesktopIdentityVault().beginUnifiedOnlineRegistration(configuredDesktopIdentity(input)));
 ipcMain.handle('desktop-identity:complete-registration', (_event, input) => getDesktopIdentityVault().completeRegistration(input));
 ipcMain.handle('desktop-identity:resume', () => getDesktopIdentityVault().resume());
 ipcMain.handle('desktop-identity:lock', () => getDesktopIdentityVault().lock());
-ipcMain.handle('desktop-identity:refresh-offline-lease', (_event, input) => getDesktopIdentityVault().refreshOfflineLease(input));
+ipcMain.handle('desktop-identity:accept-issued-session', (_event, input) => getDesktopIdentityVault().acceptIssuedSession(input));
 ipcMain.handle('desktop-identity:sign-challenge', (_event, input) => getDesktopIdentityVault().signChallenge(input));
 ipcMain.handle('desktop-authority:append-draft', (_event, input) => getDesktopAuthorityRuntime().appendDraft(input));
 ipcMain.on('desktop-authority:append-draft-sync', (event, input) => {
@@ -293,7 +288,6 @@ ipcMain.on('desktop-authority:append-draft-batch-sync', (event, inputs) => {
 ipcMain.handle('desktop-authority:get', (_event, id) => getDesktopAuthorityRuntime().get(id));
 ipcMain.handle('desktop-authority:list', () => getDesktopAuthorityRuntime().list());
 ipcMain.handle('desktop-authority:list-role-applications', (_event, input) => getDesktopAuthorityRuntime().listRoleApplications(input));
-ipcMain.handle('desktop-authority:read-projection', (_event, input) => getDesktopAuthorityRuntime().readProjection(input));
 ipcMain.handle('desktop-authority:review-role-application', (_event, applicationId, review, input) => getDesktopAuthorityRuntime().reviewRoleApplication(applicationId, review, input));
 ipcMain.handle('desktop-authority:submit', (_event, id, input) => getDesktopAuthorityRuntime().submit(id, input));
 ipcMain.handle('desktop-authority:confirm-and-submit', (_event, id, input) => getDesktopAuthorityRuntime().confirmAndSubmit(id, input));

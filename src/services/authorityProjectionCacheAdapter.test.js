@@ -11,7 +11,7 @@ const assert = require('assert');
     sourceVersion: 7,
     payload: {
       students: [{ id: 'student-1', name: 'Authority student' }],
-      student_contacts: [{ id: 'student-contact-1', student_id: 'student-1', slot: 1, relationship: 'student', phone: '13800138000', wechat: null }],
+      student_contacts: [{ id: 'student-contact-1', student_id: 'student-1', slot: 1, relationship: 'student', phone: '13800138000', wechat: null, updated_at: '2026-07-28T00:00:00.000Z' }],
       courses: [{
         id: 'course-1',
         student_pricings: '[{"student_id":"student-1","tuition":100}]',
@@ -65,7 +65,13 @@ const assert = require('assert');
       type: 'student.update.v1',
       status: 'awaiting_confirmation',
       createdAt: '2026-07-28T01:00:00.000Z',
-      payload: { id: 'student-1', changes: { notes: 'offline draft' } },
+      payload: { id: 'student-1', changes: {
+        notes: 'offline draft',
+        contacts: [
+          { slot: 1, relationship: 'student', phone: '13900139000', wechat: 'student-draft', updated_at: '2026-07-28T00:00:00.000Z' },
+          { slot: 2, relationship: 'guardian', phone: '13700137000', wechat: null, updated_at: null },
+        ],
+      } },
     },
     {
       id: 'draft-2',
@@ -73,6 +79,13 @@ const assert = require('assert');
       status: 'confirmed',
       createdAt: '2026-07-28T02:00:00.000Z',
       payload: { record: { id: 'room-offline', name: 'Offline room' } },
+    },
+    {
+      id: 'draft-school',
+      type: 'school.create.v1',
+      status: 'awaiting_confirmation',
+      createdAt: '2026-07-28T02:30:00.000Z',
+      payload: { record: { id: 'school-offline', name: 'Offline school', count: 1 } },
     },
     {
       id: 'done',
@@ -85,8 +98,19 @@ const assert = require('assert');
 
   const cache = buildAuthorityBackedBrowserCache({ projection, outbox, localOnly });
   assert.strictEqual(cache.students[0].notes, 'offline draft');
-  assert.deepStrictEqual(cache.student_contacts, [{ id: 'student-contact-1', student_id: 'student-1', slot: 1, relationship: 'student', phone: '13800138000', wechat: null }]);
+  assert.deepStrictEqual(cache.student_contacts.map(contact => ({
+    student_id: contact.student_id,
+    slot: contact.slot,
+    relationship: contact.relationship,
+    phone: contact.phone,
+    wechat: contact.wechat,
+    updated_at: contact.updated_at,
+  })), [
+    { student_id: 'student-1', slot: 1, relationship: 'student', phone: '13900139000', wechat: 'student-draft', updated_at: '2026-07-28T00:00:00.000Z' },
+    { student_id: 'student-1', slot: 2, relationship: 'guardian', phone: '13700137000', wechat: null, updated_at: null },
+  ]);
   assert.deepStrictEqual(cache.rooms, [{ id: 'room-offline', name: 'Offline room' }]);
+  assert.deepStrictEqual(cache.schools, [{ id: 'school-offline', name: 'Offline school', count: 1 }]);
   assert.deepStrictEqual(cache.schedules[0].student_ids, ['student-1']);
   assert.deepStrictEqual(cache.courses[0].student_pricings, [
     { student_id: 'student-1', tuition: 100 },

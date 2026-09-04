@@ -125,6 +125,8 @@ assert.ok(source.includes('--component'), 'version tooling must require an expli
 assert.ok(!source.includes('syncBackendPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite retired backend package versions');
 assert.ok(!source.includes('syncCloudBusinessApiPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the cloud service version');
 assert.ok(!source.includes('syncStorageAgentPackageVersion(newVersion)'), 'a desktop bump must not silently rewrite the storage agent version');
+assert.ok(source.includes("if (component === 'cloud_business') syncGatewayPackageVersion(version)"),
+  'the retired public gateway must follow its owning cloud-business component version');
 const lockFixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-version-lock-'));
 const lockFixturePath = path.join(lockFixtureDir, 'package-lock.json');
 fs.writeFileSync(lockFixturePath, JSON.stringify({ version: '1.2.3', packages: { '': { version: '1.2.3' } } }, null, 2));

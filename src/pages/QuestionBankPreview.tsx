@@ -180,10 +180,7 @@ const QuestionBankPreview: React.FC = () => {
 
   useEffect(() => {
     try {
-      const session = readDesktopAuthorizationSession();
-      fetch('/api/permissions/my', { headers: { authorization: session.authorization, 'x-device-id': session.authContext.deviceId } })
-        .then(response => response.json()).then(data => setDeleteContext(normalizeDesktopQuestionDeleteContext(session, data.capabilities)))
-        .catch(() => undefined);
+      setDeleteContext(normalizeDesktopQuestionDeleteContext(readDesktopAuthorizationSession()));
     } catch (_error) {}
   }, []);
 
@@ -954,7 +951,6 @@ const QuestionBankPreview: React.FC = () => {
               {!treeVisible && (
                 <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开体系</Button>
               )}
-              <h2>试题库</h2>
               <Select
                 className="qb-subject-select"
                 value={currentSubject}

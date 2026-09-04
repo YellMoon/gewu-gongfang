@@ -29,6 +29,8 @@ from miniapp_fixed_egress_proxy import MAX_HEADER_BYTES
 HEALTH_TIMEOUT = 5.0
 PROBE_TIMEOUT = 8.0
 EXPECTED_MINIPROGRAM_CI_VERSION = "2.1.31"
+EXPECTED_COMPATIBILITY_SCHEMA = "gewu.protocol-data-compatibility.v1"
+REQUIRED_CLOUD_BUSINESS_PARTICIPANTS = frozenset({"cloud_business", "miniapp"})
 DEFAULT_ECHO_URL = "https://checkip.amazonaws.com/"
 DEFAULT_HEALTH_URLS = (
     "https://physicsedu.xyz/cloud-business/api/health",
@@ -41,18 +43,50 @@ class FixedEgressConfig:
     echo_url: str
     allowlist: frozenset[tuple[str, int]]
     health_urls: tuple[str, ...]
-    expected_version: str
+    expected_miniapp_version: str
+    expected_cloud_business_version: str
 
 
-def read_miniapp_version(root: Path = PROJECT_ROOT) -> str:
+def _read_package_version(package_path: Path) -> str:
     try:
-        payload = json.loads((root / "miniapp" / "package.json").read_text(encoding="utf-8"))
+        payload = json.loads(package_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT) from error
     version = payload.get("version")
     if not isinstance(version, str) or not version:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT)
     return version
+
+
+def read_miniapp_version(root: Path = PROJECT_ROOT) -> str:
+    return _read_package_version(root / "miniapp" / "package.json")
+
+
+def read_cloud_business_version(root: Path = PROJECT_ROOT) -> str:
+    return _read_package_version(root / "cloud-business-api" / "package.json")
+
+
+def verify_cloud_business_compatibility(root: Path = PROJECT_ROOT) -> None:
+    try:
+        payload = json.loads(
+            (root / "config" / "release-compatibility.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    except (OSError, json.JSONDecodeError) as error:
+        raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT) from error
+    contracts = payload.get("contracts") if isinstance(payload, dict) else None
+    contract = contracts.get("cloudBusinessRest") if isinstance(contracts, dict) else None
+    participants = contract.get("participants") if isinstance(contract, dict) else None
+    contract_version = contract.get("version") if isinstance(contract, dict) else None
+    if (
+        payload.get("schema") != EXPECTED_COMPATIBILITY_SCHEMA
+        or not isinstance(contract_version, str)
+        or not contract_version.strip()
+        or not isinstance(participants, list)
+        or not REQUIRED_CLOUD_BUSINESS_PARTICIPANTS.issubset(participants)
+    ):
+        raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT)
 
 
 def _validate_https_url(value: str, purpose: str) -> tuple[str, int]:
@@ -78,7 +112,9 @@ def _validate_https_url(value: str, purpose: str) -> tuple[str, int]:
 
 def config_from_env(
     env: Mapping[str, str],
-    expected_version: Optional[str] = None,
+    expected_miniapp_version: Optional[str] = None,
+    expected_cloud_business_version: Optional[str] = None,
+    root: Path = PROJECT_ROOT,
 ) -> FixedEgressConfig:
     raw_ip = (env.get("WECHAT_MINIAPP_FIXED_EGRESS_IP") or "").strip()
     try:
@@ -102,13 +138,18 @@ def config_from_env(
     )
     for health_url in health_urls:
         _validate_https_url(health_url, "health URL")
-    version = expected_version or read_miniapp_version()
+    verify_cloud_business_compatibility(root)
+    miniapp_version = expected_miniapp_version or read_miniapp_version(root)
+    cloud_business_version = (
+        expected_cloud_business_version or read_cloud_business_version(root)
+    )
     return FixedEgressConfig(
         fixed_egress_ip=raw_ip,
         echo_url=echo_url,
         allowlist=frozenset({echo_target, ("servicewechat.com", 443)}),
         health_urls=tuple(health_urls),
-        expected_version=version,
+        expected_miniapp_version=miniapp_version,
+        expected_cloud_business_version=cloud_business_version,
     )
 
 
@@ -133,7 +174,7 @@ def _read_json_response(response_object) -> dict:
 
 def check_health(
     url: str,
-    expected_version: str,
+    expected_cloud_business_version: str,
     *,
     timeout: float = HEALTH_TIMEOUT,
     opener=None,
@@ -160,7 +201,7 @@ def check_health(
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_HEALTH_UNHEALTHY) from error
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_HEALTH_UNHEALTHY)
-    if payload.get("version") != expected_version:
+    if payload.get("version") != expected_cloud_business_version:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_HEALTH_VERSION)
 
 
@@ -336,11 +377,11 @@ def _resolve_miniapp_private_key(env: Mapping[str, str], root: Path) -> Path:
 def verify_local_upload_inputs(
     env: Mapping[str, str],
     *,
-    expected_version: str,
+    expected_miniapp_version: str,
     root: Path = PROJECT_ROOT,
 ) -> None:
     miniapp_package = _read_json_file(root / "miniapp" / "package.json")
-    if miniapp_package.get("version") != expected_version:
+    if miniapp_package.get("version") != expected_miniapp_version:
         raise FixedEgressError(MINIAPP_FIXED_EGRESS_LOCAL_PREFLIGHT)
     declared_ci = (miniapp_package.get("devDependencies") or {}).get("miniprogram-ci")
     if declared_ci != EXPECTED_MINIPROGRAM_CI_VERSION:

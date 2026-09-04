@@ -3,7 +3,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../../utils/sync';
-import { isStudentUser } from '../../../utils/permission';
+import { isStudentScopedUser } from '../../../utils/permission';
 import './detail.scss';
 
 const STATUS_MAP: Record<number, { label: string; color: string }> = {
@@ -17,7 +17,7 @@ const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3:
 
 export default function ScheduleDetail() {
   const router = useRouter();
-  const isStudent = isStudentUser();
+  const isStudent = isStudentScopedUser();
   const { id } = router.params;
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [course, setCourse] = useState<Course | null>(null);

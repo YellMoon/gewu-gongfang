@@ -8,9 +8,11 @@ const deployPy = fs.readFileSync('scripts/deploy.py', 'utf-8');
 const deployGatewayPy = fs.readFileSync('scripts/deploy_gateway.py', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 const backendPackage = fs.readFileSync('backend/package.json', 'utf-8');
+const cloudBusinessPackage = fs.readFileSync('cloud-business-api/package.json', 'utf-8');
 const taskDoc = fs.readFileSync('task.md', 'utf-8');
 const rootPkg = JSON.parse(packageJson);
 const backendPkg = JSON.parse(backendPackage);
+const cloudBusinessPkg = JSON.parse(cloudBusinessPackage);
 const deployRequirementsPath = 'scripts/requirements-deploy.txt';
 const STRONG_JWT_FIXTURE = 'J7@vN2#qR9!mT4$kL8&cW5*zH3^sP6?dF1';
 
@@ -164,7 +166,7 @@ print(all(secret not in command for command in ssh.commands for secret in all_se
 print(ssh.sftp.modes == [(path, 0o600) for path in paths] and all(ssh.sftp.events.index("chmod:" + path) < ssh.sftp.events.index("write:" + path) for path in paths))
 print(ssh.sftp.removed == paths)
 print(len(ssh.commands) == 4 and "mkdir -p" in ssh.commands[0] and all("trap" in command and path in command for command, path in zip(secure_commands[:2], paths)) and "trap" not in secure_commands[2])
-print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 delete edu-gateway" in secure_commands[2] and "GEWU_APP_VERSION=8.9.1" in secure_commands[2] and "--update-env" in secure_commands[2])
+print("node -e" in secure_commands[0] and "pm2 start" in secure_commands[1] and "--update-env" in secure_commands[1] and "pm2 delete edu-gateway" in secure_commands[2] and "GEWU_APP_VERSION=${cloudBusinessPkg.version}" in secure_commands[2] and "--update-env" in secure_commands[2])
 print(all(all(secret in ssh.sftp.contents[path] for secret in runtime_secrets if secret) for path in paths))
 `], { cwd: process.cwd(), env: deploySecurityEnv, encoding: 'utf-8' });
 assert.strictEqual(deploySecurityProbe.status, 0, deploySecurityProbe.stderr || 'secret-safe gateway deploy probe should run');

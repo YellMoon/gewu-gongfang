@@ -3,6 +3,9 @@ const fs = require('fs');
 
 const source = fs.readFileSync(require.resolve('./QuestionBankPreview.tsx'), 'utf8');
 
+assert.strictEqual((source.match(/>试题库<\/h2>/gu) || []).length, 0,
+  'the page header already names the question bank, so the content toolbar must not repeat the same heading');
+
 assert.ok(source.includes('await db?.refreshAuthorityProjection?.()'),
   'question preview must refresh the authenticated cloud projection before indexing local records');
 assert.ok(source.includes('db.deleteCloudCachedQuestion'),
@@ -17,5 +20,9 @@ assert.ok(source.includes('onToggleBasket={() => toggleQuestionBasket(q.id)}'),
   'every desktop question card must offer a direct add-or-remove basket action');
 assert.ok(!source.includes('downloadAsWord(') && !source.includes('generateExamWord('),
   'question preview must not bypass the cloud export task with a browser-local Word file');
+assert.ok(!source.includes('/api/permissions/my'),
+  'question preview must not ask the embedded database to authorize a cloud question operation');
+assert.ok(source.includes('normalizeDesktopQuestionDeleteContext(readDesktopAuthorizationSession())'),
+  'question preview must derive its delete context from the verified cloud desktop session');
 
 console.log('question bank preview cloud authority checks passed');

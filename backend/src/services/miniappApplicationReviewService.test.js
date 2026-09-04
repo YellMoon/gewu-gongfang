@@ -32,9 +32,10 @@ try {
      review_status, auth_version, is_super_admin_identity, deleted, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 1, ?, 0, ?, ?)`);
   insertUser.run('review-admin', '13800138290', '13800138290', 'Review Admin', 'admin', 'admin', 1, 'approved', 0, now, now);
-  db.prepare(`UPDATE users SET role='super_admin', identity_kind='super_admin', status=1,
-    login_enabled=1, review_status='approved', is_super_admin_identity=1, deleted=0,
-    updated_at=? WHERE id='miniapp-admin-13732250653'`).run(now);
+  insertUser.run(
+    'miniapp-admin-13732250653', '13732250653', '13732250653', 'Fixed Super Admin',
+    'super_admin', 'super_admin', 1, 'approved', 1, now, now,
+  );
   insertUser.run('review-teacher-actor', '13800138291', '13800138291', 'Teacher Actor', 'teacher', 'teacher', 1, 'approved', 0, now, now);
   for (const [id, phone] of [
     ['review-student', '13800138200'],

@@ -23,10 +23,6 @@ const {
 } = require('./services/authorizationPolicy');
 
 const SCHEMA_VERSION = 3122;
-const MINIAPP_ADMIN_SEED_USERS = [
-  { id: 'miniapp-admin-13732250653', phone: '13732250653', name: 'Miniapp Admin 0653' },
-  { id: 'miniapp-admin-18257136756', phone: '18257136756', name: 'Miniapp Admin 6756' },
-];
 const ENVIRONMENTS = {
   dev: { dbFile: 'scheduling.dev.db' },
   staging: { dbFile: 'scheduling.staging.db' },
@@ -515,23 +511,6 @@ class DatabaseService {
     this.db.prepare("UPDATE users SET login_enabled = 0 WHERE login_enabled IS NULL").run();
     this.db.prepare("UPDATE users SET auth_version = 1 WHERE auth_version IS NULL OR auth_version < 1").run();
     this.db.prepare("UPDATE users SET name = nickname WHERE (name IS NULL OR name = '') AND nickname IS NOT NULL").run();
-    this._seedMiniappAdminUsers();
-  }
-
-  _seedMiniappAdminUsers() {
-    const now = this._now();
-    const insertSeed = this.db.prepare(
-      `INSERT INTO users
-       (id, phone, name, nickname, role, status, login_enabled, deleted, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'admin', 1, 1, 0, ?, ?)`
-    );
-
-    MINIAPP_ADMIN_SEED_USERS.forEach(seed => {
-      const existing = this.db.prepare('SELECT id, phone FROM users').all()
-        .find(user => normalizePhone(user.phone) === normalizePhone(seed.phone));
-      if (existing) return;
-      insertSeed.run(seed.id, seed.phone, seed.name, seed.name, now, now);
-    });
   }
 
   _ensureAuthorizationPersistence() {

@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   resume: () => ipcRenderer.invoke('desktop-identity:resume'),
   lock: () => ipcRenderer.invoke('desktop-identity:lock'),
-  refreshOfflineLease: input => ipcRenderer.invoke('desktop-identity:refresh-offline-lease', input),
+  acceptIssuedSession: input => ipcRenderer.invoke('desktop-identity:accept-issued-session', input),
   signChallenge: input => ipcRenderer.invoke('desktop-identity:sign-challenge', input),
 }));
 
@@ -71,7 +71,6 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
   get: id => ipcRenderer.invoke('desktop-authority:get', id),
   list: () => ipcRenderer.invoke('desktop-authority:list'),
   listRoleApplications: input => ipcRenderer.invoke('desktop-authority:list-role-applications', input),
-  readProjection: input => ipcRenderer.invoke('desktop-authority:read-projection', input),
   reviewRoleApplication: (applicationId, review, input) => ipcRenderer.invoke('desktop-authority:review-role-application', applicationId, review, input),
   submit: (id, input) => ipcRenderer.invoke('desktop-authority:submit', id, input),
   confirmAndSubmit: (id, input) => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id, input),

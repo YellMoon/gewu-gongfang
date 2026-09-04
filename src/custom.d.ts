@@ -68,7 +68,11 @@ interface Window {
     }): Promise<any>;
     resume(): Promise<any>;
     lock(): Promise<any>;
-    refreshOfflineLease(input: Record<string, any>): Promise<any>;
+    acceptIssuedSession(input: {
+      session: Record<string, any>;
+      profile: Record<string, any>;
+      offlineLease: Record<string, any>;
+    }): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
   };
   desktopIdentitySessionProvider?: {
@@ -166,20 +170,11 @@ interface Window {
       requestedIdentity: 'teacher' | 'student' | 'family_member';
       profileMode: 'existing' | 'new';
       bindingHint: string;
+      profileName: string | null;
+      profilePhone: string | null;
       status: 'submitted';
       submittedAt: string;
     }>>;
-    readProjection(input?: { minSourceVersion?: number }): Promise<{
-      protocol: 'gewu.authority-projection.v1';
-      authorityId: string;
-      hostEpochId: string;
-      userId: string;
-      role: string;
-      sourceVersion: number;
-      payload: Record<string, any>;
-      payloadHash: string;
-      signature: string;
-    }>;
     submit(id: string, input?: { sessionToken: string }): Promise<any>;
     confirmAndSubmit(id: string, input?: { sessionToken: string }): Promise<any>;
     reviewRoleApplication(applicationId: string, review: { decision: 'approved' | 'rejected'; profileId: string | null }, input: { sessionToken: string }): Promise<any>;

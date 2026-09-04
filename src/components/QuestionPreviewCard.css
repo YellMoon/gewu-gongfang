@@ -77,6 +77,19 @@
   height: 34px;
 }
 
+.qb-answer-button {
+  border-radius: 999px;
+  height: 34px;
+  color: #526173;
+  font-weight: 600;
+}
+
+.qb-answer-button:hover,
+.qb-answer-button:focus-visible {
+  color: #007aff !important;
+  background: rgba(0, 122, 255, 0.06) !important;
+}
+
 .qb-delete-button {
   border-radius: 999px;
   height: 34px;

@@ -223,7 +223,8 @@ const assert = require('assert');
   const scheduleUpdate = adapter.createCommand({
     id: 'draft-schedule-update', type: 'schedule.update.v1',
     payload: { id: 'schedule-1', expectedVersion: '2026-08-24T00:00:00.000Z', changes: {
-      start_time: '2026-08-25T01:00:00.000Z', end_time: '2026-08-25T02:00:00.000Z', status: 1,
+      course_id: 'course-2', start_time: '2026-08-25 09:00', end_time: '2026-08-25 10:00',
+      recurring_rule: '{"frequency":"weekly"}', service_type: 2, status: 1,
       room: 'Room One', calculated_tuition: 100, calculated_teacher_fee: 60, notes: null,
       student_pricings: [{ student_id: 'student-1', status: 4, tuition: 80, teacher_fee: 40 }],
     } },
@@ -233,7 +234,9 @@ const assert = require('assert');
   assert.deepStrictEqual(calls.at(-1).input, {
     baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
     scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-24T00:00:00.000Z',
-    startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z', status: 1,
+    courseId: 'course-2', startAt: new Date(2026, 7, 25, 9, 0).toISOString(),
+    endAt: new Date(2026, 7, 25, 10, 0).toISOString(), recurringRule: '{"frequency":"weekly"}',
+    serviceType: 2, status: 1,
     roomDisplay: 'Room One', tuition: 100, teacherFee: 60, notes: null,
     pricings: [{ studentId: 'student-1', attendanceStatus: 4, tuition: 80, teacherFee: 40 }],
   });

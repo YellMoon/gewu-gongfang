@@ -178,13 +178,23 @@ class BrowserDatabaseService {
   public async refreshAuthorityProjection({
     minSourceVersion = 0,
   }: { minSourceVersion?: number } = {}): Promise<void> {
-    if (typeof window.desktopIdentitySessionProvider?.listCloudBusinessProjection === 'function') {
+    const cloudProvider = window.desktopIdentitySessionProvider;
+    if (typeof cloudProvider?.listCloudBusinessProjection !== 'function'
+      || typeof cloudProvider.listCloudQuestions !== 'function') {
+      throw Object.assign(new Error('DESKTOP_CLOUD_PROJECTION_PROVIDER_REQUIRED'), {
+        code: 'DESKTOP_CLOUD_PROJECTION_PROVIDER_REQUIRED',
+      });
+    }
+    if (typeof window.desktopAuthority?.list !== 'function') {
+      throw Object.assign(new Error('DESKTOP_AUTHORITY_OUTBOX_BRIDGE_REQUIRED'), {
+        code: 'DESKTOP_AUTHORITY_OUTBOX_BRIDGE_REQUIRED',
+      });
+    }
+    {
       const [payload, questions, outbox] = await Promise.all([
-        window.desktopIdentitySessionProvider.listCloudBusinessProjection(),
-        typeof window.desktopIdentitySessionProvider.listCloudQuestions === 'function'
-          ? window.desktopIdentitySessionProvider.listCloudQuestions()
-          : Promise.resolve([]),
-        window.desktopAuthority?.list ? window.desktopAuthority.list() : Promise.resolve([]),
+        cloudProvider.listCloudBusinessProjection(),
+        cloudProvider.listCloudQuestions(),
+        window.desktopAuthority.list(),
       ]);
       const cachedAt = new Date().toISOString();
       const cloudQuestions = questions.map(question => ({
@@ -224,41 +234,6 @@ class BrowserDatabaseService {
       }));
       return;
     }
-    if (!window.desktopAuthority?.readProjection || !window.desktopAuthority?.list) {
-      throw Object.assign(new Error('DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE'), {
-        code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
-      });
-    }
-    const [projection, outbox] = await Promise.all([
-      window.desktopAuthority.readProjection({ minSourceVersion }),
-      window.desktopAuthority.list(),
-    ]);
-    const next = buildAuthorityBackedBrowserCache({
-      projection,
-      outbox,
-      localOnly: {
-        questionBasketIds: this.data.questionBasketIds,
-        questionVersions: this.data.questionVersions,
-        importTasks: this.data.importTasks,
-        importTaskItems: this.data.importTaskItems,
-      },
-    });
-    this.data = {
-      ...emptyDatabase(),
-      ...next,
-    } as Database;
-    this.hydrateTaxonomiesFromSyncRows();
-    this.migrateLegacyQuestionData();
-    this.migrateLegacyTagData();
-    this.migrateQuestionVersionData();
-    this.migrateImportTaskData();
-    this.rebuildQuestionIndexes();
-    this.saveData();
-    window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
-      detail: {
-        sourceVersion: Number((projection as any).sourceVersion || 0),
-      },
-    }));
   }
 
   private loadData(): void {

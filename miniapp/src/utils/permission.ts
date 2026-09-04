@@ -55,7 +55,7 @@ export const studentModules = [
 
 export const teacherModules = staffModules.slice();
 
-export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'visitor';
+export type MiniappRole = 'super_admin' | 'teacher' | 'student' | 'family_member' | 'visitor';
 export type MiniappCapability =
   | 'business:all'
   | 'business:teacher-scope'
@@ -94,6 +94,7 @@ export interface UserInfo {
   account_state?: 'formal' | 'visitor';
   token_use?: 'miniapp-cloud' | 'miniapp-session' | 'miniapp-visitor';
   identity_kind?: string;
+  student_relationship?: 'student' | 'guardian';
   authority_id?: string;
   capabilities?: MiniappCapability[];
   review_status?: string;
@@ -216,6 +217,10 @@ export function isStudentUser(user: Partial<UserInfo> | null = getCurrentUser())
   return user?.user_type === 'student';
 }
 
+export function isStudentScopedUser(user: Partial<UserInfo> | null = getCurrentUser()): boolean {
+  return user?.user_type === 'student' || user?.user_type === 'family_member';
+}
+
 export function getLinkedStudentIds(user: Partial<UserInfo> | null = getCurrentUser()): string[] {
   return studentSubjectIds(user);
 }
@@ -240,9 +245,9 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
     capabilities: ['business:teacher-scope', 'question-bank:view'] as MiniappCapability[],
   };
 
-  if (user?.user_type === 'student') {
+  if (user?.user_type === 'student' || user?.user_type === 'family_member') {
     return {
-      role: 'student',
+      role: user.user_type,
       modules: studentModules,
       readonlyScope: 'linked-student',
       linkedStudentIds: getLinkedStudentIds(user),

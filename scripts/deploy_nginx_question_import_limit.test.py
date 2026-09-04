@@ -18,6 +18,12 @@ SOURCE = """server {
 PATCHED = MODULE.patch_nginx_config(SOURCE)
 assert PATCHED.count("client_max_body_size 96m;") == 2
 assert MODULE.patch_nginx_config(PATCHED) == PATCHED
+
+DUPLICATED_SOURCE = SOURCE + "\n" + SOURCE.replace("server {", "server {\n    listen 443 ssl;")
+DUPLICATED_PATCHED = MODULE.patch_nginx_config(DUPLICATED_SOURCE)
+assert DUPLICATED_PATCHED.count("client_max_body_size 96m;") == 4
+assert MODULE.patch_nginx_config(DUPLICATED_PATCHED) == DUPLICATED_PATCHED
+
 try:
     MODULE.patch_nginx_config("server { location / { return 404; } }")
 except ValueError as error:

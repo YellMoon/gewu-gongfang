@@ -157,7 +157,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
             echo_url="https://echo.example/ip",
             allowlist=frozenset({("servicewechat.com", 443)}),
             health_urls=("https://health.example/check",),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
         transport = IntegrationTransport()
         events = []
@@ -205,7 +206,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
             echo_url="https://echo.example/ip",
             allowlist=frozenset({("servicewechat.com", 443)}),
             health_urls=("https://health.example/check",),
-            expected_version="7.2.10",
+            expected_miniapp_version="7.2.10",
+            expected_cloud_business_version="9.4.3",
         )
         health_calls = 0
 
@@ -272,7 +274,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
                     "https://health.example/backend",
                     "https://health.example/gateway",
                 ),
-                expected_version="7.2.10",
+                expected_miniapp_version="7.2.10",
+                expected_cloud_business_version="9.4.3",
             )
             run_receipt_reconciliation(
                 recovery_config,
@@ -317,7 +320,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
                             "https://health.example/backend",
                             "https://health.example/gateway",
                         ),
-                        expected_version="7.2.10",
+                        expected_miniapp_version="7.2.10",
+                        expected_cloud_business_version="9.4.3",
                     )
                     with self.assertRaises(subprocess.CalledProcessError):
                         run_receipt_reconciliation(

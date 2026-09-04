@@ -8,6 +8,7 @@ MODULE_PATH = Path(__file__).with_name("deploy_gateway.py")
 SPEC = importlib.util.spec_from_file_location("deploy_gateway_under_test", MODULE_PATH)
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
+VERSION = module.source_version()
 
 
 class DeployRetiredGatewayTests(unittest.TestCase):
@@ -30,21 +31,21 @@ class DeployRetiredGatewayTests(unittest.TestCase):
         ):
             module.restart_gateway(ssh)
         command = run.call_args.args[1]
-        self.assertIn("GEWU_APP_VERSION=8.9.1", command)
+        self.assertIn(f"GEWU_APP_VERSION={VERSION}", command)
         self.assertIn("pm2 start src/app.js --name edu-gateway --update-env", command)
         self.assertNotIn("BACKEND_JWT_SECRET", command)
 
     def test_retirement_verification_requires_health_and_every_tombstone(self):
         ssh = mock.Mock()
         responses = [
-            (json.dumps({"ok": True, "version": "8.9.1", "legacyAuthority": "retired"}), ""),
+            (json.dumps({"ok": True, "version": VERSION, "legacyAuthority": "retired"}), ""),
             ("410", ""),
             ("410", ""),
             ("410", ""),
             ("410", ""),
         ]
         with mock.patch.object(module.backend_deploy, "run", side_effect=responses) as run:
-            health = module.verify_retired_gateway(ssh, "8.9.1")
+            health = module.verify_retired_gateway(ssh, VERSION)
         self.assertEqual(health["legacyAuthority"], "retired")
         commands = [call.args[1] for call in run.call_args_list]
         for route in ("/api/cloud/commands", "/api/auth/login", "/api/admin/users", "/api/permissions/my"):
@@ -55,10 +56,10 @@ class DeployRetiredGatewayTests(unittest.TestCase):
         with mock.patch.object(
             module.backend_deploy,
             "run",
-            return_value=(json.dumps({"ok": True, "version": "8.9.1"}), ""),
+            return_value=(json.dumps({"ok": True, "version": VERSION}), ""),
         ):
             with self.assertRaisesRegex(RuntimeError, "GATEWAY_RETIREMENT_HEALTH_INVALID"):
-                module.verify_retired_gateway(ssh, "8.9.1")
+                module.verify_retired_gateway(ssh, VERSION)
 
     def test_deploy_is_a_cloud_business_subcomponent_without_its_own_receipt(self):
         ssh = mock.Mock()

@@ -54,6 +54,8 @@ const TASK_TEXT = {
   retry: '\u4f7f\u7528\u65b0\u8bf7\u6c42\u91cd\u8bd5', refreshDownload: '\u5237\u65b0\u5e76\u4e0b\u8f7d', refresh: '\u5237\u65b0\u72b6\u6001',
 };
 
+const FORMULA_RENDERING_LABEL = String.fromCharCode(20844, 24335, 65306, 20860, 23481, 25490, 29256);
+
 const LabeledInput: React.FC<React.ComponentProps<typeof AntdInput>> = ({ addonBefore, ...props }) => addonBefore ? (
   <Space.Compact block className="paper-editor-labeled-field">
     <Typography.Text className="paper-editor-field-label">{addonBefore}</Typography.Text>
@@ -320,7 +322,7 @@ const QuestionBankPaper: React.FC = () => {
         }
         extra={
           <Space wrap>
-            <Typography.Text type="secondary">{String.fromCharCode(20844, 24335, 65306, 30690, 37327, 25490, 29256)}</Typography.Text>
+            <Typography.Text type="secondary">{FORMULA_RENDERING_LABEL}</Typography.Text>
             <Checkbox checked={includeDraft} onChange={e => setIncludeDraft(e.target.checked)}>
               包含草稿/待审核题
             </Checkbox>

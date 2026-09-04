@@ -53,7 +53,7 @@ async function loadExplicitQuestionIds({ query, tenantId = 'default', examSha256
          FROM requested
          JOIN business.question_import_tasks task
            ON task.tenant_id=$1 AND task.source_type=requested.source_type
-          AND task.source_sha256=requested.source_sha256 AND task.status='submitted'
+          AND task.source_sha256=requested.source_sha256
      ), latest_tasks AS (
        SELECT source_type,ordinal,task_id FROM ranked_tasks WHERE rank=1
      ), candidates AS (
@@ -65,9 +65,9 @@ async function loadExplicitQuestionIds({ query, tenantId = 'default', examSha256
            ON question.tenant_id=$1
           AND question.id=('question-import-' || left(item.content_hash,40))
           AND question.deleted=false AND question.status='published'
-         JOIN business.question_contents content
-           ON content.tenant_id=question.tenant_id AND content.question_id=question.id
-          AND content.deleted=false AND content.content_hash=item.content_hash
+          JOIN business.question_contents content
+            ON content.tenant_id=question.tenant_id AND content.question_id=question.id
+           AND content.deleted=false
      )
      SELECT source_type AS "sourceType","questionId","contentHash" FROM candidates ORDER BY ordinal`,
     [tenantId.trim(), ...hashes],

@@ -11,6 +11,15 @@ function authError(code = 'AUTHORIZATION_CONTEXT_REQUIRED') {
   return error;
 }
 
+function scopedValue(...candidates) {
+  for (const [source, key] of candidates) {
+    if (source && Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      return source[key] ?? null;
+    }
+  }
+  return null;
+}
+
 export function normalizeDesktopAuthorizationSession(value) {
   const token = value?.token || value?.accessToken;
   const session = value?.session || {};
@@ -23,6 +32,21 @@ export function normalizeDesktopAuthorizationSession(value) {
 
   if (!token || !userId || !deviceId || !activeRole) throw authError();
 
+  const teacherId = activeRole === 'teacher'
+    ? scopedValue([session, 'teacherId'], [profile, 'teacherId'], [value, 'teacherId'])
+    : null;
+  const studentId = activeRole === 'student'
+    ? scopedValue([session, 'studentId'], [profile, 'studentId'], [value, 'studentId'])
+    : null;
+  const normalizedProfile = {
+    ...profile,
+    userId: profile.userId || userId,
+    activeRole,
+    eligibleRoles: [...eligibleRoles],
+    teacherId,
+    studentId,
+  };
+
   return {
     authorization: `Bearer ${token}`,
     authContext: {
@@ -30,8 +54,8 @@ export function normalizeDesktopAuthorizationSession(value) {
       deviceId,
       activeRole,
       eligibleRoles: [...eligibleRoles],
-      teacherId: profile.teacherId ?? value?.teacherId ?? null,
-      studentId: profile.studentId ?? value?.studentId ?? null,
+      teacherId,
+      studentId,
       sessionId: session.id || value?.sessionId || null,
       authVersion: session.authVersion ?? profile.authVersion ?? value?.authVersion ?? null,
       credentialVersion: session.credentialVersion ?? profile.credentialVersion ?? value?.credentialVersion ?? null,
@@ -39,7 +63,7 @@ export function normalizeDesktopAuthorizationSession(value) {
     },
     expiresAt: value.expiresAt || session.expiresAt || null,
     session: { ...session },
-    profile: { ...profile },
+    profile: normalizedProfile,
     user: user.id ? { ...user } : { id: userId },
   };
 }

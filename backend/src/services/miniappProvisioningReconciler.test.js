@@ -18,9 +18,15 @@ const cloudRelaySource = fs.readFileSync('backend/src/routes/cloudRelay.js', 'ut
 const applicationRouteSource = fs.readFileSync('backend/src/routes/miniappApplications.js', 'utf8');
 const appSource = fs.readFileSync('backend/src/app.js', 'utf8');
 const identitySource = fs.readFileSync('backend/src/services/miniappIdentityService.js', 'utf8');
-assert.ok(cloudRelaySource.includes('reconcileCompletedTask'), 'V2 completion must trigger reconciliation');
-assert.ok(applicationRouteSource.includes('reconcilePendingCompletedTasks'), 'admin application reads must replay reconciliation');
-assert.ok(appSource.includes('reconcilePendingCompletedTasks'), 'Backend startup must replay reconciliation');
+assert.ok(!cloudRelaySource.includes('reconcileCompletedTask'),
+  'the retired backend task route must not reconcile or approve cloud-owned identities');
+assert.ok(!appSource.includes('createMiniappProvisioningReconciler'),
+  'the retired backend must not reconcile cloud-owned identities during startup');
+assert.ok(!cloudRelaySource.includes('createMiniappProvisioningReconciler'),
+  'the retired backend task route must not instantiate a local identity reconciler');
+assert.ok(!applicationRouteSource.includes('createMiniappProvisioningReconciler')
+  && !applicationRouteSource.includes('reconcilePendingCompletedTasks'),
+  'the retired backend application route must not reconcile cloud-owned identities on reads');
 assert.ok(identitySource.includes('account_memberships'), 'formal identity checks must accept reconciled membership mappings');
 
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-provisioning-reconciler-'));

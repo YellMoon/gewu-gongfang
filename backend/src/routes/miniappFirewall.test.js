@@ -4,7 +4,6 @@ const fs = require('fs');
 require('./legacyUnrecognizedRetirement.test');
 
 const app = fs.readFileSync('backend/src/app.js', 'utf-8');
-const authRoute = fs.readFileSync('backend/src/routes/auth.js', 'utf-8');
 const cloudRoute = fs.readFileSync('backend/src/routes/cloudRelay.js', 'utf-8');
 const middleware = fs.readFileSync('backend/src/middleware/auth.js', 'utf-8');
 const database = fs.readFileSync('backend/src/database.js', 'utf-8');
@@ -12,22 +11,8 @@ const gatewayAuth = fs.readFileSync('gateway/src/routes/auth.js', 'utf-8');
 const gatewaySchema = fs.readFileSync('gateway/src/db/schema.sql', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
 
-assert.ok(authRoute.includes('createMiniappIdentityService'), 'backend WeChat login should use the authoritative identity service');
-assert.ok(authRoute.includes('loginWithClaimedWechat'), 'backend WeChat login should create a conflict-aware manual-phone visitor or formal session');
-assert.ok(authRoute.includes('loginWithClaimedWechat'), 'manual-phone login must use the conflict-aware identity claim path');
-assert.ok(authRoute.includes('if (!normalizePhone(phone))'),
-  'every backend miniapp login must require a manual phone claim');
-assert.ok(authRoute.includes('resolveWechatIdentity(code)'),
-  'both phone paths must still require a fresh WeChat login code');
-assert.ok(authRoute.includes("MINIAPP_AUTOMATIC_PHONE_RETRIEVAL_RETIRED"),
-  'the retired automatic phone path must be rejected explicitly');
-assert.ok(!authRoute.includes('resolveWechatPhoneNumber(phoneCode)'),
-  'manual-phone release flow must not exchange a WeChat phone code');
-assert.ok(!authRoute.includes('WECHAT_BINDING_REVIEW_REQUIRED'),
-  'backend manual-phone login must not retain an unreachable binding-review response');
-assert.ok(!authRoute.includes("res.status(202)"),
-  'backend manual-phone login must not return a pending-review response');
-assert.ok(!authRoute.includes('getMiniappUserByWechat(openid)'), 'an existing openid must not bypass verified-phone login');
+assert.ok(!app.includes("app.use('/api/auth'"), 'the embedded cache must not expose any local miniapp login endpoint');
+assert.ok(!fs.existsSync('backend/src/routes/auth.js'), 'the retired handwritten-phone login router must be removed');
 assert.ok(database.includes('_ensureMiniappUserColumns'), 'backend database should migrate miniapp login guard columns');
 assert.ok(database.includes('_migrateMiniappMemberships'), 'backend database should migrate formal identities and memberships safely');
 assert.ok(!app.includes("app.use('/api/students'"), 'local students CRUD must not remain mounted');

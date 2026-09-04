@@ -7,22 +7,12 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { authMiddleware, optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
+const { optionalAuth, tenantScopeMiddleware, requireWriteAccess } = require('./middleware/auth');
 const { buildErrorPayload, errorHandler } = require('./middleware/errorHandler');
 const { getInstance } = require('./database');
-const { createMiniappProvisioningReconciler } = require('./services/miniappProvisioningReconciler');
 const HostWebSocketClient = require('./websocket/client');
 
-const authRouter = require('./routes/auth');
 const opsRouter = require('./routes/ops');
-const cloudRelayRouter = require('./routes/cloudRelay');
-const permissionsRouter = require('./routes/permissions');
-const adminUsersRouter = require('./routes/adminUsers');
-const { createDesktopIdentityRouter } = require('./routes/desktopIdentity');
-const { createAuthorityProtocolRouter } = require('./routes/authorityProtocol');
-const { createAuthorityDeviceRequestAuth } = require('./services/authorityDeviceRequestAuth');
-const { createAuthorityProjectionStoreService } = require('./services/authorityProjectionStoreService');
-const { createAuthorityCloudRuntime } = require('./services/authorityCloudRuntime');
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const writeRateLimitStore = new Map();
@@ -239,21 +229,7 @@ function getAppVersion() {
 function createApp(options = {}) {
   const app = express();
   const database = getInstance().db;
-  const authorityCloudRuntime = createAuthorityCloudRuntime({ database });
-  const authorityCommandAuthorization = authorityCloudRuntime.authorization;
-  const authorityDeviceRequestAuth = createAuthorityDeviceRequestAuth({ db: database });
-  const authorityProjectionStore = createAuthorityProjectionStoreService({ db: database });
   app.locals.authorityDatabase = database;
-  app.locals.authorityCommandAuthorization = authorityCommandAuthorization;
-  app.locals.authorityCloudRuntime = authorityCloudRuntime;
-  app.locals.authorityDeviceRequestAuth = authorityDeviceRequestAuth;
-  app.locals.authorityProjectionStore = authorityProjectionStore;
-
-  try {
-    createMiniappProvisioningReconciler({ db: database }).reconcilePendingCompletedTasks();
-  } catch (error) {
-    console.warn('[miniapp-provisioning] startup reconciliation skipped', error?.code || error?.message || 'unknown');
-  }
 
   // CORS
   app.use(cors({
@@ -278,66 +254,17 @@ function createApp(options = {}) {
     res.json({ ok: true, time: new Date().toISOString(), version: getAppVersion(), traceId: req.traceId });
   });
 
-  // 公开路由（无需认证）
-  app.use('/api/auth', authRouter);
-  app.use('/api/desktop-identity', createDesktopIdentityRouter({
-    db: database,
+  // The embedded/legacy service is never an authority. Historical command,
+  // receipt, and projection URLs are deliberately terminal so no signed device
+  // request can mutate or read an obsolete SQLite authority surface.
+  app.use('/api/authority', (_req, res) => res.status(410).json({
+    success: false,
+    error: { code: 'AUTHORITY_ENDPOINT_RETIRED' },
   }));
-  const authorityApiRouter = express.Router();
-  const authenticateAuthorityDevice = (req, res, next) => {
-    try {
-      req.authorityActor = authorityDeviceRequestAuth.authenticate(req);
-      next();
-    } catch (error) {
-      res.status(error?.statusCode || 401).json({
-        success: false,
-        error: { code: error?.code || 'AUTHORITY_DEVICE_AUTH_FAILED' },
-      });
-    }
-  };
-  authorityApiRouter.post('/commands', authenticateAuthorityDevice);
-  authorityApiRouter.get('/commands/:id/receipt', authenticateAuthorityDevice);
-  authorityApiRouter.get('/projections/current', authenticateAuthorityDevice, (req, res) => {
-    try {
-      const authorityId = String(req.headers['x-gewu-authority-id'] || '').trim();
-      const projection = authorityProjectionStore.read({
-        authorityId,
-        userId: req.authorityActor.userId,
-        role: req.authorityActor.role,
-      });
-      if (!projection) {
-        throw Object.assign(new Error('AUTHORITY_PROJECTION_NOT_FOUND'), {
-          code: 'AUTHORITY_PROJECTION_NOT_FOUND',
-          statusCode: 404,
-        });
-      }
-      authorityCommandAuthorization.authorize({
-        authorityId,
-        hostEpochId: projection.hostEpochId,
-        actor: req.authorityActor,
-        lease: {
-          id: String(req.headers['x-gewu-authority-lease-id'] || '').trim(),
-          grantVersion: Number(req.headers['x-gewu-authority-grant-version']),
-        },
-        type: 'projection.read.v1',
-        payload: {},
-      });
-      res.json({ success: true, projection });
-    } catch (error) {
-      res.status(error?.statusCode || 403).json({
-        success: false,
-        error: { code: error?.code || 'AUTHORITY_PROJECTION_READ_FAILED' },
-      });
-    }
-  });
-  authorityApiRouter.use(createAuthorityProtocolRouter({
-    executeCommand: ({ envelope }) => authorityCloudRuntime.execute(envelope),
-    findReceipt: input => authorityCloudRuntime.findReceipt(input),
+  app.use('/api/cloud', (_req, res) => res.status(410).json({
+    success: false,
+    error: { code: 'CLOUD_RELAY_RETIRED' },
   }));
-  app.use('/api/authority', authorityApiRouter);
-  app.use('/api/cloud', optionalAuth, cloudRelayRouter);
-  app.use('/api/admin/users', authMiddleware, adminUsersRouter);
-  app.use('/api/permissions', authMiddleware, permissionsRouter);
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
 
   // 閿欒澶勭悊

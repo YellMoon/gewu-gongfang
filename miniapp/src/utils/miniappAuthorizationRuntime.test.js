@@ -9,7 +9,6 @@ const {
   scopeDashboardCollections,
   businessCacheIdentityKey,
   questionBasketCacheKey,
-  createQuestionBasketRuntime,
   questionPaperTaskCacheKey,
   usesLimitedQuestionProjection,
   createQuestionPaperTaskCacheRuntime,
@@ -116,25 +115,6 @@ const rejectedTaskWrite = taskCacheRuntime.replace([{ localId: 'stale-task-a' }]
 assert.strictEqual(rejectedTaskWrite.written, false, 'a mounted old-scope task snapshot must never be written into the newly current scope');
 assert.deepStrictEqual(taskStores.get(nextTaskKey), [{ localId: 'task-b' }], 'a rejected old-scope write must leave the new tenant cache untouched');
 assert.deepStrictEqual(rejectedTaskWrite.snapshot, { scopeKey: nextTaskKey, tasks: [{ localId: 'task-b' }] }, 'scope switch must atomically reload the new task namespace');
-
-const basketStores = new Map();
-let currentBasketIdentity = { id: 'teacher-user', user_type: 'teacher', teacher_id: 'teacher-1', tenant_id: 'tenant-a' };
-const initialBasketKey = questionBasketCacheKey(currentBasketIdentity);
-const nextBasketIdentity = { ...currentBasketIdentity, tenant_id: 'tenant-b' };
-const nextBasketKey = questionBasketCacheKey(nextBasketIdentity);
-basketStores.set(initialBasketKey, ['question-a']);
-basketStores.set(nextBasketKey, ['question-b']);
-const basketRuntime = createQuestionBasketRuntime({
-  readIdentity: () => currentBasketIdentity,
-  read: key => basketStores.get(key) || [],
-  write: (key, ids) => basketStores.set(key, ids),
-});
-const initialBasketSnapshot = basketRuntime.snapshot();
-assert.deepStrictEqual(initialBasketSnapshot.ids, ['question-a']);
-currentBasketIdentity = nextBasketIdentity;
-const rejectedBasketWrite = basketRuntime.replace(['stale-question-a'], initialBasketSnapshot.scopeKey);
-assert.strictEqual(rejectedBasketWrite.written, false, 'a mounted old-scope basket must not be written into the new tenant scope');
-assert.deepStrictEqual(rejectedBasketWrite.snapshot, { scopeKey: nextBasketKey, ids: ['question-b'] }, 'scope switch must atomically reload the new basket namespace');
 
 for (const legacyUser of [
   { id: 'retired-1', user_type: 'retired' },

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Button, Card, Descriptions, message, Progress, Space, Tag } from 'antd';
 import { CloudDownloadOutlined } from '@ant-design/icons';
-import { APP_VERSION } from '../generated/version';
+import desktopPackage from '../../package.json';
 import SyncSettings from './SyncSettings';
 import type { CloudSyncContext } from '../navigation/navigationContext';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
@@ -123,10 +123,10 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
       <Card title={'\u8d26\u53f7\u4e0e\u540c\u6b65'} style={{ marginBottom: 16 }}>
         <Alert type="info" showIcon style={{ marginBottom: 16 }} message={'\u540c\u6b65\u8bf4\u660e'} description={'\u79bb\u7ebf\u65f6\u7684\u66f4\u6539\u4f1a\u5148\u4fdd\u5b58\u4e3a\u672c\u673a\u8349\u7a3f\uff1b\u6062\u590d\u8054\u7f51\u540e\uff0c\u7531\u4f60\u786e\u8ba4\u518d\u63d0\u4ea4\u3002'} />
         <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
-          <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{APP_VERSION}</Descriptions.Item>
+          <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{desktopPackage.version}</Descriptions.Item>
           <Descriptions.Item label={'\u5f53\u524d\u8d26\u53f7'}>{accountLabel}</Descriptions.Item>
-          <Descriptions.Item label={'\u9898\u5e93\u6587\u4ef6'}><Tag color="blue">\u53d7\u63a7\u5b58\u50a8</Tag></Descriptions.Item>
-          <Descriptions.Item label={'\u672c\u673a\u767b\u5f55'}><Tag color="green">\u9996\u6b21\u767b\u5f55\u540e\u81ea\u52a8\u5b8c\u6210</Tag></Descriptions.Item>
+          <Descriptions.Item label={'\u9898\u5e93\u6587\u4ef6'}><Tag color="blue">{'\u53d7\u63a7\u5b58\u50a8'}</Tag></Descriptions.Item>
+          <Descriptions.Item label={'\u672c\u673a\u767b\u5f55'}><Tag color="green">{'\u9996\u6b21\u767b\u5f55\u540e\u81ea\u52a8\u5b8c\u6210'}</Tag></Descriptions.Item>
         </Descriptions>
       </Card>
       <Card title={'\u8f6f\u4ef6\u66f4\u65b0'} style={{ marginBottom: 16 }}>

@@ -5,8 +5,9 @@ import {
 
 export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const CLOCK_SKEW_MS = 30 * 1000;
-const DESKTOP_ROLE_SET = new Set(['visitor', 'super_admin', 'teacher', 'student']);
+const DESKTOP_ROLE_SET = new Set(['super_admin', 'teacher']);
 const PRIVILEGED_ROLES = new Set(['super_admin']);
+const CLOUD_IDENTITY_OUTAGE_STATUSES = new Set([502, 503, 504]);
 
 function identityError(code, cause) {
   const error = new Error(code);
@@ -18,6 +19,18 @@ function identityError(code, cause) {
 function normalizedBaseUrl(value) {
   const baseUrl = String(value || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(baseUrl)) throw identityError('DESKTOP_IDENTITY_BASE_URL_REQUIRED');
+  let parsed;
+  try {
+    parsed = new URL(baseUrl);
+  } catch (cause) {
+    throw identityError('DESKTOP_IDENTITY_BASE_URL_REQUIRED', cause);
+  }
+  const loopbackHost = parsed.hostname === 'localhost'
+    || parsed.hostname === '127.0.0.1'
+    || parsed.hostname === '[::1]';
+  if (parsed.protocol === 'http:' && !loopbackHost) {
+    throw identityError('DESKTOP_IDENTITY_INSECURE_BASE_URL');
+  }
   return baseUrl;
 }
 
@@ -32,24 +45,29 @@ function uniqueRoles(value) {
     : [];
 }
 
+function scopedValue(...candidates) {
+  for (const [source, key] of candidates) {
+    if (source && Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      return source[key] ?? null;
+    }
+  }
+  return null;
+}
+
 export function preferredActiveRole(eligibleRoles, requestedRole) {
   const roles = uniqueRoles(eligibleRoles);
   if (requestedRole && roles.includes(requestedRole)) return requestedRole;
   if (roles.includes('teacher')) return 'teacher';
-  if (roles.includes('student')) return 'student';
   return roles[0] || null;
 }
 
 export function partitionKeyForIdentity(identity = {}) {
   const userId = String(identity.userId || identity.id || '').trim();
   const activeRole = String(identity.activeRole || identity.active_role || '').trim();
-  if (!userId || !activeRole) throw identityError('DESKTOP_IDENTITY_PARTITION_INVALID');
+  if (!userId || !DESKTOP_ROLE_SET.has(activeRole)) throw identityError('DESKTOP_IDENTITY_PARTITION_INVALID');
   let subjectId = 'all';
   if (activeRole === 'teacher') {
     subjectId = String(identity.teacherId || identity.teacher_id || '').trim() || 'unbound';
-  }
-  if (activeRole === 'student') {
-    subjectId = String(identity.studentId || identity.student_id || '').trim() || 'unbound';
   }
   return `${userId}:${activeRole}:${subjectId}`;
 }
@@ -71,16 +89,26 @@ function profileFrom({ identity = {}, authorization = {}, session = {}, fallback
   if (!userId || !activeRole || !eligibleRoles.includes(activeRole)) {
     throw identityError('DESKTOP_IDENTITY_PROFILE_INVALID');
   }
+  const teacherId = scopedValue(
+    [session, 'teacherId'], [session, 'teacher_id'],
+    [identity, 'teacherId'], [identity, 'teacher_id'],
+    [fallback, 'teacherId'], [fallback, 'teacher_id'],
+  );
+  const studentId = scopedValue(
+    [session, 'studentId'], [session, 'student_id'],
+    [identity, 'studentId'], [identity, 'student_id'],
+    [fallback, 'studentId'], [fallback, 'student_id'],
+  );
   return {
     userId,
     user: {
       id: userId,
-      name: String(identity.name || identity.user_name || fallback.user?.name || '').trim(),
+      name: String(identity.name || identity.user_name || identity.user?.name || fallback.user?.name || '').trim(),
     },
     eligibleRoles,
     activeRole,
-    teacherId: identity.teacher_id ?? identity.teacherId ?? fallback.teacherId ?? session.teacherId ?? null,
-    studentId: identity.student_id ?? identity.studentId ?? fallback.studentId ?? session.studentId ?? null,
+    teacherId: activeRole === 'teacher' ? teacherId : null,
+    studentId: activeRole === 'student' ? studentId : null,
   };
 }
 
@@ -112,13 +140,35 @@ function validOfflineLease(vaultStatus, now) {
 function sessionMatchesVault(sessionValue, vaultStatus, now) {
   if (!sessionValue || typeof sessionValue !== 'object') return false;
   const session = sessionValue.session || {};
-  const profile = sessionValue.profile || vaultStatus;
+  const profile = sessionValue.profile || {};
   const expiresAt = dateValue(sessionValue.expiresAt || session.expiresAt);
+  const sessionRoles = uniqueRoles(session.eligibleRoles || profile.eligibleRoles);
+  const vaultRoles = uniqueRoles(vaultStatus.eligibleRoles);
+  const activeRole = session.activeRole || profile.activeRole;
+  const sessionTeacherId = scopedValue([session, 'teacherId'], [profile, 'teacherId']);
+  const sessionStudentId = scopedValue([session, 'studentId'], [profile, 'studentId']);
+  const vaultTeacherId = scopedValue([vaultStatus, 'teacherId']);
+  const vaultStudentId = scopedValue([vaultStatus, 'studentId']);
+  const sameRoles = sessionRoles.length === vaultRoles.length
+    && sessionRoles.every(role => vaultRoles.includes(role));
+  const sameScope = String(sessionTeacherId || '') === String(vaultTeacherId || '')
+    && String(sessionStudentId || '') === String(vaultStudentId || '');
+  const validRoleScope = activeRole === 'teacher'
+    ? Boolean(sessionTeacherId) && !sessionStudentId
+    : activeRole === 'student'
+      ? Boolean(sessionStudentId) && !sessionTeacherId
+      : !sessionTeacherId && !sessionStudentId;
   return expiresAt !== null
     && expiresAt > now.getTime()
     && String(session.userId || profile.userId || profile.user?.id || '') === String(vaultStatus.user?.id || '')
     && String(session.deviceId || profile.deviceId || '') === String(vaultStatus.deviceId || '')
-    && uniqueRoles(session.eligibleRoles || profile.eligibleRoles).includes(session.activeRole || profile.activeRole);
+    && String(session.id || '') === String(vaultStatus.authorizationId || '')
+    && activeRole === vaultStatus.activeRole
+    && sessionRoles.includes(activeRole)
+    && vaultRoles.includes(activeRole)
+    && sameRoles
+    && sameScope
+    && validRoleScope;
 }
 
 function unlockedState(kind, identity) {
@@ -126,8 +176,8 @@ function unlockedState(kind, identity) {
   const normalized = {
     userId: identity.userId || identity.id || identity.user?.id,
     activeRole,
-    teacherId: identity.teacherId ?? identity.teacher_id ?? null,
-    studentId: identity.studentId ?? identity.student_id ?? null,
+    teacherId: activeRole === 'teacher' ? (identity.teacherId ?? identity.teacher_id ?? null) : null,
+    studentId: activeRole === 'student' ? (identity.studentId ?? identity.student_id ?? null) : null,
   };
   return {
     kind,
@@ -189,12 +239,16 @@ export function isDesktopIdentityNetworkFailure(error) {
       'ENETUNREACH',
       'ETIMEDOUT',
       'EAI_AGAIN',
+      'CLOUD_ONLINE_IDENTITY_UNAVAILABLE',
       'TARGET_HOST_REQUIRED',
       'TARGET_HOST_NOT_FOUND',
     ].includes(causeCode);
 }
 
 async function responseData(response) {
+  if (CLOUD_IDENTITY_OUTAGE_STATUSES.has(Number(response?.status))) {
+    throw identityError('CLOUD_ONLINE_IDENTITY_UNAVAILABLE');
+  }
   let payload;
   try {
     payload = await response.json();
@@ -315,16 +369,20 @@ export function createDesktopIdentityClient({
     });
     const stored = onlineSessionValue({ token: issued.token, session: issued.session, profile });
     if (!issued.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
-    if (!desktopIdentity.refreshOfflineLease) {
-      throw identityError('DESKTOP_IDENTITY_OFFLINE_LEASE_REFRESH_UNAVAILABLE');
+    if (!desktopIdentity.acceptIssuedSession) {
+      throw identityError('DESKTOP_IDENTITY_ISSUED_SESSION_ACCEPT_UNAVAILABLE');
     }
-    await desktopIdentity.refreshOfflineLease({ offlineLease: issued.offlineLease });
+    const acceptedVaultStatus = await desktopIdentity.acceptIssuedSession({
+      session: issued.session,
+      profile,
+      offlineLease: issued.offlineLease,
+    });
     await sessionStore.save(stored);
     return {
       ...stored,
-      vaultStatus,
+      vaultStatus: acceptedVaultStatus,
       gateState: resolveDesktopGateState({
-        vaultStatus,
+        vaultStatus: acceptedVaultStatus,
         online: true,
         onlineSession: stored,
         now: currentDate(),
@@ -370,7 +428,10 @@ export function createDesktopIdentityClient({
         idempotencyKey: normalizedIdempotencyKey,
       },
     });
-    if (!started?.pairingId || !started?.pairingSecret || !started?.expiresAt) {
+    const qrImageDataUrl = typeof started?.qrImageDataUrl === 'string' ? started.qrImageDataUrl : '';
+    if (!started?.pairingId || !started?.pairingSecret || !started?.expiresAt
+      || qrImageDataUrl.length > 8 * 1024 * 1024
+      || !/^data:image\/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/u.test(qrImageDataUrl)) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_PAIRING_INVALID');
     }
     return Object.freeze({
@@ -380,7 +441,7 @@ export function createDesktopIdentityClient({
       pairingId: String(started.pairingId),
       pairingSecret: String(started.pairingSecret),
       expiresAt: String(started.expiresAt),
-      qrValue: `gewu://desktop-pairing?pairingId=${encodeURIComponent(started.pairingId)}&secret=${encodeURIComponent(started.pairingSecret)}`,
+      qrImageDataUrl,
     });
   }
 
@@ -403,6 +464,7 @@ export function createDesktopIdentityClient({
     if (!verified?.verificationToken || !verified?.deviceChallenge) {
       throw identityError('DESKTOP_PASSWORD_VERIFICATION_INVALID');
     }
+    const desktopAccess = await readVerifiedDesktopAccess(normalizedUrl, verified.verificationToken);
     const publicIdentity = await desktopIdentity.beginUnifiedOnlineRegistration({ deviceName });
     if (!publicIdentity?.deviceId || !publicIdentity?.publicKey || !publicIdentity?.keyFingerprint) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
@@ -414,6 +476,7 @@ export function createDesktopIdentityClient({
       status: 'verified',
       verificationToken: String(verified.verificationToken),
       deviceChallenge: String(verified.deviceChallenge),
+      desktopAccess,
     });
   }
 
@@ -436,6 +499,7 @@ export function createDesktopIdentityClient({
     if (!enrolled?.verificationToken || !enrolled?.deviceChallenge) {
       throw identityError('DESKTOP_PASSWORD_ENROLLMENT_INVALID');
     }
+    const desktopAccess = await readVerifiedDesktopAccess(normalizedUrl, enrolled.verificationToken);
     const publicIdentity = await desktopIdentity.beginUnifiedOnlineRegistration({ deviceName });
     if (!publicIdentity?.deviceId || !publicIdentity?.publicKey || !publicIdentity?.keyFingerprint) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
@@ -447,6 +511,7 @@ export function createDesktopIdentityClient({
       status: 'verified',
       verificationToken: String(enrolled.verificationToken),
       deviceChallenge: String(enrolled.deviceChallenge),
+      desktopAccess,
     });
   }
 
@@ -470,6 +535,23 @@ export function createDesktopIdentityClient({
     return Object.freeze({ ...pending, cloudPasswordEnrolled: true });
   }
 
+  async function readVerifiedDesktopAccess(baseUrl, verificationToken) {
+    const value = await request(fetchImpl, baseUrl, '/api/desktop/verified-access', {
+      method: 'POST',
+      body: { verificationToken },
+    });
+    const roles = uniqueRoles(value?.roles);
+    const teacherId = value?.teacherId === null ? null : String(value?.teacherId || '').trim();
+    if (value?.access === 'teacher_registration_required' && roles.length === 0 && teacherId === null) {
+      return Object.freeze({ access: value.access, roles: Object.freeze([]), teacherId: null });
+    }
+    if (value?.access !== 'allowed' || roles.length === 0
+      || (roles.includes('teacher') && !teacherId)) {
+      throw identityError('DESKTOP_VERIFIED_ACCESS_INVALID');
+    }
+    return Object.freeze({ access: value.access, roles: Object.freeze(roles), teacherId });
+  }
+
   async function registerTeacherForVerifiedRegistration({ pending, name, subject = null } = {}) {
     if (!pending?.baseUrl || !pending?.verificationToken || pending?.status !== 'verified' || pending?.recovery === true) {
       throw identityError('DESKTOP_TEACHER_REGISTRATION_CONTEXT_INVALID');
@@ -491,6 +573,7 @@ export function createDesktopIdentityClient({
       teacherId: registered.teacherId,
       updatedAt: registered.updatedAt,
       replayed: registered.replayed,
+      desktopAccess: Object.freeze({ access: 'allowed', roles: Object.freeze(['teacher']), teacherId: registered.teacherId }),
     });
   }
 
@@ -505,11 +588,13 @@ export function createDesktopIdentityClient({
     if (data?.status !== 'verified' || !data.verificationToken || !data.deviceChallenge) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_PAIRING_INVALID');
     }
+    const desktopAccess = await readVerifiedDesktopAccess(pending.baseUrl, data.verificationToken);
     return Object.freeze({
       ...pending,
       status: 'verified',
       verificationToken: String(data.verificationToken),
       deviceChallenge: String(data.deviceChallenge),
+      desktopAccess,
     });
   }
 
@@ -517,6 +602,10 @@ export function createDesktopIdentityClient({
     if (!pending?.baseUrl || !pending?.publicIdentity || !pending?.idempotencyKey
       || !pending?.verificationToken || !pending?.deviceChallenge) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
+    }
+    if (pending?.desktopAccess?.access !== 'allowed'
+      || !uniqueRoles(pending.desktopAccess.roles).some(role => role === 'teacher' || role === 'super_admin')) {
+      throw identityError('DESKTOP_TEACHER_REGISTRATION_REQUIRED');
     }
     const completeVault = desktopIdentity.completeRegistration;
     if (typeof desktopIdentity.signChallenge !== 'function' || typeof completeVault !== 'function') {
@@ -550,6 +639,7 @@ export function createDesktopIdentityClient({
       || context.sessionId !== registered.sessionId || context.deviceId !== pending.publicIdentity.deviceId
       || context.installationId !== pending.publicIdentity.deviceId || !context.expiresAt
       || !activeRole
+      || !Number.isSafeInteger(Number(context.rowVersion)) || Number(context.rowVersion) < 1
       || (activeRole === 'teacher' && !context.teacherId)
       || (activeRole === 'student' && !context.studentId)) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_CONTEXT_INVALID');
@@ -570,7 +660,7 @@ export function createDesktopIdentityClient({
     };
     const profile = {
       userId: context.accountId,
-      user: { id: context.accountId, name: 'Cloud account' },
+      user: { id: context.accountId, name: '\u6211\u7684\u8d26\u53f7' },
       eligibleRoles,
       activeRole,
       teacherId: activeRole === 'teacher' ? context.teacherId : null,
@@ -590,6 +680,7 @@ export function createDesktopIdentityClient({
         deviceId: context.deviceId,
         activeRole,
         eligibleRoles,
+        rowVersion: Number(context.rowVersion),
         expiresAt: context.expiresAt,
       },
       profile,
@@ -617,8 +708,6 @@ export function createDesktopIdentityClient({
     }
     const body = { activeRole };
     if (PRIVILEGED_ROLES.has(activeRole) && !PRIVILEGED_ROLES.has(currentRole)) {
-      if (typeof desktopIdentity.resume !== 'function') throw identityError('DESKTOP_IDENTITY_RESUME_UNAVAILABLE');
-      await desktopIdentity.resume();
       const proof = await desktopIdentity.signChallenge({
         purpose: 'role-elevation',
         sessionId: currentSession.session.id,
@@ -640,10 +729,20 @@ export function createDesktopIdentityClient({
       body,
     });
     const profile = profileFrom({
+      identity: exchanged.profile,
       session: exchanged.session,
       fallback: currentSession.profile,
     });
     const stored = onlineSessionValue({ token: exchanged.token, session: exchanged.session, profile });
+    if (!exchanged.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
+    if (typeof desktopIdentity.acceptIssuedSession !== 'function') {
+      throw identityError('DESKTOP_IDENTITY_ISSUED_SESSION_ACCEPT_UNAVAILABLE');
+    }
+    await desktopIdentity.acceptIssuedSession({
+      session: exchanged.session,
+      profile,
+      offlineLease: exchanged.offlineLease,
+    });
     await sessionStore.save(stored);
     return stored;
   }
@@ -718,16 +817,23 @@ export function createDesktopIdentityClient({
     return dataUrlFromBytes(bytes, delivery.mimeType);
   }
 
-  async function updateCloudSchedule({ baseUrl, currentSession, scheduleId, expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes, pricings } = {}) {
+  async function updateCloudSchedule({
+    baseUrl, currentSession, scheduleId, expectedUpdatedAt, courseId, startAt, endAt, recurringRule,
+    status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+  } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     }
     const normalizedScheduleId = String(scheduleId || '').trim();
-    if (!normalizedScheduleId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
+    const normalizedCourseId = String(courseId || '').trim();
+    if (!normalizedScheduleId || !normalizedCourseId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
       method: 'PUT',
       token: currentSession.token,
-      body: { expectedUpdatedAt, startAt, endAt, status, roomDisplay, tuition, teacherFee, notes, pricings },
+      body: {
+        expectedUpdatedAt, courseId: normalizedCourseId, startAt, endAt, recurringRule,
+        status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+      },
     });
     if (!data?.schedule || typeof data.schedule !== 'object'
       || typeof data.schedule.id !== 'string' || typeof data.schedule.updatedAt !== 'string') {

@@ -2,6 +2,7 @@ import React from 'react';
 import katex from 'katex';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { RichAssetImage } from './RichAssetImage';
+import { columnsForOptions, normalizeOptionLabel } from '../utils/questionOptions';
 
 function markStyle(marks: any[] = []): React.CSSProperties {
   const style: React.CSSProperties = {};
@@ -39,13 +40,34 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
 }
 
 const Doc: React.FC<{ value: any }> = ({ value }) => <>{renderNode(value, 'root')}</>;
-const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnswer?: boolean }> = ({ value, showAnswer = true }) => {
+
+function docPlainText(value: any): string {
+  if (!value || typeof value !== 'object') return '';
+  if (value.type === 'text') return String(value.text || '');
+  if (value.type === 'formula') return String(value.attrs?.canonicalLatex || '');
+  if (value.type === 'image') return '[image]';
+  return (Array.isArray(value.content) ? value.content : []).map(docPlainText).join(' ');
+}
+
+function docHasContent(value: any): boolean {
+  return docPlainText(value).trim().length > 0;
+}
+
+const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnswer?: boolean }> = ({ value, showAnswer = false }) => {
   const { sections } = value;
+  const options = sections.options.map((option, index) => ({
+    ...option,
+    label: normalizeOptionLabel(option.label, index),
+  }));
+  const optionColumns = columnsForOptions(options.map(option => ({
+    label: option.label,
+    content: docPlainText(option.content),
+  })));
   return <div className="structured-question-viewer">
     <Doc value={sections.stem} />
-    {sections.options.length > 0 && <div className="structured-question-viewer__options">{sections.options.map(option => <div key={option.id} className="structured-question-viewer__option"><strong>{option.label}.</strong><Doc value={option.content} /></div>)}</div>}
-    {sections.subQuestions.map(sub => <div key={sub.id} className="structured-question-viewer__sub"><strong>{sub.label}</strong><Doc value={sub.content} />{showAnswer && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
-    {showAnswer && <><div className="structured-question-viewer__answer"><strong>{'\u7b54\u6848\uff1a'}</strong><Doc value={sections.answer} /></div><div className="structured-question-viewer__analysis"><strong>{'\u89e3\u6790\uff1a'}</strong><Doc value={sections.analysis} /></div></>}
+    {options.length > 0 && <div className={`structured-question-viewer__options cols-${optionColumns}`} style={{ gridTemplateColumns: `repeat(${optionColumns}, minmax(0, 1fr))` }}>{options.map(option => <div key={option.id} className="structured-question-viewer__option"><strong>{option.label}.</strong><Doc value={option.content} /></div>)}</div>}
+    {sections.subQuestions.map(sub => <div key={sub.id} className="structured-question-viewer__sub"><strong>{sub.label}</strong><Doc value={sub.content} />{showAnswer && docHasContent(sub.answer) && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
+    {showAnswer && <>{docHasContent(sections.answer) && <div className="structured-question-viewer__answer"><strong>{'\u7b54\u6848\uff1a'}</strong><Doc value={sections.answer} /></div>}{docHasContent(sections.analysis) && <div className="structured-question-viewer__analysis"><strong>{'\u89e3\u6790\uff1a'}</strong><Doc value={sections.analysis} /></div>}</>}
   </div>;
 };
 export default StructuredQuestionViewer;

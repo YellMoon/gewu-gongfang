@@ -17,10 +17,21 @@ import {
 import { applyScheduleListFilters, buildScheduleListFilterOptions } from '../utils/scheduleListFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
 import { projectCloudSchedules } from '../services/cloudScheduleProjection.mjs';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 
 const { RangePicker } = DatePicker;
 
 const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+function hasCloudScheduleManagementAccess(): boolean {
+  try {
+    const { authContext } = readDesktopAuthorizationSession();
+    return authContext.activeRole === 'super_admin'
+      && authContext.eligibleRoles.includes('super_admin');
+  } catch (_error) {
+    return false;
+  }
+}
 
 const ScheduleList: React.FC = () => {
   const [schedules, setSchedules] = useState<any[]>([]);
@@ -54,6 +65,7 @@ const ScheduleList: React.FC = () => {
   });
 
   const dbService = (window as any).dbService;
+  const canManageCloudSchedules = hasCloudScheduleManagementAccess();
 
   const loadData = useCallback(async () => {
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
@@ -61,10 +73,13 @@ const ScheduleList: React.FC = () => {
       try {
         const cloudSchedules = projectCloudSchedules(await cloudRuntime.listCloudSchedules());
         cloudSchedules.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+        const projectedStudents = dbService?.getAllStudents?.() || [];
+        const projectedTeachers = dbService?.getAllTeachers?.() || [];
+        const projectedCourses = dbService?.getAllCourses?.() || [];
         setSchedules(cloudSchedules);
-        setStudents([]);
-        setTeachers([]);
-        setCourses([...new Map(cloudSchedules.map(schedule => [schedule.course_id, {
+        setStudents(projectedStudents);
+        setTeachers(projectedTeachers);
+        setCourses(projectedCourses.length > 0 ? projectedCourses : [...new Map(cloudSchedules.map(schedule => [schedule.course_id, {
           id: schedule.course_id,
           name: schedule.course_name,
           display_name: schedule.course_name,
@@ -311,7 +326,7 @@ const ScheduleList: React.FC = () => {
 
   const openCloudScheduleEditor = (record: any) => {
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
-    if (typeof cloudRuntime?.updateCloudSchedule !== 'function' || !record?.updated_at) {
+    if (!canManageCloudSchedules || typeof cloudRuntime?.updateCloudSchedule !== 'function' || !record?.updated_at) {
       message.error('\u5f53\u524d\u6392\u8bfe\u672a\u8fde\u63a5\u5230\u53ef\u7528\u7684\u4e91\u7aef\u66f4\u65b0\u4f1a\u8bdd');
       return;
     }
@@ -329,16 +344,19 @@ const ScheduleList: React.FC = () => {
 
   const saveCloudSchedule = async (values: any) => {
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
-    if (!editingSchedule || typeof cloudRuntime?.updateCloudSchedule !== 'function') return;
+    if (!canManageCloudSchedules || !editingSchedule || typeof cloudRuntime?.updateCloudSchedule !== 'function') return;
     setSavingCloudSchedule(true);
     try {
       const updated = await cloudRuntime.updateCloudSchedule({
         scheduleId: editingSchedule.id,
         expectedUpdatedAt: editingSchedule.updated_at,
+        courseId: editingSchedule.course_id,
         startAt: values.startAt.toISOString(),
         endAt: values.endAt.toISOString(),
+        recurringRule: editingSchedule.recurring_rule ?? null,
         status: values.status,
         roomDisplay: values.roomDisplay?.trim() || null,
+        serviceType: editingSchedule.service_type ?? null,
         tuition: values.tuition,
         teacherFee: values.teacherFee,
         notes: values.notes?.trim() || null,
@@ -396,11 +414,11 @@ const ScheduleList: React.FC = () => {
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: any, record) => <Tag color={getScheduleStatusColor(record)}>{getScheduleStatusText(record)}</Tag> },
     { title: '教室', dataIndex: 'room', key: 'room', width: 120 },
     { title: '备注', dataIndex: 'notes', key: 'notes', width: 160, ellipsis: true },
-    { title: '\u64cd\u4f5c', key: 'actions', width: 120, render: (_, record) => {
+    ...(canManageCloudSchedules ? [{ title: '\u64cd\u4f5c', key: 'actions', width: 120, render: (_: unknown, record: any) => {
       const cloudRuntime = (window as any).desktopIdentitySessionProvider;
       if (typeof cloudRuntime?.updateCloudSchedule !== 'function' || !record.updated_at) return null;
       return <Button size="small" icon={<EditOutlined />} onClick={() => openCloudScheduleEditor(record)}>{'\u7f16\u8f91\u4e91\u7aef\u6392\u8bfe'}</Button>;
-    } },
+    } }] : []),
   ];
 
   return (
@@ -501,7 +519,7 @@ const ScheduleList: React.FC = () => {
       onDrawerClose={() => undefined}
       drawerContent={null}
     >
-      <Modal
+      {canManageCloudSchedules && (<Modal
         title={'\u7f16\u8f91\u4e91\u7aef\u6392\u8bfe'}
         open={Boolean(editingSchedule)}
         onCancel={() => !savingCloudSchedule && setEditingSchedule(null)}
@@ -529,7 +547,7 @@ const ScheduleList: React.FC = () => {
           <Form.Item name="teacherFee" label={'\u8001\u5e08\u8bfe\u65f6\u8d39'} rules={[{ required: true }]}><InputNumber min={0} precision={2} style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="notes" label={'\u5907\u6ce8'}><Input.TextArea maxLength={2000} rows={3} /></Form.Item>
         </Form>
-      </Modal>
+      </Modal>)}
     </DataPageLayout>
   );
 };

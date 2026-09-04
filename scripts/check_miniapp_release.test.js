@@ -24,6 +24,10 @@ assert.ok(source.includes('containsRetiredWechatBindingReviewUi'),
   'release checks must reject the retired administrator binding-review UI');
 assert.ok(source.includes('retired ordinary-administrator page must stay deleted'),
   'release checks must keep the retired ordinary-administrator page removed');
+assert.ok(source.includes('retired local backend auth route must stay deleted'),
+  'release checks must keep the embedded login route removed');
+assert.ok(source.includes("app.post('/api/miniapp/cloud-login'"),
+  'release checks must require the cloud business login route');
 assert.strictEqual(containsRetiredBindingReviewLoginFlow('WECHAT_BINDING_REVIEW_REQUIRED'), true);
 assert.strictEqual(containsRetiredBindingReviewLoginFlow("{ kind: 'pending-binding' }"), true);
 assert.strictEqual(containsRetiredBindingReviewLoginFlow('PHONE_WECHAT_BINDING_CONFLICT'), false);

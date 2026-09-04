@@ -8,6 +8,7 @@ const ENTITY_COLLECTIONS = Object.freeze({
   grade: 'grades',
   room: 'rooms',
   institution: 'institutions',
+  school: 'schools',
   question: 'questions',
   'taxonomy-system': 'taxonomy_systems',
   'taxonomy-node': 'taxonomy_nodes',
@@ -154,6 +155,33 @@ function applyDelete(cache, collection, id) {
   cache[collection] = cache[collection].filter(row => String(row.id) !== id);
 }
 
+function applyStudentContacts(cache, studentId, contacts) {
+  if (!Array.isArray(cache.student_contacts) || !Array.isArray(contacts)) return;
+  const existingBySlot = new Map(
+    cache.student_contacts
+      .filter(contact => String(contact.student_id || '') === studentId)
+      .map(contact => [Number(contact.slot), contact]),
+  );
+  const otherContacts = cache.student_contacts.filter(contact => String(contact.student_id || '') !== studentId);
+  const pendingContacts = contacts.map(contact => {
+    const slot = Number(contact?.slot);
+    const existing = existingBySlot.get(slot);
+    return {
+      ...(existing || {}),
+      id: existing?.id || `draft-student-contact-${studentId}-${slot}`,
+      student_id: studentId,
+      slot,
+      relationship: contact.relationship,
+      phone: contact.phone ?? null,
+      wechat: contact.wechat ?? null,
+      status: existing?.status || 'draft',
+      created_at: existing?.created_at ?? null,
+      updated_at: contact.updated_at ?? contact.expectedUpdatedAt ?? existing?.updated_at ?? null,
+    };
+  });
+  cache.student_contacts = [...otherContacts, ...pendingContacts];
+}
+
 function applyDraft(cache, item) {
   const match = /^(.+)\.(create|update|delete)\.v1$/.exec(String(item?.type || ''));
   if (!match) return;
@@ -168,12 +196,16 @@ function applyDraft(cache, item) {
     const index = cache[collection].findIndex(row => String(row.id) === id);
     if (index === -1) cache[collection].push(record);
     else cache[collection][index] = { ...cache[collection][index], ...record };
+    if (entity === 'student') applyStudentContacts(cache, id, record.contacts);
     return;
   }
   const id = String(payload.id || '').trim();
   if (!id) return;
   if (action === 'delete') {
     applyDelete(cache, collection, id);
+    if (entity === 'student') {
+      cache.student_contacts = cache.student_contacts.filter(contact => String(contact.student_id || '') !== id);
+    }
     return;
   }
   const index = cache[collection].findIndex(row => String(row.id) === id);
@@ -182,6 +214,7 @@ function applyDraft(cache, item) {
     ...cache[collection][index],
     ...(payload.changes || {}),
   });
+  if (entity === 'student') applyStudentContacts(cache, id, payload.changes?.contacts);
 }
 
 export function buildAuthorityBackedBrowserCache({

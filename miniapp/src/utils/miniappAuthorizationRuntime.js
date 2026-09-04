@@ -7,7 +7,7 @@ const STAFF_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'cou
 const TEACHER_MODULES = STAFF_MODULES.slice();
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
 const VISITOR_MODULES = ['scheduling', 'question-bank', 'settings'];
-const VALID_ROLES = new Set(['super_admin', 'teacher', 'student', 'visitor']);
+const VALID_ROLES = new Set(['super_admin', 'teacher', 'student', 'family_member', 'visitor']);
 
 function isRetiredIdentity(user) {
   if (!user || typeof user !== 'object') return false;
@@ -99,7 +99,7 @@ function businessCacheIdentityKey(user) {
   if (!user || !user.id || role === 'visitor') return '';
   if (isRetiredIdentity(user) || isVisitorIdentity(user)) return '';
   if (role === 'teacher' && !(user.teacher_id || user.teacherId)) return '';
-  if (role === 'student' && studentSubjectIds(user).length === 0) return '';
+  if ((role === 'student' || role === 'family_member') && studentSubjectIds(user).length === 0) return '';
   const scope = permissionIdentityKey(user);
   return scope ? `normal:${scope}` : '';
 }
@@ -121,7 +121,7 @@ function questionBasketCacheKey(user) {
 function usesLimitedQuestionProjection(user) {
   const role = roleOf(user);
   if (role === 'visitor') return true;
-  return role === 'student' || (role === 'teacher' && !businessCacheIdentityKey(user));
+  return role === 'student' || role === 'family_member' || (role === 'teacher' && !businessCacheIdentityKey(user));
 }
 
 function createQuestionPaperTaskCacheRuntime(dependencies) {
@@ -156,36 +156,6 @@ function createQuestionPaperTaskCacheRuntime(dependencies) {
   return { replace, snapshot: readSnapshot };
 }
 
-function createQuestionBasketRuntime(dependencies) {
-  let current = { scopeKey: null, ids: [] };
-
-  function readSnapshot() {
-    const scopeKey = questionBasketCacheKey(dependencies.readIdentity());
-    if (scopeKey !== current.scopeKey) {
-      let ids = [];
-      if (scopeKey) {
-        try {
-          const stored = dependencies.read(scopeKey);
-          ids = Array.isArray(stored) ? Array.from(new Set(stored.filter(item => typeof item === 'string' && item.trim()))) : [];
-        } catch (_error) { ids = []; }
-      }
-      current = { scopeKey, ids };
-    }
-    return { scopeKey: current.scopeKey || '', ids: current.ids.slice() };
-  }
-
-  function replace(ids, expectedScopeKey) {
-    const beforeWrite = readSnapshot();
-    if (!beforeWrite.scopeKey || beforeWrite.scopeKey !== expectedScopeKey) return { written: false, snapshot: beforeWrite };
-    const nextIds = Array.from(new Set((Array.isArray(ids) ? ids : []).filter(item => typeof item === 'string' && item.trim())));
-    dependencies.write(beforeWrite.scopeKey, nextIds);
-    current = { scopeKey: beforeWrite.scopeKey, ids: nextIds };
-    return { written: true, snapshot: readSnapshot() };
-  }
-
-  return { replace, snapshot: readSnapshot };
-}
-
 function sanitizeCapabilitiesForIdentity(user, capabilities) {
   const stringCapabilities = Array.isArray(capabilities)
     ? capabilities.filter(capability => typeof capability === 'string') : [];
@@ -208,7 +178,7 @@ function deriveAccess(user, permissionState) {
   if (visitor && capabilities.includes('projection:read')) modules = VISITOR_MODULES.slice();
   else if (!experienceOnly && capabilities.includes('business:all')) modules = STAFF_MODULES.slice();
   else if (capabilities.includes('business:teacher-scope') && role === 'teacher') modules = TEACHER_MODULES.slice();
-  else if (!experienceOnly && capabilities.includes('question-bank:view') && role === 'student') modules = STUDENT_MODULES.slice();
+  else if (!experienceOnly && capabilities.includes('question-bank:view') && (role === 'student' || role === 'family_member')) modules = STUDENT_MODULES.slice();
   return {
     role,
     experienceOnly,
@@ -274,7 +244,7 @@ function scopeDashboardCollections(user, collections = {}) {
     const studentIds = relatedStudentIds([...scopedCourses, ...scopedSchedules]);
     return { students: students.filter(student => studentIds.has(student.id)), courses: scopedCourses, schedules: scopedSchedules };
   }
-  if (role === 'student') {
+  if (role === 'student' || role === 'family_member') {
     const linkedIds = new Set(studentSubjectIds(user));
     if (linkedIds.size === 0) return { students: [], courses: [], schedules: [] };
     const scopedCourses = courses.filter(course => [...relatedStudentIds([course])].some(id => linkedIds.has(id)));
@@ -299,7 +269,6 @@ module.exports = {
   sanitizeCapabilitiesForIdentity,
   studentSubjectIds,
   businessCacheIdentityKey,
-  createQuestionBasketRuntime,
   createQuestionPaperTaskCacheRuntime,
   questionBasketCacheKey,
   questionPaperTaskCacheKey,

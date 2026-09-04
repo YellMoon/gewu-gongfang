@@ -152,10 +152,7 @@ const QuestionBankEdit: React.FC = () => {
 
   useEffect(() => {
     try {
-      const session = readDesktopAuthorizationSession();
-      fetch('/api/permissions/my', { headers: { authorization: session.authorization, 'x-device-id': session.authContext.deviceId } })
-        .then(response => response.json()).then(data => setDeleteContext(normalizeDesktopQuestionDeleteContext(session, data.capabilities)))
-        .catch(() => undefined);
+      setDeleteContext(normalizeDesktopQuestionDeleteContext(readDesktopAuthorizationSession()));
     } catch (_error) {}
   }, []);
 
@@ -372,7 +369,6 @@ const QuestionBankEdit: React.FC = () => {
     });
     if (ids.length === 0) { message.warning('No selected question can be deleted from this device'); return; }
     const db = (window as any).dbService;
-    const session = JSON.parse(sessionStorage.getItem('gewu_desktop_authorization_session') || 'null') || {};
     const settled = await Promise.allSettled(ids.map(async id => {
       const question = questions.find(item => item.id === id);
       const ok = question?.storage_state !== 'local_draft'

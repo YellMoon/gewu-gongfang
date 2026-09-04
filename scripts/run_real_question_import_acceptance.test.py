@@ -32,9 +32,24 @@ else:
 assert "GRANT vnext_pg17_owner" in MODULE.grant_owner_command()
 assert "REVOKE vnext_pg17_owner" in MODULE.revoke_owner_command()
 with tempfile.TemporaryDirectory() as directory:
-    source = Path(directory) / "parse_word.py"
+    parser_directory = Path(directory)
+    source = parser_directory / "parse_word.py"
+    helper = parser_directory / "helper.py"
     source.write_bytes(b"parser revision fixture")
-    digest = hashlib.sha256(b"parser revision fixture").hexdigest()
-    assert MODULE.sha256_file(source) == digest
+    helper.write_bytes(b"helper revision fixture")
+    nested_tests = parser_directory / "tests"
+    nested_tests.mkdir()
+    (nested_tests / "test_parser.py").write_bytes(b"must not enter production image")
+    framed = hashlib.sha256()
+    for name, contents in sorted([
+            ("helper.py", b"helper revision fixture"),
+            ("parse_word.py", b"parser revision fixture")]):
+        framed.update(f"{len(name.encode('utf-8'))}:".encode("ascii"))
+        framed.update(name.encode("utf-8"))
+        framed.update(f":{len(contents)}:".encode("ascii"))
+        framed.update(contents)
+    digest = framed.hexdigest()
+    assert MODULE.parser_bundle_sha256(parser_directory) == digest
     assert f"REAL_QUESTION_IMPORT_PARSER_SHA256='{digest}'" in MODULE.import_command(digest)
+    assert "REAL_QUESTION_IMPORT_BASE_URL='http://127.0.0.1:3002'" in MODULE.import_command(digest)
 print("real question import runner checks passed")

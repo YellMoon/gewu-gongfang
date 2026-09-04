@@ -5,7 +5,6 @@ import {
   Card,
   Divider,
   Input,
-  QRCode,
   Select,
   Space,
   Spin,
@@ -32,6 +31,10 @@ import {
   clearCurrentDesktopIdentityPartition,
   setCurrentDesktopIdentityContext,
 } from '../services/desktopIdentityPartition.mjs';
+import {
+  commitRoleSwitchRuntime,
+  resumeOfflineAfterNetworkFailure,
+} from '../services/desktopIdentityGateRuntime.mjs';
 import './DesktopIdentityGate.css';
 
 const BusinessApp = React.lazy(() => import('../App'));
@@ -89,6 +92,19 @@ const DesktopIdentityGate: React.FC = () => {
   const pollingFlowRef = useRef<number | null>(null);
   const registrationFlowRef = useRef(0);
 
+  const clearPendingVerificationState = useCallback(() => {
+    registrationFlowRef.current += 1;
+    pollingFlowRef.current = null;
+    setPolling(false);
+    setPending(null);
+    setAccountPassword('');
+    setCloudLoginName('');
+    setCloudPassword('');
+    setCloudPasswordAgain('');
+    setTeacherRegistrationName('');
+    setTeacherRegistrationSubject('');
+  }, []);
+
   const suspendBusinessMemory = useCallback(async (_partitionKey?: string) => {
     setRuntimeSuspended(true);
     (window as any).dbService?.prepareIdentityPartitionChange?.();
@@ -99,6 +115,7 @@ const DesktopIdentityGate: React.FC = () => {
     try {
       await clientRef.current?.lock();
     } finally {
+      clearPendingVerificationState();
       (window as any).dbService?.prepareIdentityPartitionChange?.();
       clearCurrentDesktopIdentityPartition(window);
       currentPartitionRef.current = null;
@@ -107,7 +124,7 @@ const DesktopIdentityGate: React.FC = () => {
       setGateState(nextState);
       setRuntimeSuspended(false);
     }
-  }, []);
+  }, [clearPendingVerificationState]);
 
   const installIdentityContext = useCallback((next: GateState) => {
     if (!next.partitionKey || !next.userId || !next.activeRole) return;
@@ -129,6 +146,7 @@ const DesktopIdentityGate: React.FC = () => {
       setGateState(next);
       return;
     }
+    clearPendingVerificationState();
     installIdentityContext(next);
     const nextOnlineSession = result.token ? {
       token: result.token,
@@ -141,7 +159,7 @@ const DesktopIdentityGate: React.FC = () => {
     setGateState(next);
     setRuntimeSuspended(false);
     setError('');
-  }, [installIdentityContext]);
+  }, [clearPendingVerificationState, installIdentityContext]);
 
   const retryInitialization = useCallback(() => {
     setError('');
@@ -321,6 +339,21 @@ const DesktopIdentityGate: React.FC = () => {
             if (!cancelled) acceptRuntime(resumed);
           } catch (caught) {
             if (!cancelled) {
+              if (isDesktopIdentityNetworkFailure(caught)) {
+                try {
+                  const offlineResumed = await resumeOfflineAfterNetworkFailure({
+                    client,
+                    baseUrl: identityBaseUrl,
+                  });
+                  if (cancelled) return;
+                  if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+                    acceptRuntime(offlineResumed);
+                    return;
+                  }
+                } catch (_offlineFallbackError) {
+                  // Preserve the original cloud recovery error below.
+                }
+              }
               const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), now: new Date() });
               setGateState(next.kind === 'locked' ? { kind: 'online-authentication-required' } : next);
               setError(messageForError(caught));
@@ -439,9 +472,9 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
-  const completeRegistration = async () => {
+  const completeRegistration = async (registrationPending = pending) => {
     const passwordEnrollmentRequested = Boolean(cloudLoginName || cloudPassword || cloudPasswordAgain);
-    const canEnrollCloudPassword = pending?.pairingId && pending?.status === 'verified' && pending?.recovery !== true;
+    const canEnrollCloudPassword = registrationPending?.pairingId && registrationPending?.status === 'verified' && registrationPending?.recovery !== true;
     if (passwordEnrollmentRequested && !canEnrollCloudPassword) {
       setError('\u6682\u65f6\u65e0\u6cd5\u8bbe\u7f6e\u8d26\u53f7\u5bc6\u7801\u3002');
       return;
@@ -454,8 +487,8 @@ const DesktopIdentityGate: React.FC = () => {
     setError('');
     try {
       const verifiedPending = passwordEnrollmentRequested
-        ? await clientRef.current.enrollPasswordForVerifiedRegistration({ pending, loginName: cloudLoginName || null, password: cloudPassword })
-        : pending;
+        ? await clientRef.current.enrollPasswordForVerifiedRegistration({ pending: registrationPending, loginName: cloudLoginName || null, password: cloudPassword })
+        : registrationPending;
       const result = await clientRef.current.completeUnifiedOnlineRegistration({ pending: verifiedPending });
       setCloudLoginName('');
       setCloudPassword('');
@@ -480,8 +513,11 @@ const DesktopIdentityGate: React.FC = () => {
     }
     setBusy(true);
     setError('');
+    let registeredAccess: any = null;
     try {
-      await clientRef.current.registerTeacherForVerifiedRegistration({ pending, name, subject });
+      const registered = await clientRef.current.registerTeacherForVerifiedRegistration({ pending, name, subject });
+      registeredAccess = registered.desktopAccess;
+      setPending({ ...pending, desktopAccess: registered.desktopAccess });
       setTeacherRegistrationName('');
       setTeacherRegistrationSubject('');
     } catch (caught) {
@@ -490,7 +526,7 @@ const DesktopIdentityGate: React.FC = () => {
       return;
     }
     setBusy(false);
-    await completeRegistration();
+    await completeRegistration({ ...pending, desktopAccess: registeredAccess });
   };
 
   const resume = async () => {
@@ -502,10 +538,12 @@ const DesktopIdentityGate: React.FC = () => {
     } catch (caught: any) {
       if (isDesktopIdentityNetworkFailure(caught)) {
         try {
-          const vaultStatus = await clientRef.current.status();
-          const fallback = resolveDesktopGateState({ vaultStatus, online: false, now: new Date() });
-          if (canStartBusinessRuntime({ gateState: fallback })) {
-            acceptRuntime({ gateState: fallback });
+          const offlineResumed = await resumeOfflineAfterNetworkFailure({
+            client: clientRef.current,
+            baseUrl,
+          });
+          if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+            acceptRuntime(offlineResumed);
             return;
           }
         } catch (_fallbackError) {
@@ -546,6 +584,7 @@ const DesktopIdentityGate: React.FC = () => {
   };
   const performRoleSwitch = async (activeRole: string) => {
     const previousPartition = currentPartitionRef.current;
+    const previousOnlineSession = onlineSessionRef.current;
     setBusy(true);
     setError('');
     try {
@@ -554,18 +593,25 @@ const DesktopIdentityGate: React.FC = () => {
         currentSession: onlineSession,
         activeRole,
       });
-      const vaultStatus = await clientRef.current.status();
-      const next = resolveDesktopGateState({
-        vaultStatus,
-        online: true,
-        onlineSession: switched,
-        now: new Date(),
+      await commitRoleSwitchRuntime({
+        switched,
+        onlineSessionRef,
+        resolveNext: async () => {
+          const vaultStatus = await clientRef.current.status();
+          return resolveDesktopGateState({
+            vaultStatus,
+            online: true,
+            onlineSession: switched,
+            now: new Date(),
+          });
+        },
+        setOnlineSession,
+        installIdentityContext,
+        setGateState,
+        setRuntimeSuspended,
       });
-      installIdentityContext(next);
-      setOnlineSession(switched);
-      setGateState(next);
-      setRuntimeSuspended(false);
     } catch (caught) {
+      onlineSessionRef.current = previousOnlineSession;
       if (previousPartition) {
         (window as any).dbService?.switchIdentityPartition?.(previousPartition);
       }
@@ -601,9 +647,16 @@ const DesktopIdentityGate: React.FC = () => {
     }
     if (pending?.status === 'verified' && pending?.verificationToken) {
       const canEnrollCloudPassword = pending?.pairingId && pending?.recovery !== true;
+      const desktopAccessAllowed = pending?.desktopAccess?.access === 'allowed';
+      const teacherRegistrationRequired = pending?.desktopAccess?.access === 'teacher_registration_required';
       return (
         <>
-          <Alert type="success" showIcon message={'\u767b\u5f55\u6210\u529f'} description={'\u6b63\u5728\u51c6\u5907\u5de5\u4f5c\u53f0\uff0c\u8bf7\u7a0d\u5019\u3002'} />
+          <Alert
+            type={desktopAccessAllowed ? 'success' : 'info'}
+            showIcon
+            message={desktopAccessAllowed ? '\u767b\u5f55\u6210\u529f' : '\u586b\u5199\u6559\u5e08\u4fe1\u606f'}
+            description={desktopAccessAllowed ? '\u6b63\u5728\u51c6\u5907\u5de5\u4f5c\u53f0\u3002' : '\u5b8c\u6210\u540e\u5373\u53ef\u8fdb\u5165\u683c\u7269\u5de5\u574a\u3002'}
+          />
           {canEnrollCloudPassword && (
             <>
               <Input value={cloudLoginName} onChange={event => setCloudLoginName(event.target.value)} placeholder={'\u8bbe\u7f6e\u8d26\u53f7\u540d\uff08\u53ef\u9009\uff09'} maxLength={64} />
@@ -611,19 +664,24 @@ const DesktopIdentityGate: React.FC = () => {
               <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u767b\u5f55\u5bc6\u7801'} />
             </>
           )}
-          <Button type="primary" loading={busy} onClick={completeRegistration} block>{'\u8fdb\u5165\u683c\u7269\u5de5\u574a'}</Button>
-          <Divider plain>{'\u8fd8\u6ca1\u6709\u6559\u5e08\u8eab\u4efd\uff1f'}</Divider>
-          <Input value={teacherRegistrationName} onChange={event => setTeacherRegistrationName(event.target.value)} placeholder={'\u6559\u5e08\u59d3\u540d'} maxLength={128} />
-          <Input value={teacherRegistrationSubject} onChange={event => setTeacherRegistrationSubject(event.target.value)} placeholder={'\u4efb\u6559\u5b66\u79d1\uff08\u53ef\u9009\uff09'} maxLength={128} />
-          <Button loading={busy} onClick={registerTeacherThenComplete} block>{'\u767b\u8bb0\u4e3a\u6559\u5e08\u5e76\u8fdb\u5165'}</Button>
+          {desktopAccessAllowed && (
+            <Button type="primary" loading={busy} onClick={() => { void completeRegistration(); }} block>{'\u8fdb\u5165\u683c\u7269\u5de5\u574a'}</Button>
+          )}
+          {teacherRegistrationRequired && (
+            <>
+              <Input value={teacherRegistrationName} onChange={event => setTeacherRegistrationName(event.target.value)} placeholder={'\u6559\u5e08\u59d3\u540d'} maxLength={128} />
+              <Input value={teacherRegistrationSubject} onChange={event => setTeacherRegistrationSubject(event.target.value)} placeholder={'\u4efb\u6559\u5b66\u79d1\uff08\u53ef\u9009\uff09'} maxLength={128} />
+              <Button type="primary" loading={busy} onClick={registerTeacherThenComplete} block>{'\u5b8c\u6210\u5e76\u8fdb\u5165'}</Button>
+            </>
+          )}
+          <Button loading={busy} onClick={returnToPasswordLogin} block>{'\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'}</Button>
         </>
       );
     }
     return (
       <>
         <Paragraph className="desktop-identity-copy">{'\u8bf7\u5728\u5fae\u4fe1\u4e2d\u786e\u8ba4\u767b\u5f55\u3002'}</Paragraph>
-        {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt={'\u5fae\u4fe1\u767b\u5f55\u4e8c\u7ef4\u7801'} /></div>
-          : pending.qrValue ? <div className="desktop-identity-qr"><QRCode value={pending.qrValue} size={196} bordered={false} /></div> : null}
+        {pending.qrImageDataUrl ? <div className="desktop-identity-qr"><img src={pending.qrImageDataUrl} width={196} height={196} alt={'\u5fae\u4fe1\u767b\u5f55\u4e8c\u7ef4\u7801'} /></div> : null}
         <Button icon={<ReloadOutlined />} loading={polling} onClick={pollRegistration} block>{'\u5237\u65b0\u767b\u5f55\u72b6\u6001'}</Button>
         <Button loading={busy} onClick={returnToPasswordLogin} block>{'\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'}</Button>
       </>
@@ -673,7 +731,10 @@ const DesktopIdentityGate: React.FC = () => {
     );
   }
 
-  const locked = ['locked', 'online-authentication-required', 'offline-blocked'].includes(gateState.kind);
+  const showLoginMethods = ['registration-required', 'registration-active', 'registration-interrupted', 'upgrade-required',
+    'password-reset-active', 'password-reset-interrupted', 'online-authentication-required',
+  ].includes(gateState.kind);
+  const locked = ['locked', 'offline-blocked'].includes(gateState.kind);
   return (
     <main className="desktop-identity-shell">
       <Card className="desktop-identity-card" variant="borderless">
@@ -691,20 +752,16 @@ const DesktopIdentityGate: React.FC = () => {
               <Alert
                 type="warning"
                 showIcon
-                message={'\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\u767b\u5f55'}
-                description={error || '\u8bf7\u5173\u95ed\u540e\u91cd\u65b0\u6253\u5f00\u683c\u7269\u5de5\u574a\u3002'}
+                message={'\u767b\u5f55\u9047\u5230\u95ee\u9898'}
+                description={error || '\u8bf7\u91cd\u8bd5\u3002'}
               />
-              <Button icon={<ReloadOutlined />} onClick={retryInitialization} block>{'\u91cd\u65b0\u68c0\u67e5'}</Button>
+              <Button icon={<ReloadOutlined />} onClick={retryInitialization} block>{'\u91cd\u8bd5'}</Button>
             </>
           )}
           {gateState.kind === 'upgrade-required' && (
             <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
-          {[
-            'registration-required', 'registration-active', 'registration-interrupted', 'upgrade-required',
-            'password-reset-active', 'password-reset-interrupted',
-          ].includes(gateState.kind)
-            && renderRegistration()}
+          {showLoginMethods && renderRegistration()}
           {locked && (
             <>
               <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u767b\u5f55\u72b6\u6001\u3002\u82e5\u5df2\u9000\u51fa\u6216\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u767b\u5f55\u3002'}</Paragraph>

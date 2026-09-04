@@ -120,6 +120,23 @@
   backdrop-filter: blur(14px);
 }
 
+.desktop-identity-runtime .app-shell__topbar {
+  padding-right: 350px;
+}
+
+.desktop-identity-runtime:has(.desktop-identity-runtime-bar .ant-btn:nth-of-type(2)) .app-shell__topbar {
+  padding-right: 540px;
+}
+
+.desktop-identity-runtime-bar .ant-typography {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
 .desktop-identity-elevation {
   display: flex !important;
   margin-top: 8px;

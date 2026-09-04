@@ -34,7 +34,7 @@ const cloudBusinessProjectionRuntime = createCloudBusinessProjectionRuntime({
 export async function pullFromCloudBusinessProjection(): Promise<boolean> {
   try {
     const session = authSessionRuntime.capture();
-    await cloudBusinessProjectionRuntime.refresh(session.token);
+    await cloudBusinessProjectionRuntime.refresh(session.token, () => authSessionRuntime.isSameSession(session));
     setLastSyncTimestamp(timestamp(Date.now()));
     syncCallback?.({ type: 'done', success: true, message: 'CLOUD_BUSINESS_PROJECTION_REFRESHED' });
     return true;

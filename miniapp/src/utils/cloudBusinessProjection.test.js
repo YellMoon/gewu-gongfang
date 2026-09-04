@@ -38,7 +38,7 @@ const {
     writeCache: (key, value) => writes.push([key, value]),
   });
 
-  const result = await runtime.refresh('miniapp-ticket.signature');
+  const result = await runtime.refresh('miniapp-ticket.signature', () => true);
 
   const normalizedSchedules = [{
     ...projection.schedules[0],
@@ -61,6 +61,19 @@ const {
     ['grades', []],
   ]);
   assert.deepStrictEqual(normalizedSchedules[0].student_ids, ['student-1'], 'projection normalization must preserve the authoritative roster');
+
+  let resolveStaleProjection;
+  const staleWrites = [];
+  const staleRuntime = createCloudBusinessProjectionRuntime({
+    readProjection: () => new Promise(resolve => { resolveStaleProjection = resolve; }),
+    writeCache: (key, value) => staleWrites.push([key, value]),
+  });
+  let staleSessionCurrent = true;
+  const staleRefresh = staleRuntime.refresh('old-account-ticket.signature', () => staleSessionCurrent);
+  staleSessionCurrent = false;
+  resolveStaleProjection({ success: true, data: { ok: true, projection } });
+  await assert.rejects(staleRefresh, /CLOUD_BUSINESS_PROJECTION_SESSION_CHANGED/);
+  assert.deepStrictEqual(staleWrites, [], 'a response from the previous account must not write into the current account cache');
   assert.strictEqual(shanghaiDateKey('2026-08-24T16:30:00.000Z'), '2026-08-25', 'calendar filtering must use the product time zone instead of UTC date slicing');
   assert.strictEqual(shiftShanghaiDateKey('2026-08-25', -1), '2026-08-24');
   assert.deepStrictEqual(shanghaiWeekDateKeys('2026-08-25'), [

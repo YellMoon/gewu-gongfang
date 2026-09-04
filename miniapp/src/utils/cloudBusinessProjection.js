@@ -85,12 +85,14 @@ function validProjection(value) {
 function createCloudBusinessProjectionRuntime({ readProjection, writeCache }) {
   if (typeof readProjection !== 'function' || typeof writeCache !== 'function') throw new TypeError('cloud business projection dependencies are required');
   return Object.freeze({
-    async refresh(token) {
+    async refresh(token, isCurrentSession) {
       if (typeof token !== 'string' || !token.trim()) throw new TypeError('cloud business session is required');
+      if (typeof isCurrentSession !== 'function') throw new TypeError('cloud business session guard is required');
       const response = await readProjection(token);
       const projection = response?.success === true && response?.data?.ok === true ? response.data.projection : null;
       if (!validProjection(projection)) throw new Error('CLOUD_BUSINESS_PROJECTION_UNAVAILABLE');
       const normalized = normalizeProjection(projection);
+      if (!isCurrentSession()) throw new Error('CLOUD_BUSINESS_PROJECTION_SESSION_CHANGED');
       TABLES.forEach(([projectionKey, cacheKey]) => writeCache(cacheKey, normalized[projectionKey]));
       writeCache('payments', []);
       writeCache('grades', []);

@@ -2,9 +2,10 @@
  * App startup, permission initialization, and session-bound synchronization.
  */
 import { PropsWithChildren } from 'react';
-import { useLaunch } from '@tarojs/taro';
+import { useDidShow, useLaunch } from '@tarojs/taro';
 import Taro from '@tarojs/taro';
 import miniappPackage from '../package.json';
+import { questionBasketStore } from './utils/questionBasketStore';
 import './app.scss';
 
 let App: React.FC<PropsWithChildren<any>>;
@@ -17,12 +18,17 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim(
 
 App = function App({ children }: PropsWithChildren<any>) {
   useLaunch((options) => {
+    questionBasketStore.reconcileIdentity();
     console.info(`\u683c\u7269\u5de5\u574a v${APP_VERSION}`);
     initializeAuthenticatedApp(options).catch(() => {
       if (!isUnauthenticatedEntryPage(options?.path)) {
         Taro.reLaunch({ url: '/pages/login/index' });
       }
     });
+  });
+
+  useDidShow(() => {
+    questionBasketStore.reconcileIdentity();
   });
 
   return children;

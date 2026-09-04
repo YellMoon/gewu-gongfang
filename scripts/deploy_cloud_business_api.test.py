@@ -74,6 +74,16 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3 4 5 6 7 8 9 10", command)
         self.assertIn("sleep 1", command)
 
+    def test_candidate_must_generate_a_real_wechat_miniapp_code_before_promotion(self):
+        command = candidate_command("8.1.0-8c425eab", "a" * 32)
+        self.assertIn("/api/desktop/pairing/start", command)
+        verification_source = base64.b64decode(
+            module.candidate_pairing_verification_script(),
+        ).decode("utf-8")
+        self.assertIn("qrImageDataUrl", verification_source)
+        self.assertIn("data:image/png;base64,", verification_source)
+        self.assertNotIn("pairingSecret'", command)
+
     def test_trusted_offline_lease_key_fingerprints_are_derived_from_desktop_public_keys(self):
         first = "MCowBQYDK2VwAyEAdHtPZNmNeiLxZgrr7u5TlhUQPY32IRFZm2jhRABGthY="
         second = "MCowBQYDK2VwAyEAGY4DlhDvEsOwR7mXM23i+P+lT2n0ZVXKVQXbSZfFR/c="

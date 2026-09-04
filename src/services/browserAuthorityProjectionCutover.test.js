@@ -17,12 +17,16 @@ assert.ok(
   'browser database must expose a projection refresh boundary',
 );
 assert.ok(
-  browserDatabase.includes('window.desktopAuthority.readProjection({ minSourceVersion })'),
-  'renderer data refresh must use only the preload authority facade',
+  !browserDatabase.includes('window.desktopAuthority.readProjection'),
+  'renderer data refresh must not retain the retired authority projection fallback',
 );
 assert.ok(
-  browserDatabase.includes('window.desktopIdentitySessionProvider?.listCloudBusinessProjection'),
+  browserDatabase.includes('cloudProvider.listCloudBusinessProjection()'),
   'an online unified desktop must hydrate business data from the cloud authority instead of an embedded backend',
+);
+assert.ok(
+  browserDatabase.includes('DESKTOP_CLOUD_PROJECTION_PROVIDER_REQUIRED'),
+  'missing cloud session projection provider must fail closed instead of reading a legacy projection',
 );
 assert.strictEqual(
   browserDatabase.includes('window.primaryHostRuntime'),

@@ -85,6 +85,18 @@ process.stdout.write(crypto.createHash('sha256').update(publicDer).digest('hex')
     return base64.b64encode(source.encode("utf-8")).decode("ascii")
 
 
+def candidate_pairing_verification_script():
+    source = """
+const fs = require('fs');
+const payload = JSON.parse(fs.readFileSync(0, 'utf8'));
+const image = String(payload && payload.qrImageDataUrl || '');
+const validImage = image.startsWith('data:image/png;base64,') || image.startsWith('data:image/jpeg;base64,');
+if (!payload || payload.ok !== true || !payload.pairingId || !payload.pairingSecret
+    || !payload.expiresAt || !validImage || image.length < 256) process.exit(2);
+""".strip()
+    return base64.b64encode(source.encode("utf-8")).decode("ascii")
+
+
 def release_tag(version, revision):
     if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", version):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
@@ -188,6 +200,12 @@ def candidate_command(tag, operation_id):
     override_path = runtime_override_env_path(tag, operation_id)
     trusted_lease_key_fingerprints = " ".join(trusted_offline_lease_key_fingerprints())
     lease_key_script = candidate_lease_key_fingerprint_script()
+    pairing_verification_script = candidate_pairing_verification_script()
+    pairing_request = json.dumps({
+        "installationId": "deployment-pairing-preflight",
+        "installationPublicKey": "deployment-pairing-preflight-public-key",
+        "idempotencyKey": f"deployment-pairing-preflight-{operation_id}",
+    }, separators=(",", ":"))
     return (
         "set -eu; "
         f"current='{CURRENT_CONTAINER}'; candidate='{candidate}'; env_path='{env_path}'; override_path='{override_path}'; owner='{operation_id}'; "
@@ -203,8 +221,11 @@ def candidate_command(tag, operation_id):
         f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
         f"actual_lease_key_fingerprint=$(docker exec \"$candidate\" node -e \"eval(Buffer.from('{lease_key_script}','base64').toString('utf8'))\"); "
         f"case ' {trusted_lease_key_fingerprints} ' in *\" $actual_lease_key_fingerprint \"*) : ;; *) printf '%s\\n' 'CLOUD_DOCKER_OFFLINE_LEASE_KEY_UNTRUSTED' >&2; exit 3 ;; esac; "
-        "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
-        "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3003/api/health && exit 0; sleep 1; done; exit 1"
+        "health_ready=0; for attempt in 1 2 3 4 5 6 7 8 9 10; do "
+        "if curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3003/api/health >/dev/null; then health_ready=1; break; fi; sleep 1; done; "
+        "test \"$health_ready\" = 1; "
+        f"pairing_response=$(curl --fail --silent --show-error --max-time 30 -H 'content-type: application/json' --data '{pairing_request}' http://127.0.0.1:3003/api/desktop/pairing/start); "
+        f"printf '%s' \"$pairing_response\" | docker exec -i \"$candidate\" node -e \"eval(Buffer.from('{pairing_verification_script}','base64').toString('utf8'))\""
     )
 
 

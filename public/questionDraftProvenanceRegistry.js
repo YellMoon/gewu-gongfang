@@ -2,6 +2,23 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+async function verifyCloudDesktopSession({ baseUrl, authorization, fetchImpl = globalThis.fetch }) {
+  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!normalizedBaseUrl || typeof fetchImpl !== 'function' || !String(authorization || '').trim()) {
+    throw Object.assign(new Error('CLOUD_ONLINE_IDENTITY_REJECTED'), { code: 'CLOUD_ONLINE_IDENTITY_REJECTED' });
+  }
+  const response = await fetchImpl(`${normalizedBaseUrl}/api/desktop/session-context`, {
+    headers: { authorization: String(authorization) },
+  });
+  let data = null;
+  try { data = await response.json(); } catch (_error) { data = null; }
+  if (!response.ok || data?.ok !== true || !data.accountId || !data.deviceId) {
+    const code = data?.code || 'CLOUD_ONLINE_IDENTITY_REJECTED';
+    throw Object.assign(new Error(code), { code });
+  }
+  return { userId: data.accountId, deviceId: data.deviceId, tokenUse: 'desktop-session' };
+}
+
 class QuestionDraftProvenanceRegistry {
   constructor({ filePath, tokenVerifier }) { this.filePath = filePath; this.tokenVerifier = tokenVerifier; }
   _read() { try { return JSON.parse(fs.readFileSync(this.filePath, 'utf8')); } catch (_error) { return {}; } }
@@ -19,4 +36,4 @@ class QuestionDraftProvenanceRegistry {
     return Boolean(existing && claims?.tokenUse === 'desktop-session' && existing.userId === claims.userId && existing.deviceId === claims.deviceId);
   }
 }
-module.exports = { QuestionDraftProvenanceRegistry };
+module.exports = { QuestionDraftProvenanceRegistry, verifyCloudDesktopSession };

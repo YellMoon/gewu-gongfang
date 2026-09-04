@@ -14,6 +14,10 @@ assert.ok(electronSource.includes('readDesktopIdentityStatus'),
   'Electron must recover only unreadable local identity envelopes before rendering the login page');
 assert.ok(electronSource.includes("DESKTOP_IDENTITY_VAULT_ENVELOPE_INVALID"),
   'only an unreadable identity envelope may take the non-destructive recovery path');
+assert.ok(
+  electronSource.includes("getDesktopIdentityVault().beginUnifiedOnlineRegistration(configuredDesktopIdentity(input))"),
+  'Electron must pass its silently derived device label into the registration vault instead of exposing device setup in the renderer',
+);
 assert.ok(!electronSource.includes('remote-debugging-port='));
 assert.ok(electronSource.includes('resolveDevelopmentRenderer'), 'Electron must use the tested development renderer boundary');
 assert.ok(preloadSource.includes('preloadLoginFixtureEnabled'), 'preload must use the tested fixture bridge boundary');

@@ -169,7 +169,6 @@ const StudentList: React.FC = () => {
   const submitExistingStudentToAuthority = async (values: any) => {
     if (!editingStudent) return false;
     const stageLocalDraft = () => {
-      if (values.school) dbService.addOrUpdateSchool(values.school);
       dbService.updateStudent(editingStudent.id, values);
       (window as any).operateLogger?.log('update', `student:${values.name}`, 'students');
     };
@@ -222,7 +221,6 @@ const StudentList: React.FC = () => {
 
   const submitNewStudentToAuthority = async (values: any) => {
     const stageLocalDraft = () => {
-      if (values.school) dbService.addOrUpdateSchool(values.school);
       dbService.createStudent(values);
       (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
     };

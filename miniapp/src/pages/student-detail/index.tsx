@@ -3,13 +3,13 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
-import { isStudentUser } from '../../utils/permission';
+import { isStudentScopedUser } from '../../utils/permission';
 import './index.scss';
 
 export default function StudentDetail() {
   const router = useRouter();
   const { id } = router.params;
-  const isStudent = isStudentUser();
+  const isStudent = isStudentScopedUser();
   const [student, setStudent] = useState<Student | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);

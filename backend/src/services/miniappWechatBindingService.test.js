@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { DatabaseService } = require('../database');
 const { createMiniappWechatBindingService } = require('./miniappWechatBindingService');
+const { canReviewUsers } = require('./authorizationPolicy');
 
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-miniapp-wechat-binding-'));
 const previous = {
@@ -28,9 +29,14 @@ try {
   insertUser.run('second-user', '13900139000', '13900139000', 'Second User', 'student', 'student', 0, now, now);
   insertUser.run('third-user', '13600136000', '13600136000', 'Third User', 'student', 'student', 0, now, now);
   insertUser.run('ordinary-admin', '13500135000', '13500135000', 'Ordinary Admin', 'admin', 'admin', 0, now, now);
+  insertUser.run(
+    'miniapp-admin-13732250653', '13732250653', '13732250653', 'Fixed Super Admin',
+    'super_admin', 'super_admin', 1, now, now,
+  );
 
   const superAdmin = db.prepare("SELECT * FROM users WHERE id='miniapp-admin-13732250653'").get();
   const normalAdmin = db.prepare("SELECT * FROM users WHERE id='ordinary-admin'").get();
+  assert.ok(superAdmin && canReviewUsers(superAdmin), 'the explicit fixed super administrator fixture must be active');
   let sequence = 0;
   const service = createMiniappWechatBindingService({
     db,

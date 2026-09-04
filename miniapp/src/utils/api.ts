@@ -43,8 +43,10 @@ export const miniappCloudAuthApi = {
       return { success: false, error: error?.errMsg || error?.message || 'Cloud login unavailable' };
     }
   },
-  async confirmDesktopLogin(pairingId: string, pairingSecret: string, loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; status: 'verified' }>> {
-    if (![pairingId, pairingSecret, loginCode, phoneCode].every(value => typeof value === 'string' && value.trim())) {
+  async confirmDesktopLogin(desktopLogin: { scene: string }, loginCode: string, phoneCode: string): Promise<ApiResponse<{ ok: true; status: 'verified' }>> {
+    if (!desktopLogin || typeof desktopLogin !== 'object' || Array.isArray(desktopLogin)
+      || Object.keys(desktopLogin).length !== 1 || !/^d_[A-Za-z0-9_-]{30}$/u.test(desktopLogin.scene)
+      || ![loginCode, phoneCode].every(value => typeof value === 'string' && value.trim())) {
       return { success: false, code: 'CLOUD_DESKTOP_PAIRING_REJECTED', error: 'Desktop login request is invalid' };
     }
     try {
@@ -52,7 +54,7 @@ export const miniappCloudAuthApi = {
         url: cloudBusinessUrl('/api/desktop/pairing/confirm'),
         method: 'POST',
         header: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-        data: { pairingId, pairingSecret, loginCode, phoneCode },
+        data: { scene: desktopLogin.scene, loginCode, phoneCode },
         timeout: REQUEST_TIMEOUT,
         dataType: 'json',
       });

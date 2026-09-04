@@ -3,8 +3,15 @@
 const assert = require('assert');
 const http = require('http');
 
-const { startFixtureServer, resolveFixturePort } = require('./capture-miniapp-ui-matrix');
+const {
+  startFixtureServer,
+  resolveFixturePort,
+  resolveStandaloneFixtureScenario,
+  richPhysicsQuestions,
+  RICH_VISITOR_QUESTION_LIMIT,
+} = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
+const { createQuestionDisplay, columnsForOptions } = require('../miniapp/src/utils/questionDisplay');
 const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
 const fs = require('fs');
 const TEST_PORT = 3020;
@@ -18,6 +25,19 @@ assert.match(matrixSource, /auth_session_state_v1/u,
 assert.strictEqual(resolveFixturePort('3020'), 3020, 'the runtime matrix must accept an isolated local fixture port');
 assert.throws(() => resolveFixturePort('0'), /fixture server port is invalid/);
 assert.throws(() => resolveFixturePort('not-a-port'), /fixture server port is invalid/);
+assert.deepStrictEqual(
+  resolveStandaloneFixtureScenario({ fixtureMode: 'question-rich' }),
+  { id: 'standalone-question-rich', fixtureMode: 'question-rich' },
+  'the rich question fixture should be directly startable for wechatide agent testing',
+);
+assert.throws(
+  () => resolveStandaloneFixtureScenario({ fixtureMode: 'unknown' }),
+  /miniapp fixture mode is unknown/,
+);
+assert.throws(
+  () => resolveStandaloneFixtureScenario({ scenarioId: 'question-visitor-preview', fixtureMode: 'question-rich' }),
+  /mutually exclusive/,
+);
 
 function request(pathname, token, port = TEST_PORT, method = 'GET') {
   return new Promise((resolve, reject) => {
@@ -72,7 +92,7 @@ function requestBytes(pathname, token, port = TEST_PORT) {
     const guardianResponse = await request('/api/miniapp/cloud-context', 'fixture-guardian');
     assert.strictEqual(guardianResponse.statusCode, 200);
     assert.strictEqual(guardianResponse.body.identity.accountId, 'fixture-guardian');
-    assert.deepStrictEqual(guardianResponse.body.identity.roles, ['student']);
+    assert.deepStrictEqual(guardianResponse.body.identity.roles, ['family_member']);
     assert.strictEqual(guardianResponse.body.identity.profile.relationship, 'guardian');
     const guardian = cloudSessionUser(guardianResponse.body.identity);
     assert.strictEqual(guardian?.identity_kind, 'family_member');
@@ -100,6 +120,66 @@ function requestBytes(pathname, token, port = TEST_PORT) {
       knowledgeLabels: ['Dynamics'],
       status: 'published',
     });
+
+    const normalTeacherQuestions = await request('/api/business/miniapp-question-previews', 'fixture-teacher');
+    assert.deepStrictEqual(normalTeacherQuestions.body.questions, [],
+      'the rich visual fixture must remain isolated from the existing empty-state matrix');
+
+    const richPort = TEST_PORT + 2;
+    const { server: richServer } = await startFixtureServer(richPort, { fixtureMode: 'question-rich' });
+    try {
+      const richVisitor = await request('/api/business/miniapp-question-previews', 'fixture-visitor', richPort);
+      assert.strictEqual(richVisitor.statusCode, 200);
+      assert.strictEqual(richVisitor.body.hasMore, true,
+        'a visitor should learn about the additional question boundary only after reaching the end');
+      assert.strictEqual(richVisitor.body.questions.length, RICH_VISITOR_QUESTION_LIMIT);
+      assert.deepStrictEqual(
+        richVisitor.body.questions.map(question => question.id),
+        richPhysicsQuestions.slice(0, RICH_VISITOR_QUESTION_LIMIT).map(question => question.id),
+      );
+
+      for (const roleToken of ['fixture-teacher', 'fixture-student', 'fixture-super_admin', 'fixture-paper-teacher']) {
+        const fullRoleQuestions = await request('/api/business/miniapp-question-previews', roleToken, richPort);
+        assert.strictEqual(fullRoleQuestions.statusCode, 200);
+        assert.strictEqual(fullRoleQuestions.body.hasMore, false);
+        assert.deepStrictEqual(fullRoleQuestions.body.questions, richPhysicsQuestions,
+          `${roleToken} should receive the complete rich question fixture`);
+      }
+
+      const [shortOptions, mediumOptions, longOptions, structuredQuestion] = richPhysicsQuestions;
+      assert.strictEqual(shortOptions.options.length, 4);
+      assert.ok(Math.max(...shortOptions.options.map(option => option.replace(/^[A-D]\.\s*/u, '').length)) <= 6,
+        'the first question should exercise the four-column short-option rule');
+      const mediumLength = Math.max(...mediumOptions.options.map(option => option.replace(/^[A-D]\.\s*/u, '').length));
+      assert.ok(mediumLength > 6 && mediumLength <= 28,
+        'the second question should exercise the two-column medium-option rule');
+      assert.ok(Math.max(...longOptions.options.map(option => option.replace(/^[A-D]\.\s*/u, '').length)) > 28,
+        'the third question should exercise the single-column long-option rule');
+      const displays = richPhysicsQuestions.map(createQuestionDisplay);
+      assert.deepStrictEqual(displays.slice(0, 3).map(display => columnsForOptions(display.options)), [4, 2, 1],
+        'the rich fixture should pass through the same 4/2/1-column option rules as the miniapp page');
+      assert.strictEqual(structuredQuestion.richContent.type, 'question-document');
+      assert.strictEqual(structuredQuestion.richContent.sections.subQuestions.length, 2);
+      const structuredText = JSON.stringify(structuredQuestion.richContent);
+      assert.match(structuredText, /v_\{0\}=0/u, 'the fixture should exercise formula subscripts');
+      assert.match(structuredText, /t\^\{2\}/u, 'the fixture should exercise formula superscripts');
+      assert.match(structuredText, /\\\\frac\{F\}\{m\}/u, 'the fixture should exercise visible fractions');
+      const structuredDisplay = displays[3];
+      assert.strictEqual(structuredDisplay.subQuestions.length, 2);
+      assert.match(structuredDisplay.stem, /v<sub>0<\/sub>=0/u,
+        'the structured question should render the subscript through the miniapp display projector');
+      assert.match(structuredDisplay.subQuestions[0].answer, /question-formula-fraction/u,
+        'the structured question should render the fractional sub-answer through the miniapp display projector');
+      assert.match(structuredDisplay.subQuestions[1].answer, /t<sup>2<\/sup>/u,
+        'the structured question should render the superscript through the miniapp display projector');
+      for (const question of richPhysicsQuestions) {
+        assert.strictEqual(question.subject, 'physics');
+        assert.ok(question.source && question.knowledgeLabels.length && Number.isInteger(question.difficulty),
+          `${question.id} must exercise source, knowledge and difficulty presentation`);
+      }
+    } finally {
+      await new Promise(resolve => richServer.close(resolve));
+    }
 
     const isolatedPort = TEST_PORT + 1;
     const { server: forbiddenServer } = await startFixtureServer(isolatedPort, { fixtureMode: 'question-forbidden' });

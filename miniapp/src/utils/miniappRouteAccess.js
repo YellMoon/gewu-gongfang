@@ -11,6 +11,7 @@ const ROUTE_MODULES = Object.freeze({
   'pages/payments/index': 'payments',
   'pages/stats/index': 'stats',
   'pages/question-bank/index': 'question-bank',
+  'pages/question-paper/index': 'question-paper',
   'pages/assets/index': 'assets',
 });
 
@@ -29,7 +30,11 @@ function canOpenMiniappRoute(path, access = {}) {
   const modules = Array.isArray(access.modules) ? access.modules : [];
   const capabilities = Array.isArray(access.capabilities) ? access.capabilities : [];
   if (moduleId === 'question-bank') return capabilities.includes('question-bank:view') || modules.includes(moduleId);
-  if (moduleId === 'students' && role === 'student' && normalizeRoute(path) === 'pages/student-detail/index') return true;
+  if (moduleId === 'question-paper') {
+    return ['super_admin', 'teacher'].includes(role)
+      && (capabilities.includes('question-bank:view') || capabilities.includes('question-paper') || modules.includes('question-bank'));
+  }
+  if (moduleId === 'students' && (role === 'student' || role === 'family_member') && normalizeRoute(path) === 'pages/student-detail/index') return true;
   return modules.includes(moduleId);
 }
 

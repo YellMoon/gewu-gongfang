@@ -13,6 +13,9 @@ assert.strictEqual(canOpenMiniappRoute('/pages/stats/index', visitor), false, 'v
 assert.strictEqual(canOpenMiniappRoute('/pages/student-detail/index?id=student-1', student), true, 'students may open their own scoped detail page');
 assert.strictEqual(canOpenMiniappRoute('/pages/schedule/edit/index', student), true, 'the read-only schedule boundary remains available to students');
 assert.strictEqual(canOpenMiniappRoute('/pages/question-bank/index', visitor), true, 'visitors retain the cloud question preview route');
+assert.strictEqual(canOpenMiniappRoute('/pages/question-paper/index', visitor), false, 'visitors must not deep-link into paper editing');
+assert.strictEqual(canOpenMiniappRoute('/pages/question-paper/index', student), false, 'students must not deep-link into paper editing');
+assert.strictEqual(canOpenMiniappRoute('/pages/question-paper/index', staff), true, 'teachers may open the limited-write paper editor');
 assert.strictEqual(canOpenMiniappRoute('/pages/schedule/index', visitor), true, 'visitors may open their scoped course schedule');
 assert.strictEqual(canOpenMiniappRoute('/pages/courses/index', staff), true);
 assert.strictEqual(canOpenMiniappRoute('/pages/login/index', visitor), true, 'unmapped routes remain available to their owning page');

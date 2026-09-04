@@ -1,15 +1,17 @@
 'use strict';
 
+const { types } = require('util');
+
 function codedError(code) {
   return Object.assign(new Error(code), { code });
 }
 
 function invalid() {
-  return codedError('CLOUD_WECHAT_MINIAPP_SCHEME_INVALID');
+  return codedError('CLOUD_WECHAT_MINIAPP_CODE_INVALID');
 }
 
 function unavailable() {
-  return codedError('CLOUD_WECHAT_MINIAPP_SCHEME_UNAVAILABLE');
+  return codedError('CLOUD_WECHAT_MINIAPP_CODE_UNAVAILABLE');
 }
 
 function text(value, maximum = 4096) {
@@ -20,13 +22,28 @@ function text(value, maximum = 4096) {
 
 function exact(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-    || Object.getPrototypeOf(value) !== Object.prototype
+    || types.isProxy(value) || Object.getPrototypeOf(value) !== Object.prototype
     || Reflect.ownKeys(value).length !== keys.length
     || keys.some(key => !Object.hasOwn(value, key))) throw invalid();
-  return value;
+  const copy = {};
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) throw invalid();
+    copy[key] = descriptor.value;
+  }
+  return copy;
 }
 
-function createWechatMiniappSchemeService(config) {
+function imageMime(contentType, bytes) {
+  const normalized = String(contentType || '').split(';', 1)[0].trim().toLowerCase();
+  if (normalized === 'image/png') return 'image/png';
+  if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'image/jpeg';
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+
+function createWechatMiniappCodeService(config) {
   const settings = exact(config, ['appId', 'appSecret', 'envVersion', 'fetchImpl', 'now']);
   if (!text(settings.appId, 128) || !text(settings.appSecret, 512)
     || !['release', 'trial', 'develop'].includes(settings.envVersion)
@@ -63,48 +80,42 @@ function createWechatMiniappSchemeService(config) {
   }
 
   return Object.freeze({
-    async generateDesktopLoginScheme(input) {
-      const request = exact(input, ['pairingId', 'pairingSecret', 'expiresAt']);
-      const pairingId = text(request.pairingId, 256);
-      const pairingSecret = text(request.pairingSecret, 512);
+    async generateDesktopLoginCode(input) {
+      const request = exact(input, ['scene']);
+      const scene = text(request.scene, 32);
+      if (!scene || !/^[A-Za-z0-9_-]{1,32}$/u.test(scene)) throw invalid();
       const timestamp = currentTimestamp();
-      const expiresAt = Date.parse(request.expiresAt);
-      if (!pairingId || !pairingSecret || !Number.isFinite(expiresAt)
-        || expiresAt <= timestamp || expiresAt > timestamp + (10 * 60 * 1000)) throw invalid();
-      const query = new URLSearchParams({
-        desktopLogin: '1',
-        pairingId,
-        secret: pairingSecret,
-      }).toString();
       let response;
-      let payload;
+      let bytes;
       try {
         const token = await accessToken(timestamp);
-        const url = new URL('https://api.weixin.qq.com/wxa/generatescheme');
+        const url = new URL('https://api.weixin.qq.com/wxa/getwxacodeunlimit');
         url.searchParams.set('access_token', token);
         response = await settings.fetchImpl(url, {
           method: 'POST',
           headers: { 'content-type': 'application/json; charset=utf-8' },
           body: JSON.stringify({
-            jump_wxa: {
-              path: 'pages/login/index',
-              query,
-              env_version: settings.envVersion,
-            },
-            is_expire: true,
-            expire_time: Math.floor(expiresAt / 1000),
+            scene,
+            page: 'pages/login/index',
+            check_path: true,
+            env_version: settings.envVersion,
+            width: 280,
           }),
         });
-        payload = await response.json();
+        bytes = Buffer.from(await response.arrayBuffer());
       } catch (error) {
-        if (error?.code === 'CLOUD_WECHAT_MINIAPP_SCHEME_INVALID') throw error;
+        if (error?.code === 'CLOUD_WECHAT_MINIAPP_CODE_INVALID') throw error;
         throw unavailable();
       }
-      if (!response?.ok || payload?.errcode || !text(payload?.openlink, 4096)
-        || !String(payload.openlink).startsWith('weixin://')) throw unavailable();
-      return payload.openlink;
+      const contentType = response?.headers?.get?.('content-type') || '';
+      const startsAsJson = bytes.subarray(0, Math.min(bytes.length, 64)).toString('utf8').trimStart().startsWith('{');
+      if (!response?.ok || startsAsJson || String(contentType).toLowerCase().includes('application/json')
+        || bytes.length < 128 || bytes.length > 5 * 1024 * 1024) throw unavailable();
+      const mime = imageMime(contentType, bytes);
+      if (!mime) throw unavailable();
+      return `data:${mime};base64,${bytes.toString('base64')}`;
     },
   });
 }
 
-module.exports = Object.freeze({ createWechatMiniappSchemeService });
+module.exports = Object.freeze({ createWechatMiniappCodeService });

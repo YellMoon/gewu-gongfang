@@ -23,17 +23,17 @@ assert.deepStrictEqual(buildRoleApplicationRequest({
   profileName: ' \u5f20\u4e09 ', contactPhone: '138 0013-8000',
 }), {
   requestedIdentity: 'student', profileMode: 'existing',
-  bindingHint: '\u59d3\u540d\uff1a\u5f20\u4e09\uff1b\u624b\u673a\u53f7\uff1a13800138000',
+  profileName: '\u5f20\u4e09', profilePhone: '13800138000',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
   requestedIdentity: 'family_member', profileMode: 'existing', profileName: '\u674e\u56db', contactPhone: '13900139000',
 }), {
-  requestedIdentity: 'family_member', profileMode: 'existing', bindingHint: '\u59d3\u540d\uff1a\u674e\u56db\uff1b\u624b\u673a\u53f7\uff1a13900139000',
+  requestedIdentity: 'family_member', profileMode: 'existing', profileName: '\u674e\u56db', profilePhone: '13900139000',
 });
 assert.deepStrictEqual(buildRoleApplicationRequest({
   requestedIdentity: 'teacher', profileMode: 'new', profileName: '\u738b\u4e94', contactPhone: '13700137000',
 }), {
-  requestedIdentity: 'teacher', profileMode: 'new', bindingHint: '\u59d3\u540d\uff1a\u738b\u4e94\uff1b\u624b\u673a\u53f7\uff1a13700137000',
+  requestedIdentity: 'teacher', profileMode: 'new', profileName: '\u738b\u4e94', profilePhone: '13700137000',
 });
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'new', profileName: '\u674e\u56db', contactPhone: '13900139000' }),
@@ -88,5 +88,9 @@ assert.ok(!initialCopy.description.includes('档案') && !initialCopy.descriptio
 const invalidCopy = copyForApplicationState('invalid');
 assert.ok(!invalidCopy.description.includes('档案'), 'validation guidance must use information users can recognize instead of internal records');
 assert.ok(!pageSource.includes("className='state-kicker'"), 'the role-application page must not repeat an internal account-identity heading above the user-facing action title');
+assert.ok(pageSource.includes("label: '\\u6559\\u5e08'"), 'the formal role name must be teacher, not the conversational teacher label');
+assert.ok(!pageSource.includes('\\u65b0\\u8eab\\u4efd') && !pageSource.includes('\\u5173\\u8054\\u5bf9\\u8c61'), 'role choices must not expose internal identity terminology');
+assert.ok(pageSource.includes('CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED'), 'a mismatched hand-entered phone must produce an explicit verified-account-phone message');
+assert.ok(pageSource.includes('\\u5f53\\u524d\\u8d26\\u53f7\\u624b\\u673a\\u53f7'), 'the phone field must clearly refer to the current verified account');
 
 console.log('account application runtime checks passed');

@@ -16,6 +16,7 @@ interface DataPageLayoutProps {
 }
 
 const DataPageLayout: React.FC<DataPageLayoutProps> = ({
+  children,
   toolbar,
   table,
   drawerOpen,
@@ -40,6 +41,7 @@ const DataPageLayout: React.FC<DataPageLayoutProps> = ({
       <Card className="data-page-layout__table" size="small">
         {table}
       </Card>
+      {children}
       {drawerContent && (
         <Drawer
           title={drawerTitle}

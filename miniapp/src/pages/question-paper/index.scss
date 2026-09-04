@@ -1,6 +1,6 @@
 .question-paper-page {
   min-height: 100vh;
-  padding: 24rpx 24rpx calc(148rpx + env(safe-area-inset-bottom));
+  padding: 24rpx 24rpx calc(220rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f7f4ee;
 }
@@ -12,7 +12,14 @@
 .paper-order-actions,
 .paper-tools,
 .paper-export-actions,
-.paper-summary {
+.paper-overview-main,
+.paper-distribution-row,
+.preview-header,
+.task-item-head,
+.task-item-title-wrap,
+.task-meta,
+.task-actions,
+.paper-item-identity {
   display: flex;
   align-items: center;
 }
@@ -23,7 +30,7 @@
 .back-button, .compact-button { margin: 0; color: #1f6f68; background: #eef5f2; border: 0; border-radius: 18rpx; font-size: 24rpx; }
 .back-button::after, .compact-button::after { border: 0; }
 
-.paper-form, .paper-summary, .paper-item, .result-card, .paper-empty, .access-boundary {
+.paper-form, .paper-overview, .paper-item, .result-card, .paper-empty, .access-boundary, .paper-status-banner {
   margin-top: 22rpx;
   padding: 26rpx;
   background: #fffdf8;
@@ -36,25 +43,53 @@
 .field-input, .section-input, .score-input, .section-picker { height: 72rpx; padding: 0 18rpx; box-sizing: border-box; background: #f3f0e9; border-radius: 16rpx; color: #172033; font-size: 27rpx; }
 .section-picker { min-width: 170rpx; line-height: 72rpx; }
 .picker-row { margin-top: 16rpx; padding: 20rpx; background: #f3f0e9; border-radius: 16rpx; color: #26364a; font-size: 26rpx; }
-.paper-summary { flex-wrap: wrap; gap: 12rpx; }
-.paper-summary text { padding: 7rpx 13rpx; border-radius: 999rpx; background: #eef5f2; color: #1f6f68; font-size: 22rpx; }
-.paper-tools { gap: 14rpx; margin-top: 20rpx; }
-.paper-item-list { max-height: 900rpx; margin-top: 20rpx; }
-.paper-item { margin-top: 16rpx; }
-.paper-item-head { justify-content: space-between; gap: 16rpx; color: #26364a; font-size: 26rpx; font-weight: 800; }
+.paper-overview { margin-top: 18rpx; padding: 22rpx 24rpx; }
+.paper-overview-main { flex-wrap: wrap; gap: 24rpx; }
+.paper-overview-main .compact-button { margin-left: auto; min-height: 72rpx; }
+.paper-metric { display: flex; align-items: baseline; gap: 8rpx; min-width: 104rpx; }
+.paper-metric-value { color: #172033; font-size: 40rpx; font-weight: 900; line-height: 1; }
+.paper-metric-label { color: #687486; font-size: 23rpx; }
+.paper-distribution-row { align-items: flex-start; gap: 16rpx; margin-top: 18rpx; }
+.paper-distribution-label { flex: none; width: 64rpx; padding-top: 7rpx; color: #657181; font-size: 23rpx; font-weight: 800; }
+.paper-distribution-tags { display: flex; flex: 1; flex-wrap: wrap; gap: 10rpx; min-width: 0; }
+.paper-distribution-tags text { padding: 6rpx 12rpx; color: #1f6f68; font-size: 21rpx; background: #eef5f2; border-radius: 999rpx; }
+.paper-status-banner { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8rpx 20rpx; padding: 18rpx 22rpx; color: #875433; font-size: 24rpx; line-height: 36rpx; background: #fff3df; }
+.paper-item-list { display: grid; gap: 18rpx; margin-top: 20rpx; }
+.paper-section { overflow: hidden; border: 1rpx solid rgba(31, 111, 104, .14); border-radius: 22rpx; background: #fffdf8; box-shadow: 0 10rpx 26rpx rgba(23, 32, 51, .04); }
+.paper-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; padding: 18rpx 22rpx; background: #eef5f2; }
+.paper-section-title { color: #173f3b; font-size: 27rpx; font-weight: 900; }
+.paper-section-count { color: #1f6f68; font-size: 22rpx; font-weight: 700; }
+.paper-section-questions { padding: 0 14rpx 16rpx; }
+.paper-section-questions .paper-item { margin-top: 14rpx; box-shadow: none; }
+.paper-item-head { flex-wrap: wrap; justify-content: space-between; gap: 14rpx; color: #26364a; font-size: 26rpx; font-weight: 800; }
+.paper-item-identity { gap: 12rpx; }
+.paper-item-number { display: flex; align-items: center; justify-content: center; width: 46rpx; height: 46rpx; color: #fff; background: #2b7e73; border-radius: 23rpx; }
 .paper-order-actions { gap: 8rpx; }
 .paper-order-actions button { margin: 0; font-size: 20rpx; }
 .paper-stem { display: block; margin-top: 16rpx; color: #172033; font-size: 27rpx; line-height: 40rpx; }
-.paper-option { display: block; margin-top: 8rpx; color: #42506a; font-size: 25rpx; line-height: 38rpx; }
+.paper-options { display: grid; gap: 8rpx 18rpx; margin-top: 10rpx; }
+.paper-options.columns-1 { grid-template-columns: minmax(0, 1fr); }
+.paper-options.columns-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.paper-options.columns-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.paper-option { display: grid; grid-template-columns: 34rpx minmax(0, 1fr); align-items: start; min-width: 0; color: #42506a; font-size: 25rpx; line-height: 38rpx; }
+.paper-option-label { display: block; color: #26364a; font-weight: 700; }
+.paper-option-content { display: block; min-width: 0; word-break: break-word; }
+.paper-subquestions { display: flex; flex-direction: column; gap: 10rpx; margin-top: 14rpx; }
+.paper-subquestion { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8rpx; color: #26364a; font-size: 25rpx; line-height: 40rpx; }
+.paper-subquestion-label { font-weight: 800; }
+.paper-subquestion-content, .paper-answer-content { display: block; min-width: 0; word-break: break-word; }
+.paper-subquestion-answers { margin-top: 8rpx; }
 .paper-question-tags { display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 14rpx; }
 .paper-question-tags text { padding: 5rpx 10rpx; border-radius: 999rpx; background: #eef5f2; color: #1f6f68; font-size: 21rpx; }
 .paper-answer, .paper-answers { margin-top: 16rpx; padding: 16rpx; border-radius: 16rpx; background: #f8f3e8; color: #46566d; font-size: 24rpx; line-height: 38rpx; }
 .paper-answer text { display: block; }
 .answer-title { display: block; color: #172033; font-size: 27rpx; font-weight: 800; }
-.paper-edit-row { gap: 12rpx; margin-top: 18rpx; }
+.paper-edit-row { flex-wrap: wrap; gap: 12rpx; margin-top: 18rpx; }
 .section-input { flex: 1; min-width: 0; }
 .score-input { width: 112rpx; }
 .paper-edit-row text { color: #596579; font-size: 24rpx; }
+.paper-edit-errors { display: flex; flex-direction: column; gap: 6rpx; margin-top: 10rpx; }
+.paper-field-error { color: #b33a3a; font-size: 22rpx; line-height: 32rpx; }
 .paper-export-actions { gap: 16rpx; margin-top: 24rpx; }
 .paper-export-actions button { flex: 1; height: 82rpx; line-height: 82rpx; margin: 0; border: 0; border-radius: 22rpx; color: #fffaf1; font-size: 28rpx; font-weight: 900; }
 .paper-export-actions button::after { border: 0; }
@@ -63,6 +98,35 @@
 .paper-empty, .access-boundary { text-align: center; color: #596579; font-size: 27rpx; line-height: 42rpx; }
 .paper-empty button, .access-boundary button { margin-top: 18rpx; color: #fffaf1; background: #1f6f68; border: 0; border-radius: 18rpx; }
 .paper-empty button::after, .access-boundary button::after { border: 0; }
+
+.result-card { padding: 24rpx; }
+.preview-header { justify-content: space-between; gap: 16rpx; }
+.preview-title { color: #172033; font-size: 29rpx; font-weight: 900; }
+.task-sync-state { color: #1f6f68; font-size: 22rpx; }
+.task-offline-state { margin-top: 16rpx; padding: 14rpx 16rpx; color: #875433; font-size: 23rpx; line-height: 34rpx; background: #fff3df; border-radius: 14rpx; }
+.task-list { display: grid; gap: 14rpx; margin-top: 18rpx; }
+.task-item { padding: 18rpx; background: #f8faf8; border: 1rpx solid #e3e9e6; border-left: 6rpx solid #82928f; border-radius: 18rpx; }
+.task-item.status-queued, .task-item.status-processing { border-left-color: #317d73; }
+.task-item.status-completed { border-left-color: #31875c; }
+.task-item.status-failed, .task-item.status-timed_out { border-left-color: #bd4f55; background: #fff8f8; }
+.task-item.status-cancelled, .task-item.status-draft { border-left-color: #b3833e; }
+.task-item-head { flex-wrap: wrap; justify-content: space-between; gap: 10rpx 18rpx; }
+.task-item-title-wrap { flex: 1; flex-wrap: wrap; gap: 10rpx; min-width: 0; }
+.task-item-title { max-width: 100%; overflow: hidden; color: #1d2d3d; font-size: 26rpx; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+.task-format { padding: 5rpx 10rpx; color: #4b5fa6; font-size: 19rpx; line-height: 1.2; background: #eef0fb; border-radius: 10rpx; }
+.task-status { flex: none; color: #45625e; font-size: 22rpx; font-weight: 750; }
+.task-meta { justify-content: space-between; margin-top: 12rpx; color: #6b7787; font-size: 21rpx; }
+.paper-task-progress-track { overflow: hidden; height: 12rpx; margin-top: 10rpx; background: #e3e9e6; border-radius: 999rpx; }
+.paper-task-progress-fill { height: 100%; background: #2b7e73; border-radius: inherit; transition: width .2s ease; }
+.status-failed .paper-task-progress-fill, .status-timed_out .paper-task-progress-fill { background: #bd4f55; }
+.task-message, .task-error { display: block; margin-top: 12rpx; font-size: 22rpx; line-height: 34rpx; word-break: break-word; }
+.task-message { color: #5f6e7d; }
+.task-error { color: #a13f46; }
+.task-actions { flex-wrap: wrap; justify-content: flex-end; gap: 10rpx; margin-top: 14rpx; }
+.task-actions button { min-width: 120rpx; min-height: 64rpx; margin: 0; padding: 0 18rpx; color: #1f6f68; font-size: 22rpx; line-height: 64rpx; background: #eef5f2; border: 0; border-radius: 32rpx; }
+.task-actions button::after { border: 0; }
+.task-actions button.primary { color: #fff; background: #1f6f68; }
+.result-text { display: block; padding: 26rpx 0 10rpx; color: #778292; font-size: 24rpx; text-align: center; }
 
 .paper-order-actions button {
   min-width: 76rpx;
@@ -77,3 +141,13 @@
 }
 .paper-order-actions button::after { border: 0; }
 .paper-order-actions button[disabled] { color: #aab3bf; background: #f3f0e9; }
+
+@media (max-width: 375px) {
+  .question-paper-page { padding-right: 18rpx; padding-left: 18rpx; }
+  .paper-form, .paper-overview, .paper-item, .result-card, .paper-empty, .access-boundary { padding: 20rpx; }
+  .paper-order-actions { width: 100%; justify-content: flex-end; }
+  .paper-edit-row .section-picker { min-width: 150rpx; }
+  .paper-edit-row .section-input { flex-basis: 220rpx; }
+  .paper-options.columns-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .task-item-title { white-space: normal; }
+}
