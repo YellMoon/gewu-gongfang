@@ -10,6 +10,15 @@ SPEC.loader.exec_module(MODULE)
 
 
 class VerifyCloudBusinessReleaseTest(unittest.TestCase):
+    def test_device_revocation_verification_normalizes_equivalent_production_function_format(self):
+        sql = MODULE.verification_sql()
+        revocation_check = sql.split("'desktopDeviceRevocationFixed'", 1)[1].split("'controlPlaneM25'", 1)[0]
+        self.assertIn("lower(regexp_replace(pg_get_functiondef(p.oid),'[[:space:]]+','','g')) AS normalized_definition", revocation_check)
+        self.assertIn("fromvnext_control_plane.vnext_accountsasa", revocation_check)
+        self.assertIn("a.status=''active''", revocation_check)
+        self.assertNotIn("position('FROM vnext_control_plane.vnext_accounts AS a' in pg_get_functiondef(p.oid))", revocation_check)
+        self.assertNotIn("position('a.status = ''active''' in pg_get_functiondef(p.oid))", revocation_check)
+
     def test_sql_checks_counts_functions_and_direct_write_denial(self):
         sql = MODULE.verification_sql()
         self.assertIn("jsonb_object_agg", sql)
