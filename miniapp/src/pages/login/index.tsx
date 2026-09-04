@@ -206,7 +206,7 @@ export default function LoginPage() {
           <Text className="desktop-login-copy">{'\u5982\u679c\u4e0d\u662f\u4f60\u672c\u4eba\u64cd\u4f5c\uff0c\u8bf7\u53d6\u6d88\u3002'}</Text>
           {desktopLoginError ? <Text className="desktop-login-error">{desktopLoginError}</Text> : null}
           {hasDesktopSession
-            ? <Button key="desktop-session-confirm" className="wx-login-btn" onClick={() => void handleDesktopSessionLogin()} loading={loading} disabled={loading}>{'\u786e\u8ba4\u767b\u5f55'}</Button>
+            ? <Button key="desktop-session-confirm" className="wx-login-btn" openType={'' as any} onClick={() => void handleDesktopSessionLogin()} loading={loading} disabled={loading}>{'\u786e\u8ba4\u767b\u5f55'}</Button>
             : <Button key="desktop-phone-login" className="wx-login-btn" openType="getPhoneNumber" onGetPhoneNumber={(event) => void handleDesktopPhoneLogin(event?.detail?.code || '')} loading={loading} disabled={loading}>{'\u624b\u673a\u53f7\u5feb\u6377\u767b\u5f55'}</Button>}
           <Button className="desktop-login-secondary" disabled={loading} onClick={() => Taro.reLaunch({ url: '/pages/login/index' })}>{'\u53d6\u6d88'}</Button>
         </>}
