@@ -1,5 +1,12 @@
 BEGIN;
 
+ALTER FUNCTION business.miniapp_cloud_role_grant_profile_guard()
+  OWNER TO vnext_pg17_business_owner;
+ALTER FUNCTION business.miniapp_cloud_student_access_guard()
+  OWNER TO vnext_pg17_business_owner;
+
+SET LOCAL ROLE vnext_pg17_business_owner;
+
 ALTER TABLE business.miniapp_cloud_role_grants
   DROP CONSTRAINT IF EXISTS miniapp_cloud_role_grants_role_check,
   DROP CONSTRAINT IF EXISTS miniapp_cloud_role_grants_profile_check,

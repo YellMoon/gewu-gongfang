@@ -6,6 +6,39 @@ const fs = require('fs');
 const sql = fs.readFileSync('cloud-business-api/sql/20260901-zz-family-member-canonical-role.sql', 'utf8');
 const repository = fs.readFileSync('cloud-business-api/src/miniappRoleApplicationRepository.js', 'utf8');
 
+const ownerTransfers = [...sql.matchAll(
+  /ALTER FUNCTION business\.(miniapp_cloud_(?:role_grant_profile|student_access)_guard)\(\)\s+OWNER TO vnext_pg17_business_owner;/gu,
+)].map((match) => match[1]);
+const beginMatches = sql.match(/^BEGIN;$/gmu) || [];
+const commitMatches = sql.match(/^COMMIT;$/gmu) || [];
+const beginIndex = sql.indexOf('BEGIN;');
+const profileOwnerIndex = sql.search(
+  /ALTER FUNCTION business\.miniapp_cloud_role_grant_profile_guard\(\)\s+OWNER TO vnext_pg17_business_owner;/u,
+);
+const studentAccessOwnerIndex = sql.search(
+  /ALTER FUNCTION business\.miniapp_cloud_student_access_guard\(\)\s+OWNER TO vnext_pg17_business_owner;/u,
+);
+const setLocalRoleIndex = sql.indexOf('SET LOCAL ROLE vnext_pg17_business_owner;');
+const firstBusinessMutationIndex = sql.indexOf('ALTER TABLE business.miniapp_cloud_role_grants');
+const commitIndex = sql.lastIndexOf('COMMIT;');
+
+assert.deepStrictEqual(ownerTransfers, [
+  'miniapp_cloud_role_grant_profile_guard',
+  'miniapp_cloud_student_access_guard',
+]);
+assert.strictEqual(beginMatches.length, 1);
+assert.strictEqual(commitMatches.length, 1);
+assert.strictEqual(sql.trimStart().indexOf('BEGIN;'), 0);
+assert.strictEqual(sql.trimEnd().endsWith('COMMIT;'), true);
+assert.ok(beginIndex < profileOwnerIndex);
+assert.ok(profileOwnerIndex < studentAccessOwnerIndex);
+assert.ok(studentAccessOwnerIndex < setLocalRoleIndex);
+assert.ok(setLocalRoleIndex < firstBusinessMutationIndex);
+assert.ok(firstBusinessMutationIndex < commitIndex);
+assert.doesNotMatch(sql, /\bGRANT\s+(?:ROLE\s+)?vnext_pg17_business_owner\b/iu);
+assert.doesNotMatch(sql, /\bREASSIGN\s+OWNED\b/iu);
+assert.doesNotMatch(sql, /\bDROP\s+TRIGGER\b/iu);
+
 assert.match(sql, /role IN \('super_admin','teacher','student','family_member'\)/u);
 assert.match(sql, /SET role='family_member'/u);
 assert.match(sql, /role='family_member' AND profile_type='student'/u);
