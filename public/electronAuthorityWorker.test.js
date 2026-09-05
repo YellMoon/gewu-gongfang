@@ -8,7 +8,7 @@ for (const marker of [
 ]) assert.ok(!source.includes(marker), `unified Electron main must not contain ${marker}`);
 assert.ok(source.includes("listen(port, '127.0.0.1'"));
 assert.ok(source.includes('createDesktopAuthorityRuntime'));
-assert.ok(source.includes('durableRelayBaseUrl'));
+assert.ok(!source.includes('durableRelayBaseUrl'), 'unified Electron main must not retain the retired durable relay URL');
 assert.ok(source.includes('cloudBusinessBaseUrl'));
 assert.ok(source.includes('cloudBusinessIdentityBaseUrl'));
 assert.ok(source.includes('desktop-authority:confirm-and-submit'));

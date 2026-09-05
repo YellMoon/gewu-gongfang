@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 
 const source = fs.readFileSync(require.resolve('../app'), 'utf8');
 assert.ok(!source.includes("app.use('/api/miniapp/applications'"), 'the embedded cache service must not expose a second miniapp role-application authority');
@@ -18,5 +19,20 @@ assert.ok(!source.includes("app.use('/api/admin/users'"), 'the embedded cache se
 assert.ok(!source.includes("app.use('/api/permissions'"), 'the embedded cache service must not expose a local permission authority');
 assert.ok(!source.includes("require('./routes/desktopIdentity')"), 'the embedded cache service must not load the retired local desktop identity authority');
 assert.ok(!source.includes("app.use('/api/desktop-identity'"), 'the embedded cache service must not expose local device or session authority endpoints');
+assert.ok(!source.includes('/api/miniapp/applications'), 'the embedded cache service must not retain a special case for the retired local application endpoint');
+
+for (const relativePath of [
+  'routes/miniappApplications.js',
+  'services/miniappApplicationService.js',
+  'services/miniappApplicationReviewService.js',
+  'services/miniappProvisioningReconciler.js',
+  'services/identityProvisioningService.js',
+  'services/cloudRelayTaskService.js',
+]) {
+  assert.ok(
+    !fs.existsSync(path.join(__dirname, '..', relativePath)),
+    `${relativePath} must be physically removed after the cloud role-application cutover`,
+  );
+}
 
 console.log('miniapp cloud-only route boundary checks passed');

@@ -15,17 +15,43 @@ function response(status, body) {
   };
 }
 
+function staticRelativeModuleClosure(entryFile) {
+  const queue = [entryFile];
+  const visited = new Set();
+  while (queue.length) {
+    const file = queue.shift();
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const source = fs.readFileSync(file, 'utf8');
+    const imports = source.matchAll(/(?:^|\n)\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?['"](\.[^'"]+)['"]\s*;?/g);
+    for (const match of imports) {
+      const resolved = path.resolve(path.dirname(file), match[1]);
+      const dependency = fs.existsSync(resolved)
+        ? resolved
+        : ['.mjs', '.js'].map(extension => `${resolved}${extension}`).find(candidate => fs.existsSync(candidate));
+      assert.ok(dependency, `static dependency ${match[1]} from ${file} must resolve`);
+      const relative = path.relative(process.cwd(), dependency).replace(/\\/g, '/');
+      if (!visited.has(relative)) queue.push(relative);
+    }
+  }
+  return [...visited].sort();
+}
+
 (async function main() {
   const electronMainSource = fs.readFileSync('public/electron.js', 'utf8');
   assert.match(electronMainSource, /isOnline:\s*\(\)\s*=>\s*net\.isOnline\(\)/,
     'the actual Electron runtime must provide its connectivity state to the draft boundary');
-  for (const packagedFile of [
+  const identityClientClosure = staticRelativeModuleClosure('src/services/desktopIdentityClient.mjs');
+  assert.ok(identityClientClosure.includes('src/services/desktopAuthorizationSession.mjs'),
+    'desktop identity client static dependency closure must include its authorization session store');
+  for (const packagedFile of new Set([
     'public/desktopAuthorityRuntime.js',
     'src/services/desktopCommandOutbox.mjs',
     'src/services/desktopAuthorityClient.mjs',
     'src/services/desktopIdentityClient.mjs',
     'src/services/desktopCloudBusinessDraft.mjs',
-  ]) {
+    ...identityClientClosure,
+  ])) {
     assert.ok(packageJson.build.files.includes(packagedFile), `${packagedFile} must be packaged`);
   }
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-desktop-authority-runtime-'));

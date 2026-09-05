@@ -86,5 +86,29 @@ assert.match(
   /assertNoLegacyIdentityFailure\(/,
   'packaged smoke must reject the retired generic identity-verification failure copy in a fresh profile',
 );
+assert.match(
+  source,
+  /embeddedBackendRuntimeFiles\s*=\s*\[['"]shared\/authorityProtocol\.js['"]\]/,
+  'packaged smoke must require the current desktop authority helper rather than the retired cloud relay helper',
+);
+assert.doesNotMatch(
+  source,
+  /embeddedBackendRuntimeFiles\s*=\s*\[[^\]]*shared\/cloudRelayLogic\.js/,
+  'packaged smoke must not require the retired cloud relay helper',
+);
+for (const retiredRuntimeFile of [
+  'backend/src/routes/cloudRelay.js',
+  'backend/src/services/cloudRelayTaskService.js',
+  'backend/src/services/primaryHostIdentityService.js',
+  'shared/cloudRelayLogic.js',
+  'shared/primaryHostSigningKey.js',
+]) {
+  assert.ok(source.includes(`'${retiredRuntimeFile}'`), `packaged smoke must reject ${retiredRuntimeFile}`);
+}
+assert.match(
+  source,
+  /presentRetiredRuntimeFiles/,
+  'packaged smoke must fail when any retired relay or primary-host file is present',
+);
 
 console.log('packaged smoke isolation checks passed');

@@ -34,6 +34,11 @@ const retiredReferences = [
   'src/services/oneClickSyncHostBackground.test.js',
   'src/services/cloudRelayHostApi.test.js',
   'scripts/check_cloud_relay.test.js',
+  'backend/src/routes/miniappApplications.http.test.js',
+  'backend/src/services/miniappApplicationService.test.js',
+  'backend/src/services/miniappApplicationReviewService.test.js',
+  'backend/src/services/miniappProvisioningReconciler.test.js',
+  'backend/src/services/identityProvisioningService.test.js',
 ];
 
 for (const [name, value] of Object.entries(rootScripts)) {

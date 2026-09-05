@@ -9,11 +9,18 @@ const debugPort = Number(process.env.PACKAGED_DEBUG_PORT || 9333);
 const debugUrl = `http://127.0.0.1:${debugPort}`;
 const packagedAppRoot = path.join(path.dirname(productExe), 'resources', 'app');
 const embeddedBackendDependencies = ['fflate', 'katex', 'mathjax-full', 'pdfkit', 'sharp', 'svg-to-pdfkit', 'ws'];
-const embeddedBackendRuntimeFiles = ['shared/cloudRelayLogic.js'];
+const embeddedBackendRuntimeFiles = ['shared/authorityProtocol.js'];
 const hostOnlyRuntimeFiles = [
   'public/primaryHostCredentialStore.js',
   'public/primaryHostOperationValidation.js',
   'public/primaryHostRuntimeManager.js',
+];
+const retiredRuntimeFiles = [
+  'backend/src/routes/cloudRelay.js',
+  'backend/src/services/cloudRelayTaskService.js',
+  'backend/src/services/primaryHostIdentityService.js',
+  'shared/cloudRelayLogic.js',
+  'shared/primaryHostSigningKey.js',
 ];
 
 function verifyPackagedFlavorBoundary() {
@@ -24,6 +31,10 @@ function verifyPackagedFlavorBoundary() {
   }
   const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
   const flavor = metadata.desktopBuildFlavor === 'primary-host' ? 'primary-host' : 'desktop-client';
+  const presentRetiredRuntimeFiles = retiredRuntimeFiles.filter(file => fs.existsSync(path.join(packagedAppRoot, ...file.split('/'))));
+  if (presentRetiredRuntimeFiles.length > 0) {
+    throw new Error(`Package contains retired relay or primary-host runtime files: ${presentRetiredRuntimeFiles.join(', ')}`);
+  }
   const presentHostFiles = hostOnlyRuntimeFiles.filter(file => fs.existsSync(path.join(packagedAppRoot, ...file.split('/'))));
   if (flavor === 'desktop-client' && presentHostFiles.length > 0) {
     throw new Error(`Ordinary package contains host-only runtime files: ${presentHostFiles.join(', ')}`);

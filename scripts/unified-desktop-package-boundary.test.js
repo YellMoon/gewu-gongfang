@@ -39,6 +39,19 @@ for (const excluded of [
   '!backend/src/websocket/client.js',
   '!backend/src/websocket/cloudRelayServer.js',
   '!backend/src/websocket/hostTaskWakeup.js',
+  '!backend/src/routes/cloudRelay.js',
+  '!backend/src/routes/miniappApplications.js',
+  '!backend/src/services/cloudRelay*.js',
+  '!backend/src/services/primaryHost*.js',
+  '!backend/src/services/hostRecoveryFactorService.js',
+  '!backend/src/services/relayAssertionService.js',
+  '!backend/src/services/miniappApplication*.js',
+  '!backend/src/services/miniappProvisioningReconciler.js',
+  '!backend/src/services/identityProvisioningService.js',
+  '!backend/src/services/questionPreviewIndex.js',
+  '!backend/src/services/legacyArchitectureGate.js',
+  '!shared/cloudRelayLogic.js',
+  '!shared/primaryHostSigningKey.js',
 ]) {
   assert.ok(packageFiles.includes(excluded), `desktop build.files must fail closed with ${excluded}`);
 }

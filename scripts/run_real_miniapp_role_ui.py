@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run real-cloud miniapp role checks with short-lived, non-personal E2E sessions."""
+"""Run real-cloud miniapp role checks with short-lived container-issued sessions."""
 
 import argparse
 import json
@@ -18,7 +18,8 @@ import deploy  # noqa: E402
 
 PROJECT = ROOT / "miniapp"
 CONTAINER = "gewu-cloud-business-api"
-ROLE_KEYS = ("visitor", "teacher", "student", "family")
+ROLE_KEYS = ("super_admin", "visitor", "teacher", "student", "family")
+E2E_ROLE_KEYS = tuple(key for key in ROLE_KEYS if key != "super_admin")
 SESSION_HELPER = ROOT / "scripts" / "real-miniapp-role-session.js"
 CLOUD_HELPER = ROOT / "scripts" / "real-cloud-business-acceptance.js"
 WECHATIDE = r"C:\Program Files (x86)\Tencent\微信web开发者工具\wechatide.cmd"
@@ -35,12 +36,14 @@ SESSION_STORAGE_KEYS = (
 )
 
 ROLE_PAGES = {
+    "super_admin": ("/pages/assets/index", "/pages/schedule/index", "/pages/question-bank/index"),
     "visitor": ("/pages/question-bank/index", "/pages/schedule/index"),
     "teacher": ("/pages/courses/index", "/pages/schedule/index", "/pages/question-bank/index"),
     "student": ("/pages/schedule/index", "/pages/question-bank/index"),
     "family": ("/pages/schedule/index", "/pages/question-bank/index"),
 }
 ROLE_RUNTIME_USERS = {
+    "super_admin": "super_admin",
     "visitor": "visitor",
     "teacher": "teacher",
     "student": "student",
@@ -58,12 +61,19 @@ def parse_session_receipt(output):
         raise ValueError("REAL_MINIAPP_ROLE_SESSION_RECEIPT_INVALID")
     for key in ROLE_KEYS:
         session = sessions[key]
-        if not isinstance(session, dict) or not isinstance(session.get("accountId"), str) or not ACCOUNT_PATTERN.fullmatch(session["accountId"]) or not isinstance(session.get("token"), str) or not TOKEN_PATTERN.fullmatch(session["token"]):
+        account_id = session.get("accountId") if isinstance(session, dict) else None
+        account_match = ACCOUNT_PATTERN.fullmatch(account_id or "")
+        account_valid = is_formal_account(account_id) if key == "super_admin" else bool(account_match and account_match.group(1) == key)
+        if not isinstance(session, dict) or not account_valid or not isinstance(session.get("token"), str) or not TOKEN_PATTERN.fullmatch(session["token"]):
             raise ValueError("REAL_MINIAPP_ROLE_SESSION_RECEIPT_INVALID")
-    markers = {session["accountId"].split(f"e2e-account-{key}-", 1)[1] for key, session in sessions.items()}
+    markers = {sessions[key]["accountId"].split(f"e2e-account-{key}-", 1)[1] for key in E2E_ROLE_KEYS}
     if len(markers) != 1 or payload["marker"] not in markers:
         raise ValueError("REAL_MINIAPP_ROLE_SESSION_RECEIPT_INVALID")
     return payload
+
+
+def is_formal_account(value):
+    return isinstance(value, str) and value == value.strip() and 0 < len(value) <= 512
 
 
 def run_wechatide(arguments, *, timeout=60, retry_connect=False):
@@ -105,6 +115,8 @@ def run_wx_api(project, method, args):
 
 
 def user_for_session(key, account_id):
+    if key == "super_admin":
+        return {"id": account_id, "cloud_account_id": account_id, "role": "super_admin", "user_type": "super_admin", "account_state": "formal", "token_use": "miniapp-cloud"}
     marker = account_id.split(f"e2e-account-{key}-", 1)[1]
     if key == "visitor":
         return {"id": account_id, "cloud_account_id": account_id, "role": "visitor", "user_type": "visitor", "identity_kind": "visitor", "account_state": "visitor", "token_use": "miniapp-visitor", "authority_id": f"cloud:{account_id}", "capabilities": ["projection:read", "role-application:read", "role-application:submit", "question-preview:read"]}
@@ -230,8 +242,12 @@ def read_refreshed_identity(project, *, attempts=3, pause_seconds=1):
     raise last_transient_error
 
 
-def verify_identity(project, session, *, on_session_injected=None):
-    key = ACCOUNT_PATTERN.fullmatch(session["accountId"]).group(1)
+def verify_identity(project, session, *, role_key=None, on_session_injected=None):
+    account_id = session.get("accountId") if isinstance(session, dict) else None
+    match = ACCOUNT_PATTERN.fullmatch(account_id or "")
+    key = role_key or (match.group(1) if match else "super_admin")
+    if key not in ROLE_KEYS or (key == "super_admin" and not is_formal_account(account_id)) or (key != "super_admin" and (not match or match.group(1) != key)):
+        raise RuntimeError("REAL_MINIAPP_ROLE_UI_INJECTION_INVALID")
     user = user_for_session(key, session["accountId"])
     run_wx_api(project, "setStorageSync", ["auth_token", session["token"]])
     if on_session_injected is not None:
@@ -408,6 +424,22 @@ def fetch_sessions():
         ssh.close()
 
 
+def redact_safe_receipt(value):
+    if isinstance(value, list):
+        return [redact_safe_receipt(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    safe = {}
+    for key, item in value.items():
+        normalized = str(key).replace("-", "_").lower()
+        if normalized in {"accountid", "account_id", "authorization", "token", "auth_token", "session_token", "access_token"}:
+            continue
+        if "secret" in normalized:
+            continue
+        safe[key] = redact_safe_receipt(item)
+    return safe
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--project", default=str(PROJECT))
@@ -430,9 +462,9 @@ def main(argv=None):
     try:
         receipt = fetch_sessions()
         for key in keys:
-            identity = verify_identity(project, receipt["sessions"][key], on_session_injected=lambda: injection_state.__setitem__("started", True))
+            identity = verify_identity(project, receipt["sessions"][key], role_key=key, on_session_injected=lambda: injection_state.__setitem__("started", True))
             pages = verify_pages(project, ROLE_PAGES[key], role=key, account_id=receipt["sessions"][key]["accountId"], screenshots_dir=screenshots_dir) if args.pages else []
-            checks[key] = {"identity": identity, "pages": pages}
+            checks[key] = redact_safe_receipt({"identity": identity, "pages": pages})
         print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
     finally:
         try:

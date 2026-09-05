@@ -34,10 +34,6 @@ function requestIdentityKey(req) {
   return clientKey(req);
 }
 
-function hasDurableIdempotency(req) {
-  return req.method === 'POST' && req.path === '/api/miniapp/applications';
-}
-
 function cleanupStore(store, now = Date.now()) {
   for (const [key, value] of store.entries()) {
     if (value.expiresAt <= now) store.delete(key);
@@ -96,7 +92,7 @@ function writeSafetyMiddleware(req, res, next) {
   cleanupStore(nonceStore, now);
   cleanupStore(idempotencyStore, now);
 
-  const idempotencyKey = hasDurableIdempotency(req) ? null : req.headers['x-idempotency-key'];
+  const idempotencyKey = req.headers['x-idempotency-key'];
   const idemKey = idempotencyKey
     ? `${requestIdentityKey(req)}:${req.method}:${req.originalUrl}:${idempotencyKey}:${requestBodyHash(req.body)}`
     : null;
@@ -230,6 +226,19 @@ function createApp(options = {}) {
   const database = getInstance().db;
   app.locals.authorityDatabase = database;
 
+  // These retired namespaces are terminal before CORS, body parsing, tenant,
+  // rate-limit, nonce, or authentication middleware. Historical clients must
+  // always receive the same 410 response and can never reach a legacy parser
+  // or write guard that obscures the retirement boundary.
+  app.use('/api/authority', (_req, res) => res.status(410).json({
+    success: false,
+    error: { code: 'AUTHORITY_ENDPOINT_RETIRED' },
+  }));
+  app.use('/api/cloud', (_req, res) => res.status(410).json({
+    success: false,
+    error: { code: 'CLOUD_RELAY_RETIRED' },
+  }));
+
   // CORS
   app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
@@ -253,17 +262,6 @@ function createApp(options = {}) {
     res.json({ ok: true, time: new Date().toISOString(), version: getAppVersion(), traceId: req.traceId });
   });
 
-  // The embedded/legacy service is never an authority. Historical command,
-  // receipt, and projection URLs are deliberately terminal so no signed device
-  // request can mutate or read an obsolete SQLite authority surface.
-  app.use('/api/authority', (_req, res) => res.status(410).json({
-    success: false,
-    error: { code: 'AUTHORITY_ENDPOINT_RETIRED' },
-  }));
-  app.use('/api/cloud', (_req, res) => res.status(410).json({
-    success: false,
-    error: { code: 'CLOUD_RELAY_RETIRED' },
-  }));
   app.use('/api/ops', optionalAuth, requireWriteAccess, opsRouter);
 
   // 閿欒澶勭悊

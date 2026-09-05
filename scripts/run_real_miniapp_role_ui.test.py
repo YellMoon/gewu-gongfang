@@ -46,7 +46,10 @@ class RoleUiReceiptTests(unittest.TestCase):
     def test_accepts_complete_short_lived_session_receipt(self):
         marker = "e2e-role-test-0123456789abcdef"
         sessions = {
-            key: {"accountId": f"e2e-account-{key}-{marker}", "token": "ticket.signature"}
+            key: {
+                "accountId": "canonical-super-admin" if key == "super_admin" else f"e2e-account-{key}-{marker}",
+                "token": "ticket.signature",
+            }
             for key in ROLE_KEYS
         }
         receipt = parse_session_receipt(json.dumps({"ok": True, "marker": marker, "sessions": sessions}))
@@ -59,11 +62,30 @@ class RoleUiReceiptTests(unittest.TestCase):
             parse_session_receipt(json.dumps(incomplete))
         mixed = {
             "ok": True, "marker": marker,
-            "sessions": {key: {"accountId": f"e2e-account-{key}-{marker}", "token": "ticket.signature"} for key in ROLE_KEYS},
+            "sessions": {
+                key: {
+                    "accountId": "canonical-super-admin" if key == "super_admin" else f"e2e-account-{key}-{marker}",
+                    "token": "ticket.signature",
+                }
+                for key in ROLE_KEYS
+            },
         }
         mixed["sessions"]["teacher"]["accountId"] = "e2e-account-teacher-e2e-role-test-abcdef0123456789"
         with self.assertRaises(ValueError):
             parse_session_receipt(json.dumps(mixed))
+        swapped = {
+            "ok": True, "marker": marker,
+            "sessions": {
+                key: {
+                    "accountId": "canonical-super-admin" if key == "super_admin" else f"e2e-account-{key}-{marker}",
+                    "token": "ticket.signature",
+                }
+                for key in ROLE_KEYS
+            },
+        }
+        swapped["sessions"]["teacher"]["accountId"] = f"e2e-account-student-{marker}"
+        with self.assertRaises(ValueError):
+            parse_session_receipt(json.dumps(swapped))
 
     def test_derives_only_the_existing_e2e_profile_ids(self):
         marker = "e2e-role-test-0123456789abcdef"
@@ -76,6 +98,11 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertEqual(family["identity_kind"], "family_member")
         self.assertTrue(is_test_account(family["id"]))
         self.assertFalse(is_test_account("real-user-account"))
+
+        super_admin = user_for_session("super_admin", "canonical-super-admin")
+        self.assertEqual(super_admin["role"], "super_admin")
+        self.assertEqual(super_admin["user_type"], "super_admin")
+        self.assertEqual(super_admin["token_use"], "miniapp-cloud")
 
     def test_accepts_an_automator_timeout_only_after_the_runtime_confirms_route(self):
         calls = []
@@ -420,7 +447,8 @@ class RoleUiReceiptTests(unittest.TestCase):
             "sessions": {"visitor": {"accountId": f"e2e-account-visitor-{marker}", "token": "ticket.signature"}},
         }
 
-        def inject(_project, _session, on_session_injected=None):
+        def inject(_project, _session, *, role_key, on_session_injected=None):
+            self.assertEqual(role_key, "visitor")
             on_session_injected()
             return {"role": "visitor"}
 
@@ -432,7 +460,34 @@ class RoleUiReceiptTests(unittest.TestCase):
                     patch("run_real_miniapp_role_ui.restore_session_state") as restore:
                 with self.assertRaisesRegex(RuntimeError, "cleanup failed"):
                     main(["--project", directory, "--role", "visitor"])
-        restore.assert_called_once_with(Path(directory).resolve(), prior)
+            restore.assert_called_once_with(Path(directory).resolve(), prior)
+
+    def test_main_does_not_print_the_formal_super_admin_account_id(self):
+        account_id = "canonical-super-admin-private"
+        receipt = {
+            "marker": "e2e-role-test-0123456789abcdef",
+            "sessions": {"super_admin": {"accountId": account_id, "token": "ticket.signature"}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            with patch("run_real_miniapp_role_ui.snapshot_session_state", return_value={}), \
+                    patch("run_real_miniapp_role_ui.fetch_sessions", return_value=receipt), \
+                    patch("run_real_miniapp_role_ui.verify_identity", return_value={"accountId": account_id, "role": "super_admin"}), \
+                    patch("run_real_miniapp_role_ui.verify_pages", return_value=[{
+                        "route": "pages/index/index",
+                        "accountId": account_id,
+                        "runtime": {"account_id": account_id, "authorization": "Bearer private-ticket"},
+                    }]), \
+                    patch("run_real_miniapp_role_ui.clear_test_session"), \
+                    patch("builtins.print") as output:
+                main(["--project", directory, "--role", "super_admin", "--pages"])
+        safe_receipt = output.call_args.args[0]
+        self.assertNotIn(account_id, safe_receipt)
+        self.assertNotIn("private-ticket", safe_receipt)
+        self.assertEqual(json.loads(safe_receipt)["checks"]["super_admin"]["identity"], {"role": "super_admin"})
+        self.assertEqual(
+            json.loads(safe_receipt)["checks"]["super_admin"]["pages"],
+            [{"route": "pages/index/index", "runtime": {}}],
+        )
 
 
 if __name__ == "__main__":

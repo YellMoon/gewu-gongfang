@@ -179,10 +179,4 @@ interface Window {
     confirmAndSubmit(id: string, input?: { sessionToken: string }): Promise<any>;
     reviewRoleApplication(applicationId: string, review: { decision: 'approved' | 'rejected'; profileId: string | null }, input: { sessionToken: string }): Promise<any>;
   };
-  primaryHostRuntime?: {
-    restart(): Promise<any>;
-    runtimeStatus(): Promise<any>;
-    relaunchReadiness(): Promise<any>;
-    executeLocalDraft(draft: { type: string; payload: Record<string, any> }): Promise<any>;
-  };
 }

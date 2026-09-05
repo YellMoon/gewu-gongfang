@@ -43,7 +43,10 @@ const syncQuickPanel = read('src/components/sync/SyncQuickPanel.tsx');
 const cloudSync = read('src/pages/CloudSync.tsx');
 const authorityOutboxPanel = read('src/components/AuthorityOutboxPanel.tsx');
 const operateLog = read('src/pages/OperateLog.tsx');
-const cloudRelayHostApi = read('src/services/cloudRelayHostApi.ts');
+assert.ok(
+  !fs.existsSync(path.join(root, 'src/services/cloudRelayHostApi.ts')),
+  'the retired local cloud relay host API must be physically removed',
+);
 const identityDeviceCenter = read('src/pages/IdentityDeviceCenter.tsx');
 const identityDeviceCenterCss = read('src/pages/IdentityDeviceCenter.css');
 const scheduleStorage = read('src/utils/scheduleStorage.mjs');

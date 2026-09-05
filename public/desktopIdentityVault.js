@@ -1,9 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { validateEnvelope, stableJson } = require('../shared/authorityProtocol');
-const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
-const { createSignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 
 const VAULT_VERSION = 3;
 const LEGACY_PASSWORD_VAULT_VERSION = 2;
@@ -1074,106 +1071,6 @@ function createDesktopIdentityVault({
     });
   }
 
-  function signAuthorityHttpRequest(input = {}) {
-    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
-    const context = unlockedSecret.authorityContext;
-    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
-    const current = currentDate(now);
-    if (Date.parse(context.lease.expiresAt) <= current.getTime()) {
-      throw vaultError('DEVICE_LEASE_EXPIRED');
-    }
-    const actor = Object.freeze({
-      userId: unlockedSecret.profile.userId,
-      deviceId: unlockedSecret.publicIdentity.deviceId,
-      role: context.lease.activeRole,
-    });
-    const payload = authorityHttpSigningPayload({
-      method: input.method,
-      path: input.path,
-      actor,
-      body: input.body === undefined ? null : input.body,
-    });
-    const signature = crypto.sign(
-      null,
-      Buffer.from(payload, 'utf8'),
-      privateKeyForSecret(unlockedSecret)
-    ).toString('base64');
-    return Object.freeze({
-      actor,
-      authorityId: context.authorityId,
-      hostEpochId: context.hostEpochId,
-      hostPublicKey: context.hostPublicKey,
-      grantVersion: context.grant.version,
-      leaseId: context.lease.id,
-      signature,
-      headers: Object.freeze({
-        'x-gewu-authority-id': context.authorityId,
-        'x-gewu-authority-user-id': actor.userId,
-        'x-gewu-authority-device-id': actor.deviceId,
-        'x-gewu-authority-role': actor.role,
-        'x-gewu-device-signature': signature,
-      }),
-    });
-  }
-
-  function createAuthorityCommand(input = {}) {
-    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
-    const context = unlockedSecret.authorityContext;
-    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
-    const type = String(input.type || '').trim();
-    const payload = input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload)
-      ? cloneJson(input.payload)
-      : null;
-    if (!/^[a-z][a-z0-9_.-]*\.v[1-9][0-9]*$/.test(type) || !payload) {
-      throw vaultError('AUTHORITY_DRAFT_INVALID');
-    }
-    const actor = Object.freeze({
-      userId: unlockedSecret.profile.userId,
-      deviceId: unlockedSecret.publicIdentity.deviceId,
-      role: context.lease.activeRole,
-    });
-    const envelope = validateEnvelope({
-      protocol: 'gewu.authority-command.v1',
-      commandId: stringField(input.commandId || crypto.randomUUID(), 'AUTHORITY_COMMAND_ID_INVALID', 128),
-      idempotencyKey: stringField(
-        input.idempotencyKey || crypto.randomUUID(),
-        'AUTHORITY_COMMAND_IDEMPOTENCY_KEY_INVALID',
-        128
-      ),
-      authorityId: context.authorityId,
-      hostEpochId: context.hostEpochId,
-      actor,
-      lease: { id: context.lease.id, grantVersion: context.grant.version },
-      type,
-      payload,
-      payloadHash: sha256(stableJson(payload)),
-      createdAt: currentDate(now).toISOString(),
-    });
-    const requestAuth = signAuthorityHttpRequest({
-      method: 'POST',
-      path: '/api/authority/commands',
-      body: envelope,
-    });
-    return Object.freeze({ envelope, requestAuth });
-  }
-
-  function signAuthorityProjection(input = {}) {
-    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
-    const context = unlockedSecret.authorityContext;
-    if (!context) throw vaultError('DESKTOP_AUTHORITY_CONTEXT_REQUIRED');
-    if (input.authorityId !== context.authorityId || input.hostEpochId !== context.hostEpochId) {
-      throw vaultError('AUTHORITY_PROJECTION_HOST_EPOCH_MISMATCH');
-    }
-    try {
-      return createSignedAuthorityProjection({
-        ...input,
-        privateKey: privateKeyForSecret(unlockedSecret),
-      });
-    } catch (error) {
-      throw vaultError(error?.code || 'AUTHORITY_PROJECTION_SIGNING_FAILED', error);
-    }
-  }
-
   function clear() {
     pendingRegistration = null;
     unlockedSecret = null;
@@ -1193,12 +1090,9 @@ function createDesktopIdentityVault({
     beginUnifiedOnlineRegistration,
     clear,
     completeRegistration,
-    createAuthorityCommand,
     lock,
     acceptIssuedSession,
     seal,
-    signAuthorityProjection,
-    signAuthorityHttpRequest,
     signChallenge,
     status,
     resume,

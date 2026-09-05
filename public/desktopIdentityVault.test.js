@@ -11,15 +11,9 @@ const {
   desktopDeviceSessionSigningPayload,
 } = require('../backend/src/services/desktopDeviceChallengeService');
 const {
-  PHYSICAL_CONFIRMATION,
-  verifyPrimaryHostLocalReceiptSignature,
-} = require('../backend/src/services/primaryHostReceiptProtocol');
-const {
   createDesktopIdentityVault,
   recoverUnreadableDesktopIdentityVault,
 } = require('./desktopIdentityVault');
-const { authorityHttpSigningPayload } = require('../shared/authorityHttpAuth');
-const { verifySignedAuthorityProjection } = require('../shared/authorityProjectionProtocol');
 const packageJson = require('../package.json');
 const offlineLeaseSigningKeyPair = crypto.generateKeyPairSync('ed25519');
 const offlineLeasePublicKey = offlineLeaseSigningKeyPair.publicKey;
@@ -665,53 +659,6 @@ async function main() {
     profile: legacyProfile,
     offlineLease: signOfflineLease(legacyLease),
   }), error => error?.code === 'DESKTOP_IDENTITY_PROFILE_INVALID');
-  const authoritySocketHandshake = vault.signAuthorityHttpRequest({
-    method: 'GET',
-    path: '/ws/authority',
-    body: null,
-  });
-  assert.strictEqual(
-    authoritySocketHandshake.headers['x-gewu-authority-id'],
-    'authority-1',
-    'a WebSocket authentication frame must identify the authority whose device grant signs it'
-  );
-  const authorityCommand = vault.createAuthorityCommand({
-    type: 'schedule.update.v1',
-    payload: { id: 'schedule-1', changes: { notes: 'safe' } },
-    commandId: 'authority-command-1',
-    idempotencyKey: 'authority-key-1',
-  });
-  assert.strictEqual(authorityCommand.envelope.authorityId, 'authority-1');
-  assert.strictEqual(authorityCommand.envelope.hostEpochId, 'epoch-1');
-  assert.strictEqual(authorityCommand.envelope.lease.id, 'authority-lease-1');
-  assert.strictEqual(authorityCommand.envelope.actor.role, 'teacher');
-  assert.ok(verifySignature(
-    publicIdentity.publicKey,
-    authorityHttpSigningPayload({
-      method: 'POST',
-      path: '/api/authority/commands',
-      actor: authorityCommand.envelope.actor,
-      body: authorityCommand.envelope,
-    }),
-    authorityCommand.requestAuth.signature
-  ));
-  const authorityProjection = vault.signAuthorityProjection({
-    protocol: 'gewu.authority-projection.v1',
-    authorityId: 'authority-1',
-    hostEpochId: 'epoch-1',
-    userId: 'canonical-human',
-    role: 'teacher',
-    sourceVersion: 1,
-    generatedAt: clock.toISOString(),
-    payload: { schedules: [], courses: [], assets: [], questionPreviews: [] },
-  });
-  assert.deepStrictEqual(
-    verifySignedAuthorityProjection({
-      projection: authorityProjection,
-      publicKey: publicIdentity.publicKey,
-    }),
-    authorityProjection
-  );
   const rawFile = fs.readFileSync(filePath);
   const rawText = rawFile.toString('utf8');
   for (const secret of [
