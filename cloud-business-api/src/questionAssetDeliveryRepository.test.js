@@ -30,6 +30,8 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
   assert.deepStrictEqual(downloaded, { deliveryId: leased.deliveryId, fileName: 'diagram.png', mimeType: 'image/png', bytes: BYTES });
   assert.ok(calls[0][0].includes('business.question_assets') && calls[0][0].includes("question.status='published'") && calls[0][0].includes('asset.question_id=$4'), 'delivery must be bound to the requested published cloud question asset');
   assert.deepStrictEqual(calls[0][1].slice(0, 4), ['default', 'account-1', HASH, 'question-1']);
+  assert.strictEqual(calls[0][1][6], false, 'draft access is disabled by default');
+  assert.match(calls[0][0], /asset_id IN \(SELECT "assetId" FROM asset\)/, 'cached deliveries must still be currently visible');
   assert.ok(calls[1][0].includes('FOR UPDATE SKIP LOCKED'), 'agent lease must be concurrency-safe');
   assert.ok(calls[2][0].includes('expected_sha256'), 'uploaded bytes must be checked against immutable metadata');
   rows.unshift([{ deliveryId: 'question_asset_delivery_12345678', status: 'queued', assetId: 'question_asset_import_question_1_0', fileName: 'diagram.png', mimeType: 'image/png', expiresAt: EXPIRY }]);
@@ -37,5 +39,13 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
   assert.strictEqual(exportRequested.status, 'queued');
   assert.ok(calls[4][0].includes('business.paper_export_tasks') && calls[4][0].includes('question_snapshot_json'), 'draft media delivery must be authorized by the persisted export snapshot');
   assert.ok(!calls[4][0].includes("question.status='published'"), 'a verified draft image selected into an export task must not be rejected by the public-read status boundary');
+  const own = { tenantId: 'default', accountId: 'account-1', deliveryId: leased.deliveryId };
+  for (const scope of [null, [], 'all', {}, { publishedLimit: 21 }, { publishedLimit: null, includeDrafts: true }]) {
+    const before = calls.length;
+    await assert.rejects(repository.status(own, scope), /INPUT_INVALID/);
+    await assert.rejects(repository.download(own, scope), /INPUT_INVALID/);
+    assert.strictEqual(calls.length, before, 'invalid read scopes never reach SQL');
+  }
+  await assert.rejects(repository.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }, { includeDrafts: 'true' }), /INPUT_INVALID/);
   console.log('question asset delivery repository checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

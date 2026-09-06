@@ -1,5 +1,7 @@
 'use strict';
 
+const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
+
 const crypto = require('crypto');
 
 function failure(code) {
@@ -13,6 +15,16 @@ function text(value, pattern, code = 'QUESTION_ASSET_DELIVERY_INPUT_INVALID') {
 
 function hash(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+// Only trusted HTTP handlers select this read scope; it is never request-body data.
+function publishedDeliveryPredicate(options) {
+  if (options === undefined) return '';
+  if (!options || typeof options !== 'object' || Array.isArray(options) || Reflect.ownKeys(options).length !== 1 || ![null, MINIAPP_VISITOR_QUESTION_LIMIT].includes(options.publishedLimit)) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
+  const limit = options.publishedLimit === MINIAPP_VISITOR_QUESTION_LIMIT ? ` LIMIT ${MINIAPP_VISITOR_QUESTION_LIMIT}` : '';
+  return ` AND asset_id IN (SELECT a.id FROM business.question_assets a WHERE a.tenant_id=$1 AND a.deleted=false AND a.state='verified'
+    AND a.question_id IN (SELECT q.id FROM business.questions q JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
+      WHERE q.tenant_id=$1 AND q.status='published' AND q.deleted=false AND c.deleted=false ORDER BY ${MINIAPP_QUESTION_ORDER_SQL}${limit}))`;
 }
 
 function output(row, { leaseToken = null, bytes = false } = {}) {
@@ -59,18 +71,19 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
     return new Date(current.getTime() + (seconds * 1000));
   }
   return Object.freeze({
-    async request(input) {
+    async request(input, { includeDrafts = false } = {}) {
+      if (typeof includeDrafts !== 'boolean') throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       if (!input || typeof input !== 'object' || Array.isArray(input) || ![3, 4].includes(Reflect.ownKeys(input).length)) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       const expiresAt = future(ttlSeconds);
       const deliveryId = `question_asset_delivery_${String(randomId()).replace(/[^A-Za-z0-9_-]/g, '')}`;
       if (!/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(deliveryId)) throw failure('QUESTION_ASSET_DELIVERY_UNAVAILABLE');
       const result = await query([
         'WITH purged AS (DELETE FROM business.question_asset_deliveries WHERE expires_at<=transaction_timestamp()),',
-        "asset AS (SELECT asset.id AS \"assetId\",asset.storage_object_id AS \"objectId\",asset.storage_object_version AS \"objectVersion\",asset.content_hash AS \"expectedSha256\",asset.size_bytes AS \"expectedBytes\",COALESCE(NULLIF(asset.file_name,''),'question-asset') AS \"fileName\",asset.mime_type AS \"mimeType\" FROM business.question_assets asset JOIN business.questions question ON question.tenant_id=asset.tenant_id AND question.id=asset.question_id WHERE asset.tenant_id=$1 AND asset.content_hash=$3 AND ($4::text IS NULL OR asset.question_id=$4) AND asset.state='verified' AND asset.deleted=false AND question.status='published' AND question.deleted=false ORDER BY asset.created_at DESC,asset.id DESC LIMIT 1),",
-        "existing AS (SELECT delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND expected_sha256=$3 AND expires_at>transaction_timestamp() AND status IN ('queued','leased','ready') ORDER BY created_at DESC LIMIT 1),",
+        "asset AS (SELECT asset.id AS \"assetId\",asset.storage_object_id AS \"objectId\",asset.storage_object_version AS \"objectVersion\",asset.content_hash AS \"expectedSha256\",asset.size_bytes AS \"expectedBytes\",COALESCE(NULLIF(asset.file_name,''),'question-asset') AS \"fileName\",asset.mime_type AS \"mimeType\" FROM business.question_assets asset JOIN business.questions question ON question.tenant_id=asset.tenant_id AND question.id=asset.question_id WHERE asset.tenant_id=$1 AND asset.content_hash=$3 AND ($4::text IS NULL OR asset.question_id=$4) AND asset.state='verified' AND asset.deleted=false AND (question.status='published' OR ($7::boolean AND question.status='draft')) AND question.deleted=false ORDER BY asset.created_at DESC,asset.id DESC LIMIT 1),",
+        "existing AS (SELECT delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND expected_sha256=$3 AND asset_id IN (SELECT \"assetId\" FROM asset) AND expires_at>transaction_timestamp() AND status IN ('queued','leased','ready') ORDER BY created_at DESC LIMIT 1),",
         "created AS (INSERT INTO business.question_asset_deliveries(delivery_id,asset_id,tenant_id,account_id,object_id,object_version,expected_sha256,expected_bytes,file_name,mime_type,status,expires_at) SELECT $5,asset.\"assetId\",$1,$2,asset.\"objectId\",asset.\"objectVersion\",asset.\"expectedSha256\",asset.\"expectedBytes\",asset.\"fileName\",asset.\"mimeType\",'queued',$6::timestamptz FROM asset WHERE NOT EXISTS (SELECT 1 FROM existing) RETURNING delivery_id AS \"deliveryId\",status,asset_id AS \"assetId\",file_name AS \"fileName\",mime_type AS \"mimeType\",expires_at AS \"expiresAt\")",
         'SELECT * FROM existing UNION ALL SELECT * FROM created',
-      ].join(' '), [tenant(input.tenantId), account(input.accountId), assetKey(input.assetKey), input.questionId === undefined ? null : question(input.questionId), deliveryId, expiresAt.toISOString()]);
+      ].join(' '), [tenant(input.tenantId), account(input.accountId), assetKey(input.assetKey), input.questionId === undefined ? null : question(input.questionId), deliveryId, expiresAt.toISOString(), includeDrafts]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_FOUND');
       return output(result.rows[0]);
     },
@@ -120,19 +133,19 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_UPLOAD_REJECTED');
       return output(result.rows[0]);
     },
-    async status(input) {
+    async status(input, options) {
       if (!input || typeof input !== 'object' || Array.isArray(input) || Reflect.ownKeys(input).length !== 3) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       const result = await query(
-        'SELECT delivery_id AS "deliveryId",status,asset_id AS "assetId",file_name AS "fileName",mime_type AS "mimeType",expires_at AS "expiresAt" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND delivery_id=$3 AND expires_at>transaction_timestamp()',
+        'SELECT delivery_id AS "deliveryId",status,asset_id AS "assetId",file_name AS "fileName",mime_type AS "mimeType",expires_at AS "expiresAt" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND delivery_id=$3 AND expires_at>transaction_timestamp()' + publishedDeliveryPredicate(options),
         [tenant(input.tenantId), account(input.accountId), delivery(input.deliveryId)],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_FOUND');
       return output(result.rows[0]);
     },
-    async download(input) {
+    async download(input, options) {
       if (!input || typeof input !== 'object' || Array.isArray(input) || Reflect.ownKeys(input).length !== 3) throw failure('QUESTION_ASSET_DELIVERY_INPUT_INVALID');
       const result = await query([
-        'WITH selected AS (SELECT delivery_id AS "deliveryId",file_name AS "fileName",mime_type AS "mimeType",asset_bytes AS bytes,expires_at AS "expiresAt" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND delivery_id=$3 AND status=\'ready\' AND expires_at>transaction_timestamp()),',
+        'WITH selected AS (SELECT delivery_id AS "deliveryId",file_name AS "fileName",mime_type AS "mimeType",asset_bytes AS bytes,expires_at AS "expiresAt" FROM business.question_asset_deliveries WHERE tenant_id=$1 AND account_id=$2 AND delivery_id=$3 AND status=\'ready\' AND expires_at>transaction_timestamp()' + publishedDeliveryPredicate(options) + '),',
         'touched AS (UPDATE business.question_asset_deliveries delivery SET downloaded_at=transaction_timestamp(),updated_at=transaction_timestamp() FROM selected WHERE delivery.delivery_id=selected."deliveryId") SELECT * FROM selected',
       ].join(' '), [tenant(input.tenantId), account(input.accountId), delivery(input.deliveryId)]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('QUESTION_ASSET_DELIVERY_NOT_READY');

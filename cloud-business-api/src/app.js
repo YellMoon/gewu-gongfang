@@ -2,10 +2,9 @@
 
 const express = require('express');
 
-const MINIAPP_VISITOR_QUESTION_LIMIT = 20;
+const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
 const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
 const MINIAPP_QUESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const MINIAPP_QUESTION_ORDER_SQL = 'c.updated_at DESC,q.id ASC';
 const DESKTOP_RENDERER_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
@@ -873,7 +872,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const actor = await desktopQuestionContext(request);
       if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
-      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, assetKey: String(request.params.assetKey || '') });
+      const delivery = await questionAssetDeliveries.request({ tenantId: businessTenantId, accountId: actor.accountId, assetKey: String(request.params.assetKey || '') }, { includeDrafts: true });
       response.status(delivery.status === 'ready' ? 200 : 202).json({ ok: true, delivery });
     } catch (error) {
       if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
@@ -1245,6 +1244,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!questionAssetDeliveries || !questionAuthority || businessTenantId === null || !body) return businessUnavailable(response);
     try {
       const actor = await miniappBusinessContext(request);
+      miniappCapabilities(actor);
       const questionId = String(body.questionId || '');
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(questionId)) return businessInputInvalid(response);
       const result = await query(
@@ -1273,7 +1273,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
     try {
       const actor = await miniappBusinessContext(request);
-      const delivery = await questionAssetDeliveries.status({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      miniappCapabilities(actor);
+      const delivery = await questionAssetDeliveries.status({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') }, { publishedLimit: actor.status === 'visitor' ? MINIAPP_VISITOR_QUESTION_LIMIT : null });
       response.json({ ok: true, delivery });
     } catch (error) {
       if (error && ['CLOUD_BUSINESS_ACCESS_DENIED', 'QUESTION_ASSET_DELIVERY_NOT_FOUND'].includes(error.code)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
@@ -1285,7 +1286,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!questionAssetDeliveries || businessTenantId === null) return businessUnavailable(response);
     try {
       const actor = await miniappBusinessContext(request);
-      const asset = await questionAssetDeliveries.download({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') });
+      miniappCapabilities(actor);
+      const asset = await questionAssetDeliveries.download({ tenantId: businessTenantId, accountId: actor.accountId, deliveryId: String(request.params.deliveryId || '') }, { publishedLimit: actor.status === 'visitor' ? MINIAPP_VISITOR_QUESTION_LIMIT : null });
       response.set('Cache-Control', 'no-store');
       response.set('Content-Type', asset.mimeType);
       response.set('Content-Length', String(asset.bytes.length));
