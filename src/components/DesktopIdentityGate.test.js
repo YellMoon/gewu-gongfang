@@ -238,9 +238,21 @@ assert.ok(!gateSource.includes('beginUnifiedOnlineRecovery'),
 
 (async () => {
   const {
+    claimAutomaticDesktopRegistration,
     commitRoleSwitchRuntime,
     resumeOfflineAfterNetworkFailure,
   } = await import('../services/desktopIdentityGateRuntime.mjs');
+
+  const attemptRef = { current: null };
+  const verified = { status: 'verified', verificationToken: 'verified-token', desktopAccess: { access: 'allowed' } };
+  assert.strictEqual(claimAutomaticDesktopRegistration({ pending: { ...verified, status: 'awaiting_online_verification' }, attemptRef }), false);
+  assert.strictEqual(claimAutomaticDesktopRegistration({ pending: { ...verified, desktopAccess: { access: 'teacher_registration_required' } }, attemptRef }), false);
+  assert.strictEqual(claimAutomaticDesktopRegistration({ pending: verified, attemptRef }), true);
+  assert.strictEqual(claimAutomaticDesktopRegistration({ pending: { ...verified }, attemptRef }), false,
+    'rerenders and repeated verification polling must not register the device twice');
+  assert.strictEqual(claimAutomaticDesktopRegistration({ pending: { ...verified, verificationToken: 'next-token' }, attemptRef }), true);
+  assert.ok(gateSource.includes('claimAutomaticDesktopRegistration({ pending, attemptRef: automaticRegistrationRef })'));
+  assert.ok(!decodedGateSource.includes("{'进入格物工坊'}"), 'a verified login must not require another enter button');
 
   const offlineCalls = [];
   const offlineResult = { gateState: { kind: 'offline-unlocked' } };

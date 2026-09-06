@@ -32,6 +32,7 @@ import {
   setCurrentDesktopIdentityContext,
 } from '../services/desktopIdentityPartition.mjs';
 import {
+  claimAutomaticDesktopRegistration,
   commitRoleSwitchRuntime,
   resumeOfflineAfterNetworkFailure,
 } from '../services/desktopIdentityGateRuntime.mjs';
@@ -91,6 +92,7 @@ const DesktopIdentityGate: React.FC = () => {
   const currentPartitionRef = useRef<string | null>(null);
   const pollingFlowRef = useRef<number | null>(null);
   const registrationFlowRef = useRef(0);
+  const automaticRegistrationRef = useRef<string | null>(null);
 
   const clearPendingVerificationState = useCallback(() => {
     registrationFlowRef.current += 1;
@@ -472,7 +474,7 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
-  const completeRegistration = async (registrationPending = pending) => {
+  const completeRegistration = useCallback(async (registrationPending = pending) => {
     const passwordEnrollmentRequested = Boolean(cloudLoginName || cloudPassword || cloudPasswordAgain);
     const canEnrollCloudPassword = registrationPending?.pairingId && registrationPending?.status === 'verified' && registrationPending?.recovery !== true;
     if (passwordEnrollmentRequested && !canEnrollCloudPassword) {
@@ -502,7 +504,12 @@ const DesktopIdentityGate: React.FC = () => {
       setCloudPasswordAgain('');
       setBusy(false);
     }
-  };
+  }, [pending, cloudLoginName, cloudPassword, cloudPasswordAgain, acceptRuntime]);
+
+  useEffect(() => {
+    if (!claimAutomaticDesktopRegistration({ pending, attemptRef: automaticRegistrationRef })) return;
+    void completeRegistration(pending);
+  }, [pending, completeRegistration]);
 
   const registerTeacherThenComplete = async () => {
     const name = teacherRegistrationName.trim();
@@ -646,8 +653,8 @@ const DesktopIdentityGate: React.FC = () => {
       );
     }
     if (pending?.status === 'verified' && pending?.verificationToken) {
-      const canEnrollCloudPassword = pending?.pairingId && pending?.recovery !== true;
       const desktopAccessAllowed = pending?.desktopAccess?.access === 'allowed';
+      const canEnrollCloudPassword = !desktopAccessAllowed && pending?.pairingId && pending?.recovery !== true;
       const teacherRegistrationRequired = pending?.desktopAccess?.access === 'teacher_registration_required';
       return (
         <>
@@ -664,8 +671,8 @@ const DesktopIdentityGate: React.FC = () => {
               <Input.Password prefix={<SafetyCertificateOutlined />} visibilityToggle value={cloudPasswordAgain} onChange={event => setCloudPasswordAgain(event.target.value)} placeholder={'\u518d\u6b21\u8f93\u5165\u767b\u5f55\u5bc6\u7801'} />
             </>
           )}
-          {desktopAccessAllowed && (
-            <Button type="primary" loading={busy} onClick={() => { void completeRegistration(); }} block>{'\u8fdb\u5165\u683c\u7269\u5de5\u574a'}</Button>
+          {desktopAccessAllowed && error && !busy && (
+            <Button type="primary" onClick={() => { void completeRegistration(); }} block>{'\u91cd\u8bd5\u767b\u5f55'}</Button>
           )}
           {teacherRegistrationRequired && (
             <>
