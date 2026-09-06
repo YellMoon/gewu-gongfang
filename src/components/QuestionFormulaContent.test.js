@@ -36,5 +36,16 @@ assert(!hidden.includes('question-formula-pending'));
 const expanded = renderToStaticMarkup(React.createElement(Viewer, { value, showAnswer: true }));
 assert(expanded.includes('question-formula-pending'));
 assert(!expanded.includes('src="word/'));
+const markedValue = { sections: { ...value.sections, options: [], subQuestions: [],
+  stem: doc([{type:'paragraph',content:[
+    {type:'text',text:'v'}, {type:'text',text:'0',marks:[{type:'subscript'}]},
+    {type:'text',text:' + 3 m/s'}, {type:'text',text:'2',marks:[{type:'superscript'}]},
+    {type:'text',text:'<unsafe>',marks:[{type:'superscript'},{type:'italic'}]},
+  ]}]),answer:doc([]),analysis:doc([]) } };
+const marked = renderToStaticMarkup(React.createElement(Viewer,{value:markedValue}));
+assert.match(marked,/<sub>.*?0.*?<\/sub>/u,'structured text must preserve subscripts');
+assert.match(marked,/<sup>.*?2.*?<\/sup>/u,'structured text must preserve superscripts');
+assert(marked.includes('&lt;unsafe&gt;'),'marked text remains escaped');
+assert(marked.includes('font-style:italic'),'vertical marks retain other typography');
 assert(fs.readFileSync(path.join(__dirname, 'RichQuestionEditor.tsx'), 'utf8').includes('<QuestionFormulaContent latex={latex}'));
-console.log('formula rendering checks passed: block formula, unresolved placeholder, answer toggle and no raw package URL');
+console.log('formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL');

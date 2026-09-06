@@ -20,7 +20,13 @@ function markStyle(marks: any[] = []): React.CSSProperties {
 
 function renderNode(node: any, key: React.Key): React.ReactNode {
   if (!node) return null;
-  if (node.type === 'text') return <span key={key} style={markStyle(node.marks)}>{node.text}</span>;
+  if (node.type === 'text') {
+    const content = <span style={markStyle(node.marks)}>{node.text}</span>;
+    const verticalMark = (node.marks || []).filter((mark: any) => mark.type === 'subscript' || mark.type === 'superscript').at(-1);
+    if (verticalMark?.type === 'subscript') return <sub key={key}>{content}</sub>;
+    if (verticalMark?.type === 'superscript') return <sup key={key}>{content}</sup>;
+    return <React.Fragment key={key}>{content}</React.Fragment>;
+  }
   if (node.type === 'formula' || node.type === 'formulaBlock') {
     const latex = String(node.attrs?.canonicalLatex || '');
     return <span key={key} className="structured-question-viewer__formula"><QuestionFormulaContent latex={latex} block={node.type === 'formulaBlock' || node.attrs?.displayMode === 'block'} /></span>;
