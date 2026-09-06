@@ -322,7 +322,7 @@ assert.ok(
   'review exit business-cache cleanup must include finance asset records and categories'
 );
 
-assert.ok(fs.existsSync(path.join(root, 'src/components/AccountStatusBanner.tsx')));
+assert.ok(!fs.existsSync(path.join(root, 'src/components/AccountStatusBanner.tsx')), 'retired duplicate role banner must stay removed');
 assert.ok(fs.existsSync(path.join(root, 'src/components/MembershipBadge.tsx')));
 assert.ok(!fs.existsSync(path.join(root, 'src/components/ReviewDemoBanner.tsx')));
 assert.ok(!fs.existsSync(path.join(root, 'src/utils/reviewExperience.js')));

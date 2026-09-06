@@ -8,7 +8,6 @@ import { accountSessionCleanupStorageKeys, isFormalIdentity, isVisitorIdentity }
 import { isOnline, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { pullFromCloud } from '../../utils/sync'
-import AccountStatusBanner from '../../components/AccountStatusBanner'
 import MembershipBadge from '../../components/MembershipBadge'
 import miniappPackage from '../../../package.json'
 import './index.scss'
@@ -95,7 +94,6 @@ export default function Settings() {
   if (isLimitedIdentity) {
     return (
       <View className='settings-page'>
-        <AccountStatusBanner />
         <View className='section'>
           <View className='setting-item'>
             <View className='item-left'><View className='item-icon info'>{'\u7528'}</View><Text className='item-label'>{'\u5f53\u524d\u8d26\u53f7'}</Text></View>
@@ -103,7 +101,7 @@ export default function Settings() {
           </View>
         </View>
         <View className='section'>
-          <View className='setting-item' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
+          <View className='setting-item role-application-entry' onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>
             <View className='item-left'><View className='item-icon info'>{'\u7533'}</View><Text className='item-label'>{'\u7533\u8bf7\u89d2\u8272'}</Text></View>
             <View className='item-right'><Text className='arrow'>{'\u203a'}</Text></View>
           </View>
@@ -129,12 +127,12 @@ export default function Settings() {
         </View>
       </View>
 
-      <View className={`sync-status ${online ? 'online' : 'offline'}`}>
-        <Text>{online ? '\u7f51\u7edc\u5df2\u8fde\u63a5' : '\u5f53\u524d\u79bb\u7ebf'}</Text>
-      </View>
+      {!online && <View className='sync-status offline'>
+        <Text>{'\u5f53\u524d\u79bb\u7ebf'}</Text>
+      </View>}
 
       <View className='section'>
-        <View className='section-title'>{'\u4e91\u7aef\u6570\u636e'}</View>
+        <View className='section-title'>{'\u6570\u636e\u66f4\u65b0'}</View>
         <View className='setting-item'>
           <View className='item-left'>
             <View className='item-icon sync'>{'\u540c'}</View>

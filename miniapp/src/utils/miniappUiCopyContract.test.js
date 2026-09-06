@@ -8,7 +8,6 @@ const display = source => source.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =
 const applicationConfig = display(read('miniapp/src/pages/account-application/index.config.ts'));
 const applicationPage = display(read('miniapp/src/pages/account-application/index.tsx'));
 const applicationRuntime = display(read('miniapp/src/pages/account-application/applicationRuntime.js'));
-const accountBanner = display(read('miniapp/src/components/AccountStatusBanner.tsx'));
 const settingsPage = display(read('miniapp/src/pages/settings/index.tsx'));
 const questionBankPage = display(read('miniapp/src/pages/question-bank/index.tsx'));
 const questionBankStyles = read('miniapp/src/pages/question-bank/index.scss');
@@ -47,7 +46,7 @@ const retiredTerms = [
   String.fromCharCode(21629, 20196, 38431, 21015),
   String.fromCharCode(20307, 39564, 36134, 21495),
 ];
-for (const source of [applicationConfig, applicationPage, applicationRuntime, accountBanner, settingsPage]) {
+for (const source of [applicationConfig, applicationPage, applicationRuntime, settingsPage]) {
   for (const retiredTerm of retiredTerms) {
     assert.ok(!source.includes(retiredTerm), `miniapp user copy must not expose retired term: ${retiredTerm}`);
   }
@@ -82,7 +81,7 @@ assert.ok(settingsPage.includes('isFormalIdentity(currentIdentity)'), 'only a ca
 assert.ok(!settingsPage.includes(String.fromCharCode(26410, 30693, 29992, 25143)), 'settings must not label a stale session as an unknown user');
 assert.ok(settingsPage.includes('isVisitorIdentity(currentUser)'), 'the sign-out path must retain the visitor cleanup branch');
 assert.ok(settingsPage.includes('isFormalIdentity, isVisitorIdentity'), 'the settings page must import both identity checks used by its formal and sign-out branches');
-assert.ok(settingsPage.includes(String.fromCharCode(32593, 32476, 24050, 36830, 25509)), 'settings must label device network reachability without claiming cloud health');
+assert.ok(settingsPage.includes('!online &&') && settingsPage.includes(String.fromCharCode(24403, 21069, 31163, 32447)), 'My must show actionable offline state without a permanent network or cloud-health claim');
 assert.ok(settingsPage.includes('__APP_VERSION__'), 'the displayed miniapp version must use the build version');
 assert.ok(settingsPage.includes(String.fromCharCode(30003, 35831, 35282, 33394)), 'visitor settings must use the same clear role-application entry as the application page');
 assert.ok(!settingsPage.includes(String.fromCharCode(30003, 35831, 36523, 20221)), 'visitor settings must not expose the internal identity-binding label');

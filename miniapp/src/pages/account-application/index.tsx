@@ -126,10 +126,10 @@ export default function AccountApplicationPage() {
 
   return (
       <View className='application-page'>
-      <View className={`state-card state-${state}`}>
+      {state !== 'not_submitted' && <View className={`state-card state-${state}`}>
         <Text className='state-title'>{copy.title}</Text>
         <Text className='state-description'>{copy.description}</Text>
-      </View>
+      </View>}
 
       {editable ? (
         <View className='application-form'>

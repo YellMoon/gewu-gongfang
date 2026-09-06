@@ -10,7 +10,7 @@ const homePage = read('src/pages/index/index.tsx');
 const homeStyles = read('src/pages/index/index.scss');
 const sharedStyles = read('src/components/shared.scss');
 const tabbarStyles = read('src/custom-tab-bar/index.scss');
-const accountStatusBanner = read('src/components/AccountStatusBanner.tsx')
+const accountEntry = read('src/pages/settings/index.tsx')
   .replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)));
 const membershipBadge = read('src/components/MembershipBadge.tsx');
 
@@ -41,9 +41,9 @@ assert.strictEqual(getMiniappHomeRoleLabel('student'), '\u5b66\u751f');
 assert.strictEqual(getMiniappHomeRoleLabel('visitor'), '');
 assert.strictEqual(getMiniappHomeRoleLabel({ user_type: 'student', identity_kind: 'family_member', student_relationship: 'guardian' }), '家庭成员');
 assert.strictEqual(getMiniappHomeRoleLabel('unknown-role'), 'unknown-role');
-assert.ok(!accountStatusBanner.includes('\u8bbf\u5ba2\u8d26\u53f7'), 'identity guidance must not persistently label a person as a visitor');
-assert.ok(accountStatusBanner.includes('\u7533\u8bf7\u89d2\u8272'), 'identity guidance must provide a clear route to request a role');
-assert.ok(!accountStatusBanner.includes('\u5173\u8054\u8eab\u4efd'), 'identity guidance must not use internal identity-binding wording');
+assert.ok(!accountEntry.includes('\u8bbf\u5ba2\u8d26\u53f7'), 'My must not persistently label a person as a visitor');
+assert.ok(accountEntry.includes('\u7533\u8bf7\u89d2\u8272'), 'My must retain the role-application action');
+assert.ok(!accountEntry.includes('AccountStatusBanner'), 'My must not render a duplicate role banner');
 assert.ok(homePage.includes('getMiniappHomeDisplayName(user)'), 'home greeting must normalize missing and blank identity names');
 assert.ok(homePage.includes('getMiniappHomeRoleLabel(user)'), 'home role pill must use the shared localized role label helper with the family-member relationship');
 assert.ok(homePage.includes('name: getMiniappHomeDisplayName(savedUser)') && homePage.includes('name: getMiniappHomeDisplayName(confirmedUser)'), 'home state must never retain an absent identity name');
@@ -60,7 +60,6 @@ assert.ok(
 assert.ok(homePage.includes("isStudent ? '已关联课程' : '今日收入'"), 'student and guardian home metrics must replace financial cards with their own course count');
 assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-indigo\">"), 'student and guardian views must not render monthly revenue');
 assert.ok(homePage.includes("!isStudent && <View className=\"home-metric-card tone-amber\">"), 'student and guardian views must not render the institution-wide student total');
-assert.ok(accountStatusBanner.includes('\u53ef\u7533\u8bf7\u6559\u5e08\u3001\u5b66\u751f\u6216\u5bb6\u5ead\u6210\u5458\u3002'));
 assert.ok(membershipBadge.includes("membership?.status !== 'active'"), 'membership badge must be derived only from the server membership state');
 for (const forbiddenMarketingCopy of ['\u8d2d\u4e70', '\u7eed\u8d39', '\u5957\u9910', '\u4f1a\u5458\u4ef7\u683c', '\u4f1a\u5458\u6743\u76ca']) {
   assert.ok(!membershipBadge.includes(forbiddenMarketingCopy));

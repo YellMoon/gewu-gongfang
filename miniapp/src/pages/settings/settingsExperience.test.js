@@ -1,0 +1,15 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
+const source = read('index.tsx');
+const config = read('index.config.ts');
+assert(config.includes("navigationBarTitleText: '\u6211\u7684'"), 'page title must match the My tab');
+assert(!source.includes('AccountStatusBanner'), 'My must not repeat role-application guidance above the single action');
+assert.equal((source.match(/url: '\/pages\/account-application\/index'/g) || []).length, 1, 'keep one role-application entry');
+assert(source.includes("!online &&"), 'network state should surface only when disconnected');
+const application = read('../account-application/index.tsx');
+assert(application.includes("state !== 'not_submitted'"), 'initial application form must not repeat the navigation title in a second card');
+assert(application.includes("state-${state}"), 'retain actionable loading, validation and review status');
+console.log('settings and application hierarchy checks passed');
