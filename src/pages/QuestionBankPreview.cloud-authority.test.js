@@ -27,3 +27,4 @@ assert.ok(source.includes('normalizeDesktopQuestionDeleteContext(readDesktopAuth
   'question preview must derive its delete context from the verified cloud desktop session');
 
 console.log('question bank preview cloud authority checks passed');
+require('./QuestionBankPreview.pagination.test');

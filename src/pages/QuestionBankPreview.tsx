@@ -380,7 +380,10 @@ const QuestionBankPreview: React.FC = () => {
 
   const jumpToQuestionPage = useCallback((page: number) => {
     setCurrentPage(page);
-    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    requestAnimationFrame(() => {
+      const viewport = document.querySelector<HTMLElement>('.app-shell__content') ?? window;
+      viewport.scrollTo({ top: 0, behavior: 'auto' });
+    });
   }, []);
 
   const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {

@@ -309,6 +309,7 @@ export function createDesktopIdentityClient({
   sessionStore = defaultSessionStore(),
   clearRoleCache = async () => {},
   onlineRegistrationCommand = null,
+  waitForAssetDelivery = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
 } = {}) {
   if (!desktopIdentity || typeof desktopIdentity.status !== 'function') {
     throw identityError('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
@@ -821,12 +822,22 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedAssetKey = String(assetKey || '').trim();
     if (!/^[0-9a-f]{64}$/.test(normalizedAssetKey)) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_INPUT_INVALID');
-    const delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/assets/${encodeURIComponent(normalizedAssetKey)}/delivery`, {
+    let delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/assets/${encodeURIComponent(normalizedAssetKey)}/delivery`, {
       method: 'POST', body: {}, token: currentSession.token,
     })).delivery;
-    if (!delivery || typeof delivery.deliveryId !== 'string' || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(delivery.deliveryId)
-      || delivery.status !== 'ready' || typeof delivery.mimeType !== 'string' || !delivery.mimeType) {
-      throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_PENDING');
+    const deliveryId = delivery?.deliveryId;
+    for (let attempt = 0; ; attempt += 1) {
+      if (!delivery || typeof deliveryId !== 'string' || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(deliveryId)
+        || delivery.deliveryId !== deliveryId || !['queued', 'leased', 'ready'].includes(delivery.status)
+        || typeof delivery.mimeType !== 'string' || !delivery.mimeType) {
+        throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_RESPONSE_INVALID');
+      }
+      if (delivery.status === 'ready') break;
+      if (attempt === 60) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_PENDING');
+      await waitForAssetDelivery(Math.min((attempt + 1) * 1000, 5000));
+      delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/asset-deliveries/${encodeURIComponent(deliveryId)}`, {
+        token: currentSession.token,
+      })).delivery;
     }
     const response = await fetchImpl(`${normalizedBaseUrl(baseUrl)}/api/desktop/question-bank/asset-deliveries/${encodeURIComponent(delivery.deliveryId)}/download`, {
       headers: { Accept: delivery.mimeType, Authorization: `Bearer ${currentSession.token}` },

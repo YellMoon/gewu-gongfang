@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('./desktopQuestionPagination.test');
+require('./desktopQuestionAssetDelivery.test');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
