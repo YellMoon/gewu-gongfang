@@ -11,6 +11,15 @@ assert.ok(source.includes('createAuthorityDraftFromLocalMutation'), 'browser dat
 assert.ok(source.includes('listCloudQuestions'), 'cloud question text must join the same authority projection cache as the business projection');
 assert.ok(source.includes("storage_state: 'cloud_cached'"), 'cloud question text must be distinguished from locally authored drafts before an edit is captured');
 assert.ok(source.includes('deleteCloudCachedQuestion'), 'cloud-cached question deletes must be captured as typed encrypted drafts');
+assert.ok(source.includes("collection === 'questions'") && source.includes('value.version'),
+  'cloud question update/delete drafts must capture the integer content version returned by the question list');
+const restoreQuestionVersionSource = source.match(/restoreQuestionVersion\(questionId: string, versionId: string\): Question \| null \{[\s\S]*?\n  \}/)?.[0] || '';
+assert.ok(restoreQuestionVersionSource.includes('const currentVersion = this.data.questions[idx].version ?? null'),
+  'question history restore must capture the current cloud CAS version before replacing the record');
+assert.ok(restoreQuestionVersionSource.includes('version: currentVersion ?? undefined'),
+  'question history restore must not revive the historical snapshot version');
+assert.ok(restoreQuestionVersionSource.includes("this.recordAuthorityDraft('questions', 'update', questionId, this.data.questions[idx], currentVersion)"),
+  'question history restore must explicitly submit the current cloud CAS version as expectedVersion');
 assert.ok(source.includes('window.desktopAuthority.appendDraftSync'), 'typed drafts must be encrypted before a synchronous local edit returns');
 assert.ok(source.includes('window.desktopAuthority.appendDraftBatchSync'), 'multi-command edits must append one atomic encrypted draft batch');
 assert.ok(source.includes('authorityCacheCheckpoint.guard'), 'failed draft persistence must restore the last durable derived-cache checkpoint');

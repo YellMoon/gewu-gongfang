@@ -22,7 +22,8 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
   const payload = {
     record: {
       id, subject: 'physics', type: 'single_choice', difficulty: 3,
-      content: 'A question with a NAS image', options: [], answer: 'A', analysis: '',
+      content: 'A question with a NAS image',
+      options: [{ label: 'A', content: 'option A' }, { label: 'B', content: 'option B' }], answer: 'A', analysis: '',
       knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
       import_task_id: taskId, import_item_id: itemId, import_item_index: itemIndex, import_content_hash: contentHash,
     },

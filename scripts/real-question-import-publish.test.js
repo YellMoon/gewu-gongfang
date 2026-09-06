@@ -9,19 +9,20 @@ const {
 const question = Object.freeze({
   id: 'question-import-abc', subject: '物理', type: '单选题', difficulty: 3,
   content: '题干', options: ['A', 'B'], answer: 'A', analysis: '解析', rich_content: null,
-  knowledge_point_ids: ['kp-1'], model_point_ids: [], taxonomy_ids: { system: ['node'] }, has_formula: false, status: 'draft',
+  knowledge_point_ids: ['kp-1'], model_point_ids: [], taxonomy_ids: { system: ['node'] }, has_formula: false, status: 'draft', version: 3,
 });
 
 const changes = changesForPublishedQuestion(question);
-const { id: _id, ...questionChanges } = question;
+const { id: _id, version: _version, ...questionChanges } = question;
 assert.deepStrictEqual(changes, { ...questionChanges, status: 'published' });
 assert.ok(!Object.hasOwn(changes, 'id'), 'an update changes payload must not smuggle a second record id');
 
 const command = questionPublishCommand(question);
 assert.strictEqual(command.type, 'question.update.v1');
-assert.deepStrictEqual(command.payload, { id: question.id, changes: { ...changes } });
+assert.deepStrictEqual(command.payload, { id: question.id, expectedVersion: 3, changes: { ...changes } });
 assert.match(command.commandId, /^question-publish-[a-z0-9-]+$/);
 assert.match(command.payloadHash, /^[0-9a-f]{64}$/);
+assert.throws(() => questionPublishCommand({ ...question, version: undefined }), /REAL_QUESTION_IMPORT_PUBLISH_QUESTION_INVALID/);
 
 assert.deepStrictEqual(importedQuestionIds({ items: [{ contentHash: 'a'.repeat(64) }, { contentHash: 'b'.repeat(64) }] }), [
   `question-import-${'a'.repeat(40)}`, `question-import-${'b'.repeat(40)}`,

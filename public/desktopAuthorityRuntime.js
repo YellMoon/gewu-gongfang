@@ -151,12 +151,19 @@ function createDesktopAuthorityRuntime({
   }
 
   function businessDraftDescriptor(input) {
-    const match = /^(student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.(v[1-9][0-9]*)$/.exec(String(input?.type || ''));
+    const match = /^(question|student|course|schedule|teacher|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.(create|update|delete)\.(v[1-9][0-9]*)$/.exec(String(input?.type || ''));
     if (!match) return null;
     const rawRecordId = match[2] === 'create' ? input.payload?.record?.id : input.payload?.id;
     if (typeof rawRecordId !== 'string') return null;
     const recordId = rawRecordId.trim();
     return recordId ? { entity: match[1], action: match[2], version: match[3], recordId } : null;
+  }
+
+  function assertQuestionMutationVersion(input) {
+    if (/^question\.(?:update|delete)\.v[1-9][0-9]*$/.test(String(input?.type || ''))
+      && (!Number.isSafeInteger(input?.payload?.expectedVersion) || input.payload.expectedVersion < 1)) {
+      throw runtimeError('AUTHORITY_QUESTION_EXPECTED_VERSION_REQUIRED');
+    }
   }
 
   function mergePendingBusinessDraft(state, input, updatedAt, draftScope) {
@@ -233,7 +240,11 @@ function createDesktopAuthorityRuntime({
     const appended = inputs.map(input => {
       const createdAt = new Date(now ? now() : new Date().toISOString()).toISOString();
       const merged = mergePendingBusinessDraft(state, input, createdAt, draftScope);
-      if (merged !== undefined) return merged;
+      if (merged !== undefined) {
+        if (merged !== null) assertQuestionMutationVersion(merged);
+        return merged;
+      }
+      assertQuestionMutationVersion(input);
       const id = String(createId ? createId() : createSecureOutboxId()).trim();
       if (!id || !Number.isFinite(Date.parse(createdAt))) {
         throw runtimeError('AUTHORITY_DRAFT_ID_OR_CLOCK_INVALID');

@@ -6,6 +6,13 @@ const crypto = require('crypto');
 const { createQuestionAuthorityService } = require('./questionAuthorityService');
 const { stableJson } = require('../../shared/authorityProtocol');
 
+function signedCommand(commandId, type, payload) {
+  return {
+    commandId, type, payload,
+    payloadHash: crypto.createHash('sha256').update(stableJson({ type, payload }), 'utf8').digest('hex'),
+  };
+}
+
 async function main() {
   const calls = [];
   const receipts = new Map();
@@ -28,7 +35,7 @@ async function main() {
     if (text.includes('vnext_create_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:03:00.000Z', affectedQuestionCount: 0 }] };
     if (text.includes('vnext_update_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:04:00.000Z', affectedQuestionCount: 0 }] };
     if (text.includes('vnext_delete_question_taxonomy_node_v1')) return { rows: [{ outcome: 'committed', id: values[1], updatedAt: '2026-08-24T05:05:00.000Z', affectedQuestionCount: values[4] }] };
-    if (text.includes('FROM business.questions q')) {
+    if (text.includes('SELECT q.id,q.subject,q.question_type AS type')) {
       return { rows: [{
         id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
         content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
@@ -117,7 +124,7 @@ async function main() {
   const importedCommandPayload = {
     record: {
       id: 'question-imported-1', subject: 'physics', type: 'single_choice', difficulty: 3,
-      content: 'Imported cloud text', options: [], answer: 'A', analysis: '',
+      content: 'Imported cloud text', options: [{ label: 'A', content: 'force' }, { label: 'B', content: 'energy' }], answer: 'A', analysis: '',
       knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
       import_task_id: 'question_import_task_demo',
       import_item_id: 'question_import_item_demo_0',
@@ -148,6 +155,43 @@ async function main() {
   assert.deepStrictEqual(importedWrite[1].slice(-4), [
     'question_import_task_demo', 'question_import_item_demo_0', 0, 'd'.repeat(64),
   ]);
+
+  const malformedImportedOptions = [
+    [{ label: 'A', content: 'first B\uff0esecond C\uff0ethird D\uff0efourth' }],
+    [{ label: 'A', content: 'first B\uff0esecond' }, { label: 'C', content: 'third D\uff0efourth' }],
+  ];
+  for (const [index, options] of malformedImportedOptions.entries()) {
+    const payload = {
+      record: {
+        id: `question-imported-invalid-${index}`, subject: 'physics', type: 'single_choice', difficulty: 3,
+        content: 'Malformed imported choice', options, answer: index === 0 ? 'A' : 'C', analysis: '',
+        knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
+        import_task_id: `question_import_task_invalid_${index}`,
+        import_item_id: `question_import_item_invalid_${index}`,
+        import_item_index: index, import_content_hash: String(index + 1).repeat(64),
+      },
+    };
+    await assert.rejects(
+      () => service.submitDesktopDraft({
+        tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+        command: signedCommand(`question-imported-invalid-command-${index}`, 'question.create.v1', payload),
+      }),
+      /CLOUD_QUESTION_INPUT_INVALID/,
+      'a malformed imported choice must not reach question authority',
+    );
+  }
+
+  const nonChoiceImport = await service.create({
+    tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+    question: {
+      id: 'question-imported-problem', subject: 'physics', questionType: 'problem', difficulty: 3,
+      stem: 'Explain the process', answer: 'A full derivation', explanation: null,
+      options: [{ label: 'A', content: 'first B\uff0esecond C\uff0ethird D\uff0efourth' }],
+      richContent: null, taxonomy: {}, hasFormula: false,
+      importBinding: { taskId: 'question_import_task_problem', itemId: 'question_import_item_problem_0', itemIndex: 0, contentHash: 'e'.repeat(64) },
+    },
+  });
+  assert.strictEqual(nonChoiceImport.id, 'question-1', 'non-choice imports must remain outside the choice-only structure gate');
 
   let taxonomySequence = 0;
   async function submitTaxonomy(type, payload) {
@@ -237,9 +281,10 @@ async function main() {
 
   const updatePayload = {
     id: 'question-3',
+    expectedVersion: 1,
     changes: {
       subject: 'physics', type: 'single_choice', difficulty: 4,
-      content: 'Cloud update is authoritative', options: [], answer: 'updated', analysis: '',
+      content: 'Cloud update is authoritative', options: [{ label: 'A', content: 'force' }, { label: 'B', content: 'energy' }], answer: 'A', analysis: '',
       knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: true, status: 'published',
     },
   };
@@ -252,11 +297,71 @@ async function main() {
   });
   assert.strictEqual(updateReceipt.status, 'committed');
   assert.ok(calls.some(call => call[0].includes('UPDATE business.questions') && call[0].includes('UPDATE business.question_contents')));
-  const publishedWrite = calls.find(call => call[0].includes('UPDATE business.questions') && call[0].includes('status=COALESCE($8,status)'));
+  const publishedWrite = calls.find(call => call[0].includes('UPDATE business.questions') && call[0].includes('status=COALESCE($8,q.status)'));
   assert.ok(publishedWrite, 'a teacher question update must be able to publish an imported question through the cloud authority command');
   assert.strictEqual(publishedWrite[1][7], 'published');
+  assert.match(publishedWrite[0], /c\.version=\$15::integer/u, 'question updates must compare-and-swap against the listed content version');
+  assert.strictEqual(publishedWrite[1][14], 1);
 
-  const deletePayload = { id: 'question-3' };
+  const malformedPublishPayload = {
+    id: 'question-3', expectedVersion: 1,
+    changes: {
+      subject: 'physics', type: 'single_choice', difficulty: 4, status: 'published',
+      content: 'Packed options must not publish',
+      options: [{ label: 'A', content: 'first B\uff0esecond' }, { label: 'C', content: 'third D\uff0efourth' }],
+      answer: 'C', analysis: '', knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
+    },
+  };
+  await assert.rejects(
+    () => service.submitDesktopDraft({
+      tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+      command: signedCommand('question-command-invalid-publish', 'question.update.v1', malformedPublishPayload),
+    }),
+    /CLOUD_QUESTION_INPUT_INVALID/,
+    'a malformed choice must not be published by the question authority',
+  );
+  const statusPreservingMalformedPayload = {
+    ...malformedPublishPayload,
+    changes: { ...malformedPublishPayload.changes },
+  };
+  delete statusPreservingMalformedPayload.changes.status;
+  await assert.rejects(
+    () => service.submitDesktopDraft({
+      tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+      command: signedCommand('question-command-invalid-status-preserving-update', 'question.update.v1', statusPreservingMalformedPayload),
+    }),
+    /CLOUD_QUESTION_INPUT_INVALID/,
+    'omitting status must not bypass the structure gate when an existing published choice is edited',
+  );
+  const invalidAnswerPublishPayload = {
+    ...updatePayload,
+    changes: { ...updatePayload.changes, answer: 'C' },
+  };
+  await assert.rejects(
+    () => service.submitDesktopDraft({
+      tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+      command: signedCommand('question-command-invalid-answer', 'question.update.v1', invalidAnswerPublishPayload),
+    }),
+    /CLOUD_QUESTION_INPUT_INVALID/,
+    'a choice answer must refer only to labels present in the submitted options',
+  );
+
+  for (const [commandId, type, payload] of [
+    ['question-update-missing-version', 'question.update.v1', { id: 'question-3', changes: updatePayload.changes }],
+    ['question-update-invalid-version', 'question.update.v1', { id: 'question-3', changes: updatePayload.changes, expectedVersion: '1' }],
+    ['question-delete-missing-version', 'question.delete.v1', { id: 'question-3' }],
+  ]) {
+    await assert.rejects(
+      () => service.submitDesktopDraft({
+        tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+        command: signedCommand(commandId, type, payload),
+      }),
+      /CLOUD_QUESTION_INPUT_INVALID/,
+      'question update/delete must carry the integer version returned by question list',
+    );
+  }
+
+  const deletePayload = { id: 'question-3', expectedVersion: 1 };
   const deleteReceipt = await service.submitDesktopDraft({
     tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
     command: {
@@ -265,7 +370,38 @@ async function main() {
     },
   });
   assert.strictEqual(deleteReceipt.status, 'committed');
-  assert.ok(calls.some(call => call[0].includes('deleted=true') && call[0].includes('business.question_contents')));
+  const deleteWrite = calls.find(call => call[0].includes('deleted=true') && call[0].includes('business.question_contents'));
+  assert.ok(deleteWrite);
+  assert.match(deleteWrite[0], /c\.version=\$3::integer/u, 'question deletes must compare-and-swap against the listed content version');
+  assert.strictEqual(deleteWrite[1][2], 1);
+
+  const conflictReceipts = new Map();
+  const conflictService = createQuestionAuthorityService({
+    query: async () => ({ rows: [] }),
+    transaction: async work => work(async (text, values) => {
+      if (text.includes('FROM business.desktop_question_command_receipts')) {
+        const stored = conflictReceipts.get(`${values[0]}:${values[1]}`);
+        return { rows: stored ? [stored] : [] };
+      }
+      if (text.includes('UPDATE business.question_contents AS c')) return { rows: [] };
+      if (text.includes('INSERT INTO business.desktop_question_command_receipts')) {
+        conflictReceipts.set(`${values[0]}:${values[1]}`, {
+          payloadHash: values[2], status: values[3], result: JSON.parse(values[4]), resultHash: values[5],
+        });
+        return { rows: [] };
+      }
+      throw new Error('unexpected question conflict query');
+    }),
+  });
+  const conflictCommand = signedCommand('question-command-conflict', 'question.update.v1', { ...updatePayload, expectedVersion: 99 });
+  const conflictReceipt = await conflictService.submitDesktopDraft({
+    tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, command: conflictCommand,
+  });
+  assert.strictEqual(conflictReceipt.status, 'rejected');
+  assert.deepStrictEqual(conflictReceipt.result, { error: { code: 'CLOUD_QUESTION_CONFLICT' }, id: 'question-3' });
+  assert.deepStrictEqual(await conflictService.submitDesktopDraft({
+    tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, command: conflictCommand,
+  }), conflictReceipt, 'a rejected question CAS conflict must replay its durable receipt');
 
   await assert.rejects(
     () => service.create({ tenantId: 'default', actor: { accountId: 'student-account-1', roles: ['student'] }, question: {

@@ -124,13 +124,22 @@ function selectedFields(value, allowed) {
   return selected;
 }
 
+function appendExpectedVersion(payload, definition, baseVersion) {
+  if (definition.entity === 'question') {
+    if (Number.isSafeInteger(baseVersion) && baseVersion > 0) payload.expectedVersion = baseVersion;
+    return;
+  }
+  const expectedVersion = String(baseVersion || '').trim();
+  if (expectedVersion) payload.expectedVersion = expectedVersion;
+}
+
 /**
  * @param {{
  *   collection?: string;
  *   action?: string;
  *   recordId?: string;
  *   value?: Record<string, unknown>;
- *   baseVersion?: string | null;
+ *   baseVersion?: string | number | null;
  * }} input
  */
 export function createAuthorityDraftFromLocalMutation({
@@ -150,8 +159,7 @@ export function createAuthorityDraftFromLocalMutation({
   let payload;
   if (normalizedAction === 'delete') {
     payload = { id };
-    const expectedVersion = String(baseVersion || '').trim();
-    if (expectedVersion) payload.expectedVersion = expectedVersion;
+    appendExpectedVersion(payload, definition, baseVersion);
     if (definition.entity === 'taxonomy-system' || definition.entity === 'taxonomy-node') {
       if (definition.entity === 'taxonomy-node') payload.systemId = requiredId(value?.system_id);
       const confirmation = value?._taxonomy_delete_confirmation;
@@ -176,8 +184,7 @@ export function createAuthorityDraftFromLocalMutation({
       payload = { record: { id, ...fields } };
     } else {
       payload = { id, changes: fields };
-      const expectedVersion = String(baseVersion || '').trim();
-      if (expectedVersion) payload.expectedVersion = expectedVersion;
+      appendExpectedVersion(payload, definition, baseVersion);
     }
   }
   return Object.freeze({

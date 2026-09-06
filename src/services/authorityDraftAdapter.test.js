@@ -117,12 +117,20 @@ const assert = require('assert');
   });
   assert.strictEqual(JSON.stringify(asset).includes('full_card_number'), false);
 
+  const questionUpdate = createAuthorityDraftFromLocalMutation({
+    collection: 'questions', action: 'update', recordId: 'question-cloud-1', baseVersion: 7,
+    value: { subject: 'physics', type: 'single_choice', content: 'Versioned update', options: ['first', 'second'], answer: 'A' },
+  });
+  assert.strictEqual(questionUpdate.payload.expectedVersion, 7,
+    'question mutations must preserve the integer content version returned by the cloud list');
+  assert.strictEqual(typeof questionUpdate.payload.expectedVersion, 'number');
+
   const importedQuestion = createAuthorityDraftFromLocalMutation({
     collection: 'questions',
     action: 'create',
     recordId: 'question-imported-1',
     value: {
-      subject: 'physics', type: 'single_choice', content: 'Imported question', options: [], answer: 'A', analysis: '',
+      subject: 'physics', type: 'single_choice', content: 'Imported question', options: ['first', 'second'], answer: 'A', analysis: '',
       import_task_id: 'question_import_task_demo',
       import_item_id: 'question_import_item_demo_0',
       import_item_index: 0,
@@ -131,7 +139,7 @@ const assert = require('assert');
     },
   });
   assert.deepStrictEqual(importedQuestion.payload.record, {
-    id: 'question-imported-1', subject: 'physics', type: 'single_choice', content: 'Imported question', options: [], answer: 'A', analysis: '',
+    id: 'question-imported-1', subject: 'physics', type: 'single_choice', content: 'Imported question', options: ['first', 'second'], answer: 'A', analysis: '',
     import_task_id: 'question_import_task_demo',
     import_item_id: 'question_import_item_demo_0',
     import_item_index: 0,

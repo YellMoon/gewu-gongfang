@@ -94,7 +94,7 @@ const assert = require('assert');
       return receipt(currentCommand, { resultHash: 'd'.repeat(64) });
     },
   });
-  const retryDraft = await retryClient.appendDraft({ type: 'question.update.v1', payload: { id: 'question-1', changes: { difficulty: 4 } } });
+  const retryDraft = await retryClient.appendDraft({ type: 'question.update.v1', payload: { id: 'question-1', expectedVersion: 1, changes: { difficulty: 4 } } });
   await retryHarness.outbox.confirm(retryDraft.id);
   await assert.rejects(() => retryClient.submit(retryDraft.id), error => error?.code === 'CLOUD_CONNECTION_LOST');
   assert.strictEqual((await retryHarness.outbox.get(retryDraft.id)).status, 'submitted');

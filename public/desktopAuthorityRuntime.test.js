@@ -353,6 +353,27 @@ function staticRelativeModuleClosure(entryFile) {
   assert.deepStrictEqual(mergedCreate.payload, {
     record: { id: 'room-merge-create-1', name: 'Latest draft room', address: null },
   });
+  const createdQuestion = runtime.appendDraftSync({
+    type: 'question.create.v1',
+    payload: { record: { id: 'question-merge-create-1', content: 'Initial local question' } },
+  });
+  const mergedQuestionCreate = runtime.appendDraftSync({
+    type: 'question.update.v1',
+    payload: { id: 'question-merge-create-1', changes: { content: 'Latest local question' } },
+  });
+  assert.strictEqual(mergedQuestionCreate.id, createdQuestion.id,
+    'editing a not-yet-submitted question must remain one create command without inventing a cloud version');
+  assert.strictEqual(mergedQuestionCreate.type, 'question.create.v1');
+  assert.deepStrictEqual(mergedQuestionCreate.payload, {
+    record: { id: 'question-merge-create-1', content: 'Latest local question' },
+  });
+  assert.throws(
+    () => runtime.appendDraftSync({
+      type: 'question.update.v1', payload: { id: 'question-unversioned-1', changes: { content: 'Unsafe overwrite' } },
+    }),
+    error => error?.code === 'AUTHORITY_QUESTION_EXPECTED_VERSION_REQUIRED',
+    'an unversioned standalone question update must never enter the encrypted outbox',
+  );
   const canceledCreate = runtime.appendDraftSync({
     type: 'school.create.v1',
     payload: { record: { id: 'school-merge-cancel-1', name: 'Canceled school', count: 1 } },

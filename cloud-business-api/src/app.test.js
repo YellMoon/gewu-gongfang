@@ -847,6 +847,22 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
       payload: { record: { id: 'question-3', subject: 'physics' } },
     },
   });
+  const rejectedQuestionCommand = await request(createCloudBusinessApp({
+    query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
+    questionAuthority: {
+      list: async () => [],
+      create: async () => { throw Object.assign(new Error('direct create disabled'), { code: 'CLOUD_QUESTION_INPUT_INVALID' }); },
+      submitDesktopDraft: async () => { throw Object.assign(new Error('invalid choice structure'), { code: 'CLOUD_QUESTION_INPUT_INVALID' }); },
+    },
+  }), '/api/desktop/question-bank/commands', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: {
+      commandId: 'question-command-invalid-choice', payloadHash: 'e'.repeat(64), type: 'question.update.v1',
+      payload: { id: 'question-3', expectedVersion: 1, changes: { status: 'published' } },
+    },
+  });
+  assert.strictEqual(rejectedQuestionCommand.status, 400);
+  assert.deepStrictEqual(rejectedQuestionCommand.body, { ok: false, code: 'CLOUD_BUSINESS_INPUT_INVALID' },
+    'invalid choice structures must fail closed at the desktop question command API');
   const miniappCannotCreateQuestion = await request(createCloudBusinessApp({ query: async () => ({ rows: [] }), miniappCloudAccount: miniappIdentity, questionAuthority, businessTenantId: 'default' }), '/api/desktop/question-bank/questions', {
     method: 'POST', headers: { authorization: 'Bearer miniapp-ticket.signature' }, body: {
       id: 'question-2', subject: 'physics', questionType: 'single_choice', difficulty: 3,

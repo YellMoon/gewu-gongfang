@@ -455,14 +455,17 @@ class BrowserDatabaseService {
     action: SyncAction,
     recordId: string,
     value: Record<string, any> = {},
-    baseVersion: string | null = null,
+    baseVersion: string | number | null = null,
   ): void {
+    const observedBaseVersion = collection === 'questions'
+      ? (baseVersion ?? value.version ?? null)
+      : baseVersion;
     const draft = createAuthorityDraftFromLocalMutation({
       collection,
       action,
       recordId,
       value,
-      baseVersion,
+      baseVersion: observedBaseVersion,
     });
     this.authorityCacheCheckpoint.guard(() => {
       if (!window.desktopAuthority?.appendDraftSync) {
@@ -479,7 +482,7 @@ class BrowserDatabaseService {
     action: SyncAction;
     recordId: string;
     value?: Record<string, any>;
-    baseVersion?: string | null;
+    baseVersion?: string | number | null;
   }>): void {
     if (changes.length === 0) return;
     const drafts = changes.map(change => createAuthorityDraftFromLocalMutation({
@@ -487,7 +490,9 @@ class BrowserDatabaseService {
       action: change.action,
       recordId: change.recordId,
       value: change.value || {},
-      baseVersion: change.baseVersion || null,
+      baseVersion: change.collection === 'questions'
+        ? (change.baseVersion ?? change.value?.version ?? null)
+        : (change.baseVersion || null),
     }));
     this.authorityCacheCheckpoint.guard(() => {
       if (!window.desktopAuthority?.appendDraftBatchSync) {
@@ -2673,6 +2678,7 @@ class BrowserDatabaseService {
     const version = (this.data.questionVersions || []).find(item => item.question_id === questionId && item.id === versionId);
     const idx = this.data.questions.findIndex(q => q.id === questionId);
     if (!version || idx === -1) return null;
+    const currentVersion = this.data.questions[idx].version ?? null;
     this.createQuestionVersionSnapshot(this.data.questions[idx], `恢复到版本 ${version.version_no} 前快照`);
     const now = new Date().toISOString();
     this.data.questions[idx] = this.normalizeQuestionRecord({
@@ -2680,9 +2686,10 @@ class BrowserDatabaseService {
       id: questionId,
       created_at: this.data.questions[idx].created_at,
       updated_at: now,
+      version: currentVersion ?? undefined,
     });
     this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
-    this.recordAuthorityDraft('questions', 'update', questionId, this.data.questions[idx]);
+    this.recordAuthorityDraft('questions', 'update', questionId, this.data.questions[idx], currentVersion);
     this.syncQuestionLocalRecord(this.data.questions[idx]);
     this.saveData();
     return this.data.questions[idx];

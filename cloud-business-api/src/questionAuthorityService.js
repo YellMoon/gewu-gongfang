@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { types } = require('util');
+const { validateChoiceQuestionStructure } = require('./questionChoiceStructure');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -122,6 +123,15 @@ function expectedVersion(value) {
   return version;
 }
 
+function questionExpectedVersion(value) {
+  if (!Number.isSafeInteger(value) || value < 1 || value > 2147483647) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  return value;
+}
+
+function assertChoiceQuestionStructure(type, options, answer) {
+  if (!validateChoiceQuestionStructure({ type, options, answer }).valid) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+}
+
 function deletionConfirmation(value) {
   const confirmation = exact(value, ['confirmed', 'expectedAffectedQuestionCount']);
   if (confirmation.confirmed !== true || !Number.isSafeInteger(confirmation.expectedAffectedQuestionCount) || confirmation.expectedAffectedQuestionCount < 0) {
@@ -223,12 +233,18 @@ function desktopCommand(value) {
     };
   }
   if (type === 'question.update.v1') {
-    if (Reflect.ownKeys(payload).some(key => !['id', 'changes', 'expectedVersion'].includes(key))
-      || typeof payload.id !== 'string' || !plainObject(payload.changes)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
-    return { commandId, payloadHash: command.payloadHash, type, question: legacyQuestion({ id: payload.id, ...payload.changes }) };
+    const draft = exact(payload, ['id', 'changes', 'expectedVersion']);
+    if (typeof draft.id !== 'string' || !plainObject(draft.changes)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+    return {
+      commandId, payloadHash: command.payloadHash, type,
+      question: legacyQuestion({ id: draft.id, ...draft.changes }), expectedVersion: questionExpectedVersion(draft.expectedVersion),
+    };
   }
-  if (Reflect.ownKeys(payload).some(key => !['id', 'expectedVersion'].includes(key))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
-  return { commandId, payloadHash: command.payloadHash, type, id: text(payload.id, { max: 128 }) };
+  const draft = exact(payload, ['id', 'expectedVersion']);
+  return {
+    commandId, payloadHash: command.payloadHash, type, id: text(draft.id, { max: 128 }),
+    expectedVersion: questionExpectedVersion(draft.expectedVersion),
+  };
 }
 
 function actor(value) {
@@ -377,6 +393,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const taxonomy = json(question.taxonomy);
       const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
       const binding = question.importBinding === undefined || question.importBinding === null ? null : importBinding(question.importBinding);
+      if (binding !== null) assertChoiceQuestionStructure(questionType, question.options, answer);
       const result = await currentQuery(binding ?
         `WITH import_item AS (
            SELECT item.import_task_id,item.item_index,item.candidate_json
@@ -484,35 +501,70 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
         result = await this.create({ tenantId, actor: currentActor, question: command.question }, transactionQuery);
       } else if (command.type === 'question.update.v1') {
         const question = command.question;
+        assertChoiceQuestionStructure(question.questionType, question.options, question.answer);
         const options = json(question.options, { array: true });
         const richContent = json(question.richContent, { nullable: true });
         const taxonomy = json(question.taxonomy);
         const contentHash = canonicalContentHash({ stem: question.stem, answer: question.answer, explanation: question.explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
         const updated = await transactionQuery(
-          `WITH updated_question AS (
-             UPDATE business.questions SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,status=COALESCE($8,status),updated_at=transaction_timestamp()
-             WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
+          `WITH target AS MATERIALIZED (
+             SELECT q.id
+               FROM business.questions q
+               JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
+              WHERE q.id=$1 AND q.tenant_id=$2 AND q.deleted=false AND c.deleted=false AND c.version=$15::integer
+              FOR UPDATE OF q,c
            ), updated_content AS (
-             UPDATE business.question_contents SET stem=$9,answer=$10,explanation=$11,options_json=$12::jsonb,rich_content_json=$13::jsonb,content_hash=$14,version=version+1,updated_at=transaction_timestamp()
-             WHERE question_id=$1 AND tenant_id=$2 AND deleted=false RETURNING version,content_hash AS "contentHash"
+             UPDATE business.question_contents AS c
+                SET stem=$9,answer=$10,explanation=$11,options_json=$12::jsonb,rich_content_json=$13::jsonb,content_hash=$14,version=c.version+1,updated_at=transaction_timestamp()
+               FROM target
+              WHERE c.question_id=target.id AND c.tenant_id=$2 AND c.deleted=false AND c.version=$15::integer
+             RETURNING c.question_id,c.version,c.content_hash AS "contentHash"
+           ), updated_question AS (
+             UPDATE business.questions AS q
+                SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,status=COALESCE($8,q.status),updated_at=transaction_timestamp()
+               FROM updated_content c
+              WHERE q.id=c.question_id AND q.tenant_id=$2 AND q.deleted=false
+             RETURNING q.id,q.status
            ) SELECT q.id,q.status,c.version,c."contentHash" FROM updated_question q CROSS JOIN updated_content c`,
-          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.status, question.stem, question.answer, question.explanation, options, richContent, contentHash],
+          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.status, question.stem, question.answer, question.explanation, options, richContent, contentHash, command.expectedVersion],
         );
-        if (!updated || !Array.isArray(updated.rows) || updated.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
-        result = questionRow(updated.rows[0]);
+        if (!updated || !Array.isArray(updated.rows) || updated.rows.length > 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+        if (updated.rows.length === 0) {
+          receiptStatus = 'rejected';
+          result = { error: { code: 'CLOUD_QUESTION_CONFLICT' }, id: question.id };
+        } else {
+          result = questionRow(updated.rows[0]);
+        }
       } else if (command.type === 'question.delete.v1') {
         const deleted = await transactionQuery(
-          `WITH deleted_question AS (
-             UPDATE business.questions SET deleted=true,deleted_at=transaction_timestamp(),updated_at=transaction_timestamp()
-             WHERE id=$1 AND tenant_id=$2 AND deleted=false RETURNING id,status
+          `WITH target AS MATERIALIZED (
+             SELECT q.id
+               FROM business.questions q
+               JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
+              WHERE q.id=$1 AND q.tenant_id=$2 AND q.deleted=false AND c.deleted=false AND c.version=$3::integer
+              FOR UPDATE OF q,c
            ), deleted_content AS (
-             UPDATE business.question_contents SET deleted=true,version=version+1,updated_at=transaction_timestamp()
-             WHERE question_id=$1 AND tenant_id=$2 AND deleted=false RETURNING version,content_hash AS "contentHash"
+             UPDATE business.question_contents AS c
+                SET deleted=true,version=c.version+1,updated_at=transaction_timestamp()
+               FROM target
+              WHERE c.question_id=target.id AND c.tenant_id=$2 AND c.deleted=false AND c.version=$3::integer
+             RETURNING c.question_id,c.version,c.content_hash AS "contentHash"
+           ), deleted_question AS (
+             UPDATE business.questions AS q
+                SET deleted=true,deleted_at=transaction_timestamp(),updated_at=transaction_timestamp()
+               FROM deleted_content c
+              WHERE q.id=c.question_id AND q.tenant_id=$2 AND q.deleted=false
+             RETURNING q.id,q.status
            ) SELECT q.id,q.status,c.version,c."contentHash" FROM deleted_question q CROSS JOIN deleted_content c`,
-          [command.id, tenantId],
+          [command.id, tenantId, command.expectedVersion],
         );
-        if (!deleted || !Array.isArray(deleted.rows) || deleted.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
-        result = questionRow(deleted.rows[0]);
+        if (!deleted || !Array.isArray(deleted.rows) || deleted.rows.length > 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+        if (deleted.rows.length === 0) {
+          receiptStatus = 'rejected';
+          result = { error: { code: 'CLOUD_QUESTION_CONFLICT' }, id: command.id };
+        } else {
+          result = questionRow(deleted.rows[0]);
+        }
       } else {
         const taxonomyResult = await executeTaxonomyCommand(command, tenantId, transactionQuery);
         receiptStatus = taxonomyResult.status;

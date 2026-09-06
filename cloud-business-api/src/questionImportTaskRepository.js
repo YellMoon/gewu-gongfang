@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { types } = require('util');
+const { INVALID_CHOICE_STRUCTURE, validateChoiceQuestionStructure } = require('./questionChoiceStructure');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -272,8 +273,21 @@ function candidateRows(value, randomId) {
       || !['accepted', 'warning', 'rejected'].includes(item.validation.status) || !Array.isArray(item.mediaManifest)) {
       throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
     }
+    const choiceStructure = validateChoiceQuestionStructure({
+      type: item.candidate.question_types ?? item.candidate.type,
+      options: item.candidate.options,
+      answer: item.candidate.answer,
+    });
+    const validation = choiceStructure.valid ? item.validation : {
+      ...item.validation,
+      status: 'rejected',
+      codes: [...new Set([
+        ...(Array.isArray(item.validation.codes) ? item.validation.codes.filter(code => typeof code === 'string') : []),
+        INVALID_CHOICE_STRUCTURE,
+      ])],
+    };
     const candidateJson = stableJson(item.candidate);
-    const validationJson = stableJson(item.validation);
+    const validationJson = stableJson(validation);
     const mediaManifest = item.mediaManifest.map((asset, assetIndex) => {
       const current = exact(asset, ['sha256', 'bytes', 'mimeType']);
       if (!/^[0-9a-f]{64}$/.test(current.sha256) || !Number.isSafeInteger(current.bytes) || current.bytes < 1 || current.bytes > (64 * 1024 * 1024)

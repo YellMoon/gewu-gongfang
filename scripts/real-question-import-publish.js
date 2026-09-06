@@ -88,9 +88,12 @@ function changesForPublishedQuestion(question) {
 }
 
 function questionPublishCommand(question) {
+  if (!plainObject(question) || !Number.isSafeInteger(question.version) || question.version < 1) {
+    throw failure('REAL_QUESTION_IMPORT_PUBLISH_QUESTION_INVALID');
+  }
   const changes = changesForPublishedQuestion(question);
   const type = 'question.update.v1';
-  const payload = { id: question.id, changes };
+  const payload = { id: question.id, expectedVersion: question.version, changes };
   return {
     commandId: `question-publish-${crypto.createHash('sha256').update(question.id, 'utf8').digest('hex').slice(0, 40)}`,
     payloadHash: crypto.createHash('sha256').update(stableJson({ type, payload }), 'utf8').digest('hex'),

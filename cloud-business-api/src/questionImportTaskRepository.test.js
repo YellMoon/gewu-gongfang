@@ -134,7 +134,38 @@ async function main() {
   const atomicCandidates = await repository.completeSourceAndStoreCandidates({
     taskId: created.taskId, agentId: 'storage-agent-1', leaseToken: 'lease-token-test-value',
     observedSha256: 'a'.repeat(64), observedBytes: 3, parserSha256: '9'.repeat(64),
-    candidates: [{ contentHash: 'f'.repeat(64), candidate: { stem: 'atomically stored' }, validation: { status: 'accepted' }, mediaManifest: [] }],
+    candidates: [
+      {
+        contentHash: '1'.repeat(64),
+        candidate: { question_types: ['single'], stem: 'packed into A', options: [{ label: 'A', content: '\u7532 B\uff0e\u4e59 C\uff0e\u4e19 D\uff0e\u4e01' }], answer: 'A' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+      {
+        contentHash: '2'.repeat(64),
+        candidate: { question_types: ['single'], stem: 'packed into A and C', options: [{ label: 'A', content: '\u7532 B\uff0e\u4e59' }, { label: 'C', content: '\u4e19 D\uff0e\u4e01' }], answer: 'C' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+      {
+        contentHash: '3'.repeat(64),
+        candidate: { question_types: ['multi'], stem: 'duplicate labels', options: [{ label: 'A', content: '\u7532' }, { label: 'A', content: '\u4e59' }], answer: 'A' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+      {
+        contentHash: '4'.repeat(64),
+        candidate: { question_types: ['single'], stem: 'answer outside options', options: [{ label: 'A', content: '\u7532' }, { label: 'B', content: '\u4e59' }], answer: 'C' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+      {
+        contentHash: '5'.repeat(64),
+        candidate: { question_types: ['single'], stem: 'valid choice', options: [{ label: 'A', content: '\u7532' }, { label: 'B', content: '\u4e59' }], answer: 'B' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+      {
+        contentHash: '6'.repeat(64),
+        candidate: { question_types: ['problem'], stem: 'non-choice stays untouched', options: [{ label: 'A', content: '\u7532 B\uff0e\u4e59 C\uff0e\u4e19 D\uff0e\u4e01' }], answer: '\u89e3\u7b54\u8fc7\u7a0b' },
+        validation: { status: 'accepted', codes: [] }, mediaManifest: [],
+      },
+    ],
   });
   assert.strictEqual(atomicCandidates.status, 'candidates_ready');
   const atomicCall = calls.at(-1);
@@ -153,6 +184,14 @@ async function main() {
   assert.ok(mediaStorageCte.includes('FROM advanced_task task CROSS JOIN input_media'),
     'media storage rows must be gated by the successfully advanced import task');
   assert.ok(!atomicCall[1].includes('lease-token-test-value'), 'raw source lease tokens must never reach PostgreSQL');
+  const storedCandidates = JSON.parse(atomicCall[1][6]);
+  assert.deepStrictEqual(storedCandidates.map(item => item.validation.status), [
+    'rejected', 'rejected', 'rejected', 'rejected', 'accepted', 'accepted',
+  ], 'malformed choice candidates must be rejected before they can enter the accepted import set');
+  assert.ok(storedCandidates.slice(0, 4).every(item => item.validation.codes.includes('invalid_choice_structure')),
+    'each rejected choice structure must retain an actionable validation code');
+  assert.deepStrictEqual(storedCandidates[5].candidate.options, [{ label: 'A', content: '\u7532 B\uff0e\u4e59 C\uff0e\u4e19 D\uff0e\u4e01' }],
+    'choice validation must not rewrite or reject non-choice candidates');
 
   const prepared = await repository.prepareDrafts({
     tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, taskId: created.taskId,

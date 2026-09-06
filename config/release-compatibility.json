@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopQuestionMutation": {
+      "version": "2",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "question update/delete requires the observed integer content version; taxonomy changes also advance it; legacy drafts without a valid baseline are rejected and must be recreated after refreshing cloud data"
+    },
     "cloudBusinessRest": {
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],

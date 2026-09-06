@@ -412,7 +412,7 @@ async function main() {
       }
       if (url === 'https://cloud.test/api/desktop/question-bank/questions?limit=200') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
-        return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text' }] }) };
+        return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text', version: 4 }] }) };
       }
       if (url === `https://cloud.test/api/desktop/question-bank/assets/${'a'.repeat(64)}/delivery`) {
         assert.strictEqual(options.method, 'POST');
@@ -728,7 +728,7 @@ async function main() {
   const cloudQuestions = await unifiedCloudClient.listCloudQuestions({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted,
   });
-  assert.deepStrictEqual(cloudQuestions, [{ id: 'question-cloud-1', content: 'Cloud question text' }]);
+  assert.deepStrictEqual(cloudQuestions, [{ id: 'question-cloud-1', content: 'Cloud question text', version: 4 }]);
   assert.strictEqual(unifiedCloudRequests.at(-1).url, 'https://cloud.test/api/desktop/question-bank/questions?limit=200');
   const cloudQuestionAsset = await unifiedCloudClient.readCloudQuestionAsset({
     baseUrl: 'https://cloud.test', currentSession: unifiedCompleted, assetKey: 'a'.repeat(64),

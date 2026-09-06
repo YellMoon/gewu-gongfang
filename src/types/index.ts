@@ -420,6 +420,7 @@ export interface Question {
   has_image: boolean;
   has_formula: boolean;
   created_by: string;
+  version?: number;                 // Cloud question_contents compare-and-swap baseline
   storage_state?: 'local_draft' | 'cloud_cached' | 'host_committed';
   committed_at?: string;
   committed_by_device_id?: string;
