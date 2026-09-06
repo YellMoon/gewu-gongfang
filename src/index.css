@@ -707,6 +707,18 @@ select,
   padding-right: calc(var(--question-basket-dock-width) + var(--question-basket-dock-inset) + 18px);
 }
 
+.taxonomy-manager__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.taxonomy-manager__actions > button {
+  flex: 1 1 112px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .app-shell__content--course-calendar {
   height: calc(100vh - 64px);
   min-height: 0;

@@ -62,4 +62,7 @@ for (const table of ['taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_no
   assert.ok(schema.includes(`CREATE TABLE IF NOT EXISTS ${table}`));
 }
 
+assert.ok(manager.includes('className="taxonomy-manager__actions"'));
+assert.ok(!manager.includes('<Space.Compact block>'), 'taxonomy actions must wrap in narrow sidebars');
+assert.match(globalStyles, /\.taxonomy-manager__actions\s*\{[^}]*flex-wrap:\s*wrap/u);
 console.log('taxonomy manager integration checks passed');

@@ -157,10 +157,10 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
   };
 
   return <div className="taxonomy-manager">
-    <Space.Compact block>
-      <Button style={{ flex: 1 }} icon={<PlusOutlined />} onClick={addSystem}>{text.addSystem}</Button>
+    <div className="taxonomy-manager__actions">
+      <Button icon={<PlusOutlined />} onClick={addSystem}>{text.addSystem}</Button>
       <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>
-    </Space.Compact>
+    </div>
     {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
     {systems.map(system => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
