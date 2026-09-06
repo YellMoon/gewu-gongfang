@@ -132,6 +132,23 @@ function testLegacyChoiceAnswerAndFormulaMigration() {
   assert.deepStrictEqual(normalized.sections.stem.content.filter(node => node.type === 'formulaBlock').map(node => node.attrs.canonicalLatex), ['x^2', '\\frac{a}{b}']);
 }
 
+function testWordParserFormulaSourceFormats() {
+  const parserModel = fs.readFileSync('modules/question-bank/parsers/formula_model.py', 'utf8');
+  const formats = JSON.parse('[' + parserModel.match(/^SOURCE_FORMATS = \{([^}]+)\}/m)[1] + ']');
+  for (const sourceFormat of formats) {
+    const rich = migrateLegacyQuestion({ stem: 'Word formula' });
+    rich.sections.stem.content = [{ type: 'paragraph', content: [{ type: 'formula', attrs: {
+      id: 'word-formula-1', canonicalLatex: 'x^2', displayMode: 'inline', sourceFormat, conversionStatus: 'complete',
+    } }] }];
+    const normalized = normalizeQuestionRichContent(rich);
+    assert.strictEqual(normalized.sections.stem.content[0].content[0].attrs.sourceFormat, sourceFormat);
+    assert.strictEqual(projectQuestionRichContent(normalized).stem, 'x^2');
+    rich.sections.stem.content[0].content[0].attrs.sourceFormat = 'unrecognized-format';
+    assert.throws(() => normalizeQuestionRichContent(rich), /sourceFormat is invalid/);
+  }
+}
+
+testWordParserFormulaSourceFormats();
 testLegacyMigrationAndDeterministicProjection();
 testFormulaAndImageNodesRoundTrip();
 testStrictValidationAndSanitization();

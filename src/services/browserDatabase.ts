@@ -221,14 +221,21 @@ class BrowserDatabaseService {
           importTaskItems: this.data.importTaskItems,
         },
       });
+      const previous = this.data;
       this.data = { ...emptyDatabase(), ...next } as Database;
-      this.hydrateTaxonomiesFromSyncRows();
-      this.migrateLegacyQuestionData();
-      this.migrateLegacyTagData();
-      this.migrateQuestionVersionData();
-      this.migrateImportTaskData();
-      this.rebuildQuestionIndexes();
-      this.saveData();
+      try {
+        this.hydrateTaxonomiesFromSyncRows();
+        this.migrateLegacyQuestionData();
+        this.migrateLegacyTagData();
+        this.migrateQuestionVersionData();
+        this.migrateImportTaskData();
+        this.rebuildQuestionIndexes();
+        this.saveData();
+      } catch (error) {
+        this.data = previous;
+        this.rebuildQuestionIndexes();
+        throw error;
+      }
       window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
         detail: { sourceVersion: Math.max(0, Number(minSourceVersion) || 0) },
       }));

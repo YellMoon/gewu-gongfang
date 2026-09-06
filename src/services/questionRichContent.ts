@@ -99,7 +99,7 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
     if (attrs.sourceRef != null && !SAFE_REF.test(String(attrs.sourceRef))) fail('formula sourceRef is invalid');
     if (attrs.previewRef != null && !SAFE_REF.test(String(attrs.previewRef))) fail('formula previewRef is invalid');
     if (attrs.conversionStatus != null && !['complete', 'approximate', 'preview_only', 'unsupported', 'failed'].includes(attrs.conversionStatus)) fail('formula conversionStatus is invalid');
-    if (attrs.sourceFormat != null && !['omml', 'eq', 'mathtype', 'mathml', 'latex', 'unknown'].includes(attrs.sourceFormat)) fail('formula sourceFormat is invalid');
+    if (attrs.sourceFormat != null && !['omml', 'eq_field', 'eq', 'mathtype', 'mathml', 'latex', 'unknown'].includes(attrs.sourceFormat)) fail('formula sourceFormat is invalid');
     if (attrs.warnings != null && (!Array.isArray(attrs.warnings) || attrs.warnings.some((item: unknown) => typeof item !== 'string' || item.length > 1000))) fail('formula warnings are invalid');
   }
   if (node.type === 'image') {
