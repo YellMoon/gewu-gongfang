@@ -7,15 +7,17 @@ const {createVNextPg17CatalogBoundary}=require('../shared/vnext-pg17/catalogAsse
 const {createBusinessFoundationCatalogBoundary}=require('../shared/vnext-pg17/businessFoundationCatalogAssertion');
 const {applyPlan}=require('./repair-question-packed-options');
 const {hash,contentHash,stableJson}=require('./repair-question-formula-identities');
-(async()=>{
+async function run(kind){
+  const inline=kind==='inline';
   const runtime=createDisposablePg17Runtime();await runtime.start();
   const handle=await runtime.createIsolatedHandle();
   const rows=['a','b'].map(letter=>{
-    const row={id:'question-import-'+letter.repeat(40),status:'draft',version:1,stem:'unaltered',answer:null,explanation:null,
-      options:[{label:'A',content:'1B.2C.3D.4'}],richContent:{sections:{stem:{type:'doc',content:[]},options:[{label:'A'}]}}};
+    const labels=inline?[...'BCD']:['A'];
+    const row={id:'question-import-'+letter.repeat(40),status:'draft',version:1,stem:inline?'unaltered A.1':'unaltered',answer:null,explanation:null,
+      options:labels.map(label=>({label,content:label==='A'?'1B.2C.3D.4':'2'})),richContent:{sections:{stem:{type:'doc',content:[]},options:labels.map(label=>({label}))}}};
     row.contentHash=contentHash(row,row.richContent);return row;
   });
-  const entries=rows.map(row=>({id:row.id,baselineHash:hash(row),after:{options:[...'ABCD'].map((label,i)=>({label,content:String(i+1)})),
+  const entries=rows.map(row=>({id:row.id,...(inline?{kind:'restore-inline-first-option'}:{}),baselineHash:hash(row),after:{...(inline?{stem:'unaltered'}:{}),options:[...'ABCD'].map((label,i)=>({label,content:String(i+1)})),
     richContent:{sections:{...row.richContent.sections,options:[...'ABCD'].map(label=>({label}))}}}}));
   try {
     const audit={appliedAt:'2026-09-06T00:00:00.000Z',appliedBy:'packed-option-repair-test'};
@@ -42,13 +44,14 @@ const {hash,contentHash,stableJson}=require('./repair-question-formula-identitie
       await assert.rejects(applyPlan((...args)=>db.query(...args),rows,entries,actor),/STATE_CHANGED/);
       await db.query('ROLLBACK');
       assert.equal((await db.query('SELECT count(*)::int AS n FROM business.desktop_question_command_receipts')).rows[0].n,0);
-      assert((await db.query('SELECT version,options_json FROM business.question_contents')).rows.every(r=>r.version===1&&r.options_json.length===1));
+      assert((await db.query('SELECT version,options_json FROM business.question_contents')).rows.every(r=>r.version===1&&r.options_json.length===(inline?3:1)));
       await db.query('BEGIN');
       assert.equal((await applyPlan((...args)=>db.query(...args),rows,entries,actor)).length,2);
       await db.query('COMMIT');
       assert((await db.query('SELECT version,stem,options_json,rich_content_json FROM business.question_contents')).rows.every(r=>r.version===2&&r.stem==='unaltered'&&r.options_json.length===4&&r.rich_content_json.sections.options.length===4));
       assert.equal((await db.query('SELECT count(*)::int AS n FROM business.desktop_question_command_receipts')).rows[0].n,2);
     });
-    console.log('packed-option PostgreSQL checks passed: limited role, conflict rollback, four options and receipts');
+    console.log(kind+'-option PostgreSQL checks passed: limited role, conflict rollback, four options and receipts');
   } finally {await runtime.disposeHandle(handle).catch(()=>{});await runtime.stop().catch(()=>{});}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+}
+run('packed').then(()=>run('inline')).catch(error=>{console.error(error);process.exitCode=1;});

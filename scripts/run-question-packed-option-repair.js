@@ -4,6 +4,10 @@ const {hash,stableJson}=require('./repair-question-formula-identities');
 const {validateProposal,applyPlan}=require('./repair-question-packed-options');
 const {postgresConfig,requireCloudHealth}=require('./repair-production-question-duplicates');
 const EXPECTED_PLAN='2a8868cef1cdadfa2fb06cdc57e233dcdfa06c56203817a09264d2dd6f02046c';
+const REVIEWED_PLANS={
+  packed:{hash:EXPECTED_PLAN,count:168,kind:undefined},
+  inline:{hash:'ecef0a0bcf3767df94f54f8c98d14f6edf7fea24f841333ac3c67759d4c9c4d9',count:4,kind:'restore-inline-first-option'},
+};
 
 async function loadRows(query,tenantId,ids){
   return (await query(`SELECT json_build_object(
@@ -22,9 +26,12 @@ async function loadRows(query,tenantId,ids){
 }
 async function run(env=process.env,mode='dry-run'){
   if(!['dry-run','apply'].includes(mode))throw new Error('OPTION_REPAIR_MODE_INVALID');
+  const reviewed=REVIEWED_PLANS[env.GEWU_OPTION_REPAIR_KIND||'packed'];
+  if(!reviewed)throw new Error('OPTION_REPAIR_PLAN_KIND_INVALID');
   const proposal=JSON.parse(fs.readFileSync(path.join(__dirname,'reviewed-proposals.json'),'utf8'));
   const entries=proposal.entries;
-  if(proposal.mode!=='offline-proposal-only'||entries.length!==168||hash(entries)!==EXPECTED_PLAN||proposal.planHash!==EXPECTED_PLAN)
+  if(proposal.mode!=='offline-proposal-only'||entries.length!==reviewed.count||hash(entries)!==reviewed.hash||proposal.planHash!==reviewed.hash
+      ||entries.some(entry=>entry.kind!==reviewed.kind))
     throw new Error('OPTION_REPAIR_PLAN_CHANGED');
   const backup=mode==='apply'?JSON.parse(fs.readFileSync(path.join(__dirname,'verified-backup.json'),'utf8')):null;
   if(mode==='apply'&&(!backup?.restoreVerified||!/^[a-f0-9]{64}$/.test(backup.sha256)||!/^\/root\/scheduling-backups\/postgres\/\d{8}-\d{6}$/.test(backup.root)))
@@ -50,7 +57,7 @@ async function run(env=process.env,mode='dry-run'){
     if(role.owns||role.superuser)throw new Error('OPTION_REPAIR_PRIVILEGE_INVALID');
     const tenantId=String(env.CLOUD_BUSINESS_TENANT_ID||'default').trim();
     const ids=entries.map(entry=>entry.id),before=await loadRows(query,tenantId,ids);
-    if(before.length!==168||new Set(before.map(row=>row.id)).size!==168)throw new Error('OPTION_REPAIR_SCOPE_CHANGED');
+    if(before.length!==reviewed.count||new Set(before.map(row=>row.id)).size!==reviewed.count)throw new Error('OPTION_REPAIR_SCOPE_CHANGED');
     for(const entry of entries)validateProposal(before.find(row=>row.id===entry.id),entry);
     const receipts=mode==='apply'?await applyPlan(query,before,entries,{tenantId,accountId:loaded.identity.accountId,roles:['super_admin']}):[];
     const after=await loadRows(query,tenantId,ids);
@@ -62,11 +69,11 @@ async function run(env=process.env,mode='dry-run'){
     if(mode==='apply'){
       const saved=(await query(`SELECT command_id AS "commandId",result_json AS result,result_hash AS "resultHash",actor_account_id AS actor
         FROM business.desktop_question_command_receipts WHERE tenant_id=$1 AND command_id=ANY($2::text[])`,[tenantId,receipts.map(r=>r.commandId)])).rows;
-      if(saved.length!==168||saved.some(row=>row.actor!==loaded.identity.accountId||row.resultHash!==hash(row.result)||!receipts.some(receipt=>receipt.commandId===row.commandId&&receipt.resultHash===row.resultHash)))
+      if(saved.length!==reviewed.count||saved.some(row=>row.actor!==loaded.identity.accountId||row.resultHash!==hash(row.result)||!receipts.some(receipt=>receipt.commandId===row.commandId&&receipt.resultHash===row.resultHash)))
         throw new Error('OPTION_REPAIR_RECEIPT_MISMATCH');
     }
     await query(mode==='apply'?'COMMIT':'ROLLBACK');
-    return {ok:true,mode,planHash:EXPECTED_PLAN,questionCount:168,receiptCount:receipts.length,unchangedFieldsVerified:true,runtimeRole:role.name,backup};
+    return {ok:true,mode,planHash:reviewed.hash,questionCount:reviewed.count,receiptCount:receipts.length,unchangedFieldsVerified:true,runtimeRole:role.name,backup};
   }catch(error){if(client)await client.query('ROLLBACK').catch(()=>{});throw error;}
   finally{client?.release();await Promise.allSettled([pool.end(),writer.end()]);}
 }

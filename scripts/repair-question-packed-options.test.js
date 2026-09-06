@@ -11,6 +11,17 @@ assert.doesNotThrow(()=>validateProposal(before,entry));
 assert.throws(()=>validateProposal({...before,version:2},entry),/BASELINE_CHANGED/);
 const altered=structuredClone(entry); altered.after.richContent.sections.stem.content.push({type:'text',text:'changed'});
 assert.throws(()=>validateProposal(before,altered),/SCOPE_CHANGED/);
+const inlineBefore=structuredClone(before);
+inlineBefore.options=after.options.slice(1);
+inlineBefore.richContent.sections.options=after.richContent.sections.options.slice(1);
+inlineBefore.stem='stem A.1';inlineBefore.contentHash=contentHash(inlineBefore,inlineBefore.richContent);
+const inlineEntry={id:inlineBefore.id,kind:'restore-inline-first-option',baselineHash:hash(inlineBefore),
+  after:{...structuredClone(after),stem:'stem'}};
+assert.doesNotThrow(()=>validateProposal(inlineBefore,inlineEntry));
+const untyped=structuredClone(inlineEntry);delete untyped.kind;
+assert.throws(()=>validateProposal(inlineBefore,untyped),/SCOPE_CHANGED/);
+const changedD=structuredClone(inlineEntry);changedD.after.richContent.sections.options[3].id='replacement';
+assert.throws(()=>validateProposal(inlineBefore,changedD),/SCOPE_CHANGED/);
 (async()=>{
   let calls=0;
   const query=async()=>{calls++;return {rowCount:1,rows:[{version:2}]};};

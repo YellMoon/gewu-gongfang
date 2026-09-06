@@ -11,6 +11,8 @@ from run_question_duplicate_repair import authority_sha256, verified_backup
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = 'gewu-cloud-business-api:8.11.6-754229230c89'
 PLAN = '2a8868cef1cdadfa2fb06cdc57e233dcdfa06c56203817a09264d2dd6f02046c'
+REVIEWED_PLANS = {PLAN: ('packed', 168),
+    'ecef0a0bcf3767df94f54f8c98d14f6edf7fea24f841333ac3c67759d4c9c4d9': ('inline', 4)}
 FILES = ('repair-question-packed-options.js', 'run-question-packed-option-repair.js',
          'repair-question-formula-identities.js', 'repair-production-question-duplicates.js',
          'real-cloud-business-acceptance.js')
@@ -25,8 +27,10 @@ def run(mode, proposal_path, receipt_path):
     if destination.exists() or backup_path.exists():
         raise ValueError('OPTION_REPAIR_RECEIPT_EXISTS')
     proposal = json.loads(source.read_text(encoding='utf-8'))
-    if (proposal.get('mode') != 'offline-proposal-only' or proposal.get('planHash') != PLAN
-            or len(proposal.get('entries', [])) != 168 or digest(proposal['entries']) != PLAN):
+    plan_hash = proposal.get('planHash')
+    kind, count = REVIEWED_PLANS.get(plan_hash, ('invalid', -1))
+    if (proposal.get('mode') != 'offline-proposal-only' or kind == 'invalid'
+            or len(proposal.get('entries', [])) != count or digest(proposal['entries']) != plan_hash):
         raise ValueError('OPTION_REPAIR_PLAN_INVALID')
     nonce = secrets.token_hex(16)
     remote, target = f'/tmp/gewu-option-repair-{nonce}', f'/app/question-repair-{nonce}'
@@ -57,12 +61,12 @@ def run(mode, proposal_path, receipt_path):
             deploy.run(ssh, f"docker cp '{remote}/{name}' gewu-cloud-business-api:'{target}/{name}'")
         flag = ' --apply' if mode == 'apply' else ''
         output, _ = deploy.run(ssh,
-            f"docker exec -e EXPECTED_CLOUD_VERSION=8.11.6 -e EXPECTED_QUESTION_AUTHORITY_SHA256={authority_sha256()} "
+            f"docker exec -e GEWU_OPTION_REPAIR_KIND={kind} -e EXPECTED_CLOUD_VERSION=8.11.6 -e EXPECTED_QUESTION_AUTHORITY_SHA256={authority_sha256()} "
             f"gewu-cloud-business-api node '{target}/run-question-packed-option-repair.js'{flag}", timeout=180)
         result = json.loads(output.strip().splitlines()[-1])
-        if (result.get('ok') is not True or result.get('mode') != mode or result.get('planHash') != PLAN
-                or result.get('questionCount') != 168 or result.get('unchangedFieldsVerified') is not True
-                or result.get('receiptCount') != (168 if mode == 'apply' else 0)):
+        if (result.get('ok') is not True or result.get('mode') != mode or result.get('planHash') != plan_hash
+                or result.get('questionCount') != count or result.get('unchangedFieldsVerified') is not True
+                or result.get('receiptCount') != (count if mode == 'apply' else 0)):
             raise ValueError('OPTION_REPAIR_RECEIPT_INVALID')
         with destination.open('x', encoding='utf-8') as handle:
             json.dump(result, handle, ensure_ascii=True, indent=2)

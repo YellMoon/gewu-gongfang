@@ -7,14 +7,22 @@ function validateProposal(before, entry) {
   if (before.status!=='draft' || !Number.isSafeInteger(before.version) || before.version<1
       || !/^question-import-[a-f0-9]{40}$/.test(before.id)) fail('SCOPE_CHANGED');
   const after=entry.after;
-  if (!after || Object.keys(after).sort().join(',')!=='options,richContent'
+  const inline=entry.kind==='restore-inline-first-option';
+  if (entry.kind && !inline) fail('SCOPE_CHANGED');
+  if (!after || Object.keys(after).sort().join(',')!==(inline?'options,richContent,stem':'options,richContent')
       || !Array.isArray(after.options) || after.options.length<4 || after.options.length>7
       || after.options.map(o=>o.label).join('')!=='ABCDEFG'.slice(0,after.options.length)
       || after.richContent?.sections?.options?.map(o=>o.label).join('')!==after.options.map(o=>o.label).join('')) fail('SCOPE_CHANGED');
   const unchanged=structuredClone(after.richContent);
+  if (inline) {
+    if (typeof after.stem!=='string' || !after.stem.trim() || after.options.length!==4
+        || before.options.map(option=>option.label).join('')!=='BCD'
+        || stableJson(after.richContent.sections.options.slice(1))!==stableJson(before.richContent.sections.options)) fail('SCOPE_CHANGED');
+    unchanged.sections.stem=before.richContent.sections.stem;
+  }
   unchanged.sections.options=before.richContent.sections.options;
   if (stableJson(unchanged)!==stableJson(before.richContent)) fail('SCOPE_CHANGED');
-  return {...before,...after,contentHash:contentHash({...before,options:after.options},after.richContent)};
+  return {...before,...after,contentHash:contentHash({...before,...after},after.richContent)};
 }
 
 // Caller owns BEGIN/ROLLBACK and verifies a reviewed plan digest plus restored backup.
@@ -28,17 +36,17 @@ async function applyPlan(query, rows, entries, actor) {
   const planHash=hash(entries), receipts=[];
   for (const {before,entry,after} of prepared) {
     const updated=await query(`UPDATE business.question_contents SET options_json=$3::jsonb,
-      rich_content_json=$4::jsonb,content_hash=$5,version=version+1,updated_at=transaction_timestamp()
+      rich_content_json=$4::jsonb,content_hash=$5,stem=$10,version=version+1,updated_at=transaction_timestamp()
       WHERE tenant_id=$1 AND question_id=$2 AND version=$6 AND content_hash=$7
-      AND options_json=$8::jsonb AND rich_content_json=$9::jsonb AND deleted=false RETURNING version`,
+      AND options_json=$8::jsonb AND rich_content_json=$9::jsonb AND stem IS NOT DISTINCT FROM $11 AND deleted=false RETURNING version`,
       [actor.tenantId,entry.id,stableJson(after.options),stableJson(after.richContent),after.contentHash,
-        before.version,before.contentHash,stableJson(before.options),stableJson(before.richContent)]);
+        before.version,before.contentHash,stableJson(before.options),stableJson(before.richContent),after.stem,before.stem]);
     if (updated.rowCount!==1 || Number(updated.rows[0]?.version)!==before.version+1) fail('STATE_CHANGED');
     const question=await query(`UPDATE business.questions SET updated_at=transaction_timestamp()
       WHERE tenant_id=$1 AND id=$2 AND status='draft' AND deleted=false`,[actor.tenantId,entry.id]);
     if (question.rowCount!==1) fail('STATE_CHANGED');
     const result={id:entry.id,status:'draft',version:before.version+1,contentHash:after.contentHash,
-      previousContentHash:before.contentHash,maintenance:'split-original-packed-options',planHash,
+      previousContentHash:before.contentHash,maintenance:entry.kind||'split-original-packed-options',planHash,
       originalSourceHash:before.sourceHash??null,originalItemId:before.itemId??null};
     const commandId='packed-option-repair-'+hash({id:entry.id,planHash}).slice(0,48);
     const receipt=await query(`INSERT INTO business.desktop_question_command_receipts
