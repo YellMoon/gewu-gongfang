@@ -1,4 +1,5 @@
 'use strict';
+require('./repair-question-formula-identities.test');
 
 const assert = require('assert');
 const crypto = require('crypto');
