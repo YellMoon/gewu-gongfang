@@ -224,10 +224,20 @@ function matchesAnyGroup(values: string[], groups?: string[][]): boolean {
   return active.length === 0 || active.every(group => group.some(id => values.includes(id)));
 }
 
+const SUBJECT_KEYS: Record<string, string> = {
+  '\u7269\u7406': 'physics', '\u6570\u5b66': 'mathematics', math: 'mathematics',
+  '\u5316\u5b66': 'chemistry', '\u751f\u7269': 'biology', '\u8bed\u6587': 'chinese',
+  '\u82f1\u8bed': 'english', '\u5386\u53f2': 'history', '\u5730\u7406': 'geography', '\u653f\u6cbb': 'politics',
+};
+function subjectKey(value: string): string {
+  const key = value.trim();
+  return SUBJECT_KEYS[key] || key;
+}
+
 function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (meta.deleted) return false;
   if (query.pendingEditOnly && !isPendingEdit(meta)) return false;
-  if (query.subjectIds?.length && !query.subjectIds.includes(meta.subject || '')) return false;
+  if (query.subjectIds?.length && !query.subjectIds.some(subject => subjectKey(subject) === subjectKey(meta.subject || ''))) return false;
   if (!matchesList(meta.type, query.types)) return false;
   if (!matchesList(meta.exam_type || '其他', query.examTypes)) return false;
   if (!matchesList(meta.status || 'draft', query.statuses)) return false;

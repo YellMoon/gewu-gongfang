@@ -1,3 +1,4 @@
+require('../services/questionLocalStore.subject.test');
 const assert = require('assert');
 const fs = require('fs');
 
