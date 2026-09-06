@@ -353,24 +353,38 @@ export async function seedQuestionLocalStore(questions: Question[]): Promise<voi
 
 export async function reconcileQuestionLocalStore(questions: Question[]): Promise<void> {
   const rows = (questions || []).filter(question => question?.id);
-  if (rows.length === 0) return;
-  await seedQuestionLocalStore(rows);
+  let db: IDBDatabase;
+  try { db = await openDb(); }
+  catch (_error) {
+    const metas = rows.map(buildMeta);
+    fallbackMeta.clear();
+    fallbackContent.clear();
+    rows.forEach((row, index) => { fallbackMeta.set(row.id, metas[index]); fallbackContent.set(row.id, row); });
+    return;
+  }
+  // This store is a derived index, not an independent source. Replace one
+  // complete confirmed-cloud-plus-local-drafts snapshot in a single transaction.
+  const metas = rows.map(buildMeta);
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([META_STORE, CONTENT_STORE], 'readwrite');
+    const metadata = tx.objectStore(META_STORE);
+    const content = tx.objectStore(CONTENT_STORE);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('Question index replacement aborted'));
+    try {
+      metadata.clear();
+      content.clear();
+      rows.forEach((row, index) => { metadata.put(metas[index]); content.put({ id: row.id, payload: row }); });
+    } catch (error) { tx.abort(); reject(error); }
+  });
 }
 
 export async function ensureQuestionLocalStoreSeeded(loadQuestions: () => Question[]): Promise<void> {
   if (seedPromise) await seedPromise;
   seedPromise = (async () => {
     const sourceQuestions = loadQuestions();
-    let count = fallbackMeta.size;
-    try {
-      const db = await openDb();
-      count = await requestToPromise(db.transaction(META_STORE, 'readonly').objectStore(META_STORE).count());
-    } catch (_err) {
-      count = fallbackMeta.size;
-    }
-    if (count === 0 || sourceQuestions.length > count) {
-      await seedQuestionLocalStore(sourceQuestions);
-    }
+    await reconcileQuestionLocalStore(sourceQuestions);
   })();
   try {
     await seedPromise;

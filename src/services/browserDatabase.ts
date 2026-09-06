@@ -177,7 +177,8 @@ class BrowserDatabaseService {
 
   public async refreshAuthorityProjection({
     minSourceVersion = 0,
-  }: { minSourceVersion?: number } = {}): Promise<void> {
+    notifyConsumers = true,
+  }: { minSourceVersion?: number; notifyConsumers?: boolean } = {}): Promise<void> {
     const cloudProvider = window.desktopIdentitySessionProvider;
     if (typeof cloudProvider?.listCloudBusinessProjection !== 'function'
       || typeof cloudProvider.listCloudQuestions !== 'function') {
@@ -236,7 +237,7 @@ class BrowserDatabaseService {
         this.rebuildQuestionIndexes();
         throw error;
       }
-      window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
+      if (notifyConsumers) window.dispatchEvent(new CustomEvent('authority-projection-refreshed', {
         detail: { sourceVersion: Math.max(0, Number(minSourceVersion) || 0) },
       }));
       return;

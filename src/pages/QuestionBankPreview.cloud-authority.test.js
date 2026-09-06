@@ -7,7 +7,7 @@ const source = fs.readFileSync(require.resolve('./QuestionBankPreview.tsx'), 'ut
 assert.strictEqual((source.match(/>试题库<\/h2>/gu) || []).length, 0,
   'the page header already names the question bank, so the content toolbar must not repeat the same heading');
 
-assert.ok(source.includes('await db?.refreshAuthorityProjection?.()'),
+assert.ok(source.includes('await db?.refreshAuthorityProjection?.({ notifyConsumers: false })'),
   'question preview must refresh the authenticated cloud projection before indexing local records');
 assert.ok(source.includes('db.deleteCloudCachedQuestion'),
   'cloud-cached questions must create encrypted delete drafts instead of calling the retired embedded backend');

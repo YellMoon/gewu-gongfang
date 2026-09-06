@@ -115,7 +115,7 @@ function normalizeQuestion(row: any): Question {
 
 async function loadBasketQuestions(ids: string[]): Promise<Question[]> {
   const db = (window as any).dbService;
-  await db?.refreshAuthorityProjection?.();
+  await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
   const localRows = (db?.getAllQuestions?.() || []).map(normalizeQuestion);
   const byId = new Map(localRows.map((q: Question) => [q.id, q]));
   return ids.map(id => byId.get(id)).filter((q): q is Question => !!q);

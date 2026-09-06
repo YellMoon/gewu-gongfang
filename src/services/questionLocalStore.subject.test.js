@@ -25,5 +25,11 @@ vm.runInNewContext(compiled, { module: moduleValue, exports: moduleValue.exports
   assert.equal((await query('custom-physics')).total, 1, 'unknown subjects must match only themselves');
   assert.equal((await query('biology')).total, 0);
   assert.equal((await query('physics')).rows[0].subject, 'physics', 'filtering must not rewrite authoritative payloads');
+  await store.ensureQuestionLocalStoreSeeded(() => questions.map(row => ({ ...row, content: 'Updated ' + row.id })));
+  assert((await query('physics')).rows.every(row => row.content.startsWith('Updated ')), 'same-count cloud updates must replace the derived index');
+  await store.ensureQuestionLocalStoreSeeded(() => questions.filter(row => row.subject === 'chemistry'));
+  assert.equal((await query('physics')).total, 0, 'removed authoritative rows must not survive in the index');
+  await store.ensureQuestionLocalStoreSeeded(() => []);
+  assert.equal((await query('chemistry')).total, 0, 'an empty authoritative snapshot must clear old index rows');
   console.log('question local subject filtering checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

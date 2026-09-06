@@ -224,7 +224,7 @@ const QuestionBankPreview: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       const db = (window as any).dbService;
-      await db?.refreshAuthorityProjection?.();
+      await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
       const cachedKnowledge = await getCachedQuestionTree('knowledge');
       const cachedModels = await getCachedQuestionTree('model');
       if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);

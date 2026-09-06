@@ -3,7 +3,7 @@ const fs = require('fs');
 
 const source = fs.readFileSync(require.resolve('./QuestionBasket.tsx'), 'utf8');
 
-assert.ok(source.includes('await db?.refreshAuthorityProjection?.()'),
+assert.ok(source.includes('await db?.refreshAuthorityProjection?.({ notifyConsumers: false })'),
   'the question basket must refresh the authenticated cloud projection before resolving selected questions');
 assert.ok(!source.includes('fetch(`${API_BASE}/questions?limit=1000`)'),
   'the question basket must not read questions from the retired embedded backend');

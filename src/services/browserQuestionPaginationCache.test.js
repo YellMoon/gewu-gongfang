@@ -73,5 +73,8 @@ const ts = require('typescript');
   await assert.rejects(cache.refreshAuthorityProjection(), /INVALID_RICH_CONTENT/);
   assert.ok(cache.data === committed, 'normalization failures must restore the previous in-memory cache');
   assert.deepEqual([pageCalls, builds, saves, events], [8, 2, 1, 1]);
+  cache.migrateLegacyQuestionData = () => {};
+  await cache.refreshAuthorityProjection({ notifyConsumers: false });
+  assert.deepEqual([pageCalls, builds, saves, events], [11, 3, 2, 1], 'page-owned refresh must update its cache without remounting the initiating page');
   console.log('browser question pagination cache checks passed: failed refresh preserves cache; complete refresh commits once');
 })().catch(error => { console.error(error); process.exitCode = 1; });
