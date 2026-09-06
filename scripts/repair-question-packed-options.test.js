@@ -1,0 +1,24 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { validateProposal, applyPlan } = require('./repair-question-packed-options');
+const { hash, contentHash } = require('./repair-question-formula-identities');
+const rich = {sections:{stem:{type:'doc',content:[]},options:[{id:'old',label:'A',content:{type:'doc',content:[]}}]}};
+const before = {id:'question-import-'+'a'.repeat(40),status:'draft',version:1,stem:'stem',answer:null,explanation:null,options:[{label:'A',content:'1B.2C.3D.4'}],richContent:rich};
+before.contentHash=contentHash(before,rich);
+const after={options:[...'ABCD'].map((label,i)=>({label,content:String(i+1)})),richContent:{...rich,sections:{...rich.sections,options:[...'ABCD'].map(label=>({id:'option-'+label,label,content:{type:'doc',content:[]}}))}}};
+const entry={id:before.id,baselineHash:hash(before),after};
+assert.doesNotThrow(()=>validateProposal(before,entry));
+assert.throws(()=>validateProposal({...before,version:2},entry),/BASELINE_CHANGED/);
+const altered=structuredClone(entry); altered.after.richContent.sections.stem.content.push({type:'text',text:'changed'});
+assert.throws(()=>validateProposal(before,altered),/SCOPE_CHANGED/);
+(async()=>{
+  let calls=0;
+  const query=async()=>{calls++;return {rowCount:1,rows:[{version:2}]};};
+  await assert.rejects(applyPlan(query,[before],[entry],{roles:['teacher']}),/ACCESS_DENIED/);
+  assert.equal(calls,0);
+  const actor={roles:['super_admin'],accountId:'operator',tenantId:'tenant-1'};
+  const receipts=await applyPlan(query,[before],[entry],actor);
+  assert.equal(receipts.length,1);assert.equal(calls,3);
+  await assert.rejects(applyPlan(async()=>({rowCount:0,rows:[]}),[before],[entry],actor),/STATE_CHANGED/);
+  console.log('packed-option repair validation and CAS checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
