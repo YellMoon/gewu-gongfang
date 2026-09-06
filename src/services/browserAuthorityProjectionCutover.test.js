@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+require('./browserQuestionPaginationCache.test');
 
 const browserDatabase = fs.readFileSync(
   path.join(__dirname, 'browserDatabase.ts'),

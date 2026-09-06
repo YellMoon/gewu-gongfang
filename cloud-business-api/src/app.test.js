@@ -721,7 +721,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const questionAuthority = {
     async list(input) {
       questionCalls.push(input);
-      return [{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }];
+      return {nextCursor:null,questions:[{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }]};
     },
     async create(input) {
       questionCalls.push(input);
@@ -739,11 +739,24 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const questionApp = createCloudBusinessApp({ query: async () => ({ rows: [] }), desktopRegistration: identity, questionAuthority, businessTenantId: 'default' });
   const listedQuestions = await request(questionApp, '/api/desktop/question-bank/questions?limit=200', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(listedQuestions.status, 200);
-  assert.deepStrictEqual(listedQuestions.body, { ok: true, questions: [{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }] });
+  assert.deepStrictEqual(listedQuestions.body, { ok: true, nextCursor: null, questions: [{ id: 'question-list-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft', content: 'Cloud text', options: [], answer: null, analysis: null, rich_content: null, knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false, version: 1 }] });
   assert.deepStrictEqual(questionCalls, [{
     tenantId: 'default', actor: { authorityId: 'authority-1', accountId: 'account-1', deviceId: 'device-1', installationId: 'install-1', sessionId: 'session-1', expiresAt: '2026-08-21T13:00:00.000Z', roles: ['super_admin'], teacherId: null, studentId: null }, limit: 200,
   }]);
   const questionImportCalls = [];
+  const paginationInputs=[];
+  const paginationApp=createCloudBusinessApp({query:async()=>({rows:[]}),desktopRegistration:identity,businessTenantId:'default',
+    questionAuthority:{...questionAuthority,list:async input=>{paginationInputs.push(input);return {questions:[{id:'q-last'}],nextCursor:'q-last'};}}});
+  const paged=await request(paginationApp,'/api/desktop/question-bank/questions?limit=200&afterId=q-first',{headers:{authorization:'Bearer eyJ2IjoxfQ.signature'}});
+  assert.strictEqual(paged.status,200);
+  assert.strictEqual(paginationInputs[0].afterId,'q-first');
+  assert.strictEqual(paged.body.nextCursor,'q-last');
+  for(const suffix of ['afterId=','afterId[]=q','afterId='+('x'.repeat(129))]) {
+    const invalidPage=await request(paginationApp,'/api/desktop/question-bank/questions?'+suffix,{headers:{authorization:'Bearer eyJ2IjoxfQ.signature'}});
+    assert.strictEqual(invalidPage.status,400);
+  }
+  const anonymousPage=await request(paginationApp,'/api/desktop/question-bank/questions?afterId=q-first');
+  assert.strictEqual(anonymousPage.status,403);
   const questionImportApp = createCloudBusinessApp({
     query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
     storageAgentKeyFingerprint: 'a'.repeat(64), storageAgentPublicKey: Buffer.alloc(44, 1).toString('base64url'),
@@ -850,7 +863,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const rejectedQuestionCommand = await request(createCloudBusinessApp({
     query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
     questionAuthority: {
-      list: async () => [],
+      list: async () => ({questions:[],nextCursor:null}),
       create: async () => { throw Object.assign(new Error('direct create disabled'), { code: 'CLOUD_QUESTION_INPUT_INVALID' }); },
       submitDesktopDraft: async () => { throw Object.assign(new Error('invalid choice structure'), { code: 'CLOUD_QUESTION_INPUT_INVALID' }); },
     },

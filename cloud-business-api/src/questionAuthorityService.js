@@ -350,8 +350,10 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
   if (typeof query !== 'function' || typeof transaction !== 'function') throw failure('CLOUD_QUESTION_INPUT_INVALID');
   return Object.freeze({
     async list(input) {
-      const request = exact(input, ['tenantId', 'actor', 'limit']);
+      const request = exact(input, ['tenantId', 'actor', 'limit',
+        ...(plainObject(input) && Object.hasOwn(input, 'afterId') ? ['afterId'] : [])]);
       const tenantId = text(request.tenantId, { max: 128 });
+      const afterId = request.afterId === undefined ? null : text(request.afterId, { max: 128 });
       actor(request.actor);
       if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 1000) throw failure('CLOUD_QUESTION_INPUT_INVALID');
       const result = await query(
@@ -366,11 +368,14 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
            FROM business.questions q
            JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
           WHERE q.tenant_id=$1 AND q.deleted=false AND c.deleted=false
-          ORDER BY c.updated_at DESC,q.id ASC LIMIT $2`,
-        [tenantId, request.limit],
+            AND ($3::text IS NULL OR q.id COLLATE "C" > $3::text COLLATE "C")
+          ORDER BY q.id COLLATE "C" ASC LIMIT $2`,
+        [tenantId, request.limit + 1, afterId],
       );
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_UNAVAILABLE');
-      return result.rows.map(questionListRow);
+      if (result.rows.length > request.limit + 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
+      const questions = result.rows.slice(0, request.limit).map(questionListRow);
+      return { questions, nextCursor: result.rows.length > request.limit ? questions.at(-1).id : null };
     },
     async create(input, currentQuery = query) {
       const request = exact(input, ['tenantId', 'actor', 'question']);

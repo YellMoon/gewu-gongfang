@@ -26,6 +26,14 @@ assert.ok(
 
 assert.ok(source.includes('resolveBumpLevel'), 'update-version should resolve an explicit bump level');
 assert.strictEqual(
+  version.analyzeVersionBump({
+    files: ['cloud-business-api/src/questionAuthorityService.js', 'src/services/desktopIdentityClient.mjs'],
+    diff: 'fix: complete existing question projection with stable ID cursor pages; preserve cache when later pages fail',
+  }),
+  'patch',
+  'repairing the truncated existing desktop projection is a patch, not a new product feature',
+);
+assert.strictEqual(
   version.analyzeVersionBump({ files: ['src/App.tsx'], diff: 'fix: 修复按钮错位' }),
   'patch',
   'bug/style fixes should auto bump patch'

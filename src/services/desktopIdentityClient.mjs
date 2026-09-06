@@ -789,13 +789,32 @@ export function createDesktopIdentityClient({
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
       throw identityError('DESKTOP_CLOUD_QUESTION_LIMIT_INVALID');
     }
-    const data = await request(fetchImpl, baseUrl, `/api/desktop/question-bank/questions?limit=${limit}`, {
-      token: currentSession.token,
-    });
-    if (!Array.isArray(data?.questions)) {
-      throw identityError('DESKTOP_CLOUD_QUESTION_RESPONSE_INVALID');
+    const questions = [];
+    const seenIds = new Set();
+    let afterId = null;
+    for (;;) {
+      const suffix = afterId === null ? '' : `&afterId=${encodeURIComponent(afterId)}`;
+      const data = await request(fetchImpl, baseUrl, `/api/desktop/question-bank/questions?limit=${limit}${suffix}`, {
+        token: currentSession.token,
+      });
+      if (!Array.isArray(data?.questions) || data.questions.length > limit
+        || !(data.nextCursor === null || (typeof data.nextCursor === 'string' && data.nextCursor.trim() && data.nextCursor.length <= 128))) {
+        throw identityError('DESKTOP_CLOUD_QUESTION_RESPONSE_INVALID');
+      }
+      for (const question of data.questions) {
+        if (!question || typeof question.id !== 'string' || !question.id.trim() || question.id.length > 128
+          || !Number.isSafeInteger(question.version) || question.version < 1 || seenIds.has(question.id)) {
+          throw identityError('DESKTOP_CLOUD_QUESTION_RESPONSE_INVALID');
+        }
+        seenIds.add(question.id);
+        questions.push(question);
+      }
+      if (data.nextCursor === null) return questions;
+      if (!data.questions.length || data.nextCursor !== data.questions.at(-1).id || data.nextCursor === afterId) {
+        throw identityError('DESKTOP_CLOUD_QUESTION_RESPONSE_INVALID');
+      }
+      afterId = data.nextCursor;
     }
-    return data.questions;
   }
 
   async function readCloudQuestionAsset({ baseUrl, currentSession, assetKey } = {}) {

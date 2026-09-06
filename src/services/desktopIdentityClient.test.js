@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./desktopQuestionPagination.test');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -412,7 +413,7 @@ async function main() {
       }
       if (url === 'https://cloud.test/api/desktop/question-bank/questions?limit=200') {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
-        return { ok: true, json: async () => ({ ok: true, questions: [{ id: 'question-cloud-1', content: 'Cloud question text', version: 4 }] }) };
+        return { ok: true, json: async () => ({ ok: true, nextCursor: null, questions: [{ id: 'question-cloud-1', content: 'Cloud question text', version: 4 }] }) };
       }
       if (url === `https://cloud.test/api/desktop/question-bank/assets/${'a'.repeat(64)}/delivery`) {
         assert.strictEqual(options.method, 'POST');

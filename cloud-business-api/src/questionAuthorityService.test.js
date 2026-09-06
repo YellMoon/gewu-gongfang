@@ -5,6 +5,7 @@ const crypto = require('crypto');
 
 const { createQuestionAuthorityService } = require('./questionAuthorityService');
 const { stableJson } = require('../../shared/authorityProtocol');
+require('./questionPagination.test');
 
 function signedCommand(commandId, type, payload) {
   return {
@@ -70,7 +71,8 @@ async function main() {
   const listed = await service.list({
     tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] }, limit: 200,
   });
-  assert.deepStrictEqual(listed, [{
+  assert.strictEqual(listed.nextCursor, null);
+  assert.deepStrictEqual(listed.questions, [{
     id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
     content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
     source: '2026 city mock', knowledgeLabels: ['Dynamics'],

@@ -1,4 +1,5 @@
 'use strict';
+require('./question-pagination.postgres.test');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');

@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopQuestionProjection": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "desktop question pages use stable ID cursors and explicit nextCursor null at the end; desktop replaces its derived cache only after every page succeeds; deploy the additive cloud cursor response before the desktop consumer"
+    },
     "desktopQuestionMutation": {
       "version": "2",
       "participants": ["desktop", "cloud_business"],

@@ -664,12 +664,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.get('/api/desktop/question-bank/questions', async (request, response) => {
     if (!questionAuthority || businessTenantId === null) return businessUnavailable(response);
+    if (Object.keys(request.query).some(key => !['limit', 'afterId'].includes(key))) return businessInputInvalid(response);
     const limit = request.query.limit === undefined ? 200 : Number(request.query.limit);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) return businessInputInvalid(response);
+    const afterId = request.query.afterId;
+    if (afterId !== undefined && (typeof afterId !== 'string' || !afterId.trim() || afterId.length > 128)) return businessInputInvalid(response);
     try {
       const actor = await desktopQuestionContext(request);
-      const questions = await questionAuthority.list({ tenantId: businessTenantId, actor, limit });
-      response.json({ ok: true, questions });
+      const page = await questionAuthority.list({ tenantId: businessTenantId, actor, limit, ...(afterId === undefined ? {} : { afterId }) });
+      response.json({ ok: true, questions: page.questions, nextCursor: page.nextCursor });
     } catch (error) {
       if (error && (error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || error.code === 'CLOUD_QUESTION_ACCESS_DENIED')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       if (error && error.code === 'CLOUD_QUESTION_INPUT_INVALID') return businessInputInvalid(response);
