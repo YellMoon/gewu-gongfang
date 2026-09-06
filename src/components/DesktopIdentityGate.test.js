@@ -12,6 +12,8 @@ const decodedIdentityErrorSource = identityErrorSource.replace(/\\u([0-9a-fA-F]{
   String.fromCharCode(Number.parseInt(hex, 16))
 ));
 const gateStyle = fs.readFileSync('src/components/DesktopIdentityGate.css', 'utf8');
+assert.match(gateStyle, /\.desktop-identity-password-fields\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*gap:\s*16px;/,
+  'password form fields must retain visible vertical spacing in the production renderer');
 const appSource = fs.readFileSync('src/App.tsx', 'utf8');
 const electronSource = fs.readFileSync('public/electron.js', 'utf8');
 
