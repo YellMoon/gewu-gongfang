@@ -1,5 +1,5 @@
 import React from 'react';
-import katex from 'katex';
+import { QuestionFormulaContent } from './QuestionFormulaContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { RichAssetImage } from './RichAssetImage';
 import { columnsForOptions, normalizeOptionLabel } from '../utils/questionOptions';
@@ -21,10 +21,9 @@ function markStyle(marks: any[] = []): React.CSSProperties {
 function renderNode(node: any, key: React.Key): React.ReactNode {
   if (!node) return null;
   if (node.type === 'text') return <span key={key} style={markStyle(node.marks)}>{node.text}</span>;
-  if (node.type === 'formula') {
+  if (node.type === 'formula' || node.type === 'formulaBlock') {
     const latex = String(node.attrs?.canonicalLatex || '');
-    const html = katex.renderToString(latex, { throwOnError: false, displayMode: node.attrs?.displayMode === 'block' });
-    return <span key={key} className="structured-question-viewer__formula" dangerouslySetInnerHTML={{ __html: html }} />;
+    return <span key={key} className="structured-question-viewer__formula"><QuestionFormulaContent latex={latex} block={node.type === 'formulaBlock' || node.attrs?.displayMode === 'block'} /></span>;
   }
   if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} style={{ width: node.attrs?.width || undefined }} data-align={node.attrs?.align || 'center'} />;
   const children = (node.content || []).map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`));
@@ -44,7 +43,7 @@ const Doc: React.FC<{ value: any }> = ({ value }) => <>{renderNode(value, 'root'
 function docPlainText(value: any): string {
   if (!value || typeof value !== 'object') return '';
   if (value.type === 'text') return String(value.text || '');
-  if (value.type === 'formula') return String(value.attrs?.canonicalLatex || '');
+  if (value.type === 'formula' || value.type === 'formulaBlock') return String(value.attrs?.canonicalLatex || '[\u516c\u5f0f\u5f85\u8865\u5168]');
   if (value.type === 'image') return '[image]';
   return (Array.isArray(value.content) ? value.content : []).map(docPlainText).join(' ');
 }

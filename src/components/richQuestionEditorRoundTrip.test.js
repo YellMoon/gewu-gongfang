@@ -1,3 +1,4 @@
+require('./QuestionFormulaContent.test');
 const assert = require('assert');
 const Module = require('module');
 const babel = require('@babel/core');

@@ -94,7 +94,11 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
   if (node.type === 'formula' || node.type === 'formulaBlock') {
     allowKeys(attrs, ['id', 'canonicalLatex', 'displayMode', 'sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef'], 'formula');
     if (!SAFE_ID.test(String(attrs.id || ''))) fail('formula id is invalid');
-    if (typeof attrs.canonicalLatex !== 'string' || !attrs.canonicalLatex.trim() || attrs.canonicalLatex.length > 10000) fail('formula canonicalLatex is invalid');
+    const originalOnly = attrs.conversionStatus === 'preview_only'
+      && (attrs.canonicalLatex == null || (typeof attrs.canonicalLatex === 'string' && !attrs.canonicalLatex.trim()))
+      && typeof attrs.previewRef === 'string' && !attrs.previewRef.includes('..')
+      && /^(?:word\/media\/|question-asset:\/\/)[A-Za-z0-9][A-Za-z0-9._/-]{0,1000}$/.test(attrs.previewRef);
+    if (!originalOnly && (typeof attrs.canonicalLatex !== 'string' || !attrs.canonicalLatex.trim() || attrs.canonicalLatex.length > 10000)) fail('formula canonicalLatex is invalid');
     if (!['inline', 'block'].includes(attrs.displayMode)) fail('formula displayMode is invalid');
     if (attrs.sourceRef != null && !SAFE_REF.test(String(attrs.sourceRef))) fail('formula sourceRef is invalid');
     if (attrs.previewRef != null && !SAFE_REF.test(String(attrs.previewRef))) fail('formula previewRef is invalid');

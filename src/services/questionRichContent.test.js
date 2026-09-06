@@ -148,6 +148,21 @@ function testWordParserFormulaSourceFormats() {
   }
 }
 
+function testPreviewOnlyFormulaPreservesOriginal() {
+  const doc = migrateLegacyQuestion({ stem: 'before' });
+  const attrs = { id: 'formula-original', canonicalLatex: null, displayMode: 'inline', sourceFormat: 'mathtype', conversionStatus: 'preview_only', previewRef: 'word/media/image67.wmf' };
+  doc.sections.stem.content = [{ type: 'paragraph', content: [{ type: 'formula', attrs }] }];
+  assert.deepStrictEqual(normalizeQuestionRichContent(doc).sections.stem.content[0].content[0].attrs, attrs);
+  for (const alteration of [
+    { conversionStatus: 'complete' }, { conversionStatus: 'failed' }, { previewRef: null },
+    { previewRef: '../escape.wmf' }, { previewRef: 'javascript:bad' }, { canonicalLatex: 42 },
+  ]) {
+    const candidate = structuredClone(doc);
+    Object.assign(candidate.sections.stem.content[0].content[0].attrs, alteration);
+    assert.throws(() => normalizeQuestionRichContent(candidate), /formula/);
+  }
+}
+testPreviewOnlyFormulaPreservesOriginal();
 testWordParserFormulaSourceFormats();
 testLegacyMigrationAndDeterministicProjection();
 testFormulaAndImageNodesRoundTrip();

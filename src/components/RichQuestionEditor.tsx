@@ -20,6 +20,7 @@ import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { storeQuestionAsset } from '../services/questionAssetStore';
 import { appendSequentialTask, clampSelection, decideExternalSync, enqueueEmission, mapPendingBookmarks, maskPersistedImagesForEditor, requireStoredAssetRef, restorePersistedImagesFromEditor } from './richQuestionEditorState';
 import { RichAssetImage } from './RichAssetImage';
+import { QuestionFormulaContent } from './QuestionFormulaContent';
 
 export interface RichQuestionEditorProps { value?: string | JSONContent; onChange?: (value: string | JSONContent) => void; onHtmlChange?: (html: string) => void; output?: 'html' | 'json'; placeholder?: string; minHeight?: number; onStoreImage?: (assetKey: string, dataUrl: string, file: File) => Promise<string>; disabled?: boolean; }
 const t = (value: string) => value;
@@ -40,9 +41,8 @@ const FormulaView: React.FC<NodeViewProps> = ({ node, selected, updateAttributes
   const latex = String(node.attrs.canonicalLatex || '');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(latex);
-  const html = katex.renderToString(latex, { throwOnError: false, displayMode: node.attrs.displayMode === 'block' });
   return <NodeViewWrapper as={node.type.name === 'formulaBlock' ? 'div' : 'span'} className={`rich-formula-node${selected ? ' is-selected' : ''}`} data-latex={latex} onDoubleClick={() => { if (editor.isEditable) { setDraft(latex); setEditing(true); } }}>
-    <span dangerouslySetInnerHTML={{ __html: html }} />
+    <QuestionFormulaContent latex={latex} block={node.type.name === 'formulaBlock' || node.attrs.displayMode === 'block'} />
     <Modal open={editing} title={t('\u7f16\u8f91 LaTeX \u516c\u5f0f')} onCancel={() => setEditing(false)} onOk={() => { const canonicalLatex = draft.trim().replace(/^\$+|\$+$/g, ''); if (editor.isEditable && canonicalLatex) updateAttributes({ canonicalLatex }); setEditing(false); }} okButtonProps={{ disabled: !editor.isEditable }} okText={t('\u66f4\u65b0\u516c\u5f0f')} cancelText={t('\u53d6\u6d88')}>
       <Input.TextArea disabled={!editor.isEditable} aria-label={t('LaTeX \u516c\u5f0f')} rows={3} value={draft} onChange={event => setDraft(event.target.value)} />
       <div className="rich-question-editor__formula-preview" role="status" aria-live="polite"><span dangerouslySetInnerHTML={{ __html: katex.renderToString(draft.trim() || '\\square', { throwOnError: false, displayMode: node.attrs.displayMode === 'block' }) }} /></div>

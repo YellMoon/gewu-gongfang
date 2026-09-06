@@ -1,4 +1,5 @@
 'use strict';
+require('./QuestionFormulaContent.test');
 
 const assert = require('assert');
 const fs = require('fs');
