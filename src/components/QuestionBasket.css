@@ -1,9 +1,9 @@
 .question-basket-float {
   position: fixed;
-  right: 18px;
+  right: var(--question-basket-dock-inset, 18px);
   top: 50%;
   z-index: 1200;
-  width: 76px;
+  width: var(--question-basket-dock-width, 76px);
   min-height: 102px;
   padding: 12px 8px;
   display: flex;

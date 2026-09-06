@@ -6,6 +6,7 @@
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
+    "test:desktop-layout": "node src/layout/AppShell.pinned-layout.test.js && node src/layout/AppShell.obstruction.test.js",
     "test:miniapp-cloud-read": "node miniapp/src/utils/cloudBusinessProjection.test.js && node miniapp/src/utils/miniappCloudBusinessProjectionApi.test.js && node miniapp/src/utils/miniappCloudProjectionSync.test.js && node miniapp/src/utils/miniappCloudBusinessReadPages.test.js && node miniapp/src/pages/index/cloudBusinessHome.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node miniapp/src/utils/questionBasketStore.test.js && node miniapp/src/utils/questionBasketHydrationRuntime.test.js && node miniapp/src/utils/questionBasketRealImportState.test.js && node miniapp/src/utils/questionDisplay.test.js && node miniapp/src/pages/question-bank/cloudDelivery.test.js && node miniapp/src/pages/question-paper/cloudDelivery.test.js && node miniapp/src/utils/personalAssetCsv.test.js && node miniapp/src/utils/miniappAccessPolicy.test.js && npm --prefix cloud-business-api run test:miniapp-cloud-read",
     "vnext:migration:inventory": "node scripts/vnext-migration/cli.js inventory",
     "vnext:migration:verify": "node scripts/vnext-migration/cli.js verify",

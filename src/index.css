@@ -495,6 +495,8 @@ select,
 }
 
 .app-shell {
+  --question-basket-dock-width: 76px;
+  --question-basket-dock-inset: 18px;
   min-height: 100vh;
   height: 100vh;
   background: var(--app-bg, #f5f7fb);
@@ -536,7 +538,7 @@ select,
   max-width: 236px !important;
   flex: 0 0 236px !important;
   height: 100vh;
-  overflow: hidden;
+  overflow: clip;
   background: var(--app-sidebar-bg, #102a43) !important;
   box-shadow: none;
   transform: translate3d(calc(-100% - 10px), 0, 0);
@@ -699,6 +701,10 @@ select,
   padding: 18px;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.app-shell__content:has(.question-basket-float) {
+  padding-right: calc(var(--question-basket-dock-width) + var(--question-basket-dock-inset) + 18px);
 }
 
 .app-shell__content--course-calendar {
