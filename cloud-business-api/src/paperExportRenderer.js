@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
+const { layoutInlineRuns } = require('./pdfInlineLayout');
 const sharp = require('sharp');
 const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
@@ -502,84 +503,50 @@ function drawPdfMedia(document, media) {
   }
 }
 
-function compactFormulaText(latex) {
-  const source = String(latex || '');
-  let cursor = 0;
-  const commandText = Object.freeze({ times: '*', cdot: '*', leq: '<=', le: '<=', geq: '>=', ge: '>=', neq: '!=', pm: '+/-' });
-  const skipWhitespace = () => { while (/\s/u.test(source[cursor] || '')) cursor += 1; };
-  const parse = stopAtBrace => {
-    let output = '';
-    const argument = () => {
-      skipWhitespace();
-      if (source[cursor] === '{') {
-        cursor += 1;
-        return parse(true);
+function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SVGtoPDF) {
+  let inline = prefix ? [{ kind: 'text', text: prefix }] : [];
+  const flush = () => {
+    if (!inline.length) return;
+    document.fontSize(size);
+    const left = document.page.margins.left;
+    const lineHeight = document.currentLineHeight(true);
+    const lines = layoutInlineRuns({tokens:inline,size,lineHeight,
+      maxWidth:document.page.width-left-document.page.margins.right,
+      measureText:text=>document.widthOfString(text)});
+    for (const line of lines) {
+      ensurePdfSpace(document,line.height);
+      const top = document.y;
+      let x = left;
+      for (const run of line.runs) {
+        const y = top + (line.height-run.height)/2;
+        if (run.kind === 'text') document.fontSize(size).text(run.text,x,y,{lineBreak:false});
+        else {
+          try {
+            drawVector(document,run.token.media.bytes.toString('utf8'),x,y,
+              {width:run.width,height:run.height,preserveAspectRatio:'xMidYMid meet'});
+          } catch (_) { throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID'); }
+        }
+        x += run.width;
       }
-      if (source[cursor] === '\\') return command();
-      const value = source[cursor] || '';
-      cursor += value ? 1 : 0;
-      return value;
-    };
-    const command = () => {
-      cursor += 1;
-      const start = cursor;
-      while (/[A-Za-z]/u.test(source[cursor] || '')) cursor += 1;
-      const name = source.slice(start, cursor);
-      if (!name) return argument();
-      if (['frac', 'dfrac', 'tfrac'].includes(name)) return `(${argument()})/(${argument()})`;
-      if (name === 'sqrt') return `sqrt(${argument()})`;
-      if (['mathrm', 'mathbf', 'mathit', 'text', 'operatorname'].includes(name)) return argument();
-      if (name === 'left' || name === 'right') return '';
-      return commandText[name] || name;
-    };
-    while (cursor < source.length) {
-      const character = source[cursor];
-      if (character === '}' && stopAtBrace) {
-        cursor += 1;
-        break;
-      }
-      if (character === '{') {
-        cursor += 1;
-        output += parse(true);
-        continue;
-      }
-      if (character === '\\') {
-        output += command();
-        continue;
-      }
-      if (character === '^' || character === '_') {
-        cursor += 1;
-        output += character + argument();
-        continue;
-      }
-      output += ({ '⋅': '*', '·': '*', '∙': '*', '－': '-', '−': '-' })[character] || character;
-      cursor += 1;
+      document.x = left;
+      document.y = top + line.height + 2;
     }
-    return output;
-  };
-  return parse(false);
-}
-
-function drawPdfTokens(document, tokens, prefix = '', size = 10) {
-  let text = prefix;
-  const flushText = () => {
-    if (!text) return;
-    document.fontSize(size).text(text).moveDown(0.25);
-    text = '';
+    document.y += size * 0.25;
+    inline = [];
   };
   for (const token of tokens || []) {
     if (token.kind === 'text') {
-      text += token.text;
+      inline.push(token);
     } else if (token.kind === 'formula' && token.media) {
       if (token.displayMode === 'inline') {
-        text += compactFormulaText(token.latex);
+        inline.push(token);
         continue;
       }
-      flushText();
+      flush();
       drawPdfMedia(document, token.media);
     }
   }
-  flushText();
+  flush();
 }
 
 function drawPdfAnswers(document, item, prefix = '') {
@@ -628,4 +595,4 @@ async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 
-module.exports = Object.freeze({ compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport });
+module.exports = Object.freeze({ drawPdfTokens, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport });

@@ -3,9 +3,22 @@
 const assert = require('assert');
 const JSZip = require('jszip');
 const sharp = require('sharp');
-const { compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
+const { drawPdfTokens, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
+require('./pdfInlineLayout.test');
 
 (async () => {
+  const drawn = [];
+  const probe = {x:10,y:75,page:{width:100,height:100,margins:{left:10,right:10,bottom:10}},
+    fontSize(){return this;},currentLineHeight(){return 12;},widthOfString(text){return [...text].length*5;},
+    text(text,x,y){drawn.push({kind:'text',text,x,y});return this;},
+    addPage(){this.y=10;this.x=10;drawn.push({kind:'page'});return this;}};
+  drawPdfTokens(probe,[{kind:'text',text:'a'.repeat(15)},
+    {kind:'formula',displayMode:'inline',latex:'x^{2}',media:{width:24,height:32,bytes:Buffer.from('<svg/>')}},
+    {kind:'text',text:'end'}],'',10,(_doc,_svg,x,y,dimensions)=>drawn.push({kind:'formula',x,y,...dimensions}));
+  assert.equal(drawn.filter(run=>run.kind==='formula').length,1, 'inline math must be drawn graphically, never flattened to ASCII');
+  assert.equal(drawn.filter(run=>run.kind==='page').length,1, 'overflowing formula row must move to the next page');
+  assert(drawn.find(run=>run.kind==='formula').y >= 10);
+  assert(drawn.filter(run=>run.kind==='text').every(run=>!run.text.includes('^')));
   assert.deepStrictEqual(wordFormulaTransformation({ width: 36, height: 16 }, 'inline'), { width: 36, height: 16 },
     'inline Word formulas must preserve their measured size instead of being stretched to a fixed blank row');
   assert.deepStrictEqual(wordFormulaTransformation({ width: 800, height: 300 }, 'block'), { width: 192, height: 72 },
@@ -93,7 +106,10 @@ const { compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformatio
     ] } }],
   });
   assert.ok(!defaultInlinePdf.bytes.includes(Buffer.from('/Subtype /Image')),
-    'a formula without an explicit block display mode must remain inline instead of consuming a standalone image row');
+    'inline vector formulas must not be rasterized');
+  const hasVectorCurves = bytes => /\n(?:-?[\d.]+ ){5}-?[\d.]+ c\n/u.test(bytes.toString('latin1'));
+  assert.ok(hasVectorCurves(defaultInlinePdf.bytes),
+    'inline formulas must retain vector geometry, not plain-text approximations');
   const legacyFractionPdf = await renderPaperExport({
     format: 'pdf', title: 'Legacy fraction paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-legacy-fraction', stem: 'Fallback', answer: '', explanation: '', richContent: { blocks: [
@@ -102,20 +118,14 @@ const { compactFormulaText, normalizeOptionTokenGroups, wordFormulaTransformatio
   });
   assert.ok(!legacyFractionPdf.bytes.includes(Buffer.from('frac')),
     'legacy TeX fractions without a braced numerator must not leak the frac command into PDF text');
-  assert.strictEqual(compactFormulaText('\\frac H {2t}'), '(H)/(2t)',
-    'legacy TeX fractions without a braced numerator must be normalized into readable inline text');
-  assert.strictEqual(compactFormulaText('\\frac{H（t－t_{0}）^{2}}{t^{2}}'), '(H（t-t_0）^2)/(t^2)',
-    'nested subscript and superscript groups must be normalized before parsing inline fractions');
-  assert.strictEqual(compactFormulaText('\\mathrm{kg}⋅\\mathrm{m}^{-1}⋅\\mathrm{s}^{-2}'), 'kg*m^-1*s^-2',
-    'inline PDF formula fallback must use glyph-safe operators and exponents');
+  assert.ok(hasVectorCurves(legacyFractionPdf.bytes),
+    'legacy TeX fractions must also retain vector geometry');
   assert.deepStrictEqual(normalizeOptionTokenGroups(['A. first', 'B．second']).map(tokens => tokens.map(token => token.text)), [
     ['A. first'], ['B．second'],
   ], 'already-labelled string options must not receive a duplicate generated label');
   assert.deepStrictEqual(normalizeOptionTokenGroups([{ label: 'A', content: 'from A．point to B．point' }]).map(tokens => tokens.map(token => token.text)), [
     ['A. from A．point to B．point'],
   ], 'the renderer must not guess that ordinary option prose contains packed options');
-  assert.strictEqual(compactFormulaText('\\frac{\\sqrt{x}}{2}'), '(sqrt(x))/(2)',
-    'nested fractions must retain their mathematical structure in PDF fallback text');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-inline', stem: 'Fallback', answer: '', explanation: '', richContent: {

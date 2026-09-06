@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.11.3",
+  "version": "8.11.4",
   "scripts": {
     "test:runtime-role": "node sql/runtime-reader-membership.test.js",
     "test:question-import-provisioning": "node sql/question-import-task-provisioning.test.js && node sql/question-import-receipt-provisioning.test.js && node sql/question-import-receipt-runtime-provisioning.test.js && node sql/question-import-receipt-writer-provisioning.test.js && node sql/question-import-receipt-returning-provisioning.test.js && node sql/storage-agent-receipt-returning-provisioning.test.js",
