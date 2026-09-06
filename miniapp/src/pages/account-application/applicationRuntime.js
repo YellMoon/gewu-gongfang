@@ -15,7 +15,7 @@ const APPLICATION_STATES = Object.freeze([
 const STATE_COPY = Object.freeze({
   loading: ['正在读取申请状态', '请稍候。'],
   not_submitted: ['申请角色', '请选择教师、学生或家庭成员，按提示填写信息。'],
-  invalid: ['请检查填写内容', '可申请教师、学生或家庭成员；家庭成员需填写学生姓名和已绑定的手机号。'],
+  invalid: ['请检查填写内容', '请填写姓名和正确的手机号。'],
   submitting: ['正在提交申请', '请勿重复操作。'],
   submitted: ['等待审核', '申请已提交；审核通过后会自动更新可用功能。'],
   rejected: ["申请未通过", "请调整资料后重新提交。"],

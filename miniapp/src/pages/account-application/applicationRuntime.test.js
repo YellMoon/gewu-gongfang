@@ -86,6 +86,7 @@ const initialCopy = copyForApplicationState('not_submitted');
 assert.strictEqual(initialCopy.title, '申请角色', 'the visitor entry must name the user action, not an internal binding process');
 assert.ok(!initialCopy.description.includes('档案') && !initialCopy.description.includes('身份绑定'), 'the role-application introduction must not expose internal record terminology');
 const invalidCopy = copyForApplicationState('invalid');
+assert.strictEqual(invalidCopy.description, '\u8bf7\u586b\u5199\u59d3\u540d\u548c\u6b63\u786e\u7684\u624b\u673a\u53f7\u3002', 'validation must name missing input instead of describing other roles');
 assert.ok(!invalidCopy.description.includes('档案'), 'validation guidance must use information users can recognize instead of internal records');
 assert.ok(!pageSource.includes("className='state-kicker'"), 'the role-application page must not repeat an internal account-identity heading above the user-facing action title');
 assert.ok(pageSource.includes("label: '\\u6559\\u5e08'"), 'the formal role name must be teacher, not the conversational teacher label');
