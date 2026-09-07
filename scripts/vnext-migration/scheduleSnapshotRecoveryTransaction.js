@@ -111,4 +111,4 @@ async function rollbackScheduleSnapshotsInTransaction(db, { tenantId, applied })
   return { tenantId, transactionId, rolledBack, alreadyRolledBack };
 }
 
-module.exports = { restoreScheduleSnapshotsInTransaction, rollbackScheduleSnapshotsInTransaction };
+module.exports = { restoreScheduleSnapshotsInTransaction, rollbackScheduleSnapshotsInTransaction, assertOwnerRecoveryTransaction: requireOwnerTransaction };

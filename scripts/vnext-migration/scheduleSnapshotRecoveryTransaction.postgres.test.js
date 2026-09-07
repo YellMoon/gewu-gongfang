@@ -8,6 +8,7 @@ const { createVNextPg17CatalogBoundary } = require('../../shared/vnext-pg17/cata
 const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-pg17/businessFoundationCatalogAssertion');
 const { restoreScheduleSnapshotsInTransaction, rollbackScheduleSnapshotsInTransaction } = require('./scheduleSnapshotRecoveryTransaction');
 const { planCapturedScheduleSnapshotRecovery } = require('./planCapturedScheduleSnapshotRecovery');
+const { applyRecoveryWithReceipt, rollbackRecoveryWithReceipt } = require('./scheduleSnapshotRecoveryReceipts');
 
 const patch = { billing_unit: 2, teacher_fee_mode: 1, teacher_id: 'teacher-1', teacher_name: 'Historical teacher' };
 const version = '2026-08-23T05:01:02.123456Z';
@@ -24,6 +25,7 @@ async function test() {
       for (const file of ['20260824-schedule-lifecycle.sql', '20260822-business-schedule-student-override.sql', '20260901-business-schedule-update-lifecycle.sql', '20260907-teacher-schedule-write-scope.sql', '20260907-zz-schedule-financial-snapshot.sql']) {
         await db.query(fs.readFileSync(path.join(__dirname, '../../cloud-business-api/sql', file), 'utf8'));
       }
+      await db.query(fs.readFileSync(path.join(__dirname, '../../cloud-business-api/sql/20260907-zzz-schedule-snapshot-recovery-receipts.sql'), 'utf8'));
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Recovery fixture',false,now(),now()),('tenant-2','Other tenant',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','Teacher',true,now(),now()),('foreign','tenant-2','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,legacy_active,legacy_deleted,created_at,updated_at) VALUES ('course-1','tenant-1','Course','Course',1,1,180,120,1,1,true,false,now(),now())");
@@ -118,6 +120,38 @@ async function test() {
         await assert.rejects(() => restoreScheduleSnapshotsInTransaction(db, { tenantId: 'tenant-1', candidates: synthetic }), /SNAPSHOT_RECOVERY_OWNER_TRANSACTION_REQUIRED/);
       } finally { await db.query('RESET ROLE'); await db.query('RESET default_transaction_isolation'); }
     });
+    const receiptPlan = { version: 1, mode: 'read_only_proposal', tenantId: 'tenant-1',
+      candidates: synthetic.map(item => ({ ...item, expectedUpdatedAt: undone.find(row => row.id === item.id).updated_at })) };
+    const planSha256 = crypto.createHash('sha256').update(JSON.stringify(receiptPlan, null, 2), 'utf8').digest('hex');
+    const request = { plan: receiptPlan, planSha256, backupSha256: 'b'.repeat(64) };
+    const countReceipts = () => withQuery(handle, 'fixture-provisioner', async db => (await db.query('SELECT count(*)::int AS count FROM business.schedule_snapshot_recovery_receipts')).rows[0].count);
+    await assert.rejects(() => transaction(db => applyRecoveryWithReceipt({ query: (sql, values) => {
+      if (sql.startsWith('INSERT INTO business.schedule_snapshot_recovery_receipts')) throw new Error('INJECTED_RECEIPT_FAILURE');
+      return db.query(sql, values);
+    } }, request)), /INJECTED_RECEIPT_FAILURE/);
+    assert.deepEqual(await allRows(), undone); assert.equal(await countReceipts(), 0);
+    const recorded = await transaction(db => applyRecoveryWithReceipt(db, request));
+    assert.equal(recorded.status, 'applied'); assert.equal(recorded.receipt.applied.length, 2);
+    assert.equal(await countReceipts(), 1);
+    const recordedRows = await allRows();
+    const retryRecorded = await transaction(db => applyRecoveryWithReceipt(db, request));
+    assert.equal(retryRecorded.status, 'already_applied'); assert.deepEqual(retryRecorded.receipt, recorded.receipt);
+    assert.deepEqual(await allRows(), recordedRows);
+    await assert.rejects(() => transaction(db => applyRecoveryWithReceipt(db, { ...request, planSha256: 'c'.repeat(64) })), /RECOVERY_PLAN_HASH_MISMATCH/);
+    await assert.rejects(() => transaction(db => applyRecoveryWithReceipt(db, { ...request, backupSha256: 'c'.repeat(64) })), /RECOVERY_BACKUP_MISMATCH/);
+    await assert.rejects(() => transaction(db => rollbackRecoveryWithReceipt({ query: (sql, values) => {
+      if (sql.startsWith('UPDATE business.schedule_snapshot_recovery_receipts')) throw new Error('INJECTED_UNDO_RECEIPT_FAILURE');
+      return db.query(sql, values);
+    } }, { tenantId: 'tenant-1', planSha256 })), /INJECTED_UNDO_RECEIPT_FAILURE/);
+    assert.deepEqual(await allRows(), recordedRows);
+    const recordedUndo = await transaction(db => rollbackRecoveryWithReceipt(db, { tenantId: 'tenant-1', planSha256 }));
+    assert.equal(recordedUndo.status, 'rolled_back'); assert.equal(recordedUndo.receipt.rolledBack.length, 2);
+    const retryUndo = await transaction(db => rollbackRecoveryWithReceipt(db, { tenantId: 'tenant-1', planSha256 }));
+    assert.equal(retryUndo.status, 'already_rolled_back'); assert.deepEqual(retryUndo.receipt, recordedUndo.receipt);
+    await assert.rejects(() => transaction(db => applyRecoveryWithReceipt(db, request)), /RECOVERY_PLAN_ALREADY_ROLLED_BACK/);
+    for (const role of ['writer', 'business-verifier', 'runtime']) {
+      await withQuery(handle, role, db => assert.rejects(() => db.query('SELECT * FROM business.schedule_snapshot_recovery_receipts'), error => error.code === '42501'));
+    }
     if (process.argv[2]) {
       // Replay only an explicitly supplied, hash-verified capture in THIS disposable DB.
       // Related names are placeholders: this is not a production full-database clone.
