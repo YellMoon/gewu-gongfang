@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const { createCloudBusinessApp } = require('./app');
+const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 
 async function request(app, path, { headers = {} } = {}) {
   const server = app.listen(0, '127.0.0.1');
@@ -90,6 +91,10 @@ async function request(app, path, { headers = {} } = {}) {
   });
   assert.strictEqual(familyResponse.status, 200);
   assert.deepStrictEqual(queries[3][1], ['default', 'student', 'student-1', 'miniapp-account-4']);
+  assert.ok(queries[2][0].includes(STUDENT_SCHEDULE_TUITION_SQL), 'student projection must calculate scoped session totals, not expose hourly rates as totals');
+  const scheduleResponse = await request(app, '/api/business/schedules', { headers: { authorization: 'Bearer student-ticket.signature' } });
+  assert.strictEqual(scheduleResponse.status, 200);
+  assert.ok(queries.at(-1)[0].includes(STUDENT_SCHEDULE_TUITION_SQL), 'schedule list and projection must use the same scoped tuition calculation');
   console.log('cloud miniapp business projection checks passed');
 })().catch(error => {
   console.error(error);
