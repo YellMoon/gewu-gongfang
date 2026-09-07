@@ -1,5 +1,7 @@
 const assert = require('assert');
 require('./scheduleDraftComparison.test');
+require('./courseRoomDraft.test');
+require('./browserDatabaseSafety.test');
 const fs = require('fs');
 
 const source = fs.readFileSync('src/services/browserDatabase.ts', 'utf-8');

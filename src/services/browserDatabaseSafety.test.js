@@ -31,7 +31,10 @@ assert.ok(
   'import, bulk schedule replace, and schedule delete should create safety backups'
 );
 assert.ok(
-  packageJson.includes('node src/services/browserDatabaseSafety.test.js'),
+  packageJson.includes('node src/services/browserDatabaseSafety.test.js') || (
+    packageJson.includes('node src/services/browserDatabaseSyncCapture.test.js') &&
+    fs.readFileSync('src/services/browserDatabaseSyncCapture.test.js', 'utf-8').includes("require('./browserDatabaseSafety.test')")
+  ),
   'browser database safety test should run in npm test'
 );
 

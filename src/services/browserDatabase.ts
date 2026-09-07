@@ -1202,6 +1202,27 @@ class BrowserDatabaseService {
     return this.data.courses.find(c => c.id === id);
   }
 
+  // Resolve the local address identity before capturing a dependent course draft.
+  // UTF-8: this only changes the derived cache; cloud submission still needs confirmation.
+  private resolveCourseDraftRoom(course: Course, changes: Partial<Course> = course): Room | null {
+    const requestedId = String(changes.room_id || '').split(',')[0].trim();
+    const requestedName = String(changes.room_name || '').trim();
+    const existing = this.data.rooms.find(room => room.id === requestedId)
+      || this.data.rooms.find(room => room.name === (requestedName || requestedId));
+    if (existing) {
+      course.room_id = existing.id;
+      course.room_name = existing.name;
+      return null;
+    }
+    if (!requestedName) return null;
+    const now = new Date().toISOString();
+    const room: Room = { id: this.generateId(), name: requestedName, address: '', count: 1, created_at: now, updated_at: now };
+    this.data.rooms.push(room);
+    course.room_id = room.id;
+    course.room_name = room.name;
+    return room;
+  }
+
   createCourse(course: Omit<Course, 'id' | 'created_at' | 'updated_at'>): Course {
     const now = new Date().toISOString();
     const newCourse: Course = {
@@ -1210,12 +1231,16 @@ class BrowserDatabaseService {
       created_at: now,
       updated_at: now
     };
-    // 如果提供了新教室名称，自动添加到教室库
-    if (newCourse.room_name && !this.data.rooms.find(r => r.name === newCourse.room_name)) {
-      this.addOrUpdateRoom(newCourse.room_name);
-    }
+    const newRoom = this.resolveCourseDraftRoom(newCourse);
     this.data.courses.push(newCourse);
-    this.recordAuthorityDraft('courses', 'create', newCourse.id, newCourse);
+    if (newRoom) {
+      this.recordAuthorityDraftBatch([
+        { collection: 'rooms', action: 'create', recordId: newRoom.id, value: newRoom },
+        { collection: 'courses', action: 'create', recordId: newCourse.id, value: newCourse },
+      ]);
+    } else {
+      this.recordAuthorityDraft('courses', 'create', newCourse.id, newCourse);
+    }
     this.saveData();
     return newCourse;
   }
@@ -1230,11 +1255,16 @@ class BrowserDatabaseService {
       ...updates,
       updated_at: new Date().toISOString()
     };
-    // 如果更新了新教室名称，自动添加到教室库
-    if (updates.room_name && !this.data.rooms.find(r => r.name === updates.room_name)) {
-      this.addOrUpdateRoom(updates.room_name);
+    const newRoom = updates.room_id !== undefined || updates.room_name !== undefined
+      ? this.resolveCourseDraftRoom(this.data.courses[index], updates) : null;
+    if (newRoom) {
+      this.recordAuthorityDraftBatch([
+        { collection: 'rooms', action: 'create', recordId: newRoom.id, value: newRoom },
+        { collection: 'courses', action: 'update', recordId: id, value: this.data.courses[index], baseVersion },
+      ]);
+    } else {
+      this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion);
     }
-    this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion);
     this.saveData();
     return this.data.courses[index];
   }
