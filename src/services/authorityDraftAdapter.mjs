@@ -26,7 +26,7 @@ const COLLECTIONS = Object.freeze({
     fields: [
       'course_id', 'start_time', 'end_time', 'recurring_rule', 'status', 'room',
       'service_type', 'student_ids', 'student_pricings', 'calculated_tuition',
-      'calculated_teacher_fee', 'notes',
+      'calculated_teacher_fee', 'notes', 'billing_unit', 'teacher_fee_mode', 'teacher_id', 'teacher_name',
     ],
   },
   payments: {

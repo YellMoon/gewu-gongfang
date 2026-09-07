@@ -6,7 +6,7 @@ function createBusinessScheduleUpdate({ query } = {}) {
   return async function updateSchedule(input) {
     const result = await query(
       `SELECT id AS "id", to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
-       FROM business.vnext_update_scoped_schedule($1,$2,$3::timestamptz,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)`,
+       FROM business.vnext_update_scoped_schedule($1,$2,$3::timestamptz,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17::jsonb)`,
       [
         input.tenantId, input.scheduleId, input.expectedUpdatedAt, input.courseId || null,
         input.startAt, input.endAt, input.recurringRule ?? null, input.status, input.roomDisplay,
@@ -18,6 +18,7 @@ function createBusinessScheduleUpdate({ query } = {}) {
           teacher_fee: pricing.teacherFee,
         }))) : null,
         ...scheduleActorParameters(input.actorScope),
+        input.financialSnapshot ? JSON.stringify(input.financialSnapshot) : null,
       ],
     );
     return result?.rows?.length === 1 ? result.rows[0] : null;

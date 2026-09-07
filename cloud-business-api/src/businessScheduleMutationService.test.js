@@ -28,7 +28,7 @@ const { createBusinessScheduleUpdate } = require('./businessScheduleMutationServ
     '2026-08-23T01:00:00.000Z', '2026-08-23T02:00:00.000Z', '{"frequency":"weekly"}',
     1, 'A102', 2, 120, 60, null,
     JSON.stringify([{ student_id: 'student-1', attendance_status: 4, tuition: 80, teacher_fee: 40 }]),
-    'teacher', 'teacher-1',
+    'teacher', 'teacher-1', null,
   ]);
   await updateSchedule({
     actorScope: { role: 'super_admin', teacherId: null },

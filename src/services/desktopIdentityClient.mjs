@@ -864,7 +864,7 @@ export function createDesktopIdentityClient({
 
   async function updateCloudSchedule({
     baseUrl, currentSession, scheduleId, expectedUpdatedAt, courseId, startAt, endAt, recurringRule,
-    status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+    status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings, billingUnit, teacherFeeMode, teacherId, teacherName,
   } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -878,6 +878,7 @@ export function createDesktopIdentityClient({
       body: {
         expectedUpdatedAt, courseId: normalizedCourseId, startAt, endAt, recurringRule,
         status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+        billingUnit, teacherFeeMode, teacherId, teacherName,
       },
     });
     if (!data?.schedule || typeof data.schedule !== 'object'
@@ -889,7 +890,7 @@ export function createDesktopIdentityClient({
 
   async function createCloudSchedule({
     baseUrl, currentSession, scheduleId, courseId, startAt, endAt, recurringRule, status,
-    roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
+    roomDisplay, serviceType, tuition, teacherFee, notes, pricings, billingUnit, teacherFeeMode, teacherId, teacherName,
   } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -901,7 +902,7 @@ export function createDesktopIdentityClient({
       token: currentSession.token,
       body: {
         scheduleId: normalizedScheduleId,
-        data: { courseId, startAt, endAt, recurringRule, status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings },
+        data: { courseId, startAt, endAt, recurringRule, status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings, billingUnit, teacherFeeMode, teacherId, teacherName },
       },
     });
     if (!data?.schedule || data.schedule.id !== normalizedScheduleId || typeof data.schedule.updatedAt !== 'string') {

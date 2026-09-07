@@ -135,6 +135,8 @@ console.log('financialDetails refresh tests passed');
     assert.strictEqual(submitted.tuition, expected.calculated_tuition);
     assert.strictEqual(submitted.teacherFee, expected.calculated_teacher_fee);
     assert.strictEqual(submitted.expectedUpdatedAt, row.updated_at);
+    assert.strictEqual(submitted.billingUnit, expected.billing_unit);
+    assert.strictEqual(submitted.teacherFeeMode, expected.teacher_fee_mode);
     assert.strictEqual(row.student_pricings[0].attendance_status, attendance, 'cloud input must not be mutated');
   }
   console.log('cloud attendance original financial round-trip checks passed');

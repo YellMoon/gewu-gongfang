@@ -22,6 +22,9 @@ function describeAuthorityDraft(item, cache={}) {
   let name=record.display_name||record.name||'';
   let time='';
   if(entity==='schedule') {
+    add('计费单位',({1:'按小时',2:'按次'})[record.billing_unit]);
+    add('教师计费方式',({1:'按课次',2:'按学生'})[record.teacher_fee_mode]);
+    add('教师',record.teacher_name);
     const course=(cache.courses||[]).find(row=>row.id===record.course_id);
     name=course?.display_name||course?.name||'';
     time=dateText(record.start_time);

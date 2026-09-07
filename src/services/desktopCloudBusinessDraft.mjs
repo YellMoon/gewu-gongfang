@@ -147,6 +147,10 @@ function courseInput(record) {
 
 function scheduleInput(record) {
   return {
+    ...(['billing_unit', 'teacher_fee_mode', 'teacher_id', 'teacher_name'].some(key => Object.hasOwn(record, key)) ? {
+      billingUnit: nullable(record.billing_unit), teacherFeeMode: nullable(record.teacher_fee_mode),
+      teacherId: nullable(record.teacher_id), teacherName: nullable(record.teacher_name),
+    } : {}),
     courseId: record.course_id,
     startAt: scheduleInstant(record.start_time),
     endAt: scheduleInstant(record.end_time),

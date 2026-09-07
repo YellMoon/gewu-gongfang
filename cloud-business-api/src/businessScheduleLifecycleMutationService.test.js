@@ -25,7 +25,7 @@ const { createBusinessScheduleLifecycleMutations } = require('./businessSchedule
     'default', 'schedule-2', 'course-1', '2026-08-25T01:00:00.000Z', '2026-08-25T02:00:00.000Z',
     null, 1, 'Room One', 1, 100, 60, null,
     JSON.stringify([{ student_id: 'student-1', attendance_status: 1, tuition: 100, teacher_fee: 60 }]),
-    'teacher', 'teacher-1',
+    'teacher', 'teacher-1', null,
   ]);
   const removed = await mutations.remove({
     actorScope: { role: 'super_admin', teacherId: null },

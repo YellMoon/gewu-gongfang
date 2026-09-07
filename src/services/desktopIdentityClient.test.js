@@ -1102,6 +1102,7 @@ async function main() {
   assert.strictEqual(integrationVault.status().activeRole, 'teacher');
 
   await require('./desktopBusinessVersionContract.test.js')();
+  await require('./desktopScheduleSnapshotContract.test.js')();
   console.log('desktop identity client checks passed');
 }
 
