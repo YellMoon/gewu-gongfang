@@ -27,8 +27,19 @@ function resolveScheduleRoomDisplay(schedule = {}, course = {}, rooms = []) {
   return courseRoomName || findRoomName(courseRoomId, rooms);
 }
 
+// The original calendar load preferred the course's latest room name. Derive
+// that display without rewriting the stored lesson or generating a draft.
+function resolveCalendarRoomDisplay(schedule = {}, course = {}, rooms = []) {
+  return resolveScheduleRoomDisplay(
+    course.room_name ? { ...schedule, room: course.room_name } : schedule,
+    course,
+    rooms,
+  );
+}
+
 export {
   normalizeRoomValue,
   findRoomName,
   resolveScheduleRoomDisplay,
+  resolveCalendarRoomDisplay,
 };

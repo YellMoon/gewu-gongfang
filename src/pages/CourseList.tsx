@@ -319,6 +319,10 @@ const CourseList: React.FC = () => {
       if (values.active === undefined) {
         values.active = true;
       }
+      // Preserve the original form's year when validation omits InputNumber's value.
+      if (editingCourse && (values.year === undefined || values.year === null)) {
+        values.year = editingCourse.year !== undefined ? Number(editingCourse.year) : new Date().getFullYear();
+      }
       const completed = await submitCourseToAuthority(values);
       if (completed) {
         setModalVisible(false);

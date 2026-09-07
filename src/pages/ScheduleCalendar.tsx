@@ -17,7 +17,7 @@ import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
 import { readSchedulesFromPrimaryStore, persistScheduleCalendarState } from '../utils/scheduleStorage.mjs';
 import { appendSteppedBatchDate, normalizeDateStepDays } from '../utils/scheduleBatchDates.mjs';
-import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
+import { resolveCalendarRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
 import { normalizeRefreshDateRange, updateRefreshDateRangeBoundary } from '../utils/scheduleRefreshRange.mjs';
 
 dayjs.extend(weekOfYear);
@@ -547,7 +547,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           const endSlot = dragOverSlot + Math.floor(durMin / 5);
           const { hour: endH, minute: endM } = slotToTime(endSlot);
           const endStr = formatTime(endH, endM);
-          const roomInfo = resolveScheduleRoomDisplay({}, dragCourse || {}, rooms);
+          const roomInfo = resolveCalendarRoomDisplay({}, dragCourse || {}, rooms);
           return (
             <div style={{
               position: 'absolute',
@@ -590,7 +590,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
           const courseColor = courseColorMap[schedule.course_id] || DEFAULT_COURSE_COLOR;
           const textColor = getTextColorForBackground(courseColor);
           const course = courses.find(item => item.id === schedule.course_id);
-          const roomDisplay = resolveScheduleRoomDisplay(schedule, course || {}, rooms);
+          const roomDisplay = resolveCalendarRoomDisplay(schedule, course || {}, rooms);
 
           return (
             <React.Fragment key={schedule.id}>
@@ -773,7 +773,7 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         let ghostY = (dragState.currentY || 0) - ghostHeight / 2;
         const isCopy = dragState.ctrlKey;
         const ghostCourse = courses.find(item => item.id === dragState.schedule.course_id);
-        const ghostRoomDisplay = resolveScheduleRoomDisplay(dragState.schedule, ghostCourse || {}, rooms);
+        const ghostRoomDisplay = resolveCalendarRoomDisplay(dragState.schedule, ghostCourse || {}, rooms);
         return (
         <div style={{
           position: 'fixed',
@@ -1682,7 +1682,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       const baseSchedule = {
         ...schedule,
         id: uuidv4(),
-        room: resolveScheduleRoomDisplay(schedule, course, rooms) || schedule.room,
+        room: resolveCalendarRoomDisplay(schedule, course, rooms) || schedule.room,
         start_time: newStartTimeStr,
         end_time: newEndTimeStr
       };
@@ -1899,7 +1899,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const db = (window as any).dbService;
     let count = 0;
     const updated = schedules.map(s => {
-      const sDate = dayjs(s.start_time);
+      const sDate = dayjs(s.start_time).startOf('day');
       if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
       const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
       if (!course) return s;
