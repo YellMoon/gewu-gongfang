@@ -1313,9 +1313,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
             const course = coursesData.find((c: Course) => c.id === s.course_id);
             if (course) {
               const updated: Partial<ScheduleEvent> = {};
-              if (course.room_name && s.room !== course.room_name) {
-                updated.room = course.room_name;
-              }
               // 鍚屾课程鍚嶇О锛堝彧鏄剧ず绾绋嬪悕锛屼笉鍚勾浠藉鏈燂級
               const displayCourseName = getCourseDisplayName(course);
               if (displayCourseName && s.course_name !== displayCourseName) {

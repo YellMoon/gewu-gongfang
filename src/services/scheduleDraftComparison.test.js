@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
+(async()=>{
+  const {sameScheduleDraftContent}=await import('./scheduleDraftComparison.mjs');
+  const source=fs.readFileSync(path.join(__dirname,'browserDatabase.ts'),'utf8');
+  const ast=ts.createSourceFile('browserDatabase.ts',source,ts.ScriptTarget.Latest,true);
+  let method;const visit=n=>{if(ts.isMethodDeclaration(n)&&n.name.getText(ast)==='replaceSchedules')method=n;ts.forEachChild(n,visit);};visit(ast);assert(method);
+  const compiled=ts.transpileModule(`class Cache {${method.getText(ast)}}; Cache`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+  const Cache=vm.runInNewContext(compiled,{sameScheduleDraftContent});
+  const previous={id:'old',course_id:'course',start_time:'2026-09-07T01:00:00Z',end_time:'2026-09-07T02:00:00Z',room:'Historical address',status:1,updated_at:'2026-09-07T00:00:00Z',student_pricings:[{student_id:'student',attendance_status:1,tuition:100,teacher_fee:50}]};
+  const display={...previous,course_name:'Display name',course_year:'2026',course_semester:'Autumn',student_pricings:[{teacher_fee:50,tuition:100,student_id:'student',attendance_status:1,status:undefined}]};
+  const cache=new Cache();cache.data={schedules:[previous]};let drafts=[];
+  cache.recordAuthorityDraftBatch=items=>{drafts.push(...items);};cache.saveData=()=>{};cache.createBusinessDataSafetyBackup=()=>{};
+  cache.replaceSchedules([display,{...previous,id:'new'}]);
+  assert.deepEqual(drafts.map(x=>[x.action,x.recordId]),[['create','new']],'display labels/key ordering must not create old schedule drafts');
+  assert.equal(cache.data.schedules.find(x=>x.id==='old').updated_at,previous.updated_at);
+  drafts=[];cache.replaceSchedules(cache.data.schedules.map(s=>s.id==='old'?{...s,room:'Explicit new address'}:s));
+  assert.deepEqual(drafts.map(x=>[x.action,x.recordId,x.baseVersion]),[['update','old',previous.updated_at]]);
+  assert.equal(sameScheduleDraftContent(previous,{...previous,student_pricings:[{...previous.student_pricings[0],attendance_status:4}]}),false);
+  assert.equal(sameScheduleDraftContent(previous,{...previous,calculated_tuition:120}),false);
+  const calendar=fs.readFileSync(path.join(__dirname,'../pages/ScheduleCalendar.tsx'),'utf8');
+  const loadBlock=calendar.slice(calendar.indexOf('const loadData = () =>'),calendar.indexOf('const interval = setInterval(loadData'));
+  assert(!loadBlock.includes('updated.room = course.room_name'),'display hydration must not rewrite a historical lesson address');
+  console.log('schedule draft comparison checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

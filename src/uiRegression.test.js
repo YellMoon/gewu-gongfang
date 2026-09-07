@@ -261,8 +261,9 @@ assert(
 
 assert(
   authorityOutboxPanel.includes('Modal.confirm') &&
-  authorityOutboxPanel.includes('copy.safetyText'),
-  'authority command confirmation must show an impact and safety preview'
+  authorityOutboxPanel.includes('presentation.details.map') &&
+  authorityOutboxPanel.includes('cancelText: copy.keep'),
+  'authority command confirmation must show concrete changed fields and allow keeping the draft'
 );
 
 assert(
@@ -305,7 +306,7 @@ assert(
 
 assert(
   scheduleCalendar.includes('readSchedulesFromPrimaryStore') &&
-  scheduleCalendar.includes('replaceSchedulesInPrimaryStore') &&
+  scheduleCalendar.includes('persistScheduleCalendarState') &&
   scheduleCalendar.includes('schedulesDirtyRef') &&
   scheduleCalendar.includes('loadingSchedulesRef') &&
   scheduleCalendar.includes('setInterval(loadData, 30000)') &&

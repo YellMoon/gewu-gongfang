@@ -23,6 +23,7 @@ import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQ
 import { projectDesktopCacheForIdentity } from './desktopCacheProjection.mjs';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.mjs';
+import { sameScheduleDraftContent } from './scheduleDraftComparison.mjs';
 import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
 import { overlayStudentContactDraftProjection } from './studentContactDraftProjection.mjs';
@@ -1338,7 +1339,7 @@ class BrowserDatabaseService {
       const previous = previousById.get(id);
       if (!previous) {
         changes.push({ action: 'create', id, payload: next });
-      } else if (JSON.stringify(previous) !== JSON.stringify(next)) {
+      } else if (!sameScheduleDraftContent(previous, next)) {
         const updated = { ...next, updated_at: now };
         nextById.set(id, updated);
         changes.push({ action: 'update', id, payload: updated, baseVersion: previous.updated_at || null });

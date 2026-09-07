@@ -16,8 +16,9 @@ import {
 } from '../utils/scheduleExcelExport.mjs';
 import { applyScheduleListFilters, buildScheduleListFilterOptions } from '../utils/scheduleListFilters.mjs';
 import { readSchedulesFromPrimaryStore } from '../utils/scheduleStorage.mjs';
-import { projectCloudSchedules } from '../services/cloudScheduleProjection.mjs';
+import { projectCloudScheduleRecords } from '../services/cloudScheduleProjection.mjs';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+import { hasDesktopScheduleWriteAccess } from '../services/desktopScheduleWriteAccess.mjs';
 
 const { RangePicker } = DatePicker;
 
@@ -26,8 +27,7 @@ const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '
 function hasCloudScheduleManagementAccess(): boolean {
   try {
     const { authContext } = readDesktopAuthorizationSession();
-    return authContext.activeRole === 'super_admin'
-      && authContext.eligibleRoles.includes('super_admin');
+    return hasDesktopScheduleWriteAccess(authContext);
   } catch (_error) {
     return false;
   }
@@ -69,13 +69,14 @@ const ScheduleList: React.FC = () => {
 
   const loadData = useCallback(async () => {
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
-    if (typeof cloudRuntime?.listCloudSchedules === 'function') {
+    if (typeof cloudRuntime?.listCloudBusinessProjection === 'function') {
       try {
-        const cloudSchedules = projectCloudSchedules(await cloudRuntime.listCloudSchedules());
+        const projection = await cloudRuntime.listCloudBusinessProjection();
+        const cloudSchedules: Array<Schedule & { course_name: string }> = projectCloudScheduleRecords(projection);
         cloudSchedules.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-        const projectedStudents = dbService?.getAllStudents?.() || [];
-        const projectedTeachers = dbService?.getAllTeachers?.() || [];
-        const projectedCourses = dbService?.getAllCourses?.() || [];
+        const projectedStudents = projection.students || [];
+        const projectedTeachers = projection.teachers || [];
+        const projectedCourses = projection.courses || [];
         setSchedules(cloudSchedules);
         setStudents(projectedStudents);
         setTeachers(projectedTeachers);
