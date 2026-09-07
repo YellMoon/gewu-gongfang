@@ -51,7 +51,7 @@ const SyncQuickPanel: React.FC<Props> = ({ onNavigate }) => {
       trigger="click"
       open={open}
       onOpenChange={setOpen}
-      placement="bottomRight"
+      placement="bottomLeft"
       overlayClassName="sync-quick-popover"
       content={<SyncSettings variant="quick" onNavigateToSettings={navigateToSettings} />}
     >

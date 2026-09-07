@@ -473,7 +473,9 @@ def create_verified_backup():
             or backup.get("dump") != f"{root}/gewu_cloud.dump"
             or backup.get("checksum") != f"{root}/gewu_cloud.dump.sha256"
             or backup.get("metadata") != f"{root}/metadata.json"
-            or backup.get("restoreVerified") is not True):
+            or backup.get("restoreVerified") is not True
+            or backup.get("ownershipAndPrivilegesVerified") is not True
+            or not re.fullmatch(r"[0-9a-f]{32}", str(backup.get("securityFingerprint", "")))):
         raise RuntimeError("CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED")
     return backup
 

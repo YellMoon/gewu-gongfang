@@ -2,6 +2,7 @@
 """Create and verify an append-only PostgreSQL authority backup on the cloud host."""
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -42,13 +43,19 @@ def backup_command(stamp, container="gewu-postgres17", database="gewu_cloud", ro
     paths = backup_paths(stamp)
     partial = paths["dump"] + ".partial"
     restore_database = f"gewu_restore_verify_{stamp.replace('-', '_')}"
+    security_sql = base64.b64encode((ROOT / 'scripts/cloud_postgres_security_fingerprint.sql').read_bytes()).decode('ascii')
+    def security_command(target):
+        return (f"printf '%s' '{security_sql}' | base64 -d | docker exec -i '{container}' "
+                f"psql -X -v ON_ERROR_STOP=1 -U '{role}' -d {target} --tuples-only --no-align")
     metadata = json.dumps({
-        "schema": "gewu.cloud-postgres-backup.v2",
+        "schema": "gewu.cloud-postgres-backup.v3",
         "createdAtUtc": datetime.strptime(stamp, "%Y%m%d-%H%M%S").replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
         "container": container,
         "database": database,
         "format": "postgres-custom",
-        "restore": f"pg_restore --clean --if-exists --no-owner --no-privileges -d {database} {paths['dump']}",
+        "restore": f"pg_restore --exit-on-error --single-transaction -d NEW_EMPTY_DATABASE {paths['dump']}",
+        "restoreScope": "same-cluster-existing-roles; disaster recovery must provision roles separately",
+        "ownershipAndPrivilegesVerified": True,
         "verification": {
             "method": "isolated-restore",
             "database": restore_database,
@@ -59,7 +66,8 @@ def backup_command(stamp, container="gewu-postgres17", database="gewu_cloud", ro
         "set -eu; umask 077; "
         f"backup_dir='{paths['root']}'; dump='{paths['dump']}'; partial='{partial}'; restore_db='{restore_database}'; restore_db_created=0; "
         "test ! -e \"$backup_dir\"; mkdir -p '/root/scheduling-backups/postgres'; mkdir \"$backup_dir\"; "
-        f"docker exec '{container}' pg_dump -U '{role}' -d '{database}' --format=custom --no-owner --no-privileges > \"$partial\"; "
+        f"source_security=$({security_command(chr(39) + database + chr(39))}); test -n \"$source_security\"; "
+        f"docker exec '{container}' pg_dump -U '{role}' -d '{database}' --format=custom > \"$partial\"; "
         "test -s \"$partial\"; "
         f"docker exec -i '{container}' pg_restore --list < \"$partial\" > /dev/null; "
         f"existing_restore_db=$(docker exec '{container}' psql -U '{role}' -d postgres --no-psqlrc "
@@ -71,18 +79,20 @@ def backup_command(stamp, container="gewu-postgres17", database="gewu_cloud", ro
         f"docker exec '{container}' createdb -U '{role}' -T template0 \"$restore_db\"; "
         "restore_db_created=1; "
         f"docker exec -i '{container}' pg_restore -U '{role}' --exit-on-error --single-transaction "
-        "--no-owner --no-privileges -d \"$restore_db\" < \"$partial\"; "
+        "-d \"$restore_db\" < \"$partial\"; "
         f"docker exec '{container}' psql -U '{role}' -d \"$restore_db\" --no-psqlrc --tuples-only --no-align "
         "--command \"SELECT to_regclass('business.tenants') IS NOT NULL "
         "AND to_regclass('vnext_control_plane.vnext_accounts') IS NOT NULL "
         "AND EXISTS (SELECT 1 FROM business.tenants)\" | grep -Fx 't'; "
+        f"restored_security=$({security_command(chr(34) + '$restore_db' + chr(34))}); "
+        "test \"$source_security\" = \"$restored_security\"; "
         f"docker exec '{container}' dropdb -U '{role}' --if-exists \"$restore_db\" > /dev/null; "
         "restore_db_created=0; trap - EXIT; "
         "mv \"$partial\" \"$dump\"; "
         f"cd \"$backup_dir\"; sha256sum 'gewu_cloud.dump' > 'gewu_cloud.dump.sha256'; "
         f"printf '%s\\n' '{metadata}' > 'metadata.json'; "
         "test -s 'gewu_cloud.dump' && sha256sum --check 'gewu_cloud.dump.sha256' > /dev/null && test -s 'metadata.json'; "
-        "sha256sum 'gewu_cloud.dump'"
+        "printf 'securityFingerprint=%s\\n' \"$source_security\"; sha256sum 'gewu_cloud.dump'"
     )
 
 
@@ -99,7 +109,11 @@ def create_backup(container="gewu-postgres17", database="gewu_cloud", role="gewu
     if len(checksum_matches) != 1:
         raise RuntimeError("CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED")
     checksum = checksum_matches[0]
-    return {**paths, "sha256": checksum, "restoreVerified": True}
+    security_matches = re.findall(r'(?m)^securityFingerprint=([a-f0-9]{32})$', output)
+    if len(security_matches) != 1:
+        raise RuntimeError('CLOUD_POSTGRES_BACKUP_SECURITY_VERIFICATION_FAILED')
+    return {**paths, "sha256": checksum, "restoreVerified": True,
+            "ownershipAndPrivilegesVerified": True, "securityFingerprint": security_matches[0]}
 
 
 def main():

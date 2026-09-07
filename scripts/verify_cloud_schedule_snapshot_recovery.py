@@ -17,7 +17,7 @@ BACKUP_ROOT = re.compile(r"^/root/scheduling-backups/postgres/[0-9]{8}-[0-9]{6}$
 
 
 def validate_probe_receipt(result, target, plan_hash, backup_hash, expected_count):
-    flags = ("ok", "fullBackupRestored", "freshConnectionRetryVerified", "failedReceiptWriteRolledBack",
+    flags = ("ok", "fullBackupRestored", "ownershipAndPrivilegesVerified", "freshConnectionRetryVerified", "failedReceiptWriteRolledBack",
              "failedRollbackReceiptRolledBack", "nonRecoveryDataUnchanged", "rollbackChangedVersionsOnly")
     counts = ("candidateCount", "applied", "rolledBack")
     if (not isinstance(result, dict) or not re.fullmatch(r"gewu_snapshot_shadow_[a-f0-9]{16}", target)
@@ -37,7 +37,10 @@ def validate_inputs(capture_directory, plan_path, backup_path):
         raise RuntimeError("SHADOW_INPUT_OUTSIDE_CAPTURE")
     backup = json.loads(backup_file.read_text(encoding="utf-8"))
     root = backup.get("root", "")
-    if not BACKUP_ROOT.fullmatch(root) or backup.get("dump") != root + "/gewu_cloud.dump" or not SHA.fullmatch(backup.get("sha256", "")) or backup.get("restoreVerified") is not True:
+    if (not BACKUP_ROOT.fullmatch(root) or backup.get("dump") != root + "/gewu_cloud.dump"
+            or not SHA.fullmatch(backup.get("sha256", "")) or backup.get("restoreVerified") is not True
+            or backup.get("ownershipAndPrivilegesVerified") is not True
+            or not re.fullmatch(r"[a-f0-9]{32}", str(backup.get("securityFingerprint", "")))):
         raise RuntimeError("SHADOW_VERIFIED_BACKUP_REQUIRED")
     plan_hash = hashlib.sha256(plan_file.read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory(prefix="gewu-shadow-plan-check-") as temp:
@@ -94,6 +97,9 @@ def verify(capture_directory, plan_path, backup_path):
         db = DockerPsqlExecutor(ssh, "gewu-postgres17", target, "gewu_app")
         if db.run("SELECT current_database()").strip() != target:
             raise RuntimeError("SHADOW_TARGET_MISMATCH")
+        fingerprint = db.run((ROOT / 'scripts/cloud_postgres_security_fingerprint.sql').read_text(encoding='utf-8')).strip()
+        if fingerprint != backup['securityFingerprint']:
+            raise RuntimeError('SHADOW_SECURITY_FINGERPRINT_MISMATCH')
         migration_result = apply_migrations(db, read_migrations(ROOT / "cloud-business-api/sql"))
         print(json.dumps({"stage": "full_shadow_migrated", "database": target, "appliedMigrations": migration_result["applied"]}), flush=True)
         pg = json.loads(private("docker inspect gewu-postgres17"))[0]
@@ -123,6 +129,7 @@ def verify(capture_directory, plan_path, backup_path):
         body = private("docker start -ai '" + container + "'", {"connection": connection, "planSha256": plan_hash, "backupSha256": backup["sha256"]})
         connection = None
         result = json.loads(body.strip().splitlines()[-1])
+        result['ownershipAndPrivilegesVerified'] = True
         expected_count = len(json.loads(plan_file.read_text(encoding="utf-8"))["candidates"])
         validate_probe_receipt(result, target, plan_hash, backup["sha256"], expected_count)
         result["appliedMigrations"] = migration_result["applied"]

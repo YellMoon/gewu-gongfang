@@ -28,6 +28,8 @@ VERIFIED_BACKUP = {
     "metadata": "/root/scheduling-backups/postgres/20260901-010203/metadata.json",
     "sha256": "b" * 64,
     "restoreVerified": True,
+    "ownershipAndPrivilegesVerified": True,
+    "securityFingerprint": "c" * 32,
 }
 VERIFIED_HEALTH = {"ok": True, "businessAuthority": "cloud", "version": "8.5.0"}
 VERIFIED_PERMISSION_CONTRACT = {"contract": "live-authority-result"}
@@ -449,6 +451,11 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertTrue(str(run.call_args_list[9].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
     def test_verified_backup_requires_exact_recovery_artifacts_and_checksum(self):
+        for field in ('ownershipAndPrivilegesVerified', 'securityFingerprint'):
+            invalid = {key: value for key, value in VERIFIED_BACKUP.items() if key != field}
+            with mock.patch.object(module.backup_cloud_postgres, 'create_backup', return_value=invalid):
+                with self.assertRaisesRegex(RuntimeError, 'CLOUD_POSTGRES_BACKUP_VERIFICATION_FAILED'):
+                    REAL_CREATE_VERIFIED_BACKUP()
         with mock.patch.object(module.backup_cloud_postgres, "create_backup", return_value=VERIFIED_BACKUP) as create:
             self.assertEqual(REAL_CREATE_VERIFIED_BACKUP(), VERIFIED_BACKUP)
         create.assert_called_once_with(container="gewu-postgres17", database="gewu_cloud", role="gewu_app")

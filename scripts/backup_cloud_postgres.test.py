@@ -10,6 +10,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CloudPostgresBackupTest(unittest.TestCase):
+    def test_restore_preserves_and_compares_application_security(self):
+        command = MODULE.backup_command("20260907-090000")
+        self.assertNotIn('--no-privileges', command)
+        self.assertNotIn('--no-owner', command)
+        self.assertIn('source_security=', command)
+        self.assertIn('restored_security=', command)
+        self.assertIn('test "$source_security" = "$restored_security"', command)
+        self.assertLess(command.index('test "$source_security" = "$restored_security"'), command.index('mv "$partial" "$dump"'))
+        self.assertIn('ownershipAndPrivilegesVerified', command)
+
     def test_append_only_verified_custom_dump(self):
         command = MODULE.backup_command("20260824-120000")
         self.assertIn("test ! -e \"$backup_dir\"", command)
@@ -37,10 +47,11 @@ class CloudPostgresBackupTest(unittest.TestCase):
         with unittest.mock.patch.object(MODULE.deploy, "connect", return_value=ssh), unittest.mock.patch.object(
             MODULE.deploy,
             "run",
-            return_value=("t\n" + "a" * 64 + "  gewu_cloud.dump\n", ""),
+            return_value=("t\nsecurityFingerprint=" + "b" * 32 + "\n" + "a" * 64 + "  gewu_cloud.dump\n", ""),
         ):
             result = MODULE.create_backup(now=MODULE.datetime(2026, 8, 24, 12, 0, 0, tzinfo=MODULE.timezone.utc))
         self.assertIs(result["restoreVerified"], True)
+        self.assertIs(result["ownershipAndPrivilegesVerified"], True)
 
     def test_cleanup_only_drops_a_database_created_by_this_run(self):
         command = MODULE.backup_command("20260907-070000")

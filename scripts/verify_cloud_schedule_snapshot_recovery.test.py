@@ -4,7 +4,7 @@ from verify_cloud_schedule_snapshot_recovery import validate_probe_receipt
 
 class RecoveryShadowReceiptTests(unittest.TestCase):
     def receipt(self):
-        return {"ok": True, "productionWrite": False, "fullBackupRestored": True,
+        return {"ok": True, "productionWrite": False, "fullBackupRestored": True, "ownershipAndPrivilegesVerified": True,
                 "database": "gewu_snapshot_shadow_" + "a" * 16, "planSha256": "b" * 64, "backupSha256": "c" * 64,
                 "candidateCount": 158, "applied": 158, "rolledBack": 158, "persistentReceiptCount": 1,
                 "freshConnectionRetryVerified": True, "failedReceiptWriteRolledBack": True,
@@ -17,7 +17,7 @@ class RecoveryShadowReceiptTests(unittest.TestCase):
         self.validate(self.receipt())
 
     def test_rejects_wrong_scope_counts_or_any_missing_check(self):
-        changes = {"database": "gewu_cloud", "productionWrite": True, "fullBackupRestored": False,
+        changes = {"database": "gewu_cloud", "productionWrite": True, "fullBackupRestored": False, "ownershipAndPrivilegesVerified": False,
                    "planSha256": "d" * 64, "backupSha256": "d" * 64, "candidateCount": 0,
                    "applied": 157, "rolledBack": 157, "persistentReceiptCount": 0,
                    "freshConnectionRetryVerified": False, "failedReceiptWriteRolledBack": False,

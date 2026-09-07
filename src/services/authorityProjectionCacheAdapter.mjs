@@ -1,3 +1,5 @@
+import { studentContactFormValues } from './studentContactDraftProjection.mjs';
+
 const ENTITY_COLLECTIONS = Object.freeze({
   student: 'students',
   course: 'courses',
@@ -193,6 +195,8 @@ function applyStudentContacts(cache, studentId, contacts) {
     };
   });
   cache.student_contacts = [...otherContacts, ...pendingContacts];
+  cache.students = cache.students.map(student => String(student.id) === studentId
+    ? {...student, ...studentContactFormValues(student, cache.student_contacts)} : student);
 }
 
 function applyDraft(cache, item) {
@@ -273,6 +277,8 @@ export function buildAuthorityBackedBrowserCache({
       sourceVersion: Number(projection.sourceVersion),
     },
   };
+  cache.students = cache.students.map(student => ({...student,
+    ...studentContactFormValues(student, cache.student_contacts)}));
   for (const key of LOCAL_ONLY_KEYS) cache[key] = array(localOnly[key]);
   const pending = array(outbox)
     .filter(item => item && item.status !== 'completed')
