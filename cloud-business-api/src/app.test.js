@@ -379,6 +379,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.deepStrictEqual(scheduleUpdate.body, { ok: true, schedule: { id: 'schedule-1', updatedAt: '2026-08-22T01:05:00.000Z' } });
   assert.strictEqual(businessWrites.length, 1);
   assert.deepStrictEqual(businessWrites[0], {
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
     courseId: 'course-2', startAt: '2026-08-23T01:00:00.000Z', endAt: '2026-08-23T02:00:00.000Z',
     recurringRule: '{"frequency":"weekly"}', status: 1, roomDisplay: 'A102', serviceType: 2,
@@ -432,6 +433,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(scheduleCreate.status, 201);
   assert.deepStrictEqual(scheduleCreate.body, { ok: true, schedule: { id: 'schedule-2', updatedAt: '2026-08-24T03:00:00.000Z' } });
   assert.deepStrictEqual(scheduleLifecycleWrites[0], ['create', {
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', scheduleId: 'schedule-2', courseId: 'course-1',
     startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z', recurringRule: null,
     status: 1, roomDisplay: 'A102', serviceType: 1, tuition: 120, teacherFee: 60, notes: null,
@@ -447,6 +449,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(scheduleDelete.status, 200);
   assert.deepStrictEqual(scheduleDelete.body, { ok: true, schedule: { id: 'schedule-2', updatedAt: '2026-08-24T03:01:00.000Z' } });
   assert.deepStrictEqual(scheduleLifecycleWrites[1], ['remove', {
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', scheduleId: 'schedule-2', expectedUpdatedAt: '2026-08-24T03:00:00.000Z',
   }]);
   let miniappCoreWriteCalled = false;
@@ -592,6 +595,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(studentOverride.status, 200);
   assert.deepStrictEqual(studentOverride.body, { ok: true, schedule: { id: 'schedule-1', updatedAt: '2026-08-22T01:06:00.000Z' } });
   assert.deepStrictEqual(studentOverrideWrites, [{
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', scheduleId: 'schedule-1', studentId: 'student-1',
     expectedUpdatedAt: '2026-08-22T01:05:00.000Z', attendanceStatus: 1, tuition: 120, teacherFee: 60,
   }]);

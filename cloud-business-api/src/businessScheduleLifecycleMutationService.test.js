@@ -12,6 +12,7 @@ const { createBusinessScheduleLifecycleMutations } = require('./businessSchedule
     },
   });
   const created = await mutations.create({
+    actorScope: { role: 'teacher', teacherId: 'teacher-1' },
     tenantId: 'default', scheduleId: 'schedule-2', courseId: 'course-1',
     startAt: '2026-08-25T01:00:00.000Z', endAt: '2026-08-25T02:00:00.000Z',
     recurringRule: null, status: 1, roomDisplay: 'Room One', serviceType: 1,
@@ -19,17 +20,21 @@ const { createBusinessScheduleLifecycleMutations } = require('./businessSchedule
     pricings: [{ studentId: 'student-1', attendanceStatus: 1, tuition: 100, teacherFee: 60 }],
   });
   assert.deepStrictEqual(created, { id: 'schedule-2', updatedAt: '2026-08-24T03:00:00.000Z' });
-  assert.match(calls[0][0], /business\.vnext_create_schedule_record_v1/);
+  assert.match(calls[0][0], /business\.vnext_create_scoped_schedule/);
   assert.deepStrictEqual(calls[0][1], [
     'default', 'schedule-2', 'course-1', '2026-08-25T01:00:00.000Z', '2026-08-25T02:00:00.000Z',
     null, 1, 'Room One', 1, 100, 60, null,
     JSON.stringify([{ student_id: 'student-1', attendance_status: 1, tuition: 100, teacher_fee: 60 }]),
+    'teacher', 'teacher-1',
   ]);
   const removed = await mutations.remove({
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', scheduleId: 'schedule-2', expectedUpdatedAt: '2026-08-24T03:00:00.000Z',
   });
   assert.deepStrictEqual(removed, { id: 'schedule-2', updatedAt: '2026-08-24T03:00:00.000Z' });
-  assert.match(calls[1][0], /business\.vnext_soft_delete_schedule/);
-  assert.deepStrictEqual(calls[1][1], ['default', 'schedule-2', '2026-08-24T03:00:00.000Z']);
+  assert.match(calls[1][0], /business\.vnext_delete_scoped_schedule/);
+  assert.deepStrictEqual(calls[1][1], ['default', 'schedule-2', '2026-08-24T03:00:00.000Z', 'super_admin', null]);
+  assert.throws(() => mutations.remove({}), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+  assert.equal(calls.length, 2, 'missing actor must never reach the writer');
   console.log('business schedule lifecycle mutation service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

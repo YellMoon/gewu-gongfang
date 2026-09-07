@@ -506,6 +506,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
+  function scheduleWriteScope(context) {
+    const scope = scheduleScope(context);
+    if (!['super_admin', 'teacher'].includes(scope.role)) throw businessAccessDenied();
+    return { role: scope.role, teacherId: scope.profileId };
+  }
+  function scheduleWriteDenied(error) {
+    return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
+      || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_SCHEDULE_SCOPE_DENIED');
+  }
   function miniappProjectionScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
     if (context.roles.includes('super_admin')) return { role: 'manager', profileId: null, accountId: context.accountId };
@@ -1512,14 +1521,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!scheduleId || !data || !exactBody(request.body, ['scheduleId', 'data'])) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const schedule = await businessScheduleLifecycleMutations.create({ tenantId: businessTenantId, scheduleId, ...data });
+      const schedule = await businessScheduleLifecycleMutations.create({ tenantId: businessTenantId, scheduleId, ...data, actorScope: scheduleWriteScope(context) });
       if (!schedule) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       response.status(201).json({ ok: true, schedule });
     } catch (error) {
       if (error?.code === '23503' || error?.code === '22023') return response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_RELATION_INVALID' });
       if (error?.code === '23505') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
-      if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (scheduleWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1556,10 +1564,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || (hasPricings && pricings === null)) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
-        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      }
       const result = await businessScheduleUpdate({
+        actorScope: scheduleWriteScope(context),
         tenantId: businessTenantId,
         scheduleId,
         expectedUpdatedAt,
@@ -1583,7 +1589,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (error && (error.code === '23503' || error.code === '22023')) {
         return response.status(400).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_RELATION_INVALID' });
       }
-      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (scheduleWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1593,12 +1599,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!scheduleId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const schedule = await businessScheduleLifecycleMutations.remove({ tenantId: businessTenantId, scheduleId, expectedUpdatedAt });
+      const schedule = await businessScheduleLifecycleMutations.remove({ tenantId: businessTenantId, scheduleId, expectedUpdatedAt, actorScope: scheduleWriteScope(context) });
       if (!schedule) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHEDULE_CONFLICT' });
       response.json({ ok: true, schedule });
     } catch (error) {
-      if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (scheduleWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1615,10 +1620,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || tuition === null || teacherFee === null) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
-        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      }
       const result = await businessScheduleStudentOverride({
+        actorScope: scheduleWriteScope(context),
         tenantId: businessTenantId,
         scheduleId,
         studentId,
@@ -1632,7 +1635,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       }
       response.json({ ok: true, schedule: result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (scheduleWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
