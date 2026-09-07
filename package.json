@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.9.6",
+  "version": "8.9.7",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
@@ -214,6 +214,7 @@
       "!shared/cloudRelayLogic.js",
       "!shared/primaryHostSigningKey.js",
       "shared/**/*",
+      "src/services/desktopOfflineLeasePolicy.js",
       "src/services/desktopCommandOutbox.mjs",
       "src/services/desktopAuthorityClient.mjs",
       "src/services/desktopIdentityClient.mjs",

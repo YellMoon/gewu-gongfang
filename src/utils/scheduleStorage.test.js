@@ -5,6 +5,7 @@ async function main() {
     MIGRATION_FLAG_KEY,
     readSchedulesFromPrimaryStore,
     replaceSchedulesInPrimaryStore,
+    persistScheduleCalendarState,
   } = await import('./scheduleStorage.mjs');
 
   function createStorage(initial = {}) {
@@ -56,6 +57,25 @@ async function main() {
 
   const explicitResult = replaceSchedulesInPrimaryStore(protectedDb, [], protectedStorage, { allowEmptyReplace: true });
   assert.strictEqual(explicitResult.length, 0, 'explicit empty replace should still support intentional delete-all operations');
+
+  const events = [];
+  const failedStorage = createStorage({ schedules: JSON.stringify([legacySchedule]) });
+  const failedDb = {
+    getAllSchedules: () => [legacySchedule],
+    replaceSchedules: () => { throw Object.assign(new Error('draft rejected'), { code: 'DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED' }); },
+  };
+  const accepted = persistScheduleCalendarState(failedDb, [{ id: 'unsaved' }], failedStorage, {
+    onSaved: () => events.push('saved'),
+    onFailed: (error, restored) => events.push({ code: error.code, restored }),
+  });
+  assert.strictEqual(accepted, false);
+  assert.deepStrictEqual(events, [{ code: 'DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED', restored: [legacySchedule] }],
+    'failed persistence must restore visible rows and never report success');
+  assert.deepStrictEqual(JSON.parse(failedStorage.dump().schedules), [legacySchedule]);
+  assert.strictEqual(persistScheduleCalendarState(createDb([]), [legacySchedule], createStorage(), {
+    onSaved: () => events.push('saved'), onFailed: () => assert.fail('unexpected save failure'),
+  }), true);
+  assert.strictEqual(events.at(-1), 'saved');
 
   console.log('scheduleStorage checks passed');
 }

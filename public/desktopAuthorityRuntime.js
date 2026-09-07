@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { stableJson } = require('../shared/authorityProtocol');
+const { DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS } = require('../src/services/desktopOfflineLeasePolicy');
 
 function runtimeError(code) {
   return Object.assign(new Error(code), { code });
@@ -106,7 +107,7 @@ function createDesktopAuthorityRuntime({
     const expiresAt = Date.parse(String(lease.expiresAt || ''));
     const current = currentTimeMs();
     if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)
-      || issuedAt > current || expiresAt <= issuedAt) {
+      || issuedAt > current + DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS || expiresAt <= issuedAt) {
       throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
     }
     if (expiresAt <= current) {

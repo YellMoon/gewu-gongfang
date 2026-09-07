@@ -8,7 +8,7 @@ const activeSource = fs.readFileSync(activePagePath, 'utf8');
 
 assert.ok(!fs.existsSync(legacyPagePath),
   'the unreachable legacy question-bank page must be removed instead of retaining a local HTTP import path');
-assert.ok(activeSource.includes('db?.refreshAuthorityProjection?.()'),
+assert.match(activeSource, /await db\?\.refreshAuthorityProjection\?\.\((?:\{\s*notifyConsumers:\s*false\s*\})?\)/,
   'the active question list must refresh the cloud authority projection before reading its local encrypted cache');
 assert.ok(!activeSource.includes('/api/question-bank'),
   'the active question list must not call the retired embedded-backend question endpoint');

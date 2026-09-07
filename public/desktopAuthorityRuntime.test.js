@@ -180,6 +180,26 @@ function staticRelativeModuleClosure(entryFile) {
     'an offline submit attempt must not confirm or mutate the draft');
   assert.strictEqual(offlineNetworkCalls, 0);
 
+  const originalLeaseStatus = offlineLeaseStatus;
+  for (const skewMs of [1, 35000, 60000]) {
+    offlineLeaseStatus = { ...originalLeaseStatus, offlineLease: {
+      ...originalLeaseStatus.offlineLease,
+      issuedAt: new Date(Date.parse('2026-07-28T00:00:00.000Z') + skewMs).toISOString(),
+    } };
+    const skewDraft = await offlineRuntime.appendDraft({
+      type: envelope.type, payload: envelope.payload,
+    });
+    assert.strictEqual(skewDraft.status, 'awaiting_confirmation',
+      'a verified lease tolerates up to 60 seconds of local clock lag');
+  }
+  offlineLeaseStatus = { ...originalLeaseStatus, offlineLease: {
+    ...originalLeaseStatus.offlineLease, issuedAt: '2026-07-28T00:01:00.001Z',
+  } };
+  await assert.rejects(() => offlineRuntime.appendDraft({ type: envelope.type, payload: envelope.payload }),
+    error => error?.code === 'DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
+  offlineLeaseStatus = originalLeaseStatus;
+  assert.strictEqual(offlineNetworkCalls, 0);
+
   const emptyVaultRuntime = createDesktopAuthorityRuntime({
     filePath: path.join(workspace, 'empty-vault-authority-outbox.bin'),
     safeStorage: {

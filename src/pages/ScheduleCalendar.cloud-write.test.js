@@ -4,6 +4,9 @@ const assert = require('assert');
 const fs = require('fs');
 
 const source = fs.readFileSync('src/pages/ScheduleCalendar.tsx', 'utf8');
+assert.ok(source.includes('persistScheduleCalendarState('), 'calendar must distinguish persisted drafts from rejected saves');
+assert.ok(source.includes('setSchedules(restored as ScheduleEvent[])'), 'failed saves must restore the visible calendar');
+assert.ok(source.includes('pendingSaveNoticeRef.current'), 'form success must wait until draft persistence');
 assert.ok(source.includes('start_time: startTime.toISOString()'),
   'drag-created schedules must persist a strict ISO instant');
 assert.ok(source.includes('const startTimeStr = localStart.toISOString()'),

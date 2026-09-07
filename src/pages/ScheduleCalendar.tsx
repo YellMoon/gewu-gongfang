@@ -15,7 +15,7 @@ import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } 
 import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot, buildCourseRefreshFinancialSnapshot } from '../utils/financialDetails';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
-import { readSchedulesFromPrimaryStore, replaceSchedulesInPrimaryStore } from '../utils/scheduleStorage.mjs';
+import { readSchedulesFromPrimaryStore, persistScheduleCalendarState } from '../utils/scheduleStorage.mjs';
 import { appendSteppedBatchDate, normalizeDateStepDays } from '../utils/scheduleBatchDates.mjs';
 import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
 import { normalizeRefreshDateRange, updateRefreshDateRangeBoundary } from '../utils/scheduleRefreshRange.mjs';
@@ -1143,6 +1143,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const schedulesHydratedRef = useRef(false);
   const schedulesDirtyRef = useRef(false);
+  const pendingSaveNoticeRef = useRef<string | null>(null);
   const loadingSchedulesRef = useRef(false);
   const today = dayjs();
   let initialMonday = today.startOf('isoWeek');
@@ -1395,8 +1396,21 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   React.useEffect(() => {
     try {
       if (schedulesHydratedRef.current && schedulesDirtyRef.current && !loadingSchedulesRef.current) {
-        replaceSchedulesInPrimaryStore((window as any).dbService, schedules, localStorage, { allowEmptyReplace: true });
         schedulesDirtyRef.current = false;
+        const saved = persistScheduleCalendarState((window as any).dbService, schedules, localStorage, {
+          onSaved: () => {
+            if (pendingSaveNoticeRef.current) message.success(pendingSaveNoticeRef.current);
+            pendingSaveNoticeRef.current = null;
+          },
+          onFailed: (_error: unknown, restored: unknown[]) => {
+            setSchedules(restored as ScheduleEvent[]);
+            setHistory({ past: [], future: [] });
+            if (pendingSaveNoticeRef.current) setModalVisible(true);
+            pendingSaveNoticeRef.current = null;
+            message.error('\u6392\u8bfe\u672a\u4fdd\u5b58\uff0c\u8bf7\u91cd\u8bd5\u3002');
+          },
+        });
+        if (!saved) return;
       }
       setBatchSchedules(schedules);
       setBatchRooms(rooms);
@@ -1764,6 +1778,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       
       const datesToSave = batchDates.length > 0 ? batchDates : [values.date];
       const newSchedules: ScheduleEvent[] = [];
+      let scheduleChanged = false;
+      pendingSaveNoticeRef.current = '\u6392\u8bfe\u5df2\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u786e\u8ba4\u540e\u63d0\u4ea4\u3002';
       
       datesToSave.forEach((dateDayjs, index) => {
         const dateStr = dateDayjs.format('YYYY-MM-DD');
@@ -1780,6 +1796,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         }
         
         if (editingSchedule && index === 0) {
+          scheduleChanged = true;
           setSchedulesWithHistory(prev => prev.map(s =>
             s.id === editingSchedule.id
               ? (() => {
@@ -1829,13 +1846,17 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       });
       
       if (newSchedules.length > 0) {
+        scheduleChanged = true;
         setSchedulesWithHistory(prev => [...prev, ...newSchedules]);
         const logDetail = `批量创建排课：${datesToSave.length} 节 - ${newSchedules.map(s => s.course_name.split(' ')[0]).filter(Boolean).join(', ')}`;
         (window as any).operateLogger?.log('创建', logDetail, '课程表');
       }
       
       const msg = datesToSave.length > 1 ? `已添加 ${datesToSave.length} 节课程` : '课程已保存';
-      message.success(msg);
+      if (!scheduleChanged) {
+        pendingSaveNoticeRef.current = null;
+        return;
+      }
       setModalVisible(false);
     }).catch(err => {
       console.error(err);

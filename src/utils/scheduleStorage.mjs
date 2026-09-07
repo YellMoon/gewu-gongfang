@@ -111,7 +111,19 @@ function replaceSchedulesInPrimaryStore(db, schedules, storage, options = {}) {
   return saved;
 }
 
+function persistScheduleCalendarState(db, schedules, storage, { onSaved, onFailed }) {
+  try {
+    replaceSchedulesInPrimaryStore(db, schedules, storage, { allowEmptyReplace: true });
+  } catch (error) {
+    onFailed(error, [...(db?.getAllSchedules?.() || [])]);
+    return false;
+  }
+  onSaved();
+  return true;
+}
+
 export {
+  persistScheduleCalendarState,
   LEGACY_SCHEDULE_STORAGE_KEYS,
   MIGRATION_FLAG_KEY,
   readSchedulesFromPrimaryStore,

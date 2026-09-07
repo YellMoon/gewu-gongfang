@@ -171,6 +171,18 @@ async function main() {
   });
   assert.strictEqual(offline.kind, 'offline-unlocked');
   assert.strictEqual(offline.partitionKey, 'user-1:teacher:teacher-1');
+  for (const skewMs of [1, 35000, 60000, 60001]) {
+    const skewState = resolveDesktopGateState({
+      vaultStatus: {
+        state: 'unlocked', unlocked: true,
+        offlineLease: { ...offlineLease, issuedAt: new Date(Date.parse('2026-07-29T00:00:00.000Z') + skewMs).toISOString() },
+        user: { id: 'user-1' }, deviceId: 'device-1', authorizationId: 'authorization-1',
+        credentialVersion: 1, activeRole: 'teacher', teacherId: 'teacher-1', eligibleRoles: ['teacher'],
+      }, online: false, now: new Date('2026-07-29T00:00:00.000Z'),
+    });
+    assert.strictEqual(skewState.kind === 'offline-unlocked', skewMs <= 60000,
+      'renderer and main process must use the same bounded lease clock tolerance');
+  }
   assert.strictEqual(canStartBusinessRuntime({ gateState: offline }), true);
   assert.strictEqual(canStartBusinessRuntime({ gateState: { kind: 'registration-required' } }), false);
   assert.strictEqual(

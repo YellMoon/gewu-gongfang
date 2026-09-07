@@ -2,9 +2,10 @@ import {
   clearDesktopAuthorizationSession,
   saveDesktopAuthorizationSession,
 } from './desktopAuthorizationSession.mjs';
+import offlineLeasePolicy from './desktopOfflineLeasePolicy.js';
 
 export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
-const CLOCK_SKEW_MS = 30 * 1000;
+const { DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS: CLOCK_SKEW_MS } = offlineLeasePolicy;
 const DESKTOP_ROLE_SET = new Set(['super_admin', 'teacher']);
 const PRIVILEGED_ROLES = new Set(['super_admin']);
 const CLOUD_IDENTITY_OUTAGE_STATUSES = new Set([502, 503, 504]);
