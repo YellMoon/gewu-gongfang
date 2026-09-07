@@ -8,6 +8,8 @@ from apply_cloud_postgres_migrations import (
     DockerPsqlExecutor,
     KNOWN_HISTORICAL_MIGRATION_COMPATIBILITY,
     apply_migrations,
+    atomic_migration_sql,
+    migration_sql,
     read_migrations,
 )
 
@@ -30,6 +32,24 @@ class FakeExecutor:
 
 
 class CloudPostgresMigrationTests(unittest.TestCase):
+    def test_real_snapshot_migration_can_have_a_leading_comment(self):
+        root = pathlib.Path(__file__).resolve().parents[1] / "cloud-business-api" / "sql"
+        migration = next(row for row in read_migrations(root) if row["name"] == "20260907-zz-schedule-financial-snapshot.sql")
+        generated = atomic_migration_sql(migration)
+        self.assertTrue(generated.startswith("-- UTF-8:"))
+        self.assertIn("INSERT INTO business.cloud_schema_migrations", generated)
+        self.assertEqual(generated.count("SET LOCAL ROLE vnext_pg17_business_owner;"), 1)
+        self.assertIn(migration["sha256"], generated)
+
+    def test_only_comments_may_precede_begin_and_comment_text_is_not_a_role_switch(self):
+        for prefix in ("-- header\n", "/* outer /* nested */ header */\n", "  -- BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;\n"):
+            generated = migration_sql(prefix + "BEGIN; SELECT 1; COMMIT;")
+            self.assertIn("BEGIN;\n\nSET LOCAL ROLE vnext_pg17_business_owner;", generated)
+            self.assertTrue(generated.startswith(prefix))
+        for sql in ("/* unterminated BEGIN;", "-- only a comment BEGIN;", "SELECT 1; BEGIN; COMMIT;", "-- note\nSELECT 1;"):
+            with self.assertRaisesRegex(RuntimeError, "CLOUD_MIGRATION_CONFIG_INVALID"):
+                migration_sql(sql)
+
     def test_uses_the_deployed_database_administration_role(self):
         self.assertEqual(DEFAULT_MIGRATION_ROLE, "gewu_app")
 

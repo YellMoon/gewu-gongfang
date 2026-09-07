@@ -42,6 +42,16 @@ class CloudPostgresBackupTest(unittest.TestCase):
             result = MODULE.create_backup(now=MODULE.datetime(2026, 8, 24, 12, 0, 0, tzinfo=MODULE.timezone.utc))
         self.assertIs(result["restoreVerified"], True)
 
+    def test_cleanup_only_drops_a_database_created_by_this_run(self):
+        command = MODULE.backup_command("20260907-070000")
+        self.assertIn("restore_db_created=0", command)
+        self.assertIn('if [ "$restore_db_created" = 1 ]; then', command)
+        created = command.index('createdb -U')
+        owned = command.index('restore_db_created=1')
+        self.assertLess(created, owned)
+        self.assertIn('mkdir "$backup_dir"', command)
+        self.assertNotIn('mkdir -p "$backup_dir"', command)
+
     def test_rejects_shell_metacharacters(self):
         for kwargs in ({"container": "db;id"}, {"database": "gewu-cloud"}, {"role": "postgres root"}):
             with self.assertRaisesRegex(RuntimeError, "CLOUD_POSTGRES_BACKUP_CONFIG_INVALID"):

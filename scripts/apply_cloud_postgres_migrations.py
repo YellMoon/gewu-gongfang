@@ -62,17 +62,45 @@ def owner_sql(statement):
     return "BEGIN; SET LOCAL ROLE vnext_pg17_business_owner; " + statement + "; COMMIT;\n"
 
 
+def skip_sql_leading_comments(sql, start=0):
+    cursor = start
+    while cursor < len(sql):
+        if sql[cursor].isspace():
+            cursor += 1
+        elif sql.startswith("--", cursor):
+            end = sql.find("\n", cursor + 2)
+            cursor = len(sql) if end < 0 else end + 1
+        elif sql.startswith("/*", cursor):
+            depth = 1
+            cursor += 2
+            while cursor < len(sql) and depth:
+                if sql.startswith("/*", cursor):
+                    depth += 1
+                    cursor += 2
+                elif sql.startswith("*/", cursor):
+                    depth -= 1
+                    cursor += 2
+                else:
+                    cursor += 1
+            if depth:
+                raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
+        else:
+            break
+    return cursor
+
+
 def migration_sql(sql):
-    if not isinstance(sql, str) or not re.match(r"^\s*BEGIN\s*;", sql):
+    if not isinstance(sql, str):
         raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
-    if re.search(r"\bSET\s+LOCAL\s+ROLE\s+vnext_pg17_business_owner\b", sql, re.IGNORECASE):
+    start = skip_sql_leading_comments(sql)
+    begin = re.match(r"BEGIN\s*;", sql[start:], re.IGNORECASE)
+    if not begin:
+        raise RuntimeError("CLOUD_MIGRATION_CONFIG_INVALID")
+    boundary = start + begin.end()
+    first_statement = skip_sql_leading_comments(sql, boundary)
+    if re.match(r"SET\s+LOCAL\s+ROLE\s+vnext_pg17_business_owner\s*;", sql[first_statement:], re.IGNORECASE):
         return sql
-    return re.sub(
-        r"^(\s*BEGIN\s*;)",
-        r"\1\n\nSET LOCAL ROLE vnext_pg17_business_owner;",
-        sql,
-        count=1,
-    )
+    return sql[:boundary] + "\n\nSET LOCAL ROLE vnext_pg17_business_owner;" + sql[boundary:]
 
 
 def atomic_migration_sql(migration):
