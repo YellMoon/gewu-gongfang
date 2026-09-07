@@ -15,10 +15,10 @@
 | 编号 | 范围 | 当前代码证据 | 状态与下一步 |
 |---|---|---|---|
 | BP-01 | 排课列表另造编辑窗 | `ScheduleList.tsx`；323862ef 新增 Modal、Form 和独立 updateCloudSchedule 路径，原列表只查询/筛选/导出 | 本轮删除额外窗口、按钮、状态、提交函数和专用权限 helper；保留完整云投影读取。原课程表窗口未替换。新增 AST 回归先失败后通过；尚未新构建实测 |
-| BP-02 | 课程内输入新地址 | `CourseList.tsx:handleSubmit` 将原 `addOrUpdateRoom` 换成提示后 return | 未恢复。应在原课程保存流程中完成关联地址保存，不能要求用户先跳地址页面。在线、离线、失败重试、地址重名及关联 ID 都需验证 |
-| BP-03 | 课程设置联动排课地址 | `CourseList.tsx:submitCourseToAuthority` 的草稿分支调用 `syncSchedulesRoomName`，在线成功分支只刷新投影 | 未恢复/未验证云端等效联动。必须对照旧版联动范围，包括历史记录是否更新，不能凭新设计擅自改变规则 |
+| BP-02 | 课程内输入新地址 | 已恢复原表单内创建地址和课程的草稿关联；确认窗口展示关联地址，并按已确认快照先提交地址、再提交课程 | 部分恢复；本地原子保存、依赖确认与失败重试测试通过。真实教师云端闭环和重名冲突恢复未完成，不关闭 |
+| BP-03 | 课程设置联动排课地址 | 在线和草稿分支都已调用原 `syncSchedulesRoomName`，保持全可见课程的原遍历范围 | 已恢复派生缓存及待确认草稿生成；关联排课仍需确认，未验证云端完整等效联动，不关闭 |
 | BP-04 | 排课计费快照字段 | `types/index.ts:Schedule` 和 `financialDetails.ts:buildScheduleFinancialSnapshot` 包含 billing_unit、teacher_fee_mode、teacher_id、teacher_name；`authorityDraftAdapter.mjs` 的 schedules 字段白名单和 `desktopCloudBusinessDraft.mjs:scheduleInput` 未携带这些字段 | 已确认提交链路缺字段，尚未修复。必须核验数据库结构、读投影、REST 与离线草稿的完整往返；仅补前端字段不算完成。课程改价/改计费模式后，旧排课及手动刷新行为必须按原逻辑验证 |
-| BP-05 | 教师课程维护权限 | `cloud-business-api/src/app.js` 的课程 create/update/delete 仍要求 super_admin | 未修复。应实现教师原业务能力与本人数据范围，不得给测试教师加管理员权限，也不得删除原入口掩盖拒绝 |
+| BP-05 | 教师课程维护权限 | 教师本人课程增删改、地址创建的服务与 SQL 已提交；迁移 `20260907-teacher-course-write-scope.sql` 尚未部署 | 部分实现；云端专项测试通过不等于生产已可用。新学生首次归属及教师地址维护仍待补齐，不关闭 |
 | BP-06 | 学生添加/修改/删除 | `StudentList.tsx` 原表单仍在，但写入、联系人、引用删除约束已改变 | 未完成逐行为核验。新增三组手机号/微信属于用户明确要求；其余字段、学校录入、机构归属、费用余额、删除及关联行为必须对照，不得统称“已保留” |
 | BP-07 | 原课程表全部动作 | `ScheduleCalendar.tsx` 的 handleSave、handleDragSchedule、handleResizeSchedule、handleSaveStudentEdit、handleDeleteSchedule、handleRefreshCourseInfo 仍存在 | 源码存在不代表实际完成。需要原窗口逐项验证新建/修改/调课/复制/拉伸/批量/删除/撤销重做/出勤与费用；含刷新与重开后的持久化 |
 
@@ -100,11 +100,38 @@ BP-02～BP-07 未关闭前，不得以 BP-01 测试通过宣称业务迁移保�
 - **BP-02 尚不关闭**：生产真实操作、同名地址冲突恢复、在线与离线最终结果对照待验；课程保存后的全范围排课地址联动仍是 BP-03 未完成项。未部署、未上传 OSS。
 - 页面生产构建 `npx craco build` 会话 92700 退出 0，主包 `main.5e346d82.js`；这是源码页面构建，不是安装包验证。新模块已补入桌面打包文件清单，相应缺失断言先失败后通过；`test:desktop-build-flavor` 通过。用户版本文件 SHA256 仍为 `BD068AA29EBCE184DDFE3383C17987BEC984C3C71A33A409EF9AEB4643CFC173`。本次没有切换 ABI、递增版本或发布。
 
+### 保存课程后的排课地址联动：已恢复草稿生成（UTF-8）
+
+- 在线新建和修改课程成功、刷新投影后，重新调用原 `syncSchedulesRoomName`；离线分支原调用保留。没有将范围缩成刚保存的课程，也没有加排课日期、状态或结课过滤。
+- 新增 `CourseList.room-sync.test.js` 执行真实保存函数与原联动函数：先复现在线只保存/刷新、未捕获地址变化，再验证新建/编辑均产生联动。涵盖其他课程、已结课课程、空地址、找不到课程的排课；除地址外，出勤、金额、备注、时间和观察到的版本均不改写，源对象不提前突变。
+- 这一步恢复的是原联动结果在派生缓存和待确认草稿中的形成；**不是已同步全部云端排课**。关联排课仍需逐条确认，完整联动的真实云端验收尚未完成，BP-03 不关闭。
+- 专项、草稿捕获和最终类型检查会话 60746 通过；页面构建会话 81261 退出 0，主包 `main.28b6ad49.js`。
+- 完整测试会话 81024 已跑过云端全部测试和教师权限 PostgreSQL 测试，随后在 `SyncSettingsAuthorization.test.js` 失败：仍断言旧两参数确认调用。本次更新为包含内容快照的调用检查，并补快照生成断言；`test:identity-device-center` 与 `uiRegression` 重跑通过。此次有明确原因，不用于解释前两次无错误输出的退出。
+
+### 隔离桌面启动实测发现的双目录原生依赖缺口（UTF-8）
+
+- `desktop-attendance-parity-9OVEUC` 通过真实配对确认请求后未进入主界面，停回密码登录页；尚未触及测试排课，不能算出勤通过。
+- 该隔离目录的 `profile/logs/electron-main.log` 明确记录缓存服务启动失败：实际加载 `backend/node_modules/better-sqlite3`，模块 ABI 137，而 Electron 要求 119。根目录与 backend 下是两份独立依赖，旧准备脚本只处理根目录。
+- 原生模块准备和恢复脚本已扩展到 backend；验证器也分别从根目录和 backend 的模块解析入口打开内存数据库，不能再用根目录成功掩盖后端失败。测试先复现旧验证器漏检，再验证故障注入可拦截；修改前两份 Node ABI 137 实际检查通过。完整 Electron 重跑结果另记，不提前宣称登录修复。
+
 ### 失败实测记录（不计通过，UTF-8）
 
 隔离测试 `desktop-attendance-parity-x9K1NC` 在原“学生出勤和费用”窗口将正常出勤改为请假，本地草稿形成、联网未静默提交；人工确认后状态为 conflict。读取该隔离目录加密草稿得到具体拒绝 `CLOUD_BUSINESS_INPUT_INVALID`，不是已证实的并发版本冲突。提交基线为 `2026-09-07T03:29:18.983+00:00`，云接口校验要求规范 ISO Z 格式。新 REST 往返回归先复现同样拒绝，传输格式修复后通过；尚未重新验证生产真实出勤操作。该记录不得写成真实操作通过、已恢复出勤、已完成发布。
 
 ## 当前证据边界
+
+### 2026-09-07 本轮真实出勤闭环（UTF-8）
+
+- 新页面构建会话 69177 退出 0，主包 `main.83658e2f.js`；类型检查会话 4512 退出 0。没有生成安装包、上传 OSS 或部署云服务。
+- 前次 `desktop-attendance-parity-niANAK` 已将隔离排课恢复正常并验证云端金额，但重载后回到登录页，因此整条测试失败。定位为 `DesktopIdentityGate` 初始化只恢复 sealed，遗漏主进程仍 unlocked、页面会话已丢失的情况；新测试执行真实初始化分支，先在 unlocked 场景失败，修复后 sealed/unlocked 的成功与云端拒绝分支均通过。恢复仍要求云端签发会话，不凭本地已解锁状态直接进入业务。
+- 实测会话 47968 退出 0：源码 Electron 在隔离本地目录启动，以既有测试教师登录配对，连接真实 `physicsedu.xyz` 云服务，在原“学生出勤和费用”窗口执行正常→请假→取消→正常。
+- 每一步均验证只生成 awaiting_confirmation 草稿、联网不提交、用户点击确认后完成云写入；请假和取消的学费/课时费合计均为 0，恢复正常后分别为 270/180。每次重载后重新打开原窗口核验对应出勤状态；最后测试排课 `d664f976-4ae4-4bcd-8dc8-bb9cfb5a17a1` 已恢复正常。没有改角色授权或真实学生档案。
+- 证据目录：`C:/Users/83423/AppData/Local/Temp/gewu-question-pagination-20260906/desktop-attendance-parity-IGzqnj`。`receipt.json` SHA256 为 `AFAF33AA5820E94FAB0EBFB4ED1E43059D76EC177F7289D204CC2F8D4971D3AF`；`reopened-4.png`、`reopened-3.png`、`reopened-1.png` 已实际查看，状态、原单价 180/120 和原窗口控件均可见。课程和学生名称仍含测试标记，不能用这些截图宣称命名与全部页面视觉验收完成。
+- 同一实测同时验证排课列表没有后来另造的“编辑云端排课”按钮。仅这一读取检查不等于列表筛选、导出全部验收。
+- Electron 根目录和 backend 两份模块均实际校验为 ABI 119；实测结束后已恢复并校验 Node 两份 ABI 137。此前漏检 backend 的原生依赖问题已纳入准备、恢复和验证脚本。
+- 此证据限于一个既有测试教师、一节 1.5 小时课程、一个学生的出勤完整循环。不是微信手机扫码登录验收、安装包验收、全部排课动作、多教师/机构/多人计费、所有角色或统一发布完成；BP-04、BP-07 仍不关闭。
+- 本轮完整 `npm test` 仍未通过：会话 82413 在角色申请原子档案 PostgreSQL 单项前后异常终止，npm 记录退出码 `-1073740791`；该单项独立重跑退出 0。随后完整重跑在另一处（跨安装锁测试前后）退出 1，该单项独立运行也通过。20 次最小 `node -e 'process.exit(0)'` 未复现异常；尚无证据确定根因，不将随机重跑成功或当前专项通过冒称整套通过。
+- 本轮已重新通过：`DesktopIdentityGate.test.js`（含真实初始化分支测试）、`desktopIdentityClient.test.js`（含真实本地 REST 版本往返）、`authorityProjectionCacheAdapter.test.js`、`financialDetails.test.js`、`test:cloud-schedule`、`SyncSettingsAuthorization.test.js`、`desktopAuthorityClient.test.js`、`desktopAuthorityRuntime.test.js`、原生模块验证器测试。用户版本文件 SHA256 保持 `BD068AA29EBCE184DDFE3383C17987BEC984C3C71A33A409EF9AEB4643CFC173`。
 
 - 8.9.8 构建会话 34379 成功，Electron ABI 119 检查通过，Node 原生依赖恢复并通过数据库测试；这是本轮删除窗口**之前**的构建，不能证明当前源码的渲染结果。
 - 旧构建真实教师测试 `desktop-teacher-schedule-QqtSFB`：原课程表新建一节课只产生一个 awaiting_confirmation 草稿；重新联网不提交；人工确认后云端创建 d664f976-4ae4-4bcd-8dc8-bb9cfb5a17a1。其后的简化编辑窗保存失败，整条测试未通过。

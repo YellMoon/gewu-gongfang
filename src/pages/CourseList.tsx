@@ -250,6 +250,7 @@ const CourseList: React.FC = () => {
         await cloudRuntime.createCloudCourse({ courseId, ...courseCloudPayload(values) });
       }
       await dbService.refreshAuthorityProjection();
+      syncSchedulesRoomName(values);
       message.success(editingCourse ? '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u521b\u5efa');
       return true;
     } catch (error: any) {

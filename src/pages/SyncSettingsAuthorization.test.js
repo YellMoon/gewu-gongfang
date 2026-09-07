@@ -26,7 +26,8 @@ for (const pageSource of [syncSettings, cloudSync]) {
 }
 
 assert.ok(outboxPanel.includes('requireBridge().list()'));
-assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item))'));
+assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item), confirmation)'));
+assert.ok(outboxPanel.includes('draftConfirmationSnapshot([...dependencies, item])'));
 assert.ok(outboxPanel.includes('requireBridge().submit(item.id, cloudDraftSubmissionInput(item))'));
 assert.ok(outboxPanel.includes('Modal.confirm'));
 assert.ok(outboxPanel.includes('draftPresentation(item)'));

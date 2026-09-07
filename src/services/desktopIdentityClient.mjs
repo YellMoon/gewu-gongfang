@@ -262,6 +262,19 @@ async function responseData(response) {
   return payload.data || payload;
 }
 
+function serializeBusinessVersion(key, value) {
+  if (key !== 'expectedUpdatedAt' || typeof value !== 'string') return value;
+  // PostgreSQL projections include a UTC offset; REST requires canonical ISO.
+  // Only normalize without precision loss. Never round a concurrency token.
+  const match = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return value;
+  const calendarDate = new Date(`${match[1]}T00:00:00.000Z`);
+  const instant = new Date(value);
+  if (!Number.isFinite(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== match[1]
+    || !Number.isFinite(instant.getTime())) return value;
+  return instant.toISOString();
+}
+
 async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token } = {}) {
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -269,7 +282,7 @@ async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, tok
   const response = await fetchImpl(`${normalizedBaseUrl(baseUrl)}${pathname}`, {
     method,
     headers,
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(body === undefined ? {} : { body: JSON.stringify(body, pathname.startsWith('/api/business/') ? serializeBusinessVersion : undefined) }),
   });
   return responseData(response);
 }

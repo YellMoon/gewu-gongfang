@@ -108,3 +108,34 @@ assert.strictEqual(
 }
 
 console.log('financialDetails refresh tests passed');
+
+// Exercise the original financial rules through the cloud projection and draft
+// adapters. A field-name mismatch must not turn leave/cancellation into normal.
+(async () => {
+  const { buildAuthorityBackedBrowserCache } = await import('../services/authorityProjectionCacheAdapter.mjs');
+  const { createAuthorityDraftFromLocalMutation } = await import('../services/authorityDraftAdapter.mjs');
+  const { createDesktopCloudBusinessDraftAdapter } = await import('../services/desktopCloudBusinessDraft.mjs');
+  for (const attendance of [1, 3, 4]) {
+    const course = { id: 'course-attendance', billing_unit: types.BillingUnit.PER_HOUR, teacher_fee_mode: types.TeacherFeeMode.PER_SESSION };
+    const row = { id: 'schedule-attendance', course_id: course.id, start_time: '2026-09-07T01:00:00Z', end_time: '2026-09-07T02:30:00Z', status: 1, updated_at: '2026-09-07T00:00:00Z', student_pricings: [{ student_id: 'student-1', attendance_status: attendance, tuition: 180, teacher_fee: 120 }] };
+    const projection = { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, payload: { schedules: [row], courses: [course] } };
+    const cache = buildAuthorityBackedBrowserCache({ projection });
+    const local = cache.schedules[0];
+    assert.strictEqual(local.student_pricings[0].status, attendance, 'cloud attendance must use the field expected by the original form');
+    assert.strictEqual(Object.hasOwn(local.student_pricings[0], 'attendance_status'), false, 'one canonical field prevents stale alias conflicts');
+    const expected = financialDetails.buildScheduleFinancialSnapshot({ ...row, student_pricings: [{ student_id: 'student-1', status: attendance, tuition: 180, teacher_fee: 120 }] }, course);
+    const calculated = financialDetails.buildScheduleFinancialSnapshot(local, course);
+    assert.deepStrictEqual(calculated, expected, 'cloud-loaded lesson must keep original attendance and financial behavior');
+    const mutation = createAuthorityDraftFromLocalMutation({ collection: 'schedules', action: 'update', recordId: row.id, baseVersion: row.updated_at, value: { ...local, ...calculated } });
+    let submitted;
+    const adapter = createDesktopCloudBusinessDraftAdapter({ baseUrl: 'https://business.example', sha256: value => `hash:${value}`, cloudClient: { updateCloudSchedule: async input => { submitted = input; return { id: row.id, updatedAt: '2026-09-07T03:00:00Z' }; } } });
+    const command = adapter.createCommand({ ...mutation, id: 'draft-attendance' });
+    await adapter.submit(command, { sessionToken: 'test-session' });
+    assert.strictEqual(submitted.pricings[0].attendanceStatus, attendance);
+    assert.strictEqual(submitted.tuition, expected.calculated_tuition);
+    assert.strictEqual(submitted.teacherFee, expected.calculated_teacher_fee);
+    assert.strictEqual(submitted.expectedUpdatedAt, row.updated_at);
+    assert.strictEqual(row.student_pricings[0].attendance_status, attendance, 'cloud input must not be mutated');
+  }
+  console.log('cloud attendance original financial round-trip checks passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -23,16 +23,18 @@ function resolvePackagedPaths({ appRoot = process.env.PACKAGED_APP_ROOT, executa
   return Object.freeze({ appRoot: resolvedAppRoot, executable: resolvedExecutable });
 }
 
-function verifyPackagedNativeModule({ appRoot }) {
-  const packagedRequire = Module.createRequire(path.join(appRoot, 'package.json'));
-  const Database = packagedRequire('better-sqlite3');
-  const db = new Database(':memory:');
-  try {
-    const row = db.prepare('SELECT 1 AS ok').get();
-    if (row?.ok !== 1) throw new Error('PACKAGED_SQLITE_SMOKE_FAILED');
-    console.log(`packaged Electron native ABI verified: ${process.versions.modules}`);
-  } finally {
-    db.close();
+function verifyPackagedNativeModule({ appRoot, createRequire = Module.createRequire, log = console.log }) {
+  for (const scope of ['', 'backend']) {
+    const packagedRequire = createRequire(path.join(appRoot, scope, 'package.json'));
+    const Database = packagedRequire('better-sqlite3');
+    const db = new Database(':memory:');
+    try {
+      const row = db.prepare('SELECT 1 AS ok').get();
+      if (row?.ok !== 1) throw new Error('PACKAGED_SQLITE_SMOKE_FAILED');
+      log(`native ABI verified (${scope || 'root'}): ${process.versions.modules}`);
+    } finally {
+      db.close();
+    }
   }
 }
 

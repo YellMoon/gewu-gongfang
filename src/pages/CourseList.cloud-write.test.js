@@ -24,3 +24,4 @@ for (const [name, pageSource] of Object.entries({ course: source, room: roomSour
 assert.ok(!studentSource.includes('__legacyStudentEditFallback'), 'student page must not retain a legacy local-write fallback');
 console.log('course list cloud-write source checks passed');
 require('./CourseList.business-parity.test.js');
+require('./CourseList.room-sync.test.js');

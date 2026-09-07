@@ -131,6 +131,23 @@ const assert = require('assert');
     error => error?.code === 'AUTHORITY_PROJECTION_CACHE_INVALID',
   );
 
+  const attendanceProjection = {
+    ...projection,
+    payload: { schedules: [{ id: 'schedule-attendance', student_pricings: JSON.stringify([{ student_id: 'student-1', attendance_status: 4, tuition: 100, teacher_fee: 50 }]) }] },
+  };
+  const attendanceCache = (outbox = []) => buildAuthorityBackedBrowserCache({ projection: attendanceProjection, outbox });
+  assert.deepStrictEqual(attendanceCache().schedules[0].student_pricings, [
+    { student_id: 'student-1', status: 4, tuition: 100, teacher_fee: 50 },
+  ]);
+  const localAttendanceDraft = {
+    type: 'schedule.update.v1', status: 'awaiting_confirmation',
+    payload: { id: 'schedule-attendance', changes: { student_pricings: [{ student_id: 'student-1', status: 3, attendance_status: 4, tuition: 100, teacher_fee: 50 }] } },
+  };
+  assert.strictEqual(attendanceCache([localAttendanceDraft]).schedules[0].student_pricings[0].status, 3);
+  assert.strictEqual(attendanceCache([{ ...localAttendanceDraft, status: 'completed' }]).schedules[0].student_pricings[0].status, 4);
+  assert.strictEqual(localAttendanceDraft.payload.changes.student_pricings[0].attendance_status, 4);
+  assert.throws(() => buildAuthorityBackedBrowserCache({ projection: { ...projection, payload: { schedules: [{ student_pricings: [{ attendance_status: 999 }] }] } } }),
+    error => error.code === 'AUTHORITY_PROJECTION_SCHEDULE_ATTENDANCE_INVALID');
   console.log('authorityProjectionCacheAdapter tests passed');
 })().catch(error => {
   console.error(error);

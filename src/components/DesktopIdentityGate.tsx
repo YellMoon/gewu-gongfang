@@ -335,7 +335,8 @@ const DesktopIdentityGate: React.FC = () => {
             : 'registration-interrupted' });
           return;
         }
-        if (vaultStatus.state === 'sealed') {
+        // UTF-8: renderer reload loses its session even when the main-process vault is unlocked.
+        if (['sealed', 'unlocked'].includes(vaultStatus.state)) {
           try {
             const resumed = await client.resume({ baseUrl: identityBaseUrl, online: browserOnline() });
             if (!cancelled) acceptRuntime(resumed);

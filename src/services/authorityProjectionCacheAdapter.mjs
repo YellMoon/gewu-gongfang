@@ -53,10 +53,23 @@ function normalizeCourse(row = {}) {
 }
 
 function normalizeSchedule(row = {}) {
+  const pricings = parsedJson(row.student_pricings, []);
+  if (!Array.isArray(pricings)) throw cacheError('AUTHORITY_PROJECTION_SCHEDULE_PRICINGS_INVALID');
   return {
     ...clone(row),
     student_ids: parsedJson(row.student_ids, []),
-    student_pricings: parsedJson(row.student_pricings, []),
+    student_pricings: pricings.map(pricing => {
+      // Preserve the original desktop form/financial contract. Local draft
+      // status takes precedence over a stale cloud alias after an offline edit.
+      const status = pricing.status ?? pricing.attendance_status;
+      const normalized = { ...pricing };
+      delete normalized.attendance_status;
+      if (status !== undefined && status !== null) {
+        if (![1, 3, 4].includes(Number(status))) throw cacheError('AUTHORITY_PROJECTION_SCHEDULE_ATTENDANCE_INVALID');
+        normalized.status = Number(status);
+      }
+      return normalized;
+    }),
   };
 }
 
