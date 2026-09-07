@@ -102,3 +102,5 @@ try {
 }
 
 process.stdout.write('vNext core scheduling read-only source checks passed\n');
+require('./scheduleSnapshotRecoveryPlan.test');
+require('./planCapturedScheduleSnapshotRecovery.test');
