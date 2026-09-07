@@ -526,6 +526,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
       || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_SCHEDULE_SCOPE_DENIED');
   }
+  function studentWriteDenied(error) {
+    return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
+      || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_STUDENT_SCOPE_DENIED');
+  }
   function courseWriteDenied(error) {
     return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
       || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_COURSE_SCOPE_DENIED');
@@ -555,7 +559,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     ')),',
     'scoped_students AS (',
     'SELECT s.* FROM business.students s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND (',
-    "$2='manager' OR ($2='student' AND s.id=$3) OR ($2='teacher' AND (EXISTS (SELECT 1 FROM business.course_student_pricings p JOIN scoped_courses c ON c.tenant_id=p.tenant_id AND c.id=p.course_id WHERE p.tenant_id=s.tenant_id AND p.student_id=s.id) OR EXISTS (SELECT 1 FROM business.schedule_student_overrides o JOIN scoped_schedules x ON x.tenant_id=o.tenant_id AND x.id=o.schedule_id WHERE o.tenant_id=s.tenant_id AND o.student_id=s.id)))",
+    "$2='manager' OR ($2='student' AND s.id=$3) OR ($2='teacher' AND (s.created_by_teacher_id=$3 OR EXISTS (SELECT 1 FROM business.course_student_pricings p JOIN scoped_courses c ON c.tenant_id=p.tenant_id AND c.id=p.course_id WHERE p.tenant_id=s.tenant_id AND p.student_id=s.id) OR EXISTS (SELECT 1 FROM business.schedule_student_overrides o JOIN scoped_schedules x ON x.tenant_id=o.tenant_id AND x.id=o.schedule_id WHERE o.tenant_id=s.tenant_id AND o.student_id=s.id)))",
     '))',
     'SELECT jsonb_build_object(',
     "'students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name,'phone',s.phone_legacy,'school',s.school_legacy,'grade_year',s.grade_year,'grade_current',s.grade_current,'institution_id',s.institution_id,'parent_name',s.parent_name_legacy,'parent_wechat',s.parent_wechat_legacy,'balance_hours',s.legacy_balance_hours,'balance_money',s.legacy_balance_money,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM scoped_students s),'[]'::jsonb),",
@@ -1679,10 +1683,9 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
-        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      }
+      const actorScope = scheduleWriteScope(context);
       const result = await businessStudentUpdate({
+        actorScope,
         tenantId: businessTenantId,
         studentId,
         expectedUpdatedAt,
@@ -1701,7 +1704,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       }
       response.json({ ok: true, student: result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (studentWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1921,10 +1924,9 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(sourceType === null || (Number.isInteger(sourceType) && [1, 2].includes(sourceType)))) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context || !Array.isArray(context.roles) || !context.roles.includes('super_admin')) {
-        return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      }
+      const actorScope = scheduleWriteScope(context);
       const result = await businessStudentRecordUpdate({
+        actorScope,
         tenantId: businessTenantId, studentId, expectedUpdatedAt, name, school, gradeYear, gradeCurrent,
         institutionId, parentName, notes, sourceType, studentSource, contacts,
       });
@@ -1933,7 +1935,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       }
       response.json({ ok: true, student: result });
     } catch (error) {
-      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (studentWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1949,12 +1951,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(update.sourceType === null || (Number.isInteger(update.sourceType) && [1, 2].includes(update.sourceType)))) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const student = await businessStudentLifecycleMutations.create({ tenantId: businessTenantId, studentId, name, school, gradeYear: update.gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType: update.sourceType, studentSource, contacts });
+      const actorScope = scheduleWriteScope(context);
+      const student = await businessStudentLifecycleMutations.create({ actorScope, tenantId: businessTenantId, studentId, name, school, gradeYear: update.gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType: update.sourceType, studentSource, contacts });
       if (!student) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
       response.status(201).json({ ok: true, student });
     } catch (error) {
-      if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (studentWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1964,11 +1966,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!studentId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const student = await businessStudentLifecycleMutations.remove({ tenantId: businessTenantId, studentId, expectedUpdatedAt });
+      const actorScope = scheduleWriteScope(context);
+      const student = await businessStudentLifecycleMutations.remove({ actorScope, tenantId: businessTenantId, studentId, expectedUpdatedAt });
       if (!student) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
       response.json({ ok: true, student });
     } catch (error) {
+      if (studentWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       if (error?.code === 'P0001' || error?.message === 'VNEXT_BUSINESS_STUDENT_REFERENCED') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_REFERENCED' });
       businessUnavailable(response);
     }

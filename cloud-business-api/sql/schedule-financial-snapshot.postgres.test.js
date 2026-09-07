@@ -15,6 +15,7 @@ const args=id=>['tenant-1',id,'course-1','2026-09-08T01:00:00Z','2026-09-08T02:3
   await createBusinessFoundationCatalogBoundary(runtime).apply(handle,receipt);
   await withQuery(handle,'fixture-provisioner',async db=>{
    for(const file of ['20260824-schedule-lifecycle.sql','20260822-business-schedule-student-override.sql','20260901-business-schedule-update-lifecycle.sql','20260907-teacher-schedule-write-scope.sql']) await db.query(sql(file));
+   await db.query(sql('20260907-z-teacher-student-write-scope.sql'));
    await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Tenant',false,now(),now()),('tenant-2','Other',false,now(),now())");
    await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','Original teacher',false,now(),now()),('teacher-2','tenant-1','Other teacher',false,now(),now()),('foreign','tenant-2','Foreign',false,now(),now())");
    await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','Student',false,false,now(),now())");

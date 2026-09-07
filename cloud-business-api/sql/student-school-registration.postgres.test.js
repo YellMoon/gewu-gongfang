@@ -18,7 +18,7 @@ async function desktopRoundTrip(writer, admin) {
   const { createDesktopAuthorityClient } = await import('../../src/services/desktopAuthorityClient.mjs');
   const { createDesktopCommandOutbox } = await import('../../src/services/desktopCommandOutbox.mjs');
   const query = (sql, values) => writer(db => db.query(sql, values));
-  let role = 'super_admin';
+  let role = 'teacher';
   let miniappOnly = false;
   const app = createCloudBusinessApp({
     query, businessTenantId: 't1',
@@ -26,7 +26,7 @@ async function desktopRoundTrip(writer, admin) {
     businessStudentRecordUpdate: createBusinessStudentRecordUpdate({ query }),
     desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => {
       if (miniappOnly) throw new Error('not a desktop session');
-      return { roles: [role] };
+      return { roles: [role], teacherId: 'http-teacher' };
     } },
     miniappCloudAccount: { login: async () => {}, context: async () => ({ roles: ['super_admin'] }) },
   });
@@ -57,6 +57,7 @@ async function desktopRoundTrip(writer, admin) {
     const read = () => admin(async db => (await db.query("SELECT s.updated_at,s.school_legacy,h.name FROM business.students s JOIN business.schools h ON h.tenant_id=s.tenant_id AND h.name=s.school_legacy AND h.legacy_deleted=false WHERE s.id='http-student'")).rows[0]);
     const created = await read();
     assert.equal(created.name, 'HTTP school');
+    await admin(async db => assert.equal((await db.query("SELECT created_by_teacher_id FROM business.students WHERE id='http-student'")).rows[0].created_by_teacher_id, 'http-teacher'));
     const update = await client.appendDraft({ type: 'student.update.v1', payload: { id: 'http-student', expectedVersion: created.updated_at.toISOString(), changes: { name: 'Student', school: 'HTTP changed school', source_type: 1, contacts: [] } } });
     await client.confirmAndSubmit(update.id, { sessionToken: 'eyJ2IjoxfQ.signature' });
     assert.equal((await read()).name, 'HTTP changed school');
@@ -89,6 +90,8 @@ async function desktopRoundTrip(writer, admin) {
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('t1','Tenant 1',false,now(),now()),('t2','Tenant 2',false,now(),now())");
       await db.query("INSERT INTO business.schools(id,tenant_id,name,legacy_count,legacy_deleted,created_at,updated_at) VALUES ('historical','t1','Existing school',7,false,now(),now())");
       await db.query(fs.readFileSync(migration, 'utf8'));
+      await db.query(fs.readFileSync(path.join(__dirname, '20260907-z-teacher-student-write-scope.sql'), 'utf8'));
+      await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('http-teacher','t1','Teacher',false,now(),now())");
     });
     let version;
     await writer(async db => {

@@ -496,6 +496,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(studentUpdate.status, 200);
   assert.deepStrictEqual(studentUpdate.body, { ok: true, student: { id: 'student-1', updatedAt: '2026-08-23T01:07:00.000Z' } });
   assert.deepStrictEqual(studentWrites, [{
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', studentId: 'student-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
     name: 'Student updated', school: 'School one', gradeYear: 2024, gradeCurrent: '\\u4e8c\\u5e74\\u7ea7',
     institutionId: null, parentName: 'Parent one', notes: 'cloud command update', sourceType: 1, studentSource: 'Referral',
@@ -521,6 +522,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(studentCreate.status, 201);
   assert.deepStrictEqual(studentCreate.body, { ok: true, student: { id: 'student-cloud-new', updatedAt: '2026-08-27T05:00:00.000Z' } });
   assert.deepStrictEqual(studentLifecycleWrites, [{
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', studentId: 'student-cloud-new', name: 'New student', school: null, gradeYear: 2026,
     gradeCurrent: null, institutionId: null, parentName: null, notes: null, sourceType: 1, studentSource: 'Referral',
     contacts: [{ slot: 1, relationship: 'student', phone: '13800138001', wechat: null }],
@@ -549,6 +551,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(studentRecordUpdate.status, 200);
   assert.deepStrictEqual(studentRecordUpdate.body, { ok: true, student: { id: 'student-1', updatedAt: '2026-08-23T01:08:00.000Z' } });
   assert.deepStrictEqual(studentRecordWrites, [{
+    actorScope: { role: 'super_admin', teacherId: null },
     tenantId: 'default', studentId: 'student-1', expectedUpdatedAt: '2026-08-22T01:00:00.000Z',
     name: 'Student record', school: null, gradeYear: 2024, gradeCurrent: null, institutionId: null,
     parentName: null, notes: null, sourceType: 1, studentSource: null,
