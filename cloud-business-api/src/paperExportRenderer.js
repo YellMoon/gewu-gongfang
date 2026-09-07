@@ -5,6 +5,7 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { layoutInlineRuns } = require('./pdfInlineLayout');
+const { nativeFormulaComponent } = require('./wordNativeFormula');
 const sharp = require('sharp');
 const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
@@ -255,10 +256,11 @@ function questions(value, layout, formulaMode) {
   });
 }
 
-async function hydrateMedia(items, resolveQuestionAsset) {
+async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
   if (items.some(item => item.assets.length) && typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
   const hydrateTokens = async tokens => Promise.all(tokens.map(async token => {
     if (token.kind !== 'formula') return token;
+    if (nativeWord) return { ...token, nativeFormula: nativeFormulaComponent(token.latex) };
     const bytes = formulaSvg(token.latex);
     try {
       const fallbackBytes = await sharp(bytes).png().toBuffer();
@@ -373,6 +375,12 @@ function appendWordTokens(rows, tokens, prefix = '') {
     if (token.kind === 'text') {
       children.push(new TextRun({ text: nextPrefix + token.text }));
       nextPrefix = '';
+    } else if (token.kind === 'formula' && token.nativeFormula) {
+      if (token.displayMode !== 'inline') flush();
+      if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
+      nextPrefix = '';
+      children.push(token.nativeFormula);
+      if (token.displayMode !== 'inline') flush();
     } else if (token.kind === 'formula' && token.media) {
       if (token.displayMode === 'inline') {
         if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -590,7 +598,7 @@ function orderedPdfBytes(input, items) {
 
 async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   const current = request(input);
-  const items = await hydrateMedia(questions(input.snapshot, current.layout, current.formulaMode), resolveQuestionAsset);
+  const items = await hydrateMedia(questions(input.snapshot, current.layout, current.formulaMode), resolveQuestionAsset, current.format === 'word' && current.formulaMode === 'word-native');
   const bytes = current.format === 'word' ? await wordBytes(current, items) : await orderedPdfBytes(current, items);
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }

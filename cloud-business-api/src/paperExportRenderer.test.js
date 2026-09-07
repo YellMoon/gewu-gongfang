@@ -5,6 +5,7 @@ const JSZip = require('jszip');
 const sharp = require('sharp');
 const { drawPdfTokens, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
 require('./pdfInlineLayout.test');
+require('./wordNativeFormula.test');
 
 (async () => {
   const drawn = [];
@@ -141,5 +142,25 @@ require('./pdfInlineLayout.test');
   const inlineParagraph = inlineXml.slice(inlineXml.lastIndexOf('<w:p', inlineBefore), inlineXml.indexOf('</w:p>', inlineBefore));
   assert.ok(inlineBefore < inlineAfter && inlineParagraph.includes('<w:drawing>') && inlineParagraph.includes('after'),
     'inline formula text and its vector must remain in the same Word paragraph');
+  const nativeWord = await renderPaperExport({
+    format: 'word', title: 'Editable equations', answerPosition: 'after', formulaMode: 'word-native',
+    snapshot: [{ id: 'native-equations', stem: 'Fallback', answer: '', explanation: '', options: [], richContent: {
+      sections: { stem: { type: 'doc', content: [{ type: 'paragraph', content: [
+        { type: 'text', text: 'Before native ' },
+        { type: 'formula', attrs: { canonicalLatex: String.raw`\frac{kg \cdot m}{s^{2}}`, displayMode: 'inline' } },
+        { type: 'text', text: ' after native' },
+      ] }] }, options: [], subQuestions: [], answer: { type: 'doc', content: [] }, analysis: { type: 'doc', content: [] } },
+    } }],
+  });
+  const nativeArchive = await JSZip.loadAsync(nativeWord.bytes);
+  const nativeXml = await nativeArchive.file('word/document.xml').async('string');
+  assert.ok(nativeXml.includes('<m:oMath>') && nativeXml.includes('<m:f>') && nativeXml.includes('<m:sSup>'),
+    'word-native must contain editable OMML fraction and superscript, not formula images');
+  assert.ok(!Object.keys(nativeArchive.files).some(name => /^word\/media\/.+/.test(name)),
+    'a native-only formula paper must not silently embed raster formulas');
+  const nativeStart = nativeXml.indexOf('Before native');
+  const nativeParagraph = nativeXml.slice(nativeXml.lastIndexOf('<w:p', nativeStart), nativeXml.indexOf('</w:p>', nativeStart));
+  assert.ok(nativeParagraph.includes('<m:oMath>') && nativeParagraph.includes('after native'),
+    'editable inline math must remain between surrounding prose');
   console.log('paper export renderer checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
