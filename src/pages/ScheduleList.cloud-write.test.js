@@ -1,4 +1,5 @@
 'use strict';
+require('./ScheduleCalendar.cloud-write.test.js');
 const assert = require('assert');
 const fs = require('fs');
 const source = fs.readFileSync('src/pages/ScheduleList.tsx', 'utf8');

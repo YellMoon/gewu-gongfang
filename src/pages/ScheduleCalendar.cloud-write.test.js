@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
+require('./ScheduleCalendar.card-content.test.js');
 
 const source = fs.readFileSync('src/pages/ScheduleCalendar.tsx', 'utf8');
 assert.ok(source.includes('persistScheduleCalendarState('), 'calendar must distinguish persisted drafts from rejected saves');
