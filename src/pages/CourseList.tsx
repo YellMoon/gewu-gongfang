@@ -224,6 +224,15 @@ const CourseList: React.FC = () => {
       else dbService.createCourse(values);
       syncSchedulesRoomName(values);
     };
+    // UTF-8: a previously saved address draft must never be sent implicitly.
+    const pendingRoomDraft = (await window.desktopAuthority?.list?.() || []).some(item =>
+      item.type === 'room.create.v1' && item.status !== 'completed'
+      && item.payload?.record?.id === values.room_id);
+    if (pendingRoomDraft) {
+      stageLocalDraft();
+      message.warning('已保存课程和上课地址，请在待提交的更改中确认。');
+      return true;
+    }
     if (!editingCourse && typeof cloudRuntime?.createCloudCourse !== 'function') {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -297,17 +306,14 @@ const CourseList: React.FC = () => {
       // 处理 room_name：始终从 room_id 同步最新房间名称，新地址自动录入教室表
       if (values.room_id) {
         const roomId = String(values.room_id).split(',')[0].trim();
-        const room = rooms.find(r => r.id === roomId || r.name === roomId);
-        if (room) {
-          values.room_name = room.name;
-        } else {
-          // 用户输入了新地址，自动添加到教室库
-          values.room_name = roomId;
-          if (dbService.addOrUpdateRoom) {
-            message.warning('\u8bf7\u5148\u5728\u4e0a\u8bfe\u5730\u5740\u4e2d\u521b\u5efa\u5e76\u540c\u6b65\u8be5\u5730\u5740');
-            return;
-          }
+        let room = (dbService.getAllRooms?.() || rooms).find((r: { id: string; name: string }) => r.id === roomId || r.name === roomId);
+        if (!room && dbService.addOrUpdateRoom) {
+          dbService.addOrUpdateRoom(roomId);
+          room = dbService.getAllRooms?.().find((r: { id: string; name: string }) => r.id === roomId || r.name === roomId);
         }
+        if (!room) throw new Error('COURSE_ROOM_DRAFT_UNAVAILABLE');
+        values.room_id = room.id;
+        values.room_name = room.name;
       } else {
         values.room_name = '';
       }

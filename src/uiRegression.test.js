@@ -222,7 +222,8 @@ assert(
 assert(syncSettings.includes('AuthorityOutboxPanel'));
 assert(cloudSync.includes('AuthorityOutboxPanel'));
 assert(authorityOutboxPanel.includes('requireBridge().list()'));
-assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id, cloudDraftSubmissionInput(item))'));
+assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id, cloudDraftSubmissionInput(item), confirmation)'));
+assert(authorityOutboxPanel.includes('draftConfirmationSnapshot([...dependencies, item])'));
 assert(authorityOutboxPanel.includes('submit(item.id, cloudDraftSubmissionInput(item))'));
 assert(authorityOutboxPanel.includes('Modal.confirm'));
 assert(authorityOutboxPanel.includes("item.status === 'conflict'"));

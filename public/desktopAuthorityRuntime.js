@@ -439,7 +439,7 @@ function createDesktopAuthorityRuntime({
     appendDraft: async input => appendDraftSync(input),
     appendDraftSync,
     appendDraftBatchSync,
-    confirmAndSubmit: async (id, input) => {
+    confirmAndSubmit: async (id, input, confirmation) => {
       assertOnlineSubmission();
       const client = await getClient();
       const draft = await client.get(id);
@@ -447,7 +447,7 @@ function createDesktopAuthorityRuntime({
         throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
       }
       cloudSessionToken(input);
-      return client.confirmAndSubmit(id, input);
+      return client.confirmAndSubmit(id, input, confirmation);
     },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),

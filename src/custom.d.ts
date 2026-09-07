@@ -176,7 +176,7 @@ interface Window {
       submittedAt: string;
     }>>;
     submit(id: string, input?: { sessionToken: string }): Promise<any>;
-    confirmAndSubmit(id: string, input?: { sessionToken: string }): Promise<any>;
+    confirmAndSubmit(id: string, input?: { sessionToken: string }, confirmation?: { items: Array<{ id: string; type: string; payload: any }> }): Promise<any>;
     reviewRoleApplication(applicationId: string, review: { decision: 'approved' | 'rejected'; profileId: string | null }, input: { sessionToken: string }): Promise<any>;
   };
 }

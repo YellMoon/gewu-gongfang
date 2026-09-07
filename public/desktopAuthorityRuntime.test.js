@@ -126,6 +126,14 @@ function staticRelativeModuleClosure(entryFile) {
         });
         return response(200, { ok: true, student: { id: 'student-runtime-1', updatedAt: '2026-08-24T00:00:01.000Z' } });
       }
+      if (url === 'https://business.example/api/business/rooms' || url === 'https://business.example/api/business/courses') {
+        assert.strictEqual(options.method, 'POST');
+        assert.strictEqual(options.headers.Authorization, 'Bearer desktop-session-token');
+        const body = JSON.parse(options.body);
+        const entity = url.endsWith('/rooms') ? 'room' : 'course';
+        if (entity === 'course') assert.strictEqual(body.data.roomId, 'inline-room');
+        return response(201, { ok: true, [entity]: { id: body[`${entity}Id`], updatedAt: '2026-09-07T00:00:00.000Z' } });
+      }
       if (url === 'https://business.example/api/business/schools/school-runtime-1') {
         assert.strictEqual(options.method, 'DELETE');
         assert.strictEqual(options.headers.Authorization, 'Bearer desktop-session-token');
@@ -299,6 +307,19 @@ function staticRelativeModuleClosure(entryFile) {
   });
   const schoolResult = await runtime.confirmAndSubmit(schoolDraft.id, { sessionToken: 'desktop-session-token' });
   assert.strictEqual(schoolResult.transportUsed, 'cloud-business-authority');
+  const [inlineRoom, inlineCourse] = runtime.appendDraftBatchSync([
+    { type: 'room.create.v1', payload: { record: { id: 'inline-room', name: 'Classroom' } } },
+    { type: 'course.create.v1', payload: { record: { id: 'inline-course', name: 'Physics', room_id: 'inline-room', teacher_id: 'teacher' } } },
+  ]);
+  const beforeInline = calls.length;
+  await assert.rejects(() => runtime.confirmAndSubmit(inlineCourse.id, { sessionToken: 'desktop-session-token' }), e => e.code === 'AUTHORITY_DRAFT_DEPENDENCY_CONFIRMATION_REQUIRED');
+  assert.strictEqual(calls.length, beforeInline);
+  const { draftConfirmationSnapshot } = await import('../src/services/authorityDraftDependencies.mjs');
+  const inlineResult = await runtime.confirmAndSubmit(inlineCourse.id, { sessionToken: 'desktop-session-token' }, { items: draftConfirmationSnapshot([inlineRoom, inlineCourse]) });
+  assert.strictEqual(inlineResult.receipt.status, 'committed');
+  assert.deepStrictEqual(calls.slice(beforeInline).map(call => call.url), ['https://business.example/api/business/rooms', 'https://business.example/api/business/courses']);
+  assert.strictEqual((await runtime.get(inlineCourse.id)).status, 'completed');
+  assert.strictEqual((await runtime.get(inlineRoom.id)).status, 'completed');
   await assert.rejects(
     () => runtime.appendDraft({
       type: 'pricing.create.v1',

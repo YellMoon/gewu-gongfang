@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./desktopAuthorityDependencies.test');
 
 (async function main() {
   const { createDesktopCommandOutbox } = await import('./desktopCommandOutbox.mjs');

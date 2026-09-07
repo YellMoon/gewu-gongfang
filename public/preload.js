@@ -73,7 +73,7 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
   listRoleApplications: input => ipcRenderer.invoke('desktop-authority:list-role-applications', input),
   reviewRoleApplication: (applicationId, review, input) => ipcRenderer.invoke('desktop-authority:review-role-application', applicationId, review, input),
   submit: (id, input) => ipcRenderer.invoke('desktop-authority:submit', id, input),
-  confirmAndSubmit: (id, input) => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id, input),
+  confirmAndSubmit: (id, input, confirmation) => ipcRenderer.invoke('desktop-authority:confirm-and-submit', id, input, confirmation),
 }));
 
 contextBridge.exposeInMainWorld('desktopBuild', Object.freeze({

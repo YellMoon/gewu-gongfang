@@ -13,7 +13,8 @@ assert.ok(source.includes('deleteCloudCourse'), 'online course deletion must use
 assert.ok(source.includes('expectedUpdatedAt: editingCourse.updated_at'), 'course updates must carry the observed version');
 assert.ok(source.includes('expectedUpdatedAt: deletedCourse.updated_at'), 'course deletion must carry the observed version');
 assert.ok(source.includes('refreshAuthorityProjection'), 'successful course commands must refresh the cloud projection');
-assert.ok(!source.includes('dbService.addOrUpdateRoom(roomId)'), 'course editing must not silently create a local room');
+assert.ok(source.includes('values.room_id = room.id'), 'course must use the resolved inline address identity');
+assert.ok(source.includes('pendingRoomDraft'), 'course must not bypass confirmation for a pending inline address');
 for (const [name, pageSource] of Object.entries({ course: source, room: roomSource, student: studentSource, teacher: teacherSource })) {
   assert.ok(!pageSource.includes('legacyStage'), `${name} page must not retain an unused local-write legacy helper`);
 }

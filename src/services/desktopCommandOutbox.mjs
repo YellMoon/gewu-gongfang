@@ -156,6 +156,29 @@ export function createDesktopCommandOutbox({
     acknowledge,
     append,
     confirm,
+    async confirmBatch(snapshots) {
+      if (!Array.isArray(snapshots) || snapshots.length === 0
+        || new Set(snapshots.map(item => item?.id)).size !== snapshots.length) {
+        throw outboxError('AUTHORITY_DRAFT_CONFIRMATION_CHANGED');
+      }
+      const state = await load();
+      for (const snapshot of snapshots) {
+        const item = state.items[snapshot?.id];
+        if (!item || !['awaiting_confirmation', 'confirmed', 'submitted', 'completed'].includes(item.status)
+          || item.type !== snapshot.type || JSON.stringify(item.payload) !== JSON.stringify(snapshot.payload)) {
+          throw outboxError('AUTHORITY_DRAFT_CONFIRMATION_CHANGED');
+        }
+      }
+      const confirmedAt = new Date(now()).toISOString();
+      for (const snapshot of snapshots) {
+        const item = state.items[snapshot.id];
+        if (item.status !== 'awaiting_confirmation') continue;
+        item.status = 'confirmed';
+        item.confirmation = { confirmedAt };
+        item.updatedAt = confirmedAt;
+      }
+      await save(state);
+    },
     get,
     list,
     markSubmitted,

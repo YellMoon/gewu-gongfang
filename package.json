@@ -217,6 +217,7 @@
       "src/services/desktopOfflineLeasePolicy.js",
       "src/services/desktopCommandOutbox.mjs",
       "src/services/desktopAuthorityClient.mjs",
+      "src/services/authorityDraftDependencies.mjs",
       "src/services/desktopIdentityClient.mjs",
       "src/services/desktopAuthorizationSession.mjs",
       "src/services/desktopCloudBusinessDraft.mjs",

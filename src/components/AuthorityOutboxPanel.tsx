@@ -3,6 +3,7 @@ import { Alert, Button, Card, Descriptions, Empty, Modal, Space, Statistic, Tabl
 import { CheckCircleOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import { getQuestionAssetDataUrl, assetKeyFromRef } from '../services/questionAssetStore';
+import { courseRoomDraftDependencies, draftConfirmationSnapshot } from '../services/authorityDraftDependencies.mjs';
 
 const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 const { describeAuthorityDraft, authorityDraftError } = require('./authorityDraftPresentation');
@@ -290,6 +291,14 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
 
   const confirmAndSubmit = (item: AuthorityOutboxItem) => {
     const presentation = draftPresentation(item);
+    let dependencies: AuthorityOutboxItem[];
+    try {
+      dependencies = courseRoomDraftDependencies(item, items);
+    } catch (error: any) {
+      message.error(authorityDraftError(error?.code));
+      return;
+    }
+    const confirmation = { items: draftConfirmationSnapshot([...dependencies, item]) };
     Modal.confirm({
       title: copy.modalTitle,
       width: 560,
@@ -300,6 +309,11 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
             <Descriptions.Item key={detail.label} label={detail.label}>{detail.value}</Descriptions.Item>
           ))}
           {!presentation.details.length && <Descriptions.Item label={copy.preview}>{presentation.summary}</Descriptions.Item>}
+          {dependencies.map(dependency => (
+            <Descriptions.Item key={dependency.id} label="一并新增地址">
+              {draftPresentation(dependency).summary}
+            </Descriptions.Item>
+          ))}
         </Descriptions>
       ),
       okText: copy.confirm,
@@ -307,7 +321,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       onOk: async () => {
         setBusyId(item.id);
         try {
-          const result = await requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item));
+          const result = await requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item), confirmation);
           if (result.receipt?.status === 'rejected') {
             message.error(authorityDraftError(result.receipt?.result?.error?.code));
           } else {

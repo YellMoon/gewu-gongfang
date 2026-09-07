@@ -5,6 +5,7 @@ const panel = fs.readFileSync('src/components/AuthorityOutboxPanel.tsx', 'utf8')
 const preload = fs.readFileSync('public/preload.js', 'utf8');
 const electron = fs.readFileSync('public/electron.js', 'utf8');
 require('./authorityDraftPresentation.test');
+require('./AuthorityOutboxPanel.confirmation.test');
 assert.ok(!panel.includes('{item.type}'), 'review UI must not display protocol identifiers');
 assert.ok(!panel.includes('result.transportUsed}'), 'success messages must not display transport names');
 assert.match(panel, /presentation\.details\.map/, 'confirmation must show actual changed values');
@@ -50,13 +51,16 @@ for (const implementationCopy of [
   '\\u5bcc\\u5a92\\u4f53',
 ]) assert.ok(!panel.includes(implementationCopy),
   `the outbox must not expose storage implementation wording: ${implementationCopy}`);
-assert.match(preload, /confirmAndSubmit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:confirm-and-submit', id, input\)/,
+assert.match(preload, /confirmAndSubmit:\s*\(id, input, confirmation\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:confirm-and-submit', id, input, confirmation\)/,
   'the preload bridge must forward an explicit one-time submission input');
 assert.match(preload, /submit:\s*\(id, input\)\s*=>\s*ipcRenderer\.invoke\('desktop-authority:submit', id, input\)/,
   'a retry must use the same guarded one-time submission input path');
-assert.match(electron, /ipcMain\.handle\('desktop-authority:confirm-and-submit', \(_event, id, input\)/,
+assert.match(electron, /ipcMain\.handle\('desktop-authority:confirm-and-submit', \(_event, id, input, confirmation\)/,
   'Electron main must receive the token only for this IPC invocation');
-assert.match(electron, /getDesktopAuthorityRuntime\(\)\.confirmAndSubmit\(id, input\)/,
+assert.match(electron, /getDesktopAuthorityRuntime\(\)\.confirmAndSubmit\(id, input, confirmation\)/,
   'Electron main must delegate question drafts to cloud-aware runtime submission');
 
+assert.ok(panel.includes('courseRoomDraftDependencies(item, items)'));
+assert.ok(panel.includes('draftConfirmationSnapshot([...dependencies, item])'));
+assert.ok(panel.includes('dependencies.map(dependency =>'));
 console.log('cloud question outbox panel boundary checks passed');
