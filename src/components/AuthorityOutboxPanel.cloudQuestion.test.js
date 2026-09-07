@@ -4,6 +4,11 @@ const fs = require('fs');
 const panel = fs.readFileSync('src/components/AuthorityOutboxPanel.tsx', 'utf8');
 const preload = fs.readFileSync('public/preload.js', 'utf8');
 const electron = fs.readFileSync('public/electron.js', 'utf8');
+require('./authorityDraftPresentation.test');
+assert.ok(!panel.includes('{item.type}'), 'review UI must not display protocol identifiers');
+assert.ok(!panel.includes('result.transportUsed}'), 'success messages must not display transport names');
+assert.match(panel, /presentation\.details\.map/, 'confirmation must show actual changed values');
+assert.match(panel, /compact \? <div role="list">/, 'compact outbox must use readable stacked items');
 
 assert.match(panel, /readDesktopAuthorizationSession/,
   'question draft confirmation must obtain the process-memory desktop session only when the user confirms');

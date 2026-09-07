@@ -5,6 +5,7 @@ import { readDesktopAuthorizationSession } from '../services/desktopAuthorizatio
 import { getQuestionAssetDataUrl, assetKeyFromRef } from '../services/questionAssetStore';
 
 const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
+const { describeAuthorityDraft, authorityDraftError } = require('./authorityDraftPresentation');
 
 type AuthorityOutboxItem = {
   id: string;
@@ -66,9 +67,8 @@ function statusTag(item: AuthorityOutboxItem) {
   return <Tag color="error">{copy.issue}</Tag>;
 }
 
-function previewText(item: AuthorityOutboxItem) {
-  const preview = item.preview || {};
-  return String(preview.title || preview.summary || item.type);
+function draftPresentation(item: AuthorityOutboxItem) {
+  return describeAuthorityDraft(item, (window as any).dbService?.data || {});
 }
 
 function cloudDraftSubmissionInput(item: AuthorityOutboxItem) {
@@ -290,14 +290,17 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
   }), [items]);
 
   const confirmAndSubmit = (item: AuthorityOutboxItem) => {
+    const presentation = draftPresentation(item);
     Modal.confirm({
       title: copy.modalTitle,
       width: 560,
       content: (
-        <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label={copy.commandType}>{item.type}</Descriptions.Item>
-          <Descriptions.Item label={copy.preview}>{previewText(item)}</Descriptions.Item>
-          <Descriptions.Item label={copy.safety}>{copy.safetyText}</Descriptions.Item>
+        <Descriptions column={1} size="small" bordered labelStyle={{ width: 116, whiteSpace: 'nowrap' }} contentStyle={{ overflowWrap: 'anywhere' }}>
+          <Descriptions.Item label={copy.commandType}>{presentation.title}</Descriptions.Item>
+          {presentation.details.map((detail: {label: string; value: string}) => (
+            <Descriptions.Item key={detail.label} label={detail.label}>{detail.value}</Descriptions.Item>
+          ))}
+          {!presentation.details.length && <Descriptions.Item label={copy.preview}>{presentation.summary}</Descriptions.Item>}
         </Descriptions>
       ),
       okText: copy.confirm,
@@ -307,20 +310,20 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
         try {
           const result = await requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item));
           if (result.receipt?.status === 'rejected') {
-            message.error(result.receipt?.result?.error?.code || 'AUTHORITY_COMMAND_REJECTED');
+            message.error(authorityDraftError(result.receipt?.result?.error?.code));
           } else {
-            message.success(`${hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed} (${result.transportUsed})`);
+            message.success(hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed);
             await (window as any).dbService?.refreshAuthorityProjection?.({
               minSourceVersion: result.receipt?.projectionVersion || 0,
             });
             try {
               await relayQuestionAssetsAfterReceipt(item, result.receipt);
             } catch (error: any) {
-              message.warning(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
+              message.warning(authorityDraftError('QUESTION_ASSET_RELAY_PENDING'));
             }
           }
         } catch (error: any) {
-          message.error(error?.code || error?.message || 'AUTHORITY_COMMAND_SUBMIT_FAILED');
+          message.error(authorityDraftError(error?.code || error?.message));
         } finally {
           setBusyId('');
           await refresh();
@@ -335,21 +338,21 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       const result = await requireBridge().submit(item.id, cloudDraftSubmissionInput(item));
       if (result) {
         if (result.receipt?.status === 'rejected') {
-          message.error(result.receipt?.result?.error?.code || 'AUTHORITY_COMMAND_REJECTED');
+          message.error(authorityDraftError(result.receipt?.result?.error?.code));
         } else {
-          message.success(`${hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed} (${result.transportUsed})`);
+          message.success(hasPendingQuestionAssetVerification(item) ? copy.questionTextCommitted : copy.completed);
           await (window as any).dbService?.refreshAuthorityProjection?.({
             minSourceVersion: result.receipt?.projectionVersion || 0,
           });
           try {
             await relayQuestionAssetsAfterReceipt(item, result.receipt);
           } catch (error: any) {
-            message.warning(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
+            message.warning(authorityDraftError('QUESTION_ASSET_RELAY_PENDING'));
           }
         }
       }
     } catch (error: any) {
-      message.error(error?.code || error?.message || 'AUTHORITY_COMMAND_RETRY_FAILED');
+      message.error(authorityDraftError(error?.code || error?.message));
     } finally {
       setBusyId('');
       await refresh();
@@ -363,7 +366,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       if (queued) message.info(copy.assetVerificationPending);
       else message.success(copy.assetVerified);
     } catch (error: any) {
-      message.error(error?.code || error?.message || 'QUESTION_ASSET_RELAY_PENDING');
+      message.error(authorityDraftError('QUESTION_ASSET_RELAY_PENDING'));
     } finally {
       setBusyId('');
       await refresh();
@@ -381,7 +384,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     {
       title: copy.preview,
       render: (_: unknown, item: AuthorityOutboxItem) => (
-        <div><div>{previewText(item)}</div><small>{item.type}</small></div>
+        <div><div>{draftPresentation(item).title}</div><small>{draftPresentation(item).summary}</small></div>
       ),
     },
     {
@@ -389,9 +392,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       width: 180,
       render: (_: unknown, item: AuthorityOutboxItem) => (
         <div>
-          <div>{item.submission?.transportUsed !== 'pending' ? item.submission?.transportUsed || '--' : '--'}</div>
-          <small>{Number.isSafeInteger(item.receipt?.projectionVersion)
-            ? `projection v${item.receipt?.projectionVersion}` : item.conflict?.code || ''}</small>
+          {item.conflict?.code ? authorityDraftError(item.conflict.code) : (item.status === 'completed' ? copy.completed : '--')}
         </div>
       ),
     },
@@ -422,7 +423,7 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       extra={<Button icon={<ReloadOutlined />} loading={loading}
         onClick={() => void refresh()}>{copy.refresh}</Button>}>
       {(errorCode || counts.issues > 0) && <Alert type={errorCode ? 'error' : 'warning'} showIcon
-        message={errorCode || copy.conflictMessage} style={{ marginBottom: 16 }} />}
+        message={errorCode ? authorityDraftError(errorCode) : copy.conflictMessage} style={{ marginBottom: 16 }} />}
       <Space size="large" wrap style={{ marginBottom: 20 }}>
         <Statistic title={copy.waitConfirm} value={counts.confirmation} />
         <Statistic title={copy.waitReceipt} value={counts.pending} />
@@ -431,6 +432,14 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       </Space>
       {visibleItems.length === 0
         ? <Empty description={copy.empty} />
+        : compact ? <div role="list">
+          {visibleItems.map(item => <div key={item.id} role="listitem" data-row-key={item.id}
+            style={{ padding: '12px 0', borderTop: '1px solid #f0f0f0', overflowWrap: 'anywhere' }}>
+            <Space wrap style={{ marginBottom: 6 }}>{statusTag(item)}<span>{draftPresentation(item).title}</span></Space>
+            <div style={{ marginBottom: 8 }}>{draftPresentation(item).summary}</div>
+            {columns[columns.length - 1].render(null, item)}
+          </div>)}
+        </div>
         : <Table rowKey="id" size={compact ? 'small' : 'middle'}
           pagination={{ pageSize: compact ? 5 : 10 }} columns={columns} dataSource={visibleItems} />}
     </Card>
