@@ -1,8 +1,10 @@
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchPermissions, getEffectiveMiniappAccess } from '../utils/permission';
 import { resolveTabBarState } from './roleTabBarRuntime';
+// @ts-ignore CommonJS lifecycle module is shared with direct Node tests.
+import { navigationOverlayRuntime } from '../utils/navigationOverlayRuntime';
 import './index.scss';
 
 declare const getCurrentPages: (() => Array<{ route?: string }>) | undefined;
@@ -35,6 +37,8 @@ function getCurrentRoute() {
 }
 
 export default function RoleTabBar() {
+  const [navigationBlocked, setNavigationBlocked] = useState(navigationOverlayRuntime.isBlocked);
+  useEffect(() => navigationOverlayRuntime.subscribe(setNavigationBlocked), []);
   const [currentRoute, setCurrentRoute] = useState(getCurrentRoute());
   const initialState = resolveTabBarState(getEffectiveMiniappAccess());
   const [userType, setUserType] = useState(initialState.userType);
@@ -73,7 +77,7 @@ export default function RoleTabBar() {
     Taro.switchTab({ url: `/${item.pagePath}` });
   };
 
-  if (!isTabPage) return null;
+  if (!isTabPage || navigationBlocked) return null;
 
   return (
     <View className="role-tabbar">

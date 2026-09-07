@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, CheckboxGroup, PageContainer, RichText, ScrollView, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { questionBasketStore, useQuestionBasket } from '../utils/questionBasketStore';
+// @ts-ignore CommonJS lifecycle module is shared with direct Node tests.
+import { navigationOverlayRuntime } from '../utils/navigationOverlayRuntime';
 // @ts-ignore CommonJS question display module is shared with direct Node tests.
 import * as questionDisplayRuntime from '../utils/questionDisplay';
 import './QuestionBasketOverlay.scss';
@@ -66,6 +68,11 @@ export default function QuestionBasketOverlay({ canUse, aboveTabBar = false, onR
   const [resolutionState, setResolutionState] = useState<'idle' | 'loading' | 'ready' | 'offline'>('idle');
   const [resolutionError, setResolutionError] = useState('');
   const [authoritativeUnavailableIds, setAuthoritativeUnavailableIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    return navigationOverlayRuntime.acquire();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

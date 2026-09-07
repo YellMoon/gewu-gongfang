@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const { resolveTabBarState } = require('./roleTabBarRuntime');
+require('../utils/navigationOverlayRuntime.test');
 
 const appConfig = fs.readFileSync('miniapp/src/app.config.ts', 'utf-8');
 const tabBar = fs.readFileSync('miniapp/src/custom-tab-bar/index.tsx', 'utf-8');

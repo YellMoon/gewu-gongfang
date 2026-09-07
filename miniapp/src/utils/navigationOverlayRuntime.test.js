@@ -1,0 +1,26 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { createNavigationOverlayRuntime } = require('./navigationOverlayRuntime');
+
+const runtime = createNavigationOverlayRuntime();
+const states = [];
+const unsubscribe = runtime.subscribe(value => states.push(value));
+assert.deepEqual(states, [false]);
+const releaseFirst = runtime.acquire();
+const releaseSecond = runtime.acquire();
+assert.equal(runtime.isBlocked(), true);
+releaseFirst();
+assert.equal(runtime.isBlocked(), true, 'another open overlay still owns the navigation lock');
+releaseFirst();
+releaseSecond();
+assert.equal(runtime.isBlocked(), false, 'close/unmount restores navigation');
+assert.deepEqual(states, [false, true, false]);
+unsubscribe();
+runtime.acquire()();
+assert.deepEqual(states, [false, true, false]);
+const read = file => fs.readFileSync(path.resolve(__dirname, '..', file), 'utf8');
+assert.match(read('components/QuestionBasketOverlay.tsx'), /if \(!open\) return undefined;\s*return navigationOverlayRuntime.acquire\(\)/);
+assert.match(read('custom-tab-bar/index.tsx'), /navigationOverlayRuntime.subscribe\(setNavigationBlocked\)/);
+assert.match(read('custom-tab-bar/index.tsx'), /if \(!isTabPage \|\| navigationBlocked\) return null/);
+console.log('navigation overlay lifecycle checks passed');
