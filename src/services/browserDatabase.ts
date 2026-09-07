@@ -968,7 +968,12 @@ class BrowserDatabaseService {
   // ========== 学校信息管理 ==========
 
   getSchoolNames(): string[] {
-    return this.data.schools.map(s => s.name).sort();
+    // Student drafts already carry the school name. Expose it locally without
+    // inventing a separately writable school record or confirmation command.
+    return [...new Set([
+      ...this.data.schools.map(s => s.name),
+      ...this.data.students.map(s => s.school),
+    ].filter((name): name is string => typeof name === 'string' && name.trim().length > 0))].sort();
   }
 
   addOrUpdateSchool(schoolName: string): void {
@@ -1139,11 +1144,6 @@ class BrowserDatabaseService {
       updated_at: now
     };
     
-    // 如果提供了学校，添加到学校库
-    if (student.school) {
-      this.addOrUpdateSchool(student.school);
-    }
-    
     this.data.students.push(newStudent);
     this.recordAuthorityDraft('students', 'create', newStudent.id, { ...newStudent, contacts: this.studentAuthorityContacts(newStudent) });
     this.saveData();
@@ -1164,11 +1164,6 @@ class BrowserDatabaseService {
     // 如果更新了入学年份，重新计算年级
     if (updates.grade_year) {
       updated.grade_current = calculateGrade(updates.grade_year);
-    }
-    
-    // 如果提供了新学校，添加到学校库
-    if (updates.school && updates.school !== this.data.students[index].school) {
-      this.addOrUpdateSchool(updates.school);
     }
     
     this.data.students[index] = updated;

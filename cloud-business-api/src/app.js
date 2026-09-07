@@ -1953,7 +1953,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const student = await businessStudentLifecycleMutations.create({ tenantId: businessTenantId, studentId, name, school, gradeYear: update.gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType: update.sourceType, studentSource, contacts });
       if (!student) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_STUDENT_CONFLICT' });
       response.status(201).json({ ok: true, student });
-    } catch (_) { businessUnavailable(response); }
+    } catch (error) {
+      if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
   });
   app.delete('/api/business/students/:studentId', async (request, response) => {
     if (!businessTenantId || !businessStudentLifecycleMutations) return businessUnavailable(response);

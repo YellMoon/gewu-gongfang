@@ -20,6 +20,6 @@ assert.ok(source.includes('phone: null, wechat: null'), 'clearing an existing st
 assert.ok(source.includes('refreshAuthorityProjection'), 'a successful command must refresh the cloud projection before rendering');
 assert.ok(source.includes('CLOUD_BUSINESS_STUDENT_CONFLICT'), 'the UI must surface concurrent changes instead of overwriting them');
 assert.ok(!source.includes('dbService.addOrUpdateSchool(values.school)'),
-  'student draft staging must let browserDatabase create exactly one dependent school draft');
+  'student submission must own school registration atomically, not create a separate school command');
 
 console.log('student list cloud-write source checks passed');

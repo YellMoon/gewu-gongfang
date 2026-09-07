@@ -1,6 +1,7 @@
 const assert = require('assert');
 require('./scheduleDraftComparison.test');
 require('./courseRoomDraft.test');
+require('./studentSchoolDraft.test');
 require('./browserDatabaseSafety.test');
 const fs = require('fs');
 
