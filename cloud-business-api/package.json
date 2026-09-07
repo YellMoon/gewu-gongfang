@@ -3,7 +3,8 @@
   "private": true,
   "version": "8.11.9",
   "scripts": {
-    "posttest": "npm run test:teacher-schedule",
+    "posttest": "npm run test:teacher-schedule && npm run test:teacher-course",
+    "test:teacher-course": "node src/desktopTeacherCourseAccess.test.js && node src/businessCourseLifecycleMutationService.test.js && node src/businessRoomLifecycleMutationService.test.js && node sql/teacher-course-scope.postgres.test.js",
     "test:teacher-schedule": "node src/desktopTeacherScheduleAccess.test.js && node src/businessScheduleMutationService.test.js && node src/businessScheduleStudentOverrideService.test.js && node src/businessScheduleLifecycleMutationService.test.js && node sql/teacher-schedule-scope.postgres.test.js",
     "test:runtime-role": "node sql/runtime-reader-membership.test.js",
     "test:question-import-provisioning": "node sql/question-import-task-provisioning.test.js && node sql/question-import-receipt-provisioning.test.js && node sql/question-import-receipt-runtime-provisioning.test.js && node sql/question-import-receipt-writer-provisioning.test.js && node sql/question-import-receipt-returning-provisioning.test.js && node sql/storage-agent-receipt-returning-provisioning.test.js",

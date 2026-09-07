@@ -11,9 +11,11 @@ const { createBusinessRoomLifecycleMutations } = require('./businessRoomLifecycl
       return { rows: [{ id: values[1], updatedAt: '2026-08-23T05:00:00.000Z' }] };
     },
   });
-  const input = { tenantId: 'default', roomId: 'room-new', name: 'Room new', address: 'Address new' };
+  const input = { actorScope: { role: 'teacher', teacherId: 'teacher-1' }, tenantId: 'default', roomId: 'room-new', name: 'Room new', address: 'Address new' };
   assert.deepStrictEqual(await mutations.create(input), { id: 'room-new', updatedAt: '2026-08-23T05:00:00.000Z' });
-  assert.match(calls[0][0], /business\.vnext_create_room_v1/);
+  assert.match(calls[0][0], /business\.vnext_create_scoped_room/);
+  assert.deepStrictEqual(calls[0][1].slice(-2), ['teacher', 'teacher-1']);
+  assert.throws(() => mutations.create({ ...input, actorScope: undefined }), error => error.code === 'CLOUD_BUSINESS_ACCESS_DENIED');
   assert.deepStrictEqual(await mutations.update({ ...input, expectedUpdatedAt: '2026-08-23T05:00:00.000Z' }), { id: 'room-new', updatedAt: '2026-08-23T05:00:00.000Z' });
   assert.match(calls[1][0], /business\.vnext_update_room_v1/);
   assert.deepStrictEqual(await mutations.remove({ tenantId: 'default', roomId: 'room-new', expectedUpdatedAt: '2026-08-23T05:00:00.000Z' }), { id: 'room-new', updatedAt: '2026-08-23T05:00:00.000Z' });

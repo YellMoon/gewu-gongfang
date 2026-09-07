@@ -12,17 +12,21 @@ const { createBusinessCourseLifecycleMutations } = require('./businessCourseLife
     },
   });
   const input = {
+    actorScope: { role: 'teacher', teacherId: 'teacher-1' },
     tenantId: 'default', courseId: 'course-new', name: 'Course new', year: 2026, semester: 'spring', displayName: 'Course new',
     type: 1, sourceType: 1, institutionId: null, priceTuition: 100, priceTeacher: 50, billingUnit: 1, teacherFeeMode: 1,
     roomId: 'room-1', roomName: 'Room one', teacherId: 'teacher-1', teacherName: 'Teacher one', active: true,
     defaultDurationMinutes: 60, notes: null, pricings: [{ studentId: 'student-1', tuition: 100, teacherFee: 50 }],
   };
   assert.deepStrictEqual(await mutations.create(input), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
-  assert.match(calls[0][0], /business\.vnext_create_course_record_v1/);
-  assert.strictEqual(calls[0][1].at(-1), JSON.stringify([{ student_id: 'student-1', tuition: 100, teacher_fee: 50 }]));
+  assert.match(calls[0][0], /business\.vnext_create_scoped_course/);
+  assert.strictEqual(calls[0][1].at(-3), JSON.stringify([{ student_id: 'student-1', tuition: 100, teacher_fee: 50 }]));
+  assert.deepStrictEqual(calls[0][1].slice(-2), ['teacher', 'teacher-1']);
   assert.deepStrictEqual(await mutations.update({ ...input, expectedUpdatedAt: '2026-08-23T06:00:00.000Z' }), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
-  assert.match(calls[1][0], /business\.vnext_update_course_record_v1/);
-  assert.deepStrictEqual(await mutations.remove({ tenantId: 'default', courseId: 'course-new', expectedUpdatedAt: '2026-08-23T06:00:00.000Z' }), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
-  assert.match(calls[2][0], /business\.vnext_soft_delete_course/);
+  assert.match(calls[1][0], /business\.vnext_update_scoped_course/);
+  assert.deepStrictEqual(await mutations.remove({ actorScope: input.actorScope, tenantId: 'default', courseId: 'course-new', expectedUpdatedAt: '2026-08-23T06:00:00.000Z' }), { id: 'course-new', updatedAt: '2026-08-23T06:00:00.000Z' });
+  assert.match(calls[2][0], /business\.vnext_delete_scoped_course/);
+  for (const method of ['create', 'update', 'remove']) assert.throws(() => mutations[method]({ ...input, actorScope: undefined }), error => error.code === 'CLOUD_BUSINESS_ACCESS_DENIED');
+  assert.strictEqual(calls.length, 3);
   console.log('business course lifecycle mutation service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
