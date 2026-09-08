@@ -3,23 +3,33 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-module.exports = async function({page, out, save, scheduleId, confirmVisibleDraft, reopenCalendar, selectRectangle}) {
+async function deleteLessonWithNativeConfirmation({page,app,save,scheduleId,accept}) {
+  const card=page.locator('[data-schedule-id="'+scheduleId+'"]');
+  await card.scrollIntoViewIfNeeded();await card.click({button:'right'});
+  const prompt=page.waitForEvent('dialog');
+  const click=page.getByRole('menuitem',{name:'删除课程',exact:true}).click({timeout:180000});
+  const dialog=await prompt;
+  assert.equal(dialog.type(),'confirm');assert.equal(dialog.message(),'确定要删除这节课程吗？');
+  // UTF-8: the Windows operator clicks the observed OS button; CDP must not answer this dialog.
+  console.log(JSON.stringify({stage:'native_delete_confirmation_waiting',scheduleId,expected:accept?'confirm':'cancel'}));
+  await click;
+  const enabled=await app.evaluate(async({BrowserWindow})=>{
+    const win=BrowserWindow.getAllWindows()[0],deadline=Date.now()+180000;
+    while(!win.isEnabled()&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+    return win.isEnabled();
+  });
+  assert.equal(enabled,true,'real native confirmation must release the owner window');
+  save('native-delete-confirm-'+scheduleId+'-'+accept,{message:dialog.message(),expected:accept,ownerEnabled:enabled,cdpResponseUsed:false});
+}
+
+module.exports = async function({page, app, out, save, scheduleId, confirmVisibleDraft, reopenCalendar, selectRectangle}) {
   await reopenCalendar();
   const card = page.locator('[data-schedule-id="'+scheduleId+'"]');
   const cloudBefore = await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
   const original = cloudBefore.schedules.find(s=>s.id===scheduleId); assert(original);
   const pending = () => page.evaluate(async id=>(await window.desktopAuthority.list()).filter(d=>
     d.status==='awaiting_confirmation'&&(d.payload.id===id||d.payload.record?.id===id)),scheduleId);
-  const remove = async accept => {
-    await card.scrollIntoViewIfNeeded(); await card.click({button:'right'});
-    const prompt = page.waitForEvent('dialog');
-    const click = page.getByRole('menuitem',{name:'删除课程',exact:true}).click();
-    const nativeDialog = await prompt;
-    assert.equal(nativeDialog.type(),'confirm');
-    assert.equal(nativeDialog.message(),'确定要删除这节课程吗？');
-    if(accept) await nativeDialog.accept(); else await nativeDialog.dismiss();
-    await click;
-  };
+  const remove=accept=>deleteLessonWithNativeConfirmation({page,app,save,scheduleId,accept});
   const beforeCancel = await page.evaluate(()=>window.desktopAuthority.list());
   await remove(false); assert(await card.isVisible());
   assert.deepEqual(await page.evaluate(()=>window.desktopAuthority.list()),beforeCancel);
@@ -95,3 +105,4 @@ module.exports = async function({page, out, save, scheduleId, confirmVisibleDraf
   return {singleDeleteCancel:true,unsubmittedDeleteUndoRedo:true,singleDeleteConfirmed:true,deletePreservesOtherLessons:true,
     batchDeleteCancel:true,batchDeleteUndoRedo:true,batchDeleteConfirmed:true,deletionsReloaded:true};
 };
+module.exports.deleteLessonWithNativeConfirmation=deleteLessonWithNativeConfirmation;

@@ -19,7 +19,7 @@ async function main() {
     'UTF-8：离线改课程时长后联网结课不夹带提交；保留草稿、确认与恢复在线编辑',
     '原课表排课与调课、三项卡片、刷新后仍一致',
     '原右键单节/批量删除取消、离线删除、未提交撤销重做、确认后仅删除所选课次及重开',
-    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
+    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.confirmedDeleteUndoOnly?'confirmed-delete-undo-only':config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
   const env = {...process.env, NODE_ENV:'production', GEWU_PARITY_SHADOW_URL:config.baseUrl,
     GEWU_DATA_DIR:path.join(out,'profile'), DB_PATH:path.join(out,'profile/data/scheduling.db')};
   delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_START_URL; delete env.GEWU_DESKTOP_LOGIN_FIXTURE;
@@ -312,6 +312,24 @@ async function main() {
       await releaseNavigation();
       await calendarCard.waitFor();
     };
+    const confirmVisibleDraft=async draft=>{
+      // UTF-8: open once per confirmation; do not toggle again during the opening animation.
+      const confirm=page.locator('[data-row-key="'+draft.id+'"]').getByRole('button',{name:'查看并确认',exact:true});
+      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
+      await page.locator('.sync-status-trigger').click();
+      await confirm.click();
+      await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
+      await courseDialog.waitFor({state:'hidden',timeout:45000});
+      const completed=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.id===id),draft.id);
+      assert.equal(completed.status,'completed');
+      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
+    };
+    if(config.confirmedDeleteUndoOnly) {
+      save('qa-inventory',{scope:'confirmed-delete-undo-only',checks:['原生删除确认','确认后云端删除','原 Ctrl+Z 恢复仅保留本地草稿','确认恢复后原课次及出勤费用一致','恢复后重开'],fullSignoff:false});
+      const result=await require('./business-parity-confirmed-deletion.cjs')({page,app,out,save,scheduleId,reopenCalendar,confirmVisibleDraft});
+      save('desktop-receipt',{scope:'confirmed-delete-undo-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     await reopenCalendar();
     assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
     await calendarCard.dblclick();
@@ -496,18 +514,6 @@ async function main() {
       }
       save('unstable-batch-draft',{id,type,date,last});throw new Error('BATCH_DRAFT_DID_NOT_STABILIZE');
     };
-    const confirmVisibleDraft=async draft=>{
-      // UTF-8: open once per confirmation; do not toggle again during the opening animation.
-      const confirm=page.locator('[data-row-key="'+draft.id+'"]').getByRole('button',{name:'查看并确认',exact:true});
-      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
-      await page.locator('.sync-status-trigger').click();
-      await confirm.click();
-      await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
-      await courseDialog.waitFor({state:'hidden',timeout:45000});
-      const completed=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.id===id),draft.id);
-      assert.equal(completed.status,'completed');
-      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
-    };
     const copyDate=await page.locator('[data-date]').nth(2).getAttribute('data-date');
     await page.context().setOffline(true);
     await selectRectangle(scheduleId,scheduleId,1,'21-batch-selected-one');
@@ -559,18 +565,14 @@ async function main() {
     const multiStudentBatch=await require('./business-parity-multistudent.cjs')({page,out,save,releaseNavigation,waitForModalWidth,
       selectCourseOption,confirmVisibleDraft,reopenCalendar,studentId,
       teacherName:projection.teachers.find(t=>t.id===config.login.teacherId).name});
-    const scheduleDeletion=await require('./business-parity-schedule-deletion.cjs')({page,out,save,
+    const scheduleDeletion=await require('./business-parity-schedule-deletion.cjs')({page,app,out,save,
       scheduleId:copyId,confirmVisibleDraft,reopenCalendar,selectRectangle});
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
     for(const width of [1280,1200]) {
-      await app.evaluate(({BrowserWindow},size)=>{
-        const win=BrowserWindow.getAllWindows()[0];
-        // UTF-8: a maximized native window ignores setContentSize on Windows.
-        if(win.isMaximized()) win.unmaximize();
-        win.setContentSize(size,800);
-      },width);
+      const sizeEvidence=await app.evaluate(require('./business-parity-window-size.cjs').resizeParityWindow,{width,height:800});
+      save('window-resize-'+width,sizeEvidence);
       await page.waitForFunction(expected=>innerWidth===expected,width);
       for(const [group,item,button,expectedWidth] of [
         ['team 资源','user 学生','plus 添加学生',700],
@@ -608,6 +610,7 @@ async function main() {
     }
     assert.deepEqual(await page.evaluate(()=>window.desktopAuthority.list()),outboxBeforeEditors,'opening and cancelling resource editors must not create or submit drafts');
     save('resource-modal-checks',editorChecks);
+    const confirmedDeletionUndo=await require('./business-parity-confirmed-deletion.cjs')({page,app,out,save,scheduleId,reopenCalendar,confirmVisibleDraft});
     save('desktop-receipt',{passwordLogin:true,sourceDesktop:true,installed:false,productionWrite:false,
       originalWorkspaceLoaded:true,teacherProjectionRead:true,studentDraftConfirmed:true,schoolAtomic:true,
       noSilentReconnectWrite:true,studentReloadVisible:true,courseAndAddressConfirmed:true,
@@ -616,7 +619,7 @@ async function main() {
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,
       rectangleCopy:true,twoScheduleBatchMove:true,batchFeeSnapshots:true,batchNoSilentWrite:true,batchReloaded:true,...multiStudentBatch,
-      ...scheduleDeletion,studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
+      ...scheduleDeletion,...confirmedDeletionUndo,studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
     if(page) {

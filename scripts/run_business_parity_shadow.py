@@ -61,7 +61,7 @@ def export_committed_source(repo, commit, destination):
     return destination
 
 
-def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None):
+def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None, confirmed_delete_undo_only=False):
     backup = validate_backup(json.loads(pathlib.Path(backup_path).read_text(encoding='utf-8')))
     nonce = secrets.token_hex(8)
     target = validate_target('gewu_ui_shadow_' + nonce)
@@ -75,7 +75,7 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
     # UTF-8: focused reruns keep explicit scope and never claim the full UI matrix.
     receipt = {'database': target, 'productionWrite': False, 'uiVerified': False,
                'cloudSourceCommit': cloud_source_commit,
-               'scope': 'course-address-only' if course_address_only else 'resource-confirmation-only' if resource_confirmation_only else 'course-confirmation-only' if course_confirmation_only else 'business-parity'}
+               'scope': 'confirmed-delete-undo-only' if confirmed_delete_undo_only else 'course-address-only' if course_address_only else 'resource-confirmation-only' if resource_confirmation_only else 'course-confirmation-only' if course_confirmation_only else 'business-parity'}
 
     def private(command):
         stdin, stdout, stderr = ssh.exec_command(command, timeout=180)
@@ -189,7 +189,7 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         print(json.dumps({'stage':'shadow_api_ready','database':target,'out':str(out)}), flush=True)
         if not probe_only:
             result = subprocess.run(['node', str(ROOT / 'scripts/business-parity-desktop.cjs')],
-                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=600)
+                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only,'confirmedDeleteUndoOnly':confirmed_delete_undo_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=900)
             if result.returncode: raise RuntimeError('DESKTOP_PARITY_FAILED')
             receipt['desktopLoginVerified'] = True
             receipt['uiVerified'] = False  # Full QA inventory still requires its own signoff.
@@ -222,6 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--resource-confirmation-only', action='store_true')
     # UTF-8: keep address linkage as an explicit limited evidence scope.
     parser.add_argument('--course-address-only', action='store_true')
+    parser.add_argument('--confirmed-delete-undo-only', action='store_true')
     parser.add_argument('--cloud-source-commit', help='Exact commit SHA for cloud code, shared contracts and SQL; excludes dirty changes')
     args = parser.parse_args()
-    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit)
+    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit, args.confirmed_delete_undo_only)

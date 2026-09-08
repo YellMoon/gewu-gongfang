@@ -1,5 +1,17 @@
 # 业务行为保真核查（未完成，禁止据此发布）
 
+## 2026-09-08 原生确认框实操纠偏（UTF-8）
+
+- 本轮未修改产品布局、原确认框或业务规则。窗口等待辅助测试通过并接入 `test:business-parity`；该入口会话 73464 退出 0。真实完整会话 35819 仍在末尾失败：`PARITY_WINDOW_UNMAXIMIZE_TIMEOUT`，证据位于 `gewu-business-parity-e7p0krny`，不是产品窗口修复成功。
+- 单独启动原源码桌面、不登录、不连业务端点，复现窗口状态：未处理确认框时可以还原和设为 1280×800；用 Playwright `dialog.accept/dismiss` 后原生窗口仍禁用，取消最大化无事件，`setEnabled(true)` 也无效。失败的强行启用方案已删除，没有加入产品或最终测试。对应诊断目录 `gewu-business-parity-pRsKA2`、`gewu-business-parity-6Zsbc2`。
+- 改为 Windows 原生操作后，会话 26262 退出 0（`gewu-business-parity-D3TW2y`）：从实际截图点击无业务数据诊断框的“取消”与“确定”，分别返回 false/true，窗口均恢复 enabled=true，1280/1200 宽度验证通过。第一次无障碍索引点击未生效，重新观察后用截图坐标点击；没有把无效点击记为通过。Computer Use 技能限定了真实窗口选择、观察后操作和即时复核；没有替换产品确认框。
+- Playwright 官方 Electron 文档说明原生 dialog API 不由其网页弹窗接口拦截：https://playwright.dev/docs/api/class-electron 。因此之前删除实操中 `dialog.accept/dismiss` 只能证明脚本响应后的业务变化，不能证明真实系统按钮操作完成。现有删除验收已改为等待实际 Windows 按钮操作，并检查原生窗口恢复可用；不再用 CDP 回答该弹窗。
+- 完整会话 79880（`gewu-business-parity-wsc8zfdj`）中，实际 Windows 点击取消/确认后原窗口 enabled=true；单节/批量删除及未提交撤销重做检查走完，两个宽度的学生、老师、学校、上课地址、机构、缴费共 12 项原弹窗均检查完并保存 `resource-modal-checks.json`，取消不产生草稿。学生长表单上下截图均保存，底部取消/确定可见；本轮查看了 1200 学生底部截图。该会话在最后新增撤销专项开始时被原 600 秒上限终止，整体退出 1，不能称全流程通过。测试副本已清理；残留本地测试窗口经原生 Alt+F4 关闭，随后检查该 profile 的 Electron 进程已不存在。（UTF-8）
+- 新增已确认删除后的原 Ctrl+Z 验收及 `--confirmed-delete-undo-only` 专项入口，完整实操上限调整为 900 秒，所有入口仍保持明确 scope/fullSignoff=false。专项会话 63230（`gewu-business-parity-cg7eqxjo`，隔离数据库 `gewu_ui_shadow_91a0157ecfce8fce`）实际确认删除后，云端课次已消失，但 Ctrl+Z 无效、卡片没有恢复；失败快照中撤销/重做均 disabled，outbox 只有已 completed 的新增与删除，没有恢复草稿。该专项明确退出 1，副本清理完成。尚未执行到恢复 REST，不能将潜在同编号新增冲突冒称本次已复现。
+- 定位到 `src/App.tsx` 的 `authority-projection-refreshed` 事件递增 refreshKey；整个业务页被带有该 key 的 div 重新挂载。确认窗口刷新云投影会触发该事件，因此课表组件内 past/future 历史丢失。这是下一处应修复的原业务差异：区分原手动刷新与确认后的数据刷新，保持课表实例及原历史，再继续验证同编号恢复的云端契约。不要靠改按钮、删除原撤销功能或放宽云端冲突检查掩盖问题。
+- 本轮没有产品修复、版本递增、安装包或发布。Electron 准备会话 2005 退出 0（119）；最终恢复会话 25213 退出 0，root/backend 均回到 Node ABI 137。用户版本文件 SHA256 仍为 `BD068AA29EBCE184DDFE3383C17987BEC984C3C71A33A409EF9AEB4643CFC173`，暂停的权限改动及用户 NAS/output 工作未动。
+- 最终 Node 环境下 `test:business-parity` 会话 65575 退出 0，新增/改动实操脚本语法检查及定向差异检查通过，UTF-8 中文已读回。该回归入口不包含真实桌面专项，不能冲销上述真实业务失败；没有重新运行完整根测试或构建。
+
 ## 2026-09-08 原删除撤销的相反草稿修复与实操（UTF-8）
 
 - BP-07 专项先复现明确错误：原课表删除后撤销由 replaceSchedules 捕获为同 ID 新增，runtime 没有 delete→create 合并分支，实际留下删除/新增两条草稿。新增真实 runtime＋实际草稿适配器测试退出 1（2 !== 0）。没有改原右键菜单、原确认窗、历史按钮、计费或云端权限。
