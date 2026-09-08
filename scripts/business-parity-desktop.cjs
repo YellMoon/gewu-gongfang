@@ -430,6 +430,106 @@ async function main() {
     await targetDay.locator('[data-schedule-id="'+scheduleId+'"]').waitFor();
     assert.match(await calendarCard.innerText(),/16:00-18:30/);
     await calendarCard.screenshot({path:path.join(out,'20-gestures-reloaded-card.png')});
+    // UTF-8: use the original rectangle and Ctrl-drag, with no direct state mutations.
+    const selectRectangle=async(firstId,lastId,count,artifact)=>{
+      const first=page.locator('[data-schedule-id="'+firstId+'"]');
+      const last=page.locator('[data-schedule-id="'+lastId+'"]');
+      await first.scrollIntoViewIfNeeded();
+      const a=await first.boundingBox(),b=await last.boundingBox();
+      const body=await first.locator('xpath=..').boundingBox();
+      const start={x:body.x+1,y:a.y+2};
+      const end={x:b.x+b.width/2,y:b.y+b.height-2};
+      save(artifact+'-geometry',{a,b,body,start,end});
+      await page.mouse.move(start.x,start.y);await page.mouse.down();
+      await page.mouse.move(end.x,end.y,{steps:18});await page.mouse.up();
+      await page.getByText('已选 '+count+' 节 · 拖拽移动 · Ctrl 拖拽复制 · 右键更多',{exact:true}).waitFor();
+      await page.screenshot({path:path.join(out,artifact+'.png'),scale:'css'});
+    };
+    const dragRectangle=async(fromId,toDayIndex,copy)=>{
+      const box=await page.locator('[data-schedule-id="'+fromId+'"]').boundingBox();
+      const destination=await page.locator('[data-date]').nth(toDayIndex).locator('[data-day-body="true"]').boundingBox();
+      if(copy) await page.keyboard.down('Control');
+      try {
+        await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();
+        await page.mouse.move(destination.x+destination.width/2,box.y+box.height/2,{steps:18});
+        await page.mouse.up();
+      } finally {if(copy)await page.keyboard.up('Control');}
+    };
+    const waitBatchDraft=async(id,type,date)=>{
+      let last,stableSince=null;const deadline=Date.now()+12000;
+      while(Date.now()<deadline){
+        last=await page.evaluate(async({id,type,courseId})=>(await window.desktopAuthority.list()).find(d=>
+          d.type===type&&d.status==='awaiting_confirmation'&&(id?d.payload.id===id:d.payload.record?.course_id===courseId)),{id,type,courseId});
+        const record=last&&(last.payload.record||last.payload.changes);
+        const matches=record&&new Date(record.start_time).getTime()===new Date(date+'T16:00:00+08:00').getTime()
+          &&new Date(record.end_time).getTime()===new Date(date+'T18:30:00+08:00').getTime()
+          &&record.calculated_tuition===450&&record.calculated_teacher_fee===300;
+        if(matches){if(stableSince===null)stableSince=Date.now();}else stableSince=null;
+        if(stableSince!==null&&Date.now()-stableSince>=600)return last;
+        await page.waitForTimeout(75);
+      }
+      save('unstable-batch-draft',{id,type,date,last});throw new Error('BATCH_DRAFT_DID_NOT_STABILIZE');
+    };
+    const confirmVisibleDraft=async draft=>{
+      // UTF-8: open once per confirmation; do not toggle again during the opening animation.
+      const confirm=page.locator('[data-row-key="'+draft.id+'"]').getByRole('button',{name:'查看并确认',exact:true});
+      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
+      await page.locator('.sync-status-trigger').click();
+      await confirm.click();
+      await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
+      await courseDialog.waitFor({state:'hidden',timeout:45000});
+      const completed=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.id===id),draft.id);
+      assert.equal(completed.status,'completed');
+      await page.locator('.sync-quick-popover:visible').waitFor({state:'hidden'});
+    };
+    const copyDate=await page.locator('[data-date]').nth(2).getAttribute('data-date');
+    await page.context().setOffline(true);
+    await selectRectangle(scheduleId,scheduleId,1,'21-batch-selected-one');
+    await dragRectangle(scheduleId,2,true);
+    const copyDraft=await waitBatchDraft(null,'schedule.create.v1',copyDate);
+    const copyId=copyDraft.payload.record.id;assert.notEqual(copyId,scheduleId);
+    save('22-batch-copy-draft',copyDraft);
+    await page.context().setOffline(false);
+    const copyPending=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert.deepEqual(copyPending.schedules,gestureProjection.schedules,'copy must await explicit confirmation');
+    await confirmVisibleDraft(copyDraft);
+    const copiedProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const copiedSchedule=copiedProjection.schedules.find(s=>s.id===copyId);assert(copiedSchedule);
+    assert.deepEqual(copiedProjection.schedules.find(s=>s.id===scheduleId),gestured,'copy must not rewrite its source');
+    const stableFields=['course_id','student_ids','student_pricings','teacher_id','room','billing_unit','teacher_fee_mode','status','calculated_tuition','calculated_teacher_fee'];
+    for(const key of stableFields)assert.deepEqual(copiedSchedule[key],gestured[key],'copy must preserve '+key);
+    assert.equal(new Date(copiedSchedule.start_time).getTime(),new Date(copyDate+'T16:00:00+08:00').getTime());
+    assert.equal(new Date(copiedSchedule.end_time).getTime(),new Date(copyDate+'T18:30:00+08:00').getTime());
+    await reopenCalendar();
+    await page.locator('[data-schedule-id="'+copyId+'"]').waitFor();
+    await page.context().setOffline(true);
+    await selectRectangle(scheduleId,copyId,2,'23-batch-selected-two');
+    await dragRectangle(scheduleId,3,false);
+    const batchDates=await page.locator('[data-date]').evaluateAll(els=>els.map(el=>el.getAttribute('data-date')));
+    const batchDrafts=[await waitBatchDraft(scheduleId,'schedule.update.v1',batchDates[3]),await waitBatchDraft(copyId,'schedule.update.v1',batchDates[4])];
+    const batchBefore=[gestured,copiedSchedule];
+    batchDrafts.forEach((draft,i)=>assert.equal(new Date(draft.payload.expectedVersion).getTime(),new Date(batchBefore[i].updated_at).getTime()));
+    save('24-batch-move-drafts',batchDrafts);
+    await page.context().setOffline(false);
+    const batchPending=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert.deepEqual(batchPending.schedules,copiedProjection.schedules,'batch moving must not submit on reconnect');
+    for(const draft of batchDrafts)await confirmVisibleDraft(draft);
+    const batchProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const batchAfter=[scheduleId,copyId].map(id=>batchProjection.schedules.find(s=>s.id===id));
+    for(const [i,after] of batchAfter.entries()){
+      assert(after);for(const key of stableFields)assert.deepEqual(after[key],batchBefore[i][key]);
+      assert.equal(new Date(after.start_time).getTime(),new Date(batchDates[i+3]+'T16:00:00+08:00').getTime());
+      assert.equal(new Date(after.end_time).getTime(),new Date(batchDates[i+3]+'T18:30:00+08:00').getTime());
+    }
+    assert.deepEqual(batchProjection.schedules.filter(s=>![scheduleId,copyId].includes(s.id)),
+      copiedProjection.schedules.filter(s=>![scheduleId,copyId].includes(s.id)),'unselected schedules must remain untouched');
+    save('batch-readback',{source:gestured,copy:copiedSchedule,before:batchBefore,after:batchAfter});
+    await reopenCalendar();
+    for(const [i,id] of [scheduleId,copyId].entries()){
+      const card=page.locator('[data-date]').nth(i+3).locator('[data-schedule-id="'+id+'"]');
+      await card.waitFor();assert.match(await card.innerText(),/初二物理[\s\S]*东湖上课点\s+16:00-18:30/);
+      await card.screenshot({path:path.join(out,'25-batch-reloaded-'+i+'.png')});
+    }
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
@@ -484,6 +584,7 @@ async function main() {
       rescheduleConfirmed:true,rescheduleNoSilentWrite:true,rescheduleVersionBaseline:true,
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,
+      rectangleCopy:true,twoScheduleBatchMove:true,batchFeeSnapshots:true,batchNoSilentWrite:true,batchReloaded:true,
       studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {

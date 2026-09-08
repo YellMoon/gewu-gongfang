@@ -1,3 +1,5 @@
+import dayjs from 'dayjs';
+
 const MIN_START_HOUR = 8;
 const SLOT_DURATION_MINUTES = 5;
 const SLOT_HEIGHT = 2.5;
@@ -46,9 +48,14 @@ function formatTime(hour, minute) {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function splitScheduleTime(value) {
-  const [date, time] = String(value || '').split(' ');
-  return { date, time };
+function splitScheduleTime(value, calendarDate = '') {
+  // UTF-8: use the same local calendar day for legacy strings and cloud instants.
+  const instant = value ? dayjs(value) : null;
+  if (!instant?.isValid()) return { date: '', time: '' };
+  const date = instant.format('YYYY-MM-DD');
+  // UTF-8: preserve the original end-of-day 24:00 slot, including cloud ISO midnight.
+  const dayOffset = calendarDate ? dayjs(date).diff(dayjs(calendarDate), 'day') : 0;
+  return { date, time: formatTime(instant.hour() + dayOffset * 24, instant.minute()) };
 }
 
 function isInactiveSchedule(schedule) {
@@ -77,7 +84,7 @@ function applyBatchScheduleDrag({
     if (!schedule) continue;
 
     const { date: oldDate, time: oldStart } = splitScheduleTime(schedule.start_time);
-    const { time: oldEnd } = splitScheduleTime(schedule.end_time);
+    const { time: oldEnd } = splitScheduleTime(schedule.end_time, oldDate);
     if (!oldDate || !oldStart || !oldEnd) continue;
 
     const oldDayIndex = (weekDates || []).findIndex(date => date === oldDate);
@@ -88,8 +95,8 @@ function applyBatchScheduleDrag({
     const newDate = weekDates[newDayIndex];
     const updated = {
       ...schedule,
-      start_time: `${newDate} ${formatTime(moved.start.hour, moved.start.minute)}`,
-      end_time: `${newDate} ${formatTime(moved.end.hour, moved.end.minute)}`,
+      start_time: dayjs(`${newDate} ${formatTime(moved.start.hour, moved.start.minute)}`).toISOString(),
+      end_time: dayjs(`${newDate} ${formatTime(moved.end.hour, moved.end.minute)}`).toISOString(),
     };
 
     if (isCopy) {
@@ -113,7 +120,8 @@ function applyBatchScheduleDrag({
 
     for (const other of nextSchedules) {
       if (!other || other.id === checkItem.id || isInactiveSchedule(other)) continue;
-      if (checkItem.start_time < other.end_time && checkItem.end_time > other.start_time) {
+      if (dayjs(checkItem.start_time).valueOf() < dayjs(other.end_time).valueOf()
+          && dayjs(checkItem.end_time).valueOf() > dayjs(other.start_time).valueOf()) {
         return {
           success: false,
           nextSchedules: schedules || [],
@@ -142,6 +150,7 @@ export {
   slotToDisplayTop,
   selectionIntersectsSchedule,
   moveTimeBySlots,
+  splitScheduleTime,
   applyBatchScheduleDrag,
   formatBatchConflictMessage,
 };

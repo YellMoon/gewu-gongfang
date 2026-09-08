@@ -10,6 +10,7 @@ import {
   slotToDisplayTop,
   selectionIntersectsSchedule,
   moveTimeBySlots,
+  splitScheduleTime,
   applyBatchScheduleDrag,
   formatBatchConflictMessage,
 } from '../utils/batchSelectionGeometry.mjs';
@@ -260,9 +261,10 @@ export default function useBatchSelection(
     const pv = sel.ids.map(cid => {
       const s = schedRef.current.find((x: any) => x.id === cid);
       if (!s) return null;
-      const [date, st] = s.start_time.split(' ');
-      const ep = s.end_time.split(' ');
-      const et = ep.length >= 2 ? ep[1] : ep[0];
+      // UTF-8: cloud UTC timestamps follow the calendar's local date and time.
+      const { date, time: st } = splitScheduleTime(s.start_time);
+      const { time: et } = splitScheduleTime(s.end_time, date);
+      if (!date || !st || !et) return null;
       const [sh, sm] = st.split(':').map(Number);
       const [eh, em] = et.split(':').map(Number);
       const od = twoWeeksRef.current.findIndex(d => d.format('YYYY-MM-DD') === date);
@@ -310,10 +312,9 @@ export default function useBatchSelection(
     const ids: string[] = [];
     schedRef.current.forEach((s: any) => {
       if (s.status !== ScheduleStatus.PLANNED) return;
-      const [date, st] = s.start_time.split(' ');
-      const ep = s.end_time.split(' ');
-      const et = ep.length >= 2 ? ep[1] : ep[0];
-      if (!et) return;
+      const { date, time: st } = splitScheduleTime(s.start_time);
+      const { time: et } = splitScheduleTime(s.end_time, date);
+      if (!date || !st || !et) return;
       const [sh, sm] = st.split(':').map(Number);
       const [eh, em] = et.split(':').map(Number);
       const cd = twoWeeksRef.current.findIndex(d => d.format('YYYY-MM-DD') === date);
@@ -461,9 +462,9 @@ export default function useBatchSelection(
             if (anyOob) return; // 宸茶秴闄愬垯璺宠繃
             const s = schedRef.current.find((x: any) => x.id === cid);
             if (!s) return;
-            const [date, st] = s.start_time.split(' ');
-            const ep = s.end_time.split(' ');
-            const et = ep.length >= 2 ? ep[1] : ep[0];
+            const { date, time: st } = splitScheduleTime(s.start_time);
+            const { time: et } = splitScheduleTime(s.end_time, date);
+            if (!date || !st || !et) { anyOob = true; return; }
             const [sh, sm] = st.split(':').map(Number);
             const [eh, em] = et.split(':').map(Number);
             const od = twoWeeksRef.current.findIndex(d => d.format('YYYY-MM-DD') === date);
@@ -564,9 +565,9 @@ export default function useBatchSelection(
             if (hasOobOnUp) return;
             const s = schedRef.current.find((x: any) => x.id === cid);
             if (!s) return;
-            const [od, ost] = s.start_time.split(' ');
-            const ep = s.end_time.split(' ');
-            const oet = ep.length >= 2 ? ep[1] : ep[0];
+            const { date, time: ost } = splitScheduleTime(s.start_time);
+            const { time: oet } = splitScheduleTime(s.end_time, date);
+            if (!ost || !oet) { hasOobOnUp = true; return; }
             const [sh_, sm_] = ost.split(':').map(Number);
             const [eh_, em_] = oet.split(':').map(Number);
             const os = slot(sh_, sm_);
