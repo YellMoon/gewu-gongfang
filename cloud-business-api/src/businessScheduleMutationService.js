@@ -4,9 +4,11 @@ const { scheduleActorParameters } = require('./businessScheduleActorScope');
 function createBusinessScheduleUpdate({ query } = {}) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   return async function updateSchedule(input) {
+    // UTF-8: ordinary PUT remains update-only; explicit undo uses a separate restricted function.
+    const mutation = input.restoreDeleted === true ? 'vnext_restore_scoped_schedule' : 'vnext_update_scoped_schedule';
     const result = await query(
       `SELECT id AS "id", to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
-       FROM business.vnext_update_scoped_schedule($1,$2,$3::timestamptz,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17::jsonb)`,
+       FROM business.${mutation}($1,$2,$3::timestamptz,$4,$5::timestamptz,$6::timestamptz,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17::jsonb)`,
       [
         input.tenantId, input.scheduleId, input.expectedUpdatedAt, input.courseId || null,
         input.startAt, input.endAt, input.recurringRule ?? null, input.status, input.roomDisplay,

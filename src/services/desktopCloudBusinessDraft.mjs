@@ -379,6 +379,13 @@ export function createDesktopCloudBusinessDraftAdapter({
           ...scheduleInput(updateRecord),
         }));
       case 'schedule.create.v1':
+        if (payload.restoreDeleted === true) {
+          return cloudClient.updateCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+            scheduleId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
+            expectedUpdatedAt: expectedVersion(payload), restoreDeleted: true,
+            ...scheduleCreateInput(createRecord),
+          }));
+        }
         return cloudClient.createCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
           scheduleId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...scheduleCreateInput(createRecord),

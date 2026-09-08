@@ -1565,11 +1565,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     const lifecycleKeys = ['courseId', 'recurringRule', 'serviceType'];
     const lifecycleKeyCount = lifecycleKeys.filter(key => request.body && Object.prototype.hasOwnProperty.call(request.body, key)).length;
     const hasLifecycle = lifecycleKeyCount === lifecycleKeys.length;
+    const hasRestore = Boolean(request.body && Object.prototype.hasOwnProperty.call(request.body, 'restoreDeleted'));
+    if (hasRestore && (request.body.restoreDeleted !== true || !hasLifecycle || !hasPricings)) return businessInputInvalid(response);
     const baseKeys = ['expectedUpdatedAt', 'startAt', 'endAt', 'status', 'roomDisplay', 'tuition', 'teacherFee', 'notes'];
     const financialSnapshot = scheduleSnapshot(request.body);
     if (financialSnapshot === undefined) return businessInputInvalid(response);
     const update = lifecycleKeyCount !== 0 && !hasLifecycle ? null : exactBody(request.body, [
       ...baseKeys,
+      ...(hasRestore ? ['restoreDeleted'] : []),
       ...(financialSnapshot ? scheduleSnapshotKeys : []),
       ...(hasLifecycle ? lifecycleKeys : []),
       ...(hasPricings ? ['pricings'] : []),
@@ -1595,6 +1598,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     try {
       const context = await desktopBusinessContext(request);
       const result = await businessScheduleUpdate({
+        ...(hasRestore ? { restoreDeleted: true } : {}),
         ...(financialSnapshot ? { financialSnapshot } : {}),
         actorScope: scheduleWriteScope(context),
         tenantId: businessTenantId,

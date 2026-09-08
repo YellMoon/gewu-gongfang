@@ -865,6 +865,7 @@ export function createDesktopIdentityClient({
   async function updateCloudSchedule({
     baseUrl, currentSession, scheduleId, expectedUpdatedAt, courseId, startAt, endAt, recurringRule,
     status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings, billingUnit, teacherFeeMode, teacherId, teacherName,
+    restoreDeleted,
   } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
@@ -877,6 +878,7 @@ export function createDesktopIdentityClient({
       token: currentSession.token,
       body: {
         expectedUpdatedAt, courseId: normalizedCourseId, startAt, endAt, recurringRule,
+        ...(restoreDeleted === true ? { restoreDeleted: true } : {}),
         status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings,
         billingUnit, teacherFeeMode, teacherId, teacherName,
       },

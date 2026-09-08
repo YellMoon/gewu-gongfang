@@ -190,6 +190,7 @@ function createDesktopAuthorityRuntime({
       };
     } else if (previous.action === 'create' && incoming.action === 'update') {
       existing.payload = {
+        ...existing.payload,
         record: {
           ...(existing.payload.record || {}),
           ...(input.payload.changes || {}),
@@ -244,6 +245,23 @@ function createDesktopAuthorityRuntime({
     return existing;
   }
 
+  function confirmedScheduleRestoration(state, input, draftScope) {
+    // UTF-8: undo keeps a local create overlay, but submits an explicit versioned REST restoration.
+    if (input.type !== 'schedule.create.v1') return input;
+    const recordId = input.payload?.record?.id;
+    const completed = Object.values(state.items).filter(item => item?.status === 'completed'
+      && item.draftScope?.userId === draftScope.userId
+      && item.draftScope?.businessAuthority === draftScope.businessAuthority
+      && businessDraftDescriptor(item)?.entity === 'schedule'
+      && businessDraftDescriptor(item)?.recordId === recordId);
+    const latest = completed.sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt)).at(-1);
+    const receipt = latest?.receipt;
+    if (latest?.type !== 'schedule.delete.v1' || receipt?.status !== 'committed'
+      || receipt.result?.id !== recordId || typeof receipt.result?.updatedAt !== 'string'
+      || !Number.isFinite(Date.parse(receipt.result.updatedAt))) return input;
+    return { ...input, payload: { ...input.payload, restoreDeleted: true, expectedVersion: receipt.result.updatedAt } };
+  }
+
   function appendDraftBatchSync(inputs) {
     const localDraftStatus = assertLocalDraftSession();
     if (!Array.isArray(inputs) || inputs.length === 0) {
@@ -276,6 +294,7 @@ function createDesktopAuthorityRuntime({
         if (merged !== null) assertQuestionMutationVersion(merged);
         return merged;
       }
+      input = confirmedScheduleRestoration(state, input, draftScope);
       assertQuestionMutationVersion(input);
       const id = String(createId ? createId() : createSecureOutboxId()).trim();
       if (!id || !Number.isFinite(Date.parse(createdAt))) {
