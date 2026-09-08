@@ -18,7 +18,7 @@ async function main() {
     '原课程窗口选入新学生、课程名称和地址不含跟踪编码',
     'UTF-8：离线改课程时长后联网结课不夹带提交；保留草稿、确认与恢复在线编辑',
     '原课表排课与调课、三项卡片、刷新后仍一致',
-    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
+    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
   const env = {...process.env, NODE_ENV:'production', GEWU_PARITY_SHADOW_URL:config.baseUrl,
     GEWU_DATA_DIR:path.join(out,'profile'), DB_PATH:path.join(out,'profile/data/scheduling.db')};
   delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_START_URL; delete env.GEWU_DESKTOP_LOGIN_FIXTURE;
@@ -290,6 +290,13 @@ async function main() {
     assert.match(await calendarCard.innerText(),/初二物理/);
     assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
     await calendarCard.screenshot({path:path.join(out,'13-calendar-card.png')});
+    // UTF-8: focused original address-linkage flow, not a full business or UI signoff.
+    if(config.courseAddressOnly) {
+      save('qa-inventory',{scope:'course-address-only',checks:['原窗口新增地址及确认后重开','原课程中修改地址','断网重连和保留草稿不提交','课程确认不夹带排课草稿','排课单独确认后地址改变而时间出勤费用不变','选回已有地址不重复新建','恢复后重开课表及确认窗口截图'],fullSignoff:false});
+      const results=await require('./business-parity-course-address.cjs')({page,out,save,courseId,scheduleId,releaseNavigation});
+      save('desktop-receipt',{scope:'course-address-only',sourceDesktop:true,installed:false,productionWrite:false,results,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     // UTF-8: reopen persisted schedule through the original calendar, then reschedule offline.
     const reopenCalendar=async()=>{
       await page.reload();
