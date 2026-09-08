@@ -79,10 +79,13 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const onProjectionRefreshed = () => setRefreshKey(key => key + 1);
+    const onProjectionRefreshed = () => {
+      // UTF-8: calendar refreshes its cache in place; remounting discards original undo history.
+      if (currentPage !== 'course-calendar') setRefreshKey(key => key + 1);
+    };
     window.addEventListener('authority-projection-refreshed', onProjectionRefreshed);
     return () => window.removeEventListener('authority-projection-refreshed', onProjectionRefreshed);
-  }, []);
+  }, [currentPage]);
 
   useEffect(() => {
     const loadDb = async () => {

@@ -1358,7 +1358,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     };
     loadData();
     const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
+    // UTF-8: acknowledged cloud data updates the existing page, preserving original undo/redo.
+    window.addEventListener('authority-projection-refreshed', loadData);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('authority-projection-refreshed', loadData);
+    };
   }, []);
 
   // 鈶?鑷姩閫夋嫨绗竴浣嶈€佸笀
