@@ -8,10 +8,37 @@ import copy
 from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
 from business_parity_student_balance import seed_student_balance
-from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history
+from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history, verify_retained_course_actions
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_retained_course_actions_exact_history(self):
+        before = {'student': {'id': 'student', 'name': '原学生'}}
+        before.update({key: [{'id': str(i)} for i in range(count)] for key, count in [
+            ('courses', 1), ('schedules', 1), ('course_student_pricings', 1), ('schedule_student_overrides', 1), ('payments', 2), ('consumptions', 1)]})
+        before['courses'][0].update(legacy_deleted=False, updated_at='old')
+        before['schedules'][0].update(id='lesson', legacy_deleted=False, updated_at='old', created_at='old',
+            start_at='2026-09-08T01:00:00+00:00', end_at='2026-09-08T02:30:00+00:00', calculated_tuition=270,
+            calculated_teacher_fee=180, teacher_name='原教师')
+        before['schedule_student_overrides'][0].update(schedule_id='lesson', tuition=180, teacher_fee=120)
+        after = copy.deepcopy(before); after['courses'][0].update(legacy_deleted=True, updated_at='new')
+        after['schedules'][0].update(start_at='2026-09-09T01:00:00+00:00', end_at='2026-09-09T03:00:00+00:00',
+            calculated_tuition=360, calculated_teacher_fee=240, updated_at='new')
+        copy_id='12345678-1234-4234-8234-123456789abc'
+        copied={**after['schedules'][0], 'id':copy_id, 'created_at':'new', 'legacy_deleted':True,
+                'start_at':'2026-09-10T01:00:00+00:00', 'end_at':'2026-09-10T03:00:00+00:00'}
+        after['schedules'].append(copied)
+        after['schedule_student_overrides'].append({**before['schedule_student_overrides'][0], 'schedule_id':copy_id})
+        self.assertTrue(verify_retained_course_actions(before,after,copy_id)['copyDeletedAfterUndo'])
+        for table,field in [('schedules','calculated_tuition'),('schedules','teacher_name'),('courses','name'),
+                            ('schedule_student_overrides','tuition'),('payments','amount'),('consumptions','amount')]:
+            bad=copy.deepcopy(after);bad[table][0][field]='wrong'
+            with self.subTest(table=table,field=field), self.assertRaises(RuntimeError):
+                verify_retained_course_actions(before,bad,copy_id)
+        for table in ('schedules','schedule_student_overrides'):
+            bad=copy.deepcopy(after);bad[table].pop()
+            with self.assertRaises(RuntimeError): verify_retained_course_actions(before,bad,copy_id)
+
     def test_course_history_rejects_cascade_and_student_changes(self):
         before = {'student': {'id': 'student', 'name': '原学生'}}
         before.update({key: [{'id': str(i)} for i in range(count)] for key, count in [

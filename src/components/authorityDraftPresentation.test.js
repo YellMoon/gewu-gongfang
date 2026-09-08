@@ -3,6 +3,16 @@ const assert = require('node:assert/strict');
 const { describeAuthorityDraft, authorityDraftError } = require('./authorityDraftPresentation');
 const item = {type:'schedule.create.v1',preview:{title:'schedule.create'},payload:{record:{course_id:'course-1',start_time:'2026-09-07T06:00:00.000Z',end_time:'2026-09-07T07:30:00.000Z',room:'\u6d4b\u8bd5\u6559\u5ba4',calculated_tuition:270,calculated_teacher_fee:180}}};
 const result=describeAuthorityDraft(item,{courses:[{id:'course-1',name:'\u7269\u7406\u8bfe\u7a0b'}]});
+// UTF-8: a deleted parent stays out of selectors; its retained lesson still identifies the confirmation target.
+for(const origin of ['preview','cloud']){
+  const record={id:'retained',course_id:'deleted-course',course_name:'历史课程核验',start_time:'2026-09-10T01:00:00Z',end_time:'2026-09-10T03:00:00Z',room:'原上课地址',calculated_tuition:360,calculated_teacher_fee:240};
+  const draft={type:'schedule.delete.v1',payload:{id:'retained',expectedVersion:'2026-09-09T01:00:00Z'},...(origin==='preview'?{preview:{record}}:{})};
+  const cache={courses:[],schedules:origin==='cloud'?[record]:[]},before=JSON.stringify({draft,cache});
+  const shown=describeAuthorityDraft(draft,cache);
+  assert(shown.details.some(d=>d.label==='课程'&&d.value==='历史课程核验'),'retained lesson must remain identifiable from '+origin);
+  assert(shown.summary.startsWith('历史课程核验'));assert.equal(JSON.stringify({draft,cache}),before);
+}
+assert(!describeAuthorityDraft({type:'schedule.delete.v1',payload:{id:'missing'}},{courses:[],schedules:[]}).details.some(d=>d.label==='课程'),'do not invent a name for a missing target');
 // UTF-8: actual offline duration/status changes must be visible before confirmation.
 for (const active of [false,true]) {
   const draft={type:'course.update.v1',payload:{id:'course',changes:{default_duration_minutes:120,active}}};

@@ -89,6 +89,12 @@ async function main() {
     if(config.courseDeleteHistory) {
       save('qa-inventory',{scope:'course-delete-history-only',checks:['原课程删除取消','离线删除与重连不提交','原确认窗口','删除后重开课表三字段','历史排课出勤费用逐字段保留'],fullSignoff:false});
       const result=await require('./business-parity-course-history.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
+      if(config.retainedCourseActions){
+        save('qa-inventory',{scope:'retained-course-actions-only',checks:['原课程删除后保留课次','鼠标移动和拉伸','撤销重做保留草稿','确认调课','按住 Ctrl 拖动复制并确认','撤销已确认复制后再次确认','重开与数据库逐字段核验'],fullSignoff:false});
+        const actions=await require('./business-parity-retained-course.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
+        save('desktop-receipt',{scope:'retained-course-actions-only',result:{...result,...actions},sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+        return;
+      }
       save('desktop-receipt',{scope:'course-delete-history-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
       return;
     }

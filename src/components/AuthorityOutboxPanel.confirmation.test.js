@@ -57,5 +57,14 @@ const { renderToStaticMarkup } = require('react-dom/server');
   modal=undefined; deps.window.desktopIdentitySessionProvider.listCloudBusinessProjection=async()=>({students:[]});
   await open(legacy); assert.equal(modal,undefined,'unidentified legacy deletes must not offer blind confirmation');
   assert.equal(calls.length,1);
+  for(const origin of ['preview','cloud']){
+    const record={id:'lesson',course_id:'deleted-course',course_name:'历史课程核验',start_time:'2026-09-10T01:00:00Z',end_time:'2026-09-10T03:00:00Z',room:'原上课地址'};
+    const draft={id:'retained-'+origin,type:'schedule.delete.v1',status:'awaiting_confirmation',payload:{id:'lesson',expectedVersion:'version'},...(origin==='preview'?{preview:{record}}:{})};
+    current=[draft];modal=undefined;
+    deps.window.desktopIdentitySessionProvider.listCloudBusinessProjection=async()=>({courses:[],schedules:origin==='cloud'?[record]:[]});
+    const count=calls.length;await open(draft);assert(modal,'retained course name must identify the deletion');
+    assert.equal(calls.length,count);const text=renderToStaticMarkup(modal.content);assert(text.includes('历史课程核验')&&text.includes('原上课地址'));
+    await modal.onOk();assert.equal(calls.length,count+1);assert.equal(calls.at(-1)[0],draft.id);
+  }
   console.log('outbox actual confirmation render and user-action checks passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

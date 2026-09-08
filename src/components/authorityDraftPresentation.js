@@ -28,7 +28,8 @@ function describeAuthorityDraft(item, cache={}) {
     add('教师计费方式',({1:'按课次',2:'按学生'})[record.teacher_fee_mode]);
     add('教师',record.teacher_name);
     const course=(cache.courses||[]).find(row=>row.id===record.course_id);
-    name=course?.display_name||course?.name||'';
+    // UTF-8: retained lessons carry a cloud-provided name after their course leaves selectors.
+    name=course?.display_name||course?.name||record.course_name||'';
     time=dateText(record.start_time);
     add('\u8bfe\u7a0b',name);add('\u5f00\u59cb\u65f6\u95f4',time);add('\u7ed3\u675f\u65f6\u95f4',dateText(record.end_time));add('\u4e0a\u8bfe\u5730\u5740',record.room);
     for(const [field,label] of [['calculated_tuition','\u5b66\u8d39\u5408\u8ba1'],['calculated_teacher_fee','\u6559\u5e08\u8bfe\u65f6\u8d39\u5408\u8ba1']]) {

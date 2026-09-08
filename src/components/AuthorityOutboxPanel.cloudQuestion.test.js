@@ -60,7 +60,9 @@ assert.match(electron, /ipcMain\.handle\('desktop-authority:confirm-and-submit',
 assert.match(electron, /getDesktopAuthorityRuntime\(\)\.confirmAndSubmit\(id, input, confirmation\)/,
   'Electron main must delegate question drafts to cloud-aware runtime submission');
 
-assert.ok(panel.includes('courseRoomDraftDependencies(item, items)'));
+// UTF-8: dependency review now deliberately uses freshly read persisted drafts.
+assert.ok(panel.includes('const current = await requireBridge().list()'));
+assert.ok(panel.includes('courseRoomDraftDependencies(item, current)'));
 assert.ok(panel.includes('draftConfirmationSnapshot([...dependencies, item])'));
 assert.ok(panel.includes('dependencies.map(dependency =>'));
 console.log('cloud question outbox panel boundary checks passed');
