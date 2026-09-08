@@ -1,5 +1,14 @@
 # 业务行为保真核查（未完成，禁止据此发布）
 
+## 2026-09-09 原桌面现存引用删除实操（UTF-8）
+
+- 会话 11388 退出 0，实际源码桌面加载已提交云端 `058fce74154d05f1f95c74576cb413aaa7eeeb1e`，未加载暂停的权限改动。阿里云完整备份隔离副本 `gewu_ui_shadow_82ffd0f9ff4e26df` 使用实际 `gewu_cloud_schedule_reader` 启动；仅在副本新建学生及未删除的课程/排课、定价、出勤、两笔缴费和一笔课消。
+- 在原学生窗口完成取消、离线删除、重连、打开确认、确认提交、重开列表。取消/重连/仅打开确认均不写云端；确认后草稿 completed、列表与云端投影不再返回学生。云库逐字段比对六类关联记录全保留，学生只改变软删除标记和版本；`referencesArchived=false` 明确证明此次不是仅测已删除课程/排课。
+- 证据目录 `C:/Users/83423/AppData/Local/Temp/gewu-business-parity-c6kinf1u`；`student-history-readback.json` SHA256 `65016f0934f3cf6b510c2e255c134e4445cbdeb1d0ca2aed9f4d3ef49adfd8d5`。已查看 student-history-01-confirm 与 student-history-02-reloaded 两张截图，确认对象名称、两个确认选项和重开列表可读；未将旧测试数据长名称或整页其他状态签为视觉完成。
+- 回执 ok/cleanupComplete=true，测试副本、容器及远端临时目录已清理；备份和本机证据保留，该 profile 残留 Electron 数为 0。sourceDesktop=true、installed=false、productionWrite=false，uiVerified/businessFlowComplete 仍为 false。本轮没有改动业务 UI、生产库、NAS 或发布版本。
+- Electron 准备会话 6333 退出 0，收尾会话 92432 退出 0，root/backend 恢复 Node ABI 137；恢复后会话 72300 退出 0，原学生页面写入检查、210 组原年级计算、16 个真实 PostgreSQL 删除案例及六项隔离防误写测试再次通过。用户版本文件校验和仍未变。未重跑完整根测试或生成新构建，不把上轮完整云测试算作恢复依赖后的新运行。
+- 后续原版检查已定位下一项：原 browserDatabase.deleteCourse 也只删除课程项，当前 vnext_soft_delete_course 却新增排课引用禁删。此项尚未修复；必须连同原课表读取、历史费用与教师范围对照，不能仅取消报错便宣称完整恢复。
+
 ## 2026-09-08 恢复原学生删除行为（UTF-8）
 
 - 重新读取 `8118419f` 的原 StudentList.handleDelete 和 browserDatabase.deleteStudent：只删除学生项，保留课程、排课、定价、出勤与费用记录，没有课程/排课引用禁删规则。下文仅恢复“已删除父记录不阻止删除”的阶段结论不是完整保真目标；本轮继续移除现存引用带来的新增业务限制，不改原窗口、按钮、字段和布局。
