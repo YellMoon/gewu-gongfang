@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { hasPendingBusinessDraft } from '../services/businessDraftSubmissionGuard.mjs';
 import { 
   Table, Button, Form, Input, InputNumber, Select as AntSelect,
   Space, message, Popconfirm, Row, Col, Statistic
@@ -51,6 +52,13 @@ const TeacherList: React.FC = () => {
       dbService.deleteTeacher(id);
       (window as any).operateLogger?.log('delete', `teacher:${deletedTeacher?.name || id}`, 'teachers');
     };
+    // UTF-8: only the existing confirmation panel may submit unfinished drafts.
+    if (await hasPendingBusinessDraft(window.desktopAuthority, 'teacher', id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      loadData();
+      return;
+    }
     if (typeof cloudRuntime?.deleteCloudTeacher !== 'function' || !deletedTeacher?.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -96,6 +104,11 @@ const TeacherList: React.FC = () => {
       return code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
         || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
     };
+    if (editingTeacher && await hasPendingBusinessDraft(window.desktopAuthority, 'teacher', editingTeacher.id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      return true;
+    }
     if (!editingTeacher && typeof cloudRuntime?.createCloudTeacher !== 'function') {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { hasPendingBusinessDraft } from '../services/businessDraftSubmissionGuard.mjs';
 import { 
   Table, Button, Form, Input, InputNumber, Select as AntSelect,
   Space, message, Popconfirm, Tag, Row, Col, Divider, Statistic
@@ -137,6 +138,13 @@ const StudentList: React.FC = () => {
       dbService.deleteStudent(id);
       (window as any).operateLogger?.log('delete', `student:${deletedStudent?.name || id}`, 'students');
     };
+    // UTF-8: do not bypass the existing confirmation workflow for this record.
+    if (await hasPendingBusinessDraft(window.desktopAuthority, 'student', id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      loadData();
+      return;
+    }
     if (typeof cloudRuntime?.deleteCloudStudent !== 'function' || !deletedStudent?.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -173,6 +181,11 @@ const StudentList: React.FC = () => {
       (window as any).operateLogger?.log('update', `student:${values.name}`, 'students');
     };
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
+    if (await hasPendingBusinessDraft(window.desktopAuthority, 'student', editingStudent.id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      return true;
+    }
     if (typeof cloudRuntime?.updateCloudStudentRecord !== 'function' || !editingStudent.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { hasPendingBusinessDraft } from '../services/businessDraftSubmissionGuard.mjs';
 import {
   Table, Button, Form, Input,
   Space, message, Popconfirm, Statistic
@@ -42,6 +43,13 @@ const RoomManager: React.FC = () => {
     const deletedRoom = rooms.find(room => room.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => { dbService.deleteRoom(id); };
+    // UTF-8: preserve unconfirmed address changes before any online action.
+    if (await hasPendingBusinessDraft(window.desktopAuthority, 'room', id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      loadData();
+      return;
+    }
     if (typeof cloudRuntime?.deleteCloudRoom !== 'function' || !deletedRoom?.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -83,6 +91,11 @@ const RoomManager: React.FC = () => {
       return code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
         || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
     };
+    if (editingRoom && await hasPendingBusinessDraft(window.desktopAuthority, 'room', editingRoom.id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      return true;
+    }
     if (!editingRoom && typeof cloudRuntime?.createCloudRoom !== 'function') {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');

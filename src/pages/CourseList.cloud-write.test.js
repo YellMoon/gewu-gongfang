@@ -25,3 +25,5 @@ assert.ok(!studentSource.includes('__legacyStudentEditFallback'), 'student page 
 console.log('course list cloud-write source checks passed');
 require('./CourseList.business-parity.test.js');
 require('./CourseList.room-sync.test.js');
+// UTF-8: the same explicit-confirmation boundary covers original resource pages.
+require('./ResourceDraftConfirmation.test.js');
