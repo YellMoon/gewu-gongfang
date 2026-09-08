@@ -6,7 +6,7 @@ const ts = require('typescript');
 (async () => {
   const ast = ts.createSourceFile('CourseList.tsx', fs.readFileSync(path.join(__dirname, 'CourseList.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = new Map();
-  function visit(n) { if (ts.isVariableDeclaration(n) && ['syncSchedulesRoomName', 'submitCourseToAuthority'].includes(n.name.getText(ast))) names.set(n.name.getText(ast), n.initializer.getText(ast)); ts.forEachChild(n, visit); }
+  function visit(n) { if (ts.isVariableDeclaration(n) && ['syncSchedulesRoomName', 'submitCourseToAuthority', 'hasPendingCourseDraft'].includes(n.name.getText(ast))) names.set(n.name.getText(ast), n.initializer.getText(ast)); ts.forEachChild(n, visit); }
   visit(ast);
   function compile(name, deps) {
     assert(names.has(name));
@@ -26,8 +26,10 @@ const ts = require('typescript');
     } };
     const sync = compile('syncSchedulesRoomName', { dbService, localStorage: {}, readSchedulesFromPrimaryStore: () => schedules,
       replaceSchedulesInPrimaryStore: (_db, rows) => { events.push('capture'); replaced = rows; } });
+    // UTF-8: bind the actual guard to this same empty-outbox session.
+    const window = { desktopAuthority: { list: async () => [] }, desktopIdentitySessionProvider: { createCloudCourse: async () => events.push('cloud'), updateCloudCourse: async () => events.push('cloud') } };
     const submit = compile('submitCourseToAuthority', {
-      window: { desktopAuthority: { list: async () => [] }, desktopIdentitySessionProvider: { createCloudCourse: async () => events.push('cloud'), updateCloudCourse: async () => events.push('cloud') } },
+      window, hasPendingCourseDraft: compile('hasPendingCourseDraft', { window }),
       dbService, syncSchedulesRoomName: sync, courseCloudPayload: x => x,
       editingCourse: edit ? { id: 'edited', updated_at: '2026-09-07T00:00:00Z' } : null,
       message: { warning() {}, success() {}, error() {} },

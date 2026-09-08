@@ -160,10 +160,22 @@ const CourseList: React.FC = () => {
       || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
   };
 
+  // UTF-8: local course rows can contain unfinished drafts, not just cloud values.
+  const hasPendingCourseDraft = async (courseId: string) =>
+    (await window.desktopAuthority?.list?.() || []).some(item =>
+      /^course\.(create|update|delete)\.v1$/.test(item.type) && item.status !== 'completed'
+      && (item.payload?.record?.id || item.payload?.id) === courseId);
+
   const handleDelete = async (id: string) => {
     const deletedCourse = courses.find(course => course.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => dbService.deleteCourse(id);
+    if (await hasPendingCourseDraft(id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      loadData();
+      return;
+    }
     if (typeof cloudRuntime?.deleteCloudCourse !== 'function' || !deletedCourse?.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -195,6 +207,12 @@ const CourseList: React.FC = () => {
     const nextActive = !course.active;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => dbService.updateCourse(course.id, { active: nextActive });
+    if (await hasPendingCourseDraft(course.id)) {
+      stageLocalDraft();
+      message.warning('已保存更改，请在待提交的更改中确认。');
+      loadData();
+      return;
+    }
     if (typeof cloudRuntime?.updateCloudCourse !== 'function' || !course.updated_at) {
       stageLocalDraft();
       message.warning('\u5f53\u524d\u65e0\u4e91\u7aef\u4f1a\u8bdd\uff0c\u5df2\u4fdd\u5b58\u4e3a\u5f85\u786e\u8ba4\u63d0\u4ea4\u7684\u8349\u7a3f');
@@ -228,9 +246,10 @@ const CourseList: React.FC = () => {
     const pendingRoomDraft = (await window.desktopAuthority?.list?.() || []).some(item =>
       item.type === 'room.create.v1' && item.status !== 'completed'
       && item.payload?.record?.id === values.room_id);
-    if (pendingRoomDraft) {
+    const pendingCourseDraft = editingCourse && await hasPendingCourseDraft(editingCourse.id);
+    if (pendingRoomDraft || pendingCourseDraft) {
       stageLocalDraft();
-      message.warning('已保存课程和上课地址，请在待提交的更改中确认。');
+      message.warning(pendingRoomDraft ? '已保存课程和上课地址，请在待提交的更改中确认。' : '已保存更改，请在待提交的更改中确认。');
       return true;
     }
     if (!editingCourse && typeof cloudRuntime?.createCloudCourse !== 'function') {

@@ -6,7 +6,9 @@ const path = require('node:path');
 (async () => {
   const source = ts.createSourceFile('CourseList.tsx', fs.readFileSync(path.join(__dirname, 'CourseList.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let handler, submitHandler;
+  const declarations = new Map();
   function visit(node) {
+    if (ts.isVariableDeclaration(node)) declarations.set(node.name.getText(source), node.initializer);
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'handleSubmit') handler = node.initializer;
     if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'submitCourseToAuthority') submitHandler = node.initializer;
     ts.forEachChild(node, visit);
@@ -61,8 +63,44 @@ const path = require('node:path');
       dbService: { createCourse: () => calls.push('draft'), updateCourse: () => calls.push('draft'), refreshAuthorityProjection: async () => {} },
       syncSchedulesRoomName: () => {}, courseCloudPayload: v => v, message: { warning() {}, success() {}, error() {} },
     };
+    // UTF-8: execute the real new guard with the same outbox, not a test replacement.
+    if (declarations.has('hasPendingCourseDraft')) dependencies.hasPendingCourseDraft = new Function('window',
+      ts.transpileModule(`return (${declarations.get('hasPendingCourseDraft').getText(source)});`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2020 },
+      }).outputText)(dependencies.window);
     assert.equal(await new Function(...Object.keys(dependencies), submitCompiled)(...Object.values(dependencies))({ room_id: 'room' }), true);
     assert.deepEqual(calls, [pending ? 'draft' : 'cloud'], 'online course save must not bypass an unconfirmed address draft');
   }
-  console.log('course original-form year and inline-address preservation checks passed');
+  // UTF-8: reconnecting must not piggyback an older draft on a new course action.
+  for (const operation of ['create', 'update', 'delete']) for (const status of ['awaiting_confirmation', 'confirmed', 'submitted', 'conflict', 'completed']) {
+    for (const action of ['submitCourseToAuthority', 'handleToggleActive', 'handleDelete']) {
+      for (const sameCourse of [true, false]) {
+        const calls = [];
+        const course = { id: 'course', updated_at: '2026-09-08T00:00:00Z', active: true, room_id: 'room', notes: '尚未确认的备注' };
+        const recordId = sameCourse ? 'course' : 'other';
+        const draft = { type: `course.${operation}.v1`, status, payload: operation === 'create'
+          ? { record: { ...course, id: recordId } } : { id: recordId, changes: { notes: course.notes } } };
+        const draftBefore = JSON.stringify(draft);
+        const dependencies = {
+          window: { desktopAuthority: { list: async () => [draft] }, desktopIdentitySessionProvider: {
+            updateCloudCourse: async () => calls.push('cloud'), deleteCloudCourse: async () => calls.push('cloud'),
+          } },
+          courses: [course], editingCourse: course, courseCloudPayload: value => value,
+          dbService: { updateCourse: () => calls.push('draft'), deleteCourse: () => calls.push('draft'), refreshAuthorityProjection: async () => {} },
+          syncSchedulesRoomName() {}, loadData() {}, isOfflineCloudFailure: () => false,
+          message: { warning() {}, success() {}, error: text => { throw new Error(text); } },
+        };
+        const expression = name => ts.transpileModule(`return (${declarations.get(name).getText(source)});`, {
+          compilerOptions: { target: ts.ScriptTarget.ES2020 },
+        }).outputText;
+        if (declarations.has('hasPendingCourseDraft')) dependencies.hasPendingCourseDraft = new Function('window', expression('hasPendingCourseDraft'))(dependencies.window);
+        const execute = new Function(...Object.keys(dependencies), expression(action))(...Object.values(dependencies));
+        await execute(action === 'handleDelete' ? course.id : course);
+        assert.deepEqual(calls, [sameCourse && status !== 'completed' ? 'draft' : 'cloud'],
+          action + ' must retain unfinished course edits for explicit confirmation, without blocking unrelated/completed drafts');
+        assert.equal(JSON.stringify(draft), draftBefore, 'the guard cannot rewrite a stored or confirmed draft');
+      }
+    }
+  }
+  console.log('course original-form year, inline-address and 90 pending-course confirmation cases passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
