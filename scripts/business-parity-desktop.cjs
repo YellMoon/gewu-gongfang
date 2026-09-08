@@ -530,6 +530,9 @@ async function main() {
       await card.waitFor();assert.match(await card.innerText(),/初二物理[\s\S]*东湖上课点\s+16:00-18:30/);
       await card.screenshot({path:path.join(out,'25-batch-reloaded-'+i+'.png')});
     }
+    const multiStudentBatch=await require('./business-parity-multistudent.cjs')({page,out,save,releaseNavigation,waitForModalWidth,
+      selectCourseOption,confirmVisibleDraft,reopenCalendar,studentId,
+      teacherName:projection.teachers.find(t=>t.id===config.login.teacherId).name});
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
@@ -584,7 +587,7 @@ async function main() {
       rescheduleConfirmed:true,rescheduleNoSilentWrite:true,rescheduleVersionBaseline:true,
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,
-      rectangleCopy:true,twoScheduleBatchMove:true,batchFeeSnapshots:true,batchNoSilentWrite:true,batchReloaded:true,
+      rectangleCopy:true,twoScheduleBatchMove:true,batchFeeSnapshots:true,batchNoSilentWrite:true,batchReloaded:true,...multiStudentBatch,
       studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
