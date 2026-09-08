@@ -1249,7 +1249,9 @@ class BrowserDatabaseService {
         { collection: 'courses', action: 'update', recordId: id, value: this.data.courses[index], baseVersion },
       ]);
     } else {
-      this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion);
+      // UTF-8: retain a state-only intent; outbox merging still preserves any earlier form draft.
+      const stateOnly = Object.keys(updates).length === 1 && typeof updates.active === 'boolean';
+      this.recordAuthorityDraft('courses', 'update', id, stateOnly ? { active: updates.active } : this.data.courses[index], baseVersion);
     }
     this.saveData();
     return this.data.courses[index];

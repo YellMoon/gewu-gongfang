@@ -1740,7 +1740,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   });
   app.put('/api/business/courses/:courseId', async (request, response) => {
     if (!businessTenantId || !businessCourseLifecycleMutations) return businessUnavailable(response);
-    const courseId = String(request.params.courseId || '').trim(); const update = courseRecord(request.body, true);
+    // UTF-8: finish/reopen uses the same endpoint without replacing unrelated historical fields.
+    const stateBody = exactBody(request.body, ['expectedUpdatedAt', 'active']);
+    const stateVersion = versionInstant(stateBody?.expectedUpdatedAt);
+    const courseId = String(request.params.courseId || '').trim();
+    const update = stateBody && stateVersion && typeof stateBody.active === 'boolean'
+      ? { expectedUpdatedAt: stateVersion, active: stateBody.active } : courseRecord(request.body, true);
     if (!courseId || !update) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);

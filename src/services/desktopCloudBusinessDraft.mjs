@@ -365,7 +365,8 @@ export function createDesktopCloudBusinessDraftAdapter({
         return cloudClient.updateCloudCourse(callInput(normalizedBaseUrl, sessionToken, {
           courseId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
-          ...courseInput(updateRecord),
+          ...(Object.keys(updateRecord).length === 1 && typeof updateRecord.active === 'boolean'
+            ? { active: updateRecord.active } : courseInput(updateRecord)),
         }));
       case 'course.delete.v1':
         return cloudClient.deleteCloudCourse(callInput(normalizedBaseUrl, sessionToken, {

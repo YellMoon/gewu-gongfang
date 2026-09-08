@@ -229,7 +229,8 @@ const CourseList: React.FC = () => {
       return;
     }
     try {
-      await cloudRuntime.updateCloudCourse({ courseId: course.id, expectedUpdatedAt: course.updated_at, ...courseCloudPayload({ ...course, active: nextActive }) });
+      // UTF-8: original finish/reopen changes only the course state, not its historical defaults.
+      await cloudRuntime.updateCloudCourse({ courseId: course.id, expectedUpdatedAt: course.updated_at, active: nextActive });
       cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success(nextActive ? '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u672a\u7ed3\u8bfe' : '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u5df2\u7ed3\u8bfe');
