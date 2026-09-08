@@ -1788,7 +1788,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         const eId = editingSchedule?.id || '';
         const overlap = checkOverlap(eId, startTimeStr, endTimeStr);
         if (overlap) {
-          message.warning(`时间重叠：${dateStr} 与「${overlap.course_name}」(${overlap.start_time.substring(11,16)}-${overlap.end_time.substring(11,16)})冲突，已恢复`);
+          // UTF-8: cloud instants must display the same local time as calendar cards.
+          message.warning(`时间重叠：${dateStr} 与「${overlap.course_name}」(${dayjs(overlap.start_time).format('HH:mm')}-${dayjs(overlap.end_time).format('HH:mm')})冲突，已恢复`);
           return;
         }
         
@@ -1818,7 +1819,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                 })()
               : s
           ));
-          (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间 ${startTimeStr.substring(11,16)}-${endTimeStr.substring(11,16)}`, '课程表');
+          (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间 ${dayjs(startTimeStr).format('HH:mm')}-${dayjs(endTimeStr).format('HH:mm')}`, '课程表');
         } else {
           const courseObj = courses.find(c => c.id === values.courseId);
           const baseSchedule: ScheduleEvent = {

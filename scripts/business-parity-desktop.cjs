@@ -274,6 +274,86 @@ async function main() {
     assert.match(await calendarCard.innerText(),/初二物理/);
     assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
     await calendarCard.screenshot({path:path.join(out,'13-calendar-card.png')});
+    // UTF-8: reopen persisted schedule through the original calendar, then reschedule offline.
+    const reopenCalendar=async()=>{
+      await page.reload();
+      await page.locator('.app-shell').waitFor({timeout:45000});
+      await page.getByText('系统加载中...',{exact:true}).waitFor({state:'hidden',timeout:45000});
+      await page.locator('.app-shell__collapse-button').click();
+      // UTF-8: reload returns to the home page with the academic submenu collapsed.
+      await page.getByRole('menuitem',{name:'calendar 教务',exact:true}).click();
+      await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).click();
+      await releaseNavigation();
+      await calendarCard.waitFor();
+    };
+    await reopenCalendar();
+    assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
+    await calendarCard.dblclick();
+    await courseDialog.waitFor();
+    await waitForModalWidth(600);
+    assert.equal(await courseDialog.locator('#startTime').inputValue(),'12:00');
+    assert.equal(await courseDialog.locator('#endTime').inputValue(),'13:30');
+    save('14-reschedule-before-snapshot',await courseDialog.ariaSnapshot());
+    await courseDialog.locator('#startTime').fill('14:00');
+    await courseDialog.locator('#startTime').press('Enter');
+    await selectCourseOption('duration','2小时');
+    assert.equal(await courseDialog.locator('#endTime').inputValue(),'16:00');
+    // UTF-8: the full backup has an existing 14:00 lesson; retain conflict rejection evidence.
+    const outboxBeforeConflict=await page.evaluate(()=>window.desktopAuthority.list());
+    await courseDialog.getByRole('button',{name:/^保\s*存$/}).click();
+    await page.locator('.ant-message-notice-content').filter({hasText:/时间重叠：.*14:00-15:30/}).waitFor();
+    await page.screenshot({path:path.join(out,'14-reschedule-conflict.png'),scale:'css'});
+    assert(await courseDialog.isVisible());
+    assert.deepEqual(await page.evaluate(()=>window.desktopAuthority.list()),outboxBeforeConflict);
+    await courseDialog.locator('#startTime').fill('16:00');
+    await courseDialog.locator('#startTime').press('Enter');
+    assert.equal(await courseDialog.locator('#endTime').inputValue(),'18:00');
+    await courseDialog.screenshot({path:path.join(out,'14-reschedule-form.png')});
+    await page.context().setOffline(true);
+    await courseDialog.getByRole('button',{name:/^保\s*存$/}).click();
+    await courseDialog.waitFor({state:'hidden'});
+    await page.waitForFunction(async id=>(await window.desktopAuthority.list()).some(d=>
+      d.type==='schedule.update.v1'&&d.status==='awaiting_confirmation'&&d.payload.id===id),scheduleId);
+    const rescheduleDraft=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>
+      d.type==='schedule.update.v1'&&d.status==='awaiting_confirmation'&&d.payload.id===id),scheduleId);
+    assert.equal(new Date(rescheduleDraft.payload.expectedVersion).getTime(),new Date(schedule.updated_at).getTime(),
+      'rescheduling must retain the cloud version read before editing');
+    assert.equal(rescheduleDraft.payload.changes.calculated_tuition,360);
+    assert.equal(rescheduleDraft.payload.changes.calculated_teacher_fee,240);
+    assert.match(await calendarCard.innerText(),/东湖上课点\s+16:00-18:00/);
+    await page.context().setOffline(false);
+    const reschedulePending=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert.deepEqual(reschedulePending.schedules.find(s=>s.id===scheduleId),schedule,
+      'reconnecting after rescheduling must not change any cloud schedule field');
+    await page.locator('.sync-status-trigger').click();
+    await page.locator('[data-row-key="'+rescheduleDraft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
+    await courseDialog.waitFor();
+    save('15-reschedule-confirm-snapshot',await courseDialog.ariaSnapshot());
+    await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
+    await courseDialog.waitFor({state:'hidden',timeout:45000});
+    await page.waitForFunction(async id=>(await window.desktopAuthority.list()).some(d=>d.id===id&&d.status==='completed'),rescheduleDraft.id);
+    const movedProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const moved=movedProjection.schedules.find(s=>s.id===scheduleId);
+    assert.equal(movedProjection.schedules.filter(s=>s.id===scheduleId).length,1);
+    assert.equal(new Date(moved.start_time).getTime(),new Date(scheduleDate+'T16:00:00+08:00').getTime());
+    assert.equal(new Date(moved.end_time).getTime(),new Date(scheduleDate+'T18:00:00+08:00').getTime());
+    assert.equal(moved.calculated_tuition,360); assert.equal(moved.calculated_teacher_fee,240);
+    for(const key of ['course_id','room','student_ids','student_pricings','teacher_id','billing_unit','teacher_fee_mode','status'])
+      assert.deepEqual(moved[key],schedule[key],'rescheduling must preserve '+key);
+    assert.notEqual(moved.updated_at,schedule.updated_at);
+    save('reschedule-readback',{before:schedule,after:moved,expectedVersion:rescheduleDraft.payload.expectedVersion});
+    await reopenCalendar();
+    assert.match(await calendarCard.innerText(),/东湖上课点\s+16:00-18:00/);
+    await calendarCard.screenshot({path:path.join(out,'16-reschedule-reloaded-card.png')});
+    await calendarCard.dblclick();
+    await courseDialog.waitFor();
+    await waitForModalWidth(600);
+    assert.equal(await courseDialog.locator('#startTime').inputValue(),'16:00');
+    assert.equal(await courseDialog.locator('#endTime').inputValue(),'18:00');
+    await courseDialog.getByText('东湖上课点',{exact:true}).waitFor();
+    await courseDialog.screenshot({path:path.join(out,'16-reschedule-reopened.png')});
+    await courseDialog.getByRole('button',{name:/^取\s*消$/}).click();
+    await courseDialog.waitFor({state:'hidden'});
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
@@ -325,6 +405,8 @@ async function main() {
       originalWorkspaceLoaded:true,teacherProjectionRead:true,studentDraftConfirmed:true,schoolAtomic:true,
       noSilentReconnectWrite:true,studentReloadVisible:true,courseAndAddressConfirmed:true,
       courseReopened:true,scheduleConfirmed:true,scheduleFinancialReadback:true,
+      rescheduleConfirmed:true,rescheduleNoSilentWrite:true,rescheduleVersionBaseline:true,
+      rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
