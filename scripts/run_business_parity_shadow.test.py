@@ -1,8 +1,62 @@
 import unittest
-from run_business_parity_shadow import validate_backup, validate_target
+import pathlib
+import subprocess
+import tempfile
+import io
+import tarfile
+from unittest.mock import patch
+from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_rejects_escaping_and_linked_archive_entries_before_extraction(self):
+        for name, kind in [('cloud-business-api/../../escape', tarfile.REGTYPE),
+                           ('/absolute', tarfile.REGTYPE), ('other/file', tarfile.REGTYPE),
+                           ('shared/link', tarfile.SYMTYPE), ('shared/hardlink', tarfile.LNKTYPE)]:
+            payload = io.BytesIO()
+            with tarfile.open(fileobj=payload, mode='w') as archive:
+                item = tarfile.TarInfo(name); item.type = kind
+                if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE): item.linkname = '../../escape'
+                archive.addfile(item)
+            with self.subTest(name=name), tempfile.TemporaryDirectory(prefix='gewu-archive-guard-test-') as temp:
+                destination = pathlib.Path(temp) / 'rejected'
+                with patch('run_business_parity_shadow.subprocess.run', return_value=subprocess.CompletedProcess([], 0, payload.getvalue())):
+                    with self.assertRaisesRegex(RuntimeError, 'UNSAFE_SOURCE_ARCHIVE'):
+                        export_committed_source(temp, 'a'*40, destination)
+                self.assertFalse(destination.exists())
+
+    def test_snapshot_excludes_dirty_and_untracked_cloud_changes(self):
+        with tempfile.TemporaryDirectory(prefix='gewu-source-snapshot-test-') as temp:
+            repo = pathlib.Path(temp) / 'repo'; repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(['git', *args], cwd=repo).decode('utf-8').strip()
+            git('init', '-q')
+            paths = ['cloud-business-api/src/app.js', 'cloud-business-api/scripts/start.js',
+                     'cloud-business-api/sql/original.sql', 'cloud-business-api/server.js',
+                     'cloud-business-api/package.json', 'shared/contract.js']
+            for name in paths:
+                file = repo / name; file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('committed source', encoding='utf-8')
+            git('add', '--', 'cloud-business-api', 'shared')
+            git('-c', 'user.name=Snapshot Test', '-c', 'user.email=snapshot@example.invalid', 'commit', '-qm', 'fixture')
+            commit = git('rev-parse', 'HEAD')
+            dirty = repo / paths[0]; dirty.write_text('paused user change', encoding='utf-8')
+            untracked = repo / 'cloud-business-api/sql/paused.sql'
+            untracked.write_text('must not deploy', encoding='utf-8')
+            destination = pathlib.Path(temp) / 'snapshot'
+            self.assertEqual(export_committed_source(repo, commit, destination), destination)
+            self.assertEqual((destination / paths[0]).read_text(encoding='utf-8'), 'committed source')
+            self.assertFalse((destination / 'cloud-business-api/sql/paused.sql').exists())
+            self.assertFalse((destination / '.git').exists())
+            self.assertEqual(dirty.read_text(encoding='utf-8'), 'paused user change')
+            self.assertTrue(untracked.exists())
+            with self.assertRaises(FileExistsError):
+                export_committed_source(repo, commit, destination)
+            for invalid in ['HEAD', '', '--output=elsewhere', 'a'*40+';id']:
+                with self.subTest(ref=invalid), self.assertRaisesRegex(RuntimeError, 'EXACT_SOURCE_COMMIT_REQUIRED'):
+                    export_committed_source(repo, invalid, pathlib.Path(temp) / 'rejected')
+            self.assertFalse((pathlib.Path(temp) / 'rejected').exists())
+
     def backup(self):
         root = '/root/scheduling-backups/postgres/20260907-083758'
         return dict(root=root, dump=root+'/gewu_cloud.dump', sha256='a'*64,

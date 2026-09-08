@@ -1,6 +1,7 @@
 """Run source desktop against a disposable full cloud backup, never production."""
 import argparse
 import hashlib
+import io
 import json
 import pathlib
 import re
@@ -37,18 +38,43 @@ def validate_target(target):
     return target
 
 
-def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False):
+def export_committed_source(repo, commit, destination):
+    """Export only committed cloud inputs; never alter or register a worktree."""
+    if not re.fullmatch(r'[a-f0-9]{40}', commit or ''):
+        raise RuntimeError('EXACT_SOURCE_COMMIT_REQUIRED')
+    destination = pathlib.Path(destination)
+    if destination.exists():
+        raise FileExistsError(destination)
+    paths = ['cloud-business-api/src', 'cloud-business-api/scripts', 'cloud-business-api/sql',
+             'cloud-business-api/server.js', 'cloud-business-api/package.json', 'shared']
+    payload = subprocess.run(['git', 'archive', '--format=tar', commit, '--', *paths],
+                             cwd=repo, check=True, capture_output=True, timeout=60).stdout
+    with tarfile.open(fileobj=io.BytesIO(payload), mode='r:') as archive:
+        for item in archive.getmembers():
+            name = pathlib.PurePosixPath(item.name)
+            if (name.is_absolute() or '..' in name.parts or '\\' in item.name or ':' in item.name
+                    or not name.parts or name.parts[0] not in ('cloud-business-api', 'shared')
+                    or not (item.isfile() or item.isdir())):
+                raise RuntimeError('UNSAFE_SOURCE_ARCHIVE')
+        destination.mkdir(parents=True, exist_ok=False)
+        archive.extractall(destination, filter='data')
+    return destination
+
+
+def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None):
     backup = validate_backup(json.loads(pathlib.Path(backup_path).read_text(encoding='utf-8')))
     nonce = secrets.token_hex(8)
     target = validate_target('gewu_ui_shadow_' + nonce)
     container = 'gewu-ui-shadow-' + nonce
     remote = '/tmp/' + container
     out = pathlib.Path(tempfile.mkdtemp(prefix='gewu-business-parity-'))
+    cloud_root = export_committed_source(ROOT, cloud_source_commit, out / 'committed-source') if cloud_source_commit else ROOT
     ssh = deploy.connect()
     created = staged = app_created = False
     tunnel = None
     # UTF-8: focused reruns keep explicit scope and never claim the full UI matrix.
     receipt = {'database': target, 'productionWrite': False, 'uiVerified': False,
+               'cloudSourceCommit': cloud_source_commit,
                'scope': 'course-address-only' if course_address_only else 'resource-confirmation-only' if resource_confirmation_only else 'course-confirmation-only' if course_confirmation_only else 'business-parity'}
 
     def private(command):
@@ -75,7 +101,7 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         if actual_security != backup['securityFingerprint']:
             raise RuntimeError('SHADOW_SECURITY_FINGERPRINT_MISMATCH')
         receipt['ownershipAndPrivilegesVerified'] = True
-        receipt['migrations'] = apply_migrations(db, read_migrations(ROOT / 'cloud-business-api/sql'))['applied']
+        receipt['migrations'] = apply_migrations(db, read_migrations(cloud_root / 'cloud-business-api/sql'))['applied']
         receipt['backupSha256'] = backup['sha256']
         print(json.dumps({'stage': 'shadow_migrated', 'database': target}), flush=True)
         app = json.loads(private('docker inspect gewu-cloud-business-api'))[0]
@@ -100,15 +126,15 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         archive = out / 'source.tar'
         with tarfile.open(archive, 'w') as bundle:
             for folder in ('src', 'scripts'):
-                for file in (ROOT / 'cloud-business-api' / folder).rglob('*.js'):
+                for file in (cloud_root / 'cloud-business-api' / folder).rglob('*.js'):
                     if not file.name.endswith('.test.js'):
-                        bundle.add(file, arcname=file.relative_to(ROOT / 'cloud-business-api').as_posix())
+                        bundle.add(file, arcname=file.relative_to(cloud_root / 'cloud-business-api').as_posix())
             for name in ('server.js', 'package.json'):
-                bundle.add(ROOT / 'cloud-business-api' / name, arcname=name)
+                bundle.add(cloud_root / 'cloud-business-api' / name, arcname=name)
             bundle.add(ROOT / 'scripts/business-parity-shadow-bootstrap.cjs', arcname='bootstrap.cjs')
-            for file in (ROOT / 'shared').rglob('*'):
+            for file in (cloud_root / 'shared').rglob('*'):
                 if file.is_file() and file.suffix in ('.js','.mjs','.json','.sql') and '.test.' not in file.name:
-                    bundle.add(file, arcname='current-shared/' + file.relative_to(ROOT / 'shared').as_posix())
+                    bundle.add(file, arcname='current-shared/' + file.relative_to(cloud_root / 'shared').as_posix())
         receipt['sourceSha256'] = hashlib.sha256(archive.read_bytes()).hexdigest()
         sftp = ssh.open_sftp()
         try:
@@ -196,5 +222,6 @@ if __name__ == '__main__':
     parser.add_argument('--resource-confirmation-only', action='store_true')
     # UTF-8: keep address linkage as an explicit limited evidence scope.
     parser.add_argument('--course-address-only', action='store_true')
+    parser.add_argument('--cloud-source-commit', help='Exact commit SHA for cloud code, shared contracts and SQL; excludes dirty changes')
     args = parser.parse_args()
-    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only)
+    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit)
