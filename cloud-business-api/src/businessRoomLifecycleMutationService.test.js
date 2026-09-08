@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const { createBusinessRoomLifecycleMutations } = require('./businessRoomLifecycleMutationService');
+require('../sql/room-lifecycle.postgres.test');
 
 (async () => {
   const calls = [];
