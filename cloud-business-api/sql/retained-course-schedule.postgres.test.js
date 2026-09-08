@@ -16,8 +16,8 @@ const deleteSql='SELECT * FROM business.vnext_delete_scoped_schedule($1,$2,$3::t
 const denied=e=>e.code==='42501';
 const readTables=['courses','students','schedules','course_student_pricings','schedule_student_overrides'];
 const read=handle=>withQuery(handle,'fixture-provisioner',async db=>{const result={};for(const table of readTables)result[table]=(await db.query(`SELECT to_jsonb(t) AS value FROM business.${table} t ORDER BY to_jsonb(t)::text`)).rows.map(r=>r.value);return result;});
-(async()=>{
- const cases=verify().filter(c=>c.action!=='attendance');
+async function run({studentDeleted=false}={}){
+ const courseStates=studentDeleted?[true,false]:[true];
  const {createAuthorityDraftFromLocalMutation}=await import('../../src/services/authorityDraftAdapter.mjs');
  const {createDesktopCloudBusinessDraftAdapter}=await import('../../src/services/desktopCloudBusinessDraft.mjs');
  const runtime=createDisposablePg17Runtime();await runtime.start();const handle=await runtime.createIsolatedHandle();let server;
@@ -27,11 +27,19 @@ const read=handle=>withQuery(handle,'fixture-provisioner',async db=>{const resul
   await withQuery(handle,'fixture-provisioner',async db=>{
    for(const file of ['20260824-schedule-lifecycle.sql','20260822-business-schedule-student-override.sql','20260901-business-schedule-update-lifecycle.sql','20260907-teacher-schedule-write-scope.sql','20260907-z-teacher-student-write-scope.sql','20260907-zz-schedule-financial-snapshot.sql','20260908-schedule-confirmed-restore.sql'])await db.query(sql(file));
    const file='20260909-retained-course-schedule-write.sql';await db.query(sql(file));await db.query(sql(file));
+   const studentGuards=await db.query("SELECT p.oid,pg_get_functiondef(p.oid) AS definition,p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='business' AND p.proname IN ('vnext_teacher_student_access','vnext_check_student_actor') ORDER BY p.oid");
+   const studentFile='20260909-retained-student-schedule-write.sql';await db.query(sql(studentFile));await db.query(sql(studentFile));
+   assert.deepEqual((await db.query("SELECT p.oid,pg_get_functiondef(p.oid) AS definition,p.proacl FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='business' AND p.proname IN ('vnext_teacher_student_access','vnext_check_student_actor') ORDER BY p.oid")).rows,studentGuards.rows,'student CRUD guards and privileges must not change');
    await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Tenant',false,now(),now()),('tenant-2','Other',false,now(),now())");
    await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','Original teacher',false,now(),now()),('teacher-2','tenant-1','Other teacher',false,now(),now())");
    await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','Student',false,false,now(),now()),('student-2','tenant-1','Unrelated',false,false,now(),now())");
    await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ('course-1','tenant-1','Original course','Original course',1,1,999,888,2,2,'teacher-1',true,true,now(),now())");
    await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','course-1','student-1',999,888)");
+   if(studentDeleted){
+    await db.query("UPDATE business.students SET legacy_deleted=true WHERE id='student-2'");
+    await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ('unrelated-course','tenant-1','Other course','Other course',1,1,999,888,2,2,'teacher-1',true,false,now(),now())");
+    await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','unrelated-course','student-2',999,888)");
+   }
   });
   const query=(text,values)=>withQuery(handle,'writer',db=>db.query(text,values));
   let context;
@@ -47,10 +55,13 @@ const read=handle=>withQuery(handle,'fixture-provisioner',async db=>{const resul
    safeStorage:{isEncryptionAvailable:()=>true,encryptString:s=>Buffer.from(s,'utf8'),decryptString:b=>b.toString('utf8')},
    fetchImpl:async(url,options)=>{requests.push({url,method:options.method});return fetch(url,options);}});
   let count=0,restorations=0,lockArgs;
-  for(const relationship of ['enrolment','lesson'])for(const role of ['teacher','super_admin'])for(const item of cases){
+  for(const courseDeleted of courseStates)for(const relationship of ['enrolment','lesson'])for(const role of ['teacher','super_admin'])for(const item of verify({studentDeleted,courseDeleted}).filter(c=>c.action!=='attendance')){
    const id='lesson-'+count,copyId='copy-'+count,version='2026-09-01T00:00:00.000Z',teacher=role==='teacher'?'teacher-1':null;
    const record={...(item.result||item.schedule),id:item.action==='copy'?copyId:id,updated_at:version};
    await withQuery(handle,'fixture-provisioner',async db=>{
+    await db.query("UPDATE business.students SET legacy_deleted=$1 WHERE id='student-1'",[studentDeleted]);
+    await db.query("UPDATE business.courses SET legacy_deleted=$1 WHERE id='course-1'",[courseDeleted]);
+    if(relationship==='enrolment')await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','course-1','student-1',999,888) ON CONFLICT DO NOTHING");
     if(relationship==='lesson')await db.query("DELETE FROM business.course_student_pricings WHERE course_id='course-1'");
     await db.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,room_display_snapshot,service_type,calculated_tuition,calculated_teacher_fee,billing_unit,teacher_fee_mode,teacher_id,teacher_name,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1','course-1','2026-09-14T01:00:00Z','2026-09-14T02:30:00Z',1,'Original room',1,270,180,$2,$3,'teacher-1','Original teacher',false,'2026-09-01T00:00:00Z',$4)",[id,item.schedule.billing_unit,item.schedule.teacher_fee_mode,version]);
     await db.query("INSERT INTO business.schedule_student_overrides(tenant_id,schedule_id,student_id,attendance_status,tuition,teacher_fee) VALUES ('tenant-1',$1,'student-1',$2,180,120)",[id,item.schedule.student_pricings[0].status]);
@@ -72,6 +83,11 @@ const read=handle=>withQuery(handle,'fixture-provisioner',async db=>{const resul
     if(item.action!=='delete'&&role==='teacher'){
      const unrelated=[...args];unrelated[roleIndex-1]=JSON.stringify([{student_id:'student-2',attendance_status:1,tuition:180,teacher_fee:120}]);await assert.rejects(()=>db.query(query,unrelated),denied);
      const missing=[...args];missing[item.action==='copy'?2:3]='missing-course';await assert.rejects(()=>db.query(query,missing),denied);
+    }
+    if(studentDeleted&&item.action!=='delete'){
+     const unrelated=[...args];unrelated[roleIndex-1]=JSON.stringify([{student_id:'student-2',attendance_status:1,tuition:180,teacher_fee:120}]);
+     await assert.rejects(()=>db.query(query,unrelated),e=>['42501','22023'].includes(e.code),'another course must not authorize a deleted student in this course');
+     for(const helper of ['vnext_schedule_student_reference','vnext_schedule_pricing_student_valid'])await assert.rejects(()=>db.query('SELECT business.'+helper+'($1,$2,$3)',['tenant-1','course-1','student-1']),denied);
     }
     if(item.action!=='copy'){const stale=[...args];stale[2]='2000-01-01T00:00:00Z';assert.equal((await db.query(query,stale)).rows.length,0);}
     assert.deepEqual(await read(handle),before,'rejected mutations must not change any field');
@@ -119,6 +135,8 @@ const read=handle=>withQuery(handle,'fixture-provisioner',async db=>{const resul
    }finally{await writer.query('ROLLBACK');await admin.query('RESET lock_timeout');}
   }));
   assert.deepEqual(await read(handle),beforeLocks);
-  console.log('retained-course original handlers/outbox/REST/scoped PostgreSQL passed: '+count+' teacher/admin mutations, '+restorations+' confirmed restorations, both roster paths and concurrent locks');
+  console.log((studentDeleted?'retained-student':'retained-course')+' original handlers/outbox/REST/scoped PostgreSQL passed: '+count+' teacher/admin mutations, '+restorations+' confirmed restorations, both roster paths and concurrent locks');
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await runtime.disposeHandle(handle).catch(()=>{});await runtime.stop().catch(()=>{});}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+}
+module.exports={run};
+if(require.main===module)run().catch(error=>{console.error(error);process.exitCode=1;});

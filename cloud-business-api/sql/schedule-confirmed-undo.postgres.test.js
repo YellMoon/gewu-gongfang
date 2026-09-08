@@ -22,6 +22,7 @@ const data={courseId:'course-1',startAt:'2026-09-08T01:00:00.000Z',endAt:'2026-0
    for(const file of ['20260824-schedule-lifecycle.sql','20260822-business-schedule-student-override.sql','20260901-business-schedule-update-lifecycle.sql','20260907-teacher-schedule-write-scope.sql','20260907-z-teacher-student-write-scope.sql','20260907-zz-schedule-financial-snapshot.sql'])await db.query(sql(file));
    const restore='20260908-schedule-confirmed-restore.sql';await db.query(sql(restore));await db.query(sql(restore));
    await db.query(sql('20260909-retained-course-schedule-write.sql'));
+   await db.query(sql('20260909-retained-student-schedule-write.sql'));
    await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','One',false,now(),now()),('tenant-2','Two',false,now(),now())");
    await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Two',false,now(),now())");
    await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','One',false,false,now(),now()),('student-2','tenant-1','Other',false,false,now(),now())");

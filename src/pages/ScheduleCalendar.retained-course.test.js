@@ -10,9 +10,9 @@ const versions=[true,false].map(old=>{
   const financial=load(source('src/utils/financialDetails.ts',old),name=>name==='../types'?types:require(name));
   return {calendar:source('src/pages/ScheduleCalendar.tsx',old),financial,types,compiled:new Map()};
 });
-function execute(action,schedule,old,confirm=true,overlap=false){
+function execute(action,schedule,old,confirm=true,overlap=false,options={}){
   const v=versions[old?0:1],unaffected={...schedule,id:'unaffected'},state={rows:[schedule,unaffected],writes:0,editorOpened:false};
-  const env={schedule,newDay:dayjs('2026-09-15'),newSlot:120,courses:[],teachers:[{id:'teacher-1',name:'Original teacher'}],rooms:[],dayjs,
+  const env={schedule,newDay:dayjs('2026-09-15'),newSlot:120,courses:options.courseDeleted===false?[{id:schedule.course_id,name:'Original course',teacher_id:'teacher-1',student_pricings:schedule.student_pricings}]:[],students:options.studentDeleted?[]:[{id:'student-1',name:'Original student'}],teachers:[{id:'teacher-1',name:'Original teacher'}],rooms:[],dayjs,
     schedules:state.rows,window:{confirm:()=>confirm},message:{success:()=>{},warning:()=>{}},uuidv4:()=> 'copy',
     slotToTime:slot=>({hour:Math.floor(slot/12),minute:(slot%12)*5}),formatTime:(h,m)=>String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'),GLOBAL_MAX_SLOT:287,
     checkOverlap:()=>overlap?schedule:null,resolveScheduleRoomDisplay:s=>s.room,resolveCalendarRoomDisplay:s=>s.room,
@@ -30,23 +30,31 @@ function execute(action,schedule,old,confirm=true,overlap=false){
   state.rows=state.rows.map(s=>({...s,start_time:dayjs(s.start_time).toISOString(),end_time:dayjs(s.end_time).toISOString()}));
   return state;
 }
-function verify(){
+function verify(options={}){
+  // UTF-8: execute the original deletion, proving it retains course/lesson relationships.
+  if(options.studentDeleted){
+    const code=source('src/services/browserDatabase.ts',true),ast=ts.createSourceFile('database.ts',code,99,true);let method;
+    function visit(n){if(ts.isMethodDeclaration(n)&&n.name.getText(ast)==='deleteStudent')method=n;ts.forEachChild(n,visit);}visit(ast);assert(method);
+    const state={data:{students:[{id:'student-1'}],courses:[{id:'course-1',student_pricings:[{student_id:'student-1'}]}],schedules:[{id:'lesson',student_pricings:[{student_id:'student-1',tuition:180,teacher_fee:120}]}]},saveData(){},recordSyncChange(){}};
+    const expected=structuredClone(state.data);expected.students=[];
+    const run=load('module.exports=function(id:string)'+method.body.getText(ast),require);assert.equal(run.call(state,'student-1'),true);assert.deepEqual(state.data,expected);
+  }
   const previous=process.env.TZ;process.env.TZ='Asia/Shanghai';const cases=[];
   try{
     for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const status of [1,3,4]){
       const schedule={id:'lesson',course_id:'course-1',course_name:'Original course',room:'Original room',start_time:'2026-09-14 09:00',end_time:'2026-09-14 10:30',status:1,
         billing_unit,teacher_fee_mode,teacher_id:'teacher-1',teacher_name:'Original teacher',source_type:1,service_type:1,
         student_pricings:[{student_id:'student-1',tuition:180,teacher_fee:120,status}],calculated_tuition:270,calculated_teacher_fee:180};
-      for(const action of ['move','copy','resize','delete','attendance']){
-        const before=JSON.stringify(schedule),original=execute(action,schedule,true),current=execute(action,schedule,false);
+      for(const action of (options.courseDeleted===false?['move','copy','resize','delete']:['move','copy','resize','delete','attendance'])){
+        const before=JSON.stringify(schedule),original=execute(action,schedule,true,true,false,options),current=execute(action,schedule,false,true,false,options);
         assert.deepEqual(current,original,action+' with deleted course');assert.equal(JSON.stringify(schedule),before);
         if(action==='attendance'){assert.equal(current.editorOpened,false);assert.equal(current.writes,0);}else assert.equal(current.writes,1);
         cases.push({action,schedule,result:current.rows.find(s=>s.id===(action==='copy'?'copy':'lesson'))});
       }
       for(const old of [true,false]){
-        assert.equal(execute('delete',schedule,old,false).writes,0);
-        assert.equal(execute('move',schedule,old,true,true).writes,0);
-        assert.equal(execute('resize',schedule,old,true,true).writes,0);
+        assert.equal(execute('delete',schedule,old,false,false,options).writes,0);
+        assert.equal(execute('move',schedule,old,true,true,options).writes,0);
+        assert.equal(execute('resize',schedule,old,true,true,options).writes,0);
       }
     }
   }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}

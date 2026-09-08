@@ -41,6 +41,11 @@
       "participants": ["desktop", "cloud_business"],
       "rule": "apply 20260909-retained-course-schedule-write.sql before cloud deployment; original move/copy/resize/delete and confirmed restoration retain tenant/teacher ownership, original lesson snapshots and version checks even after course deletion; only roster links of the checked course extend schedule permission, not student CRUD; course selectors and attendance editor are unchanged; no new REST fields, miniapp or storage_proxy update required"
     },
+    "retainedStudentScheduleWrites": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "apply 20260909-retained-student-schedule-write.sql before cloud deployment; original move/copy/resize/delete and explicit restoration preserve deleted students already linked to the checked course by enrolment or a retained active lesson; keep original rates, tenant/teacher ownership, version checks and locked reference evidence; student CRUD and selectors remain unchanged; existing REST fields only, no miniapp or storage_proxy update required"
+    },
     "questionPaperExport": {
       "version": "3",
       "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
