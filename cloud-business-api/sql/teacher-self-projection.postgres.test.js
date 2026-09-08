@@ -8,7 +8,7 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
 
 (async () => {
   let source;
-  const empty = { students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [] };
+  const empty = { students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [], payments: [], consumptions: [] };
   const app = createCloudBusinessApp({ businessTenantId: 'own-tenant', query: async (sql, values) => {
     source = sql;
     assert.deepEqual(values, ['own-tenant', 'teacher', 'self', 'account']);

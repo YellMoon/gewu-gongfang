@@ -69,6 +69,8 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[0][0].includes('business.personal_asset_manual_records'), 'manual desktop asset records must join the same cloud projection');
   assert.ok(queries[0][0].includes('JOIN scoped_students s ON s.id=d.student_id'), 'contacts inherit tenant scope from the selected student');
   assert.ok(!queries[0][0].includes('d.tenant_id'), 'the contact directory has no tenant_id column');
+  assert.ok(!queries[0][0].includes('business.payments') && !queries[0][0].includes('business.consumptions'),
+    'desktop ledger enrichment must not expose payment or consumption ledgers to miniapp users');
 
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },

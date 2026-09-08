@@ -21,6 +21,11 @@
       "participants": ["desktop", "cloud_business"],
       "rule": "schedule PUT with restoreDeleted true and full lifecycle/pricings requires the confirmed deletion expectedUpdatedAt; restore is atomic, permission-scoped and explicitly confirmed; ordinary PUT/POST never resurrect a tombstone; deploy 20260908-schedule-confirmed-restore.sql and cloud support before desktop; old cloud rejects restoration without a legacy fallback"
     },
+    "desktopStudentLedger": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "desktop teacher projection supplies existing payments/consumptions arrays for its authorized students, in the same database snapshot; preserve original student-wide balance calculation and tenant/deleted boundaries; missing arrays fail closed; cloud-only correction using existing schema and client fields, no miniapp or storage_proxy change required"
+    },
     "questionPaperExport": {
       "version": "3",
       "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],

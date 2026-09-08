@@ -55,6 +55,7 @@ async function request(app, path) {
       return { rows: [{ projection: {
         students: [], studentContacts: [], teachers: [], courses: [], schedules: [],
         institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
+        payments: [], consumptions: [],
       } }] };
     },
     desktopRegistration,

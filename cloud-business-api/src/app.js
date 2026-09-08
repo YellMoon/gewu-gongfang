@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
+const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
 
 const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
 const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
@@ -610,7 +611,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       && ['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions', 'assetRecords', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(value[key]));
   }
   function scopedDesktopProjection(value) {
-    if (!isMiniappProjection(value)) return null;
+    if (!isMiniappProjection(value) || !Array.isArray(value.payments) || !Array.isArray(value.consumptions)) return null;
     return {
       students: value.students,
       student_contacts: value.studentContacts,
@@ -621,8 +622,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       schools: value.schools,
       rooms: value.rooms,
       grades: [],
-      payments: [],
-      consumptions: [],
+      payments: value.payments,
+      consumptions: value.consumptions,
       assetRecords: value.assetRecords,
       assetCategories: value.assetCategories,
       taxonomy_systems: [],
@@ -1470,7 +1471,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       } else {
         const scope = miniappProjectionScope(context);
         if (scope.role !== 'teacher') throw businessAccessDenied();
-        result = await query(miniappProjectionSql, [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+        result = await query(withDesktopStudentLedgerProjection(miniappProjectionSql), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
         projection = scopedDesktopProjection(result?.rows?.[0]?.projection);
       }
       if (!isDesktopProjection(projection)) return businessUnavailable(response);
