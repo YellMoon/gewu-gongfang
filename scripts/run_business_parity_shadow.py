@@ -17,6 +17,7 @@ import urllib.request
 import deploy
 from apply_cloud_postgres_migrations import DockerPsqlExecutor, apply_migrations, read_migrations
 from business_parity_student_balance import seed_student_balance
+from business_parity_course_refresh import seed_course_refresh, verify_course_refresh_history
 from business_parity_student_history import seed_student_history, read_student_history, verify_student_history, verify_course_history, verify_retained_course_actions
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -69,7 +70,9 @@ def shadow_drop_command(target):
     return "docker exec gewu-postgres17 dropdb -U gewu_app --if-exists --force '" + target + "'"
 
 
-def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None, confirmed_delete_undo_only=False, student_balance_only=False, student_delete_history_only=False, student_delete_reference_state='archived', course_delete_history_only=False, retained_course_actions_only=False, retained_student_actions_only=False):
+def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None, confirmed_delete_undo_only=False, student_balance_only=False, student_delete_history_only=False, student_delete_reference_state='archived', course_delete_history_only=False, retained_course_actions_only=False, retained_student_actions_only=False, course_refresh_only=False):
+    if course_refresh_only and any([course_confirmation_only,resource_confirmation_only,course_address_only,confirmed_delete_undo_only,student_balance_only,student_delete_history_only,course_delete_history_only,retained_course_actions_only,retained_student_actions_only]):
+        raise ValueError('REFRESH_ACTION_SCOPE_CONFLICT')
     # UTF-8: real retained-lesson operations start with the original course deletion.
     if retained_course_actions_only: course_delete_history_only = True
     # UTF-8: keep the course active while exercising the original student deletion.
@@ -99,6 +102,8 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         receipt['scope'] = 'retained-course-actions-only'
     if retained_student_actions_only:
         receipt['scope'] = 'retained-student-actions-only'
+    if course_refresh_only:
+        receipt['scope'] = 'course-refresh-only'
     receipt['cleanupComplete'] = False
     (out / 'receipt.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     print(json.dumps({'stage':'shadow_prepared','database':target,'out':str(out)}), flush=True)
@@ -129,8 +134,8 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         receipt['ownershipAndPrivilegesVerified'] = True
         receipt['migrations'] = apply_migrations(db, read_migrations(cloud_root / 'cloud-business-api/sql'))['applied']
         receipt['backupSha256'] = backup['sha256']
-        balance_fixture = seed_student_history(db, target, parents_deleted=False if course_delete_history_only else student_delete_reference_state == 'archived') if student_delete_history_only or course_delete_history_only else seed_student_balance(db, target) if student_balance_only else None
-        history_before = read_student_history(db, balance_fixture) if student_delete_history_only or course_delete_history_only else None
+        balance_fixture = seed_course_refresh(db,target) if course_refresh_only else seed_student_history(db, target, parents_deleted=False if course_delete_history_only else student_delete_reference_state == 'archived') if student_delete_history_only or course_delete_history_only else seed_student_balance(db, target) if student_balance_only else None
+        history_before = read_student_history(db, balance_fixture,include_course_copies=course_refresh_only) if student_delete_history_only or course_delete_history_only or course_refresh_only else None
         print(json.dumps({'stage': 'shadow_migrated', 'database': target}), flush=True)
         app = json.loads(private('docker inspect gewu-cloud-business-api'))[0]
         pg = json.loads(private('docker inspect gewu-postgres17'))[0]
@@ -217,8 +222,12 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         print(json.dumps({'stage':'shadow_api_ready','database':target,'out':str(out)}), flush=True)
         if not probe_only:
             result = subprocess.run(['node', str(ROOT / 'scripts/business-parity-desktop.cjs')],
-                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only,'confirmedDeleteUndoOnly':confirmed_delete_undo_only,'studentBalanceFixture':balance_fixture,'studentDeleteHistory':student_delete_history_only,'courseDeleteHistory':course_delete_history_only,'retainedCourseActions':retained_course_actions_only,'retainedStudentActions':retained_student_actions_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=900)
+                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only,'confirmedDeleteUndoOnly':confirmed_delete_undo_only,'studentBalanceFixture':balance_fixture,'studentDeleteHistory':student_delete_history_only,'courseDeleteHistory':course_delete_history_only,'retainedCourseActions':retained_course_actions_only,'retainedStudentActions':retained_student_actions_only,'courseRefreshOnly':course_refresh_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=900)
             if result.returncode: raise RuntimeError('DESKTOP_PARITY_FAILED')
+            if course_refresh_only:
+                history_after=read_student_history(db,balance_fixture,include_course_copies=True)
+                receipt['courseRefresh']=verify_course_refresh_history(history_before,history_after,balance_fixture['refreshIds'])
+                (out / 'refresh-database-readback.json').write_text(json.dumps({'before':history_before,'after':history_after,'result':receipt['courseRefresh']},indent=2),encoding='utf-8')
             if student_delete_history_only or course_delete_history_only:
                 history_after = read_student_history(db, balance_fixture, include_course_copies=retained_course_actions_only or retained_student_actions_only)
                 history_key = 'courseHistory' if course_delete_history_only else 'studentHistory'
@@ -269,7 +278,8 @@ if __name__ == '__main__':
     parser.add_argument('--course-delete-history-only', action='store_true')
     parser.add_argument('--retained-course-actions-only', action='store_true')
     parser.add_argument('--retained-student-actions-only', action='store_true')
+    parser.add_argument('--course-refresh-only', action='store_true')
     parser.add_argument('--student-delete-reference-state', choices=['archived', 'active'], default='archived')
     parser.add_argument('--cloud-source-commit', help='Exact commit SHA for cloud code, shared contracts and SQL; excludes dirty changes')
     args = parser.parse_args()
-    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit, args.confirmed_delete_undo_only, args.student_balance_only, args.student_delete_history_only, args.student_delete_reference_state, args.course_delete_history_only, args.retained_course_actions_only, args.retained_student_actions_only)
+    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit, args.confirmed_delete_undo_only, args.student_balance_only, args.student_delete_history_only, args.student_delete_reference_state, args.course_delete_history_only, args.retained_course_actions_only, args.retained_student_actions_only,args.course_refresh_only)

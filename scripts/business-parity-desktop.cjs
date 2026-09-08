@@ -86,6 +86,12 @@ async function main() {
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
     await releaseNavigation();
+    if(config.courseRefreshOnly){
+      save('qa-inventory',{scope:'course-refresh-only',checks:['原日期范围','原生警告取消及确认','离线刷新仅生成草稿','逐项确认与范围外不变','原撤销后确认恢复','重开及数据库全字段核验'],fullSignoff:false});
+      const result=await require('./business-parity-course-refresh.cjs')({page,app,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
+      save('desktop-receipt',{scope:'course-refresh-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     if(config.courseDeleteHistory) {
       save('qa-inventory',{scope:'course-delete-history-only',checks:['原课程删除取消','离线删除与重连不提交','原确认窗口','删除后重开课表三字段','历史排课出勤费用逐字段保留'],fullSignoff:false});
       const result=await require('./business-parity-course-history.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
