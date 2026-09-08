@@ -224,10 +224,6 @@ const OperateLog: React.FC = () => {
           />
         )
       }
-      drawerOpen={false}
-      drawerTitle=""
-      onDrawerClose={() => undefined}
-      drawerContent={null}
     />
   );
 };

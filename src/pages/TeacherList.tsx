@@ -175,8 +175,8 @@ const TeacherList: React.FC = () => {
 
   const subjects = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治', '其他'];
 
-  const drawerFooter = (
-    <div className="data-page-layout__drawer-footer">
+  const modalFooter = (
+    <div className="data-page-layout__modal-footer">
       <Button onClick={() => setModalVisible(false)}>取消</Button>
       <Button type="primary" onClick={handleSubmit}>确定</Button>
     </div>
@@ -207,12 +207,12 @@ const TeacherList: React.FC = () => {
         />
         </>
       }
-      drawerOpen={modalVisible}
-      drawerTitle={editingTeacher ? '编辑老师' : '添加老师'}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerWidth={600}
-      drawerFooter={drawerFooter}
-      drawerContent={
+      modalOpen={modalVisible}
+      modalTitle={editingTeacher ? '编辑老师' : '添加老师'}
+      onModalCancel={() => setModalVisible(false)}
+      modalWidth={600}
+      modalFooter={modalFooter}
+      modalContent={
         <>
         <Form form={form} layout="vertical">
           <Row gutter={16}>

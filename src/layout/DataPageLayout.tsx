@@ -1,17 +1,16 @@
 import React from 'react';
-import { Card, Drawer } from 'antd';
+import { Card, Modal } from 'antd';
 
 interface DataPageLayoutProps {
   children?: React.ReactNode;
   toolbar: React.ReactNode;
   table: React.ReactNode;
-  drawerOpen?: boolean;
-  drawerTitle?: React.ReactNode;
-  drawerContent?: React.ReactNode;
-  onDrawerClose?: () => void;
-  drawerWidth?: number | string;
-  drawerExtra?: React.ReactNode;
-  drawerFooter?: React.ReactNode;
+  modalOpen?: boolean;
+  modalTitle?: React.ReactNode;
+  modalContent?: React.ReactNode;
+  onModalCancel?: () => void;
+  modalWidth?: number | string;
+  modalFooter?: React.ReactNode;
   destroyOnClose?: boolean;
 }
 
@@ -19,19 +18,19 @@ const DataPageLayout: React.FC<DataPageLayoutProps> = ({
   children,
   toolbar,
   table,
-  drawerOpen,
-  drawerTitle,
-  drawerContent,
-  onDrawerClose,
-  drawerWidth = 560,
-  drawerExtra,
-  drawerFooter,
+  modalOpen,
+  modalTitle,
+  modalContent,
+  onModalCancel,
+  modalWidth = 520,
+  modalFooter,
   destroyOnClose,
 }) => {
-  const responsiveDrawerWidth =
-    typeof drawerWidth === 'number'
-      ? `min(${drawerWidth}px, calc(100vw - 16px))`
-      : drawerWidth;
+  // UTF-8: retain each resource's original modal width, bounded on small screens.
+  const responsiveModalWidth =
+    typeof modalWidth === 'number'
+      ? `min(${modalWidth}px, calc(100vw - 16px))`
+      : modalWidth;
 
   return (
     <div className="data-page-layout">
@@ -42,18 +41,17 @@ const DataPageLayout: React.FC<DataPageLayoutProps> = ({
         {table}
       </Card>
       {children}
-      {drawerContent && (
-        <Drawer
-          title={drawerTitle}
-          open={drawerOpen}
-          onClose={onDrawerClose}
-          width={responsiveDrawerWidth}
-          extra={drawerExtra}
-          footer={drawerFooter}
+      {modalContent && (
+        <Modal
+          title={modalTitle}
+          open={modalOpen}
+          onCancel={onModalCancel}
+          width={responsiveModalWidth}
+          footer={modalFooter}
           destroyOnClose={destroyOnClose}
         >
-          {drawerContent}
-        </Drawer>
+          {modalContent}
+        </Modal>
       )}
     </div>
   );

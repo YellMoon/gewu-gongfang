@@ -139,16 +139,16 @@ const SchoolManager: React.FC = () => {
           locale={{ emptyText: '暂无学校数据，点击上方按钮添加' }}
         />
       )}
-      drawerOpen={modalVisible}
-      drawerTitle={editingSchool ? '编辑学校' : '添加学校'}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerFooter={(
-        <div className="data-page-layout__drawer-footer">
+      modalOpen={modalVisible}
+      modalTitle={editingSchool ? '编辑学校' : '添加学校'}
+      onModalCancel={() => setModalVisible(false)}
+      modalFooter={(
+        <div className="data-page-layout__modal-footer">
           <Button onClick={() => setModalVisible(false)}>取消</Button>
           <Button type="primary" onClick={handleSubmit}>保存</Button>
         </div>
       )}
-      drawerContent={(
+      modalContent={(
         <Form form={form} layout="vertical">
           <Form.Item 
             name="name" 

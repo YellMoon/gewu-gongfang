@@ -384,8 +384,8 @@ const StudentList: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const gradeYears = Array.from({ length: 6 }, (_, i) => currentYear - i);
 
-  const drawerFooter = (
-    <div className="data-page-layout__drawer-footer">
+  const modalFooter = (
+    <div className="data-page-layout__modal-footer">
       <Button onClick={() => setModalVisible(false)}>取消</Button>
       <Button type="primary" onClick={handleSubmit}>确定</Button>
     </div>
@@ -437,13 +437,13 @@ const StudentList: React.FC = () => {
           scroll={{ x: 1200 }}
         />
       }
-      drawerOpen={modalVisible}
-      drawerTitle={editingStudent ? '编辑学生' : '添加学生'}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerWidth={560}
-      drawerFooter={drawerFooter}
+      modalOpen={modalVisible}
+      modalTitle={editingStudent ? '编辑学生' : '添加学生'}
+      onModalCancel={() => setModalVisible(false)}
+      modalWidth={700}
+      modalFooter={modalFooter}
       destroyOnClose
-      drawerContent={
+      modalContent={
         <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>

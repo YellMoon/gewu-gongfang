@@ -11,6 +11,12 @@ const { chromium } = require('playwright');
     for (const width of [1200,1536]) {
       const page = await browser.newPage({viewport:{width,height:800}});
       await page.setContent(`<style>${css}\n${basketCss}</style><div class="app-shell app-shell--nav-pinned"><aside class="app-shell__sider app-shell__sider--open"><div class="app-shell__brand"><span class="app-shell__brand-mark">G</span></div></aside><main class="app-shell__main"><div class="app-shell__topbar">Library</div><section class="app-shell__content"><article style="height:1600px;background:white"><button id="action" style="float:right">Add</button></article><button class="question-basket-float">Basket</button></section></main></div>`);
+      // UTF-8: actual computed geometry must remain unchanged when navigation opens.
+      const pinnedBox=await page.locator('.app-shell__main').boundingBox();
+      await page.locator('.app-shell').evaluate(el=>el.classList.remove('app-shell--nav-pinned'));
+      const closedBox=await page.locator('.app-shell__main').boundingBox();
+      assert.deepEqual(pinnedBox,closedBox,'navigation must overlay rather than resize the workspace');
+      await page.locator('.app-shell').evaluate(el=>el.classList.add('app-shell--nav-pinned'));
       const result = await page.evaluate(() => {
         const sider=document.querySelector('.app-shell__sider');
         sider.scrollLeft=30;

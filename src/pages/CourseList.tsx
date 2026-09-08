@@ -426,7 +426,7 @@ const CourseList: React.FC = () => {
   ];
 
   const modalFooter = (
-    <div className="data-page-layout__drawer-footer">
+    <div className="data-page-layout__modal-footer">
       <Button onClick={() => setModalVisible(false)}>取消</Button>
       <Button type="primary" onClick={handleSubmit}>确定</Button>
     </div>

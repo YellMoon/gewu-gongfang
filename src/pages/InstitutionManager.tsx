@@ -124,17 +124,17 @@ const InstitutionManager: React.FC = () => {
           pagination={{ pageSize: 20 }}
         />
       )}
-      drawerOpen={modalVisible}
-      drawerTitle={editingInst ? '编辑机构' : '添加机构'}
-      drawerWidth={600}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerFooter={(
-        <div className="data-page-layout__drawer-footer">
+      modalOpen={modalVisible}
+      modalTitle={editingInst ? '编辑机构' : '添加机构'}
+      modalWidth={600}
+      onModalCancel={() => setModalVisible(false)}
+      modalFooter={(
+        <div className="data-page-layout__modal-footer">
           <Button onClick={() => setModalVisible(false)}>取消</Button>
           <Button type="primary" onClick={handleSubmit}>保存</Button>
         </div>
       )}
-      drawerContent={(
+      modalContent={(
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="机构名称" rules={[{ required: true, message: '请输入机构名称' }]}>
             <Input placeholder="请输入机构名称" />

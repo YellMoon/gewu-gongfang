@@ -175,17 +175,17 @@ const PaymentList: React.FC = () => {
           pagination={{ pageSize: 20 }}
         />
       )}
-      drawerOpen={modalVisible}
-      drawerTitle={editingPayment ? '编辑缴费记录' : '添加缴费记录'}
-      drawerWidth={600}
-      onDrawerClose={() => setModalVisible(false)}
-      drawerFooter={(
-        <div className="data-page-layout__drawer-footer">
+      modalOpen={modalVisible}
+      modalTitle={editingPayment ? '编辑缴费记录' : '添加缴费记录'}
+      modalWidth={600}
+      onModalCancel={() => setModalVisible(false)}
+      modalFooter={(
+        <div className="data-page-layout__modal-footer">
           <Button onClick={() => setModalVisible(false)}>取消</Button>
           <Button type="primary" onClick={handleSubmit}>保存</Button>
         </div>
       )}
-      drawerContent={(
+      modalContent={(
         <Form form={form} layout="vertical">
           <Row gutter={16}>
             <Col span={12}>

@@ -212,17 +212,17 @@ const RoomManager: React.FC = () => {
           pagination={{ pageSize: 20, showSizeChanger: true }}
         />
       )}
-      drawerOpen={modalVisible}
-      drawerTitle={editingRoom ? '编辑上课地址' : '添加上课地址'}
-      onDrawerClose={() => setModalVisible(false)}
+      modalOpen={modalVisible}
+      modalTitle={editingRoom ? '编辑上课地址' : '添加上课地址'}
+      onModalCancel={() => setModalVisible(false)}
       destroyOnClose
-      drawerFooter={(
-        <div className="data-page-layout__drawer-footer">
+      modalFooter={(
+        <div className="data-page-layout__modal-footer">
           <Button onClick={() => setModalVisible(false)}>取消</Button>
           <Button type="primary" onClick={handleSubmit}>保存</Button>
         </div>
       )}
-      drawerContent={(
+      modalContent={(
         <Form form={form} layout="vertical">
           <Form.Item
             name="name"

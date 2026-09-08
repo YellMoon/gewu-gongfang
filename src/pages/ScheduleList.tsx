@@ -428,10 +428,6 @@ const ScheduleList: React.FC = () => {
           size="small"
         />
       )}
-      drawerOpen={false}
-      drawerTitle=""
-      onDrawerClose={() => undefined}
-      drawerContent={null}
     />
   );
 };

@@ -665,11 +665,6 @@ select,
   background: var(--app-bg, #f5f7fb);
 }
 
-.app-shell--nav-pinned .app-shell__main {
-  margin-left: 236px;
-  width: calc(100% - 236px);
-}
-
 .app-shell__topbar {
   position: sticky;
   top: 0;
@@ -786,7 +781,7 @@ select,
   min-width: 0;
 }
 
-.data-page-layout__drawer-footer {
+.data-page-layout__modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: var(--app-control-gap, 8px);

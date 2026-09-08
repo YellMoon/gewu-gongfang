@@ -1,5 +1,5 @@
 'use strict';
-// UTF-8: original student-window interaction evidence.
+// UTF-8: original student/course-window interaction evidence.
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -13,7 +13,7 @@ async function main() {
   const save = (name, data) => fs.writeFileSync(path.join(out, name + '.json'), JSON.stringify(data, null, 2), 'utf8');
   save('qa-inventory', {checks:[
     '原登录窗口账号密码登录、新安装实例静默登记、无人工设备审批',
-    '原学生抽屉必填校验、取消、学校输入、保存后教师可见',
+    '学生原弹窗必填校验、取消、学校输入、保存后教师可见',
     '离线保存不提交、重连不提交、用户确认后云端可读回',
     '原课程窗口选入新学生、课程名称和地址不含跟踪编码',
     '原课表排课与调课、三项卡片、刷新后仍一致',
@@ -47,12 +47,53 @@ async function main() {
     // Read-only diagnostics; subsequent mutations use original UI controls.
     const projection = await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
     assert(projection.teachers.some(t=>t.id===config.login.teacherId));
+    const releaseNavigation=async()=>{
+      await page.locator('.app-shell__sider-unpin').click();
+      // UTF-8: leave the hover-open rail before using controls underneath it.
+      const mainBox=await page.locator('.app-shell__main').boundingBox();
+      await page.mouse.move(mainBox.x+mainBox.width-30,mainBox.y+100);
+      await page.waitForFunction(()=>!document.querySelector('.app-shell__sider--open'));
+      await page.locator('.app-shell__sider').evaluate(async el=>Promise.all(el.getAnimations().map(a=>a.finished.catch(()=>{}))));
+    };
+    const mainBeforeNav=await page.locator('.app-shell__main').boundingBox();
+    // UTF-8: wait past both animation preparation and the actual zoom transition.
+    const waitForModalWidth=async width=>page.getByRole('dialog').evaluate(async(el,expected)=>{
+      // UTF-8: rc-motion may start after an initially untransformed frame.
+      let stableSince=null;
+      const deadline=performance.now()+7000;
+      await new Promise((resolve,reject)=>{
+        function frame(now) {
+          const stable=Math.abs(el.getBoundingClientRect().width-expected)<1
+            && getComputedStyle(el).transform==='none'
+            && !el.getAnimations().some(a=>a.playState==='running');
+          if(stable) { if(stableSince===null) stableSince=now; }
+          else stableSince=null;
+          if(stableSince!==null && now-stableSince>=350) return resolve();
+          if(now>deadline) return reject(new Error('MODAL_GEOMETRY_NOT_STABLE'));
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      });
+    },width);
     await page.locator('.app-shell__collapse-button').click();
+    assert.deepEqual(await page.locator('.app-shell__main').boundingBox(),mainBeforeNav,'pinning navigation must not resize or move the workspace');
+    save('navigation-geometry',{before:mainBeforeNav,opened:await page.locator('.app-shell__main').boundingBox()});
+    await page.screenshot({path:path.join(out,'02-navigation-overlay.png'),scale:'css'});
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
+    await releaseNavigation();
     await page.getByRole('button',{name:'plus 添加学生',exact:true}).click();
     const drawer = page.getByRole('dialog');
     await drawer.waitFor();
+    await drawer.locator('.ant-modal-content').waitFor();
+    assert.equal(await page.locator('.ant-drawer:visible').count(),0);
+    await waitForModalWidth(700);
+    const studentModalBox=await drawer.boundingBox();
+    assert.equal(Math.round(studentModalBox.width),700);
+    // UTF-8: a tall original form has a scrollbar; center in the usable modal viewport.
+    const viewportWidth=await page.locator('.ant-modal-wrap:visible').evaluate(el=>el.clientWidth);
+    save('student-window-geometry',{studentModalBox,viewportWidth});
+    assert(Math.abs(studentModalBox.x-(viewportWidth-studentModalBox.width)/2)<2,'student modal must be horizontally centered');
     save('03-student-form-snapshot',await drawer.ariaSnapshot());
     await drawer.getByRole('button',{name:/^确\s*定$/}).click();
     await drawer.getByText('请输入姓名',{exact:true}).waitFor();
@@ -62,7 +103,8 @@ async function main() {
     await drawer.locator('#school').press('Enter');
     await drawer.locator('#grade_year').click();
     await page.locator('.ant-select-dropdown:visible').getByText('2025级',{exact:true}).click();
-    await drawer.screenshot({path:path.join(out,'03-student-form.png')});
+    await drawer.getByText('添加学生',{exact:true}).click();
+    await page.screenshot({path:path.join(out,'03-student-form.png'),scale:'css'});
     await page.context().setOffline(true);
     await drawer.getByRole('button',{name:/^确\s*定$/}).click();
     await drawer.waitFor({state:'hidden'});
@@ -99,21 +141,197 @@ async function main() {
     await page.locator('.app-shell__collapse-button').click();
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
+    await releaseNavigation();
     await page.getByRole('button',{name:'plus 添加学生',exact:true}).waitFor();
     await page.getByRole('cell',{name:'林小禾',exact:true}).waitFor();
     const studentRow=page.getByRole('row').filter({has:page.getByRole('cell',{name:'林小禾',exact:true})});
     await studentRow.getByRole('cell',{name:'13100000000',exact:true}).waitFor();
     await studentRow.getByRole('cell',{name:'自有',exact:true}).waitFor();
     await page.screenshot({path:path.join(out,'05-student-reloaded.png'),scale:'css'});
+    await page.locator('.app-shell__collapse-button').click();
+    await page.getByRole('menuitem',{name:'calendar 教务',exact:true}).click();
+    await page.getByRole('menuitem',{name:'book 课程信息',exact:true}).click();
+    await releaseNavigation();
+    await page.getByRole('button',{name:'plus 添加课程',exact:true}).click();
+    const courseDialog=page.getByRole('dialog');
+    await courseDialog.waitFor();
+    save('06-course-form-snapshot',await courseDialog.ariaSnapshot());
+    const selectCourseOption=async (id,text)=>{
+      // UTF-8: click the user-visible select surface, not its covered search input.
+      await courseDialog.locator('.ant-select').filter({has:page.locator('#'+id)}).locator('.ant-select-selector').click();
+      // UTF-8: target the visible option, not Ant Design's duplicate a11y mirror.
+      await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:new RegExp('^'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$')}).click();
+    };
+    await courseDialog.getByPlaceholder('请输入课程名称',{exact:true}).fill('初二物理');
+    await selectCourseOption('semester','秋学期');
+    await selectCourseOption('source_type','自有课程');
+    await selectCourseOption('type','一对一');
+    await selectCourseOption('default_duration_minutes','1.5小时');
+    // Keep the original inline address workflow; both drafts need explicit confirmation.
+    await courseDialog.locator('#room_id').fill('东湖上课点');
+    await courseDialog.locator('#room_id').press('Enter');
+    await courseDialog.getByRole('button',{name:'plus-circle 添加学生',exact:true}).click();
+    await selectCourseOption('student_pricings_0_student_id','林小禾');
+    await courseDialog.locator('#student_pricings_0_tuition').fill('180');
+    await courseDialog.locator('#student_pricings_0_teacher_fee').fill('120');
+    await courseDialog.locator('#student_pricings_0_teacher_fee').press('Tab');
+    assert.equal(await courseDialog.locator('#price_tuition').inputValue(),'180');
+    assert.equal(await courseDialog.locator('#price_teacher').inputValue(),'120');
+    await courseDialog.screenshot({path:path.join(out,'06-course-form.png')});
+    await courseDialog.getByRole('button',{name:/^确\s*定$/}).click();
+    await courseDialog.waitFor({state:'hidden'});
+    await page.waitForFunction(async()=> (await window.desktopAuthority.list()).some(d=>d.status==='awaiting_confirmation'&&d.type==='course.create.v1'));
+    const courseDrafts=await page.evaluate(async()=> (await window.desktopAuthority.list()).filter(d=>d.status==='awaiting_confirmation'));
+    assert.equal(courseDrafts.length,2,'inline new address and course must remain pending together');
+    const courseDraft=courseDrafts.find(d=>d.type==='course.create.v1');
+    assert(courseDraft);
+    const courseId=courseDraft.payload.record.id;
+    const beforeCourse=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert(!beforeCourse.courses.some(c=>c.id===courseId),'online address draft must not silently submit course');
+    assert(!beforeCourse.rooms.some(r=>r.name==='东湖上课点'),'typing an address must not silently submit it');
+    await page.locator('.sync-status-trigger').click();
+    await page.locator('[data-row-key="'+courseDraft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
+    await page.getByRole('dialog').waitFor();
+    await page.getByRole('dialog').evaluate(async el=>Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{}))));
+    save('07-course-confirm-snapshot',await page.getByRole('dialog').ariaSnapshot());
+    await page.getByRole('dialog').screenshot({path:path.join(out,'07-course-confirm.png')});
+    await page.getByRole('button',{name:'确认并发送',exact:true}).click();
+    await page.getByRole('dialog').waitFor({state:'hidden',timeout:45000});
+    const courseResults=await page.evaluate(()=>window.desktopAuthority.list());
+    for(const d of courseDrafts) assert.equal(courseResults.find(r=>r.id===d.id)?.status,'completed',d.type);
+    const courseProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const course=courseProjection.courses.find(c=>c.id===courseId);
+    save('course-readback',{course,rooms:courseProjection.rooms.filter(r=>r.name==='东湖上课点')});
+    assert.equal(course?.display_name,'初二物理');
+    assert.equal(course?.teacher_id,config.login.teacherId);
+    assert.equal(course?.room_name,'东湖上课点');
+    assert.equal(course?.default_duration_minutes,90);
+    assert.equal(course?.price_tuition,180); assert.equal(course?.price_teacher,120);
+    assert.equal(course?.student_pricings?.[0]?.student_id,studentId);
+    await page.reload();
+    await page.locator('.app-shell').waitFor({timeout:45000});
+    await page.getByText('系统加载中...',{exact:true}).waitFor({state:'hidden',timeout:45000});
+    await page.locator('.app-shell__collapse-button').click();
+    await page.getByRole('menuitem',{name:'calendar 教务',exact:true}).click();
+    await page.getByRole('menuitem',{name:'book 课程信息',exact:true}).click();
+    await releaseNavigation();
+    const courseRow=page.getByRole('row').filter({has:page.getByRole('cell',{name:'初二物理',exact:true})});
+    await courseRow.waitFor();
+    save('08-course-reloaded-snapshot',await page.locator('body').ariaSnapshot());
+    await page.screenshot({path:path.join(out,'08-course-reloaded.png'),scale:'css'});
+    await courseRow.getByRole('button',{name:'edit 编辑',exact:true}).click();
+    await courseDialog.waitFor();
+    assert.equal(await courseDialog.locator('#price_tuition').inputValue(),'180');
+    assert.equal(await courseDialog.locator('#price_teacher').inputValue(),'120');
+    await courseDialog.getByText('林小禾',{exact:true}).waitFor();
+    await courseDialog.getByText('东湖上课点',{exact:true}).waitFor();
+    await courseDialog.screenshot({path:path.join(out,'09-course-reopened.png')});
+    await courseDialog.getByRole('button',{name:/^取\s*消$/}).click();
+    // UTF-8: continue through the existing calendar date header and schedule modal.
+    await page.locator('.app-shell__collapse-button').click();
+    await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).click();
+    await releaseNavigation();
+    await page.locator('[data-date]').first().waitFor();
+    save('10-calendar-snapshot',await page.locator('body').ariaSnapshot());
+    await page.screenshot({path:path.join(out,'10-calendar.png'),scale:'css'});
+    const dayColumn=page.locator('[data-date]').first();
+    const scheduleDate=await dayColumn.getAttribute('data-date');
+    await dayColumn.locator(':scope > div').first().dblclick();
+    await courseDialog.waitFor();
+    save('11-schedule-form-snapshot',await courseDialog.ariaSnapshot());
+    await selectCourseOption('teacherId',projection.teachers.find(t=>t.id===config.login.teacherId).name);
+    await courseDialog.locator('#startTime').fill('12:00');
+    await courseDialog.locator('#startTime').press('Enter');
+    await selectCourseOption('courseId','初二物理');
+    assert.equal(await courseDialog.locator('#endTime').inputValue(),'13:30');
+    await courseDialog.getByText('东湖上课点',{exact:true}).waitFor();
+    await courseDialog.screenshot({path:path.join(out,'11-schedule-form.png')});
+    await page.context().setOffline(true);
+    await courseDialog.getByRole('button',{name:/^保\s*存$/}).click();
+    await courseDialog.waitFor({state:'hidden'});
+    await page.waitForFunction(async()=> (await window.desktopAuthority.list()).some(d=>d.status==='awaiting_confirmation'&&d.type==='schedule.create.v1'));
+    const scheduleDraft=await page.evaluate(async()=> (await window.desktopAuthority.list()).find(d=>d.status==='awaiting_confirmation'&&d.type==='schedule.create.v1'));
+    const scheduleId=scheduleDraft.payload.record.id;
+    await page.context().setOffline(false);
+    const beforeSchedule=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert(!beforeSchedule.schedules.some(s=>s.id===scheduleId));
+    await page.locator('.sync-status-trigger').click();
+    await page.locator('[data-row-key="'+scheduleDraft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
+    await courseDialog.waitFor();
+    await courseDialog.evaluate(async el=>Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{}))));
+    await courseDialog.screenshot({path:path.join(out,'12-schedule-confirm.png')});
+    await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
+    await courseDialog.waitFor({state:'hidden',timeout:45000});
+    const scheduleProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const schedule=scheduleProjection.schedules.find(s=>s.id===scheduleId);
+    save('schedule-readback',{schedule,scheduleDate});
+    assert(schedule); assert.equal(schedule.course_id,courseId);
+    assert.equal(schedule.calculated_tuition,270); assert.equal(schedule.calculated_teacher_fee,180);
+    assert.equal(schedule.billing_unit,1); assert.equal(schedule.teacher_fee_mode,1);
+    assert.equal(schedule.student_pricings?.[0]?.student_id,studentId);
+    const calendarCard=page.locator('[data-schedule-id="'+scheduleId+'"]');
+    await calendarCard.waitFor();
+    assert.match(await calendarCard.innerText(),/初二物理/);
+    assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
+    await calendarCard.screenshot({path:path.join(out,'13-calendar-card.png')});
+    // UTF-8: verify every restored resource editor at both desktop widths, without saving.
+    const editorChecks=[];
+    const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
+    for(const width of [1280,1200]) {
+      await app.evaluate(({BrowserWindow},size)=>{
+        const win=BrowserWindow.getAllWindows()[0];
+        // UTF-8: a maximized native window ignores setContentSize on Windows.
+        if(win.isMaximized()) win.unmaximize();
+        win.setContentSize(size,800);
+      },width);
+      await page.waitForFunction(expected=>innerWidth===expected,width);
+      for(const [group,item,button,expectedWidth] of [
+        ['team 资源','user 学生','plus 添加学生',700],
+        ['team 资源','team 老师','plus 添加老师',600],
+        ['team 资源','bank 学校','plus 添加学校',520],
+        ['team 资源','home 上课地址','plus 添加地址',520],
+        ['team 资源','team 机构','plus 添加机构',600],
+        ['dollar 财务','dollar 缴费','plus 添加缴费记录',600],
+      ]) {
+        const beforeNav=await page.locator('.app-shell__main').boundingBox();
+        await page.locator('.app-shell__collapse-button').click();
+        assert.deepEqual(await page.locator('.app-shell__main').boundingBox(),beforeNav);
+        const groupItem=page.getByRole('menuitem',{name:group,exact:true});
+        if(await groupItem.getAttribute('aria-expanded')!=='true') await groupItem.click();
+        await page.getByRole('menuitem',{name:item,exact:true}).click();
+        await releaseNavigation();
+        await page.getByRole('button',{name:button,exact:true}).click();
+        const editor=page.getByRole('dialog');
+        await editor.locator('.ant-modal-content').waitFor();
+        await waitForModalWidth(expectedWidth);
+        const box=await editor.boundingBox();
+        const viewport=await page.locator('.ant-modal-wrap:visible').evaluate(el=>({width:el.clientWidth,height:el.clientHeight}));
+        assert.equal(Math.round(box.width),expectedWidth);
+        assert(Math.abs(box.x-(viewport.width-box.width)/2)<2);
+        assert.equal(await page.locator('.ant-drawer:visible').count(),0);
+        const artifact='modal-'+width+'-'+item.split(' ')[1];
+        await page.screenshot({path:path.join(out,artifact+'-top.png'),scale:'css'});
+        const cancel=editor.getByRole('button',{name:/^取\s*消$/});
+        await cancel.scrollIntoViewIfNeeded();
+        await page.screenshot({path:path.join(out,artifact+'-footer.png'),scale:'css'});
+        await cancel.click();
+        await editor.waitFor({state:'hidden'});
+        editorChecks.push({item,width,box,viewport,cancelled:true});
+      }
+    }
+    assert.deepEqual(await page.evaluate(()=>window.desktopAuthority.list()),outboxBeforeEditors,'opening and cancelling resource editors must not create or submit drafts');
+    save('resource-modal-checks',editorChecks);
     save('desktop-receipt',{passwordLogin:true,sourceDesktop:true,installed:false,productionWrite:false,
       originalWorkspaceLoaded:true,teacherProjectionRead:true,studentDraftConfirmed:true,schoolAtomic:true,
-      noSilentReconnectWrite:true,studentReloadVisible:true,businessFlowComplete:false});
-    console.log(JSON.stringify({stage:'original_desktop_logged_in',out}));
+      noSilentReconnectWrite:true,studentReloadVisible:true,courseAndAddressConfirmed:true,
+      courseReopened:true,scheduleConfirmed:true,scheduleFinancialReadback:true,
+      studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
+    console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
     if(page) {
       await page.getByPlaceholder('输入密码',{exact:true}).fill('').catch(()=>{});
       await page.screenshot({path:path.join(out,'failure.png'),scale:'css'}).catch(()=>{});
-      save('failure', {error:String(error),snapshot:await page.locator('body').ariaSnapshot().catch(()=> '')});
+      save('failure', {error:String(error),stack:error.stack,snapshot:await page.locator('body').ariaSnapshot().catch(()=> '')});
     }
     throw error;
   } finally { await app.close(); }
