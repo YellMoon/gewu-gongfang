@@ -40,6 +40,7 @@ const RoomManager: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    let cloudWriteCompleted = false;
     const deletedRoom = rooms.find(room => room.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => { dbService.deleteRoom(id); };
@@ -58,10 +59,15 @@ const RoomManager: React.FC = () => {
     }
     try {
       await cloudRuntime.deleteCloudRoom({ roomId: id, expectedUpdatedAt: deletedRoom.updated_at });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success('\u4e91\u7aef\u4e0a\u8bfe\u5730\u5740\u5df2\u5220\u9664');
       loadData();
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('删除已完成，列表暂未更新，请刷新后查看。');
+        return;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_ROOM_REFERENCED') {
         message.error('\u8be5\u4e0a\u8bfe\u5730\u5740\u5df2\u88ab\u8bfe\u7a0b\u5f15\u7528\uff0c\u4e0d\u80fd\u5220\u9664');
@@ -80,6 +86,7 @@ const RoomManager: React.FC = () => {
   };
 
   const submitRoomToAuthority = async (values: any) => {
+    let cloudWriteCompleted = false;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const payload = { name: values.name.trim(), address: values.address?.trim() || null };
     const stageLocalDraft = () => {
@@ -113,10 +120,15 @@ const RoomManager: React.FC = () => {
         const roomId = globalThis.crypto?.randomUUID?.() || `room-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         await cloudRuntime.createCloudRoom({ roomId, ...payload });
       }
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success(editingRoom ? '\u4e91\u7aef\u4e0a\u8bfe\u5730\u5740\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u4e0a\u8bfe\u5730\u5740\u5df2\u521b\u5efa');
       return true;
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return true;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_ROOM_NAME_EXISTS') {
         message.error('\u8be5\u4e0a\u8bfe\u5730\u5740\u5df2\u5b58\u5728');

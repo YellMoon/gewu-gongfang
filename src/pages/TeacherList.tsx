@@ -46,6 +46,7 @@ const TeacherList: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    let cloudWriteCompleted = false;
     const deletedTeacher = teachers.find(teacher => teacher.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => {
@@ -67,10 +68,15 @@ const TeacherList: React.FC = () => {
     }
     try {
       await cloudRuntime.deleteCloudTeacher({ teacherId: id, expectedUpdatedAt: deletedTeacher.updated_at });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success('\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u5220\u9664');
       loadData();
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('删除已完成，列表暂未更新，请刷新后查看。');
+        return;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_TEACHER_REFERENCED') {
         message.error('\u8be5\u6559\u5e08\u5df2\u88ab\u8bfe\u7a0b\u5f15\u7528\uff0c\u4e0d\u80fd\u5220\u9664');
@@ -89,6 +95,7 @@ const TeacherList: React.FC = () => {
   };
 
   const submitTeacherToAuthority = async (values: any) => {
+    let cloudWriteCompleted = false;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const payload = {
       name: values.name.trim(), phone: values.phone?.trim() || null, subject: values.subject?.trim() || null,
@@ -126,10 +133,15 @@ const TeacherList: React.FC = () => {
         const teacherId = globalThis.crypto?.randomUUID?.() || `teacher-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         await cloudRuntime.createCloudTeacher({ teacherId, ...payload });
       }
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success(editingTeacher ? '\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u6559\u5e08\u8d44\u6599\u5df2\u521b\u5efa');
       return true;
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return true;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_TEACHER_CONFLICT') {
         message.error('\u8be5\u6559\u5e08\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');

@@ -61,6 +61,35 @@ async function desktopRoundTrip(writer, admin) {
     const update = await client.appendDraft({ type: 'student.update.v1', payload: { id: 'http-student', expectedVersion: created.updated_at.toISOString(), changes: { name: 'Student', school: 'HTTP changed school', source_type: 1, contacts: [] } } });
     await client.confirmAndSubmit(update.id, { sessionToken: 'eyJ2IjoxfQ.signature' });
     assert.equal((await read()).name, 'HTTP changed school');
+    // UTF-8: real page handler -> REST -> restricted PostgreSQL writer, then a failed readback.
+    const ts = require('typescript');
+    const source = ts.createSourceFile('StudentList.tsx', fs.readFileSync(path.join(__dirname, '../../src/pages/StudentList.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let createHandler;
+    function findHandler(node) {
+      if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'submitNewStudentToAuthority') createHandler = node.initializer.getText(source);
+      ts.forEachChild(node, findHandler);
+    }
+    findHandler(source); assert(createHandler);
+    let repeatedDrafts = 0; const warnings = []; const requestsBeforeReadFailure = requests;
+    const dependencies = {
+      window: { desktopIdentitySessionProvider: { createCloudStudentRecord: input => cloudClient.createCloudStudentRecord({
+        baseUrl: `http://127.0.0.1:${server.address().port}`, currentSession: { token: 'eyJ2IjoxfQ.signature', offline: false }, ...input,
+      }) } },
+      dbService: { createStudent: () => repeatedDrafts++, refreshAuthorityProjection: async () => { throw new TypeError('Failed to fetch'); } },
+      studentContactCommands: () => [], calculateGrade: () => '高一',
+      message: { success() {}, warning: text => warnings.push(text), error(text) { throw new Error(text); } },
+    };
+    const saveStudent = new Function(...Object.keys(dependencies), ts.transpileModule(`return (${createHandler});`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText)(...Object.values(dependencies));
+    assert.equal(await saveStudent({ name: 'Readback acknowledged student', school: 'Readback school', grade_year: 2026, source_type: 1 }), true);
+    assert.equal(requests - requestsBeforeReadFailure, 1, 'exactly one student write, no hidden retry');
+    assert.equal(repeatedDrafts, 0, 'actual persisted student cannot generate a duplicate draft after read failure');
+    assert(warnings.some(text => text.includes('已保存') && text.includes('刷新')));
+    await admin(async db => {
+      const rows = (await db.query("SELECT grade_year,grade_current,school_legacy FROM business.students WHERE name='Readback acknowledged student'")).rows;
+      assert.deepEqual(rows, [{ grade_year: 2026, grade_current: '高一', school_legacy: 'Readback school' }]);
+    });
     for (const access of ['visitor', 'student', 'miniapp']) {
       role = access; miniappOnly = access === 'miniapp';
       const denied = await client.appendDraft({ type: 'student.create.v1', payload: { record: { id: `denied-${access}`, name: 'Student', school: 'Denied HTTP school', source_type: 1, contacts: [] } } });

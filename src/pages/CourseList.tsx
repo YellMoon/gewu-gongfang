@@ -102,13 +102,15 @@ const CourseList: React.FC = () => {
     setModalVisible(true);
   };
 
-  const syncSchedulesRoomName = (savedCourse?: any) => {
+  const syncSchedulesRoomName = (savedCourse?: any, acknowledgedCourseId?: string) => {
     try {
       const schedules = readSchedulesFromPrimaryStore(dbService, localStorage);
       const allCourses = dbService.getAllCourses();
       let updated = false;
       const newSchedules = schedules.map((s: any) => {
-        const course = allCourses.find((c: any) => c.id === s.course_id);
+        // UTF-8: failed readback may leave this acknowledged course's cache stale.
+        const course = acknowledgedCourseId && s.course_id === acknowledgedCourseId
+          ? savedCourse : allCourses.find((c: any) => c.id === s.course_id);
         if (course && course.room_name && s.room !== course.room_name) {
           updated = true;
           return { ...s, room: course.room_name };
@@ -167,6 +169,7 @@ const CourseList: React.FC = () => {
       && (item.payload?.record?.id || item.payload?.id) === courseId);
 
   const handleDelete = async (id: string) => {
+    let cloudWriteCompleted = false;
     const deletedCourse = courses.find(course => course.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => dbService.deleteCourse(id);
@@ -184,10 +187,15 @@ const CourseList: React.FC = () => {
     }
     try {
       await cloudRuntime.deleteCloudCourse({ courseId: id, expectedUpdatedAt: deletedCourse.updated_at });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success('\u4e91\u7aef\u8bfe\u7a0b\u5df2\u5220\u9664');
       loadData();
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('删除已完成，列表暂未更新，请刷新后查看。');
+        return;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_COURSE_REFERENCED') {
         message.error('\u8be5\u8bfe\u7a0b\u5df2\u6709\u6392\u8bfe\u8bb0\u5f55\uff0c\u4e0d\u80fd\u5220\u9664');
@@ -204,6 +212,7 @@ const CourseList: React.FC = () => {
   };
 
   const handleToggleActive = async (course: Course) => {
+    let cloudWriteCompleted = false;
     const nextActive = !course.active;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => dbService.updateCourse(course.id, { active: nextActive });
@@ -221,10 +230,15 @@ const CourseList: React.FC = () => {
     }
     try {
       await cloudRuntime.updateCloudCourse({ courseId: course.id, expectedUpdatedAt: course.updated_at, ...courseCloudPayload({ ...course, active: nextActive }) });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success(nextActive ? '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u672a\u7ed3\u8bfe' : '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u5df2\u7ed3\u8bfe');
       loadData();
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return;
+      }
       if (!isOfflineCloudFailure(error)) {
         message.error('\u4e91\u7aef\u66f4\u65b0\u8bfe\u7a0b\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5');
         return;
@@ -236,6 +250,8 @@ const CourseList: React.FC = () => {
   };
 
   const submitCourseToAuthority = async (values: any) => {
+    let cloudWriteCompleted = false;
+    let acknowledgedCourseId = editingCourse?.id;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => {
       if (editingCourse) dbService.updateCourse(editingCourse.id, values);
@@ -267,12 +283,19 @@ const CourseList: React.FC = () => {
       else {
         const courseId = globalThis.crypto?.randomUUID?.() || `course-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         await cloudRuntime.createCloudCourse({ courseId, ...courseCloudPayload(values) });
+        acknowledgedCourseId = courseId;
       }
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       syncSchedulesRoomName(values);
       message.success(editingCourse ? '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u521b\u5efa');
       return true;
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        syncSchedulesRoomName(values, acknowledgedCourseId);
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return true;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_COURSE_CONFLICT') {
         message.error('\u8be5\u8bfe\u7a0b\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');

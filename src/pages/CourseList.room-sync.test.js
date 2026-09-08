@@ -42,5 +42,26 @@ const ts = require('typescript');
     for (let i = 0; i < replaced.length; i++) assert.deepEqual({ ...replaced[i], room: schedules[i].room }, schedules[i], 'address linkage must not change time, attendance, fees, notes or version baselines');
     assert.deepEqual(schedules, originalSchedules, 'source records must not be mutated before durable draft capture');
   }
-  console.log('course original full-range address linkage checks passed');
+  // UTF-8: an acknowledged edit still links addresses when the projection read fails.
+  for (const failure of [new TypeError('Failed to fetch'), new Error('INVALID_PROJECTION')]) {
+    const schedules = structuredClone(originalSchedules); let replaced; let drafts = 0;
+    const courses = [{ id: 'edited', room_name: 'Old address' }, { id: 'other', active: false, room_name: 'Other new address' }];
+    const dbService = { getAllCourses: () => courses, updateCourse: () => drafts++,
+      refreshAuthorityProjection: async () => { throw failure; } };
+    const sync = compile('syncSchedulesRoomName', { dbService, localStorage: {}, readSchedulesFromPrimaryStore: () => schedules,
+      replaceSchedulesInPrimaryStore: (_db, rows) => { replaced = rows; } });
+    const window = { desktopAuthority: { list: async () => [] }, desktopIdentitySessionProvider: { updateCloudCourse: async () => ({ id: 'edited' }) } };
+    const submit = compile('submitCourseToAuthority', { window, hasPendingCourseDraft: compile('hasPendingCourseDraft', { window }),
+      dbService, syncSchedulesRoomName: sync, courseCloudPayload: x => x,
+      editingCourse: { id: 'edited', updated_at: '2026-09-07T00:00:00Z' },
+      message: { warning() {}, success() {}, error(text) { throw new Error(text); } } });
+    assert.equal(await submit({ room_id: 'r1', room_name: 'New address' }), true);
+    assert.equal(drafts, 0, 'an acknowledged course must not become another course draft');
+    assert.equal(replaced[0].room, 'New address', 'link the acknowledged address, not the stale cached address');
+    assert.equal(replaced[1].room, 'Other new address', 'retain the original full-visible-course scope');
+    assert.equal(courses[0].room_name, 'Old address', 'do not turn local cache into a writable authority');
+    for (let i = 0; i < replaced.length; i++) assert.deepEqual({ ...replaced[i], room: schedules[i].room }, schedules[i]);
+    assert.deepEqual(schedules, originalSchedules, 'only the original draft-capture path may store linked schedules');
+  }
+  console.log('course original full-range address linkage and acknowledged-write read-failure checks passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

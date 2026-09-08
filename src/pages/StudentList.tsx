@@ -132,6 +132,7 @@ const StudentList: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    let cloudWriteCompleted = false;
     const deletedStudent = students.find(student => student.id === id);
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => {
@@ -153,10 +154,15 @@ const StudentList: React.FC = () => {
     }
     try {
       await cloudRuntime.deleteCloudStudent({ studentId: id, expectedUpdatedAt: deletedStudent.updated_at });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u5220\u9664');
       loadData();
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('删除已完成，列表暂未更新，请刷新后查看。');
+        return;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_STUDENT_REFERENCED') {
         message.error('\u8be5\u5b66\u751f\u5df2\u88ab\u6392\u8bfe\u6216\u8bfe\u7a0b\u5f15\u7528\uff0c\u4e0d\u80fd\u5220\u9664');
@@ -175,6 +181,7 @@ const StudentList: React.FC = () => {
   };
 
   const submitExistingStudentToAuthority = async (values: any) => {
+    let cloudWriteCompleted = false;
     if (!editingStudent) return false;
     const stageLocalDraft = () => {
       dbService.updateStudent(editingStudent.id, values);
@@ -212,10 +219,15 @@ const StudentList: React.FC = () => {
         studentSource: values.student_source?.trim() || null,
         contacts,
       });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u66f4\u65b0');
       return true;
     } catch (error: any) {
+      if (cloudWriteCompleted) {
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return true;
+      }
       const code = String(error?.code || error?.message || '');
       if (code === 'CLOUD_BUSINESS_STUDENT_CONFLICT') {
         message.error('\u8be5\u5b66\u751f\u5df2\u88ab\u5176\u4ed6\u8bbe\u5907\u4fee\u6539\uff0c\u8bf7\u5237\u65b0\u540e\u518d\u7f16\u8f91');
@@ -234,6 +246,7 @@ const StudentList: React.FC = () => {
   };
 
   const submitNewStudentToAuthority = async (values: any) => {
+    let cloudWriteCompleted = false;
     const stageLocalDraft = () => {
       dbService.createStudent(values);
       (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
@@ -260,11 +273,17 @@ const StudentList: React.FC = () => {
         studentSource: values.student_source?.trim() || null,
         contacts,
       });
+      cloudWriteCompleted = true;
       await dbService.refreshAuthorityProjection();
       (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
       message.success('\u4e91\u7aef\u5b66\u751f\u8d44\u6599\u5df2\u521b\u5efa');
       return true;
     } catch (error: any) {
+      // UTF-8: a failed read cannot revoke an acknowledged cloud write.
+      if (cloudWriteCompleted) {
+        message.warning('已保存，列表暂未更新，请刷新后查看。');
+        return true;
+      }
       const code = String(error?.code || error?.message || '');
       const offline = code === 'ONLINE_DESKTOP_SESSION_REQUIRED' || error?.name === 'TypeError'
         || ['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH', 'ETIMEDOUT', 'EAI_AGAIN'].includes(String(error?.cause?.code || error?.code || ''));
