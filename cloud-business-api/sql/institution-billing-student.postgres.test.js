@@ -66,6 +66,7 @@ async function confirmedHttpRoundTrip(writer,admin){
   const historical=await snapshot();
   const migration=path.join(__dirname,'20260908-z-institution-billing-student.sql');
   await admin(db=>db.query(fs.readFileSync(migration,'utf8')));
+  await admin(db=>db.query(fs.readFileSync(path.join(__dirname,'20260908-zz-institution-billing-projection.sql'),'utf8')));
   assert.deepEqual(await snapshot(),historical,'install must not rewrite historical records');
   let version=(await writer(db=>create(db,'new','新机构'))).rows[0].updated_at.toISOString();
   let current=await snapshot();
@@ -123,6 +124,23 @@ async function confirmedHttpRoundTrip(writer,admin){
   await writer(db=>assert.rejects(()=>create(db,'collision','Collision'),e=>e.message==='VNEXT_INSTITUTION_BILLING_LINK_INVALID'));
   assert.deepEqual(await snapshot(),beforeCollision,'stable generated ID must never overwrite an unrelated record');
   await confirmedHttpRoundTrip(writer,admin);
+  // UTF-8: execute the actual desktop projection fragments as its read-only role.
+  const appSource=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+  const fragment=entity=>{
+   const line=appSource.split('\n').filter(x=>x.includes(`\"'${entity}',COALESCE((SELECT jsonb_agg`)).at(-1);
+   assert(line);return new Function('return '+line.trim().replace(/,$/,''))().replace(/,$/,'');
+  };
+  await admin(async db=>{
+   await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.students,business.institutions TO gewu_cloud_schedule_reader');
+   await db.query('SET ROLE gewu_cloud_schedule_reader');
+   try{
+    const payload=(await db.query('SELECT jsonb_build_object('+fragment('students')+','+fragment('institutions')+') AS payload',['tenant'])).rows[0].payload;
+    const institution=payload.institutions.find(i=>i.id==='http-inst');
+    assert.equal(institution.billing_student_id,'institution-student-http-inst');
+    assert.equal(payload.students.find(s=>s.id===institution.billing_student_id).is_institution_student,true);
+    await assert.rejects(()=>db.query("UPDATE business.institution_billing_students SET student_id='ordinary' WHERE institution_id='http-inst'"),e=>e.code==='42501');
+   }finally{await db.query('RESET ROLE');}
+  });
  }finally{try{await runtime.disposeHandle(handle);}finally{await runtime.stop();}}
  console.log('institution billing student atomic create, rename, conflict, rollback and privilege checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1});

@@ -27,6 +27,7 @@ import { sameScheduleDraftContent } from './scheduleDraftComparison.mjs';
 import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
 import { overlayStudentContactDraftProjection } from './studentContactDraftProjection.mjs';
+import { overlayInstitutionBillingDraft } from './institutionBillingDraft.mjs';
 import {
   partitionedStorageKey,
   migrateLegacyStorageValue,
@@ -331,7 +332,6 @@ class BrowserDatabaseService {
       ...s,
       grade_current: calculateGrade(s.grade_year)
     }));
-    this.ensureInstitutionStudents(false);
 
     // 题型迁移：旧题型统一为5种
     const typeMigrateMap: Record<string, string> = {
@@ -1032,8 +1032,8 @@ class BrowserDatabaseService {
       updated_at: now
     };
     this.data.institutions.push(newInstitution);
+    overlayInstitutionBillingDraft(this.data, newInstitution);
     this.recordAuthorityDraft('institutions', 'create', newInstitution.id, newInstitution);
-    this.ensureInstitutionStudents(true);
     this.saveData();
     return newInstitution;
   }
@@ -1043,29 +1043,10 @@ class BrowserDatabaseService {
     if (index === -1) return undefined;
     const baseVersion = this.data.institutions[index].updated_at || null;
     this.data.institutions[index] = { ...this.data.institutions[index], ...updates, updated_at: new Date().toISOString() };
+    overlayInstitutionBillingDraft(this.data, this.data.institutions[index]);
     this.recordAuthorityDraft('institutions', 'update', id, this.data.institutions[index], baseVersion);
-    this.ensureInstitutionStudents(true);
     this.saveData();
     return this.data.institutions[index];
-  }
-
-  private ensureInstitutionStudents(captureDrafts = false): void {
-    const now = new Date().toISOString();
-    for (const institution of this.data.institutions || []) {
-      const existing = (this.data.students || []).find(student => student.is_institution_student && student.institution_id === institution.id);
-      const name = String(institution.name || '').trim() + '\u5b66\u751f';
-      if (existing) {
-        if (existing.name === name && existing.source_type === StudentSource.INSTITUTION) continue;
-        const baseVersion = existing.updated_at || null;
-        existing.name = name; existing.source_type = StudentSource.INSTITUTION; existing.updated_at = now;
-        if (captureDrafts) this.recordAuthorityDraft('students', 'update', existing.id, { ...existing, contacts: this.studentAuthorityContacts(existing) }, baseVersion);
-      } else {
-        const created = { id: this.generateId(), name, source_type: StudentSource.INSTITUTION, institution_id: institution.id,
-          is_institution_student: true, balance_hours: 0, balance_money: 0, notes: '\u673a\u6784\u8bfe\u7a0b\u8d39\u7528\u4e13\u7528\u5b66\u751f', created_at: now, updated_at: now } as Student;
-        this.data.students.push(created);
-        if (captureDrafts) this.recordAuthorityDraft('students', 'create', created.id, { ...created, contacts: this.studentAuthorityContacts(created) });
-      }
-    }
   }
 
   deleteInstitution(id: string): boolean {

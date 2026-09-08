@@ -1,0 +1,47 @@
+'use strict';
+// UTF-8: exercise actual cache methods and reloading the pending projection.
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
+(async()=>{
+ const source=fs.readFileSync('src/services/browserDatabase.ts','utf8');
+ const ast=ts.createSourceFile('browserDatabase.ts',source,ts.ScriptTarget.Latest,true),methods=[];
+ (function visit(node){if(ts.isMethodDeclaration(node)&&['createInstitution','updateInstitution','ensureInstitutionStudents'].includes(node.name.getText(ast)))methods.push(node.getText(ast));ts.forEachChild(node,visit);})(ast);
+ const helperPath='./institutionBillingDraft.mjs';
+ const helper=fs.existsSync(require('node:path').join(__dirname,'institutionBillingDraft.mjs'))?await import(helperPath):{};
+ const Cache=new Function('StudentSource','overlayInstitutionBillingDraft',ts.transpileModule('class Cache {'+methods.join('\n')+'};return Cache;', {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText)({INSTITUTION:2},helper.overlayInstitutionBillingDraft);
+ const {buildAuthorityBackedBrowserCache}=await import('./authorityProjectionCacheAdapter.mjs');
+ const ordinary={id:'ordinary',name:'普通机构学生',institution_id:'institution',source_type:2,is_institution_student:true,notes:'not a managed record',updated_at:'2026-09-08T00:00:00Z'};
+ const cache=new Cache(),drafts=[];let ids=0;
+ cache.data={institutions:[],students:[structuredClone(ordinary)]};cache.generateId=()=>++ids===1?'institution':'unexpected-student-id';
+ cache.saveData=()=>{};cache.studentAuthorityContacts=()=>[];
+ cache.recordAuthorityDraft=(...args)=>drafts.push(structuredClone(args));
+ const created=cache.createInstitution({name:'测试机构'});
+ assert.deepEqual(drafts.map(d=>d[0]),['institutions'],'one institution edit must produce one confirmation, not an independent student draft');
+ assert.equal(ids,1,'billing identity must match the cloud-derived stable ID');
+ const managed=cache.data.students.find(s=>s.id==='institution-student-institution');
+ assert.equal(managed.name,'测试机构学生');assert.deepEqual(cache.data.students.find(s=>s.id===ordinary.id),ordinary);
+ const baseline=created.updated_at;cache.updateInstitution(created.id,{name:'已改名'});
+ assert.deepEqual(drafts.map(d=>d[0]),['institutions','institutions']);assert.equal(drafts[1][4],baseline);
+ assert.equal(cache.data.students.find(s=>s.id===managed.id).name,'已改名学生');
+ const projection={protocol:'gewu.authority-projection.v1',sourceVersion:1,payload:{institutions:[],students:[ordinary]}};
+ const outbox=drafts.map((d,i)=>({type:`institution.${d[1]}.v1`,status:'awaiting_confirmation',createdAt:String(i),payload:d[1]==='create'?{record:d[3]}:{id:d[2],changes:d[3],expectedVersion:d[4]}}));
+ const before=JSON.stringify({projection,outbox});
+ const clean=buildAuthorityBackedBrowserCache({projection});
+ const reloaded=buildAuthorityBackedBrowserCache({projection,outbox});
+ assert.equal(reloaded.students.find(s=>s.id===managed.id).name,'已改名学生');
+ assert.deepEqual(reloaded.students.find(s=>s.id===ordinary.id),clean.students.find(s=>s.id===ordinary.id));
+ assert.equal(JSON.stringify({projection,outbox}),before);
+ assert.equal(buildAuthorityBackedBrowserCache({projection}).students.length,1,'no drafts means no invented cloud billing students');
+ assert(!source.includes('this.ensureInstitutionStudents(false)'),'startup must not invent or rename authority records');
+ // UTF-8: canonical ownership is stronger than mutable notes; ambiguity is not guessed.
+ const linked={id:'legacy-billing',institution_id:'linked',name:'Old',source_type:2,is_institution_student:true,notes:'edited note',updated_at:baseline};
+ const linkedCache={students:[structuredClone(linked)]};
+ helper.overlayInstitutionBillingDraft(linkedCache,{id:'linked',name:'Renamed',billing_student_id:linked.id});
+ assert.equal(linkedCache.students.length,1);assert.equal(linkedCache.students[0].id,linked.id);assert.equal(linkedCache.students[0].updated_at,baseline);
+ assert.equal(linkedCache.students[0].notes,linked.notes);
+ const duplicate={students:[{...linked,notes:'机构课程费用专用学生'},{...linked,id:'second',notes:'机构课程费用专用学生'}]};
+ const duplicateBefore=JSON.stringify(duplicate);
+ assert.throws(()=>helper.overlayInstitutionBillingDraft(duplicate,{id:'linked',name:'No change'}),e=>e.code==='INSTITUTION_BILLING_DRAFT_AMBIGUOUS');
+ assert.equal(JSON.stringify(duplicate),duplicateBefore);
+ assert.throws(()=>helper.overlayInstitutionBillingDraft({students:[]},{id:'linked',name:'Missing',billing_student_id:'missing'}),e=>e.code==='INSTITUTION_BILLING_STUDENT_NOT_LOADED');
+ console.log('institution single confirmation and derived billing student draft checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1});

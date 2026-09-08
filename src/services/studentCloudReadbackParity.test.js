@@ -30,6 +30,10 @@ const path=require('node:path');
   for(const line of studentLines){
     assert(line.includes("'source_type',s.legacy_source_type"),'desktop and scoped projections must retain student source category');
     assert(line.includes("'student_source',s.student_source_legacy"),'desktop and scoped projections must retain source details');
+    assert(line.includes("'is_institution_student',s.legacy_is_institution_student"),'billing identity must survive canonical readback');
   }
+  const institutionLines=app.split('\n').filter(line=>line.includes("\"'institutions',COALESCE((SELECT jsonb_agg"));
+  assert.equal(institutionLines.length,2);
+  for(const line of institutionLines)assert(line.includes("'billing_student_id'")&&line.includes('business.institution_billing_students'),'readback must identify the canonical billing student');
   console.log('student canonical contact and original source readback parity checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

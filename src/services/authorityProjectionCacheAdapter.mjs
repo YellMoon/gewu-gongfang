@@ -1,4 +1,5 @@
 import { studentContactFormValues } from './studentContactDraftProjection.mjs';
+import { overlayInstitutionBillingDraft } from './institutionBillingDraft.mjs';
 
 const ENTITY_COLLECTIONS = Object.freeze({
   student: 'students',
@@ -214,6 +215,7 @@ function applyDraft(cache, item) {
     if (index === -1) cache[collection].push(record);
     else cache[collection][index] = { ...cache[collection][index], ...record };
     if (entity === 'student') applyStudentContacts(cache, id, record.contacts);
+    if (entity === 'institution') overlayInstitutionBillingDraft(cache,cache[collection].find(row=>String(row.id)===id));
     return;
   }
   const id = String(payload.id || '').trim();
@@ -232,6 +234,7 @@ function applyDraft(cache, item) {
     ...(payload.changes || {}),
   });
   if (entity === 'student') applyStudentContacts(cache, id, payload.changes?.contacts);
+  if (entity === 'institution') overlayInstitutionBillingDraft(cache,cache[collection][index]);
 }
 
 export function buildAuthorityBackedBrowserCache({

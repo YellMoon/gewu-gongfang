@@ -108,6 +108,15 @@
 
 - UTF-8 收尾：完整云服务测试会话 71133 退出 0（含 pretest/test/posttest 与新机构用例）。随后将新机构专项的夹具扩展为同时加载联系人、手机号约束、学校登记、教师学生作用域与本轮分类迁移，再次退出 0；这仍是隔离 PostgreSQL，不是完整生产副本迁移。252 组原业务对照和 root/backend Node ABI 137 检查通过，版本文件 SHA256 仍为 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`。PostgreSQL 技能用于归属表最小权限和父记录先行的锁顺序；全量根测试旧未通过记录不由云服务测试替代。
 
+### 2026-09-08 桌面机构单草稿与云端归属读回（UTF-8）
+
+- 实际缓存方法测试先复现 institutions＋students 两条草稿。现 createInstitution/updateInstitution 只记录机构命令，实删 ensureInstitutionStudents 及启动时自动补学生调用；新 helper 仅覆盖该机构的本地派生学生，ID 与云端稳定规则一致。待确认投影重载也复用该覆盖，不发请求、不改原草稿、不覆盖其他学生。明确云端归属优先于可变备注；缺失已关联学生、歧义或 ID 冲突拒绝猜测，既有学生 observed updated_at 不被本地改名伪造。
+- 云端两个读取投影原本缺失专用标记/明确归属，新增 source 回归先失败后通过。现读回 is_institution_student 与 billing_student_id；新增 20260908-zz-institution-billing-projection.sql 仅授予现有只读角色归属表 SELECT。隔离 PostgreSQL 实际执行当前桌面学生/机构投影片段，验证所返回的专用学生 ID/标记一致，并验证该读角色 UPDATE 仍被拒绝。不是通过假响应证明读回。
+- 新缓存用例进入 browserDatabaseSyncCapture 门禁；缓存单草稿/重载/歧义/普通学生保护、business-parity、uiRegression 通过。类型检查会话 70274 退出 0；npx craco build 会话 12098 退出 0，主包 main.4fea04c5.js，原日历 450.eed1888f.chunk.js 与 CSS main.5792781d.css 未变。原机构窗口未修改，没有递增版本、打包安装程序或发布。
+- 仍未放行：旧版机构伴随的独立学生草稿及课程引用需要安全对账，不能直接重放造成重复学生，也不能静默删除/重写用户草稿；本轮未改旧草稿提交器或宣称该兼容门禁完成。机构删除、教师权限、完整云副本和原窗口一次确认实操继续待验。当前构建不部署到生产，完整云服务测试结果另记。
+
+- UTF-8 收尾：完整云服务测试会话 25911 退出 0（含新只读投影实查）；root/backend Node ABI 137 校验通过。用户版本文件 SHA256 保持 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`，NAS 用户改动及 output 未动。全量根测试、真实原窗口与旧草稿对账仍不由这些结果代替。
+
 ## 不可变边界
 
 用户要求迁移，不是重做。原有排课、调课、复制、批量排课、课程设置、学生添加、出勤、学费和教师课时费的业务含义、字段、联动和操作流程必须保留。
