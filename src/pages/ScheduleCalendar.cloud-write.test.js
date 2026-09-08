@@ -3,6 +3,8 @@
 const assert = require('assert');
 const fs = require('fs');
 require('./ScheduleCalendar.card-content.test.js');
+// UTF-8: preserve pending-course presentation alongside the settled cards.
+require('./ScheduleCalendar.sidebar-parity.test.js');
 // UTF-8: include original undo/redo persistence in the existing calendar gate.
 require('./ScheduleCalendar.history.test.js');
 
