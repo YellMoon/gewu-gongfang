@@ -16,8 +16,9 @@ async function main() {
     '学生原弹窗必填校验、取消、学校输入、保存后教师可见',
     '离线保存不提交、重连不提交、用户确认后云端可读回',
     '原课程窗口选入新学生、课程名称和地址不含跟踪编码',
+    'UTF-8：离线改课程时长后联网结课不夹带提交；保留草稿、确认与恢复在线编辑',
     '原课表排课与调课、三项卡片、刷新后仍一致',
-    '启动尺寸及较小窗口截图，无遮挡和裁切'], fullSignoff:false});
+    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
   const env = {...process.env, NODE_ENV:'production', GEWU_PARITY_SHADOW_URL:config.baseUrl,
     GEWU_DATA_DIR:path.join(out,'profile'), DB_PATH:path.join(out,'profile/data/scheduling.db')};
   delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_START_URL; delete env.GEWU_DESKTOP_LOGIN_FIXTURE;
@@ -227,6 +228,13 @@ async function main() {
     await courseDialog.getByText('东湖上课点',{exact:true}).waitFor();
     await courseDialog.screenshot({path:path.join(out,'09-course-reopened.png')});
     await courseDialog.getByRole('button',{name:/^取\s*消$/}).click();
+    const coursePendingConfirmation=await require('./business-parity-course-confirmation.cjs')({page,out,save,courseId,selectCourseOption});
+    // UTF-8: a focused rerun must not certify calendar, attendance or six-page checks.
+    if(config.courseConfirmationOnly) {
+      save('desktop-receipt',{passwordLogin:true,sourceDesktop:true,installed:false,productionWrite:false,
+        scope:'course-confirmation-only',...coursePendingConfirmation,businessFlowComplete:false,uiVerified:false});
+      return;
+    }
     // UTF-8: continue through the existing calendar date header and schedule modal.
     await page.locator('.app-shell__collapse-button').click();
     await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).click();
@@ -583,7 +591,7 @@ async function main() {
     save('desktop-receipt',{passwordLogin:true,sourceDesktop:true,installed:false,productionWrite:false,
       originalWorkspaceLoaded:true,teacherProjectionRead:true,studentDraftConfirmed:true,schoolAtomic:true,
       noSilentReconnectWrite:true,studentReloadVisible:true,courseAndAddressConfirmed:true,
-      courseReopened:true,scheduleConfirmed:true,scheduleFinancialReadback:true,
+      courseReopened:true,...coursePendingConfirmation,scheduleConfirmed:true,scheduleFinancialReadback:true,
       rescheduleConfirmed:true,rescheduleNoSilentWrite:true,rescheduleVersionBaseline:true,
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,

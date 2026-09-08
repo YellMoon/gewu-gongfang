@@ -1,5 +1,17 @@
 # 业务行为保真核查（未完成，禁止据此发布）
 
+## 2026-09-08 原桌面课程草稿实际确认与可见内容（UTF-8）
+
+- 使用真实源桌面、独立密码测试账号、已校验完整云库副本，不安装新版本、不写生产业务。Playwright Interactive 技能所需交互工具不可用，复用既有 Playwright/Electron 脚本；Electron ABI 技能要求测试前切到 119，结束后恢复 Node。新增 `business-parity-course-confirmation.cjs` 只通过原控件修改、筛选、结课、确认和恢复，读取接口只用于核验。
+- 首轮会话 26370 退出 1：离线时长变更、联网结课、拒绝/接受确认以及云端字段断言已走过，但确认后页面重新挂载回默认未结课筛选，脚本没有重新选已结课便试图编辑，因此找不到行。保留失败证据；仅修正测试筛选步骤，未改变产品筛选规则。副本清理成功。
+- 第二轮完整脚本会话 24498 退出 0。新路径实际将默认时长 90→120 分钟离线保存，重连保持云端原值；联网点击结课后仍为一个待确认草稿，保留草稿不写云端；确认后 active=false、时长 120，原名称、教师、地址、计费单位/模式、价格与学生定价一致。随后通过原表单恢复 active=true、时长 90，完成草稿不再阻挡正常在线保存。完整脚本后续原排课、调课、批量、出勤和六页弹窗步骤也运行通过，但不替代全部业务/多端验收。
+- 本机证据目录 `gewu-business-parity-e3r10hyr`，`course-pending-confirmation-readback.json` SHA256 `3c6a7c5363b326f55967a776b3bfb8d2ba289710105159e69103ae16a4fc2539`。副本 `gewu_ui_shadow_1053b5d4a2c5ebe4` 回执 ok/cleanupComplete=true，productionWrite/uiVerified=false。此轮构建为 `main.72f08a27.js`，不能据此认证后来新增的确认内容。
+- 人工查看 09a/09b/09c 截图发现：确认窗口没有列出真正变更的课程状态和默认时长。因此没有把功能断言通过当作确认体验合格。先补测试复现失败，再仅给现有确认信息增加这两项；课程编辑窗、课程列表布局与按钮不变。确认数据展示、确认面板和 uiRegression 均退出 0。
+- 新构建会话 18301 退出 0，`main.1364e63f.js`，日历块和全部 CSS 未变。新增 `--course-confirmation-only` 用于这类修复的专项实操，回执明确 scope，仍保持 uiVerified/businessFlowComplete=false，不把专项当全流程。
+- 新构建专项会话 79615 退出 0，目录 `gewu-business-parity-aax96pac`，副本 `gewu_ui_shadow_86204e0c17ce59be` 已清理；回执 ok/cleanupComplete=true、productionWrite/uiVerified=false、scope=course-confirmation-only。已亲自查看新 09b 确认截图和 09c 恢复截图；09b 显示“课程状态：已结课”“默认时长：2小时”，内容和两个确认/保留按钮完整可见。原大表水平滚动、测试教师长名称和右上既有 Cloud account 仍在，不据此声称整页无缺陷。
+- 新专项 `course-pending-confirmation-readback.json` SHA256 `bd0aa70a89979e05ae1fc5ff889d11bd21b30ada8ebff50ffa417df8016072cf`；09b 截图 SHA256 `88184b6fca5f5cdadf11d005b35f1fe23caf95959ee77bfdb5caa5b415cb79aa`。新增 UI 实操只覆盖保存/结课/保留/确认/恢复，不把函数测试的 90 种组合都称为实操，也未新增删除和所有角色验收。
+- 最后 rebuild:node 会话 60785 退出 0，根/backend 均为 Node ABI 137；确认面板、展示、课程完整检查（含 90 组合）、副本保护测试再次退出 0。用户版本文件 SHA256 仍为 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`。无打包、部署、OSS/NAS 更新，长期全量门禁仍开放。（UTF-8）
+
 ## 2026-09-08 课程未确认草稿防夹带修复（UTF-8）
 
 - 数据映射检查发现：当前课程缓存可能叠加未确认的离线修改，而 `submitCourseToAuthority` / `handleToggleActive` 仍将整条缓存直接提交，删除也绕开同课程的未完成草稿。先扩展真实处理函数测试，旧代码明确失败：期望仅保存草稿，实际调用云端接口。该证据证明调用边界错误，不冒称已经在生产库发生误写。

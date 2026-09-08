@@ -34,6 +34,13 @@ function describeAuthorityDraft(item, cache={}) {
     }
   } else {
     add('\u540d\u79f0',name);
+    // UTF-8: expose the actual course changes in the existing confirmation dialog.
+    if(entity==='course') {
+      if(typeof record.active==='boolean') add('课程状态',record.active?'未结课':'已结课');
+      if(typeof record.default_duration_minutes==='number'&&Number.isFinite(record.default_duration_minutes)&&record.default_duration_minutes>0) {
+        add('默认时长',`${record.default_duration_minutes/60}小时`);
+      }
+    }
     for(const [field,label] of [['subject','\u79d1\u76ee'],['address','\u5730\u5740'],['school','\u5b66\u6821'],['teacher_name','\u6559\u5e08'],['room_name','\u4e0a\u8bfe\u5730\u5740'],['amount','\u91d1\u989d'],['score','\u6210\u7ee9'],['notes','\u5907\u6ce8']]) add(label,record[field]);
   }
   return {title,summary:[name,time].filter(Boolean).join(' \u00b7 ')||title,details};

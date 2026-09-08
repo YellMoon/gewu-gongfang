@@ -3,6 +3,15 @@ const assert = require('node:assert/strict');
 const { describeAuthorityDraft, authorityDraftError } = require('./authorityDraftPresentation');
 const item = {type:'schedule.create.v1',preview:{title:'schedule.create'},payload:{record:{course_id:'course-1',start_time:'2026-09-07T06:00:00.000Z',end_time:'2026-09-07T07:30:00.000Z',room:'\u6d4b\u8bd5\u6559\u5ba4',calculated_tuition:270,calculated_teacher_fee:180}}};
 const result=describeAuthorityDraft(item,{courses:[{id:'course-1',name:'\u7269\u7406\u8bfe\u7a0b'}]});
+// UTF-8: actual offline duration/status changes must be visible before confirmation.
+for (const active of [false,true]) {
+  const draft={type:'course.update.v1',payload:{id:'course',changes:{default_duration_minutes:120,active}}};
+  const before=JSON.stringify(draft);
+  const details=describeAuthorityDraft(draft,{courses:[{id:'course',display_name:'初二物理',default_duration_minutes:90,active:!active}]}).details;
+  assert(details.some(row=>row.label==='默认时长'&&row.value==='2小时'));
+  assert(details.some(row=>row.label==='课程状态'&&row.value===(active?'未结课':'已结课')));
+  assert.equal(JSON.stringify(draft),before);
+}
 const snapshotDetails=describeAuthorityDraft({type:'schedule.update.v1',payload:{changes:{billing_unit:2,teacher_fee_mode:2,teacher_name:'王老师'}}}).details;
 assert(snapshotDetails.some(row=>row.label==='计费单位'&&row.value==='按次'));
 assert(snapshotDetails.some(row=>row.label==='教师计费方式'&&row.value==='按学生'));
