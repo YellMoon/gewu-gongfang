@@ -36,6 +36,11 @@
       "participants": ["desktop", "cloud_business", "miniapp"],
       "rule": "apply 20260909-course-delete-original-behavior.sql before cloud deployment; original course deletion retains lessons, rates, attendance and finances; scoped projections retain authorized lessons and original display labels but never resurrect courses in selectors; miniapp retains supplied course_name/course_type; no storage_proxy change required"
     },
+    "retainedCourseScheduleWrites": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "apply 20260909-retained-course-schedule-write.sql before cloud deployment; original move/copy/resize/delete and confirmed restoration retain tenant/teacher ownership, original lesson snapshots and version checks even after course deletion; only roster links of the checked course extend schedule permission, not student CRUD; course selectors and attendance editor are unchanged; no new REST fields, miniapp or storage_proxy update required"
+    },
     "questionPaperExport": {
       "version": "3",
       "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],

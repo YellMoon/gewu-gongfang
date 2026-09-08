@@ -23,6 +23,7 @@ const args=id=>['tenant-1',id,'course-1','2026-09-08T01:00:00Z','2026-09-08T02:3
    await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','course-1','student-1',180,120)");
    await db.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,calculated_tuition,calculated_teacher_fee,legacy_deleted,created_at,updated_at) VALUES ('legacy','tenant-1','course-1','2026-09-07T01:00:00Z','2026-09-07T02:30:00Z',1,270,180,false,now(),now())");
    await db.query(sql('20260907-zz-schedule-financial-snapshot.sql'));await db.query(sql('20260907-zz-schedule-financial-snapshot.sql'));
+   await db.query(sql('20260909-retained-course-schedule-write.sql'));
    assert.deepEqual((await db.query("SELECT billing_unit,teacher_fee_mode,teacher_id,teacher_name FROM business.schedules WHERE id='legacy'")).rows[0],{billing_unit:null,teacher_fee_mode:null,teacher_id:null,teacher_name:null},'migration must not invent missing historical snapshots');
   });
   let version;
