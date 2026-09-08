@@ -6,9 +6,31 @@ import io
 import tarfile
 from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
+from business_parity_student_balance import seed_student_balance
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_ledger_fixture_refuses_nonisolated_database_before_writing(self):
+        class FakeDb:
+            def __init__(self, database): self.database, self.calls = database, []
+            def run(self, sql):
+                self.calls.append(sql)
+                return self.database if sql == 'SELECT current_database()' else 'test-teacher'
+        target = 'gewu_ui_shadow_' + 'a' * 16
+        for requested, actual in [('gewu_cloud', 'gewu_cloud'), (target, 'gewu_cloud')]:
+            db = FakeDb(actual)
+            with self.assertRaisesRegex(RuntimeError, 'ISOLATED_SHADOW_REQUIRED'):
+                seed_student_balance(db, requested)
+            self.assertFalse(any('INSERT' in sql for sql in db.calls))
+        db = FakeDb(target)
+        result = seed_student_balance(db, target)
+        self.assertEqual(result['name'], '余额核验学生')
+        self.assertEqual(len(db.calls), 3)
+        self.assertIn('IF current_database()<>', db.calls[-1])
+        self.assertIn('SET LOCAL ROLE vnext_pg17_business_owner', db.calls[-1])
+        self.assertNotIn('UPDATE ', db.calls[-1])
+        self.assertNotIn('DELETE ', db.calls[-1])
+
     def test_rejects_escaping_and_linked_archive_entries_before_extraction(self):
         for name, kind in [('cloud-business-api/../../escape', tarfile.REGTYPE),
                            ('/absolute', tarfile.REGTYPE), ('other/file', tarfile.REGTYPE),
