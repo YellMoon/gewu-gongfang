@@ -21,6 +21,8 @@ const denied = error => error.code === '42501';
       }
       const migration = path.join(__dirname, '20260907-z-teacher-student-write-scope.sql');
       await db.query(fs.readFileSync(migration, 'utf8'));
+      const activeReferences = fs.readFileSync(path.join(__dirname,'20260908-student-delete-active-references.sql'),'utf8');
+      await db.query(activeReferences); await db.query(activeReferences);
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','One',false,now(),now()),('tenant-2','Two',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Two',false,now(),now()),('foreign','tenant-2','Foreign',false,now(),now()),('archived','tenant-1','Archived',true,now(),now())");
       await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('room-1','tenant-1','Classroom',false,now(),now())");
@@ -88,6 +90,55 @@ const denied = error => error.code === '42501';
       } finally { await writer.query('ROLLBACK'); }
       await assert.rejects(() => admin.query("UPDATE business.students SET created_by_teacher_id='foreign' WHERE id='student-new'"), e => e.code === '23503');
     }));
+    // The pre-scope cloud lifecycle already ignored tombstoned parents, but not merely completed courses.
+    const referenceCases = ['teacher', 'super_admin'].flatMap(role => [
+      {name:'old-course',courseDeleted:true,pricing:true,allowed:true},
+      {name:'old-schedule',scheduleDeleted:true,allowed:true},
+      {name:'inactive-course',pricing:true,inactive:true,allowed:false},
+      {name:'active-schedule',scheduleDeleted:false,allowed:false},
+      {name:'mixed',courseDeleted:true,pricing:true,scheduleDeleted:false,allowed:false},
+    ].map(value => ({...value,role,id:'ref-'+role+'-'+value.name})));
+    await withQuery(handle, 'fixture-provisioner', async db => {
+      for (const c of referenceCases) {
+        await db.query("INSERT INTO business.students(id,tenant_id,name,created_by_teacher_id,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,'teacher-1',false,false,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')",[c.id]);
+        await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,$1,1,1,100,60,1,1,'teacher-1',$2,$3,now(),now())",[c.id,!c.inactive,Boolean(c.courseDeleted)]);
+        if(c.pricing) await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1',$1,$1,100,60)",[c.id]);
+        if(c.scheduleDeleted!==undefined) {
+          await db.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,calculated_tuition,calculated_teacher_fee,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,'2026-09-08T01:00:00Z','2026-09-08T02:00:00Z',1,100,60,$2,now(),now())",[c.id,c.scheduleDeleted]);
+          await db.query("INSERT INTO business.schedule_student_overrides(tenant_id,schedule_id,student_id,attendance_status,tuition,teacher_fee) VALUES ('tenant-1',$1,$1,1,100,60)",[c.id]);
+        }
+      }
+    });
+    const referenceSnapshot=()=>withQuery(handle,'fixture-provisioner',async db=>{
+      const snapshot={};
+      for(const table of ['courses','schedules','course_student_pricings','schedule_student_overrides']) {
+        snapshot[table]=(await db.query(`SELECT * FROM business.${table} ORDER BY 1,2,3`)).rows;
+      }
+      return snapshot;
+    });
+    const referencesBefore=await referenceSnapshot();
+    const removeScoped='SELECT * FROM business.vnext_delete_scoped_student($1,$2,$3::timestamptz,$4,$5)';
+    await withQuery(handle,'verifier',async db=>await assert.rejects(()=>db.query(removeScoped,['tenant-1',referenceCases[0].id,'2026-09-01T00:00:00Z','super_admin',null]),denied));
+    await withQuery(handle,'writer',async db=>{
+      for(const c of referenceCases) {
+        const args=['tenant-1',c.id,'2026-09-01T00:00:00Z',c.role,c.role==='teacher'?'teacher-1':null];
+        await assert.rejects(()=>db.query(removeScoped,['tenant-1',c.id,args[2],'teacher','teacher-2']),denied);
+        assert.equal((await db.query(removeScoped,['tenant-2',c.id,args[2],'super_admin',null])).rows.length,0);
+        assert.equal((await db.query(removeScoped,[...args.slice(0,2),'2000-01-01T00:00:00Z',...args.slice(3)])).rows.length,0);
+        if(c.allowed) assert.equal((await db.query(removeScoped,args)).rows.length,1,`${c.role}/${c.name}: historical references must not block deletion`);
+        else await assert.rejects(()=>db.query(removeScoped,args),e=>e.message==='VNEXT_BUSINESS_STUDENT_REFERENCED');
+      }
+    });
+    assert.deepEqual(await referenceSnapshot(),referencesBefore,'student soft deletion must not remove or rewrite historical courses, schedules, rates or attendance');
+    assert.deepEqual(require('../../config/release-compatibility.json').contracts.studentDeletionReferences.participants,['desktop','cloud_business']);
+    await withQuery(handle,'fixture-provisioner',async db=>{
+      for(const c of referenceCases) {
+        const row=(await db.query('SELECT legacy_deleted,created_by_teacher_id,name,created_at,updated_at FROM business.students WHERE id=$1',[c.id])).rows[0];
+        assert.equal(row.legacy_deleted,c.allowed); assert.equal(row.created_by_teacher_id,'teacher-1'); assert.equal(row.name,c.id);
+        assert.equal(row.created_at.toISOString(),'2026-09-01T00:00:00.000Z');
+        if(!c.allowed) assert.equal(row.updated_at.toISOString(),'2026-09-01T00:00:00.000Z');
+      }
+    });
   } finally { await runtime.disposeHandle(handle).catch(()=>{}); await runtime.stop().catch(()=>{}); }
   console.log('teacher student creation, visibility, course selection, mutation and privilege PostgreSQL checks passed');
 })().catch(error => { console.error(error); process.exitCode=1; });
