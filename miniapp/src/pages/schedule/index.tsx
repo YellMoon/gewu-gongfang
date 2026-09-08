@@ -69,13 +69,14 @@ export default function SchedulePage() {
       setLoading(false);
       return;
     }
-    const allSchedules = getCachedList<Schedule>('schedules');
+    const allSchedules = getCachedList<ScheduleWithCourse>('schedules');
     const cachedCourses = getCachedList<Course>('courses');
     const allStudents = getCachedList<Student>('students');
 
     const enriched: ScheduleWithCourse[] = allSchedules.map((s) => {
       const course = cachedCourses.find((c) => c.id === s.course_id);
-      return { ...s, course_name: course?.display_name || course?.name || '未知课程', course_type: course?.type };
+      // UTF-8: retain cloud-backed lesson labels after its course leaves the selector.
+      return { ...s, course_name: course?.display_name || course?.name || s.course_name || '未知课程', course_type: course?.type ?? s.course_type };
     });
 
     setSchedules(enriched);

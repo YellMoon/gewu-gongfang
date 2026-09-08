@@ -8,10 +8,26 @@ import copy
 from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
 from business_parity_student_balance import seed_student_balance
-from business_parity_student_history import seed_student_history, verify_student_history
+from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_course_history_rejects_cascade_and_student_changes(self):
+        before = {'student': {'id': 'student', 'name': '原学生'}}
+        before.update({key: [{'id': str(i)} for i in range(count)] for key, count in [
+            ('courses', 1), ('schedules', 1), ('course_student_pricings', 1), ('schedule_student_overrides', 1), ('payments', 2), ('consumptions', 1)]})
+        for key in ('courses', 'schedules'): before[key][0].update(legacy_deleted=False, updated_at='old')
+        after = copy.deepcopy(before)
+        after['courses'][0].update(legacy_deleted=True, updated_at='new')
+        self.assertTrue(verify_course_history(before, after)['lessonsStillActive'])
+        for key in before:
+            changed = copy.deepcopy(after)
+            if key == 'student': changed[key]['name'] = 'Changed'
+            elif key == 'courses': changed[key][0]['name'] = 'Changed'
+            else: changed[key] = []
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'COURSE_DELETE_HISTORY_CHANGED'):
+                verify_course_history(before, changed)
+
     def test_history_verifier_detects_cascade_and_metadata_changes(self):
         # UTF-8: reject history loss, not only a missing student in the UI.
         before = {'student': {'id': 'test', 'legacy_deleted': False, 'updated_at': 'old', 'name': 'Original'}}

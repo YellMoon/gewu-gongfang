@@ -31,6 +31,11 @@
       "participants": ["desktop", "cloud_business"],
       "rule": "20260908-student-delete-original-behavior.sql restores original desktop deletion regardless of course/schedule references; soft-delete only the authorized student, retain actor/version locks and all related records; apply forward migration before cloud deployment; existing REST/client contract is unchanged, no storage_proxy or miniapp update required"
     },
+    "courseDeletionHistory": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "apply 20260909-course-delete-original-behavior.sql before cloud deployment; original course deletion retains lessons, rates, attendance and finances; scoped projections retain authorized lessons and original display labels but never resurrect courses in selectors; miniapp retains supplied course_name/course_type; no storage_proxy change required"
+    },
     "questionPaperExport": {
       "version": "3",
       "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],

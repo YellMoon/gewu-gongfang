@@ -73,6 +73,8 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
       const first = await read('teacher');
       assert.equal(first.payments[0].amount, 1200); assert.equal(first.consumptions[0].hours, 1.5);
       await db.query("UPDATE business.courses SET legacy_deleted=true WHERE id='own-course'");
+      assertIds(await read('teacher'), ['created', 'override']);
+      await db.query("UPDATE business.schedules SET legacy_deleted=true WHERE id='lesson'");
       assertIds(await read('teacher'), ['created']);
       await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');
       try { await assert.rejects(db.query("UPDATE business.payments SET amount=1 WHERE id='created'"), error => error.code === '42501'); }

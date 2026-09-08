@@ -3,6 +3,7 @@
 const express = require('express');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
+const { withScheduleCourseContextSql, applyScheduleCourseContext } = require('./scheduleCoursePresentation');
 
 const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
 const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
@@ -558,7 +559,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   const miniappProjectionSql = [
     'WITH scoped_schedules AS (',
-    'SELECT s.* FROM business.schedules s JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND c.legacy_deleted=false AND (',
+    'SELECT s.* FROM business.schedules s JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND (',
     "$2='manager' OR ($2='teacher' AND c.teacher_id=$3) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3) OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id) AND EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3))))",
     ')),',
     'scoped_courses AS (',
@@ -1087,8 +1088,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
     try {
       const scope = miniappProjectionScope(await miniappBusinessContext(request));
-      const result = await query(miniappProjectionSql, [businessTenantId, scope.role, scope.profileId, scope.accountId]);
-      const projection = result?.rows?.[0]?.projection;
+      const result = await query(withScheduleCourseContextSql(miniappProjectionSql), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+      const projection = applyScheduleCourseContext(result?.rows?.[0]?.projection);
       if (!isMiniappProjection(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });
     } catch (error) {
@@ -1442,7 +1443,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
            CASE WHEN $2 IN ('super_admin','teacher') THEN s.calculated_teacher_fee ELSE NULL END AS "teacherFee"
          FROM business.schedules s
          JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
-         WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND c.legacy_deleted=false
+         WHERE s.tenant_id=$1 AND s.legacy_deleted=false
            AND ($2='super_admin'
              OR ($2='teacher' AND c.teacher_id=$3)
              OR ($2='student' AND (
@@ -1466,13 +1467,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       let result;
       let projection;
       if (Array.isArray(context.roles) && context.roles.includes('super_admin')) {
-        result = await query(desktopProjectionSql, [businessTenantId, context.accountId]);
-        projection = result?.rows?.[0]?.projection;
+        result = await query(withScheduleCourseContextSql(desktopProjectionSql), [businessTenantId, context.accountId]);
+        projection = applyScheduleCourseContext(result?.rows?.[0]?.projection);
       } else {
         const scope = miniappProjectionScope(context);
         if (scope.role !== 'teacher') throw businessAccessDenied();
-        result = await query(withDesktopStudentLedgerProjection(miniappProjectionSql), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
-        projection = scopedDesktopProjection(result?.rows?.[0]?.projection);
+        result = await query(withScheduleCourseContextSql(withDesktopStudentLedgerProjection(miniappProjectionSql)), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+        projection = scopedDesktopProjection(applyScheduleCourseContext(result?.rows?.[0]?.projection));
       }
       if (!isDesktopProjection(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });

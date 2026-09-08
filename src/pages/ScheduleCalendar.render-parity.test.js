@@ -89,6 +89,17 @@ function renderer(text) {
         }
       }
     }
+    // UTF-8: the original deletion removes the course, not its already-named lesson cards.
+    const { applyScheduleCourseContext } = require('../../cloud-business-api/src/scheduleCoursePresentation');
+    for (const [raw, display] of [['2026 秋学期 初二物理', '初二物理'], ['E2E-20260905-物理课程', 'E2E-20260905-物理课程'], ['2026提高班-A01', '2026提高班-A01']]) {
+      const lesson = { id: 'SCHEDULE-ID', course_id: 'COURSE-ID', course_name: display, room: '原上课地址', start_time: '2026-09-08 09:00:00', end_time: '2026-09-08 10:30:00', status: 1 };
+      const payload = applyScheduleCourseContext({ courses: [], schedules: [{ ...lesson, course_name: undefined, start_time: '2026-09-08T01:00:00Z', end_time: '2026-09-08T02:30:00Z' }], _scheduleCourseContext: [{ id: 'COURSE-ID', name: raw }] });
+      const cache = buildAuthorityBackedBrowserCache({ projection: { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, payload } });
+      for (const drag of states) {
+        assert.deepEqual(html(newView, cache.schedules, cache.courses, [], drag), html(oldView, [lesson], [], [], drag), 'deleted course must retain its original three-field lesson card');
+        comparisons++;
+      }
+    }
     const course = { id: 'COURSE-ID', name: '2026 秋学期 初二物理', room_name: '最新上课点' };
     const schedule = { id: 'SCHEDULE-ID', course_id: course.id, course_name: '旧名称', room: '旧地址',
       start_time: '2026-09-08T02:00:00.000Z', end_time: '2026-09-08T03:30:00.000Z' };

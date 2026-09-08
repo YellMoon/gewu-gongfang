@@ -17,7 +17,7 @@ import urllib.request
 import deploy
 from apply_cloud_postgres_migrations import DockerPsqlExecutor, apply_migrations, read_migrations
 from business_parity_student_balance import seed_student_balance
-from business_parity_student_history import seed_student_history, read_student_history, verify_student_history
+from business_parity_student_history import seed_student_history, read_student_history, verify_student_history, verify_course_history
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -63,7 +63,7 @@ def export_committed_source(repo, commit, destination):
     return destination
 
 
-def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None, confirmed_delete_undo_only=False, student_balance_only=False, student_delete_history_only=False, student_delete_reference_state='archived'):
+def run(backup_path, probe_only=False, course_confirmation_only=False, resource_confirmation_only=False, course_address_only=False, cloud_source_commit=None, confirmed_delete_undo_only=False, student_balance_only=False, student_delete_history_only=False, student_delete_reference_state='archived', course_delete_history_only=False):
     backup = validate_backup(json.loads(pathlib.Path(backup_path).read_text(encoding='utf-8')))
     nonce = secrets.token_hex(8)
     target = validate_target('gewu_ui_shadow_' + nonce)
@@ -80,6 +80,8 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
                'scope': 'student-balance-only' if student_balance_only else 'confirmed-delete-undo-only' if confirmed_delete_undo_only else 'course-address-only' if course_address_only else 'resource-confirmation-only' if resource_confirmation_only else 'course-confirmation-only' if course_confirmation_only else 'business-parity'}
     if student_delete_history_only:
         receipt['scope'] = 'student-delete-history-only'
+    if course_delete_history_only:
+        receipt['scope'] = 'course-delete-history-only'
 
     def private(command):
         stdin, stdout, stderr = ssh.exec_command(command, timeout=180)
@@ -107,8 +109,8 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         receipt['ownershipAndPrivilegesVerified'] = True
         receipt['migrations'] = apply_migrations(db, read_migrations(cloud_root / 'cloud-business-api/sql'))['applied']
         receipt['backupSha256'] = backup['sha256']
-        balance_fixture = seed_student_history(db, target, parents_deleted=student_delete_reference_state == 'archived') if student_delete_history_only else seed_student_balance(db, target) if student_balance_only else None
-        history_before = read_student_history(db, balance_fixture) if student_delete_history_only else None
+        balance_fixture = seed_student_history(db, target, parents_deleted=False if course_delete_history_only else student_delete_reference_state == 'archived') if student_delete_history_only or course_delete_history_only else seed_student_balance(db, target) if student_balance_only else None
+        history_before = read_student_history(db, balance_fixture) if student_delete_history_only or course_delete_history_only else None
         print(json.dumps({'stage': 'shadow_migrated', 'database': target}), flush=True)
         app = json.loads(private('docker inspect gewu-cloud-business-api'))[0]
         pg = json.loads(private('docker inspect gewu-postgres17'))[0]
@@ -195,12 +197,14 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
         print(json.dumps({'stage':'shadow_api_ready','database':target,'out':str(out)}), flush=True)
         if not probe_only:
             result = subprocess.run(['node', str(ROOT / 'scripts/business-parity-desktop.cjs')],
-                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only,'confirmedDeleteUndoOnly':confirmed_delete_undo_only,'studentBalanceFixture':balance_fixture,'studentDeleteHistory':student_delete_history_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=900)
+                input=json.dumps({'baseUrl':base,'login':login,'out':str(out),'courseConfirmationOnly':course_confirmation_only,'resourceConfirmationOnly':resource_confirmation_only,'courseAddressOnly':course_address_only,'confirmedDeleteUndoOnly':confirmed_delete_undo_only,'studentBalanceFixture':balance_fixture,'studentDeleteHistory':student_delete_history_only,'courseDeleteHistory':course_delete_history_only}), text=True, encoding='utf-8', cwd=ROOT, timeout=900)
             if result.returncode: raise RuntimeError('DESKTOP_PARITY_FAILED')
-            if student_delete_history_only:
+            if student_delete_history_only or course_delete_history_only:
                 history_after = read_student_history(db, balance_fixture)
-                receipt['studentHistory'] = verify_student_history(history_before, history_after, parents_deleted=balance_fixture['parentsDeleted'])
-                (out / 'student-history-readback.json').write_text(json.dumps({'before': history_before, 'after': history_after, 'result': receipt['studentHistory']}, indent=2), encoding='utf-8')
+                history_key = 'courseHistory' if course_delete_history_only else 'studentHistory'
+                receipt[history_key] = verify_course_history(history_before, history_after) if course_delete_history_only else verify_student_history(history_before, history_after, parents_deleted=balance_fixture['parentsDeleted'])
+                history_file = 'course-history-readback.json' if course_delete_history_only else 'student-history-readback.json'
+                (out / history_file).write_text(json.dumps({'before': history_before, 'after': history_after, 'result': receipt[history_key]}, indent=2), encoding='utf-8')
             receipt['desktopLoginVerified'] = True
             receipt['uiVerified'] = False  # Full QA inventory still requires its own signoff.
         login = None
@@ -235,7 +239,8 @@ if __name__ == '__main__':
     parser.add_argument('--confirmed-delete-undo-only', action='store_true')
     parser.add_argument('--student-balance-only', action='store_true')
     parser.add_argument('--student-delete-history-only', action='store_true')
+    parser.add_argument('--course-delete-history-only', action='store_true')
     parser.add_argument('--student-delete-reference-state', choices=['archived', 'active'], default='archived')
     parser.add_argument('--cloud-source-commit', help='Exact commit SHA for cloud code, shared contracts and SQL; excludes dirty changes')
     args = parser.parse_args()
-    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit, args.confirmed_delete_undo_only, args.student_balance_only, args.student_delete_history_only, args.student_delete_reference_state)
+    run(args.backup_path, args.probe_only, args.course_confirmation_only, args.resource_confirmation_only, args.course_address_only, args.cloud_source_commit, args.confirmed_delete_undo_only, args.student_balance_only, args.student_delete_history_only, args.student_delete_reference_state, args.course_delete_history_only)
