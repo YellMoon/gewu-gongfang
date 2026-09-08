@@ -265,14 +265,14 @@ async function responseData(response) {
 function serializeBusinessVersion(key, value) {
   if (key !== 'expectedUpdatedAt' || typeof value !== 'string') return value;
   // PostgreSQL projections include a UTC offset; REST requires canonical ISO.
-  // Only normalize without precision loss. Never round a concurrency token.
-  const match = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  // UTF-8: preserve PostgreSQL microseconds; Date alone truncates concurrency tokens.
+  const match = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d{1,6}))?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
   if (!match) return value;
   const calendarDate = new Date(`${match[1]}T00:00:00.000Z`);
   const instant = new Date(value);
   if (!Number.isFinite(calendarDate.getTime()) || calendarDate.toISOString().slice(0, 10) !== match[1]
     || !Number.isFinite(instant.getTime())) return value;
-  return instant.toISOString();
+  return `${instant.toISOString().slice(0, 19)}.${(match[2] || '').padEnd(3, '0')}Z`;
 }
 
 async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token } = {}) {

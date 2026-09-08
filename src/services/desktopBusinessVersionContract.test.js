@@ -50,7 +50,10 @@ async function run() {
     assert.equal(bodies[0].contacts[0].expectedUpdatedAt, '2026-09-07T03:29:18.983Z');
     assert.equal(contacts[0].expectedUpdatedAt, '2026-09-07T11:29:18.983+08:00');
     await capture.updateCloudStudentRecord({ ...input, studentId: 'student-1', name: 'Test', contacts: [], expectedUpdatedAt: '2026-09-07T03:29:18.983123+00:00' });
-    assert.equal(bodies[1].expectedUpdatedAt, '2026-09-07T03:29:18.983123+00:00', 'never truncate a higher-precision concurrency token');
+    // UTF-8: canonical UTC is accepted by REST without truncating the microseconds.
+    assert.equal(bodies[1].expectedUpdatedAt, '2026-09-07T03:29:18.983123Z', 'never truncate a higher-precision concurrency token');
+    await client.updateCloudSchedule({ ...input, expectedUpdatedAt: '2026-09-07T11:29:18.983123+08:00' });
+    assert.equal(writes[1].expectedUpdatedAt, '2026-09-07T03:29:18.983123Z');
     console.log('desktop business version REST round-trip checks passed');
   } finally {
     await new Promise(resolve => server.close(resolve));

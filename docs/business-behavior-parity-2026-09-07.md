@@ -1,5 +1,18 @@
 # 业务行为保真核查（未完成，禁止据此发布）
 
+## 2026-09-08 学生草稿实操暴露的微秒版本冲突（UTF-8）
+
+- 资源专项首轮会话 56543 退出 1，证据目录 `C:/Users/83423/AppData/Local/Temp/gewu-business-parity-28_lrgnw`：学生离线编辑、联网再次编辑均保留草稿，但用户确认后得到 `CLOUD_BUSINESS_STUDENT_CONFLICT`。联系人基线为 `2026-09-08T14:21:02.254223+08:00`；副本回执 cleanupComplete=true，未写生产库。
+- 代码定位：桌面序列化只归一化毫秒版本；云 API 的 instant 只接受毫秒规范时间。联系人验证把解析失败的 null 当作新增联系人所用的空基线，造成错误冲突。新增真实客户端到 HTTP 接口测试先得到 `CLOUD_BUSINESS_INPUT_INVALID`，修复后通过。
+- 修复仅涉及并发版本：expectedUpdatedAt 保留 PostgreSQL 六位小数精度并归一化 UTC；所有业务版本验证统一使用保精度检查，排课起止时间等事件时间仍使用原验证。联系人无效版本返回 400，不再变为空基线。没有改数据库时间戳、权限、表单、窗口、布局或业务规则。
+- 新测试覆盖毫秒/微秒、正负时区、非法日期/时间/过高精度、单独联系人接口，以及相差一微秒仍冲突。原排课 REST 回归也增加微秒校验。完整 `npm --prefix cloud-business-api test` 会话 58138 退出 0（含前后置 PostgreSQL 检查）；桌面 identity client 与 HTTP 冷启动检查退出 0，类型检查 64800 退出 0，副本保护测试 2 项通过。
+- `npx craco build` 会话 53507 退出 0，主包 `main.23088ccf.js`；主 CSS `main.5792781d.css`、日历块 `450.eed1888f.chunk.js` 未变。新增资源专项只覆盖学生、教师、地址的原编辑/删除及草稿确认，不能代表全部业务或多端验收；修复后的实际桌面复测结果另记。未打包或部署。（UTF-8）
+- 修复后实操会话 52753：学生编辑和删除均实际 completed，联网再次编辑未夹带草稿、删除也等待确认，已读取云端结果。随后教师确认失败，专项整体退出 1；目录 `gewu-business-parity-7ok9bji0`，副本 `gewu_ui_shadow_cfa0b57250bcec9c` 已清理。截图显示确认窗为旧的“角色测试老师初改”，实际草稿为“角色测试老师复核”，仍 awaiting_confirmation 且 confirmation/receipt=null。确认保护没有错误提交旧内容；面板每 5 秒刷新导致旧显示的问题待修，不能冒称教师权限检查通过。
+- 已查看上述学生修改确认、学生删除确认和失败截图；删除确认截图仅截到过渡动画的细小区域，不能作为视觉证据。后续脚本使用现有面板刷新按钮、断言确认名称等于本次草稿，并用关闭动画的整窗截图取证；该测试操作不代表旧内容显示问题已修复。（UTF-8）
+- 最终专项会话 32345 退出 0：目录 `gewu-business-parity-qn1x50na`，副本 `gewu_ui_shadow_6656bbc8273af5d4` 已清理，ok/cleanupComplete=true，productionWrite/uiVerified/businessFlowComplete=false。学生更新、删除 completed；教师及地址更新、删除 conflict，回执为 CLOUD_BUSINESS_ACCESS_DENIED，草稿原文完整保留、云端记录未变。三类再次编辑及删除均未夹带离线更改。读取证据 `resource-confirmation-readback.json` SHA256 `b2c22ced26c74cf4e8acd45fb53a9f5acd0dcaffd110cf7bce5d3e551ca4deca`。
+- 已查看最终学生删除确认、教师更新确认/拒绝结果、地址删除拒绝结果截图。教师确认显示本次“复核”名称，拒绝后提示草稿保留；学生删除确认只写“删除学生”没有对象名称，此显示缺口仍待修。保留本地删除后的空列表是草稿覆盖缓存，不是云端删除成功。顶部过渡通知可能同时显示旧离线提示，不宣称整页体验完成。测试没有新增教师权限，不能将按现有规则拒绝视为用户角色方案验收。
+- 按 Electron ABI 技能恢复 Node，会话 46592 退出 0，root/backend 均为 137。保护的版本文件 SHA256 仍为 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`；未修改用户 NAS 脚本，未打包、更新 NAS 或发布 OSS。（UTF-8）
+
 ## 2026-09-08 学生、教师、地址的同类草稿边界（UTF-8）
 
 - 承接已实操通过的课程检查，检查原 StudentList/TeacherList/RoomManager 的编辑和删除路径。新增真实处理函数测试先失败：StudentList 存在 awaiting_confirmation 的新建草稿时，删除实际调用云端而非继续保存本地更改。

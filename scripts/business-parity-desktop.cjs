@@ -149,6 +149,13 @@ async function main() {
     await studentRow.getByRole('cell',{name:'13100000000',exact:true}).waitFor();
     await studentRow.getByRole('cell',{name:'自有',exact:true}).waitFor();
     await page.screenshot({path:path.join(out,'05-student-reloaded.png'),scale:'css'});
+    // UTF-8: resource-only checks explicitly exclude course/calendar signoff.
+    if(config.resourceConfirmationOnly) {
+      save('qa-inventory',{scope:'resource-confirmation-only',checks:['学生编辑/删除经确认提交','教师和地址编辑/删除拒绝后保留草稿','重连和再次编辑不夹带提交'],fullSignoff:false});
+      const results=await require('./business-parity-resource-confirmation.cjs')({page,out,save,studentId,teacherId:config.login.teacherId,releaseNavigation});
+      save('desktop-receipt',{scope:'resource-confirmation-only',sourceDesktop:true,installed:false,productionWrite:false,results,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     await page.locator('.app-shell__collapse-button').click();
     await page.getByRole('menuitem',{name:'calendar 教务',exact:true}).click();
     await page.getByRole('menuitem',{name:'book 课程信息',exact:true}).click();
