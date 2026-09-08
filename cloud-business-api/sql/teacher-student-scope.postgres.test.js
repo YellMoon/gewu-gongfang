@@ -8,6 +8,16 @@ const receipt = { appliedAt: '2026-09-07T00:00:00.000Z', appliedBy: 'teacher-stu
 const createSql = 'SELECT * FROM business.vnext_create_scoped_student($1,$2,$3,$4,NULL,NULL,NULL,NULL,NULL,1,NULL,$5::jsonb,$6,$7)';
 const input = (id, teacher = 'teacher-1') => ['tenant-1', id, 'Student', 'School', '[]', 'teacher', teacher];
 const denied = error => error.code === '42501';
+// UTF-8: derive deletion semantics from the original desktop, not from the migrated guard.
+const ts = require('typescript'), cp = require('node:child_process');
+const originalSource = ts.createSourceFile('browserDatabase.ts', cp.execFileSync('git', ['show', '8118419f:src/services/browserDatabase.ts'], {cwd:path.resolve(__dirname,'../..'),encoding:'utf8'}), ts.ScriptTarget.Latest, true);
+let originalDelete;
+function findOriginalDelete(node) {
+  if(ts.isMethodDeclaration(node) && node.name.getText(originalSource)==='deleteStudent') originalDelete=node;
+  ts.forEachChild(node,findOriginalDelete);
+}
+findOriginalDelete(originalSource); assert(originalDelete);
+const deleteOriginal = new Function(ts.transpileModule(`return function(id: string) ${originalDelete.body.getText(originalSource)}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText)();
 (async () => {
   const runtime = createDisposablePg17Runtime(); await runtime.start();
   const handle = await runtime.createIsolatedHandle();
@@ -23,6 +33,8 @@ const denied = error => error.code === '42501';
       await db.query(fs.readFileSync(migration, 'utf8'));
       const activeReferences = fs.readFileSync(path.join(__dirname,'20260908-student-delete-active-references.sql'),'utf8');
       await db.query(activeReferences); await db.query(activeReferences);
+      const originalBehavior = fs.readFileSync(path.join(__dirname,'20260908-student-delete-original-behavior.sql'),'utf8');
+      await db.query(originalBehavior); await db.query(originalBehavior);
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','One',false,now(),now()),('tenant-2','Two',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Two',false,now(),now()),('foreign','tenant-2','Foreign',false,now(),now()),('archived','tenant-1','Archived',true,now(),now())");
       await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('room-1','tenant-1','Classroom',false,now(),now())");
@@ -48,7 +60,7 @@ const denied = error => error.code === '42501';
       await db.query("SELECT * FROM business.vnext_create_scoped_schedule('tenant-1','trial-schedule','course-new','2026-09-08T01:00:00Z','2026-09-08T02:00:00Z',NULL,1,'Classroom',1,100,60,NULL,$1::jsonb,'teacher','teacher-1')", [JSON.stringify([{student_id:'trial-student',attendance_status:1,tuition:100,teacher_fee:60}])]);
       const remove = "SELECT * FROM business.vnext_delete_scoped_student('tenant-1',$1,$2::timestamptz,'teacher',$3)";
       await assert.rejects(() => db.query(remove, ['student-new', version, 'teacher-2']), denied);
-      await assert.rejects(() => db.query(remove, ['student-new', version, 'teacher-1']), e => e.message === 'VNEXT_BUSINESS_STUDENT_REFERENCED');
+      assert.equal((await db.query(remove, ['student-new', '2000-01-01T00:00:00Z', 'teacher-1'])).rows.length,0);
       const disposable = (await db.query(createSql, input('delete-student'))).rows[0];
       assert.equal((await db.query(remove, ['delete-student', disposable.updated_at, 'teacher-1'])).rows.length, 1);
       await assert.rejects(() => db.query("UPDATE business.students SET created_by_teacher_id='teacher-2' WHERE id='student-new'"), denied);
@@ -90,18 +102,22 @@ const denied = error => error.code === '42501';
       } finally { await writer.query('ROLLBACK'); }
       await assert.rejects(() => admin.query("UPDATE business.students SET created_by_teacher_id='foreign' WHERE id='student-new'"), e => e.code === '23503');
     }));
-    // The pre-scope cloud lifecycle already ignored tombstoned parents, but not merely completed courses.
+    // Original deletion removes only the student regardless of existing course/schedule references.
     const referenceCases = ['teacher', 'super_admin'].flatMap(role => [
-      {name:'old-course',courseDeleted:true,pricing:true,allowed:true},
-      {name:'old-schedule',scheduleDeleted:true,allowed:true},
-      {name:'inactive-course',pricing:true,inactive:true,allowed:false},
-      {name:'active-schedule',scheduleDeleted:false,allowed:false},
-      {name:'mixed',courseDeleted:true,pricing:true,scheduleDeleted:false,allowed:false},
+      {name:'old-course',courseDeleted:true,pricing:true},
+      {name:'old-schedule',scheduleDeleted:true},
+      {name:'inactive-course',pricing:true,inactive:true},
+      {name:'active-course',pricing:true},
+      {name:'active-schedule',scheduleDeleted:false},
+      {name:'mixed',courseDeleted:true,pricing:true,scheduleDeleted:false},
+      {name:'shared-course',pricing:true,courseTeacher:'teacher-2'},
+      {name:'enrolled-legacy',pricing:true,creator:null},
     ].map(value => ({...value,role,id:'ref-'+role+'-'+value.name})));
     await withQuery(handle, 'fixture-provisioner', async db => {
+      await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('unrelated-teacher','tenant-1','Unrelated',false,now(),now())");
       for (const c of referenceCases) {
-        await db.query("INSERT INTO business.students(id,tenant_id,name,created_by_teacher_id,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,'teacher-1',false,false,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')",[c.id]);
-        await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,$1,1,1,100,60,1,1,'teacher-1',$2,$3,now(),now())",[c.id,!c.inactive,Boolean(c.courseDeleted)]);
+        await db.query("INSERT INTO business.students(id,tenant_id,name,created_by_teacher_id,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,$2,false,false,'2026-09-01T00:00:00Z','2026-09-01T00:00:00Z')",[c.id,c.creator===null?null:'teacher-1']);
+        await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,$1,1,1,100,60,1,1,$4,$2,$3,now(),now())",[c.id,!c.inactive,Boolean(c.courseDeleted),c.courseTeacher||'teacher-1']);
         if(c.pricing) await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1',$1,$1,100,60)",[c.id]);
         if(c.scheduleDeleted!==undefined) {
           await db.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,calculated_tuition,calculated_teacher_fee,legacy_deleted,created_at,updated_at) VALUES ($1,'tenant-1',$1,'2026-09-08T01:00:00Z','2026-09-08T02:00:00Z',1,100,60,$2,now(),now())",[c.id,c.scheduleDeleted]);
@@ -122,11 +138,18 @@ const denied = error => error.code === '42501';
     await withQuery(handle,'writer',async db=>{
       for(const c of referenceCases) {
         const args=['tenant-1',c.id,'2026-09-01T00:00:00Z',c.role,c.role==='teacher'?'teacher-1':null];
-        await assert.rejects(()=>db.query(removeScoped,['tenant-1',c.id,args[2],'teacher','teacher-2']),denied);
+        await assert.rejects(()=>db.query(removeScoped,['tenant-1',c.id,args[2],'teacher','unrelated-teacher']),denied);
+        for(const role of ['student','visitor','family']) await assert.rejects(()=>db.query(removeScoped,['tenant-1',c.id,args[2],role,null]),denied);
         assert.equal((await db.query(removeScoped,['tenant-2',c.id,args[2],'super_admin',null])).rows.length,0);
         assert.equal((await db.query(removeScoped,[...args.slice(0,2),'2000-01-01T00:00:00Z',...args.slice(3)])).rows.length,0);
-        if(c.allowed) assert.equal((await db.query(removeScoped,args)).rows.length,1,`${c.role}/${c.name}: historical references must not block deletion`);
-        else await assert.rejects(()=>db.query(removeScoped,args),e=>e.message==='VNEXT_BUSINESS_STUDENT_REFERENCED');
+        assert.equal((await withQuery(handle,'fixture-provisioner',admin=>admin.query('SELECT updated_at FROM business.students WHERE id=$1',[c.id]))).rows[0].updated_at.toISOString(),'2026-09-01T00:00:00.000Z','rejected requests must not change the student version');
+        const originalState={...structuredClone(referencesBefore),students:[{id:c.id},{id:'untouched-student'}]};
+        const originalContext={data:originalState,saveData(){},recordSyncChange(){}};
+        assert.equal(deleteOriginal.call(originalContext,c.id),true);
+        assert.deepEqual(originalState.students,[{id:'untouched-student'}]);
+        const {students,...originalReferences}=originalState;
+        assert.deepEqual(originalReferences,referencesBefore,'original desktop preserves all related records');
+        assert.equal((await db.query(removeScoped,args)).rows.length,1,`${c.role}/${c.name}: match original student deletion`);
       }
     });
     assert.deepEqual(await referenceSnapshot(),referencesBefore,'student soft deletion must not remove or rewrite historical courses, schedules, rates or attendance');
@@ -134,9 +157,9 @@ const denied = error => error.code === '42501';
     await withQuery(handle,'fixture-provisioner',async db=>{
       for(const c of referenceCases) {
         const row=(await db.query('SELECT legacy_deleted,created_by_teacher_id,name,created_at,updated_at FROM business.students WHERE id=$1',[c.id])).rows[0];
-        assert.equal(row.legacy_deleted,c.allowed); assert.equal(row.created_by_teacher_id,'teacher-1'); assert.equal(row.name,c.id);
+        assert.equal(row.legacy_deleted,true); assert.equal(row.created_by_teacher_id,c.creator===null?null:'teacher-1'); assert.equal(row.name,c.id);
         assert.equal(row.created_at.toISOString(),'2026-09-01T00:00:00.000Z');
-        if(!c.allowed) assert.equal(row.updated_at.toISOString(),'2026-09-01T00:00:00.000Z');
+        assert.notEqual(row.updated_at.toISOString(),'2026-09-01T00:00:00.000Z');
       }
     });
   } finally { await runtime.disposeHandle(handle).catch(()=>{}); await runtime.stop().catch(()=>{}); }

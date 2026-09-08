@@ -4,12 +4,42 @@ import subprocess
 import tempfile
 import io
 import tarfile
+import copy
 from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
 from business_parity_student_balance import seed_student_balance
+from business_parity_student_history import seed_student_history, verify_student_history
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_history_verifier_detects_cascade_and_metadata_changes(self):
+        # UTF-8: reject history loss, not only a missing student in the UI.
+        before = {'student': {'id': 'test', 'legacy_deleted': False, 'updated_at': 'old', 'name': 'Original'}}
+        before.update({key: [{'id': str(i)} for i in range(count)] for key, count in [
+            ('courses', 1), ('schedules', 1), ('course_student_pricings', 1), ('schedule_student_overrides', 1), ('payments', 2), ('consumptions', 1)]})
+        for key in ('courses', 'schedules'): before[key][0]['legacy_deleted'] = True
+        after = copy.deepcopy(before)
+        after['student'].update(legacy_deleted=True, updated_at='new')
+        self.assertTrue(verify_student_history(before, after)['historicalRecordsUnchanged'])
+        active_before, active_after = copy.deepcopy(before), copy.deepcopy(after)
+        for snapshot in (active_before, active_after):
+            for key in ('courses', 'schedules'): snapshot[key][0]['legacy_deleted'] = False
+        self.assertFalse(verify_student_history(active_before, active_after, parents_deleted=False)['referencesArchived'])
+        with self.assertRaisesRegex(RuntimeError, 'STUDENT_HISTORY_BASELINE_INVALID'):
+            verify_student_history(active_before, active_after, parents_deleted=True)
+        for key in before:
+            changed = copy.deepcopy(after)
+            if key == 'student': changed[key]['name'] = 'Changed'
+            else: changed[key] = []
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'STUDENT_DELETE_HISTORY_CHANGED'):
+                verify_student_history(before, changed)
+        class WrongDb:
+            def run(self, sql):
+                if sql != 'SELECT current_database()': raise AssertionError('must not write to wrong database')
+                return 'gewu_cloud'
+        with self.assertRaisesRegex(RuntimeError, 'ISOLATED_SHADOW_REQUIRED'):
+            seed_student_history(WrongDb(), 'gewu_ui_shadow_' + 'a' * 16)
+
     def test_ledger_fixture_refuses_nonisolated_database_before_writing(self):
         class FakeDb:
             def __init__(self, database): self.database, self.calls = database, []

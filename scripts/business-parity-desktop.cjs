@@ -19,7 +19,7 @@ async function main() {
     'UTF-8：离线改课程时长后联网结课不夹带提交；保留草稿、确认与恢复在线编辑',
     '原课表排课与调课、三项卡片、刷新后仍一致',
     '原右键单节/批量删除取消、离线删除、未提交撤销重做、确认后仅删除所选课次及重开',
-    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.studentBalanceFixture?'student-balance-only':config.confirmedDeleteUndoOnly?'confirmed-delete-undo-only':config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
+    '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.studentDeleteHistory?'student-delete-history-only':config.studentBalanceFixture?'student-balance-only':config.confirmedDeleteUndoOnly?'confirmed-delete-undo-only':config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
   const env = {...process.env, NODE_ENV:'production', GEWU_PARITY_SHADOW_URL:config.baseUrl,
     GEWU_DATA_DIR:path.join(out,'profile'), DB_PATH:path.join(out,'profile/data/scheduling.db')};
   delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_START_URL; delete env.GEWU_DESKTOP_LOGIN_FIXTURE;
@@ -86,6 +86,12 @@ async function main() {
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
     await releaseNavigation();
+    if(config.studentDeleteHistory) {
+      save('qa-inventory',{scope:'student-delete-history-only',checks:['原学生删除取消','离线删除及重连不提交','确认对象名称','确认后云端删除和重开','历史课程排课费用逐字段不变由云库读回核验'],fullSignoff:false});
+      const result=await require('./business-parity-student-history.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
+      save('desktop-receipt',{scope:'student-delete-history-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     if(config.studentBalanceFixture) {
       save('qa-inventory',{scope:'student-balance-only',checks:['原学生列表课时/余额','原编辑弹窗与取消','刷新后重进学生列表','1200宽度读回','教师范围与无草稿提交'],fullSignoff:false});
       const result=await require('./business-parity-student-balance.cjs')({page,app,out,save,fixture:config.studentBalanceFixture,releaseNavigation,waitForModalWidth});

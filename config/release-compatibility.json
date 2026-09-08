@@ -29,7 +29,7 @@
     "studentDeletionReferences": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],
-      "rule": "20260908-student-delete-active-references.sql restores existing non-tombstoned parent checks in the scoped student delete writer; retain actor/version locks and all historical rows; completed courses still count as references; existing REST/client contract is unchanged, no storage_proxy or miniapp update required"
+      "rule": "20260908-student-delete-original-behavior.sql restores original desktop deletion regardless of course/schedule references; soft-delete only the authorized student, retain actor/version locks and all related records; apply forward migration before cloud deployment; existing REST/client contract is unchanged, no storage_proxy or miniapp update required"
     },
     "questionPaperExport": {
       "version": "3",
