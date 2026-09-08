@@ -72,6 +72,24 @@
 - 本轮只有测试、测试入口与证据文档改动；生产业务源码未改，沿用上一轮已验证构建 `main.748335f2.js`/`450.eed1888f.chunk.js`。没有更新生产数据库、NAS、安装包或版本。此轮真实签字范围为自有一对二/按次/按学生分摊/正常出勤/三日期新增，不将 144 组源码检查说成全部表单和多角色实操完成；整体业务/小程序/Word/发布门禁仍保留。
 - 收尾 **3908 退出 0**，root/backend 恢复 Node ABI 137；验证 **62241 退出 0**，business-parity、financialDetails（含出勤云端往返）、coursePricingRules、scheduleBatchDates、原日历云写入/卡片/历史、uiRegression、desktop-layout 均通过。用户版本文件哈希仍为 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`，未暂存 NAS 用户改动或任何 output 文件；本次未重跑全量根测试，旧未通过记录保持。
 
+### 2026-09-08 双学生出勤组合与零费用恢复（UTF-8，实操结果另记）
+
+- 在已有批量保真测试中，分别执行历史 `8118419f` 与当前的实际 `getSchedulePricingsForEdit`、`buildFinancialFieldsForSchedule`、`handleSaveStudentEdit`，使用各自费用模块。新增 36 组：2 种计费单位 × 2 种教师费模式 × 两名学生各正常/取消/请假，覆盖全员非出勤产生零费用。原版与当前输出、原学生单价、未选排课、一次历史写入、云端命令状态和 expectedUpdatedAt 均一致；与原 144 组批量组合一起通过。该回归仍不代表纯机构分支或全部实际表单验收。
+- 真实桌面脚本扩展五个组合：[请假,正常]、[取消,正常]、[正常,请假]、[请假,请假]、[正常,正常]。每次从原卡片右键打开“学生出勤和费用”，离线保存两名学生状态，稳定读取草稿、核对旧版本、重连确认云端未变、原确认窗口发送，然后重载重开检查状态与原 180/120、130/80 单价。逐轮断言课程默认对象及其他排课未改变。只改测试，不改窗口或生产收费逻辑；实操结果另记。
+- 初轮 **20576 退出 1**，停在双人课程第二名学生的下拉选项点击，未进入出勤矩阵。日志为选项先不稳定、随后不可见；失败截图仍见周清选项，未据此认定产品选择功能失败。改用原有 showSearch 输入姓名并回车选择，同时断言已选姓名，不修改 AutoCloseSelect 或禁用动画。证据 `gewu-business-parity-6nkiie3o`，副本 `gewu_ui_shadow_d873802baca52bac` 已清理，业务未部署。
+- 第二轮 **4203 退出 1**：新的筛选定位把 dialog 根定位器放进 filter(has)，等价于在选择框内部再查弹窗，因而找不到第一名学生输入框。改为相对筛选，后续学生卡片也修正同类测试定位；未改产品 DOM。证据 `gewu-business-parity-_8mf_67j`，副本 `gewu_ui_shadow_05498cdad53d29ef` 已清理；仍未进入出勤验收，不算完成。
+- 第三轮 **52464 退出 1**：已进入原出勤窗口，在重复点击第二名学生原本不变的“正常出勤”时，再次遇到下拉选项稳定性/可见性等待失败。依据本机 rc-select OptionList 源码的方向键及 aria-activedescendant 支持，测试改为只操作变化的状态，读实际高亮标签后方向键/回车，并断言选中标签；不强制点击、不改选项顺序或业务规则。证据 `gewu-business-parity-4fkc2yr8`，副本 `gewu_ui_shadow_3df5919cef7aa44b` 已清理，未将此轮计为出勤通过。
+
+- UTF-8 最终实操回执核验：`gewu-business-parity-gfdbml3k/receipt.json` 为 ok=true、cleanupComplete=true，副本 `gewu_ui_shadow_fc59f19858ec670f`，productionWrite=false。原进程已结束，因续转未保留该轮终端会话编号，不编造退出码。desktop-receipt 中 five-state 数量为 5、attendanceZeroAndRestore/courseDefaultsPreserved=true，businessFlowComplete=false。五轮云端读回费用依次为 130/80、130/80、180/120、0/0、310/200；原学生单价、课程默认对象和其他排课保持，逐轮确认前云端未变。五张刷新后重开窗口截图已逐张查看，与状态和原单价一致。
+- 本机证据目录 `C:/Users/83423/AppData/Local/Temp/gewu-business-parity-gfdbml3k`：`attendance-matrix-readback.json` SHA256 `637e891ccae9a28cbe6a48ae584b4a49e502f3bdd8fa48624368fe7c42d17f29`；全员请假 `33-attendance-reopened-3.png` 为 `8d93d98fdac7faa8cb184bd894ad4c1afdea277ad6514cd6469101c2b06b8039`；恢复出勤 `33-attendance-reopened-4.png` 为 `efd4c1be7e0bd7eca0b380d1066f859c6d3a3a322b159cf9146afece2141e40e`。此证据仅证明自有一对二、按次、按学生分摊的这五种实操状态，不覆盖纯机构课、混合课或小程序。
+- 收尾依赖恢复会话 18960 退出 0，root/backend Node ABI 137；重新验证会话 69066 退出 0，覆盖 business-parity、financialDetails、coursePricingRules、scheduleBatchDates、ScheduleCalendar.cloud-write、uiRegression、desktop-layout。未改生产源码，未重建安装包或发布；全量根测试旧未通过状态不变。用户版本文件哈希仍为 `bd068aa29ebce184ddfe3383c17987bec984c3c71a33a409ef9aeb4643cfc173`，NAS 用户改动和 output 未动。
+
+### 2026-09-08 机构与混合课：先核对历史规则（UTF-8）
+
+- `git show 8118419f` 证明：2026-07-13 的该提交已将 `isPureInstitutionSchedule` 改为恒 false，并停用无学生机构费回退；当前并非本轮迁移才删除它。当前 `coursePricingRules.mjs`、`financialDetails.ts` 与该版本差异为空。不能因为旧分支函数仍在，就擅自恢复更早的无学生收费规则；机构课程按既有规则绑定本机构学生（含机构费用专用学生），混合课可选自有与本机构学生。
+- 出勤回归不再注入恒 false 替身，而是分别加载历史和当前的实际判断函数。扩展自有/机构/混合三类，共 108 组；课程默认单价故意设为不同值，确保本节学生价格快照不被默认值覆盖，课程默认对象也不被本节编辑改写。与 144 组批量场景合计 252 组通过。此处仍是具名函数和草稿 REST 转换检查，不冒充机构/混合课真实窗口或权限验收。
+- 最终会话 50980 退出 0：business-parity 全入口、institution-student 原生命周期/选人/费用专项及 Node ABI 检查通过。原生命周期使用临时 SQLite，只证明历史行为基准；不能证明云端机构自动建学生、重命名和删除联动已完成。下一步须验证这些云端事务及原窗口操作，本轮不改生产规则或界面，不发布。
+
 ## 不可变边界
 
 用户要求迁移，不是重做。原有排课、调课、复制、批量排课、课程设置、学生添加、出勤、学费和教师课时费的业务含义、字段、联动和操作流程必须保留。

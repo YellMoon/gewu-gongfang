@@ -48,7 +48,13 @@ module.exports=async function runMultiStudentBatch({page,out,save,releaseNavigat
   await dialog.locator('#room_id').fill('东湖上课点');await dialog.locator('#room_id').press('Enter');
   for(const [i,name,tuition,fee] of [[0,'林小禾','180','120'],[1,'周清','130','80']]){
     await dialog.getByRole('button',{name:'plus-circle 添加学生',exact:true}).click();
-    await selectCourseOption('student_pricings_'+i+'_student_id',name);
+    // UTF-8: use the original searchable select's keyboard interaction during popup re-alignment.
+    const studentInput=dialog.locator('#student_pricings_'+i+'_student_id');
+    const studentSelect=dialog.locator('.ant-select').filter({has:page.locator('#student_pricings_'+i+'_student_id')});
+    await studentSelect.locator('.ant-select-selector').click();await studentInput.fill(name);
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:new RegExp('^'+name+'$')}).waitFor();
+    await studentInput.press('Enter');
+    assert.equal(await studentSelect.locator('.ant-select-selection-item').innerText(),name);
     await dialog.locator('#student_pricings_'+i+'_tuition').fill(tuition);
     await dialog.locator('#student_pricings_'+i+'_teacher_fee').fill(fee);
     await dialog.locator('#student_pricings_'+i+'_teacher_fee').press('Tab');
@@ -104,5 +110,75 @@ module.exports=async function runMultiStudentBatch({page,out,save,releaseNavigat
     assert.match(await card.innerText(),/双人讨论课[\s\S]*东湖上课点\s+12:00-13:30/);
     await card.screenshot({path:path.join(out,'29-multidate-reloaded-'+i+'.png')});
   }
-  return {secondStudentCreated:true,twoStudentCourseCreated:true,perSessionFeesPreserved:true,threeDateBatchConfirmed:true,batchDatesReloaded:true};
+  // UTF-8: edit one original lesson's attendance; never change course defaults or sibling lessons.
+  let attendanceBefore=records[0];const attendanceChecks=[];
+  const labels={1:'正常出勤',3:'取消',4:'请假'};
+  const openAttendance=async()=>{
+    const card=page.locator('[data-schedule-id="'+attendanceBefore.id+'"]');
+    await card.click({button:'right'});await page.getByRole('menuitem',{name:'学生出勤和费用',exact:true}).click();
+    await dialog.waitFor();await waitForModalWidth(700);
+  };
+  const studentCard=name=>dialog.locator('.ant-card').filter({has:page.getByText(new RegExp('^\\d+\\. '+name+'$'))});
+  for(const [step,statuses,tuition,teacherFee] of [[0,[4,1],130,80],[1,[3,1],130,80],[2,[1,4],180,120],[3,[4,4],0,0],[4,[1,1],310,200]]){
+    await openAttendance();
+    for(const [i,name,unitTuition,unitFee] of [[0,'林小禾','180','120'],[1,'周清','130','80']]){
+      const card=studentCard(name);await card.waitFor();
+      assert.equal(await card.getByRole('spinbutton').nth(0).inputValue(),unitTuition);
+      assert.equal(await card.getByRole('spinbutton').nth(1).inputValue(),unitFee);
+      const currentLabel=await card.locator('.ant-select-selection-item').innerText();
+      if(currentLabel!==labels[statuses[i]]){
+        // UTF-8: rc-select exposes its active keyboard option via aria-activedescendant.
+        const input=card.getByRole('combobox');const inputId=await input.getAttribute('id');
+        const waitActive=label=>page.waitForFunction(({id,label})=>{
+          const input=document.getElementById(id);const option=document.getElementById(input?.getAttribute('aria-activedescendant'));
+          return input?.getAttribute('aria-expanded')==='true'&&option?.getAttribute('aria-label')===label;
+        },{id:inputId,label});
+        await card.locator('.ant-select-selector').click();await waitActive(currentLabel);
+        const order=['正常出勤','请假','取消'];const steps=(order.indexOf(labels[statuses[i]])-order.indexOf(currentLabel)+3)%3;
+        for(let n=0;n<steps;n++)await input.press('ArrowDown');
+        await waitActive(labels[statuses[i]]);await input.press('Enter');
+        assert.equal(await card.locator('.ant-select-selection-item').innerText(),labels[statuses[i]]);
+      }
+    }
+    await dialog.screenshot({path:path.join(out,'30-attendance-form-'+step+'.png')});
+    await page.context().setOffline(true);await dialog.getByRole('button',{name:/^确\s*定$/}).click();await dialog.waitFor({state:'hidden'});
+    let draft,stableSince=null;const deadline=Date.now()+12000;
+    while(Date.now()<deadline){
+      draft=(await page.evaluate(()=>window.desktopAuthority.list())).find(d=>d.type==='schedule.update.v1'&&d.status==='awaiting_confirmation'&&d.payload.id===attendanceBefore.id);
+      const changes=draft?.payload.changes;
+      const matches=changes?.calculated_tuition===tuition&&changes?.calculated_teacher_fee===teacherFee
+        &&[studentId,secondStudentId].every((id,i)=>changes.student_pricings.find(p=>p.student_id===id)?.status===statuses[i]);
+      if(matches){if(stableSince===null)stableSince=Date.now();}else stableSince=null;
+      if(stableSince!==null&&Date.now()-stableSince>=600)break;
+      await page.waitForTimeout(75);
+    }
+    save('31-attendance-draft-'+step,{draft,statuses,tuition,teacherFee});
+    assert(stableSince!==null&&Date.now()-stableSince>=600,'attendance draft must stabilize with both student statuses');
+    assert.equal(new Date(draft.payload.expectedVersion).getTime(),new Date(attendanceBefore.updated_at).getTime());
+    await page.context().setOffline(false);
+    const pending=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert.deepEqual(pending.schedules.find(s=>s.id===attendanceBefore.id),attendanceBefore,'attendance must not silently submit');
+    await confirmVisibleDraft(draft);
+    const projection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const updated=projection.schedules.find(s=>s.id===attendanceBefore.id);assert(updated);
+    save('32-attendance-readback-'+step,{before:attendanceBefore,after:updated,statuses});
+    assert.equal(updated.calculated_tuition,tuition);assert.equal(updated.calculated_teacher_fee,teacherFee);
+    assert.deepEqual(updated.student_pricings.map(p=>[p.student_id,p.tuition,p.teacher_fee,p.attendance_status]).sort(),
+      [[studentId,180,120,statuses[0]],[secondStudentId,130,80,statuses[1]]].sort());
+    for(const key of ['start_time','end_time','course_id','room','teacher_id','billing_unit','teacher_fee_mode','status'])assert.deepEqual(updated[key],attendanceBefore[key]);
+    assert.deepEqual(projection.courses.find(c=>c.id===courseId),course,'lesson attendance must not change course defaults');
+    assert.deepEqual(projection.schedules.filter(s=>s.id!==updated.id),pending.schedules.filter(s=>s.id!==updated.id),'other lessons must remain unchanged');
+    attendanceChecks.push({statuses,tuition,teacherFee,expectedVersion:draft.payload.expectedVersion});attendanceBefore=updated;
+    await reopenCalendar();await openAttendance();
+    for(const [i,name] of [[0,'林小禾'],[1,'周清']]){
+      const card=studentCard(name);assert.equal(await card.locator('.ant-select-selection-item').innerText(),labels[statuses[i]]);
+      assert.equal(await card.getByRole('spinbutton').nth(0).inputValue(),i===0?'180':'130');
+      assert.equal(await card.getByRole('spinbutton').nth(1).inputValue(),i===0?'120':'80');
+    }
+    await dialog.screenshot({path:path.join(out,'33-attendance-reopened-'+step+'.png')});
+    await dialog.getByRole('button',{name:/^取\s*消$/}).click();await dialog.waitFor({state:'hidden'});
+  }
+  save('attendance-matrix-readback',attendanceChecks);
+  return {secondStudentCreated:true,twoStudentCourseCreated:true,perSessionFeesPreserved:true,threeDateBatchConfirmed:true,batchDatesReloaded:true,
+    twoStudentAttendanceStates:attendanceChecks.length,attendanceZeroAndRestore:true,courseDefaultsPreserved:true};
 };
