@@ -45,6 +45,12 @@ require('./businessDeleteConfirmation.test');
   });
   assert.deepStrictEqual(deleted.payload, { id: 'student-1' });
   assert.strictEqual(deleted.type, 'student.delete.v1');
+  const scheduleDelete = createAuthorityDraftFromLocalMutation({collection:'schedules',action:'delete',
+    recordId:'schedule-undo',baseVersion:'2026-07-27T00:00:00.000Z',
+    value:{id:'schedule-undo',course_id:'course-1',notes:'original',tenant_id:'must-not-copy',secret:'must-not-copy'}});
+  assert.deepStrictEqual(scheduleDelete.payload,{id:'schedule-undo',expectedVersion:'2026-07-27T00:00:00.000Z'});
+  assert.deepStrictEqual(scheduleDelete.localUndoRecord,{id:'schedule-undo',course_id:'course-1',notes:'original'});
+  assert(!JSON.stringify(scheduleDelete).includes('must-not-copy'));
 
   const school = createAuthorityDraftFromLocalMutation({
     collection: 'schools', action: 'update', recordId: 'school-1', baseVersion: 'school-version-1',

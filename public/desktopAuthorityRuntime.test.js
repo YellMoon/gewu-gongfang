@@ -447,6 +447,45 @@ function staticRelativeModuleClosure(entryFile) {
     id: 'course-merge-delete-1',
     expectedVersion: '2026-07-27T02:00:00.000Z',
   });
+  // UTF-8: deleting then undoing a lesson must not leave opposing cloud commands.
+  const { createAuthorityDraftFromLocalMutation: scheduleMutation } = await import('../src/services/authorityDraftAdapter.mjs');
+  for (const edited of [false, true]) {
+    const id = `schedule-delete-undo-${edited}`;
+    const baseVersion = '2026-07-27T03:00:00.000Z';
+    const record = { id, course_id: 'original-course', start_time: '2026-07-29T08:00:00Z',
+      end_time: '2026-07-29T09:00:00Z', status: 1, notes: edited ? 'pending edit' : 'original',
+      student_ids: ['student-1'], student_pricings: [{ student_id: 'student-1', tuition: 180, teacher_fee: 120, status: 1 }],
+      calculated_tuition: 180, calculated_teacher_fee: 120 };
+    let previous;
+    if (edited) previous = runtime.appendDraftSync(scheduleMutation({collection:'schedules',action:'update',recordId:id,value:record,baseVersion}));
+    const removal = runtime.appendDraftSync(scheduleMutation({collection:'schedules',action:'delete',recordId:id,value:record,baseVersion}));
+    assert.deepStrictEqual(removal.payload,{id,expectedVersion:baseVersion},'undo metadata never changes the REST delete payload');
+    runtime.appendDraftSync(scheduleMutation({collection:'schedules',action:'create',recordId:id,value:record}));
+    const remaining = (await runtime.list()).filter(d=>d.status==='awaiting_confirmation'&&(d.payload.id===id||d.payload.record?.id===id));
+    assert.strictEqual(remaining.length,edited?1:0,'undo restores the exact pending state before delete');
+    if(edited) {
+      assert.strictEqual(remaining[0].id,previous.id);
+      assert.strictEqual(remaining[0].type,'schedule.update.v1');
+      assert.deepStrictEqual(remaining[0].payload,previous.payload);
+    }
+    runtime.appendDraftSync(scheduleMutation({collection:'schedules',action:'delete',recordId:id,value:record,baseVersion}));
+    const redone = (await runtime.list()).filter(d=>d.status==='awaiting_confirmation'&&d.payload.id===id);
+    assert.strictEqual(redone.length,1); assert.strictEqual(redone[0].type,'schedule.delete.v1');
+    assert.strictEqual(redone[0].payload.expectedVersion,baseVersion);
+  }
+  for (const legacy of [false, true]) {
+    const id = `schedule-restored-different-${legacy}`;
+    const removal = scheduleMutation({collection:'schedules',action:'delete',recordId:id,
+      baseVersion:'2026-07-27T03:00:00.000Z',value:{id,course_id:'course-1',notes:'before'}});
+    runtime.appendDraftSync(legacy ? {type:removal.type,payload:removal.payload} : removal);
+    runtime.appendDraftSync(scheduleMutation({collection:'schedules',action:'create',recordId:id,
+      value:{id,course_id:'course-1',notes:'changed restoration'}}));
+    const remaining=(await runtime.list()).filter(d=>d.status==='awaiting_confirmation'&&(d.payload.id===id||d.payload.record?.id===id));
+    assert.strictEqual(remaining.length,1);
+    assert.strictEqual(remaining[0].type,'schedule.update.v1');
+    assert.deepStrictEqual(remaining[0].payload,{id,expectedVersion:'2026-07-27T03:00:00.000Z',changes:{course_id:'course-1',notes:'changed restoration'}});
+    assert.strictEqual(remaining[0].localUndo,undefined);
+  }
   const firstAsyncUpdate = await runtime.appendDraft({
     type: 'payment.update.v1',
     payload: {

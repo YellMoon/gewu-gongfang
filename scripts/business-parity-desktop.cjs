@@ -18,6 +18,7 @@ async function main() {
     '原课程窗口选入新学生、课程名称和地址不含跟踪编码',
     'UTF-8：离线改课程时长后联网结课不夹带提交；保留草稿、确认与恢复在线编辑',
     '原课表排课与调课、三项卡片、刷新后仍一致',
+    '原右键单节/批量删除取消、离线删除、未提交撤销重做、确认后仅删除所选课次及重开',
     '启动尺寸及较小窗口截图，无遮挡和裁切'], scope:config.courseAddressOnly?'course-address-only':config.courseConfirmationOnly?'course-confirmation-only':'business-parity', fullSignoff:false});
   const env = {...process.env, NODE_ENV:'production', GEWU_PARITY_SHADOW_URL:config.baseUrl,
     GEWU_DATA_DIR:path.join(out,'profile'), DB_PATH:path.join(out,'profile/data/scheduling.db')};
@@ -48,6 +49,8 @@ async function main() {
     // Read-only diagnostics; subsequent mutations use original UI controls.
     const projection = await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
     assert(projection.teachers.some(t=>t.id===config.login.teacherId));
+    // Wait for the displayed business cache, not just the independent REST read.
+    await page.waitForFunction(id=>window.dbService?.getAllTeachers?.().some(t=>t.id===id),config.login.teacherId,{timeout:45000});
     const releaseNavigation=async()=>{
       await page.locator('.app-shell__sider-unpin').click();
       // UTF-8: leave the hover-open rail before using controls underneath it.
@@ -556,6 +559,8 @@ async function main() {
     const multiStudentBatch=await require('./business-parity-multistudent.cjs')({page,out,save,releaseNavigation,waitForModalWidth,
       selectCourseOption,confirmVisibleDraft,reopenCalendar,studentId,
       teacherName:projection.teachers.find(t=>t.id===config.login.teacherId).name});
+    const scheduleDeletion=await require('./business-parity-schedule-deletion.cjs')({page,out,save,
+      scheduleId:copyId,confirmVisibleDraft,reopenCalendar,selectRectangle});
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
@@ -611,7 +616,7 @@ async function main() {
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
       crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,
       rectangleCopy:true,twoScheduleBatchMove:true,batchFeeSnapshots:true,batchNoSilentWrite:true,batchReloaded:true,...multiStudentBatch,
-      studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
+      ...scheduleDeletion,studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
     if(page) {

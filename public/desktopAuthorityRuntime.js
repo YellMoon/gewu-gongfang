@@ -200,11 +200,42 @@ function createDesktopAuthorityRuntime({
       delete state.items[existing.id];
       return null;
     } else if (previous.action === 'update' && incoming.action === 'delete') {
+      if (incoming.entity === 'schedule') {
+        existing.localUndo = {
+          record: input.localUndoRecord,
+          previous: { type: existing.type, payload: existing.payload, preview: existing.preview },
+        };
+      }
       existing.type = `${incoming.entity}.delete.${incoming.version}`;
       existing.payload = {
         id: incoming.recordId,
         expectedVersion: existing.payload.expectedVersion || input.payload.expectedVersion,
       };
+    } else if (incoming.entity === 'schedule' && previous.action === 'delete' && incoming.action === 'create') {
+      const canonical = value => Array.isArray(value) ? value.map(canonical)
+        : value && typeof value === 'object'
+          ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
+      const undo = existing.localUndo;
+      const exactRestore = undo?.record?.id === incoming.recordId
+        && JSON.stringify(canonical(undo.record)) === JSON.stringify(canonical(input.payload.record));
+      if (exactRestore && !undo.previous) {
+        delete state.items[existing.id];
+        return null;
+      }
+      if (exactRestore && undo.previous?.type === 'schedule.update.v1') {
+        existing.type = undo.previous.type;
+        existing.payload = undo.previous.payload;
+        existing.preview = undo.previous.preview;
+      } else {
+        // Legacy deletion or changed restoration: keep an explicit, versioned update.
+        const { id: _id, ...changes } = input.payload.record;
+        existing.type = `schedule.update.${incoming.version}`;
+        existing.payload = { id: incoming.recordId, expectedVersion: existing.payload.expectedVersion, changes };
+        existing.preview = JSON.parse(JSON.stringify(input.preview || {}));
+      }
+      delete existing.localUndo;
+      existing.updatedAt = updatedAt;
+      return existing;
     } else {
       return undefined;
     }
@@ -256,6 +287,8 @@ function createDesktopAuthorityRuntime({
         type: input.type,
         payload: JSON.parse(JSON.stringify(input.payload)),
         preview: JSON.parse(JSON.stringify(input.preview || {})),
+        ...(input.type === 'schedule.delete.v1' && input.localUndoRecord?.id === input.payload.id
+          ? { localUndo: { record: JSON.parse(JSON.stringify(input.localUndoRecord)) } } : {}),
         draftScope,
         status: 'awaiting_confirmation',
         createdAt,
