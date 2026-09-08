@@ -193,6 +193,12 @@ export function createAuthorityDraftFromLocalMutation({
     preview: Object.freeze({
       title: `${definition.entity}.${normalizedAction}`,
       summary: id,
+      // UTF-8: minimal display snapshot only; never included in the cloud command payload.
+      ...(normalizedAction === 'delete' ? { record: selectedFields(value, [
+        'name', 'display_name', 'course_id', 'student_id', 'student_name', 'start_time', 'end_time',
+        'room', 'address', 'school', 'subject', 'amount', 'score', 'payment_date', 'consumption_date',
+        'exam_date', 'date', 'category_name',
+      ]) } : {}),
     }),
   });
 }

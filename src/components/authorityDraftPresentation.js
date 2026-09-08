@@ -16,10 +16,12 @@ function describeAuthorityDraft(item, cache={}) {
   const payload=item?.payload||{};
   const rows=cache[collections[entity]];
   const previous=Array.isArray(rows)?rows.find(row=>row.id===payload.id):null;
-  const record={...previous,...(payload.record||payload.changes||{})};
+  // UTF-8: a local delete removes its row from the derived cache before confirmation.
+  const record={...(action==='delete'?item?.preview?.record:{}),...previous,...(payload.record||payload.changes||{})};
   const details=[];
   const add=(label,value)=>{if(value!==undefined&&value!==null&&String(value).trim())details.push({label,value:String(value)});};
   let name=record.display_name||record.name||'';
+  const studentName=record.student_name||(cache.students||[]).find(row=>row.id===record.student_id)?.name||'';
   let time='';
   if(entity==='schedule') {
     add('计费单位',({1:'按小时',2:'按次'})[record.billing_unit]);
@@ -34,6 +36,9 @@ function describeAuthorityDraft(item, cache={}) {
     }
   } else {
     add('\u540d\u79f0',name);
+    // UTF-8: finance/grade records identify the related student without inventing a name column.
+    add('学生',studentName);
+    add('分类',record.category_name);
     // UTF-8: expose the actual course changes in the existing confirmation dialog.
     if(entity==='course') {
       if(typeof record.active==='boolean') add('课程状态',record.active?'未结课':'已结课');
@@ -43,11 +48,12 @@ function describeAuthorityDraft(item, cache={}) {
     }
     for(const [field,label] of [['subject','\u79d1\u76ee'],['address','\u5730\u5740'],['school','\u5b66\u6821'],['teacher_name','\u6559\u5e08'],['room_name','\u4e0a\u8bfe\u5730\u5740'],['amount','\u91d1\u989d'],['score','\u6210\u7ee9'],['notes','\u5907\u6ce8']]) add(label,record[field]);
   }
-  return {title,summary:[name,time].filter(Boolean).join(' \u00b7 ')||title,details};
+  return {title,summary:[name||studentName||record.category_name,time].filter(Boolean).join(' \u00b7 ')||title,details};
 }
 function authorityDraftError(code) {
   const text=String(code||'');
   // UTF-8: explain the recoverable user action, not the internal dependency protocol.
+  if (text === 'AUTHORITY_DRAFT_TARGET_UNAVAILABLE') return '暂时无法读取要删除的对象，请联网刷新后重试。草稿已保留。';
   if (text === 'AUTHORITY_DRAFT_CONFIRMATION_CHANGED') return '更改内容已变化，请重新查看并确认。';
   if (text === 'AUTHORITY_DRAFT_DEPENDENCY_CONFIRMATION_REQUIRED') return '关联的上课地址尚未确认，请查看课程更改并一并确认。';
   if (text === 'AUTHORITY_DRAFT_DEPENDENCY_BLOCKED') return '上课地址尚未提交成功，请先处理对应的地址更改。课程草稿已保留。';

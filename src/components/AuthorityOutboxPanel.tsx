@@ -289,11 +289,29 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     completed: items.filter(item => item.status === 'completed' && !hasPendingQuestionAssetVerification(item)).length,
   }), [items]);
 
-  const confirmAndSubmit = (item: AuthorityOutboxItem) => {
-    const presentation = draftPresentation(item);
+  const confirmAndSubmit = async (listedItem: AuthorityOutboxItem) => {
+    let item: AuthorityOutboxItem;
     let dependencies: AuthorityOutboxItem[];
+    let presentation: ReturnType<typeof describeAuthorityDraft>;
     try {
-      dependencies = courseRoomDraftDependencies(item, items);
+      // UTF-8: review the persisted draft, not the five-second-old rendered list.
+      const current = await requireBridge().list();
+      const fresh = Array.isArray(current) ? current.find((draft: AuthorityOutboxItem) => draft.id === listedItem.id) : undefined;
+      if (!fresh || fresh.status !== 'awaiting_confirmation') {
+        throw Object.assign(new Error('AUTHORITY_DRAFT_CONFIRMATION_CHANGED'), { code: 'AUTHORITY_DRAFT_CONFIRMATION_CHANGED' });
+      }
+      item = fresh;
+      dependencies = courseRoomDraftDependencies(item, current);
+      presentation = draftPresentation(item);
+      // UTF-8: old ID-only business deletes must resolve a real object before review.
+      if (/^(student|teacher|course|schedule|room|institution|school|payment|consumption|grade|personal-asset-record|personal-asset-category)\.delete\./.test(item.type)) {
+        const identified = () => presentation.details.some((detail: {label: string}) => ['名称', '课程', '学生', '分类'].includes(detail.label));
+        if (!identified()) {
+          const projection = await (window as any).desktopIdentitySessionProvider?.listCloudBusinessProjection?.();
+          presentation = describeAuthorityDraft(item, projection || {});
+          if (!identified()) throw Object.assign(new Error('AUTHORITY_DRAFT_TARGET_UNAVAILABLE'), { code: 'AUTHORITY_DRAFT_TARGET_UNAVAILABLE' });
+        }
+      }
     } catch (error: any) {
       message.error(authorityDraftError(error?.code));
       return;

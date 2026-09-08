@@ -25,12 +25,11 @@ module.exports = async ({ page, out, save, studentId, teacherId, releaseNavigati
   const confirm = async (draft, allowed, artifact) => {
     await page.locator('.sync-quick-popover:visible').waitFor({ state: 'hidden' });
     await page.locator('.sync-status-trigger').click();
-    // UTF-8: explicitly refresh via the existing control; stale-panel behavior is recorded separately.
-    await page.locator('.sync-quick-popover:visible').getByRole('button', { name: 'reload 刷新', exact: true }).click();
-    await page.locator('.sync-quick-popover:visible .ant-spin-spinning').waitFor({ state: 'hidden' });
+    // UTF-8: review must read fresh content without requiring a manual panel refresh.
     await page.locator('[data-row-key="' + draft.id + '"]').getByRole('button', { name: '查看并确认', exact: true }).click();
     await dialog.waitFor();
     if (draft.payload.changes?.name) await dialog.getByText(draft.payload.changes.name, { exact: true }).waitFor();
+    if (draft.type.endsWith('.delete.v1')) await dialog.getByText(draft.preview.record.name, { exact: true }).waitFor();
     await page.screenshot({ path: path.join(out, artifact + '-confirm.png'), scale: 'css', animations: 'disabled' });
     await dialog.getByRole('button', { name: '确认并发送', exact: true }).click();
     await dialog.waitFor({ state: 'hidden', timeout: 45000 });

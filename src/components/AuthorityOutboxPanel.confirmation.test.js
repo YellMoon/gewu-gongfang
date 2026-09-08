@@ -16,21 +16,46 @@ const { renderToStaticMarkup } = require('react-dom/server');
   const compiled = ts.transpileModule(`return (${handler.getText(ast)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React } }).outputText;
   const room = { id: 'room-draft', type: 'room.create.v1', status: 'awaiting_confirmation', payload: { record: { id: 'room', name: '湖畔教室' } } };
   const course = { id: 'course-draft', type: 'course.create.v1', status: 'awaiting_confirmation', payload: { record: { id: 'course', name: '物理提高课', room_id: 'room' } } };
-  let modal; const calls = [];
+  // UTF-8: the panel list deliberately lags behind the stored drafts.
+  let modal; const calls = []; const errors = [];
+  const freshRoom = { ...room, payload: { record: { ...room.payload.record, name: '湖畔新教室' } } };
+  const freshCourse = { ...course, payload: { record: { ...course.payload.record, name: '物理最新课程' } } };
+  let current = [freshRoom, freshCourse]; let readError = false;
   const deps = { React, Descriptions, items: [room, course], courseRoomDraftDependencies, draftConfirmationSnapshot,
-    draftPresentation: d => describeAuthorityDraft(d), authorityDraftError,
+    draftPresentation: d => describeAuthorityDraft(d), describeAuthorityDraft, authorityDraftError,
     Modal: { confirm: config => { modal = config; } }, copy: { modalTitle: '确认提交更改', confirm: '确认并发送', keep: '继续保留草稿' },
-    message: { error: e => { throw new Error(e); }, success() {}, warning() {} },
+    message: { error: e => { errors.push(e); }, success() {}, warning() {} },
     setBusyId() {}, refresh: async () => {}, hasPendingQuestionAssetVerification: () => false,
     window: {}, relayQuestionAssetsAfterReceipt: async () => {}, cloudDraftSubmissionInput: () => ({ sessionToken: 'test-session' }),
-    requireBridge: () => ({ confirmAndSubmit: async (...args) => { calls.push(args); return { receipt: { status: 'committed' } }; } }),
+    requireBridge: () => ({ list: async () => { if (readError) throw new Error('READ_FAILED'); return current; },
+      confirmAndSubmit: async (...args) => { calls.push(args); return { receipt: { status: 'committed' } }; } }),
   };
-  new Function(...Object.keys(deps), compiled)(...Object.values(deps))(course);
+  const open = new Function(...Object.keys(deps), compiled)(...Object.values(deps));
+  await open(course);
   assert.equal(calls.length, 0, 'opening review must not confirm or submit');
   const markup = renderToStaticMarkup(modal.content);
-  assert(markup.includes('物理提高课') && markup.includes('湖畔教室') && markup.includes('一并新增地址'));
+  assert(markup.includes('物理最新课程') && markup.includes('湖畔新教室') && markup.includes('一并新增地址'), 'review must read the current draft and dependencies instead of stale panel state');
+  assert(!markup.includes('物理提高课') && !markup.includes('湖畔教室'));
   await modal.onOk();
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0], [course.id, { sessionToken: 'test-session' }, { items: draftConfirmationSnapshot([room, course]) }]);
+  assert.deepEqual(calls[0], [course.id, { sessionToken: 'test-session' }, { items: draftConfirmationSnapshot([freshRoom, freshCourse]) }]);
+  for (const state of ['missing', 'completed', 'read-error']) {
+    modal = undefined; readError = state === 'read-error';
+    current = state === 'missing' ? [] : [{ ...freshCourse, status: 'completed' }];
+    await open(course);
+    assert.equal(modal, undefined, 'unavailable or no-longer-pending drafts cannot open a stale confirmation');
+  }
+  assert.equal(errors.length, 3); assert.equal(calls.length, 1);
+  // UTF-8: old ID-only delete drafts need an actual cloud record, never a guessed name.
+  readError = false;
+  const legacy = { id:'legacy-delete',type:'student.delete.v1',status:'awaiting_confirmation',payload:{id:'student',expectedVersion:'version'} };
+  current=[legacy]; modal=undefined;
+  deps.window.desktopIdentitySessionProvider={listCloudBusinessProjection:async()=>({students:[{id:'student',name:'云端原姓名'}]})};
+  await open(legacy);
+  assert(renderToStaticMarkup(modal.content).includes('云端原姓名'));
+  assert.deepEqual(legacy.payload,{id:'student',expectedVersion:'version'});
+  modal=undefined; deps.window.desktopIdentitySessionProvider.listCloudBusinessProjection=async()=>({students:[]});
+  await open(legacy); assert.equal(modal,undefined,'unidentified legacy deletes must not offer blind confirmation');
+  assert.equal(calls.length,1);
   console.log('outbox actual confirmation render and user-action checks passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

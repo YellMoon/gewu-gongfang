@@ -959,8 +959,8 @@ class BrowserDatabaseService {
     const index = this.data.rooms.findIndex(r => r.id === id);
     if (index === -1) return false;
     const baseVersion = this.data.rooms[index].updated_at || null;
-    this.data.rooms.splice(index, 1);
-    this.recordAuthorityDraft('rooms', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.rooms.splice(index, 1);
+    this.recordAuthorityDraft('rooms', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1011,8 +1011,8 @@ class BrowserDatabaseService {
     const index = this.data.schools.findIndex(s => s.id === id);
     if (index === -1) return false;
     const baseVersion = this.data.schools[index].updated_at || null;
-    this.data.schools.splice(index, 1);
-    this.recordAuthorityDraft('schools', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.schools.splice(index, 1);
+    this.recordAuthorityDraft('schools', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1053,8 +1053,8 @@ class BrowserDatabaseService {
     const index = this.data.institutions.findIndex(i => i.id === id);
     if (index === -1) return false;
     const baseVersion = this.data.institutions[index].updated_at || null;
-    this.data.institutions.splice(index, 1);
-    this.recordAuthorityDraft('institutions', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.institutions.splice(index, 1);
+    this.recordAuthorityDraft('institutions', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1162,8 +1162,8 @@ class BrowserDatabaseService {
     const index = this.data.students.findIndex(s => s.id === id);
     if (index === -1) return false;
     const baseVersion = this.data.students[index].updated_at || null;
-    this.data.students.splice(index, 1);
-    this.recordAuthorityDraft('students', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.students.splice(index, 1);
+    this.recordAuthorityDraft('students', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1249,8 +1249,8 @@ class BrowserDatabaseService {
     const index = this.data.courses.findIndex(c => c.id === id);
     if (index === -1) return false;
     const baseVersion = this.data.courses[index].updated_at || null;
-    this.data.courses.splice(index, 1);
-    this.recordAuthorityDraft('courses', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.courses.splice(index, 1);
+    this.recordAuthorityDraft('courses', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1337,7 +1337,8 @@ class BrowserDatabaseService {
 
     previousById.forEach((previous, id) => {
       if (!nextById.has(id)) {
-        changes.push({ action: 'delete', id, payload: { id }, baseVersion: previous.updated_at || null });
+        // UTF-8: preserve local display metadata; the adapter still sends only ID/version.
+        changes.push({ action: 'delete', id, payload: previous, baseVersion: previous.updated_at || null });
       }
     });
 
@@ -1372,8 +1373,8 @@ class BrowserDatabaseService {
     if (index === -1) return false;
     const baseVersion = this.data.schedules[index].updated_at || null;
     this.createBusinessDataSafetyBackup('before-deleteSchedule');
-    this.data.schedules.splice(index, 1);
-    this.recordAuthorityDraft('schedules', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.schedules.splice(index, 1);
+    this.recordAuthorityDraft('schedules', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1555,7 +1556,7 @@ class BrowserDatabaseService {
     if (!existing) return;
     const baseVersion = existing.updated_at || null;
     this.data.teachers = this.data.teachers.filter(t => t.id !== id);
-    this.recordAuthorityDraft('teachers', 'delete', id, { id }, baseVersion);
+    this.recordAuthorityDraft('teachers', 'delete', id, existing, baseVersion);
     this.saveData();
   }
 
@@ -1608,7 +1609,7 @@ class BrowserDatabaseService {
     if (!existing) return;
     const baseVersion = existing.updated_at || existing.created_at || null;
     this.data.payments = this.data.payments.filter(p => p.id !== id);
-    this.recordAuthorityDraft('payments', 'delete', id, { id }, baseVersion);
+    this.recordAuthorityDraft('payments', 'delete', id, existing, baseVersion);
     this.saveData();
   }
 
@@ -1661,7 +1662,7 @@ class BrowserDatabaseService {
     if (!existing) return;
     const baseVersion = existing.updated_at || existing.created_at || null;
     this.data.consumptions = this.data.consumptions.filter(c => c.id !== id);
-    this.recordAuthorityDraft('consumptions', 'delete', id, { id }, baseVersion);
+    this.recordAuthorityDraft('consumptions', 'delete', id, existing, baseVersion);
     this.saveData();
   }
 
@@ -1774,8 +1775,8 @@ class BrowserDatabaseService {
     const idx = this.data.assetRecords.findIndex(r => r.id === id);
     if (idx === -1) return false;
     const baseVersion = this.data.assetRecords[idx].updated_at || this.data.assetRecords[idx].created_at || null;
-    this.data.assetRecords.splice(idx, 1);
-    this.recordAuthorityDraft('assetRecords', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.assetRecords.splice(idx, 1);
+    this.recordAuthorityDraft('assetRecords', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1808,8 +1809,8 @@ class BrowserDatabaseService {
     const idx = this.data.assetCategories.findIndex(c => c.id === id);
     if (idx === -1) return false;
     const baseVersion = this.data.assetCategories[idx].updated_at || this.data.assetCategories[idx].created_at || null;
-    this.data.assetCategories.splice(idx, 1);
-    this.recordAuthorityDraft('assetCategories', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.assetCategories.splice(idx, 1);
+    this.recordAuthorityDraft('assetCategories', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }
@@ -1879,8 +1880,8 @@ class BrowserDatabaseService {
     const idx = this.data.grades.findIndex(g => g.id === id);
     if (idx === -1) return false;
     const baseVersion = this.data.grades[idx].updated_at || this.data.grades[idx].created_at || null;
-    this.data.grades.splice(idx, 1);
-    this.recordAuthorityDraft('grades', 'delete', id, { id }, baseVersion);
+    const [deletedRecord] = this.data.grades.splice(idx, 1);
+    this.recordAuthorityDraft('grades', 'delete', id, deletedRecord, baseVersion);
     this.saveData();
     return true;
   }

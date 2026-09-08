@@ -1,4 +1,6 @@
 const assert = require('assert');
+// UTF-8: run the original cache-to-review delete flow in this standard suite.
+require('./businessDeleteConfirmation.test');
 
 (async () => {
   const {
