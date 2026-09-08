@@ -6,12 +6,23 @@ import io
 import tarfile
 import copy
 from unittest.mock import patch
-from run_business_parity_shadow import validate_backup, validate_target, export_committed_source
+from run_business_parity_shadow import validate_backup, validate_target, export_committed_source, run, shadow_drop_command
 from business_parity_student_balance import seed_student_balance
 from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history, verify_retained_course_actions
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_cleanup_force_is_limited_to_exact_disposable_target(self):
+        target='gewu_ui_shadow_'+'a'*16
+        self.assertEqual(shadow_drop_command(target),"docker exec gewu-postgres17 dropdb -U gewu_app --if-exists --force '"+target+"'")
+        for bad in ['gewu_cloud','postgres','gewu_ui_shadow_','gewu_ui_shadow_'+'a'*16+"'; drop database gewu_cloud;--"]:
+            with self.subTest(target=bad),self.assertRaises((ValueError,RuntimeError)): shadow_drop_command(bad)
+
+    def test_rejects_mixed_retained_action_targets_before_connection(self):
+        for course_flag in ['course_delete_history_only','retained_course_actions_only']:
+            with self.subTest(course_flag=course_flag),self.assertRaisesRegex(ValueError,'RETAINED_ACTION_SCOPE_CONFLICT'):
+                run('not-a-backup',retained_student_actions_only=True,**{course_flag:True})
+
     def test_retained_course_actions_exact_history(self):
         before = {'student': {'id': 'student', 'name': '原学生'}}
         before.update({key: [{'id': str(i)} for i in range(count)] for key, count in [
@@ -38,6 +49,17 @@ class BusinessParityShadowGuardTest(unittest.TestCase):
         for table in ('schedules','schedule_student_overrides'):
             bad=copy.deepcopy(after);bad[table].pop()
             with self.assertRaises(RuntimeError): verify_retained_course_actions(before,bad,copy_id)
+        # UTF-8: the student-only deletion keeps its parent course unchanged.
+        before['student'].update(legacy_deleted=False,updated_at='old')
+        after['courses']=copy.deepcopy(before['courses'])
+        after['student']={**before['student'],'legacy_deleted':True,'updated_at':'new'}
+        self.assertTrue(verify_retained_course_actions(before,after,copy_id,student_deleted=True)['studentRemainsDeleted'])
+        for key in ['student','courses','schedules','schedule_student_overrides','payments','consumptions']:
+            bad=copy.deepcopy(after)
+            if key=='student': bad[key]['legacy_deleted']=False
+            else: bad[key][0]['unexpected']='drift'
+            with self.subTest(key=key),self.assertRaises(RuntimeError):
+                verify_retained_course_actions(before,bad,copy_id,student_deleted=True)
 
     def test_course_history_rejects_cascade_and_student_changes(self):
         before = {'student': {'id': 'student', 'name': '原学生'}}

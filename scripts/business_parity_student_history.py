@@ -71,12 +71,13 @@ def verify_course_history(before, after):
     return {'courseSoftDeleted': True, 'historicalRecordsUnchanged': True, 'versionChanged': True, 'lessonsStillActive': True}
 
 
-def verify_retained_course_actions(before, after, copy_id):
+def verify_retained_course_actions(before, after, copy_id, student_deleted=False):
     if not isinstance(copy_id,str) or not re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}',copy_id):
         raise RuntimeError('RETAINED_COURSE_COPY_ID_INVALID')
     other = copy.deepcopy(after)
     for key in ('schedules','schedule_student_overrides'): other[key] = before[key]
-    verify_course_history(before,other)
+    if student_deleted: verify_student_history(before,other,parents_deleted=False)
+    else: verify_course_history(before,other)
     if len(after.get('schedules',[])) != 2 or len(after.get('schedule_student_overrides',[])) != 2:
         raise RuntimeError('RETAINED_COURSE_ACTION_ROWS_INVALID')
     original = before['schedules'][0]
@@ -100,4 +101,4 @@ def verify_retained_course_actions(before, after, copy_id):
         roster=[p for p in after['schedule_student_overrides'] if p['schedule_id']==record_id]
         expected_roster=[{**p,'schedule_id':record_id} for p in before['schedule_student_overrides']]
         if roster!=expected_roster: raise RuntimeError('RETAINED_COURSE_ACTION_ROSTER_CHANGED')
-    return {'originalMovedAndResized':True,'copyDeletedAfterUndo':True,'originalRosterAndRatesRetained':True,'ledgersUnchanged':True}
+    return {'originalMovedAndResized':True,'copyDeletedAfterUndo':True,'originalRosterAndRatesRetained':True,'ledgersUnchanged':True,**({'studentRemainsDeleted':True} if student_deleted else {})}

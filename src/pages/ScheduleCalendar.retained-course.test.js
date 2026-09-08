@@ -60,5 +60,28 @@ function verify(options={}){
   }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
   return cases;
 }
-module.exports={verify};
+function verifyAttendance(){
+  // UTF-8: execute original open/save handlers with no live student profile.
+  let count=0;
+  for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const status of [1,3,4]){
+    const schedule={id:'lesson',course_id:'course-1',start_time:'2026-09-14 09:00',end_time:'2026-09-14 10:30',status:1,billing_unit,teacher_fee_mode,teacher_id:'teacher-1',teacher_name:'Original teacher',student_pricings:[{student_id:'deleted-student',tuition:180,teacher_fee:120,status:1}]};
+    const outcomes=versions.map(v=>{
+      const course={id:'course-1',course_type:1,student_pricings:schedule.student_pricings},modal={open:false,schedule:null};let fields,writes=0,rows=[schedule];
+      const env={schedule,courses:[course],allStudents:[],students:[],teachers:[],studentEditModal:modal,
+        studentEditForm:{setFieldsValue:value=>{fields=value;},getFieldsValue:()=>({students:fields.students.map(p=>({...p,status}))})},
+        setStudentEditModal:value=>Object.assign(modal,value),setSchedulesWithHistory:fn=>{rows=fn(rows);writes++;},message:{success(){}},
+        buildScheduleFinancialSnapshot:v.financial.buildScheduleFinancialSnapshot,...v.types};
+      const code=['getSchedulePricingsForEdit','buildFinancialFieldsForSchedule','isPureInstitutionSchedule','getInstitutionSchedulePricing','handleOpenStudentEdit','handleSaveStudentEdit'].map(name=>named(v.calendar,name)).join('\n')+'\nhandleOpenStudentEdit(schedule);handleSaveStudentEdit();';
+      new Function(...Object.keys(env),ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText)(...Object.values(env));
+      assert.equal(writes,1);assert.equal(modal.open,false);assert.equal(rows[0].student_pricings[0].student_id,'deleted-student');
+      assert.equal(rows[0].student_pricings[0].status,status);assert.equal(rows[0].student_pricings[0].tuition,180);assert.equal(rows[0].student_pricings[0].teacher_fee,120);
+      assert.equal(rows[0].calculated_tuition,status===1?180*(billing_unit===1?1.5:1):0);
+      assert.equal(rows[0].calculated_teacher_fee,status===1?120*(billing_unit===1?1.5:1):0);
+      return rows;
+    });
+    assert.deepEqual(outcomes[0],outcomes[1]);count++;
+  }
+  return count;
+}
+module.exports={verify,verifyAttendance};
 if(require.main===module){const cases=verify();console.log('original/current retained-course handlers passed: '+cases.length+' cases, cancellation and overlap boundaries');}

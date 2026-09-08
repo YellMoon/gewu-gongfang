@@ -101,6 +101,12 @@ async function main() {
     if(config.studentDeleteHistory) {
       save('qa-inventory',{scope:'student-delete-history-only',checks:['原学生删除取消','离线删除及重连不提交','确认对象名称','确认后云端删除和重开','历史课程排课费用逐字段不变由云库读回核验'],fullSignoff:false});
       const result=await require('./business-parity-student-history.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});
+      if(config.retainedStudentActions){
+        save('qa-inventory',{scope:'retained-student-actions-only',checks:['原学生删除和重开','原课次移动拉伸及复制撤销','原出勤独立窗口与取消','出勤确认及原撤销后确认恢复','重开及名单价格账目逐字段核验'],fullSignoff:false});
+        const actions=await require('./business-parity-retained-course.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation,studentDeleted:true});
+        save('desktop-receipt',{scope:'retained-student-actions-only',result:{...result,...actions},sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+        return;
+      }
       save('desktop-receipt',{scope:'student-delete-history-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
       return;
     }

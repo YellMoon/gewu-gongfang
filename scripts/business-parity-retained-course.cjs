@@ -1,9 +1,15 @@
 'use strict';
 // UTF-8: original desktop pointer gestures and confirmation controls; state reads only.
 const assert=require('node:assert/strict'),path=require('node:path');
-module.exports=async({page,out,save,fixture,releaseNavigation})=>{
+module.exports=async({page,out,save,fixture,releaseNavigation,studentDeleted=false})=>{
  const id=fixture.studentId,projection=()=>page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
- const baseline=await projection(),original=baseline.schedules.find(s=>s.id===id);assert(original);assert(!baseline.courses.some(c=>c.id===id));
+ const baseline=await projection(),original=baseline.schedules.find(s=>s.id===id);assert(original);assert.equal(baseline.courses.some(c=>c.id===id),studentDeleted);
+ if(studentDeleted){
+  assert(!baseline.students.some(s=>s.id===id));
+  await page.locator('.app-shell__collapse-button').click();
+  if(!await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).isVisible())await page.getByRole('menuitem',{name:'calendar 教务',exact:true}).click();
+  await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).click();await releaseNavigation();
+ }
  const card=page.locator('[data-schedule-id="'+id+'"]');
  const snapshot=async name=>{save(name+'-tree',await page.locator('.app-shell__main').ariaSnapshot());await page.screenshot({path:path.join(out,name+'.png'),scale:'css'});};
  const pending=async(type,recordId,start,end,tuition)=>{
@@ -56,7 +62,26 @@ module.exports=async({page,out,save,fixture,releaseNavigation})=>{
  const afterCopy=await confirm(copied,afterResize,'retained-05-copy');assert(afterCopy.schedules.some(s=>s.id===copyId));
  await page.context().setOffline(true);await page.keyboard.press('Control+z');
  const undoCopy=await pending('schedule.delete.v1',copyId);assert.equal(await page.locator('[data-schedule-id="'+copyId+'"]').count(),0);
- const afterUndo=await confirm(undoCopy,afterCopy,'retained-06-undo-copy');assert(!afterUndo.schedules.some(s=>s.id===copyId));
+ let afterUndo=await confirm(undoCopy,afterCopy,'retained-06-undo-copy');assert(!afterUndo.schedules.some(s=>s.id===copyId));
+ if(studentDeleted){
+  const openAttendance=async()=>{await card.click({button:'right'});await page.getByRole('menuitem',{name:'学生出勤和费用',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.waitFor();return dialog;};
+  const beforeDrafts=await page.evaluate(()=>window.desktopAuthority.list());
+  let attendance=await openAttendance();assert.equal(await attendance.getByRole('spinbutton').nth(0).inputValue(),'180');assert.equal(await attendance.getByRole('spinbutton').nth(1).inputValue(),'120');
+  await snapshot('retained-student-08-attendance');await attendance.getByRole('button',{name:/^取\s*消$/}).click();await attendance.waitFor({state:'hidden'});
+  assert.deepEqual(await page.evaluate(()=>window.desktopAuthority.list()),beforeDrafts);assert.deepEqual(await projection(),afterUndo);
+  await page.context().setOffline(true);attendance=await openAttendance();await attendance.locator('.ant-select-selector').click();await page.locator('.ant-select-dropdown:visible').getByText('请假',{exact:true}).click();
+  await attendance.getByRole('button',{name:/^确\s*定$/}).click();await attendance.waitFor({state:'hidden'});
+  // UTF-8: original LEAVE is 4; cloud projection keeps its attendance_status contract.
+  const leave=await pending('schedule.update.v1',id,movedStart,longEnd,0);assert.equal(leave.payload.changes.calculated_teacher_fee,0);assert.equal(leave.payload.changes.student_pricings[0].status,4);
+  const left=await confirm(leave,afterUndo,'retained-student-09-leave'),expected=structuredClone(afterUndo),expectedLesson=expected.schedules.find(s=>s.id===id),leftLesson=left.schedules.find(s=>s.id===id);
+  expectedLesson.student_pricings=expectedLesson.student_pricings.map(p=>({...p,attendance_status:4}));expectedLesson.calculated_tuition=0;expectedLesson.calculated_teacher_fee=0;expectedLesson.updated_at=leftLesson.updated_at;
+  assert.deepEqual(left,expected,'attendance changes only this lesson status and totals');save('retained-student-attendance-readback',{before:afterUndo,after:left});
+  await page.context().setOffline(true);await page.keyboard.press('Control+z');
+  const restored=await pending('schedule.update.v1',id,movedStart,longEnd,360);assert.equal(restored.payload.changes.calculated_teacher_fee,240);
+  afterUndo=await confirm(restored,left,'retained-student-10-restore-attendance');
+  const expectedRestore=structuredClone(expected);expectedRestore.schedules=expectedRestore.schedules.map(s=>s.id===id?{...moved,updated_at:afterUndo.schedules.find(r=>r.id===id).updated_at}:s);
+  assert.deepEqual(afterUndo,expectedRestore,'undo must restore original attendance and prices');
+ }
  save('retained-course-cloud-before-reload',{copyId,baseline,afterResize,afterCopy,afterUndo});
  await page.reload();await page.locator('.app-shell').waitFor({timeout:45000});await page.getByText('系统加载中...',{exact:true}).waitFor({state:'hidden',timeout:45000});
  // UTF-8: the original app reopens on its workbench; navigate, do not change that behavior.
@@ -65,8 +90,8 @@ module.exports=async({page,out,save,fixture,releaseNavigation})=>{
  await page.getByRole('menuitem',{name:'calendar 课程表',exact:true}).click();await releaseNavigation();
  await card.waitFor();await card.scrollIntoViewIfNeeded();assert.match(await card.innerText(),/原上课地址\s+09:00-11:00/);
  assert.equal(await page.locator('[data-schedule-id="'+copyId+'"]').count(),0);await snapshot('retained-07-reloaded');
- const reloaded=await projection();assert.deepEqual(reloaded.schedules,afterUndo.schedules);assert(!reloaded.courses.some(c=>c.id===id));
+ const reloaded=await projection();assert.deepEqual(reloaded.schedules,afterUndo.schedules);assert.equal(reloaded.courses.some(c=>c.id===id),studentDeleted);
  for(const key of ['students','student_contacts','payments','consumptions'])assert.deepEqual(reloaded[key],baseline[key]);
  save('retained-course-ui-readback',{copyId,baseline,afterResize,afterCopy,afterUndo,reloaded});
- return {copyId,moveAndResize:true,undoRedo:true,confirmedCopy:true,confirmedUndoOfCopy:true,reloaded:true,noSilentSubmission:true};
+ return {copyId,moveAndResize:true,undoRedo:true,confirmedCopy:true,confirmedUndoOfCopy:true,reloaded:true,noSilentSubmission:true,...(studentDeleted?{studentRemainsDeleted:true,attendanceCancel:true,confirmedAttendance:true,confirmedAttendanceUndo:true}:{})};
 };
