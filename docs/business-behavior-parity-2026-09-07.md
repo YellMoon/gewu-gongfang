@@ -6,7 +6,11 @@
 - 沿用 `/api/business/schedules/:scheduleId` PUT，新增严格可选 `restoreDeleted: true`，要求完整课程生命周期和学生价格字段；普通 PUT/POST 不恢复软删除。云端独立受限函数在同一事务中锁定准确删除版本、核对原课程及目标课程权限，复用已有出勤、费用与快照校验，再恢复记录；创建时间不重写。非法关联、越权、校验失败均回滚，读账号无函数执行权、writer 无直接表更新权。
 - 新增实际 outbox → REST 客户端 → HTTP 路由 → PostgreSQL writer 测试。首轮退出 1（恢复草稿缺少明确标记）；runtime 补齐后第二轮退出 1（旧路由拒绝恢复输入）；完整接入后退出 0。加测同账号/不同账号、不同云端、确认前重做、已恢复后不能借旧删除回执、两请求争用同一删除版本（仅一个 200、另一个 409）、跨租户、学生/小程序票据拒绝及失败全量读回不变，均通过。认证上下文和系统加密在该集成测试中是测试替身，不冒称真实登录/UI 验收。
 - 兼容声明增加 `desktopScheduleRestoration`，只涉及桌面与云服务；发布时必须先应用 `20260908-schedule-confirmed-restore.sql` 及云端支持，再发布桌面消费者。旧云拒绝该请求，绝不退回旧中继或改成覆盖式 POST。未触动 NAS、小程序功能或任何组件的安装版本；独立版本/发布矩阵回归通过。
-- 当前完整根回归、渲染构建及原源码桌面专项仍须取得最终证据。本节不关闭原业务整体审计、真实 Word 可编辑公式或多端发布门禁。
+- 完整根 npm test 会话 2683 退出 0（含新增集成测试）；仍是包含受保护暂停文件的工作区回归，不是干净发布矩阵。渲染构建会话 75561 退出 0，main.f7d2cc8d.js、249.17b700cb.chunk.js，CSS 仍为 main.5792781d.css。Electron 准备会话 33375 退出 0，root/backend 为 ABI 119。
+- 原源码桌面专项会话 33699 **退出 0**：云源码 `6df09d5565a09804ffb28bf47f37bbd8db9791cf`、隔离库 `gewu_ui_shadow_279b609e0a0df0ca`，未带入暂停的历史地址权限改动。通过实际 Windows 原确认按钮删除，再在原确认入口提交；Ctrl+Z 后仅出现本地恢复草稿，确认前云端仍为删除状态；再次确认恢复成功，最终云读回及重开课表检查通过。原创建时间、课程、时段、地址、出勤、学费和教师课时费一致，其他课次和课程不变。已查看原三字段卡片截图，未修改窗口或布局。
+- 证据目录 `C:/Users/83423/AppData/Local/Temp/gewu-business-parity-hpampnyx`；`confirmed-delete-undo-readback.json` SHA256 为 `d4a1108dadf8b9a9212cf35d06b1b3fda0ecec096629e27f20a9515c9d797a8d`。最终恢复草稿 completed、restoreDeleted=true、submitError=null；回执 `confirmedDeletionUndoRestored=true`，同时保持 `scope=confirmed-delete-undo-only`、installed=false、productionWrite=false、uiVerified=false、businessFlowComplete=false。测试副本已清理，原备份及本地截图读回保留。
+- 收尾恢复会话 31976 退出 0，root/backend 已回到 Node ABI 137；随后会话 3036 再次通过实际 runtime、outbox/REST/PostgreSQL 恢复及 App 挂载测试。当前测试 profile 无残留 Electron 进程，受保护版本文件 SHA256 仍为 `BD068AA29EBCE184DDFE3383C17987BEC984C3C71A33A409EF9AEB4643CFC173`；暂停的云权限改动及用户 NAS/output 文件未纳入提交。（UTF-8）
+- 本节只关闭“确认删除后的同编号云端恢复”这个缺口，不关闭 BP-07 全部动作组合、原业务整体审计、真实 Word 可编辑公式或多端发布门禁。PostgreSQL 技能用于短事务、锁定版本及失败整体回滚；Computer Use 技能用于实际原生确认按钮观察/操作。没有组件版本递增、安装包、NAS 更新或正式部署。
 
 ## 2026-09-08 确认后的课表原历史保留（UTF-8）
 
