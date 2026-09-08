@@ -30,10 +30,22 @@ module.exports = async ({ page, out, save, studentId, teacherId, releaseNavigati
     await dialog.waitFor();
     if (draft.payload.changes?.name) await dialog.getByText(draft.payload.changes.name, { exact: true }).waitFor();
     if (draft.type.endsWith('.delete.v1')) await dialog.getByText(draft.preview.record.name, { exact: true }).waitFor();
+    // UTF-8: wait for a stable original confirmation control before capturing the modal.
+    await dialog.getByRole('button', { name: '确认并发送', exact: true }).hover();
     await page.screenshot({ path: path.join(out, artifact + '-confirm.png'), scale: 'css', animations: 'disabled' });
     await dialog.getByRole('button', { name: '确认并发送', exact: true }).click();
     await dialog.waitFor({ state: 'hidden', timeout: 45000 });
-    const stored = await page.evaluate(async id => (await window.desktopAuthority.list()).find(d => d.id === id), draft.id);
+    // UTF-8: observe this submission's actual IPC receipt, never resubmit or infer success from a closing modal.
+    let stored;
+    const observations = [];
+    const deadline = Date.now() + 45000;
+    do {
+      stored = await page.evaluate(async id => (await window.desktopAuthority.list()).find(d => d.id === id), draft.id);
+      observations.push({ at: new Date().toISOString(), status: stored?.status, receipt: stored?.receipt?.status || null });
+      if (['completed', 'conflict'].includes(stored?.status)) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    } while (Date.now() < deadline);
+    save(artifact + '-receipt-observations', observations);
     assert.equal(stored.status, allowed ? 'completed' : 'conflict');
     if (!allowed) {
       assert.equal(stored.receipt.status, 'rejected');
@@ -43,10 +55,10 @@ module.exports = async ({ page, out, save, studentId, teacherId, releaseNavigati
     await page.screenshot({ path: path.join(out, artifact + '-result.png'), scale: 'css' });
     return stored;
   };
-  for (const [entity, collection, id, menu, label, allowed] of [
-    ['student', 'students', studentId, 'user 学生', '林小禾', true],
-    ['teacher', 'teachers', teacherId, 'team 老师', '角色测试老师', false],
-    ['room', 'rooms', room.id, 'home 上课地址', '角色测试地址', false],
+  for (const [entity, collection, id, menu, label, updateAllowed, deleteAllowed] of [
+    ['student', 'students', studentId, 'user 学生', '林小禾', true, true],
+    ['teacher', 'teachers', teacherId, 'team 老师', '角色测试老师', true, false],
+    ['room', 'rooms', room.id, 'home 上课地址', '角色测试地址', false, false],
   ]) {
     await navigate(menu);
     const baseline = (await projection())[collection].find(r => r.id === id);
@@ -67,9 +79,15 @@ module.exports = async ({ page, out, save, studentId, teacherId, releaseNavigati
     const update = await getDraft(entity, id, 'update');
     assert.equal(update.payload.changes.name, label + '复核');
     assert.deepEqual((await projection())[collection].find(r => r.id === id), baseline, 'online resave must not piggyback offline edits');
-    const updateReceipt = await confirm(update, allowed, 'resource-' + entity + '-update');
+    const updateReceipt = await confirm(update, updateAllowed, 'resource-' + entity + '-update');
     const updated = (await projection())[collection].find(r => r.id === id);
-    if (allowed) assert.equal(updated.name, label + '复核'); else assert.deepEqual(updated, baseline);
+    if (updateAllowed) assert.equal(updated.name, label + '复核'); else assert.deepEqual(updated, baseline);
+    if (entity === 'teacher') {
+      // UTF-8: changing the name must not change the original subject, phone, rate or notes.
+      for (const field of ['phone', 'subject', 'hourly_rate']) assert.deepEqual(updated[field], baseline[field], field);
+      // Existing optional-text REST contract normalizes an empty note to null; non-empty notes remain exact.
+      assert.equal(updated.notes ?? '', baseline.notes ?? '', 'notes');
+    }
     // Leave another edit pending, then use the original delete confirmation.
     await edit(label + '待删除', true);
     await page.context().setOffline(false);
@@ -77,11 +95,11 @@ module.exports = async ({ page, out, save, studentId, teacherId, releaseNavigati
     await page.locator('.ant-popconfirm:visible').getByRole('button', { name: /^确\s*定$/ }).click();
     const deletion = await getDraft(entity, id, 'delete');
     assert.deepEqual((await projection())[collection].find(r => r.id === id), updated, 'delete must still await confirmation');
-    const deleteReceipt = await confirm(deletion, allowed, 'resource-' + entity + '-delete');
+    const deleteReceipt = await confirm(deletion, deleteAllowed, 'resource-' + entity + '-delete');
     const deleted = (await projection())[collection].find(r => r.id === id);
-    if (allowed) assert.equal(deleted, undefined); else assert.deepEqual(deleted, baseline);
-    results.push({ entity, allowed, editNoPiggyback: true, deleteWaited: true,
-      updateStatus: updateReceipt.status, deleteStatus: deleteReceipt.status, deniedContentsPreserved: !allowed });
+    if (deleteAllowed) assert.equal(deleted, undefined); else assert.deepEqual(deleted, updated);
+    results.push({ entity, updateAllowed, deleteAllowed, editNoPiggyback: true, deleteWaited: true,
+      updateStatus: updateReceipt.status, deleteStatus: deleteReceipt.status, deniedContentsPreserved: !deleteAllowed });
     save('resource-confirmation-readback', results);
   }
   console.log(JSON.stringify({ stage: 'resource_confirmation_verified', results }));

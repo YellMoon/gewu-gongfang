@@ -4,6 +4,7 @@ const assert = require('assert');
 const { createCloudBusinessApp } = require('./app');
 // UTF-8: keep precision and malformed-contact regression in the standard API suite.
 require('./businessVersionPrecision.test');
+require('./teacherSelfUpdateRoutes.test');
 
 async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   const server = app.listen(0, '127.0.0.1');
