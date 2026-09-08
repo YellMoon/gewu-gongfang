@@ -34,5 +34,17 @@ async function request(app, path, method, body) {
   assert.strictEqual((await request(app, '/api/business/schools/school-1', 'PUT', { expectedUpdatedAt: '2026-08-24T04:00:00.000Z', ...schoolData })).status, 200);
   assert.strictEqual((await request(app, '/api/business/schools/school-1', 'DELETE', { expectedUpdatedAt: '2026-08-24T04:01:00.000Z' })).status, 200);
   assert.deepStrictEqual(calls.map(call => call[0]), ['institution.create', 'institution.update', 'institution.remove', 'school.create', 'school.update', 'school.remove']);
+  for (const reason of ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID']) {
+    const fail = async () => { throw Object.assign(new Error(reason), { code: 'P0001' }); };
+    lifecycle.institutions.create = fail; lifecycle.institutions.update = fail;
+    for (const [method, url, body] of [
+      ['POST', '/api/business/institutions', { institutionId: 'institution-1', data: institutionData }],
+      ['PUT', '/api/business/institutions/institution-1', { expectedUpdatedAt: '2026-08-24T04:00:00.000Z', ...institutionData }],
+    ]) {
+      const result = await request(app, url, method, body);
+      assert.strictEqual(result.status, 409, 'billing relationship conflicts must not masquerade as an offline service');
+      assert.strictEqual(result.body.code, 'CLOUD_BUSINESS_INSTITUTION_CONFLICT');
+    }
+  }
   console.log('foundation lifecycle route checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

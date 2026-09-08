@@ -1770,6 +1770,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.status(201).json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
+        if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
         if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
         businessUnavailable(response);
@@ -1785,6 +1786,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
+        if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
         if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
         businessUnavailable(response);
