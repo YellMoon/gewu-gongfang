@@ -3,6 +3,8 @@
 const assert = require('assert');
 const fs = require('fs');
 require('./ScheduleCalendar.card-content.test.js');
+// UTF-8: include original undo/redo persistence in the existing calendar gate.
+require('./ScheduleCalendar.history.test.js');
 
 const source = fs.readFileSync('src/pages/ScheduleCalendar.tsx', 'utf8');
 // UTF-8: exercise the real form's conflict/log templates with cloud UTC timestamps.

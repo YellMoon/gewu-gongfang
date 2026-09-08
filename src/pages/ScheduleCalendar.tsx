@@ -1247,6 +1247,8 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const past = pastRef.current;
     if (past.length === 0) return;
     const prevState = past[past.length - 1];
+    // UTF-8: history changes must persist through the same explicit-confirmation draft path.
+    schedulesDirtyRef.current = true;
     setSchedules(cur => {
       setHistory(h => ({
         past: h.past.slice(0, -1),
@@ -1262,6 +1264,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const future = futureRef.current;
     if (future.length === 0) return;
     const nextState = future[future.length - 1];
+    schedulesDirtyRef.current = true;
     setSchedules(cur => {
       setHistory(h => ({
         past: [...h.past, [...cur]],

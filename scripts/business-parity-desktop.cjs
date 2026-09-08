@@ -354,6 +354,82 @@ async function main() {
     await courseDialog.screenshot({path:path.join(out,'16-reschedule-reopened.png')});
     await courseDialog.getByRole('button',{name:/^取\s*消$/}).click();
     await courseDialog.waitFor({state:'hidden'});
+    // UTF-8: exercise native pointer gestures and original undo/redo controls, not React handlers.
+    const targetDay=page.locator('[data-date]').nth(1);
+    const targetDate=await targetDay.getAttribute('data-date');
+    await calendarCard.scrollIntoViewIfNeeded();
+    const sourceBox=await calendarCard.boundingBox();
+    const targetBox=await targetDay.locator('[data-day-body="true"]').boundingBox();
+    assert.equal(await targetDay.locator('[data-day-body="true"]').getAttribute('data-min-start-slot'),
+      await calendarCard.locator('xpath=..').getAttribute('data-min-start-slot'));
+    const dragEnd={x:targetBox.x+targetBox.width/2,y:sourceBox.y+sourceBox.height/2};
+    save('17-pointer-geometry',{sourceBox,targetBox,targetDate,dragEnd});
+    await page.context().setOffline(true);
+    await page.mouse.move(sourceBox.x+sourceBox.width/2,sourceBox.y+sourceBox.height/2);
+    await page.mouse.down();
+    await page.mouse.move(dragEnd.x,dragEnd.y,{steps:15});
+    await page.mouse.up();
+    await targetDay.locator('[data-schedule-id="'+scheduleId+'"]').waitFor();
+    const waitDraftTimes=async(start,end,tuition)=>{
+      // UTF-8: assert the exact saved snapshot, not a transient poll followed by a different read.
+      const deadline=Date.now()+12000;
+      let stableSince=null,last;
+      while(Date.now()<deadline) {
+        last=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.payload.id===id&&d.type==='schedule.update.v1'&&d.status==='awaiting_confirmation'),scheduleId);
+        const matches=last&&new Date(last.payload.changes.start_time).getTime()===new Date(start).getTime()
+          &&new Date(last.payload.changes.end_time).getTime()===new Date(end).getTime()
+          &&last.payload.changes.calculated_tuition===tuition;
+        if(matches) { if(stableSince===null) stableSince=Date.now(); }
+        else stableSince=null;
+        if(stableSince!==null&&Date.now()-stableSince>=600) return last;
+        await page.waitForTimeout(75);
+      }
+      save('unstable-history-draft',{expected:{start,end,tuition},last});
+      throw new Error('SCHEDULE_DRAFT_DID_NOT_STABILIZE');
+    };
+    const dragStart=targetDate+'T16:00:00+08:00';
+    const dragEndTime=targetDate+'T18:00:00+08:00';
+    const resizeEnd=targetDate+'T18:30:00+08:00';
+    await waitDraftTimes(dragStart,dragEndTime,360);
+    await calendarCard.screenshot({path:path.join(out,'17-dragged-card.png')});
+    const beforeResize=await calendarCard.boundingBox();
+    const resizePixels=beforeResize.height/120*30;
+    await page.mouse.move(beforeResize.x+beforeResize.width/2,beforeResize.y+beforeResize.height-2);
+    await page.mouse.down();
+    await page.mouse.move(beforeResize.x+beforeResize.width/2,beforeResize.y+beforeResize.height-2+resizePixels,{steps:10});
+    await page.mouse.up();
+    const resizedDraft=await waitDraftTimes(dragStart,resizeEnd,450);
+    assert.equal(resizedDraft.payload.changes.calculated_teacher_fee,300);
+    await calendarCard.screenshot({path:path.join(out,'18-resized-card.png')});
+    // UTF-8: keyboard undo must work without another pointer event triggering persistence.
+    await page.keyboard.press('Control+z');
+    const undoneDraft=await waitDraftTimes(dragStart,dragEndTime,360);
+    assert.match(await calendarCard.innerText(),/16:00-18:00/);
+    save('19-undone-draft',{draft:undoneDraft,targetDate});
+    await page.getByRole('button',{name:/^重\s*做$/}).click();
+    const redoneDraft=await waitDraftTimes(dragStart,resizeEnd,450);
+    assert.equal(new Date(redoneDraft.payload.expectedVersion).getTime(),new Date(moved.updated_at).getTime());
+    save('19-history-draft',{draft:redoneDraft,targetDate});
+    await calendarCard.screenshot({path:path.join(out,'19-redone-card.png')});
+    await page.context().setOffline(false);
+    const beforeDragConfirm=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    assert.deepEqual(beforeDragConfirm.schedules.find(s=>s.id===scheduleId),moved);
+    await page.locator('.sync-status-trigger').click();
+    await page.locator('[data-row-key="'+redoneDraft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
+    await courseDialog.getByRole('button',{name:'确认并发送',exact:true}).click();
+    await courseDialog.waitFor({state:'hidden',timeout:45000});
+    await page.waitForFunction(async id=>(await window.desktopAuthority.list()).some(d=>d.id===id&&d.status==='completed'),redoneDraft.id);
+    const gestureProjection=await page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+    const gestured=gestureProjection.schedules.find(s=>s.id===scheduleId);
+    assert.equal(new Date(gestured.start_time).getTime(),new Date(dragStart).getTime());
+    assert.equal(new Date(gestured.end_time).getTime(),new Date(resizeEnd).getTime());
+    assert.equal(gestured.calculated_tuition,450);assert.equal(gestured.calculated_teacher_fee,300);
+    for(const key of ['student_pricings','course_id','room','teacher_id','billing_unit','teacher_fee_mode']) assert.deepEqual(gestured[key],moved[key]);
+    save('gesture-readback',{before:moved,after:gestured});
+    await reopenCalendar();
+    await targetDay.locator('[data-schedule-id="'+scheduleId+'"]').waitFor();
+    assert.match(await calendarCard.innerText(),/16:00-18:30/);
+    await calendarCard.screenshot({path:path.join(out,'20-gestures-reloaded-card.png')});
     // UTF-8: verify every restored resource editor at both desktop widths, without saving.
     const editorChecks=[];
     const outboxBeforeEditors=await page.evaluate(()=>window.desktopAuthority.list());
@@ -407,6 +483,7 @@ async function main() {
       courseReopened:true,scheduleConfirmed:true,scheduleFinancialReadback:true,
       rescheduleConfirmed:true,rescheduleNoSilentWrite:true,rescheduleVersionBaseline:true,
       rescheduleFinancialReadback:true,rescheduleReloaded:true,rescheduleConflictRejected:true,
+      crossDayDrag:true,bottomResize:true,undoRedoDrafts:true,gestureCloudReadback:true,gestureReloaded:true,
       studentOriginalModal:true,navigationDoesNotResize:true,resourceModalChecks:editorChecks.length,businessFlowComplete:false});
     console.log(JSON.stringify({stage:'original_desktop_student_course_verified',out}));
   } catch(error) {
@@ -414,6 +491,7 @@ async function main() {
       await page.getByPlaceholder('输入密码',{exact:true}).fill('').catch(()=>{});
       await page.screenshot({path:path.join(out,'failure.png'),scale:'css'}).catch(()=>{});
       save('failure', {error:String(error),stack:error.stack,snapshot:await page.locator('body').ariaSnapshot().catch(()=> '')});
+      save('failure-draft-state',await page.evaluate(async()=>window.desktopAuthority?.list()).catch(()=>null));
     }
     throw error;
   } finally { await app.close(); }
