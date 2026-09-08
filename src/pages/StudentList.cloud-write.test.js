@@ -23,3 +23,4 @@ assert.ok(!source.includes('dbService.addOrUpdateSchool(values.school)'),
   'student submission must own school registration atomically, not create a separate school command');
 
 console.log('student list cloud-write source checks passed');
+require('./StudentList.business-parity.test.js');

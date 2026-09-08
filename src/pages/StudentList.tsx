@@ -203,7 +203,8 @@ const StudentList: React.FC = () => {
         name: values.name.trim(),
         school: values.school || null,
         gradeYear: values.grade_year ?? null,
-        gradeCurrent: values.grade_current ?? null,
+        // UTF-8: keep the original database's enrollment-year recalculation on edit.
+        gradeCurrent: values.grade_year ? calculateGrade(values.grade_year) : (values.grade_current ?? editingStudent.grade_current ?? null),
         institutionId: values.institution_id ?? null,
         parentName: values.parent_name?.trim() || null,
         notes: values.notes ?? null,
@@ -251,7 +252,7 @@ const StudentList: React.FC = () => {
         name: values.name.trim(),
         school: values.school || null,
         gradeYear: values.grade_year ?? null,
-        gradeCurrent: values.grade_current || calculateGrade(values.grade_year),
+        gradeCurrent: calculateGrade(values.grade_year),
         institutionId: values.institution_id ?? null,
         parentName: values.parent_name?.trim() || null,
         notes: values.notes ?? null,
