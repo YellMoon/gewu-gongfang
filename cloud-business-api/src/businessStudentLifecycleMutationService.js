@@ -12,7 +12,11 @@ function createBusinessStudentLifecycleMutations({ query } = {}) {
       `SELECT id AS "id", to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
        FROM business.vnext_create_scoped_student($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14)`,
       [input.tenantId, input.studentId, input.name, input.school, input.gradeYear, input.gradeCurrent, input.institutionId, input.parentName, input.notes, input.sourceType, input.studentSource, JSON.stringify(input.contacts), ...scheduleActorParameters(input.actorScope)],
-    ),
+    ).catch(error => {
+      // UTF-8: use the existing route's 409 result for an atomic create conflict.
+      if (error?.code === '23505') return null;
+      throw error;
+    }),
     remove: input => resultRow(
       `SELECT id AS "id", to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
        FROM business.vnext_delete_scoped_student($1,$2,$3::timestamptz,$4,$5)`,

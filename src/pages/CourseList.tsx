@@ -251,11 +251,12 @@ const CourseList: React.FC = () => {
 
   const submitCourseToAuthority = async (values: any) => {
     let cloudWriteCompleted = false;
+    let attemptedCreateId: string | undefined;
     let acknowledgedCourseId = editingCourse?.id;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const stageLocalDraft = () => {
       if (editingCourse) dbService.updateCourse(editingCourse.id, values);
-      else dbService.createCourse(values);
+      else dbService.createCourse(values, attemptedCreateId);
       syncSchedulesRoomName(values);
     };
     // UTF-8: a previously saved address draft must never be sent implicitly.
@@ -282,6 +283,7 @@ const CourseList: React.FC = () => {
       if (editingCourse) await cloudRuntime.updateCloudCourse({ courseId: editingCourse.id, expectedUpdatedAt: editingCourse.updated_at, ...courseCloudPayload(values) });
       else {
         const courseId = globalThis.crypto?.randomUUID?.() || `course-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        attemptedCreateId = courseId;
         await cloudRuntime.createCloudCourse({ courseId, ...courseCloudPayload(values) });
         acknowledgedCourseId = courseId;
       }

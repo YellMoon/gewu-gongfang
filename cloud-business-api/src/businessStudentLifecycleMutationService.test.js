@@ -24,5 +24,14 @@ const { createBusinessStudentLifecycleMutations } = require('./businessStudentLi
   assert.throws(() => mutations.create({ contacts: [] }), e => e.code === 'CLOUD_BUSINESS_ACCESS_DENIED');
   assert.throws(() => mutations.remove({}), e => e.code === 'CLOUD_BUSINESS_ACCESS_DENIED');
   assert.equal(calls.length, 2);
+  // UTF-8: an existing identifier is a conflict, not an outage or a successful retry.
+  for (const code of ['23505', '42501', '08006']) {
+    const failure = Object.assign(new Error('synthetic database failure'), { code });
+    const failed = createBusinessStudentLifecycleMutations({ query: async () => { throw failure; } });
+    const input = { actorScope: { role: 'super_admin', teacherId: null }, contacts: [] };
+    if (code === '23505') assert.equal(await failed.create(input), null);
+    else await assert.rejects(() => failed.create(input), error => error === failure);
+    await assert.rejects(() => failed.remove(input), error => error === failure);
+  }
   console.log('business student lifecycle mutation service checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

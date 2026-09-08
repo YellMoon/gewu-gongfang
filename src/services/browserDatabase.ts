@@ -922,8 +922,12 @@ class BrowserDatabaseService {
     return this.data.rooms;
   }
 
-  addOrUpdateRoom(roomName: string, address?: string): void {
-    const existing = this.data.rooms.find(s => s.name === roomName);
+  addOrUpdateRoom(roomName: string, address?: string, requestedId?: string): void {
+    // UTF-8: preserve an attempted cloud create's ID; never reinterpret it as another room's update.
+    if (requestedId !== undefined && (!requestedId || requestedId !== requestedId.trim() || this.data.rooms.some(row => row.id === requestedId))) {
+      throw new Error('AUTHORITY_DRAFT_CREATE_ID_INVALID_OR_EXISTS');
+    }
+    const existing = requestedId === undefined ? this.data.rooms.find(s => s.name === roomName) : undefined;
     if (existing) {
       const baseVersion = existing.updated_at || null;
       existing.count++;
@@ -932,7 +936,7 @@ class BrowserDatabaseService {
       this.recordAuthorityDraft('rooms', 'update', existing.id, existing, baseVersion);
     } else {
       const room = {
-        id: this.generateId(),
+        id: requestedId ?? this.generateId(),
         name: roomName,
         address: address || '',
         count: 1,
@@ -1115,11 +1119,14 @@ class BrowserDatabaseService {
     return this.data.students.find(s => s.id === id);
   }
 
-  createStudent(student: Omit<Student, 'id' | 'created_at' | 'updated_at'>): Student {
+  createStudent(student: Omit<Student, 'id' | 'created_at' | 'updated_at'>, requestedId?: string): Student {
+    if (requestedId !== undefined && (!requestedId || requestedId !== requestedId.trim() || this.data.students.some(row => row.id === requestedId))) {
+      throw new Error('AUTHORITY_DRAFT_CREATE_ID_INVALID_OR_EXISTS');
+    }
     const now = new Date().toISOString();
     const newStudent: Student = {
       ...student,
-      id: this.generateId(),
+      id: requestedId ?? this.generateId(),
       grade_current: calculateGrade(student.grade_year),
       created_at: now,
       updated_at: now
@@ -1199,11 +1206,14 @@ class BrowserDatabaseService {
     return room;
   }
 
-  createCourse(course: Omit<Course, 'id' | 'created_at' | 'updated_at'>): Course {
+  createCourse(course: Omit<Course, 'id' | 'created_at' | 'updated_at'>, requestedId?: string): Course {
+    if (requestedId !== undefined && (!requestedId || requestedId !== requestedId.trim() || this.data.courses.some(row => row.id === requestedId))) {
+      throw new Error('AUTHORITY_DRAFT_CREATE_ID_INVALID_OR_EXISTS');
+    }
     const now = new Date().toISOString();
     const newCourse: Course = {
       ...course,
-      id: this.generateId(),
+      id: requestedId ?? this.generateId(),
       created_at: now,
       updated_at: now
     };
@@ -1521,11 +1531,14 @@ class BrowserDatabaseService {
     return this.data.teachers.find(t => t.id === id);
   }
 
-  createTeacher(teacher: Omit<Teacher, 'id' | 'created_at' | 'updated_at'>): Teacher {
+  createTeacher(teacher: Omit<Teacher, 'id' | 'created_at' | 'updated_at'>, requestedId?: string): Teacher {
+    if (requestedId !== undefined && (!requestedId || requestedId !== requestedId.trim() || this.data.teachers.some(row => row.id === requestedId))) {
+      throw new Error('AUTHORITY_DRAFT_CREATE_ID_INVALID_OR_EXISTS');
+    }
     const now = new Date().toISOString();
     const newTeacher: Teacher = {
       ...teacher,
-      id: this.generateId(),
+      id: requestedId ?? this.generateId(),
       created_at: now,
       updated_at: now
     };

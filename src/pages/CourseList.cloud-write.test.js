@@ -28,3 +28,4 @@ require('./CourseList.room-sync.test.js');
 // UTF-8: the same explicit-confirmation boundary covers original resource pages.
 require('./ResourceDraftConfirmation.test.js');
 require('./BusinessWriteReadback.test.js');
+require('./BusinessCreateIdentity.test.js');

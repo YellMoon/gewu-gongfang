@@ -247,8 +247,9 @@ const StudentList: React.FC = () => {
 
   const submitNewStudentToAuthority = async (values: any) => {
     let cloudWriteCompleted = false;
+    let attemptedCreateId: string | undefined;
     const stageLocalDraft = () => {
-      dbService.createStudent(values);
+      dbService.createStudent(values, attemptedCreateId);
       (window as any).operateLogger?.log('create', `student:${values.name}`, 'students');
     };
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
@@ -259,6 +260,7 @@ const StudentList: React.FC = () => {
     }
     const contacts = studentContactCommands(values);
     const studentId = globalThis.crypto?.randomUUID?.() || `student-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    attemptedCreateId = studentId;
     try {
       await cloudRuntime.createCloudStudentRecord({
         studentId,

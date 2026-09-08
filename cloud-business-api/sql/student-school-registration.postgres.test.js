@@ -90,6 +90,53 @@ async function desktopRoundTrip(writer, admin) {
       const rows = (await db.query("SELECT grade_year,grade_current,school_legacy FROM business.students WHERE name='Readback acknowledged student'")).rows;
       assert.deepEqual(rows, [{ grade_year: 2026, grade_current: '高一', school_legacy: 'Readback school' }]);
     });
+    // UTF-8: exercise lost replies using real HTTP and the real local create method.
+    const dbSource = ts.createSourceFile('browserDatabase.ts', fs.readFileSync(path.join(__dirname, '../../src/services/browserDatabase.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+    let localCreate;
+    function findLocalCreate(node) {
+      if (ts.isMethodDeclaration(node) && node.name.getText(dbSource) === 'createStudent') localCreate = node;
+      ts.forEachChild(node, findLocalCreate);
+    }
+    findLocalCreate(dbSource); assert(localCreate);
+    for (const delivered of [false, true]) {
+      let attemptedId, droppedReply;
+      const losingClient = createDesktopIdentityClient({ desktopIdentity: { status: async () => ({}) }, fetchImpl: async (url, options) => {
+        attemptedId = JSON.parse(options.body).studentId;
+        if (delivered) {
+          const response = await fetch(url, options);
+          assert(response.ok);
+          droppedReply = await response.json();
+        }
+        throw new TypeError('Simulated lost response');
+      } });
+      const captures = [];
+      const localDb = { data: { students: [] }, generateId: () => 'must-not-allocate-another-id', saveData() {}, studentAuthorityContacts: () => [],
+        recordAuthorityDraft: (_collection, action, id, value) => captures.push({ action, id, value: structuredClone(value) }) };
+      localDb.createStudent = new Function('calculateGrade', ts.transpileModule(`return function(${localCreate.parameters.map(p => p.getText(dbSource)).join(',')})${localCreate.body.getText(dbSource)}`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText)(() => '高一');
+      const saveDependencies = { ...dependencies, dbService: localDb,
+        window: { desktopIdentitySessionProvider: { createCloudStudentRecord: input => losingClient.createCloudStudentRecord({
+          baseUrl: `http://127.0.0.1:${server.address().port}`, currentSession: { token: 'eyJ2IjoxfQ.signature', offline: false }, ...input,
+        }) } } };
+      const save = new Function(...Object.keys(saveDependencies), ts.transpileModule(`return (${createHandler});`, {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText)(...Object.values(saveDependencies));
+      const name = delivered ? 'Lost reply persisted student' : 'Not delivered student';
+      assert.equal(await save({ name, school: 'Recovery school', grade_year: 2026, source_type: 1 }), true);
+      assert.equal(captures.length, 1);
+      assert.equal(captures[0].id, attemptedId);
+      if (delivered) assert.equal(droppedReply.student.id, attemptedId, 'server committed before the reply was dropped');
+      const pending = await client.appendDraft({ type: 'student.create.v1', payload: { record: captures[0].value } });
+      const beforeConfirm = requests;
+      assert.equal(await client.submit(pending.id, { sessionToken: 'eyJ2IjoxfQ.signature' }), undefined);
+      assert.equal(requests, beforeConfirm, 'reconnection cannot silently submit the fallback draft');
+      await admin(async db => assert.equal((await db.query('SELECT id FROM business.students WHERE id=$1', [attemptedId])).rows.length, delivered ? 1 : 0));
+      const confirmed = await client.confirmAndSubmit(pending.id, { sessionToken: 'eyJ2IjoxfQ.signature' });
+      assert.equal((await outbox.get(pending.id)).status, delivered ? 'conflict' : 'completed');
+      assert.equal(confirmed.rejected, delivered, 'a previously committed ID must be reconciled, never silently marked complete');
+      await admin(async db => assert.deepEqual((await db.query('SELECT id FROM business.students WHERE name=$1', [name])).rows, [{ id: attemptedId }]));
+    }
     for (const access of ['visitor', 'student', 'miniapp']) {
       role = access; miniappOnly = access === 'miniapp';
       const denied = await client.appendDraft({ type: 'student.create.v1', payload: { record: { id: `denied-${access}`, name: 'Student', school: 'Denied HTTP school', source_type: 1, contacts: [] } } });

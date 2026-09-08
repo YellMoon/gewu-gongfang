@@ -96,6 +96,7 @@ const TeacherList: React.FC = () => {
 
   const submitTeacherToAuthority = async (values: any) => {
     let cloudWriteCompleted = false;
+    let attemptedCreateId: string | undefined;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const payload = {
       name: values.name.trim(), phone: values.phone?.trim() || null, subject: values.subject?.trim() || null,
@@ -103,7 +104,7 @@ const TeacherList: React.FC = () => {
     };
     const stageLocalDraft = () => {
       if (editingTeacher) dbService.updateTeacher(editingTeacher.id, values);
-      else dbService.createTeacher(values);
+      else dbService.createTeacher(values, attemptedCreateId);
       (window as any).operateLogger?.log(editingTeacher ? 'update' : 'create', `teacher:${values.name}`, 'teachers');
     };
     const offline = (error: any) => {
@@ -131,6 +132,7 @@ const TeacherList: React.FC = () => {
         await cloudRuntime.updateCloudTeacher({ teacherId: editingTeacher.id, expectedUpdatedAt: editingTeacher.updated_at, ...payload });
       } else {
         const teacherId = globalThis.crypto?.randomUUID?.() || `teacher-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        attemptedCreateId = teacherId;
         await cloudRuntime.createCloudTeacher({ teacherId, ...payload });
       }
       cloudWriteCompleted = true;

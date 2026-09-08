@@ -87,11 +87,12 @@ const RoomManager: React.FC = () => {
 
   const submitRoomToAuthority = async (values: any) => {
     let cloudWriteCompleted = false;
+    let attemptedCreateId: string | undefined;
     const cloudRuntime = (window as any).desktopIdentitySessionProvider;
     const payload = { name: values.name.trim(), address: values.address?.trim() || null };
     const stageLocalDraft = () => {
       if (editingRoom) dbService.updateRoom(editingRoom.id, values);
-      else dbService.addOrUpdateRoom(values.name, values.address);
+      else dbService.addOrUpdateRoom(values.name, values.address, attemptedCreateId);
     };
     const offline = (error: any) => {
       const code = String(error?.code || error?.message || '');
@@ -118,6 +119,7 @@ const RoomManager: React.FC = () => {
         await cloudRuntime.updateCloudRoom({ roomId: editingRoom.id, expectedUpdatedAt: editingRoom.updated_at, ...payload });
       } else {
         const roomId = globalThis.crypto?.randomUUID?.() || `room-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        attemptedCreateId = roomId;
         await cloudRuntime.createCloudRoom({ roomId, ...payload });
       }
       cloudWriteCompleted = true;
