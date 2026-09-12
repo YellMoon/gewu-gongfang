@@ -6,6 +6,8 @@ import { authSessionRuntime } from '../../utils/authSession';
 import { assertMiniappWriteAllowed } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { EmptyState, NetworkStatus } from '../../components/shared';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
+import ForbiddenPage from '../forbidden';
 // @ts-ignore CommonJS CSV parser has no TypeScript declarations.
 import { parsePersonalAssetCsv } from '../../utils/personalAssetCsv';
 import './index.scss';
@@ -19,12 +21,16 @@ export default function Assets() {
   const [period, setPeriod] = useState<'month' | 'year' | 'all'>('month');
 
   useDidShow(() => {
-    setRecords(getLocalData<AssetRecord>('assetRecords'));
-    setCategories(getLocalData<AssetCategory>('assetCategories'));
+    void refreshMiniappPageAccess('/pages/assets/index').then(permitted => {
+      const allowed = permitted && canAccessMiniappPage('/pages/assets/index');
+      setRecords(allowed ? getLocalData<AssetRecord>('assetRecords') : []);
+      setCategories(allowed ? getLocalData<AssetCategory>('assetCategories') : []);
+    });
   });
 
   const submitAssetImportTask = async () => {
     try {
+      if (!canAccessMiniappPage('/pages/assets/index')) return;
       assertMiniappWriteAllowed('asset-import');
       const selected: any = await Taro.chooseMessageFile({ count: 1, type: 'file', extension: ['csv'] });
       const filePath = selected?.tempFiles?.[0]?.path;
@@ -61,6 +67,8 @@ export default function Assets() {
     }
     return Array.from(values.values()).sort((left, right) => right.amount - left.amount);
   }, [filteredRecords, categories]);
+
+  if (!canAccessMiniappPage('/pages/assets/index')) return <ForbiddenPage />;
 
   return (
     <View className='assets-page'>

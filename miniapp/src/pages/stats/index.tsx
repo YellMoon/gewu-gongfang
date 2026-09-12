@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
+import { useDidShow } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, CourseType } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
+import ForbiddenPage from '../forbidden';
 import './index.scss';
 
 interface StatsData {
@@ -21,11 +24,18 @@ export default function Stats() {
   const [courseTypeCollapsed, setCourseTypeCollapsed] = useState(false);
   const [monthCollapsed, setMonthCollapsed] = useState(false);
 
+  useDidShow(() => {
+    if (!canAccessMiniappPage('/pages/stats/index')) {
+      setStats({ totalRevenue: 0, totalSchedules: 0, byCourseType: [], byMonth: [] });
+    }
+  });
+
   useEffect(() => {
     let active = true;
     const load = async () => {
+      if (!await refreshMiniappPageAccess('/pages/stats/index') || !active) return;
       await pullFromCloudBusinessProjection();
-      if (active) loadStats();
+      if (active && canAccessMiniappPage('/pages/stats/index')) loadStats();
     };
     void load();
     return () => { active = false; };
@@ -73,6 +83,8 @@ export default function Stats() {
         .sort((a, b) => b.month.localeCompare(a.month)),
     });
   };
+
+  if (!canAccessMiniappPage('/pages/stats/index')) return <ForbiddenPage />;
 
   return (
     <View className='container'>

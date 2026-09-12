@@ -5,6 +5,8 @@ import { Payment, PaymentType, Student } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import { sortPaymentsNewestFirst } from './paymentsRuntime';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
+import ForbiddenPage from '../forbidden';
 import './index.scss';
 
 export default function Payments() {
@@ -19,6 +21,12 @@ export default function Payments() {
   });
 
   const loadData = () => {
+    if (!canAccessMiniappPage('/pages/payments/index')) {
+      setPayments([]);
+      setStudents([]);
+      setLoading(false);
+      return;
+    }
     setPayments(getLocalData<Payment>('payments'));
     setStudents(getLocalData<Student>('students'));
     setLoading(false);
@@ -27,6 +35,12 @@ export default function Payments() {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
+      if (!await refreshMiniappPageAccess('/pages/payments/index')) {
+        setPayments([]);
+        setStudents([]);
+        setLoading(false);
+        return;
+      }
       await pullFromCloudBusinessProjection();
       loadData();
     } catch {
@@ -42,6 +56,8 @@ export default function Payments() {
 
   const getStudentName = (id: string) => students.find(s => s.id === id)?.name || '未知';
   const totalAmount = filteredPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  if (!canAccessMiniappPage('/pages/payments/index')) return <ForbiddenPage />;
 
   return (
     <View className="payments-page">

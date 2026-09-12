@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+require('./miniappPageAccess.test');
 const { canOpenMiniappRoute, moduleForMiniappRoute } = require('./miniappRouteAccess');
 
 const staff = { role: 'teacher', modules: ['scheduling', 'students', 'courses', 'teachers', 'payments', 'stats', 'assets'], capabilities: ['question-bank:view'] };
