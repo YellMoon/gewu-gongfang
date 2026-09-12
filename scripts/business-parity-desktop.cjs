@@ -351,8 +351,9 @@ async function main() {
     await calendarCard.screenshot({path:path.join(out,'13-calendar-card.png')});
     if(config.managedTeacherOnly){
       assert.equal(schedule.teacher_id,managedTeacher.id);
+      const deletion=await require('./business-parity-teacher-deletion.cjs')({page,out,save,releaseNavigation,teacherId:managedTeacher.id,courseId,scheduleId});
       save('desktop-receipt',{scope:'managed-teacher-only',teacherId:managedTeacher.id,studentId,courseId,scheduleId,
-        originalWindows:true,explicitConfirmation:true,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+        ...deletion,originalWindows:true,explicitConfirmation:true,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
       return;
     }
     // UTF-8: focused original address-linkage flow, not a full business or UI signoff.

@@ -533,7 +533,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function scheduleWriteDenied(error) {
     return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
-      || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_SCHEDULE_SCOPE_DENIED');
+      || (error?.code === '42501' && ['VNEXT_TEACHER_SCHEDULE_SCOPE_DENIED', 'VNEXT_TEACHER_PROFILE_SCOPE_DENIED'].includes(error.message));
   }
   function studentWriteDenied(error) {
     return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
@@ -541,7 +541,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   }
   function courseWriteDenied(error) {
     return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED'
-      || (error?.code === '42501' && error.message === 'VNEXT_TEACHER_COURSE_SCOPE_DENIED');
+      || (error?.code === '42501' && ['VNEXT_TEACHER_COURSE_SCOPE_DENIED', 'VNEXT_TEACHER_PROFILE_SCOPE_DENIED'].includes(error.message));
   }
   function miniappProjectionScope(context) {
     if (!context || !Array.isArray(context.roles)) throw businessAccessDenied();
@@ -557,7 +557,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
-  const managedTeacherScopeSql = "managed_teachers AS (SELECT t.id FROM business.teachers t JOIN business.teachers owner ON owner.tenant_id=t.tenant_id AND owner.id=t.created_by_teacher_id AND owner.legacy_deleted=false WHERE t.tenant_id=$1 AND t.created_by_teacher_id=$3 AND t.legacy_deleted=false AND t.account_claimed=false)";
+  // Retained teaching-only profiles still scope history; the teachers list itself remains live-only.
+  const managedTeacherScopeSql = "managed_teachers AS (SELECT t.id FROM business.teachers t JOIN business.teachers owner ON owner.tenant_id=t.tenant_id AND owner.id=t.created_by_teacher_id AND owner.legacy_deleted=false WHERE t.tenant_id=$1 AND t.created_by_teacher_id=$3 AND t.account_claimed=false)";
   const miniappProjectionSql = [
     // UTF-8: creator-managed profiles are visible before any course, but never after an account claim.
     `WITH ${managedTeacherScopeSql}, scoped_schedules AS (`,

@@ -48,6 +48,26 @@ class BusinessParityShadowGuardTest(unittest.TestCase):
             with self.subTest(flag=flag),self.assertRaisesRegex(ValueError,'MANAGED_TEACHER_SCOPE_CONFLICT'):
                 run('not-a-backup',managed_teacher_only=True,**{flag:True})
 
+    def test_managed_teacher_deletion_requires_database_and_ui_evidence(self):
+        import json
+        from unittest.mock import Mock
+        ui={'teacherId':'teacher','studentId':'student','courseId':'course','scheduleId':'lesson'}
+        actual={
+            'teacher':{'id':'teacher','name':'周启明','creator':'owner','claimed':False,'rate':120,'deleted':True},
+            'student':{'id':'student','name':'林小禾','school':'春禾中学'},
+            'course':{'id':'course','teacher':'teacher','name':'初二物理','minutes':90,'room':'东湖上课点','tuition':180,'fee':120},
+            'schedule':{'id':'lesson','course':'course','teacher':'teacher','tuition':270,'fee':180},
+            'pricings':[{'student':'student','tuition':180,'fee':120}],
+            'attendance':[{'student':'student','status':1,'tuition':180,'fee':120}],'grants':0}
+        db=Mock();db.run.return_value=json.dumps(actual)
+        with self.assertRaisesRegex(RuntimeError,'MANAGED_TEACHER_UI_DELETION_EVIDENCE_REQUIRED'):
+            read_managed_teacher(db,ui,'owner')
+        ui.update({key:True for key in ['teacherDeleted','historyPreserved','reloaded','reconnectDidNotSubmit']})
+        self.assertTrue(read_managed_teacher(db,ui,'owner')['teacherDeletionVerified'])
+        actual['teacher']['deleted']=False;db.run.return_value=json.dumps(actual)
+        with self.assertRaisesRegex(RuntimeError,'MANAGED_TEACHER_DATABASE_READBACK_MISMATCH'):
+            read_managed_teacher(db,ui,'owner')
+
     def test_cleanup_force_is_limited_to_exact_disposable_target(self):
         target='gewu_ui_shadow_'+'a'*16
         self.assertEqual(shadow_drop_command(target),"docker exec gewu-postgres17 dropdb -U gewu_app --if-exists --force '"+target+"'")

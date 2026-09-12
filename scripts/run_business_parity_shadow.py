@@ -253,6 +253,7 @@ def run(backup_path, probe_only=False, course_confirmation_only=False, resource_
                 readback=read_managed_teacher(db,ui,login['teacherId'])
                 (out / 'managed-teacher-database-readback.json').write_text(json.dumps(readback,indent=2,ensure_ascii=False),encoding='utf-8')
                 receipt['managedTeacherVerified']=readback['verified']
+                receipt['teacherDeletionVerified']=readback['teacherDeletionVerified']
             if course_active_only:
                 history_after=read_student_history(db,balance_fixture)
                 receipt['courseActive']=verify_course_active_history(history_before,history_after,balance_fixture['studentId'])
