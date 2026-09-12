@@ -22,7 +22,8 @@ module.exports=async({page,out,save,releaseNavigation,teacherId,courseId,schedul
  await page.locator('.sync-status-trigger').click();
  await page.locator('[data-row-key="'+draft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
  const dialog=page.getByRole('dialog');await dialog.waitFor();
- save('teacher-delete-confirm-tree',await dialog.ariaSnapshot());await dialog.screenshot({path:path.join(out,'teacher-delete-confirm.png')});
+ await dialog.getByRole('button',{name:'确认并发送',exact:true}).hover();
+ save('teacher-delete-confirm-tree',await dialog.ariaSnapshot());await dialog.screenshot({path:path.join(out,'teacher-delete-confirm.png'),animations:'disabled'});
  await dialog.getByRole('button',{name:'确认并发送',exact:true}).click();await dialog.waitFor({state:'hidden',timeout:45000});
  await page.waitForFunction(async id=>['completed','conflict'].includes((await window.desktopAuthority.list()).find(d=>d.id===id)?.status),draft.id,{timeout:45000});
  const result=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.id===id),draft.id);
@@ -30,9 +31,11 @@ module.exports=async({page,out,save,releaseNavigation,teacherId,courseId,schedul
  assert(!(await unchanged()).teachers.some(t=>t.id===teacherId));
  await page.reload();await page.locator('.app-shell').waitFor({timeout:45000});await page.getByText('系统加载中...',{exact:true}).waitFor({state:'hidden',timeout:45000});
  await navigate('team 资源','team 老师');assert.equal(await page.getByRole('row').and(page.locator('[data-row-key="'+teacherId+'"]')).count(),0);
- const after=await unchanged();await navigate('calendar 教务','calendar 课程表');
- const card=page.locator('[data-schedule-id="'+scheduleId+'"]');await card.waitFor();
- assert.match(await card.innerText(),/初二物理/);assert.match(await card.innerText(),/东湖上课点\s+12:00-13:30/);
+ // Original calendar selects a live teacher after reopening; it cannot select a deleted profile.
+ // Use the existing unfiltered lesson list, without changing the original calendar semantics.
+ const after=await unchanged();await navigate('calendar 教务','file-text 排课列表');
+ const retainedRow=page.getByRole('row').and(page.locator('[data-row-key="'+scheduleId+'"]'));await retainedRow.waitFor();
+ assert.match(await retainedRow.innerText(),/初二物理/);assert.match(await retainedRow.innerText(),/东湖上课点/);assert.match(await retainedRow.innerText(),/12:00.*13:30/);
  save('teacher-delete-reloaded-tree',await page.locator('body').ariaSnapshot());await page.screenshot({path:path.join(out,'teacher-delete-reloaded.png'),scale:'css',animations:'disabled'});
  save('teacher-delete-history',{before:{course,schedule},after:{course:after.courses.find(c=>c.id===courseId),schedule:after.schedules.find(s=>s.id===scheduleId)},same:true});
  return {teacherDeleted:true,historyPreserved:true,reloaded:true,reconnectDidNotSubmit:true};
