@@ -1,42 +1,7 @@
 .privacy-page {
   min-height: 100vh;
-  padding: calc(40rpx + env(safe-area-inset-top)) 32rpx calc(40rpx + env(safe-area-inset-bottom));
+  padding: 32rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
   background: #fffdf8;
-}
-
-.privacy-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 40rpx;
-}
-
-.privacy-back {
-  width: 88rpx;
-  height: 88rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 16rpx;
-  background: rgba(31, 111, 104, 0.08);
-  color: #1f6f68;
-  font-size: 32rpx;
-  font-weight: 700;
-}
-
-.privacy-back::after {
-  border: 0;
-}
-
-.privacy-title {
-  flex: 1;
-  text-align: center;
-  font-size: 36rpx;
-  font-weight: 800;
-  color: #172033;
-}
-
-.privacy-title-placeholder {
-  width: 88rpx;
 }
 
 .privacy-content {

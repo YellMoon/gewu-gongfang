@@ -1,14 +1,8 @@
-import Taro from '@tarojs/taro';
-import { View, Text, Button } from '@tarojs/components';
+import { View, Text } from '@tarojs/components';
 import './privacy.scss';
 
 export default function PrivacyPage() {
   return <View className="privacy-page">
-    <View className="privacy-header">
-      <Button className="privacy-back" onClick={() => Taro.navigateBack()}>{'<'}</Button>
-      <Text className="privacy-title">{'\u9690\u79c1\u4fdd\u62a4\u6307\u5f15'}</Text>
-      <View className="privacy-title-placeholder" />
-    </View>
     <View className="privacy-content">
       <View className="privacy-section">
         <Text className="privacy-section-title">{'\u4e00\u3001\u4fe1\u606f\u6536\u96c6'}</Text>

@@ -1,3 +1,4 @@
 export default definePageConfig({
-  navigationStyle: 'custom',
+  navigationStyle: 'default',
+  navigationBarTitleText: '隐私保护指引',
 });
