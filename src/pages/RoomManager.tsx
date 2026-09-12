@@ -25,7 +25,12 @@ const RoomManager: React.FC = () => {
     setCourses([...coursesData]);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    // UTF-8: refresh acknowledged data without discarding the original editor.
+    window.addEventListener('authority-projection-refreshed', loadData);
+    return () => window.removeEventListener('authority-projection-refreshed', loadData);
+  }, []);
 
   const handleAdd = () => {
     setEditingRoom(null);

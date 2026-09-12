@@ -86,6 +86,12 @@ async function main() {
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
     await releaseNavigation();
+    if(config.resourceEditorOnly){
+      save('qa-inventory',{scope:'resource-editor-only',checks:['六个原编辑窗口输入保留','实际云投影刷新','原窗口取消','无业务提交或草稿'],fullSignoff:false});
+      const result=await require('./business-parity-resource-editor.cjs')({page,out,save,releaseNavigation});
+      save('desktop-receipt',{scope:'resource-editor-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     if(config.courseActiveOnly){
       save('qa-inventory',{scope:'course-active-only',checks:['原结课与启用按钮','在线单字段提交','离线仅草稿及保留草稿','用户确认后提交','待排列表与原课次保留','重开及数据库逐字段比对'],fullSignoff:false});
       const result=await require('./business-parity-course-active.cjs')({page,out,save,fixture:config.studentBalanceFixture,releaseNavigation});

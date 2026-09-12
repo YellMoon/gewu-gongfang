@@ -32,6 +32,9 @@ const InstitutionManager: React.FC = () => {
 
   useEffect(() => {
     loadInstitutions();
+    // UTF-8: refresh acknowledged data without discarding the original editor.
+    window.addEventListener('authority-projection-refreshed', loadInstitutions);
+    return () => window.removeEventListener('authority-projection-refreshed', loadInstitutions);
   }, []);
 
   const handleAdd = () => {

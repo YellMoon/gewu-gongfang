@@ -27,6 +27,10 @@ class BusinessParityShadowGuardTest(unittest.TestCase):
         for flag in ['course_refresh_only','retained_student_actions_only','course_confirmation_only']:
             with self.assertRaisesRegex(ValueError,'COURSE_ACTIVE_SCOPE_CONFLICT'):
                 run('not-a-backup',course_active_only=True,**{flag:True})
+        # UTF-8: editor preservation is read-only and cannot mix with mutation scenarios.
+        for flag in ['probe_only','course_active_only','resource_confirmation_only','student_balance_only']:
+            with self.assertRaisesRegex(ValueError,'RESOURCE_EDITOR_SCOPE_CONFLICT'):
+                run('not-a-backup',resource_editor_only=True,**{flag:True})
 
     def test_retained_course_actions_exact_history(self):
         before = {'student': {'id': 'student', 'name': '原学生'}}

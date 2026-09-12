@@ -15,7 +15,9 @@ async function checkMountedCalendar() {
     for(const file of ['react/umd/react.production.min.js','react-dom/umd/react-dom.production.min.js'])await page.addScriptTag({path:path.join(root,'node_modules',file)});
     await page.evaluate(code=>{
       const R=window.React,element=R.createElement;
-      window.mounts={calendar:0,student:0,course:0};window.unmounts={calendar:0,student:0,course:0};
+      const resources={student:'StudentList',teacher:'TeacherList',address:'RoomManager',school:'SchoolManager',institution:'InstitutionManager',payment:'PaymentList'};
+      window.mounts={calendar:0,course:0};window.unmounts={calendar:0,course:0};
+      Object.keys(resources).forEach(name=>{window.mounts[name]=0;window.unmounts[name]=0;});
       const stateful=name=>function Probe(){
         const [history,setHistory]=R.useState(0);
         R.useEffect(()=>{window.mounts[name]++;return()=>{window.unmounts[name]++;};},[]);
@@ -24,7 +26,7 @@ async function checkMountedCalendar() {
       const Calendar=stateful('calendar'),Student=stateful('student'),Course=stateful('course');
       const shell=({children,onNavigate,onRefresh})=>element('main',null,
         element('button',{id:'calendar-nav',onClick:()=>onNavigate('course-calendar')},'calendar'),
-        element('button',{id:'student-nav',onClick:()=>onNavigate('student')},'student'),
+        ...Object.keys(resources).map(name=>element('button',{key:name,id:name+'-nav',onClick:()=>onNavigate(name)},name)),
         element('button',{id:'course-nav',onClick:()=>onNavigate('course-info')},'course'),
         element('button',{id:'manual-refresh',onClick:onRefresh},'refresh'),children);
       const modules={react:R,antd:{},'@ant-design/icons':{},
@@ -38,6 +40,7 @@ async function checkMountedCalendar() {
         './components/question-editor/questionEditorSession':{requestEditorSpaNavigation:callback=>callback()},
         './services/browserDatabase':{default:{refreshAuthorityProjection:async()=>{}},__esModule:true}};
       const exported={};
+      Object.entries(resources).forEach(([name,file])=>{modules['./pages/'+file]={default:stateful(name),__esModule:true};});
       new Function('require','exports',code)(name=>{
         if(modules[name])return modules[name];
         if(name.startsWith('./pages/')||name==='./components/QuestionBasket')return{default:()=>null,__esModule:true};
@@ -57,9 +60,17 @@ async function checkMountedCalendar() {
     assert.deepEqual(await page.evaluate(()=>[mounts.calendar,unmounts.calendar]),[1,0]);
     await page.locator('#manual-refresh').click();assert.equal(await page.locator('#calendar').innerText(),'0');
     await page.waitForFunction(()=>mounts.calendar===2&&unmounts.calendar===1);
-    await page.locator('#student-nav').click();await page.locator('#student').click();
-    await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
-    await page.waitForFunction(()=>document.querySelector('#student').textContent==='0');
+    // UTF-8: cloud acknowledgement must not discard another unfinished resource editor.
+    for(const name of ['student','teacher','address','school','institution','payment']) {
+      await page.locator('#'+name+'-nav').click();await page.locator('#'+name).click();
+      for(let n=0;n<3;n++) {
+        await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        assert.equal(await page.locator('#'+name).innerText(),'1',name+' original editor state must survive acknowledged cache refresh');
+      }
+      assert.deepEqual(await page.evaluate(key=>[mounts[key],unmounts[key]],name),[1,0]);
+      await page.locator('#manual-refresh').click();assert.equal(await page.locator('#'+name).innerText(),'0');
+    }
     // UTF-8: acknowledged course writes cannot reset the original filters or open form.
     await page.locator('#course-nav').click();await page.locator('#course').click();
     for(let n=0;n<3;n++) {
@@ -133,4 +144,32 @@ function checkCourseReadEffect() {
   assert.equal(reads.count,2,'course page must remove its listener when leaving');
   console.log('actual course load effect refreshes cache in place and removes its listener on unmount');
 }
-checkMountedCalendar().then(()=>{checkCalendarReadEffect();checkCourseReadEffect();}).catch(error=>{console.error(error);process.exitCode=1;});
+function checkResourceReadEffects() {
+  for(const name of ['StudentList','TeacherList','RoomManager','SchoolManager','InstitutionManager','PaymentList']) {
+    const source=fs.readFileSync(path.join(__dirname,'pages',name+'.tsx'),'utf8');
+    const tree=ts.createSourceFile(name+'.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+    const readerName=name==='InstitutionManager'?'loadInstitutions':'loadData';let reader;const effects=[];
+    const visit=node=>{
+      if(ts.isVariableDeclaration(node)&&node.name.getText(tree)===readerName)reader=node.initializer;
+      if(ts.isCallExpression(node)&&node.expression.getText(tree)==='useEffect'&&node.arguments[0]?.getText(tree).includes(readerName+'();'))effects.push(node.arguments[0]);
+      ts.forEachChild(node,visit);
+    };visit(tree);assert(reader);assert.equal(effects.length,1);
+    const window=new EventTarget(),state={},calls=[];let revision=1;
+    const dbService=new Proxy({}, {get:(_,key)=>{
+      assert.match(String(key),/^get/,'refresh must never write business data');
+      return()=>{calls.push(key);return [{id:'one',name:'school-'+revision,count:revision,revision}];};
+    }});
+    const setters=[...new Set(reader.getText(tree).match(/\bset[A-Z]\w*/g))];
+    const context={window,dbService,console,buildSchoolOptions:rows=>rows.map(row=>({value:row.name})),...Object.fromEntries(setters.map(key=>[key,value=>{state[key]=value;}]))};
+    const code=compile('const '+readerName+'='+reader.getText(tree)+';const effect='+effects[0].getText(tree)+';');
+    const cleanup=new Function(...Object.keys(context),code+'return effect();')(...Object.values(context));
+    const baseline=JSON.stringify(state),initialReads=calls.length;assert(initialReads>0);
+    revision=2;window.dispatchEvent(new Event('authority-projection-refreshed'));
+    assert.equal(calls.length,initialReads*2,name+' refresh must reread all displayed relations');
+    assert.notEqual(JSON.stringify(state),baseline,name+' cache read must reach page state');
+    assert.equal(typeof cleanup,'function');cleanup();window.dispatchEvent(new Event('authority-projection-refreshed'));
+    assert.equal(calls.length,initialReads*2,name+' must remove its listener on unmount');
+  }
+  console.log('six actual resource read effects refresh displayed data without writes and remove listeners');
+}
+checkMountedCalendar().then(()=>{checkCalendarReadEffect();checkCourseReadEffect();checkResourceReadEffects();}).catch(error=>{console.error(error);process.exitCode=1;});
