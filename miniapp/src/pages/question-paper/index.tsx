@@ -161,7 +161,7 @@ export default function QuestionPaperPage() {
   const [items, setItems] = useState<PaperItem[]>([]);
   const [title, setTitle] = useState('练习试卷');
   const [answerPosition, setAnswerPosition] = useState<'end' | 'after'>('end');
-  const formulaMode = 'latex-vector';
+  const formulaMode = 'word-native';
   const [loading, setLoading] = useState(true);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [catalogError, setCatalogError] = useState('');

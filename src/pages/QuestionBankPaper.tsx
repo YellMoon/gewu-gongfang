@@ -153,7 +153,7 @@ const QuestionBankPaper: React.FC = () => {
   const [items, setItems] = useState<PaperQuestion[]>([]);
   const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('end');
   const [includeDraft, setIncludeDraft] = useState(true);
-  const formulaMode = 'latex-vector' as const;
+  const formulaMode = 'word-native' as const;
   const [exportingFormat, setExportingFormat] = useState<PaperArtifactFormat | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [runtimeConfigError, setRuntimeConfigError] = useState('');

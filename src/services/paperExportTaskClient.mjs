@@ -167,6 +167,7 @@ export async function retryPaperExportTask(config, localId, deps = {}) {
   const key = randomId(deps);
   const draft = {
     ...previous, localId: `paper_${key}`, idempotencyKey: key, serverTaskId: '',
+    request: { ...previous.request, formulaMode: previous.request.format === 'word' ? 'word-native' : previous.request.formulaMode },
     status: 'draft', phase: 'draft', progress: 0, accepted: false, result: null, message: '', errorCode: '',
     createdAt: nowIso(deps), updatedAt: nowIso(deps), retryOf: previous.localId,
   };

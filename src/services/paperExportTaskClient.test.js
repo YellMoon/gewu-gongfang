@@ -81,6 +81,28 @@ function memoryStorage(seed = {}) {
   assert.strictEqual(JSON.parse(retryCalls[0].init.body).payload.questionIds.join(','), 'q3,q1,q2');
   assert.strictEqual(retryCalls[0].init.headers['x-idempotency-key'], 'idem-retry', 'manual retry must use a fresh idempotency key');
 
+  for (const format of ['word', 'pdf']) {
+    const legacyStorage = memoryStorage();
+    const legacy = await client.submitPaperExportTask(config, { ...input, format, formulaMode: 'latex-vector' }, {
+      taskStorage: legacyStorage, authStorage, idempotencyKeyFactory: () => `legacy-${format}`,
+      fetchImpl: async () => { throw new Error('offline'); },
+    });
+    let retryRequest;
+    const updated = await client.retryPaperExportTask(config, legacy.task.localId, {
+      taskStorage: legacyStorage, authStorage, idempotencyKeyFactory: () => `native-retry-${format}`,
+      fetchImpl: async (_url, init) => {
+        retryRequest = JSON.parse(init.body);
+        return { ok: true, status: 202, json: async () => ({ ok: true, task: { taskId: `retried-${format}`, status: 'queued' } }) };
+      },
+    });
+    const expectedMode = format === 'word' ? 'word-native' : 'latex-vector';
+    assert.strictEqual(retryRequest.payload.formulaMode, expectedMode, 'Explicit Word retry must correct old image formula mode, without changing PDF');
+    assert.strictEqual(updated.task.request.formulaMode, expectedMode);
+    assert.deepStrictEqual(retryRequest.payload.layout, input.layout);
+    assert.strictEqual(client.loadPaperExportTasks(legacyStorage).find(task => task.localId === legacy.task.localId).request.formulaMode,
+      'latex-vector', 'Keep the original task record unchanged');
+  }
+
   const unavailableStorage = memoryStorage();
   const unavailable = await client.submitPaperExportTask(config, input, { taskStorage: unavailableStorage, authStorage,
     fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ ok: false, code: 'CLOUD_TASK_UNAVAILABLE' }) }) });
