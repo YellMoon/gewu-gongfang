@@ -123,6 +123,10 @@ async function confirmedHttpRoundTrip(writer,admin){
   const beforeCollision=await snapshot();
   await writer(db=>assert.rejects(()=>create(db,'collision','Collision'),e=>e.message==='VNEXT_INSTITUTION_BILLING_LINK_INVALID'));
   assert.deepEqual(await snapshot(),beforeCollision,'stable generated ID must never overwrite an unrelated record');
+  await admin(async db=>{
+   await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+   await db.query(fs.readFileSync(path.join(__dirname,'20260913-teacher-institution-scope.sql'),'utf8'));
+  });
   await confirmedHttpRoundTrip(writer,admin);
   // UTF-8: execute the actual desktop projection fragments as its read-only role.
   const appSource=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');

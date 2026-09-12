@@ -579,7 +579,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     "'teachers',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'name',t.name,'phone',t.phone_legacy,'subject',t.subject,'hourly_rate',CASE WHEN $2 IN ('manager','teacher') THEN t.hourly_rate ELSE NULL END,'notes',CASE WHEN $2 IN ('manager','teacher') THEN t.notes ELSE NULL END,'deleted',false,'created_at',t.created_at,'updated_at',t.updated_at) ORDER BY t.id) FROM business.teachers t WHERE t.tenant_id=$1 AND t.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND (t.id=$3 OR t.id IN (SELECT id FROM managed_teachers))) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.teacher_id=t.id))),'[]'::jsonb),",
     "'courses',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'year',c.year,'semester',c.semester,'display_name',c.display_name,'type',c.course_type,'source_type',c.legacy_source_type,'institution_id',c.institution_id,'price_tuition',c.price_tuition,'price_teacher',CASE WHEN $2 IN ('manager','teacher') THEN c.price_teacher ELSE NULL END,'billing_unit',c.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN c.teacher_fee_mode ELSE NULL END,'room_id',c.legacy_room_id,'room_name',c.room_name_snapshot,'teacher_id',c.teacher_id,'teacher_name',c.teacher_name_snapshot,'active',c.legacy_active,'default_duration_minutes',c.default_duration_minutes,'notes',c.notes,'deleted',false,'created_at',c.created_at,'updated_at',c.updated_at,'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY c.id) FROM scoped_courses c),'[]'::jsonb),",
     "'schedules',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'course_id',s.course_id,'start_time',s.start_at,'end_time',s.end_at,'recurring_rule',s.recurring_rule_json,'status',s.status,'room',s.room_display_snapshot,'service_type',s.service_type,'billing_unit',s.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN s.teacher_fee_mode ELSE NULL END,'teacher_id',s.teacher_id,'teacher_name',s.teacher_name,'calculated_tuition',CASE WHEN $2='student' THEN " + STUDENT_SCHEDULE_TUITION_SQL + " ELSE s.calculated_tuition END,'calculated_teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN s.calculated_teacher_fee ELSE NULL END,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at,'student_ids',COALESCE((SELECT jsonb_agg(o.student_id ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(p.student_id ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb),'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',o.student_id,'tuition',o.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN o.teacher_fee ELSE NULL END,'attendance_status',o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY s.start_at,s.id) FROM scoped_schedules s),'[]'::jsonb),",
-    "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'billing_student_id',(SELECT b.student_id FROM business.institution_billing_students b WHERE b.tenant_id=i.tenant_id AND b.institution_id=i.id),'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
+    "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'billing_student_id',(SELECT b.student_id FROM business.institution_billing_students b WHERE b.tenant_id=i.tenant_id AND b.institution_id=i.id),'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND i.created_by_teacher_id=$3 AND EXISTS (SELECT 1 FROM business.teachers actor WHERE actor.tenant_id=$1 AND actor.id=$3 AND actor.legacy_deleted=false)) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND r.created_by_teacher_id=$3) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
     "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.id,'category_id',asset.category_id,'category_name',asset.category_name,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'student_id',asset.student_id,'student_name',asset.student_name,'note',asset.note,'created_at',asset.created_at,'updated_at',asset.updated_at) ORDER BY asset.record_date DESC,asset.id) FROM (SELECT record_id AS id,category_id,category_name,amount,record_type,record_date,NULL::text AS student_id,NULL::text AS student_name,note,created_at,updated_at FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT record_id,category_id,category_name,amount,record_type,record_date,student_id,student_name,note,created_at,updated_at FROM business.personal_asset_manual_records WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) asset),'[]'::jsonb),",
@@ -1776,6 +1776,15 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
   });
 
+  function foundationWriteScope(context, serviceName) {
+    if (serviceName === 'institutions') return { actorScope: scheduleWriteScope(context) };
+    if (!context?.roles?.includes('super_admin')) throw Object.assign(new Error('CLOUD_BUSINESS_ACCESS_DENIED'), { code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+    return {};
+  }
+  function foundationWriteDenied(error) {
+    return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || (error?.code === '42501'
+      && ['VNEXT_TEACHER_INSTITUTION_SCOPE_DENIED', 'VNEXT_TEACHER_PROFILE_SCOPE_DENIED'].includes(error.message));
+  }
   const foundationRoutes = [
     ['institutions', 'institutionId', institutionRecord, 'institutions', 'INSTITUTION'],
     ['schools', 'schoolId', schoolRecord, 'schools', 'SCHOOL'],
@@ -1786,14 +1795,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const recordId = String(request.body?.[idName] || '').trim(); const data = parser(request.body?.data, false);
       if (!recordId || !data || !exactBody(request.body, [idName, 'data'])) return businessInputInvalid(response);
       try {
-        const context = await desktopBusinessContext(request); if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-        const record = await businessFoundationLifecycleMutations[serviceName].create({ tenantId: businessTenantId, [idName]: recordId, ...data });
+        const context = await desktopBusinessContext(request);
+        const record = await businessFoundationLifecycleMutations[serviceName].create({ tenantId: businessTenantId, [idName]: recordId, ...data, ...foundationWriteScope(context, serviceName) });
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.status(201).json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
         if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
-        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        if (foundationWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
         businessUnavailable(response);
       }
     });
@@ -1802,14 +1811,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const recordId = String(request.params[idName] || '').trim(); const data = parser(request.body, true);
       if (!recordId || !data) return businessInputInvalid(response);
       try {
-        const context = await desktopBusinessContext(request); if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-        const record = await businessFoundationLifecycleMutations[serviceName].update({ tenantId: businessTenantId, [idName]: recordId, ...data });
+        const context = await desktopBusinessContext(request);
+        const record = await businessFoundationLifecycleMutations[serviceName].update({ tenantId: businessTenantId, [idName]: recordId, ...data, ...foundationWriteScope(context, serviceName) });
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
         if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
-        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        if (foundationWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
         businessUnavailable(response);
       }
     });
@@ -1818,13 +1827,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const recordId = String(request.params[idName] || '').trim(); const expectedUpdatedAt = versionInstant(request.body?.expectedUpdatedAt);
       if (!recordId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
       try {
-        const context = await desktopBusinessContext(request); if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-        const record = await businessFoundationLifecycleMutations[serviceName].remove({ tenantId: businessTenantId, [idName]: recordId, expectedUpdatedAt });
+        const context = await desktopBusinessContext(request);
+        const record = await businessFoundationLifecycleMutations[serviceName].remove({ tenantId: businessTenantId, [idName]: recordId, expectedUpdatedAt, ...foundationWriteScope(context, serviceName) });
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
         if (error?.code === 'P0001') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_REFERENCED` });
-        if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+        if (foundationWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
         businessUnavailable(response);
       }
     });
