@@ -24,6 +24,9 @@ class BusinessParityShadowGuardTest(unittest.TestCase):
                 run('not-a-backup',retained_student_actions_only=True,**{course_flag:True})
         with self.assertRaisesRegex(ValueError,'REFRESH_ACTION_SCOPE_CONFLICT'):
             run('not-a-backup',course_refresh_only=True,retained_student_actions_only=True)
+        for flag in ['course_refresh_only','retained_student_actions_only','course_confirmation_only']:
+            with self.assertRaisesRegex(ValueError,'COURSE_ACTIVE_SCOPE_CONFLICT'):
+                run('not-a-backup',course_active_only=True,**{flag:True})
 
     def test_retained_course_actions_exact_history(self):
         before = {'student': {'id': 'student', 'name': '原学生'}}

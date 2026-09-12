@@ -93,6 +93,9 @@ const CourseList: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    // UTF-8: preserve the original filters and editing window across cloud readback.
+    window.addEventListener('authority-projection-refreshed', loadData);
+    return () => window.removeEventListener('authority-projection-refreshed', loadData);
   }, []);
 
   const handleAdd = () => {

@@ -15,21 +15,23 @@ async function checkMountedCalendar() {
     for(const file of ['react/umd/react.production.min.js','react-dom/umd/react-dom.production.min.js'])await page.addScriptTag({path:path.join(root,'node_modules',file)});
     await page.evaluate(code=>{
       const R=window.React,element=R.createElement;
-      window.mounts={calendar:0,student:0};window.unmounts={calendar:0,student:0};
+      window.mounts={calendar:0,student:0,course:0};window.unmounts={calendar:0,student:0,course:0};
       const stateful=name=>function Probe(){
         const [history,setHistory]=R.useState(0);
         R.useEffect(()=>{window.mounts[name]++;return()=>{window.unmounts[name]++;};},[]);
         return element('button',{id:name,onClick:()=>setHistory(n=>n+1)},String(history));
       };
-      const Calendar=stateful('calendar'),Student=stateful('student');
+      const Calendar=stateful('calendar'),Student=stateful('student'),Course=stateful('course');
       const shell=({children,onNavigate,onRefresh})=>element('main',null,
         element('button',{id:'calendar-nav',onClick:()=>onNavigate('course-calendar')},'calendar'),
         element('button',{id:'student-nav',onClick:()=>onNavigate('student')},'student'),
+        element('button',{id:'course-nav',onClick:()=>onNavigate('course-info')},'course'),
         element('button',{id:'manual-refresh',onClick:onRefresh},'refresh'),children);
       const modules={react:R,antd:{},'@ant-design/icons':{},
         './layout/AppShell':{default:shell,__esModule:true},
         './pages/ScheduleCalendar':{default:Calendar,__esModule:true},
         './pages/StudentList':{default:Student,__esModule:true},
+        './pages/CourseList':{default:Course,__esModule:true},
         './components/ErrorBoundary':{default:({children})=>children,__esModule:true},
         './navigation/appNavigation':{questionBankPages:[]},
         './navigation/navigationContext':{normalizeNavigationTarget:input=>typeof input==='string'?{page:input}:input},
@@ -58,6 +60,15 @@ async function checkMountedCalendar() {
     await page.locator('#student-nav').click();await page.locator('#student').click();
     await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
     await page.waitForFunction(()=>document.querySelector('#student').textContent==='0');
+    // UTF-8: acknowledged course writes cannot reset the original filters or open form.
+    await page.locator('#course-nav').click();await page.locator('#course').click();
+    for(let n=0;n<3;n++) {
+      await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await page.locator('#course').innerText(),'1','projection refresh must preserve course filters and form state');
+    }
+    assert.deepEqual(await page.evaluate(()=>[mounts.course,unmounts.course]),[1,0]);
+    await page.locator('#manual-refresh').click();assert.equal(await page.locator('#course').innerText(),'0');
     await page.locator('#calendar-nav').click();await page.locator('#calendar').waitFor();
     assert.equal(await page.locator('#calendar').innerText(),'0','leaving/reopening keeps the original navigation reset');
     await page.locator('#calendar').click();
@@ -65,7 +76,7 @@ async function checkMountedCalendar() {
     await page.locator('#calendar').waitFor({state:'hidden'});
     await page.locator('#calendar-nav').click();await page.locator('#calendar').waitFor();
     assert.equal(await page.locator('#calendar').innerText(),'0','account/role partition replacement must discard old history');
-    console.log('actual App preserves calendar instance on projection refresh; manual refresh and other-page behavior unchanged');
+    console.log('actual App preserves calendar/course instances on projection refresh; manual refresh and account partition resets remain');
   } finally {await browser.close();}
 }
 
@@ -99,4 +110,27 @@ function checkCalendarReadEffect() {
   assert.equal(reads.count,2,'unmounted calendar must remove its projection listener');assert.equal(state.interval,null);
   console.log('actual calendar load effect refreshes cache in place and removes its listener on unmount');
 }
-checkMountedCalendar().then(checkCalendarReadEffect).catch(error=>{console.error(error);process.exitCode=1;});
+function checkCourseReadEffect() {
+  // UTF-8: execute the actual cache reader/effect without replacing the course component state.
+  const course=fs.readFileSync(path.join(__dirname,'pages/CourseList.tsx'),'utf8');
+  const tree=ts.createSourceFile('course.tsx',course,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let reader;const effects=[];
+  const visit=node=>{
+    if(ts.isVariableDeclaration(node)&&node.name.getText(tree)==='loadData')reader=node.initializer;
+    if(ts.isCallExpression(node)&&node.expression.getText(tree)==='useEffect'&&node.arguments[0]?.getText(tree).includes('loadData();'))effects.push(node.arguments[0]);
+    ts.forEachChild(node,visit);
+  };visit(tree);assert(reader);assert.equal(effects.length,1);
+  const window=new EventTarget(),state={},reads={count:0};let records=[{id:'course',active:true}];
+  const dbService={getAllCourses:()=>{reads.count++;return records;},getAllInstitutions:()=>[],getAllTeachers:()=>[],getAllStudents:()=>[],getAllRooms:()=>[]};
+  const setter=key=>value=>{state[key]=value;};
+  const context={window,dbService,console,setCourses:setter('courses'),setInstitutions:setter('institutions'),setTeachers:setter('teachers'),setStudents:setter('students'),setRooms:setter('rooms')};
+  const code=compile('const loadData='+reader.getText(tree)+';const effect='+effects[0].getText(tree)+';');
+  const cleanup=new Function(...Object.keys(context),code+'return effect();')(...Object.values(context));
+  assert.equal(reads.count,1);assert.notEqual(state.courses,records);
+  records=[{id:'course',active:false}];window.dispatchEvent(new Event('authority-projection-refreshed'));
+  assert.equal(reads.count,2,'mounted course page must read acknowledged cloud cache');assert.deepEqual(state.courses,records);
+  assert.equal(typeof cleanup,'function');cleanup();window.dispatchEvent(new Event('authority-projection-refreshed'));
+  assert.equal(reads.count,2,'course page must remove its listener when leaving');
+  console.log('actual course load effect refreshes cache in place and removes its listener on unmount');
+}
+checkMountedCalendar().then(()=>{checkCalendarReadEffect();checkCourseReadEffect();}).catch(error=>{console.error(error);process.exitCode=1;});
