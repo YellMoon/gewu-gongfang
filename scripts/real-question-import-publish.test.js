@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 require('./prepare-question-formula-correction.test');
+require('./apply-question-formula-corrections.test');
 const {
   changesForPublishedQuestion, importedQuestionIds, questionCreateCommand, questionPublishCommand,
   questionRecordFromImportItem,
