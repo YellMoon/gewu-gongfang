@@ -18,13 +18,14 @@ function ownedSql(name) {
 const APPLY = Object.freeze({ appliedAt: '2026-08-27T00:00:00.000Z', appliedBy: 'question-import-media-binding-test' });
 const HASH = 'a'.repeat(64);
 
-function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
+function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} }) {
   const payload = {
     record: {
       id, subject: 'physics', type: 'single_choice', difficulty: 3,
       content: 'A question with a NAS image',
       options: [{ label: 'A', content: 'option A' }, { label: 'B', content: 'option B' }], answer: 'A', analysis: '',
       knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: [], has_formula: false,
+      ...metadata,
       import_task_id: taskId, import_item_id: itemId, import_item_index: itemIndex, import_content_hash: contentHash,
     },
   };
@@ -92,9 +93,11 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
       });
       const accepted = await service.submitDesktopDraft({
         tenantId: 'tenant-1', actor: { accountId: 'teacher-1', roles: ['teacher'] },
-        command: commandFor({ id: 'question-bound-1', taskId: 'question_import_task_demo', itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: HASH }),
+        command: commandFor({ id: 'question-bound-1', taskId: 'question_import_task_demo', itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: HASH, metadata: {year: '2026', grade: 'Grade 12', has_image: true} }),
       });
       assert.strictEqual(accepted.status, 'committed');
+      assert.deepStrictEqual((await facade.query("SELECT exam_year,grade,has_image FROM business.questions WHERE id='question-bound-1'")).rows,
+        [{exam_year: '2026', grade: 'Grade 12', has_image: true}], 'bound imports retain original editable metadata as well as media');
       const asset = await facade.query('SELECT question_id,storage_object_id,storage_object_version,content_hash,state FROM business.question_assets WHERE question_id=$1', ['question-bound-1']);
       assert.deepStrictEqual(asset.rows.map(row => ({
         questionId: row.question_id, objectId: row.storage_object_id, objectVersion: row.storage_object_version, contentHash: row.content_hash, state: row.state,
@@ -143,6 +146,22 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash }) {
         error => error?.code === 'CLOUD_QUESTION_UNAVAILABLE',
       );
       assert.deepStrictEqual((await facade.query("SELECT id FROM business.questions WHERE id='question-hash-mismatch'")).rows, []);
+      for (const [suffix, source] of [['manual', 'Reviewed source'], ['cleared', null]]) {
+        const taskId = `question_import_task_${suffix}`, itemId = `question_import_item_${suffix}`;
+        await facade.query(`INSERT INTO business.question_import_tasks
+          (task_id,tenant_id,account_id,idempotency_key,source_type,source_file_name,source_mime_type,source_sha256,source_size_bytes,metadata_json,request_hash,status,phase)
+          SELECT $1,tenant_id,account_id,$1,source_type,source_file_name,source_mime_type,source_sha256,source_size_bytes,metadata_json,request_hash,'drafts_prepared','drafts_prepared'
+          FROM business.question_import_tasks WHERE task_id='question_import_task_demo'`, [taskId]);
+        await facade.query(`INSERT INTO business.question_import_items
+          (item_id,import_task_id,item_index,content_hash,candidate_json,validation_json,media_manifest_json,status)
+          VALUES ($1,$2,0,$3,'{"assets":[]}','{}','[]','draft_prepared')`, [itemId,taskId,HASH]);
+        const id = `question-bound-${suffix}`;
+        const result = await service.submitDesktopDraft({tenantId:'tenant-1',actor:{accountId:'teacher-1',roles:['teacher']},
+          command:commandFor({id,taskId,itemId,itemIndex:0,contentHash:HASH,metadata:{source,year:'2025'}})});
+        assert.strictEqual(result.status,'committed');
+        assert.deepStrictEqual((await facade.query('SELECT source,exam_year FROM business.questions WHERE id=$1',[id])).rows,
+          [{source,exam_year:'2025'}], 'explicit import source or clear takes precedence over the original filename default');
+      }
     });
   } finally {
     await runtime.disposeHandle(handle).catch(() => {});

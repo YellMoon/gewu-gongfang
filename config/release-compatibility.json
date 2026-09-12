@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopQuestionMetadata": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "existing question source/year/grade/semester/exam_type/region/school/subject_id/chapter_id/edit_status/has_image fields persist in existing business.questions columns and round-trip through desktop reads; omitted update fields preserve prior values, explicit clears remain explicit and metadata edits use the existing content-version CAS; absent import source defaults to the verified original filename; cloud-only implementation correction, no new schema or NAS change"
+    },
     "desktopQuestionProjection": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

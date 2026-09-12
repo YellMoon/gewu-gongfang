@@ -94,6 +94,45 @@ function optionalLegacyText(value, max = 1048576) {
   return text(value, { max });
 }
 
+// Existing desktop fields and existing database columns, not a new protocol.
+const QUESTION_METADATA_COLUMNS = Object.freeze({
+  source: 'source', year: 'exam_year', grade: 'grade', semester: 'semester',
+  exam_type: 'exam_type', region: 'region', school: 'school', subject_id: 'subject_id',
+  chapter_id: 'chapter_id', edit_status: 'edit_status', has_image: 'has_image',
+});
+function questionMetadata(value, strict = false) {
+  if (!plainObject(value) || (strict && Reflect.ownKeys(value).some(key => !Object.hasOwn(QUESTION_METADATA_COLUMNS, key)))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  const result = {};
+  for (const key of Object.keys(QUESTION_METADATA_COLUMNS)) {
+    if (!Object.hasOwn(value, key) || value[key] === undefined) continue;
+    if (key === 'has_image') {
+      if (typeof value[key] !== 'boolean') throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      result[key] = value[key];
+    } else if (key === 'edit_status') {
+      if (!['unreviewed', 'reviewed'].includes(value[key])) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      result[key] = value[key];
+    } else {
+      result[key] = optionalLegacyText(value[key], 4096);
+    }
+  }
+  return result;
+}
+function metadataInsertValues(parameter, sourceFallback = 'NULL') {
+  return Object.keys(QUESTION_METADATA_COLUMNS).map(key => {
+    const value = `${parameter}::jsonb->>'${key}'`;
+    if (key === 'source') return `CASE WHEN ${parameter}::jsonb ? 'source' THEN ${value} ELSE ${sourceFallback} END`;
+    if (key === 'has_image') return `COALESCE((${value})::boolean,false)`;
+    if (key === 'edit_status') return `COALESCE(${value},'unreviewed')`;
+    return value;
+  }).join(',');
+}
+function metadataUpdateAssignments(parameter) {
+  return Object.entries(QUESTION_METADATA_COLUMNS).map(([key, column]) => {
+    const value = `${parameter}::jsonb->>'${key}'`;
+    return `${column}=CASE WHEN ${parameter}::jsonb ? '${key}' THEN ${key === 'has_image' ? `(${value})::boolean` : value} ELSE q.${column} END`;
+  }).join(',');
+}
+
 function idList(value) {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.length > 4096) throw failure('CLOUD_QUESTION_INPUT_INVALID');
@@ -183,6 +222,7 @@ function legacyQuestion(record) {
       taxonomyIds: taxonomyMap(record.taxonomy_ids),
     },
     hasFormula: Boolean(record.has_formula),
+    metadata: questionMetadata(record),
     importBinding: legacyImportBinding(record),
   };
   if (status !== null) question.status = status;
@@ -283,7 +323,7 @@ function questionListRow(row) {
     content: row.content, options: row.options, answer: row.answer ?? null, analysis: row.analysis ?? null,
     rich_content: row.rich_content ?? null, knowledge_point_ids: knowledgePointIds, model_point_ids: modelPointIds,
     taxonomy_ids: taxonomyIds, has_formula: row.has_formula, version: Number(row.version),
-    source: row.source ?? '', knowledgeLabels,
+    ...questionMetadata(row), source: row.source ?? '', knowledgeLabels,
   };
 }
 
@@ -359,6 +399,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const result = await query(
         `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem AS content,c.options_json AS options,
                 c.answer,c.explanation AS analysis,c.rich_content_json AS rich_content,q.taxonomy_json AS taxonomy,q.has_formula,c.version,
+                ${Object.entries(QUESTION_METADATA_COLUMNS).filter(([key]) => key !== 'source').map(([key, column]) => `q.${column} AS "${key}"`).join(',')},
                 COALESCE((
                   SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
                   FROM business.question_taxonomy_nodes n
@@ -382,7 +423,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
       if (!plainObject(request.question)
-        || Reflect.ownKeys(request.question).some(key => !['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula', 'importBinding'].includes(key))) {
+        || Reflect.ownKeys(request.question).some(key => !['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula', 'importBinding', 'metadata'].includes(key))) {
         throw failure('CLOUD_QUESTION_INPUT_INVALID');
       }
       const question = request.question;
@@ -398,14 +439,15 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const taxonomy = json(question.taxonomy);
       const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
       const binding = question.importBinding === undefined || question.importBinding === null ? null : importBinding(question.importBinding);
+      const metadata = json(questionMetadata(question.metadata === undefined ? {} : question.metadata, true));
       if (binding !== null) assertChoiceQuestionStructure(questionType, question.options, answer);
       const result = await currentQuery(binding ?
         `WITH import_item AS (
            SELECT item.import_task_id,item.item_index,item.candidate_json
              FROM business.question_import_tasks task
              JOIN business.question_import_items item ON item.import_task_id=task.task_id
-            WHERE task.task_id=$15 AND task.tenant_id=$2 AND task.account_id=$6 AND task.status='drafts_prepared'
-              AND item.item_id=$16 AND item.item_index=$17 AND item.content_hash=$18 AND item.status='draft_prepared'
+            WHERE task.task_id=$16 AND task.tenant_id=$2 AND task.account_id=$6 AND task.status='drafts_prepared'
+              AND item.item_id=$17 AND item.item_index=$18 AND item.content_hash=$19 AND item.status='draft_prepared'
          ), all_media AS (
            SELECT media.media_id
              FROM import_item item
@@ -430,8 +472,8 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
              FROM import_item item
             WHERE (SELECT count(*) FROM all_media)=(SELECT count(*) FROM verified_media)
          ), inserted_question AS (
-           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,source)
-           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,task.source_file_name
+           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,${Object.values(QUESTION_METADATA_COLUMNS).join(',')})
+           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,${metadataInsertValues('$15', 'task.source_file_name')}
              FROM binding_complete
              JOIN business.question_import_tasks task ON task.task_id=binding_complete.import_task_id
            RETURNING id,status
@@ -449,29 +491,29 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
          ), submitted_item AS (
            UPDATE business.question_import_items item SET status='submitted',updated_at=transaction_timestamp()
              FROM inserted_question question
-            WHERE item.import_task_id=$15 AND item.item_id=$16 AND item.item_index=$17 AND item.content_hash=$18 AND item.status='draft_prepared'
+            WHERE item.import_task_id=$16 AND item.item_id=$17 AND item.item_index=$18 AND item.content_hash=$19 AND item.status='draft_prepared'
            RETURNING item.item_id
          ), submitted_task AS (
            UPDATE business.question_import_tasks task SET status='submitted',phase='submitted',updated_at=transaction_timestamp()
-            WHERE task.task_id=$15 AND EXISTS (SELECT 1 FROM submitted_item)
+            WHERE task.task_id=$16 AND EXISTS (SELECT 1 FROM submitted_item)
               AND NOT EXISTS (
                 SELECT 1 FROM business.question_import_items pending
-                 WHERE pending.import_task_id=task.task_id AND pending.item_id<>$16
+                 WHERE pending.import_task_id=task.task_id AND pending.item_id<>$17
                    AND pending.status IN ('accepted','warning','draft_prepared')
               )
            RETURNING task.task_id
          ) SELECT q.id,q.status,c.version,c."contentHash" FROM inserted_question q CROSS JOIN inserted_content c CROSS JOIN submitted_item`
         :
         `WITH inserted_question AS (
-           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula)
-           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)
+           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,${Object.values(QUESTION_METADATA_COLUMNS).join(',')})
+           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,${metadataInsertValues('$15')})
            RETURNING id,status
          ), inserted_content AS (
            INSERT INTO business.question_contents (question_id,tenant_id,stem,answer,explanation,options_json,rich_content_json,content_hash)
            SELECT $1,$2,$9,$10,$11,$12::jsonb,$13::jsonb,$14 FROM inserted_question
            RETURNING version,content_hash AS "contentHash"
          ) SELECT q.id,q.status,c.version,c."contentHash" FROM inserted_question q CROSS JOIN inserted_content c`,
-        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash,
+        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash, metadata,
           ...(binding ? [binding.taskId, binding.itemId, binding.itemIndex, binding.contentHash] : [])],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
@@ -526,12 +568,12 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
              RETURNING c.question_id,c.version,c.content_hash AS "contentHash"
            ), updated_question AS (
              UPDATE business.questions AS q
-                SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,status=COALESCE($8,q.status),updated_at=transaction_timestamp()
+                SET subject=$3,question_type=$4,difficulty=$5,taxonomy_json=$6::jsonb,has_formula=$7,status=COALESCE($8,q.status),${metadataUpdateAssignments('$16')},updated_at=transaction_timestamp()
                FROM updated_content c
               WHERE q.id=c.question_id AND q.tenant_id=$2 AND q.deleted=false
              RETURNING q.id,q.status
            ) SELECT q.id,q.status,c.version,c."contentHash" FROM updated_question q CROSS JOIN updated_content c`,
-          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.status, question.stem, question.answer, question.explanation, options, richContent, contentHash, command.expectedVersion],
+          [question.id, tenantId, question.subject, question.questionType, question.difficulty, taxonomy, question.hasFormula, question.status, question.stem, question.answer, question.explanation, options, richContent, contentHash, command.expectedVersion, json(question.metadata)],
         );
         if (!updated || !Array.isArray(updated.rows) || updated.rows.length > 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');
         if (updated.rows.length === 0) {

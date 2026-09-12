@@ -37,7 +37,11 @@ function resolveQuestionAssetRefs(value, paths = {}) {
     .replace(QUESTION_ASSET_IMAGE, (_match, before, _quote, assetKey, after) => {
       const resolved = typeof paths?.[assetKey] === 'string' ? paths[assetKey].trim() : '';
       if (!resolved) return visiblePlaceholder(`${before || ''}${after || ''}`);
-      return `<img${before || ' '}src="${escapeHtml(resolved)}"${after || ''}>`;
+      // RichText owns its internal image nodes, so outer WXSS image selectors
+      // do not provide the desktop renderer's responsive bounds here.
+      const attributes = `${before || ''}${after || ''}`.replace(/\/\s*$/, '')
+        .replace(/\s(?:style|width|height)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+      return `<img${attributes} src="${escapeHtml(resolved)}" style="max-width:100%;height:auto;vertical-align:middle;object-fit:contain;">`;
     })
     .replace(QUESTION_ASSET_REF, (_match, assetKey) => {
       const resolved = typeof paths?.[assetKey] === 'string' ? paths[assetKey].trim() : '';

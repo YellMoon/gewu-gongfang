@@ -232,5 +232,15 @@ const resolvedAsset = resolveQuestionAssetRefs(
 );
 assert.match(resolvedAsset, /wxfile:\/\/tmp\/diagram\.png\?x=1&amp;y=2/, 'resolved delivery paths must be safely inserted into RichText HTML');
 assert.doesNotMatch(resolvedAsset, /图片暂未加载/, 'resolved question assets must replace the loading placeholder');
+assert.match(resolvedAsset, /style="[^"]*max-width:100%;[^"]*height:auto;/,
+  'RichText images must carry the desktop size bounds inline; outer WXSS cannot size their internal nodes');
+const oversizedAsset = resolveQuestionAssetRefs(
+  `<img width="2600" height="1800" style="width:2600px;height:1800px" src="question-asset://${unresolvedAssetKey}" alt="diagram" />`,
+  { [unresolvedAssetKey]: 'wxfile://tmp/diagram.png' },
+);
+assert.doesNotMatch(oversizedAsset, /(?:width|height)="\d|2600|1800|[";]width:100%/,
+  'original bitmap dimensions must neither overflow the card nor force small images to stretch');
+assert.match(oversizedAsset, /alt="diagram"/);
+assert.strictEqual((oversizedAsset.match(/\sstyle=/g) || []).length, 1);
 
 console.log('miniapp question display checks passed');

@@ -35,8 +35,11 @@ class StartupWaitTests(unittest.TestCase):
         for state in ({'route': 'pages/index/index', 'accountId': 'other'},
                       {'route': 'pages/login/index', 'accountId': 'qa'}):
             with self.subTest(state=state), patch.object(subject, 'run_wechatide', return_value=state), patch.object(subject.time, 'sleep'):
-                with self.assertRaisesRegex(RuntimeError, 'STARTUP_HOME_NOT_READY'):
+                with self.assertRaisesRegex(RuntimeError, 'STARTUP_HOME_NOT_READY') as caught:
                     subject.wait_for_startup_home(Path('C:/miniapp'), 'qa', attempts=2)
+                self.assertIn(state['route'], str(caught.exception))
+                self.assertIn('accountMatches', str(caught.exception))
+                self.assertNotIn('"accountId"', str(caught.exception))
 
 
 if __name__ == '__main__':

@@ -299,7 +299,13 @@ def wait_for_startup_home(project, account_id, *, attempts=12):
             return
         if attempt + 1 < attempts:
             time.sleep(0.5)
-    raise RuntimeError('REAL_MINIAPP_ROLE_UI_STARTUP_HOME_NOT_READY')
+    route = state.get('route') if isinstance(state, dict) else None
+    observation = {
+        'route': route if isinstance(route, str) and re.fullmatch(r'pages/[a-z0-9_/-]+', route) else None,
+        'accountMatches': isinstance(state, dict) and state.get('accountId') == account_id,
+        'bridgeErrors': transient_failures,
+    }
+    raise RuntimeError('REAL_MINIAPP_ROLE_UI_STARTUP_HOME_NOT_READY:' + json.dumps(observation, sort_keys=True))
 
 
 def validate_png_screenshot(target):
@@ -485,11 +491,13 @@ def main(argv=None):
     try:
         receipt = fetch_sessions()
         for key in keys:
+            print(json.dumps({'role': key, 'stage': 'checking_identity'}), file=sys.stderr, flush=True)
             identity = verify_identity(project, receipt["sessions"][key], role_key=key, on_session_injected=lambda: injection_state.__setitem__("started", True))
             if args.pages:
                 wait_for_startup_home(project, receipt["sessions"][key]["accountId"])
             pages = verify_pages(project, ROLE_PAGES[key], role=key, account_id=receipt["sessions"][key]["accountId"], screenshots_dir=screenshots_dir) if args.pages else []
             checks[key] = redact_safe_receipt({"identity": identity, "pages": pages})
+            print(json.dumps({'role': key, 'stage': 'checked', 'pageCount': len(pages)}), file=sys.stderr, flush=True)
         print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
     finally:
         try:
