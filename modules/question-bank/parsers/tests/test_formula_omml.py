@@ -53,12 +53,16 @@ class OmmlFormulaTests(unittest.TestCase):
         prime = f"<m:sSup><m:e>{run('u')}</m:e><m:sup>{run(chr(39))}</m:sup></m:sSup>"
         self.assertLatex(
             f"<m:sSubSup><m:e>{prime}</m:e><m:sub>{run('1')}</m:sub><m:sup>{run('2')}</m:sup></m:sSubSup>",
-            r"{u^{'}}_{1}^{2}",
+            r"{u^{\prime}}_{1}^{2}",
         )
         self.assertLatex(
             f"<m:sSup><m:e><m:sSup><m:e>{run('x')}</m:e><m:sup>{run('2')}</m:sup></m:sSup></m:e><m:sup>{run('3')}</m:sup></m:sSup>",
             r"{x^{2}}^{3}",
         )
+
+    def test_superscript_prime_is_a_symbol_not_tex_empty_base_shorthand(self):
+        for primes, expected in (("'", r"u^{\prime}"), ("''", r"u^{\prime\prime}")):
+            self.assertLatex(f"<m:sSup><m:e>{run('u')}</m:e><m:sup>{run(primes)}</m:sup></m:sSup>", expected)
 
     def test_explicit_blank_delimiter_is_invisible_not_missing(self):
         for blank in ('', ' '):

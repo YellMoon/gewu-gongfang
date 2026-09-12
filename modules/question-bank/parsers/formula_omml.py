@@ -102,6 +102,9 @@ class _OmmlVisitor:
                 base = "{%s}" % base
             sub = self.visit(_child(node, "sub"))
             sup = self.visit(_child(node, "sup"))
+            if re.fullmatch("'+", sup):
+                # An OMML superscript stores the prime itself, not TeX's x' shorthand.
+                sup = r"\prime" * len(sup)
             return base + ("_{%s}" % sub if sub else "") + ("^{%s}" % sup if sup else "")
         if tag == "sPre":
             base = self.visit(_child(node, "e"))

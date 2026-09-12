@@ -5,7 +5,7 @@ const { stableJson } = require('../shared/authorityProtocol');
 const { prepareFormulaCorrection } = require('./prepare-question-formula-correction');
 const { nativeFormulaComponent } = require('../cloud-business-api/src/wordNativeFormula');
 const oldLatex = String.raw`u^{'}_{1}^{2}`;
-const newLatex = String.raw`{u^{'}}_{1}^{2}`;
+const newLatex = String.raw`{u^{\prime}}_{1}^{2}`;
 const current = {
   id: 'question-import-' + 'a'.repeat(40), version: 2, status: 'published',
   subject: 'physics', type: 'calculation', difficulty: 3, content: 'unchanged stem',
@@ -39,7 +39,7 @@ assert.throws(()=>build({validateFormula:undefined}), /VALIDATOR_REQUIRED/);
 const legacy = '<p>Keep text <span class="legacy-latex" data-formula-id="source-formula" data-latex="u^{&#x27;}_{1}^{2}" data-source-format="omml"></span></p>';
 const withProjection = {...current, analysis:legacy};
 const projectionCommand = build({current:withProjection,baseline:structuredClone(withProjection)});
-assert.equal(projectionCommand.payload.changes.analysis, legacy.replace('u^{&#x27;}_{1}^{2}', '{u^{&#x27;}}_{1}^{2}'),
+assert.equal(projectionCommand.payload.changes.analysis, legacy.replace('u^{&#x27;}_{1}^{2}', newLatex),
   'the legacy HTML formula projection must stay consistent without rewriting its surrounding content');
 const unrelated = {...current, analysis:legacy.replace('source-formula','another-formula')};
 assert.equal(build({current:unrelated,baseline:structuredClone(unrelated)}).payload.changes.analysis, unrelated.analysis);

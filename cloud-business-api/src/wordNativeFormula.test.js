@@ -8,9 +8,11 @@ const { nativeFormulaComponent } = require('./wordNativeFormula');
   const cases = [
     [String.raw`\frac{kg\cdot m}{s^{2}}`, ['m:f','m:sSup']],
     [String.raw`x_i^2`, ['m:sSubSup']],
+    [String.raw`{u^{\prime}}_{1}^{2}`, ['m:sSubSup', 'm:sSup']],
+    [String.raw`u^{\prime\prime}`, ['m:sSup']],
     [String.raw`\frac{T_{1}^{2}}{R^{3}}=\frac{T_{2}^{2}}{\left(2R)^{3}\right.}`, ['m:f', 'm:sSubSup']],
-    [String.raw`\frac{1}{2}Mu_{1}^{2}=\frac{1}{2}M{u^{'}}_{1}^{2}+\frac{1}{2}Mu_{2}^{2}`, ['m:f', 'm:sSubSup']],
-    [String.raw`\frac{1}{2}mv_{1}^{2}=\frac{1}{2}mv_{2}^{2}+\frac{1}{2}M{u^{'}}_{2}^{2}`, ['m:f', 'm:sSubSup']],
+    [String.raw`\frac{1}{2}Mu_{1}^{2}=\frac{1}{2}M{u^{\prime}}_{1}^{2}+\frac{1}{2}Mu_{2}^{2}`, ['m:f', 'm:sSubSup']],
+    [String.raw`\frac{1}{2}mv_{1}^{2}=\frac{1}{2}mv_{2}^{2}+\frac{1}{2}M{u^{\prime}}_{2}^{2}`, ['m:f', 'm:sSubSup']],
     [String.raw`x_i`, ['m:sSub']],
     [String.raw`\sqrt{x}+\sqrt[3]{y}`, ['m:rad','m:deg']],
     [String.raw`\left(\frac{x}{y}\right)`, ['m:d','m:f']],
@@ -32,6 +34,10 @@ const { nativeFormulaComponent } = require('./wordNativeFormula');
     const xml = await zip.file('word/document.xml').async('string');
     for(const tag of tags) assert.ok(xml.includes(`<${tag}>`),`${latex}: ${tag}`);
     assert.ok(!xml.includes('<w:drawing>'),`${latex}: native equations must not be images`);
+    if (latex.includes('\\prime')) {
+      assert.ok(!/<m:e\s*\/>|<m:e>\s*<\/m:e>/.test(xml), 'prime symbols must not create empty Word base placeholders');
+      assert.ok(xml.includes('\u2032'), 'prime must be preserved as an actual prime character');
+    }
     if (latex.includes('safe')) assert.ok(xml.includes('&amp;') && xml.includes('&lt;'));
     if (latex.includes('vec')) {
       assert.ok(xml.includes('m:val="\u20d7"'), 'Word vector accents require a combining arrow');
