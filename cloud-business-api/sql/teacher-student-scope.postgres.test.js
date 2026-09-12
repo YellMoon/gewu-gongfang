@@ -34,6 +34,7 @@ const deleteOriginal = new Function(ts.transpileModule(`return function(id: stri
       const activeReferences = fs.readFileSync(path.join(__dirname,'20260908-student-delete-active-references.sql'),'utf8');
       await db.query(activeReferences); await db.query(activeReferences);
       const originalBehavior = fs.readFileSync(path.join(__dirname,'20260908-student-delete-original-behavior.sql'),'utf8');
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
       await db.query(originalBehavior); await db.query(originalBehavior);
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','One',false,now(),now()),('tenant-2','Two',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Two',false,now(),now()),('foreign','tenant-2','Foreign',false,now(),now()),('archived','tenant-1','Archived',true,now(),now())");

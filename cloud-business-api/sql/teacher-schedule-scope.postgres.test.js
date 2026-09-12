@@ -23,6 +23,7 @@ const denied=error=>error?.code==='42501';
       await db.query(fs.readFileSync(path.join(__dirname,'20260907-z-teacher-student-write-scope.sql'),'utf8'));
       await db.query(fs.readFileSync(path.join(__dirname,'20260909-retained-course-schedule-write.sql'),'utf8'));
       await db.query(fs.readFileSync(path.join(__dirname,'20260909-retained-student-schedule-write.sql'),'utf8'));
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Tenant',false,now(),now()),('tenant-2','Other tenant',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Two',false,now(),now())");
       await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','One',false,false,now(),now()),('student-2','tenant-1','Two',false,false,now(),now()),('student-trial','tenant-1','Trial',false,false,now(),now())");

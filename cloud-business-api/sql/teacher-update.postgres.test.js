@@ -21,18 +21,19 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
       const fix = fs.readFileSync(path.join(__dirname, '20260908-teacher-update-qualified.sql'), 'utf8');
       await facade.query(fix);
       await facade.query(fix);
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(facade);
       await facade.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant','Test',false,now(),now())");
     });
     let expected;
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
       const service = createBusinessTeacherLifecycleMutations({ query: (sql, values) => facade.query(sql, values) });
       const original = { tenantId: 'tenant', teacherId: 'self', name: '原教师', phone: '13100000000', subject: '物理', hourlyRate: 120, notes: null };
-      const created = await service.create(original);
-      const changed = { ...original, expectedUpdatedAt: created.updatedAt, name: '教师本人', subject: '数学', hourlyRate: 150, notes: '本人维护' };
+      const created = await service.create({ ...original, actorScope: { role: 'super_admin', teacherId: null } });
+      const changed = { ...original, expectedUpdatedAt: created.updatedAt, name: '教师本人', subject: '数学', hourlyRate: 150, notes: '本人维护', actorScope: { role: 'teacher', teacherId: 'self' } };
       const updated = await service.update(changed);
       assert.equal(updated.id, original.teacherId);
       assert.match(updated.updatedAt, /^\d{4}-\d{2}-\d{2}T.*Z$/);
-      assert.equal(await service.update({ ...changed, tenantId: 'foreign' }), null);
+      await assert.rejects(() => service.update({ ...changed, tenantId: 'foreign' }), error => error.code === '42501');
       assert.equal(await service.update({ ...changed, expectedUpdatedAt: '2000-01-01T00:00:00.000Z', name: '陈旧覆盖' }), null);
       await assert.rejects(() => facade.query("UPDATE business.teachers SET name='direct' WHERE id='self'"), error => error.code === '42501');
       expected = { name: changed.name, phone_legacy: changed.phone, subject: changed.subject, hourly_rate: '150', notes: changed.notes };

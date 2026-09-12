@@ -28,8 +28,10 @@ require('../sql/teacher-update.postgres.test');
     } },
     businessTeacherLifecycleMutations: {
       create: async () => { throw new Error('unexpected creation'); },
-      remove: async () => { throw new Error('unexpected deletion'); },
+      remove: async () => { throw Object.assign(new Error('bound teacher'), { code: '42501' }); },
       update: async input => {
+        // Relationship checks now run in the restricted database service; this stub models bound profiles only.
+        if (input.actorScope.role !== 'super_admin' && input.actorScope.teacherId !== input.teacherId) throw Object.assign(new Error('bound teacher'), { code: '42501' });
         calls.push(input);
         return input.expectedUpdatedAt === version ? { id: input.teacherId, updatedAt: version } : null;
       },
@@ -47,7 +49,7 @@ require('../sql/teacher-update.postgres.test');
     const client = createDesktopIdentityClient({ desktopIdentity: { status: async () => ({}) }, fetchImpl: fetch });
     const result = await client.updateCloudTeacher({ baseUrl, currentSession: { token: 'eyJ2IjoxfQ.self' }, teacherId: 'teacher-self', ...body });
     assert.equal(result.id, 'teacher-self');
-    assert.deepEqual(calls[0], { tenantId: 'server-tenant', teacherId: 'teacher-self', ...body });
+    assert.deepEqual(calls[0], { tenantId: 'server-tenant', teacherId: 'teacher-self', ...body, actorScope: { role: 'teacher', teacherId: 'teacher-self' } });
     for (const identity of ['legacy', 'activeTeacher', 'admin']) assert.equal((await request(identity)).status, 200);
     assert.equal((await request('admin', 'teacher-other')).status, 200);
     const before = calls.length;

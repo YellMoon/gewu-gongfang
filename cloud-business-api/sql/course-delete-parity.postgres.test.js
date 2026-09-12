@@ -29,7 +29,7 @@ const removeSql='SELECT * FROM business.vnext_delete_scoped_course($1,$2,$3::tim
   }
   finally{await new Promise(resolve=>server.close(resolve));}
   // Exact runtime authorization CTEs. Unrelated assets/directory fields are outside this SQL test.
-  const start=actualSql.indexOf('WITH scoped_schedules AS ('),end=actualSql.indexOf('SELECT jsonb_build_object(',start);
+  const start=actualSql.indexOf('WITH managed_teachers AS ('),end=actualSql.indexOf('SELECT jsonb_build_object(',start);
   assert(start>=0&&end>start);
   const readSql=actualSql.slice(start,end)+"SELECT jsonb_build_object('courses',COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM scoped_courses c),'[]'::jsonb),'schedules',COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM scoped_schedules s),'[]'::jsonb)) AS projection";
   const runtime=createDisposablePg17Runtime();await runtime.start();const handle=await runtime.createIsolatedHandle();
@@ -42,7 +42,8 @@ const removeSql='SELECT * FROM business.vnext_delete_scoped_course($1,$2,$3::tim
       for(const file of ['20260823-zzzzz-course-lifecycle.sql','20260827-course-lifecycle-qualified.sql','20260907-teacher-course-write-scope.sql','20260907-z-teacher-student-write-scope.sql','20260822-business-schedule-student-override.sql','20260824-supplemental-business-authority.sql'])await db.query(fs.readFileSync(path.join(__dirname,file),'utf8'));
       const migration=fs.readFileSync(path.join(__dirname,'20260909-course-delete-original-behavior.sql'),'utf8');await db.query(migration);await db.query(migration);
       await db.query(fs.readFileSync(path.join(__dirname,'20260907-zz-schedule-financial-snapshot.sql'),'utf8'));
-      await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+      await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Own',false,now(),now()),('tenant-2','Other',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Other',false,now(),now())");
       await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','One',false,false,now(),now()),('student-2','tenant-1','Other',false,false,now(),now())");

@@ -329,7 +329,8 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(businessQueries.length, 1);
   assert.deepStrictEqual(businessQueries[0][1], ['default', 'super_admin', null]);
-  assert.ok(businessQueries[0][0].startsWith('SELECT s.id AS "id", s.course_id AS "courseId"'));
+  assert.ok(businessQueries[0][0].startsWith('WITH managed_teachers AS ('));
+  assert.ok(businessQueries[0][0].includes('SELECT s.id AS "id", s.course_id AS "courseId"'));
   assert.ok(businessQueries[0][0].includes('s.legacy_deleted=false') && businessQueries[0][0].includes('c.legacy_deleted=false'));
   const projectionQueries = [];
   const desktopProjection = await request(createCloudBusinessApp({

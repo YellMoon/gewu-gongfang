@@ -34,11 +34,15 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     await createVNextPg17CatalogBoundary(runtime).apply(handle, receipt);
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, receipt);
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(facade);
       await facade.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('own-tenant','Test',false,now(),now()),('other-tenant','Other',false,now(),now())");
       for (const [id, tenant, deleted] of [['self', 'own-tenant', false], ['other', 'own-tenant', false], ['deleted', 'own-tenant', true], ['foreign', 'other-tenant', false]]) {
         await facade.query('INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ($1,$2,$1,$3,now(),now())', [id, tenant, deleted]);
       }
-      const query = `WITH bound_profile AS (SELECT $3::text AS id), scoped_courses AS (SELECT unnest($4::text[]) AS teacher_id) SELECT ${expression} AS teachers`;
+      const scopeStart = source.indexOf('WITH managed_teachers AS (');
+      const scopeEnd = source.indexOf(', scoped_schedules AS (', scopeStart);
+      assert(scopeStart >= 0 && scopeEnd > scopeStart);
+      const query = `${source.slice(scopeStart, scopeEnd)}, bound_profile AS (SELECT $3::text AS id), scoped_courses AS (SELECT unnest($4::text[]) AS teacher_id) SELECT ${expression} AS teachers`;
       for (const [role, profile, courseTeachers, ids] of [
         ['teacher', 'self', [], ['self']],
         ['teacher', 'self', ['self'], ['self']],

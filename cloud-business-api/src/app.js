@@ -557,14 +557,16 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     }
     throw businessAccessDenied();
   }
+  const managedTeacherScopeSql = "managed_teachers AS (SELECT t.id FROM business.teachers t JOIN business.teachers owner ON owner.tenant_id=t.tenant_id AND owner.id=t.created_by_teacher_id AND owner.legacy_deleted=false WHERE t.tenant_id=$1 AND t.created_by_teacher_id=$3 AND t.legacy_deleted=false AND t.account_claimed=false)";
   const miniappProjectionSql = [
-    'WITH scoped_schedules AS (',
+    // UTF-8: creator-managed profiles are visible before any course, but never after an account claim.
+    `WITH ${managedTeacherScopeSql}, scoped_schedules AS (`,
     'SELECT s.* FROM business.schedules s JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND (',
-    "$2='manager' OR ($2='teacher' AND c.teacher_id=$3) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3) OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id) AND EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3))))",
+    "$2='manager' OR ($2='teacher' AND (c.teacher_id=$3 OR c.teacher_id IN (SELECT id FROM managed_teachers))) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3) OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id) AND EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3))))",
     ')),',
     'scoped_courses AS (',
     'SELECT c.* FROM business.courses c WHERE c.tenant_id=$1 AND c.legacy_deleted=false AND (',
-    "$2='manager' OR ($2='teacher' AND c.teacher_id=$3) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id AND p.student_id=$3) OR EXISTS (SELECT 1 FROM scoped_schedules x WHERE x.tenant_id=c.tenant_id AND x.course_id=c.id)))",
+    "$2='manager' OR ($2='teacher' AND (c.teacher_id=$3 OR c.teacher_id IN (SELECT id FROM managed_teachers))) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id AND p.student_id=$3) OR EXISTS (SELECT 1 FROM scoped_schedules x WHERE x.tenant_id=c.tenant_id AND x.course_id=c.id)))",
     ')),',
     'scoped_students AS (',
     'SELECT s.* FROM business.students s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND (',
@@ -574,7 +576,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     "'students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name,'phone',s.phone_legacy,'school',s.school_legacy,'grade_year',s.grade_year,'grade_current',s.grade_current,'source_type',s.legacy_source_type,'is_institution_student',s.legacy_is_institution_student,'student_source',s.student_source_legacy,'institution_id',s.institution_id,'parent_name',s.parent_name_legacy,'parent_wechat',s.parent_wechat_legacy,'balance_hours',s.legacy_balance_hours,'balance_money',s.legacy_balance_money,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM scoped_students s),'[]'::jsonb),",
     "'studentContacts',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',d.contact_id,'student_id',d.student_id,'slot',d.contact_slot,'relationship',d.relationship,'phone',d.phone_value,'wechat',d.wechat_handle,'status',d.status,'created_at',d.created_at,'updated_at',d.updated_at) ORDER BY d.student_id,d.contact_slot) FROM business.student_contact_directory d JOIN scoped_students s ON s.id=d.student_id),'[]'::jsonb),",
     // UTF-8: a newly registered teacher has a self profile before the first course exists.
-    "'teachers',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'name',t.name,'phone',t.phone_legacy,'subject',t.subject,'hourly_rate',CASE WHEN $2 IN ('manager','teacher') THEN t.hourly_rate ELSE NULL END,'notes',CASE WHEN $2 IN ('manager','teacher') THEN t.notes ELSE NULL END,'deleted',false,'created_at',t.created_at,'updated_at',t.updated_at) ORDER BY t.id) FROM business.teachers t WHERE t.tenant_id=$1 AND t.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND t.id=$3) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.teacher_id=t.id))),'[]'::jsonb),",
+    "'teachers',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'name',t.name,'phone',t.phone_legacy,'subject',t.subject,'hourly_rate',CASE WHEN $2 IN ('manager','teacher') THEN t.hourly_rate ELSE NULL END,'notes',CASE WHEN $2 IN ('manager','teacher') THEN t.notes ELSE NULL END,'deleted',false,'created_at',t.created_at,'updated_at',t.updated_at) ORDER BY t.id) FROM business.teachers t WHERE t.tenant_id=$1 AND t.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND (t.id=$3 OR t.id IN (SELECT id FROM managed_teachers))) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.teacher_id=t.id))),'[]'::jsonb),",
     "'courses',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'year',c.year,'semester',c.semester,'display_name',c.display_name,'type',c.course_type,'source_type',c.legacy_source_type,'institution_id',c.institution_id,'price_tuition',c.price_tuition,'price_teacher',CASE WHEN $2 IN ('manager','teacher') THEN c.price_teacher ELSE NULL END,'billing_unit',c.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN c.teacher_fee_mode ELSE NULL END,'room_id',c.legacy_room_id,'room_name',c.room_name_snapshot,'teacher_id',c.teacher_id,'teacher_name',c.teacher_name_snapshot,'active',c.legacy_active,'default_duration_minutes',c.default_duration_minutes,'notes',c.notes,'deleted',false,'created_at',c.created_at,'updated_at',c.updated_at,'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY c.id) FROM scoped_courses c),'[]'::jsonb),",
     "'schedules',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'course_id',s.course_id,'start_time',s.start_at,'end_time',s.end_at,'recurring_rule',s.recurring_rule_json,'status',s.status,'room',s.room_display_snapshot,'service_type',s.service_type,'billing_unit',s.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN s.teacher_fee_mode ELSE NULL END,'teacher_id',s.teacher_id,'teacher_name',s.teacher_name,'calculated_tuition',CASE WHEN $2='student' THEN " + STUDENT_SCHEDULE_TUITION_SQL + " ELSE s.calculated_tuition END,'calculated_teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN s.calculated_teacher_fee ELSE NULL END,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at,'student_ids',COALESCE((SELECT jsonb_agg(o.student_id ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(p.student_id ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb),'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',o.student_id,'tuition',o.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN o.teacher_fee ELSE NULL END,'attendance_status',o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY s.start_at,s.id) FROM scoped_schedules s),'[]'::jsonb),",
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'billing_student_id',(SELECT b.student_id FROM business.institution_billing_students b WHERE b.tenant_id=i.tenant_id AND b.institution_id=i.id),'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
@@ -1438,14 +1440,14 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const context = await businessContext(request);
       const scope = scheduleScope(context);
       const result = await query(
-        `SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.updated_at AS "updatedAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay",
+        `WITH ${managedTeacherScopeSql} SELECT s.id AS "id", s.course_id AS "courseId", c.display_name AS "courseName", s.start_at AS "startAt", s.end_at AS "endAt", s.updated_at AS "updatedAt", s.status AS "status", s.room_display_snapshot AS "roomDisplay",
            CASE WHEN $2='super_admin' THEN s.calculated_tuition WHEN $2='student' THEN ${STUDENT_SCHEDULE_TUITION_SQL} ELSE NULL END AS "tuition",
            CASE WHEN $2 IN ('super_admin','teacher') THEN s.calculated_teacher_fee ELSE NULL END AS "teacherFee"
          FROM business.schedules s
          JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
          WHERE s.tenant_id=$1 AND s.legacy_deleted=false
            AND ($2='super_admin'
-             OR ($2='teacher' AND c.teacher_id=$3)
+             OR ($2='teacher' AND (c.teacher_id=$3 OR c.teacher_id IN (SELECT id FROM managed_teachers)))
              OR ($2='student' AND (
                EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3)
                OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id)
@@ -1885,11 +1887,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(update?.hourlyRate === null || (typeof update?.hourlyRate === 'number' && Number.isFinite(update.hourlyRate) && update.hourlyRate >= 0 && update.hourlyRate <= 100000))) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const teacher = await businessTeacherLifecycleMutations.create({ tenantId: businessTenantId, teacherId, name, phone, subject, hourlyRate: update.hourlyRate, notes });
+      const teacher = await businessTeacherLifecycleMutations.create({ tenantId: businessTenantId, teacherId, name, phone, subject, hourlyRate: update.hourlyRate, notes, actorScope: scheduleWriteScope(context) });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
       response.status(201).json({ ok: true, teacher });
-    } catch (_) { businessUnavailable(response); }
+    } catch (error) {
+      if (error?.code === '42501' || error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      businessUnavailable(response);
+    }
   });
   app.put('/api/business/teachers/:teacherId', async (request, response) => {
     if (!businessTenantId || !businessTeacherLifecycleMutations) return businessUnavailable(response);
@@ -1901,14 +1905,13 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       || !(update?.hourlyRate === null || (typeof update?.hourlyRate === 'number' && Number.isFinite(update.hourlyRate) && update.hourlyRate >= 0 && update.hourlyRate <= 100000))) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      // UTF-8: a bound teacher can maintain their own original profile form, not another teacher's record.
+      // UTF-8: creator/claim boundaries are checked and locked by the scoped database function.
       const actorScope = scheduleWriteScope(context);
-      if (actorScope.role !== 'super_admin' && actorScope.teacherId !== teacherId) throw businessAccessDenied();
-      const teacher = await businessTeacherLifecycleMutations.update({ tenantId: businessTenantId, teacherId, expectedUpdatedAt, name, phone, subject, hourlyRate: update.hourlyRate, notes });
+      const teacher = await businessTeacherLifecycleMutations.update({ tenantId: businessTenantId, teacherId, expectedUpdatedAt, name, phone, subject, hourlyRate: update.hourlyRate, notes, actorScope });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
       response.json({ ok: true, teacher });
     } catch (error) {
-      if (error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (error?.code === '42501' || error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1918,12 +1921,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!teacherId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const teacher = await businessTeacherLifecycleMutations.remove({ tenantId: businessTenantId, teacherId, expectedUpdatedAt });
+      const teacher = await businessTeacherLifecycleMutations.remove({ tenantId: businessTenantId, teacherId, expectedUpdatedAt, actorScope: scheduleWriteScope(context) });
       if (!teacher) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_CONFLICT' });
       response.json({ ok: true, teacher });
     } catch (error) {
       if (error?.code === 'P0001' || error?.message === 'VNEXT_BUSINESS_TEACHER_REFERENCED') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_TEACHER_REFERENCED' });
+      if (error?.code === '42501' || error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });

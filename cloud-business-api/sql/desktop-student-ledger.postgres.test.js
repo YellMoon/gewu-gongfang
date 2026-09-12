@@ -18,7 +18,7 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
   await new Promise(resolve => server.once('listening', resolve));
   try { assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/business/desktop-projection`, { headers: { authorization: 'Bearer desktop.ticket' } })).status, 200); }
   finally { await new Promise(resolve => server.close(resolve)); }
-  const start = actualSql.indexOf('WITH scoped_schedules AS (');
+  const start = actualSql.indexOf('WITH managed_teachers AS (');
   const end = actualSql.indexOf('SELECT jsonb_build_object(', start);
   assert(start > 0 && end > start);
   const scopeSql = actualSql.slice(start, end) + "SELECT jsonb_build_object('students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id) ORDER BY id) FROM scoped_students),'[]'::jsonb)) AS projection";
@@ -34,7 +34,8 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
       for (const file of ['20260821-business-schedule-update.sql', '20260822-business-schedule-student-override.sql', '20260907-z-teacher-student-write-scope.sql', '20260824-supplemental-business-authority.sql']) {
         await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
       }
-      await db.query('GRANT SELECT ON business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+      await db.query('GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('own','Own',false,now(),now()),('foreign','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher','own','Teacher',false,now(),now()),('other','own','Other',false,now(),now())");
       for (const [id, tenant, creator, deleted] of [

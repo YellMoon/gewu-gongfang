@@ -65,7 +65,7 @@ async function request(app, path) {
   assert.strictEqual(projection.status, 200,
     'a desktop teacher needs its role-scoped projection to operate the teacher client');
   assert.deepStrictEqual(projectionQueries[0][1], ['default', 'teacher', 'teacher-1', 'account-1']);
-  assert.ok(projectionQueries[0][0].includes('WITH scoped_schedules AS ('),
+  assert.ok(projectionQueries[0][0].includes('WITH managed_teachers AS (') && projectionQueries[0][0].includes('scoped_schedules AS ('),
     'a desktop teacher must use the scoped projection query, never the tenant-wide desktop projection');
   assert.deepStrictEqual(projection.body.projection, {
     students: [], student_contacts: [], teachers: [], courses: [], schedules: [],
