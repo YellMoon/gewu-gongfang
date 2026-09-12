@@ -42,6 +42,10 @@ function recordFromPreparedItem({ taskId, item, subject = '物理' } = {}) {
   }
   const prepared = requirePreparedItem(item);
   const candidate = prepared.candidate;
+  if (prepared.validation?.status !== 'accepted'
+    || (Array.isArray(candidate.formulas) && candidate.formulas.some(formula => formula?.conversion_status !== 'complete'))) {
+    throw failure('REAL_QUESTION_IMPORT_REVIEW_REQUIRED');
+  }
   const content = text(candidate.stem || candidate.content);
   if (!content) throw failure('REAL_QUESTION_IMPORT_SUBMISSION_CONTENT_INVALID');
   const answer = text(candidate.answer) || null;
@@ -121,6 +125,19 @@ async function assertMediaVerified(pool, taskId) {
   return { total, verified };
 }
 
+async function existingSubmissionSession({ helper, appPool, writerPool, env }) {
+  const loaded = await helper.loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
+  if (!loaded.session) throw failure('REAL_QUESTION_IMPORT_ACTIVE_SESSION_REQUIRED');
+  return { sessionToken: helper.makeSessionToken(env.CLOUD_IDENTITY_TICKET_SECRET, loaded.session), deviceId: loaded.session.deviceId };
+}
+
+async function preflightPreparedTasks({ fetchImpl, sessionToken, deviceId, baseUrl, taskIds }) {
+  for (const taskId of taskIds) {
+    const body = await request(fetchImpl, sessionToken, deviceId, `${baseUrl.replace(/\/$/, '')}/api/desktop/question-imports/${encodeURIComponent(taskId)}`);
+    commandsForPreparedTask({ task: body.task, taskId });
+  }
+}
+
 async function runFromEnvironment(env = process.env) {
   const cloudAcceptance = require('./real-cloud-business-acceptance');
   const taskIds = [env.REAL_QUESTION_IMPORT_EXAM_TASK_ID, env.REAL_QUESTION_IMPORT_LECTURE_TASK_ID];
@@ -130,21 +147,19 @@ async function runFromEnvironment(env = process.env) {
   const { resolveRuntimeDatabaseUser } = require(path.join(path.dirname(runtimeModules.packagePath), 'src', 'runtimeDatabaseRole'));
   const appPool = new Pool({ host: env.POSTGRES_HOST || '127.0.0.1', port: Number(env.POSTGRES_PORT || 5432), database: env.POSTGRES_DB || 'gewu_cloud', user: resolveRuntimeDatabaseUser(env.POSTGRES_USER), password: env.POSTGRES_PASSWORD });
   const writerPool = new Pool({ host: env.POSTGRES_HOST || '127.0.0.1', port: Number(env.POSTGRES_PORT || 5432), database: env.POSTGRES_DB || 'gewu_cloud', user: 'vnext_pg17_writer', password: env.COMMAND_WRITER_POSTGRES_PASSWORD });
-  let registration = null;
   try {
-    const loaded = await cloudAcceptance.loadActiveSuperAdminSession(appPool, writerPool, env.CLOUD_OPERATOR_PHONE_HMACS);
+    const session = await existingSubmissionSession({ helper: cloudAcceptance, appPool, writerPool, env });
     for (const taskId of taskIds) await assertMediaVerified(appPool, taskId);
-    registration = await cloudAcceptance.runOnlineRegistrationAcceptance({ fetchImpl: fetch, runtimeModules, ticketSecret: env.CLOUD_IDENTITY_TICKET_SECRET, identity: loaded.identity });
+    await preflightPreparedTasks({ fetchImpl: fetch, ...session, baseUrl: cloudAcceptance.PUBLIC_BASE_URL, taskIds });
     const results = [];
-    for (const taskId of taskIds) results.push(await submitPreparedTask({ fetchImpl: fetch, sessionToken: registration.sessionToken, deviceId: registration.fixture.deviceId, baseUrl: cloudAcceptance.PUBLIC_BASE_URL, taskId }));
+    for (const taskId of taskIds) results.push(await submitPreparedTask({ fetchImpl: fetch, ...session, baseUrl: cloudAcceptance.PUBLIC_BASE_URL, taskId }));
     return { ok: true, imports: results };
   } finally {
-    if (registration?.fixture) await cloudAcceptance.revokeOnlineRegistrationAcceptance(writerPool, registration.fixture);
     await Promise.allSettled([appPool.end(), writerPool.end()]);
   }
 }
 
-module.exports = Object.freeze({ questionTypeFromCandidate, recordFromPreparedItem, questionCommand, taskForSubmission, commandsForPreparedTask, submitPreparedTask, assertMediaVerified, runFromEnvironment });
+module.exports = Object.freeze({ questionTypeFromCandidate, recordFromPreparedItem, questionCommand, taskForSubmission, commandsForPreparedTask, submitPreparedTask, assertMediaVerified, existingSubmissionSession, preflightPreparedTasks, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))

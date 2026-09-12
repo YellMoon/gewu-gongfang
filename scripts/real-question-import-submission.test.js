@@ -38,6 +38,39 @@ async function main() {
   assert.strictEqual(command.payloadHash, crypto.createHash('sha256').update(stableJson({ type: command.type, payload: command.payload }), 'utf8').digest('hex'));
   const prepared = subject.commandsForPreparedTask({ task: preparedTask(), taskId: TASK_ID });
   assert.strictEqual(prepared.commands.length, 1, 'all records must be normalized before the first cloud command is sent');
+  for (const status of ['warning', 'rejected', undefined]) {
+    const task = preparedTask();
+    task.items[0].validation = { status };
+    assert.throws(() => subject.commandsForPreparedTask({ task, taskId: TASK_ID }),
+      error => error.code === 'REAL_QUESTION_IMPORT_REVIEW_REQUIRED');
+  }
+  const formulaTask = preparedTask();
+  formulaTask.items[0].candidate.formulas = [{ conversion_status: 'preview_only' }];
+  assert.throws(() => subject.commandsForPreparedTask({ task: formulaTask, taskId: TASK_ID }),
+    error => error.code === 'REAL_QUESTION_IMPORT_REVIEW_REQUIRED');
+  const sessionCalls = [];
+  const activeSession = { deviceId: 'existing-device', sessionId: 'existing-session' };
+  const helper = {
+    loadActiveSuperAdminSession: async (...args) => { sessionCalls.push(args); return { session: activeSession }; },
+    makeSessionToken: (secret, session) => { assert.strictEqual(session, activeSession); return `signed-${secret}`; },
+    runOnlineRegistrationAcceptance: () => { throw new Error('must not register a device for submission'); },
+  };
+  assert.deepStrictEqual(await subject.existingSubmissionSession({ helper, appPool: 'reader', writerPool: 'writer', env: { CLOUD_IDENTITY_TICKET_SECRET: 'test' } }),
+    { sessionToken: 'signed-test', deviceId: 'existing-device' });
+  assert.strictEqual(sessionCalls.length, 1);
+  await assert.rejects(() => subject.existingSubmissionSession({ helper: { ...helper, loadActiveSuperAdminSession: async () => ({ session: null }) }, env: {} }),
+    error => error.code === 'REAL_QUESTION_IMPORT_ACTIVE_SESSION_REQUIRED');
+  const batchWrites = [];
+  const secondTaskId = 'question_import_task_second_12345678';
+  await assert.rejects(() => subject.preflightPreparedTasks({
+    fetchImpl: async (url, options = {}) => {
+      if (options.method === 'POST') batchWrites.push(url);
+      const task = preparedTask();
+      if (url.endsWith(secondTaskId)) { task.taskId = secondTaskId; task.items[0].validation.status = 'warning'; }
+      return { ok: true, json: async () => ({ ok: true, task }) };
+    }, sessionToken: 'test', deviceId: 'device', baseUrl: 'https://example.test', taskIds: [TASK_ID, secondTaskId],
+  }), error => error.code === 'REAL_QUESTION_IMPORT_REVIEW_REQUIRED');
+  assert.deepStrictEqual(batchWrites, [], 'review every source before any batch write');
 
   const calls = [];
   let reads = 0;
