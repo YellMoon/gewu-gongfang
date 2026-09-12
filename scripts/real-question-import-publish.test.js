@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+require('./prepare-question-formula-correction.test');
 const {
   changesForPublishedQuestion, importedQuestionIds, questionCreateCommand, questionPublishCommand,
   questionRecordFromImportItem,
