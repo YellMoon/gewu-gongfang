@@ -279,6 +279,22 @@ def verify_identity(project, session, *, role_key=None, on_session_injected=None
     return {key: result.get(key) for key in ("accountId", "role", "identityKind", "accountState")}
 
 
+def wait_for_startup_home(project, account_id, *, attempts=12):
+    if not isinstance(attempts, int) or attempts < 1 or not isinstance(account_id, str) or not account_id:
+        raise RuntimeError('REAL_MINIAPP_ROLE_UI_STARTUP_INPUT_INVALID')
+    # The configured entry page is login. It redirects an authenticated session
+    # to home asynchronously; a ready bridge or populated storage is not enough.
+    command = ['automation_evaluate', '--project', str(project), '--fn-source',
+               "() => ({route:typeof getCurrentPages === 'function' ? getCurrentPages().slice(-1)[0]?.route || null : null,accountId:typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function' ? wx.getStorageSync('user_info')?.id || null : null})"]
+    for attempt in range(attempts):
+        state = run_wechatide(command, retry_connect=True)
+        if isinstance(state, dict) and state.get('route') == 'pages/index/index' and state.get('accountId') == account_id:
+            return
+        if attempt + 1 < attempts:
+            time.sleep(0.5)
+    raise RuntimeError('REAL_MINIAPP_ROLE_UI_STARTUP_HOME_NOT_READY')
+
+
 def validate_png_screenshot(target):
     try:
         header = target.read_bytes()[:24]
@@ -463,6 +479,8 @@ def main(argv=None):
         receipt = fetch_sessions()
         for key in keys:
             identity = verify_identity(project, receipt["sessions"][key], role_key=key, on_session_injected=lambda: injection_state.__setitem__("started", True))
+            if args.pages:
+                wait_for_startup_home(project, receipt["sessions"][key]["accountId"])
             pages = verify_pages(project, ROLE_PAGES[key], role=key, account_id=receipt["sessions"][key]["accountId"], screenshots_dir=screenshots_dir) if args.pages else []
             checks[key] = redact_safe_receipt({"identity": identity, "pages": pages})
         print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))

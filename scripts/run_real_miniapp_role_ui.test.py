@@ -472,6 +472,7 @@ class RoleUiReceiptTests(unittest.TestCase):
             with patch("run_real_miniapp_role_ui.snapshot_session_state", return_value={}), \
                     patch("run_real_miniapp_role_ui.fetch_sessions", return_value=receipt), \
                     patch("run_real_miniapp_role_ui.verify_identity", return_value={"accountId": account_id, "role": "super_admin"}), \
+                    patch("run_real_miniapp_role_ui.wait_for_startup_home"), \
                     patch("run_real_miniapp_role_ui.verify_pages", return_value=[{
                         "route": "pages/index/index",
                         "accountId": account_id,

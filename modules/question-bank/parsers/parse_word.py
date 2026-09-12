@@ -904,6 +904,11 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
     with zipfile.ZipFile(file_path, "r") as archive:
         for paragraph in paragraphs:
             formulas = formula_rows.get(paragraph.paragraph_index, [])
+            converted_previews = {
+                item["source"]["preview_ref"] for item in formulas
+                if item.get("conversion_status") == "complete" and item.get("canonical_latex")
+                and (item.get("source") or {}).get("preview_ref")
+            }
             formula_by_index = {(item.get("source") or {}).get("content_index"): item for item in formulas}
             parts = []
             assets = []
@@ -934,7 +939,8 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
                     asset = _asset_from_part(archive, token.target, "image", token.rel_id, token.rel_type)
                     if asset:
                         assets.append(asset)
-                        parts.append(_image_tag(asset))
+                        if token.target not in converted_previews:
+                            parts.append(_image_tag(asset))
                 elif token.kind == "ole" and token.target:
                     asset = _asset_from_part(archive, token.target, "formula_ole", token.rel_id, token.rel_type)
                     if asset:
@@ -1553,12 +1559,17 @@ def is_section_heading_like(text):
 def should_inline_option(question):
     if not question:
         return False
+    if question.get("sub_questions"):
+        return True
+    # A choice stem can discuss an experiment without being an experiment subquestion.
+    if re.search(r"[（(]\s*[　\s]{2,}[）)]", str(question.get("stem", ""))):
+        return False
     text = "".join([
         str(question.get("stem", "")),
         str(question.get("knowledge_point", "")),
         str(question.get("section_title", "")),
     ])
-    return bool(question.get("sub_questions")) or any(token in text for token in ("\u5b9e\u9a8c", "\u89e3\u7b54", "\u7efc\u5408"))
+    return any(token in text for token in ("\u5b9e\u9a8c", "\u89e3\u7b54", "\u7efc\u5408"))
 
 
 def clean_topic_heading(text):
@@ -1771,6 +1782,9 @@ def parse_lecture_questions(paragraphs, default_topic=None):
     return parse_question_block(paragraphs, default_topic)
 
 
+SOURCE_COMMENT_RE = re.compile(r'((?:19|20)\d{2})\s*([\u4e00-\u9fa5ⅠⅡⅢIVXAB]*卷[甲乙丙丁ⅠⅡⅢIVXAB]?)')
+
+
 def parse_source_from_comment(comments):
     """从批注中解析试题来源信息"""
     if not comments:
@@ -1780,7 +1794,7 @@ def parse_source_from_comment(comments):
         if not comment:
             continue
         # Pattern: 19XX/20XX + 地区/描述 + 卷 + 可选后缀(I/II/A/B)
-        match = re.search(r'((?:19|20)\d{2})\s*([\u4e00-\u9fa5]*卷[A-Z甲乙丙丁IⅠⅡⅢ]?)', comment)
+        match = SOURCE_COMMENT_RE.search(comment)
         if match:
             year = match.group(1)
             full_name = match.group(2).strip()
@@ -1808,7 +1822,10 @@ def parse_lecture_numbered_items(items, default_topic=None):
         if current:
             comments = [comment for comment in current.pop("_comments", []) if comment]
             if comments and not current.get("answer"):
-                current["answer"] = "\n".join(comments)
+                current["answer"] = "\n".join(
+                    line for comment in comments for line in comment.splitlines()
+                    if not SOURCE_COMMENT_RE.fullmatch(line.strip())
+                ).strip()
             source_info = parse_source_from_comment(comments)
             if source_info:
                 current['source_info'] = source_info
@@ -1974,6 +1991,8 @@ def quality_report(questions):
             warnings["missing_answer"] = warnings.get("missing_answer", 0) + 1
         if question.get("options") and len(question["options"]) < 2:
             warnings["few_options"] = warnings.get("few_options", 0) + 1
+        if not question.get("options") and any(kind in ("single", "multi") for kind in question.get("question_types", [])):
+            warnings["missing_options"] = warnings.get("missing_options", 0) + 1
         for formula in question.get("formulas", []):
             if not isinstance(formula, dict):
                 continue

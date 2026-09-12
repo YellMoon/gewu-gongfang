@@ -112,17 +112,39 @@ async function request(fetchImpl, sessionToken, deviceId, url, options = {}) {
   return body;
 }
 
+async function listAllQuestionPages(readPage) {
+  const rows = [], seen = new Set(), cursors = new Set();
+  let afterId = null;
+  do {
+    const page = await readPage(afterId);
+    if (!Array.isArray(page?.questions)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
+    for (const row of page.questions) {
+      if (typeof row?.id !== 'string' || !row.id || seen.has(row.id)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
+      seen.add(row.id); rows.push(row);
+    }
+    const next = page.nextCursor ?? null;
+    if (next !== null && (typeof next !== 'string' || !next || cursors.has(next) || !page.questions.length)) {
+      throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
+    }
+    if (next !== null) cursors.add(next);
+    afterId = next;
+  } while (afterId !== null);
+  return rows;
+}
+
 async function publishImportedSamples({ fetchImpl, sessionToken, deviceId, baseUrl, taskIds }) {
   if (typeof fetchImpl !== 'function' || typeof sessionToken !== 'string' || !sessionToken || typeof deviceId !== 'string' || !deviceId
     || typeof baseUrl !== 'string' || !Array.isArray(taskIds) || taskIds.length !== 2) throw failure('REAL_QUESTION_IMPORT_PUBLISH_INPUT_INVALID');
   const root = baseUrl.replace(/\/$/, '');
+  const listQuestions = () => listAllQuestionPages(afterId => request(fetchImpl, sessionToken, deviceId,
+    `${root}/api/desktop/question-bank/questions?limit=200${afterId === null ? '' : `&afterId=${encodeURIComponent(afterId)}`}`));
   const desiredRecords = [];
   for (const taskId of taskIds) {
     const taskBody = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-imports/${encodeURIComponent(taskId)}`);
     if (!plainObject(taskBody.task) || !Array.isArray(taskBody.task.items) || !taskBody.task.items.length) throw failure('REAL_QUESTION_IMPORT_PUBLISH_TASK_INVALID');
     desiredRecords.push(questionRecordFromImportItem(taskId, taskBody.task.items[0]));
   }
-  const listed = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/questions?limit=200`);
+  const listed = { questions: await listQuestions() };
   if (!Array.isArray(listed.questions)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
   const existing = new Map(listed.questions.filter(question => question && typeof question.id === 'string').map(question => [question.id, question]));
   for (const record of desiredRecords) {
@@ -132,7 +154,7 @@ async function publishImportedSamples({ fetchImpl, sessionToken, deviceId, baseU
       });
     }
   }
-  const created = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/questions?limit=200`);
+  const created = { questions: await listQuestions() };
   if (!Array.isArray(created.questions)) throw failure('REAL_QUESTION_IMPORT_PUBLISH_LIST_INVALID');
   const desiredIds = desiredRecords.map(record => record.id);
   const selected = desiredIds.map(id => created.questions.find(question => question?.id === id));
@@ -144,7 +166,7 @@ async function publishImportedSamples({ fetchImpl, sessionToken, deviceId, baseU
       });
     }
   }
-  const confirmed = await request(fetchImpl, sessionToken, deviceId, `${root}/api/desktop/question-bank/questions?limit=200`);
+  const confirmed = { questions: await listQuestions() };
   const published = desiredIds.map(id => confirmed.questions?.find(question => question?.id === id));
   if (published.some(question => !question || question.status !== 'published')) throw failure('REAL_QUESTION_IMPORT_PUBLISH_INCOMPLETE');
   return { questionIds: desiredIds, publishedCount: published.length };
@@ -262,7 +284,7 @@ async function runFromEnvironment(env = process.env) {
   }
 }
 
-module.exports = Object.freeze({ importedQuestionIds, questionTypeFromImportCandidate, questionRecordFromImportItem, questionCreateCommand, changesForPublishedQuestion, questionPublishCommand, publishImportedSamples, fixtureAccount, fixtureTeacherIdentity, verifyMiniappBrowse, verifyMultiRoleQuestionAccess, runFromEnvironment });
+module.exports = Object.freeze({ importedQuestionIds, questionTypeFromImportCandidate, questionRecordFromImportItem, questionCreateCommand, changesForPublishedQuestion, questionPublishCommand, listAllQuestionPages, publishImportedSamples, fixtureAccount, fixtureTeacherIdentity, verifyMiniappBrowse, verifyMultiRoleQuestionAccess, runFromEnvironment });
 
 if (require.main === module) runFromEnvironment()
   .then(result => process.stdout.write(`${JSON.stringify(result)}\n`))
