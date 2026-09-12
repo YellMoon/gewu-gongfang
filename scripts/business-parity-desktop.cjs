@@ -86,6 +86,12 @@ async function main() {
     await page.getByRole('menuitem',{name:'team 资源',exact:true}).click();
     await page.getByRole('menuitem',{name:'user 学生',exact:true}).click();
     await releaseNavigation();
+    if(config.resourceMaintenanceOnly){
+      save('qa-inventory',{scope:'resource-maintenance-only',checks:['原机构与地址新增编辑删除','重连不发送、用户明确确认','机构学生选入原课程并排课','地址改名不重写课次','删除后历史保留、重开与实际云库核验'],fullSignoff:false});
+      const result=await require('./business-parity-resource-maintenance.cjs')({page,out,save,releaseNavigation,teacherId:config.login.teacherId});
+      save('desktop-receipt',{scope:'resource-maintenance-only',...result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     if(config.resourceEditorOnly){
       save('qa-inventory',{scope:'resource-editor-only',checks:['六个原编辑窗口输入保留','实际云投影刷新','原窗口取消','无业务提交或草稿'],fullSignoff:false});
       const result=await require('./business-parity-resource-editor.cjs')({page,out,save,releaseNavigation});

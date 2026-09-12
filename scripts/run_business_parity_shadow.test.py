@@ -9,10 +9,28 @@ from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source, run, shadow_drop_command
 from business_parity_student_balance import seed_student_balance
 from business_parity_managed_teacher import read_managed_teacher
+from business_parity_resource_maintenance import read_resource_maintenance
 from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history, verify_retained_course_actions
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_resource_maintenance_readback_requires_exact_ids_and_matching_data(self):
+        from unittest.mock import Mock
+        db=Mock()
+        with self.assertRaisesRegex(ValueError,'RESOURCE_MAINTENANCE_EXACT_IDS_REQUIRED'):
+            read_resource_maintenance(db,{'roomId':"'; drop database gewu_cloud;--"},'creator')
+        db.run.assert_not_called()
+        ids={key:'test-'+key for key in ['institutionId','roomId','studentId','courseId','scheduleId']}
+        db.run.return_value='{}'
+        with self.assertRaisesRegex(RuntimeError,'RESOURCE_MAINTENANCE_DATABASE_READBACK_MISMATCH'):
+            read_resource_maintenance(db,ids,'creator')
+        self.assertIn("id='test-courseId'",db.run.call_args.args[0])
+
+    def test_resource_maintenance_rejects_mixed_scopes_before_connection(self):
+        for flag in ['probe_only','managed_teacher_only','resource_editor_only','course_active_only','retained_student_actions_only','course_address_only']:
+            with self.subTest(flag=flag),self.assertRaisesRegex(ValueError,'RESOURCE_MAINTENANCE_SCOPE_CONFLICT'):
+                run('not-a-backup',resource_maintenance_only=True,**{flag:True})
+
     def test_managed_teacher_readback_rejects_unbounded_ids(self):
         from unittest.mock import Mock
         db=Mock()
