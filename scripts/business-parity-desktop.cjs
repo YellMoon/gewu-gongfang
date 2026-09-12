@@ -134,6 +134,7 @@ async function main() {
       save('desktop-receipt',{scope:'student-balance-only',result,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
       return;
     }
+    const managedTeacher=config.managedTeacherOnly ? await require('./business-parity-managed-teacher.cjs')({page,out,save,releaseNavigation}) : null;
     await page.getByRole('button',{name:'plus 添加学生',exact:true}).click();
     const drawer = page.getByRole('dialog');
     await drawer.waitFor();
@@ -220,13 +221,14 @@ async function main() {
       // UTF-8: click the user-visible select surface, not its covered search input.
       await courseDialog.locator('.ant-select').filter({has:page.locator('#'+id)}).locator('.ant-select-selector').click();
       // UTF-8: target the visible option, not Ant Design's duplicate a11y mirror.
-      await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:new RegExp('^'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$')}).click();
+      await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:new RegExp('^\\s*'+text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$')}).click();
     };
     await courseDialog.getByPlaceholder('请输入课程名称',{exact:true}).fill('初二物理');
     await selectCourseOption('semester','秋学期');
     await selectCourseOption('source_type','自有课程');
     await selectCourseOption('type','一对一');
     await selectCourseOption('default_duration_minutes','1.5小时');
+    if(managedTeacher)await selectCourseOption('teacher_id',managedTeacher.name);
     // Keep the original inline address workflow; both drafts need explicit confirmation.
     await courseDialog.locator('#room_id').fill('东湖上课点');
     await courseDialog.locator('#room_id').press('Enter');
@@ -263,7 +265,7 @@ async function main() {
     const course=courseProjection.courses.find(c=>c.id===courseId);
     save('course-readback',{course,rooms:courseProjection.rooms.filter(r=>r.name==='东湖上课点')});
     assert.equal(course?.display_name,'初二物理');
-    assert.equal(course?.teacher_id,config.login.teacherId);
+    assert.equal(course?.teacher_id,managedTeacher?.id||config.login.teacherId);
     assert.equal(course?.room_name,'东湖上课点');
     assert.equal(course?.default_duration_minutes,90);
     assert.equal(course?.price_tuition,180); assert.equal(course?.price_teacher,120);
@@ -287,7 +289,7 @@ async function main() {
     await courseDialog.getByText('东湖上课点',{exact:true}).waitFor();
     await courseDialog.screenshot({path:path.join(out,'09-course-reopened.png')});
     await courseDialog.getByRole('button',{name:/^取\s*消$/}).click();
-    const coursePendingConfirmation=await require('./business-parity-course-confirmation.cjs')({page,out,save,courseId,selectCourseOption});
+    const coursePendingConfirmation=config.managedTeacherOnly ? {} : await require('./business-parity-course-confirmation.cjs')({page,out,save,courseId,selectCourseOption});
     // UTF-8: a focused rerun must not certify calendar, attendance or six-page checks.
     if(config.courseConfirmationOnly) {
       save('desktop-receipt',{passwordLogin:true,sourceDesktop:true,installed:false,productionWrite:false,
@@ -306,7 +308,7 @@ async function main() {
     await dayColumn.locator(':scope > div').first().dblclick();
     await courseDialog.waitFor();
     save('11-schedule-form-snapshot',await courseDialog.ariaSnapshot());
-    await selectCourseOption('teacherId',projection.teachers.find(t=>t.id===config.login.teacherId).name);
+    await selectCourseOption('teacherId',managedTeacher?.name||projection.teachers.find(t=>t.id===config.login.teacherId).name);
     await courseDialog.locator('#startTime').fill('12:00');
     await courseDialog.locator('#startTime').press('Enter');
     await selectCourseOption('courseId','初二物理');
@@ -341,6 +343,12 @@ async function main() {
     assert.match(await calendarCard.innerText(),/初二物理/);
     assert.match(await calendarCard.innerText(),/东湖上课点\s+12:00-13:30/);
     await calendarCard.screenshot({path:path.join(out,'13-calendar-card.png')});
+    if(config.managedTeacherOnly){
+      assert.equal(schedule.teacher_id,managedTeacher.id);
+      save('desktop-receipt',{scope:'managed-teacher-only',teacherId:managedTeacher.id,studentId,courseId,scheduleId,
+        originalWindows:true,explicitConfirmation:true,sourceDesktop:true,installed:false,productionWrite:false,uiVerified:false,businessFlowComplete:false});
+      return;
+    }
     // UTF-8: focused original address-linkage flow, not a full business or UI signoff.
     if(config.courseAddressOnly) {
       save('qa-inventory',{scope:'course-address-only',checks:['原窗口新增地址及确认后重开','原课程中修改地址','断网重连和保留草稿不提交','课程确认不夹带排课草稿','排课单独确认后地址改变而时间出勤费用不变','选回已有地址不重复新建','恢复后重开课表及确认窗口截图'],fullSignoff:false});

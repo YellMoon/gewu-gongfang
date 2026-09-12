@@ -8,10 +8,28 @@ import copy
 from unittest.mock import patch
 from run_business_parity_shadow import validate_backup, validate_target, export_committed_source, run, shadow_drop_command
 from business_parity_student_balance import seed_student_balance
+from business_parity_managed_teacher import read_managed_teacher
 from business_parity_student_history import seed_student_history, verify_student_history, verify_course_history, verify_retained_course_actions
 
 
 class BusinessParityShadowGuardTest(unittest.TestCase):
+    def test_managed_teacher_readback_rejects_unbounded_ids(self):
+        from unittest.mock import Mock
+        db=Mock()
+        with self.assertRaisesRegex(ValueError,'MANAGED_TEACHER_EXACT_IDS_REQUIRED'):
+            read_managed_teacher(db,{'teacherId':"'; drop database gewu_cloud;--"},'creator')
+        db.run.assert_not_called()
+        ids={'teacherId':'b18555a6-9b3f-406f-a45a-49493c6bc932','studentId':'4821ee8c-d71a-465f-83c7-abe9748ee65a','courseId':'mtyktz0kyc76zfs84m','scheduleId':'7a5246a4-83bc-443b-8e06-3cc713bbf995'}
+        db.run.return_value='{}'
+        with self.assertRaisesRegex(RuntimeError,'MANAGED_TEACHER_DATABASE_READBACK_MISMATCH'):
+            read_managed_teacher(db,ids,'e2e-teacher-existing')
+        self.assertIn("c.id='mtyktz0kyc76zfs84m'",db.run.call_args.args[0])
+
+    def test_managed_teacher_scope_does_not_mix_other_scenarios(self):
+        for flag in ['probe_only','course_confirmation_only','resource_editor_only','course_active_only','retained_student_actions_only']:
+            with self.subTest(flag=flag),self.assertRaisesRegex(ValueError,'MANAGED_TEACHER_SCOPE_CONFLICT'):
+                run('not-a-backup',managed_teacher_only=True,**{flag:True})
+
     def test_cleanup_force_is_limited_to_exact_disposable_target(self):
         target='gewu_ui_shadow_'+'a'*16
         self.assertEqual(shadow_drop_command(target),"docker exec gewu-postgres17 dropdb -U gewu_app --if-exists --force '"+target+"'")

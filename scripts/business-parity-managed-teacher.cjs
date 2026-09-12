@@ -1,0 +1,44 @@
+'use strict';
+// UTF-8: use original visible controls; reads below only observe the cloud/outbox.
+const assert=require('node:assert/strict'),path=require('node:path');
+module.exports=async({page,out,save,releaseNavigation})=>{
+ const projection=()=>page.evaluate(()=>window.desktopIdentitySessionProvider.listCloudBusinessProjection());
+ const navigate=async item=>{
+  await page.locator('.app-shell__collapse-button').click();
+  const group=page.getByRole('menuitem',{name:'team 资源',exact:true});
+  if(await group.getAttribute('aria-expanded')!=='true')await group.click();
+  await page.getByRole('menuitem',{name:item,exact:true}).click();await releaseNavigation();
+ };
+ await navigate('team 老师');
+ await page.getByRole('button',{name:'plus 添加老师',exact:true}).click();
+ const dialog=page.getByRole('dialog');await dialog.waitFor();
+ save('managed-teacher-form-tree',await dialog.ariaSnapshot());
+ await dialog.getByPlaceholder('请输入老师姓名',{exact:true}).fill('周启明');
+ await dialog.getByPlaceholder('元/小时',{exact:true}).fill('120');
+ await dialog.getByRole('button',{name:/^取\s*消$/}).click();await dialog.waitFor({state:'hidden'});
+ assert(!(await projection()).teachers.some(t=>t.name==='周启明'));
+ await page.getByRole('button',{name:'plus 添加老师',exact:true}).click();await dialog.waitFor();
+ await dialog.getByPlaceholder('请输入老师姓名',{exact:true}).fill('周启明');
+ await dialog.getByPlaceholder('元/小时',{exact:true}).fill('120');
+ await dialog.screenshot({path:path.join(out,'managed-teacher-form.png')});
+ await page.context().setOffline(true);
+ await dialog.getByRole('button',{name:/^确\s*定$/}).click();await dialog.waitFor({state:'hidden'});
+ await page.waitForFunction(async()=>(await window.desktopAuthority.list()).some(d=>d.type==='teacher.create.v1'&&d.status==='awaiting_confirmation'));
+ const draft=await page.evaluate(async()=>(await window.desktopAuthority.list()).find(d=>d.type==='teacher.create.v1'&&d.status==='awaiting_confirmation'));
+ await page.context().setOffline(false);
+ assert(!(await projection()).teachers.some(t=>t.id===draft.payload.record.id),'reconnect must not submit a teacher');
+ await page.locator('.sync-status-trigger').click();
+ await page.locator('[data-row-key="'+draft.id+'"]').getByRole('button',{name:'查看并确认',exact:true}).click();
+ await dialog.waitFor();save('managed-teacher-confirm-tree',await dialog.ariaSnapshot());
+ await dialog.screenshot({path:path.join(out,'managed-teacher-confirm.png')});
+ await dialog.getByRole('button',{name:'确认并发送',exact:true}).click();await dialog.waitFor({state:'hidden',timeout:45000});
+ const result=await page.evaluate(async id=>(await window.desktopAuthority.list()).find(d=>d.id===id),draft.id);
+ save('managed-teacher-submission',{status:result.status,lastError:result.lastError});assert.equal(result.status,'completed');
+ const teacher=(await projection()).teachers.find(t=>t.id===draft.payload.record.id);assert.equal(teacher?.name,'周启明');assert.equal(teacher.hourly_rate,120);
+ await page.reload();await page.locator('.app-shell').waitFor({timeout:45000});
+ await page.getByText('系统加载中...',{exact:true}).waitFor({state:'hidden',timeout:45000});
+ await navigate('team 老师');await page.getByRole('cell',{name:'周启明',exact:true}).waitFor();
+ await page.screenshot({path:path.join(out,'managed-teacher-reloaded.png'),scale:'css'});
+ save('managed-teacher-readback',{id:teacher.id,name:teacher.name,hourlyRate:teacher.hourly_rate,reconnectDidNotSubmit:true,reloaded:true});
+ await navigate('user 学生');return teacher;
+};
