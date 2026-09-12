@@ -8,6 +8,9 @@ const { nativeFormulaComponent } = require('./wordNativeFormula');
   const cases = [
     [String.raw`\frac{kg\cdot m}{s^{2}}`, ['m:f','m:sSup']],
     [String.raw`x_i^2`, ['m:sSubSup']],
+    [String.raw`\frac{T_{1}^{2}}{R^{3}}=\frac{T_{2}^{2}}{\left(2R)^{3}\right.}`, ['m:f', 'm:sSubSup']],
+    [String.raw`\frac{1}{2}Mu_{1}^{2}=\frac{1}{2}M{u^{'}}_{1}^{2}+\frac{1}{2}Mu_{2}^{2}`, ['m:f', 'm:sSubSup']],
+    [String.raw`\frac{1}{2}mv_{1}^{2}=\frac{1}{2}mv_{2}^{2}+\frac{1}{2}M{u^{'}}_{2}^{2}`, ['m:f', 'm:sSubSup']],
     [String.raw`x_i`, ['m:sSub']],
     [String.raw`\sqrt{x}+\sqrt[3]{y}`, ['m:rad','m:deg']],
     [String.raw`\left(\frac{x}{y}\right)`, ['m:d','m:f']],
@@ -36,6 +39,10 @@ const { nativeFormulaComponent } = require('./wordNativeFormula');
     }
   }
   assert.throws(()=>nativeFormulaComponent(String.raw`\unknownnativecommand{x}`));
+  assert.throws(()=>nativeFormulaComponent(String.raw`\left(2R)^{3}\right `), /cannot be represented safely/,
+    'invalid imported delimiters must be repaired at the source, not silently guessed during export');
+  assert.throws(()=>nativeFormulaComponent(String.raw`u^{'}_{1}^{2}`), /cannot be represented safely/,
+    'ambiguous double superscripts must not be hidden by a raster fallback');
   assert.throws(()=>nativeFormulaComponent(String.raw`\enclose{circle}{x}`),/cannot be represented safely/);
   assert.throws(()=>nativeFormulaComponent('x'.repeat(32769)),/cannot be represented safely/);
   assert.throws(()=>nativeFormulaComponent(''),/cannot be represented safely/);

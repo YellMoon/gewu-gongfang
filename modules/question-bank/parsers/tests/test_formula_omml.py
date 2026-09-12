@@ -49,6 +49,33 @@ class OmmlFormulaTests(unittest.TestCase):
             r"\left[x+1\right]",
         )
 
+    def test_nested_script_base_keeps_its_grouping(self):
+        prime = f"<m:sSup><m:e>{run('u')}</m:e><m:sup>{run(chr(39))}</m:sup></m:sSup>"
+        self.assertLatex(
+            f"<m:sSubSup><m:e>{prime}</m:e><m:sub>{run('1')}</m:sub><m:sup>{run('2')}</m:sup></m:sSubSup>",
+            r"{u^{'}}_{1}^{2}",
+        )
+        self.assertLatex(
+            f"<m:sSup><m:e><m:sSup><m:e>{run('x')}</m:e><m:sup>{run('2')}</m:sup></m:sSup></m:e><m:sup>{run('3')}</m:sup></m:sSup>",
+            r"{x^{2}}^{3}",
+        )
+
+    def test_explicit_blank_delimiter_is_invisible_not_missing(self):
+        for blank in ('', ' '):
+            self.assertLatex(
+                f'<m:d><m:dPr><m:endChr m:val="{blank}"/></m:dPr><m:e>{run("2R")}<m:sSup><m:e>{run(")")}</m:e><m:sup>{run("3")}</m:sup></m:sSup></m:e></m:d>',
+                r"\left(2R)^{3}\right.",
+            )
+        self.assertLatex(f'<m:d><m:e>{run("x")}</m:e></m:d>', r"\left(x\right)")
+
+    def test_delimiter_properties_are_local_and_braces_are_escaped(self):
+        inner = f'<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr><m:e>{run("x")}</m:e></m:d>'
+        self.assertLatex(f'<m:d><m:e>{inner}</m:e></m:d>', r"\left(\left[x\right]\right)")
+        self.assertLatex(
+            '<m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val="}"/></m:dPr><m:e>' + run('x') + '</m:e></m:d>',
+            r"\left\{x\right\}",
+        )
+
     def test_matrix_equation_array_accents_bars_and_grouping(self):
         matrix = f"<m:m><m:mr><m:e>{run('a')}</m:e><m:e>{run('b')}</m:e></m:mr><m:mr><m:e>{run('c')}</m:e><m:e>{run('d')}</m:e></m:mr></m:m>"
         self.assertLatex(matrix, r"\begin{matrix}a & b \\ c & d\end{matrix}")

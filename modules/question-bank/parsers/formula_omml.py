@@ -30,6 +30,15 @@ def _descendant(node: ET.Element, name: str) -> ET.Element | None:
     return next((child for child in node.iter() if _local(child) == name), None)
 
 
+def _delimiter(node: ET.Element, name: str, default: str) -> str:
+    properties = _child(node, "dPr")
+    prop = _child(properties, name) if properties is not None else None
+    value = default if prop is None else prop.attrib.get("{%s}val" % M, default)
+    # Office allows an explicitly empty/space delimiter. TeX spells it as a dot.
+    value = value.strip() or "."
+    return {"{": r"\{", "}": r"\}"}.get(value, value)
+
+
 TOKEN_REPLACEMENTS = {
     "→": r"\to ",
     "←": r"\leftarrow ",
@@ -86,7 +95,11 @@ class _OmmlVisitor:
             fraction_type = _value(_descendant(node, "type"))
             return "%s/%s" % (numerator, denominator) if fraction_type in {"lin", "skw"} else r"\frac{%s}{%s}" % (numerator, denominator)
         if tag in {"sSub", "sSup", "sSubSup"}:
-            base = self.visit(_child(node, "e"))
+            base_node = _child(node, "e")
+            base = self.visit(base_node)
+            # Nested scripts are a single base, not a second script on its last atom.
+            if base_node is not None and any(_local(child) in {"sSub", "sSup", "sSubSup", "sPre"} for child in list(base_node)):
+                base = "{%s}" % base
             sub = self.visit(_child(node, "sub"))
             sup = self.visit(_child(node, "sup"))
             return base + ("_{%s}" % sub if sub else "") + ("^{%s}" % sup if sup else "")
@@ -117,9 +130,9 @@ class _OmmlVisitor:
             body = self.visit(_child(node, "e"))
             return r"%s\left(%s\right)" % (FUNCTIONS.get(name, r"\operatorname{%s}" % name), body)
         if tag == "d":
-            begin = _value(_descendant(node, "begChr"), "(")
-            end = _value(_descendant(node, "endChr"), ")")
-            separator = _value(_descendant(node, "sepChr"), "|")
+            begin = _delimiter(node, "begChr", "(")
+            end = _delimiter(node, "endChr", ")")
+            separator = _delimiter(node, "sepChr", "|")
             entries = [self.visit(child) for child in list(node) if _local(child) == "e"]
             body = (r"\middle%s" % separator).join(entries)
             return r"\left%s%s\right%s" % (begin or ".", body, end or ".")
