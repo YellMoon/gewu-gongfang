@@ -10,8 +10,8 @@ function createBusinessRoomLifecycleMutations({ query } = {}) {
   const returnedRoom = 'SELECT id AS "id", to_char(updated_at AT TIME ZONE \'UTC\', \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\') AS "updatedAt" FROM';
   return Object.freeze({
     create: input => resultRow(`${returnedRoom} business.vnext_create_scoped_room($1,$2,$3,$4,$5,$6)`, [input.tenantId, input.roomId, input.name, input.address, ...actorParameters(input.actorScope)]),
-    update: input => resultRow(`${returnedRoom} business.vnext_update_room_v1($1,$2,$3::timestamptz,$4,$5)`, [input.tenantId, input.roomId, input.expectedUpdatedAt, input.name, input.address]),
-    remove: input => resultRow(`${returnedRoom} business.vnext_soft_delete_room($1,$2,$3::timestamptz)`, [input.tenantId, input.roomId, input.expectedUpdatedAt]),
+    update: input => resultRow(`${returnedRoom} business.vnext_update_scoped_room($1,$2,$3::timestamptz,$4,$5,$6,$7)`, [input.tenantId, input.roomId, input.expectedUpdatedAt, input.name, input.address, ...actorParameters(input.actorScope)]),
+    remove: input => resultRow(`${returnedRoom} business.vnext_delete_scoped_room($1,$2,$3::timestamptz,$4,$5)`, [input.tenantId, input.roomId, input.expectedUpdatedAt, ...actorParameters(input.actorScope)]),
   });
 }
 

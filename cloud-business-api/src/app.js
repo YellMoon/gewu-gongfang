@@ -1839,6 +1839,10 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     });
   }
 
+  function roomWriteDenied(error) {
+    return error?.code === 'CLOUD_BUSINESS_ACCESS_DENIED' || (error?.code === '42501'
+      && ['VNEXT_TEACHER_ROOM_SCOPE_DENIED', 'VNEXT_TEACHER_PROFILE_SCOPE_DENIED'].includes(error.message));
+  }
   app.post('/api/business/rooms', async (request, response) => {
     if (!businessTenantId || !businessRoomLifecycleMutations) return businessUnavailable(response);
     const update = exactBody(request.body, ['roomId', 'name', 'address']);
@@ -1850,7 +1854,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
       response.status(201).json({ ok: true, room });
     } catch (error) {
-      if (courseWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
+      if (roomWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       if (error?.code === '23505' || error?.message === 'VNEXT_BUSINESS_ROOM_NAME_EXISTS') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_NAME_EXISTS' });
       businessUnavailable(response);
     }
@@ -1862,12 +1866,12 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!roomId || !expectedUpdatedAt || !name || address === undefined) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const room = await businessRoomLifecycleMutations.update({ tenantId: businessTenantId, roomId, expectedUpdatedAt, name, address });
+      const room = await businessRoomLifecycleMutations.update({ tenantId: businessTenantId, roomId, expectedUpdatedAt, name, address, actorScope: scheduleWriteScope(context) });
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
       response.json({ ok: true, room });
     } catch (error) {
       if (error?.code === '23505' || error?.message === 'VNEXT_BUSINESS_ROOM_NAME_EXISTS') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_NAME_EXISTS' });
+      if (roomWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });
@@ -1877,12 +1881,11 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if (!roomId || !expectedUpdatedAt || !exactBody(request.body, ['expectedUpdatedAt'])) return businessInputInvalid(response);
     try {
       const context = await desktopBusinessContext(request);
-      if (!context?.roles?.includes('super_admin')) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      const room = await businessRoomLifecycleMutations.remove({ tenantId: businessTenantId, roomId, expectedUpdatedAt });
+      const room = await businessRoomLifecycleMutations.remove({ tenantId: businessTenantId, roomId, expectedUpdatedAt, actorScope: scheduleWriteScope(context) });
       if (!room) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_CONFLICT' });
       response.json({ ok: true, room });
     } catch (error) {
-      if (error?.code === 'P0001' || error?.message === 'VNEXT_BUSINESS_ROOM_REFERENCED') return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_ROOM_REFERENCED' });
+      if (roomWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);
     }
   });

@@ -5,6 +5,8 @@ const version = '2026-09-07T01:00:00.000Z';
 const course = { name: 'Physics', year: 2026, semester: 'autumn', displayName: 'Physics', type: 1, sourceType: 1, institutionId: null, priceTuition: 100, priceTeacher: 60, billingUnit: 1, teacherFeeMode: 1, roomId: 'room-own', roomName: 'Classroom', teacherId: 'teacher-own', teacherName: 'Teacher', active: true, defaultDurationMinutes: 90, notes: null, pricings: [] };
 const operations = [
   ['POST', '/api/business/rooms', { roomId: 'room-own', name: 'Classroom', address: null }, 201],
+  ['PUT', '/api/business/rooms/room-own', { expectedUpdatedAt: version, name: 'Classroom edited', address: null }, 200],
+  ['DELETE', '/api/business/rooms/room-own', { expectedUpdatedAt: version }, 200],
   ['POST', '/api/business/courses', { courseId: 'course-own', data: course }, 201],
   ['PUT', '/api/business/courses/course-own', { expectedUpdatedAt: version, ...course }, 200],
   ['DELETE', '/api/business/courses/course-own', { expectedUpdatedAt: version }, 200],
@@ -13,7 +15,7 @@ async function exercise(context, { miniappOnly = false, databaseDenies = false }
   const writes = [];
   const mutate = async input => {
     writes.push(input);
-    if (databaseDenies) throw Object.assign(new Error('VNEXT_TEACHER_COURSE_SCOPE_DENIED'), { code: '42501' });
+    if (databaseDenies) throw Object.assign(new Error(input.courseId ? 'VNEXT_TEACHER_COURSE_SCOPE_DENIED' : 'VNEXT_TEACHER_ROOM_SCOPE_DENIED'), { code: '42501' });
     return { id: input.courseId || input.roomId, updatedAt: version };
   };
   const app = createCloudBusinessApp({

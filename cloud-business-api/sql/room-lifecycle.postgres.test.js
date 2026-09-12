@@ -19,19 +19,23 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, receipt);
     await withQuery(handle, 'fixture-provisioner', async db => {
       for (const file of ['20260823-zzzz-room-lifecycle.sql', '20260823-zzzzz-course-lifecycle.sql',
-        '20260827-lifecycle-delete-qualified.sql', '20260907-teacher-course-write-scope.sql']) {
+        '20260907-teacher-course-write-scope.sql']) {
         await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
       }
       const fix = fs.readFileSync(path.join(__dirname, '20260908-room-update-qualified.sql'), 'utf8');
       await db.query(fix);
       await db.query(fix);
+      await db.query(fs.readFileSync(path.join(__dirname, '20260908-created-room-visibility.sql'), 'utf8'));
+      await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+      await db.query(fs.readFileSync(path.join(__dirname, '20260913-teacher-room-maintenance.sql'), 'utf8'));
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant','Test',false,now(),now())");
     });
     await withQuery(handle, 'writer', async db => {
       const mutations = createBusinessRoomLifecycleMutations({ query: (sql, values) => db.query(sql, values) });
       // The direct service call must execute SQL, not merely match source text or mock a successful row.
       const seed = await mutations.create({ actorScope: { role: 'super_admin', teacherId: null }, tenantId: 'tenant', roomId: 'room', name: '春禾教室', address: '春禾路一号' });
-      const saved = await mutations.update({ tenantId: 'tenant', roomId: 'room', expectedUpdatedAt: seed.updatedAt, name: '春禾二楼', address: '春禾路二号' });
+      const actorScope = { role: 'super_admin', teacherId: null };
+      const saved = await mutations.update({ actorScope, tenantId: 'tenant', roomId: 'room', expectedUpdatedAt: seed.updatedAt, name: '春禾二楼', address: '春禾路二号' });
       assert.equal(saved.id, 'room');
       const app = createCloudBusinessApp({ query: async () => ({ rows: [] }), businessTenantId: 'tenant', businessRoomLifecycleMutations: mutations,
         desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => ({ roles: ['super_admin'] }) } });
@@ -55,13 +59,13 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
           assert.deepEqual(result.rows, [{ name: '春禾三楼', address_legacy: '春禾路三号' }]);
           await verify.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,legacy_room_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ('course','tenant','Test','Test',1,1,100,60,1,1,'room',true,false,now(),now())");
         });
-        await assert.rejects(() => client.deleteCloudRoom({ ...session, roomId: 'room', expectedUpdatedAt: sameName.updatedAt }), error => error.code === 'CLOUD_BUSINESS_ROOM_REFERENCED');
-        assert.equal(await mutations.update({ tenantId: 'foreign', roomId: 'room', expectedUpdatedAt: sameName.updatedAt, name: '越界', address: null }), null);
+        await client.deleteCloudRoom({ ...session, roomId: 'room', expectedUpdatedAt: sameName.updatedAt });
+        assert.equal(await mutations.update({ actorScope, tenantId: 'foreign', roomId: 'room', expectedUpdatedAt: sameName.updatedAt, name: '越界', address: null }), null);
         await client.deleteCloudRoom({ ...session, roomId: 'second', expectedUpdatedAt: second.updatedAt });
         await withQuery(handle, 'fixture-provisioner', async verify => {
           const result = await verify.query("SELECT id,name,address_legacy,legacy_deleted FROM business.rooms ORDER BY id");
           assert.deepEqual(result.rows, [
-            { id: 'room', name: '春禾三楼', address_legacy: '春禾路三号', legacy_deleted: false },
+            { id: 'room', name: '春禾三楼', address_legacy: '春禾路三号', legacy_deleted: true },
             { id: 'second', name: '第二教室', address_legacy: null, legacy_deleted: true },
           ]);
         });
@@ -72,5 +76,5 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     await runtime.disposeHandle(handle).catch(() => {});
     await runtime.stop().catch(() => {});
   }
-  console.log('room actual service and desktop REST PostgreSQL lifecycle, duplicate, conflict and reference checks passed');
+  console.log('room actual service and desktop REST PostgreSQL lifecycle, duplicate, conflict and original deletion checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
