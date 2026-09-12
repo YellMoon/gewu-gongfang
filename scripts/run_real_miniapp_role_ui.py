@@ -286,8 +286,15 @@ def wait_for_startup_home(project, account_id, *, attempts=12):
     # to home asynchronously; a ready bridge or populated storage is not enough.
     command = ['automation_evaluate', '--project', str(project), '--fn-source',
                "() => ({route:typeof getCurrentPages === 'function' ? getCurrentPages().slice(-1)[0]?.route || null : null,accountId:typeof wx !== 'undefined' && typeof wx.getStorageSync === 'function' ? wx.getStorageSync('user_info')?.id || null : null})"]
+    transient_failures = 0
     for attempt in range(attempts):
-        state = run_wechatide(command, retry_connect=True)
+        try:
+            state = run_wechatide(command, retry_connect=True)
+        except RuntimeError as error:
+            transient_failures += 1
+            if not is_transient_post_refresh_automator_error(error) or transient_failures >= 3 or attempt + 1 == attempts:
+                raise
+            state = None
         if isinstance(state, dict) and state.get('route') == 'pages/index/index' and state.get('accountId') == account_id:
             return
         if attempt + 1 < attempts:

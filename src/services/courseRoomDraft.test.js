@@ -21,6 +21,24 @@ function setup(rooms = [], courses = []) {
 }
 const room = { id: 'room-existing', name: 'Shared classroom', updated_at: '2026-09-07T00:00:00Z', count: 1 };
 const original = { id: 'course-old', name: 'Physics', room_id: room.id, room_name: room.name, updated_at: '2026-09-07T00:00:00Z' };
+for (const version of [original.updated_at, '2026-09-07T00:00:00.123456Z', null]) {
+  for (const updates of [{ name: 'Changed' }, { active: false }, { active: true }]) {
+    const before = { ...original, updated_at: version };
+    const { cache, calls } = setup([room], [before]);
+    const input = structuredClone(updates);
+    const updated = cache.updateCourse(before.id, input);
+    assert.deepEqual(calls.map(c => c.kind), ['single', 'save']);
+    const draft = calls[0].changes[0];
+    assert.equal(draft.collection, 'courses');
+    assert.equal(draft.action, 'update');
+    assert.equal(draft.recordId, before.id);
+    assert.equal(draft.baseVersion, version, 'preserve the observed cloud version, including microseconds and an absent baseline');
+    assert.notEqual(draft.baseVersion, updated.updated_at, 'never submit the new local timestamp as the cloud baseline');
+    assert.deepEqual(draft.value, 'active' in updates ? updates : updated);
+    assert.deepEqual(input, updates);
+    assert.deepEqual(cache.data.rooms, [room]);
+  }
+}
 for (const edit of [false, true]) {
   const { cache, calls } = setup([], edit ? [original] : []);
   const input = { name: 'Physics', room_id: 'New classroom', room_name: 'New classroom' };

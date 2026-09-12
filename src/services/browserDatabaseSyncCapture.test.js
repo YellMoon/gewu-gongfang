@@ -82,7 +82,8 @@ for (const marker of [
   "this.recordAuthorityDraft('rooms', 'delete', id, deletedRecord, baseVersion)",
   "this.recordAuthorityDraft('students', 'update', id, draftValue, baseVersion)",
   "this.recordAuthorityDraft('students', 'delete', id, deletedRecord, baseVersion)",
-  "this.recordAuthorityDraft('courses', 'update', id, this.data.courses[index], baseVersion)",
+  // Course updates have full-form and state-only payloads. courseRoomDraft.test
+  // executes both branches and checks the observed version rather than spelling.
   "this.recordAuthorityDraft('courses', 'delete', id, deletedRecord, baseVersion)",
   "this.recordAuthorityDraft('schedules', 'update', id, this.data.schedules[index], baseVersion)",
   "this.recordAuthorityDraft('schedules', 'delete', id, deletedRecord, baseVersion)",
