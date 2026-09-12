@@ -119,6 +119,20 @@ class RoleUiReceiptTests(unittest.TestCase):
         self.assertEqual([call[0] for call in calls], ["automation_navigate", "automation_evaluate"])
         self.assertEqual(calls[0][-2:], ["--wait", "2"])
 
+    def test_uses_switch_tab_for_every_registered_tab_page(self):
+        config = (Path(__file__).resolve().parents[1] / 'miniapp/src/app.config.ts').read_text(encoding='utf-8')
+        import re
+        tabs = re.findall(r"pagePath: '([^']+)'", config)
+        self.assertEqual(len(tabs), 4)
+        for route in tabs:
+            calls = []
+            def wechatide(arguments, **_kwargs):
+                calls.append(arguments)
+                return {'route': route} if arguments[0] == 'automation_evaluate' else {'success': True}
+            with self.subTest(route=route), patch('run_real_miniapp_role_ui.run_wechatide', side_effect=wechatide):
+                verify_pages(Path('C:/miniapp'), ('/' + route,))
+            self.assertEqual(calls[0][calls[0].index('--action') + 1], 'switchTab')
+
     def test_rejects_non_timeout_navigation_failures(self):
         with patch("run_real_miniapp_role_ui.run_wechatide", side_effect=RuntimeError("REAL_MINIAPP_ROLE_UI_TOOL_FAILED:project closed")):
             with self.assertRaisesRegex(RuntimeError, "project closed"):

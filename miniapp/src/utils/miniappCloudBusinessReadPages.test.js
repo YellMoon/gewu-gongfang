@@ -1,4 +1,5 @@
 'use strict';
+require('./studentDisplay.test');
 
 const assert = require('assert');
 const fs = require('fs');

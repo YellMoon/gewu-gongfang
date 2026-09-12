@@ -3,6 +3,7 @@ import { View, Text, Input } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Student, StudentSource } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
+import { studentSchoolLabel, studentGradeLabel } from '../../utils/studentDisplay';
 import { NetworkStatus, EmptyState, LoadingSkeleton, PullRefreshView } from '../../components/shared';
 import './index.scss';
 
@@ -74,8 +75,8 @@ export default function Students() {
                   )}
                 </View>
                 <Text className="student-detail">
-                  {s.school ? `${s.school} · ` : ''}
-                  {s.grade_year ? `${s.grade_year}年级 · ` : ''}
+                  {studentSchoolLabel(s.school) ? `${studentSchoolLabel(s.school)} · ` : ''}
+                  {studentGradeLabel(s) ? `${studentGradeLabel(s)} · ` : ''}
                   余额 {s.balance_hours || 0} 小时
                 </Text>
                 <Text className="student-contact">{s.phone || s.parent_wechat || ''}</Text>

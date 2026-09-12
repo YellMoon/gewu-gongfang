@@ -40,6 +40,15 @@ assert.deepStrictEqual(imported, {
   import_task_id: 'question_import_task_demo', import_item_id: 'question_import_item_demo_0', import_item_index: 0, import_content_hash: 'c'.repeat(64),
 });
 const importedCommand = questionCreateCommand(imported);
+const withSource = questionRecordFromImportItem('question_import_task_demo', {
+  itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: 'c'.repeat(64),
+  candidate: { stem: 'Imported stem', options: [], source_info: { source: '全国Ⅰ卷', year: '2019', region: '全国', exam_type: '高考真题' } },
+});
+assert.strictEqual(withSource.source, '全国Ⅰ卷');
+assert.strictEqual(withSource.year, '2019');
+assert.strictEqual(withSource.region, '全国');
+assert.strictEqual(withSource.exam_type, '高考真题');
+assert.deepStrictEqual(withSource.knowledge_point_ids, [], 'printed source labels must not become invented taxonomy IDs');
 assert.strictEqual(importedCommand.type, 'question.create.v1');
 assert.deepStrictEqual(importedCommand.payload, { record: imported });
 assert.match(importedCommand.payloadHash, /^[0-9a-f]{64}$/);

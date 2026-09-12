@@ -371,7 +371,7 @@ def verify_question_bank_content(project):
 def verify_pages(project, pages, *, role=None, account_id=None, screenshots_dir=None):
     visited = []
     for page in pages:
-        action = "switchTab" if page in {"/pages/schedule/index", "/pages/question-bank/index"} else "navigateTo"
+        action = "switchTab" if page in {"/pages/index/index", "/pages/schedule/index", "/pages/question-bank/index", "/pages/settings/index"} else "navigateTo"
         expected_route = page.removeprefix("/")
         navigation = ["automation_navigate", "--project", str(project), "--action", action, "--url", page, "--wait", "2"]
         try:

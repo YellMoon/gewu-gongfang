@@ -1,2 +1,25 @@
 const assert=require('assert'); const {createNativeQuestionDraft}=require('./nativeQuestionDraftCreate');
-(async()=>{const calls=[];globalThis.questionDraftProvenance={issueDraft:async()=>({questionId:'native-id'})};const db={createQuestion:(data,id)=>(calls.push({data,id}),{id})};const storage={getItem:()=>JSON.stringify({token:'t',userId:'u',deviceId:'d'})};assert.strictEqual((await createNativeQuestionDraft(db,{x:1},storage)).id,'native-id');globalThis.questionDraftProvenance=null;await assert.rejects(()=>createNativeQuestionDraft(db,{x:2},storage),e=>e.code==='DRAFT_PROVENANCE_UNAVAILABLE');assert.strictEqual(calls.length,1);console.log('native question draft create tests passed');})().catch(e=>{console.error(e);process.exit(1)});
+const { importQuestionMetadata } = require('../../shared/questionImportMetadata');
+const parserCandidate = { source_info: { source: '全国Ⅰ卷', year: '2019', exam_type: '高考真题', region: '全国', paper_name: '全国Ⅰ卷', accountId: 'must-not-copy' } };
+assert.deepStrictEqual(importQuestionMetadata(parserCandidate), { source: '全国Ⅰ卷', year: '2019', exam_type: '高考真题', region: '全国' });
+assert.deepStrictEqual(importQuestionMetadata({ ...parserCandidate, source: '用户修订', year: null }), { source: '用户修订', year: null, exam_type: '高考真题', region: '全国' });
+assert.deepStrictEqual(importQuestionMetadata({}), {});
+assert.deepStrictEqual(importQuestionMetadata({ source_info: { year: { invalid: true }, source: '' } }), {});
+assert.deepStrictEqual(importQuestionMetadata({ source: '', source_info: { source: '不要覆盖明确清空' } }), { source: '' });
+(async () => {
+  const calls = [];
+  globalThis.questionDraftProvenance = { issueDraft: async () => ({ questionId: 'native-id' }) };
+  const db = { createQuestion: (data, id) => (calls.push({ data, id }), { id }) };
+  const storage = { getItem: () => JSON.stringify({ token: 't', userId: 'u', deviceId: 'd' }) };
+  assert.strictEqual((await createNativeQuestionDraft(db, { x: 1 }, storage)).id, 'native-id');
+  assert.deepStrictEqual(calls[0].data, { x: 1 });
+  await createNativeQuestionDraft(db, parserCandidate, storage);
+  assert.strictEqual(calls[1].data.source, parserCandidate.source_info.source);
+  assert.strictEqual(calls[1].data.year, '2019');
+  assert.strictEqual(calls[1].data.accountId, undefined);
+  assert.strictEqual(parserCandidate.year, undefined, 'must not mutate parser result');
+  globalThis.questionDraftProvenance = null;
+  await assert.rejects(() => createNativeQuestionDraft(db, { x: 2 }, storage), e => e.code === 'DRAFT_PROVENANCE_UNAVAILABLE');
+  assert.strictEqual(calls.length, 2, 'missing provenance must not write a draft');
+  console.log('native question draft create tests passed');
+})().catch(error => { console.error(error); process.exit(1); });

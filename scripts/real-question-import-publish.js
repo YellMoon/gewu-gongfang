@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const path = require('path');
 const { stableJson } = require('../shared/authorityProtocol');
+const { importQuestionMetadata } = require('../shared/questionImportMetadata');
 
 function failure(code) { return Object.assign(new Error(code), { code }); }
 
@@ -52,6 +53,7 @@ function questionRecordFromImportItem(taskId, item) {
     subject: typeof candidate.subject === 'string' && candidate.subject.trim() ? candidate.subject.trim() : '\u7269\u7406',
     type: questionTypeFromImportCandidate(candidate), difficulty, content: candidate.stem,
     options: candidate.options, answer, analysis, rich_content: richContent,
+    ...importQuestionMetadata(candidate),
     knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: {}, has_formula: Boolean(candidate.has_formula),
     import_task_id: taskId, import_item_id: item.itemId, import_item_index: item.itemIndex, import_content_hash: item.contentHash,
   };
