@@ -49,6 +49,21 @@ function fixture() {
   f=fixture();const duplicate={...plan,entries:[plan.entries[0],plan.entries[0]]};await assert.rejects(applyFormulaCorrections({...f.args,plan:duplicate,execute:true}),/INPUT/);assert.equal(f.state.posts.length,0);
   f=fixture();f.state.rows[0].content='new edit';const injected=structuredClone(plan);injected.entries[0].current=originals[0];await assert.rejects(applyFormulaCorrections({...f.args,plan:injected,execute:true}),/STATE_CHANGED/);assert.equal(f.state.posts.length,0);
   f=fixture();f.state.rows[0].source='new source metadata';await applyFormulaCorrections({...f.args,execute:true});assert.equal(f.state.rows[0].source,'new source metadata','fresh unrelated metadata must be preserved');
+  function subquestionFixture() {
+    const f=fixture(),p=text=>({type:'paragraph',content:[{type:'text',text}]}),d=(...content)=>({type:'doc',content});
+    f.state.rows.forEach(row=>{
+      row.content='Intro\n(1) Find speed';
+      row.rich_content={sections:{stem:d(p('Intro'),p('(1) Find speed')),subQuestions:[{label:'(1)',content:d(p('Find speed')),answer:d()}]}};
+    });
+    f.args.plan={schema:'source-subquestion-correction-review-v1',entries:f.state.rows.map(row=>({id:row.id,baseline:structuredClone(row)}))};
+    return f;
+  }
+  f=subquestionFixture();await applyFormulaCorrections(f.args);assert.equal(f.state.posts.length,0);
+  f=subquestionFixture();await applyFormulaCorrections({...f.args,execute:true});assert.equal(f.state.posts.length,2);assert.equal(f.state.rows[0].content,'Intro');
+  assert.equal(f.state.rows[0].rich_content.sections.subQuestions[0].content.content[0].content[0].text,'Find speed');
+  f=subquestionFixture();f.state.rows[1].version++;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/STATE_CHANGED/);assert.equal(f.state.posts.length,0);
+  f=subquestionFixture();f.state.dropResponse=true;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/TRANSPORT_UNCERTAIN/);
+  f.state.dropResponse=false;await applyFormulaCorrections({...f.args,execute:true,journal:f.state.journal});assert.equal(f.state.posts.length,2);
   const {spawnSync}=require('node:child_process'),path=require('node:path');
   for(const args of [[],['--execute'],['--unknown']]) {
     const result=spawnSync(process.execPath,[path.join(__dirname,'apply-question-formula-corrections.js'),...args],{encoding:'utf8',timeout:10000,windowsHide:true});

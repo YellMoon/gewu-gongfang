@@ -1599,9 +1599,10 @@ def new_question(stem, index=None, knowledge_point=None):
 
 
 def append_text(question, text):
-    question["stem"] = (question["stem"] + "\n" + text).strip()
     if question["sub_questions"]:
         question["sub_questions"][-1]["content"] += "\n" + text
+    else:
+        question["stem"] = (question["stem"] + "\n" + text).strip()
 
 
 def parse_question_block(paragraphs, default_topic=None):
@@ -1639,7 +1640,6 @@ def parse_question_block(paragraphs, default_topic=None):
         sub_label, sub_content = extract_sub_question(text)
         if sub_label:
             current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -1770,7 +1770,6 @@ def parse_exam_question_block(paragraphs):
         sub_label, sub_content = extract_sub_question(text)
         if sub_label:
             current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
     if current:
@@ -1881,7 +1880,6 @@ def parse_lecture_numbered_items(items, default_topic=None):
         sub_label, sub_content = extract_sub_question(text)
         if sub_label:
             current["sub_questions"].append({"title": sub_label, "content": sub_content, "answer": ""})
-            current["stem"] = (current["stem"] + "\n" + f"{sub_label} {sub_content}").strip()
             continue
         append_text(current, text)
 
