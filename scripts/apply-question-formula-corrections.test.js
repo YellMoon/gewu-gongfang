@@ -64,6 +64,28 @@ function fixture() {
   f=subquestionFixture();f.state.rows[1].version++;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/STATE_CHANGED/);assert.equal(f.state.posts.length,0);
   f=subquestionFixture();f.state.dropResponse=true;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/TRANSPORT_UNCERTAIN/);
   f.state.dropResponse=false;await applyFormulaCorrections({...f.args,execute:true,journal:f.state.journal});assert.equal(f.state.posts.length,2);
+  // UTF-8: answer-section repair uses the same verified backup and resume gates.
+  function answerSectionFixture() {
+    const f=fixture(),p=text=>({type:'paragraph',content:[{type:'text',text}]}),d=(...content)=>({type:'doc',content});
+    f.state.rows.forEach(row=>{
+      row.rich_content={sections:{stem:d(p('stem')),options:[],answer:d(p('answer')),analysis:d(p('analysis')),
+        subQuestions:[{id:'sub-original',label:'(1)',content:d(p('question')),answer:d(p('solution'))}]}};
+    });
+    f.args.plan={schema:'source-answer-section-correction-review-v1',entries:f.state.rows.map(row=>{
+      const sourceBefore={stem:row.content,options:[],answer:row.answer,analysis:row.analysis,assets:[],formulas:[],rich_content:structuredClone(row.rich_content)};
+      const sourceAfter=structuredClone(sourceBefore);
+      sourceAfter.analysis='analysis\n(1) solution';sourceAfter.rich_content.sections.analysis=d(p('analysis'),p('(1) solution'));
+      sourceAfter.rich_content.sections.subQuestions[0].answer=d(p('source answer'));
+      return {id:row.id,baseline:structuredClone(row),sourceBefore,sourceAfter};
+    })};
+    return f;
+  }
+  f=answerSectionFixture();await applyFormulaCorrections(f.args);assert.equal(f.state.posts.length,0);
+  f=answerSectionFixture();await applyFormulaCorrections({...f.args,execute:true});assert.equal(f.state.posts.length,2);assert.equal(f.state.rows[0].analysis,'analysis\n(1) solution');
+  f=answerSectionFixture();f.state.rows[1].version++;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/STATE_CHANGED/);assert.equal(f.state.posts.length,0);
+  f=answerSectionFixture();await assert.rejects(applyFormulaCorrections({...f.args,execute:true,verifyBackup:async()=>({restoreVerified:false})}),/BACKUP/);assert.equal(f.state.posts.length,0);
+  f=answerSectionFixture();f.state.dropResponse=true;await assert.rejects(applyFormulaCorrections({...f.args,execute:true}),/TRANSPORT_UNCERTAIN/);
+  f.state.dropResponse=false;await applyFormulaCorrections({...f.args,execute:true,journal:f.state.journal});assert.equal(f.state.posts.length,2);
   const {spawnSync}=require('node:child_process'),path=require('node:path');
   for(const args of [[],['--execute'],['--unknown']]) {
     const result=spawnSync(process.execPath,[path.join(__dirname,'apply-question-formula-corrections.js'),...args],{encoding:'utf8',timeout:10000,windowsHide:true});

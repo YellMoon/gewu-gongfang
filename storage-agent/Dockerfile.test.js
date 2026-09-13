@@ -8,7 +8,12 @@ const dockerfile = fs.readFileSync(path.join(__dirname, 'Dockerfile'), 'utf8');
 const dockerignore = fs.readFileSync(path.join(__dirname, '..', '.dockerignore'), 'utf8');
 
 assert.match(dockerfile, /^FROM node:20-alpine$/m, 'the NAS agent must use the validated Node Alpine runtime');
-assert.match(dockerfile, /^RUN apk add --no-cache python3$/m, 'the Word parser must install Python through the validated Alpine package source without retaining package-manager cache');
+assert.match(dockerfile, /^RUN apk add --no-cache python3 ruby ruby-json ruby-nokogiri$/m,
+  'the Linux importer must include the MathType runtime, not silently depend on the desktop Ruby installation');
+assert.match(dockerfile, /gem install --no-document --ignore-dependencies ruby-ole:1\.2\.13\.1 bindata:2\.5\.1 mathtype:0\.0\.8 mathtype_to_mathml_plus:0\.0\.16/,
+  'MathType converter dependencies must use the versions validated with the original Word files');
+assert.match(dockerfile, /ruby -e "require 'json'; require 'mathtype_to_mathml_plus'"/,
+  'image build must fail when the converter or a transitive runtime dependency is missing');
 assert.match(dockerfile, /^COPY shared \/app\/shared$/m, 'the NAS agent must include the encrypted relay implementation');
 assert.match(dockerfile, /^COPY storage-agent \/app\/storage-agent$/m, 'the NAS agent must include its runtime');
 assert.match(dockerfile, /^COPY modules\/question-bank\/parsers\/\*\.py \/app\/modules\/question-bank\/parsers\/$/m,
