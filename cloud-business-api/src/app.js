@@ -1378,6 +1378,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const task = await paperExportTasks.read({ tenantId: businessTenantId, actor: await miniappBusinessContext(request), taskId: request.params.taskId });
       response.json({ ok: true, task });
     } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
       if (error && error.code === 'CLOUD_PAPER_EXPORT_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
       if (error && error.code === 'CLOUD_PAPER_EXPORT_NOT_FOUND') return response.status(404).json({ ok: false, code: error.code });
       businessUnavailable(response);
@@ -1389,6 +1390,7 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       const task = await paperExportTasks.cancel({ tenantId: businessTenantId, actor: await miniappBusinessContext(request), taskId: request.params.taskId });
       response.json({ ok: true, task });
     } catch (error) {
+      if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
       if (error && error.code === 'CLOUD_PAPER_EXPORT_ACCESS_DENIED') return response.status(403).json({ ok: false, code: error.code });
       if (error && error.code === 'CLOUD_PAPER_EXPORT_NOT_CANCELLABLE') return response.status(409).json({ ok: false, code: error.code });
       businessUnavailable(response);

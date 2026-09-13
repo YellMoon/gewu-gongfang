@@ -205,6 +205,21 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   });
   assert.strictEqual(studentExport.status, 403);
 
+  for (const endpoint of [
+    { path: '/api/business/miniapp-paper-export-tasks/paper_task_1' },
+    { path: '/api/business/miniapp-paper-export-tasks/paper_task_1/cancel', method: 'POST', body: {} },
+  ]) {
+    for (const authorization of [null, 'Bearer expired-miniapp.signature']) {
+      const denied = await request(app, endpoint.path, {
+        ...endpoint, headers: authorization ? { authorization } : {},
+      });
+      assert.strictEqual(denied.status, 403, 'missing or expired login must not masquerade as a cloud outage');
+      assert.strictEqual(denied.body.code, 'CLOUD_BUSINESS_ACCESS_DENIED');
+    }
+  }
+  const readable = await request(app, '/api/business/miniapp-paper-export-tasks/paper_task_1', { headers });
+  assert.strictEqual(readable.status, 200, 'valid task reads remain available');
+
   const disallowed = await request(app, '/api/business/miniapp-paper-export-tasks', {
     method: 'POST', headers: { ...headers, 'x-idempotency-key': 'miniapp-paper-2' },
     body: { taskType: 'question-paper', request: { questionIds: ['q-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native' } },
