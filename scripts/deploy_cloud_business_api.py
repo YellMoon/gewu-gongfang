@@ -21,6 +21,7 @@ import deploy  # noqa: E402
 import backup_cloud_postgres  # noqa: E402
 import deploy_gateway as retirement_gateway  # noqa: E402
 import verify_cloud_business_release  # noqa: E402
+from cloud_release_source import frozen_cloud_inputs  # noqa: E402
 
 
 CURRENT_CONTAINER = "gewu-cloud-business-api"
@@ -388,8 +389,8 @@ def reconcile_switch_failure_command(tag, operation_id):
     )
 
 
-def source_version():
-    payload = json.loads((ROOT / "cloud-business-api" / "package.json").read_text(encoding="utf-8"))
+def source_version(source_root=ROOT):
+    payload = json.loads((source_root / "cloud-business-api" / "package.json").read_text(encoding="utf-8"))
     value = payload.get("version")
     if not isinstance(value, str):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
@@ -408,7 +409,7 @@ def validated_release_tag(requested_tag=None):
     return expected
 
 
-def upload_source(ssh, tag):
+def upload_source(ssh, tag, source_root):
     build_dir = remote_build_dir(tag)
     deploy.run(
         ssh,
@@ -433,16 +434,16 @@ def upload_source(ssh, tag):
         created_directories.add(remote_directory)
     try:
         for top_level in ("cloud-business-api", "shared"):
-            local_top = ROOT / top_level
+            local_top = source_root / top_level
             for local_path in local_top.rglob("*"):
                 if not local_path.is_file() or "node_modules" in local_path.parts:
                     continue
-                relative = local_path.relative_to(ROOT).as_posix()
+                relative = local_path.relative_to(source_root).as_posix()
                 remote_path = posixpath.join(build_dir, relative)
                 remote_parent = posixpath.dirname(remote_path)
                 ensure_directory(remote_parent)
                 sftp.put(str(local_path), remote_path)
-        font = ROOT / "backend" / "assets" / "fonts" / "NotoSansCJKsc-Regular.otf"
+        font = source_root / "backend" / "assets" / "fonts" / "NotoSansCJKsc-Regular.otf"
         if not font.is_file():
             raise failure("CLOUD_DOCKER_DEPLOY_FONT_MISSING")
         font_target = posixpath.join(build_dir, "backend", "assets", "fonts", font.name)
@@ -458,18 +459,15 @@ def build_image(ssh, tag):
     deploy.run(ssh, f"cd '{build_dir}' && docker build --pull=false -t 'gewu-cloud-business-api:{tag}' -f cloud-business-api/Dockerfile .", timeout=600)
 
 
-def run_cloud_migrations():
-    control_m20 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m20.py")], cwd=ROOT, check=True, text=True)
-    control_m21 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m21.py")], cwd=ROOT, check=True, text=True)
-    control_m22 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m22.py")], cwd=ROOT, check=True, text=True)
-    control_m23 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m23.py")], cwd=ROOT, check=True, text=True)
-    control_m24 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m24.py")], cwd=ROOT, check=True, text=True)
-    control_m25 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m25.py")], cwd=ROOT, check=True, text=True)
-    control_m26 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m26.py")], cwd=ROOT, check=True, text=True)
-    control_m27 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m27.py")], cwd=ROOT, check=True, text=True)
-    control_m28 = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_control_plane_m28.py")], cwd=ROOT, check=True, text=True)
-    business = subprocess.run([sys.executable, str(ROOT / "scripts" / "apply_cloud_postgres_migrations.py")], cwd=ROOT, check=True, text=True)
-    return max(control_m20.returncode, control_m21.returncode, control_m22.returncode, control_m23.returncode, control_m24.returncode, control_m25.returncode, control_m26.returncode, control_m27.returncode, control_m28.returncode, business.returncode)
+def run_cloud_migrations(source_root):
+    # Only the dotenv *path* is inherited; secrets never enter the source archive.
+    environment = {**os.environ, "DOTENV_CONFIG_PATH": str(deploy.dotenv_path.resolve())}
+    scripts = [f"apply_cloud_control_plane_m{version}.py" for version in range(20, 29)]
+    scripts.append("apply_cloud_postgres_migrations.py")
+    for name in scripts:
+        subprocess.run([sys.executable, str(source_root / "scripts" / name)],
+                       cwd=source_root, env=environment, check=True, text=True, encoding="utf-8")
+    return 0
 
 
 def create_verified_backup():
@@ -743,17 +741,24 @@ def deploy_release():
     version = source_version()
     deploy.require_release_manifest("cloud_business")
     tag = validated_release_tag()
+    with frozen_cloud_inputs(ROOT, tag.rsplit('-', 1)[1]) as source_root:
+        if source_version(source_root) != version:
+            raise failure("CLOUD_RELEASE_SOURCE_VERSION_MISMATCH")
+        return deploy_frozen_release(version, tag, source_root)
+
+
+def deploy_frozen_release(version, tag, source_root):
     candidate_operation_id = secrets.token_hex(16)
     ssh = deploy.connect()
     runtime_override_uploaded = False
     try:
-        upload_source(ssh, tag)
+        upload_source(ssh, tag, source_root)
         build_image(ssh, tag)
         backup = create_verified_backup()
         deploy_retirement_gateway()
         # The candidate starts with strict schema/invariant verification. Apply
         # additive migrations only after a fresh, verified recovery point exists.
-        run_cloud_migrations()
+        run_cloud_migrations(source_root)
         upload_runtime_override_file(ssh, tag, candidate_operation_id)
         runtime_override_uploaded = True
         try:

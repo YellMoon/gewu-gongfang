@@ -4,6 +4,8 @@ import unittest
 import shutil
 import subprocess
 import os
+import contextlib
+import importlib.util
 from pathlib import Path
 from unittest import mock
 
@@ -41,6 +43,10 @@ VERIFIED_PERMISSION_CONTRACT = {"contract": "live-authority-result"}
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
     def setUp(self):
+        self.source_guard = mock.patch.object(module, 'frozen_cloud_inputs', create=True,
+                                             side_effect=lambda *_args: contextlib.nullcontext(module.ROOT))
+        self.source_guard.start()
+        self.addCleanup(self.source_guard.stop)
         self.backup_guard = mock.patch.object(
             module,
             "create_verified_backup",
@@ -66,6 +72,25 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_test_process_blocks_real_cloud_migrations_by_default(self):
         with self.assertRaisesRegex(AssertionError, "TEST_MUST_MOCK_CLOUD_MIGRATIONS"):
             module.run_cloud_migrations()
+
+    def test_snapshot_failure_prevents_any_remote_connection(self):
+        with mock.patch.object(module, 'source_version', return_value='8.5.0'), \
+                mock.patch.object(module, 'source_revision', return_value='1165783d'), \
+                mock.patch.object(module.deploy, 'require_release_manifest'), \
+                mock.patch.object(module.deploy, 'connect') as connect, \
+                mock.patch.object(module, 'frozen_cloud_inputs', side_effect=ValueError('CLOUD_RELEASE_SOURCE_HEAD_MISMATCH')):
+            with self.assertRaisesRegex(ValueError, 'CLOUD_RELEASE_SOURCE_HEAD_MISMATCH'):
+                module.deploy_release()
+            connect.assert_not_called()
+
+    def test_snapshot_version_mismatch_prevents_any_remote_connection(self):
+        with mock.patch.object(module, 'source_version', side_effect=['8.5.0','8.5.0','8.4.0']), \
+                mock.patch.object(module, 'source_revision', return_value='1165783d'), \
+                mock.patch.object(module.deploy, 'require_release_manifest'), \
+                mock.patch.object(module.deploy, 'connect') as connect:
+            with self.assertRaisesRegex(ValueError, 'CLOUD_RELEASE_SOURCE_VERSION_MISMATCH'):
+                module.deploy_release()
+            connect.assert_not_called()
 
     def test_release_tag_is_stable_and_rejects_unsafe_input(self):
         self.assertEqual(release_tag("8.1.0", "8c425eab"), "8.1.0-8c425eab")
@@ -276,7 +301,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         ssh = mock.Mock()
         ssh.open_sftp.return_value = mock.Mock()
         with mock.patch.object(module.deploy, "run") as run:
-            module.upload_source(ssh, "8.5.0-1101687f349d")
+            module.upload_source(ssh, "8.5.0-1101687f349d", module.ROOT)
         command = run.call_args_list[0].args[1]
         self.assertIn("test -d '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
         self.assertIn("test ! -L '/root/gewu-cloud-business-builds/8.5.0-1101687f349d'", command)
@@ -478,10 +503,15 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn("rollback-8.5.0-fb899bbdd414", run.call_args_list[-1].args[1])
 
     def test_cloud_migrations_apply_control_plane_before_business_schema(self):
+        snapshot = module.ROOT / 'synthetic-committed-source'
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
-            self.assertEqual(REAL_RUN_CLOUD_MIGRATIONS(), 0)
+            self.assertEqual(REAL_RUN_CLOUD_MIGRATIONS(snapshot), 0)
         self.assertEqual(len(run.call_args_list), 10)
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs['cwd'], snapshot)
+            self.assertTrue(Path(call.args[0][1]).is_relative_to(snapshot))
+            self.assertEqual(call.kwargs['env']['DOTENV_CONFIG_PATH'], str(module.deploy.dotenv_path.resolve()))
         self.assertTrue(str(run.call_args_list[0].args[0][1]).endswith("apply_cloud_control_plane_m20.py"))
         self.assertTrue(str(run.call_args_list[1].args[0][1]).endswith("apply_cloud_control_plane_m21.py"))
         self.assertTrue(str(run.call_args_list[2].args[0][1]).endswith("apply_cloud_control_plane_m22.py"))
@@ -537,19 +567,22 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module, "source_revision", return_value="1165783d"
         ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
             module.deploy, "connect", return_value=ssh
-        ), mock.patch.object(module, "upload_source", side_effect=lambda *_args: events.append("upload")), mock.patch.object(
+        ), mock.patch.object(module, "upload_source", side_effect=lambda *_args: events.append("upload")) as upload, mock.patch.object(
             module, "build_image", side_effect=lambda *_args: events.append("build")
         ), mock.patch.object(
             module, "create_verified_backup", side_effect=lambda: events.append("backup") or VERIFIED_BACKUP
         ), mock.patch.object(
              module, "deploy_retirement_gateway", side_effect=lambda: events.append("gateway") or {"ok": True}
-        ), mock.patch.object(module, "run_cloud_migrations", side_effect=lambda: events.append("migrate") or 0), mock.patch.object(
+        ), mock.patch.object(module, "run_cloud_migrations", side_effect=lambda *_args: events.append("migrate") or 0) as migrate, mock.patch.object(
             module, "upload_runtime_override_file", side_effect=lambda *_args: events.append("runtime") or "/tmp/runtime.env"
         ), mock.patch.object(
             module.deploy, "run", side_effect=lambda *_args, **_kwargs: events.append("candidate") or ("", "")
         ), mock.patch.object(module, "promote_validated_candidate", side_effect=lambda *_args: events.append("promote") or {"ok": True}):
             self.assertEqual(module.deploy_release(), {"ok": True})
         self.assertEqual(events, ["upload", "build", "backup", "gateway", "migrate", "runtime", "candidate", "promote"])
+        module.frozen_cloud_inputs.assert_called_once_with(module.ROOT, '1165783d')
+        self.assertEqual(upload.call_args.args[-1], module.ROOT)
+        migrate.assert_called_once_with(module.ROOT)
 
     def test_backup_failure_blocks_migrations_candidate_and_promotion(self):
         ssh = mock.Mock()
@@ -780,6 +813,15 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertIn('choices=("deploy", "discard", "recover-lock")', source)
         self.assertNotIn('if args.command == "candidate"', source)
         self.assertNotIn('if args.command == "promote"', source)
+
+
+def load_tests(loader, tests, pattern):
+    spec = importlib.util.spec_from_file_location('cloud_release_source_tests',
+                                                Path(__file__).with_name('cloud_release_source.test.py'))
+    source_tests = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(source_tests)
+    tests.addTests(loader.loadTestsFromModule(source_tests))
+    return tests
 
 
 if __name__ == "__main__":
