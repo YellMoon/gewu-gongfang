@@ -1,6 +1,10 @@
 import importlib.util
 import pathlib
 import unittest
+import unittest.mock
+import contextlib
+import io
+import json
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -10,6 +14,25 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CloudPostgresBackupTest(unittest.TestCase):
+    def test_json_cli_keeps_diagnostics_out_of_receipt(self):
+        receipt = {"restoreVerified": True, "sha256": "a" * 64}
+        def noisy_backup(*args):
+            print("Connecting diagnostic")
+            print(">>> backup command diagnostic")
+            return receipt
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with unittest.mock.patch.object(MODULE.sys, "argv", ["backup_cloud_postgres.py", "--json"]), unittest.mock.patch.object(MODULE, "create_backup", side_effect=noisy_backup), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            MODULE.main()
+        self.assertEqual(json.loads(stdout.getvalue()), receipt)
+        self.assertIn("Connecting diagnostic", stderr.getvalue())
+
+    def test_json_cli_never_emits_success_receipt_after_failure(self):
+        stdout = io.StringIO()
+        with unittest.mock.patch.object(MODULE.sys, "argv", ["backup_cloud_postgres.py", "--json"]), unittest.mock.patch.object(MODULE, "create_backup", side_effect=RuntimeError("backup failed")), contextlib.redirect_stdout(stdout):
+            with self.assertRaisesRegex(RuntimeError, "backup failed"):
+                MODULE.main()
+        self.assertEqual(stdout.getvalue(), "")
+
     def test_restore_preserves_and_compares_application_security(self):
         command = MODULE.backup_command("20260907-090000")
         self.assertNotIn('--no-privileges', command)

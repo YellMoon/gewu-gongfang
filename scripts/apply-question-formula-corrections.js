@@ -98,7 +98,7 @@ async function main(env=process.env) {
     verifyBackup:async()=>{
       const {execFile}=require('node:child_process');
       const {promisify}=require('node:util');
-      const result=await promisify(execFile)(env.PYTHON||'python',[path.join(__dirname,'backup_cloud_postgres.py')],{encoding:'utf8',timeout:660000,maxBuffer:1024*1024,windowsHide:true});
+      const result=await promisify(execFile)(env.PYTHON||'python',[path.join(__dirname,'backup_cloud_postgres.py'),'--json'],{encoding:'utf8',timeout:660000,maxBuffer:1024*1024,windowsHide:true});
       return JSON.parse(result.stdout);
     },
     persistJournal:async value=>{

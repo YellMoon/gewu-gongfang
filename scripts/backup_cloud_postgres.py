@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+import contextlib
 import json
 import re
 import sys
@@ -121,8 +122,11 @@ def main():
     parser.add_argument("--container", default="gewu-postgres17")
     parser.add_argument("--database", default="gewu_cloud")
     parser.add_argument("--role", default="gewu_app")
+    parser.add_argument("--json", action="store_true", help="Emit only the verified receipt on stdout; diagnostics go to stderr")
     args = parser.parse_args()
-    print(json.dumps(create_backup(args.container, args.database, args.role), sort_keys=True))
+    with contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext():
+        receipt = create_backup(args.container, args.database, args.role)
+    print(json.dumps(receipt, sort_keys=True))
 
 
 if __name__ == "__main__":
