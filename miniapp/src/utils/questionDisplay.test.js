@@ -34,6 +34,10 @@ function loadDesktopQuestionOptions() {
 
 const desktopQuestionOptions = loadDesktopQuestionOptions();
 
+assert.strictEqual(renderLatex('v_1^{\\prime}'), 'v<sub>1</sub><sup>\u2032</sup>', 'a collision velocity prime must render as a prime symbol, not the command name');
+assert.strictEqual(renderLatex('O^{\\prime\\prime}'), 'O<sup>\u2032\u2032</sup>', 'repeated prime commands must remain repeated marks');
+assert.strictEqual(renderLatex('v^{\\prime}_2'), 'v<sup>\u2032</sup><sub>2</sub>', 'prime rendering must preserve the source subscript and superscript order');
+
 assert.deepStrictEqual(normalizeOptions([
   'A. first',
   { label: 'B', content: 'second' },

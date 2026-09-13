@@ -152,6 +152,7 @@ function columnsForOptions(options) {
 }
 
 const LATEX_SYMBOLS = Object.freeze({
+  prime: '\u2032',
   alpha: '\u03b1', beta: '\u03b2', gamma: '\u03b3', delta: '\u03b4', epsilon: '\u03b5', varepsilon: '\u03f5', zeta: '\u03b6', eta: '\u03b7', theta: '\u03b8', vartheta: '\u03d1',
   iota: '\u03b9', kappa: '\u03ba', lambda: '\u03bb', mu: '\u03bc', nu: '\u03bd', xi: '\u03be', omicron: '\u03bf', pi: '\u03c0', varpi: '\u03d6', rho: '\u03c1', varrho: '\u03f1',
   sigma: '\u03c3', varsigma: '\u03c2', tau: '\u03c4', upsilon: '\u03c5', phi: '\u03c6', varphi: '\u03d5', chi: '\u03c7', psi: '\u03c8', omega: '\u03c9',
