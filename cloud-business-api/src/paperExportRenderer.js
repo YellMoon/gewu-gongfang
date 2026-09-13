@@ -6,6 +6,7 @@ const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { layoutInlineRuns } = require('./pdfInlineLayout');
 const { nativeFormulaComponent } = require('./wordNativeFormula');
+const { withFormulaTagScope } = require('./formulaTagScope');
 const sharp = require('sharp');
 const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
@@ -14,6 +15,8 @@ const { SVG } = require('mathjax-full/js/output/svg.js');
 const { liteAdaptor } = require('mathjax-full/js/adaptors/liteAdaptor.js');
 const { RegisterHTMLHandler } = require('mathjax-full/js/handlers/html.js');
 const { AllPackages } = require('mathjax-full/js/input/tex/AllPackages.js');
+const formulaAdaptor = liteAdaptor();
+RegisterHTMLHandler(formulaAdaptor);
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -176,13 +179,14 @@ function normalizeOptionTokenGroups(value) {
 
 function formulaSvg(latex) {
   try {
-    const adaptor = liteAdaptor();
-    RegisterHTMLHandler(adaptor);
-    const tex = new TeX({ packages: AllPackages });
-    const svg = new SVG({ fontCache: 'none' });
-    const document = mathjax.document('', { InputJax: tex, OutputJax: svg });
-    const container = document.convert(latex, { display: true });
-    return Buffer.from(adaptor.outerHTML(adaptor.firstChild(container)), 'utf8');
+    return withFormulaTagScope(() => {
+      const adaptor = formulaAdaptor;
+      const tex = new TeX({ packages: AllPackages });
+      const svg = new SVG({ fontCache: 'none' });
+      const document = mathjax.document('', { InputJax: tex, OutputJax: svg });
+      const container = document.convert(latex, { display: true });
+      return Buffer.from(adaptor.outerHTML(adaptor.firstChild(container)), 'utf8');
+    });
   } catch (_) {
     throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
   }
@@ -266,6 +270,30 @@ async function hydrateInOrder(values, hydrate) {
 
 async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
   if (items.some(item => item.assets.length) && typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
+  // Prepare all deliveries before converting any formulas. A pending asset is
+  // not a fatal error: finish the bounded serial pass so NAS can fetch the rest,
+  // then defer once with no detached work or repeated partial formula builds.
+  let pending = null;
+  const prepared = await hydrateInOrder(items, async item => ({
+    ...item,
+    media: await hydrateInOrder(item.assets, async asset => {
+      let bytes;
+      try { bytes = await resolveQuestionAsset({ questionId: item.id, ...asset }); }
+      catch (error) {
+        if (error?.code !== 'CLOUD_PAPER_EXPORT_MEDIA_PENDING') throw error;
+        pending ||= error;
+        return null;
+      }
+      if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      try {
+        const metadata = await sharp(bytes).metadata();
+        return { ...asset, bytes: Buffer.from(bytes), kind: 'image', width: metadata.width, height: metadata.height };
+      } catch (_) {
+        throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      }
+    }),
+  }));
+  if (pending) throw pending;
   const hydrateTokens = async tokens => hydrateInOrder(tokens, async token => {
     if (token.kind !== 'formula') return token;
     if (nativeWord) return { ...token, nativeFormula: nativeFormulaComponent(token.latex) };
@@ -278,18 +306,8 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
       throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
     }
   });
-  return hydrateInOrder(items, async item => ({
+  return hydrateInOrder(prepared, async item => ({
     ...item,
-    media: await hydrateInOrder(item.assets, async asset => {
-      const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
-      if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
-      try {
-        const metadata = await sharp(bytes).metadata();
-        return { ...asset, bytes: Buffer.from(bytes), kind: 'image', width: metadata.width, height: metadata.height };
-      } catch (_) {
-        throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
-      }
-    }),
     stemTokens: await hydrateTokens(item.stemTokens),
     options: await hydrateInOrder(item.options, hydrateTokens),
     subQuestions: await hydrateInOrder(item.subQuestions, async subQuestion => ({

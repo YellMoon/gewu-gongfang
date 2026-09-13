@@ -8,6 +8,7 @@ const { AllPackages } = require('mathjax-full/js/input/tex/AllPackages.js');
 const { liteAdaptor } = require('mathjax-full/js/adaptors/liteAdaptor.js');
 const { RegisterHTMLHandler } = require('mathjax-full/js/handlers/html.js');
 const { STATE } = require('mathjax-full/js/core/MathItem.js');
+const { withFormulaTagScope } = require('./formulaTagScope');
 RegisterHTMLHandler(liteAdaptor());
 
 const element = (name, elements = [], attributes) => ({ type: 'element', name: `m:${name}`, elements, ...(attributes ? { attributes } : {}) });
@@ -27,9 +28,11 @@ const accentCharacter = value => ({
 // unsupported native formula. Unknown notation fails the export explicitly.
 function nativeFormulaComponent(latex) {
   if (typeof latex !== 'string' || !latex.trim() || latex.length > 32768) throw unsupported();
-  const tex = new TeX({ packages: AllPackages.filter(name => !['noerrors','noundefined'].includes(name)), formatError() { throw unsupported(); } });
-  const document = mathjax.document('', { InputJax: tex, OutputJax: new SVG({ fontCache: 'none' }) });
-  const root = document.convert(latex, { display: true, end: STATE.CONVERT });
+  const root = withFormulaTagScope(() => {
+    const tex = new TeX({ packages: AllPackages.filter(name => !['noerrors','noundefined'].includes(name)), formatError() { throw unsupported(); } });
+    const document = mathjax.document('', { InputJax: tex, OutputJax: new SVG({ fontCache: 'none' }) });
+    return document.convert(latex, { display: true, end: STATE.CONVERT });
+  });
   let visited = 0;
   function convert(node, depth = 0) {
     if (!node || ++visited > 20000 || depth > 128) throw unsupported();

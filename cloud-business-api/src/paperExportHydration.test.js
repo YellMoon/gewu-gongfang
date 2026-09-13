@@ -52,7 +52,28 @@ async function verifyHydration() {
   }
   await delay(60); // Drain the old implementation before reporting its failures.
   try { assert.equal(activeAtRejection, 0, 'worker must not defer while hydration requests are still running'); } catch (error) { failures.push(error); }
-  try { assert.ok(started <= 2, `pending media must stop scheduling later questions, observed ${started}`); } catch (error) { failures.push(error); }
+  try { assert.equal(started, input.snapshot.length, 'pending media must enqueue every remaining asset before deferring'); } catch (error) { failures.push(error); }
+  const withFormula = { ...input, snapshot: input.snapshot.map((question, index) => ({
+    ...question, richContent: index === 0 ? [{ type: 'formula', latex: String.raw`\unknownnativecommand{x}` }] : null,
+  })) };
+  for (let tick = 0; tick < 3; tick++) {
+    const requested = [];
+    try {
+      await renderPaperExport(withFormula, { resolveQuestionAsset: async asset => {
+        requested.push(asset.questionId);
+        if (asset.questionId === 'hydration-5') throw pending;
+        return pixel;
+      } });
+      assert.fail('pending media must not render');
+    } catch (error) {
+      try { assert.equal(error, pending, 'no formula conversion until every asset is ready'); } catch (failure) { failures.push(failure); }
+    }
+    try { assert.equal(requested.length, 6, 'each bounded preparation pass must reach all assets'); } catch (error) { failures.push(error); }
+  }
+  const broken = Object.assign(new Error('invalid media'), { code: 'CLOUD_PAPER_EXPORT_MEDIA_INVALID' });
+  started = 0;
+  await assert.rejects(() => renderPaperExport(input, { resolveQuestionAsset: async () => { started++; throw broken; } }), error => error === broken);
+  assert.equal(started, 1, 'genuine errors still fail immediately with no detached requests');
   if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('; '));
   console.log('paper export bounded hydration and failure drain tests passed');
 }

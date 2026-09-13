@@ -1,8 +1,9 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.11.11",
+  "version": "8.11.12",
   "scripts": {
+    "test:paper-export-regressions": "node src/paperExportHydration.test.js && node src/paperExportFormulaLifetime.test.js && node src/wordNativeFormula.test.js && node src/paperExportRenderer.test.js && node src/paperExportMediaResolver.test.js && node src/paperExportExecutionLease.test.js && node src/paperExportWorkerRuntime.test.js && node src/paperExportTaskProcessor.test.js && node src/paperExportTaskRepository.test.js && node src/paperExportArtifactRepository.test.js",
     "posttest": "npm run test:question-metadata && npm run test:teacher-schedule && npm run test:teacher-course && npm run test:managed-teacher && node src/desktopTeacherStudentAccess.test.js && node sql/teacher-student-scope.postgres.test.js && node sql/student-school-registration.postgres.test.js && node sql/student-source-classification.postgres.test.js && npm run test:teacher-institution && npm run test:desktop-student-ledger && node src/courseActiveUpdate.test.js && node sql/course-active-parity.postgres.test.js",
     "test:question-metadata": "node sql/question-metadata-parity.postgres.test.js && node sql/question-import-media-binding.postgres.test.js && node sql/question-pagination.postgres.test.js && node src/questionAuthorityService.test.js",
     "test:managed-teacher": "node src/businessTeacherLifecycleMutationService.test.js && node src/teacherSelfUpdateRoutes.test.js && node sql/managed-teacher-profile.postgres.test.js && node sql/retained-teacher-profile.postgres.test.js",
