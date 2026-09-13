@@ -3,11 +3,40 @@
 const assert = require('assert');
 const JSZip = require('jszip');
 const sharp = require('sharp');
+const PDFDocument = require('pdfkit');
+const path = require('node:path');
 const { drawPdfTokens, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport } = require('./paperExportRenderer');
 require('./pdfInlineLayout.test');
 require('./wordNativeFormula.test');
 
 (async () => {
+  // UTF-8: a real SVG text fallback must not change the following CJK body font.
+  const fontProbe = new PDFDocument();
+  fontProbe.resume();
+  fontProbe.font(path.join(__dirname, '../../backend/assets/fonts/NotoSansCJKsc-Regular.otf'));
+  const bodyFont = fontProbe._font;
+  const bodyRuns = [];
+  const originalText = fontProbe.text;
+  fontProbe.text = function (value, ...args) {
+    bodyRuns.push({ value, font: this._font });
+    return originalText.call(this, value, ...args);
+  };
+  drawPdfTokens(fontProbe, [{kind:'text',text:'公式前中文'},
+    {kind:'formula',displayMode:'inline',media:{width:20,height:12,bytes:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="12"><text x="0" y="10" font-family="serif">x</text></svg>','utf8')}},
+    {kind:'text',text:'公式后中文'}]);
+  fontProbe.end();
+  assert(bodyRuns.every(run => run.font === bodyFont), 'SVG formula fallback must preserve the font of all following CJK text');
+  assert.strictEqual(fontProbe._font, bodyFont);
+  const failedFontProbe = new PDFDocument();
+  failedFontProbe.resume();
+  failedFontProbe.font(path.join(__dirname, '../../backend/assets/fonts/NotoSansCJKsc-Regular.otf'));
+  const failedBodyFont = failedFontProbe._font;
+  assert.throws(() => drawPdfTokens(failedFontProbe,
+    [{kind:'formula',displayMode:'inline',media:{width:20,height:12,bytes:Buffer.from('<svg/>','utf8')}}],
+    '', 10, doc => { doc.font('Times-Roman'); throw new Error('vector failed'); }),
+  /CLOUD_PAPER_RENDER_FORMULA_INVALID/);
+  assert.strictEqual(failedFontProbe._font, failedBodyFont, 'a failed SVG also restores the body font');
+  failedFontProbe.end();
   await require('./paperExportHydration.test')();
   const drawn = [];
   const probe = {x:10,y:75,page:{width:100,height:100,margins:{left:10,right:10,bottom:10}},

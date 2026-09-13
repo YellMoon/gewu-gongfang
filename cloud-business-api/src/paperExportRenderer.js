@@ -537,10 +537,17 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
         const y = top + (line.height-run.height)/2;
         if (run.kind === 'text') document.fontSize(size).text(run.text,x,y,{lineBreak:false});
         else {
+          // SVG text fallbacks select their own font. Graphics save/restore does
+          // not restore PDFKit's JS font selection for the following CJK runs.
+          const fontSource = document._fontSource;
+          const fontFamily = document._fontFamily;
           try {
             drawVector(document,run.token.media.bytes.toString('utf8'),x,y,
               {width:run.width,height:run.height,preserveAspectRatio:'xMidYMid meet'});
           } catch (_) { throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID'); }
+          finally {
+            if (fontSource !== undefined) document.font(fontSource, fontFamily, size);
+          }
         }
         x += run.width;
       }
