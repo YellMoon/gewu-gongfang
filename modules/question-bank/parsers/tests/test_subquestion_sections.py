@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from parse_word import build_question_rich_content, parse_exam_question_block, parse_lecture_numbered_items, parse_question_block
+from parse_word import build_question_rich_content, parse_exam_question_block, parse_exam_questions, parse_lecture_numbered_items, parse_question_block
 
 
 def plain(node):
@@ -18,6 +18,35 @@ def plain(node):
 
 
 class SubquestionSectionsTests(unittest.TestCase):
+    def test_numbered_analysis_does_not_overwrite_subquestion_answers(self):
+        # UTF-8: the source repeats (1)/(2) in answers and worked solutions.
+        answer_formula = '<span data-formula-id="answer-work" data-latex="W=Q-mgd"></span>'
+        for analysis_start in ['【详解】（1）温度推导。', '【详解】\n（1）温度推导。']:
+            with self.subTest(analysis_start=analysis_start):
+                question = parse_exam_questions([
+                    '1. 活塞缓慢移动。', '(1) 求温度。', '(2) 求做功。',
+                    '参考答案', '1. (1) 温度结果', '(2) ' + answer_formula,
+                    *analysis_start.splitlines(), '（2）根据热力学第一定律。', '整理后得出结论。',
+                ])[0]
+                self.assertEqual(question['sub_questions'][1]['answer'], answer_formula)
+                self.assertIn('（1）温度推导。', question['analysis'])
+                self.assertIn('（2）根据热力学第一定律。', question['analysis'])
+                self.assertIn('整理后得出结论。', question['analysis'])
+                question['formulas'] = [{'id': 'answer-work', 'canonical_latex': 'W=Q-mgd',
+                                         'source': {'part_name': 'word/document.xml'}}]
+                rich = build_question_rich_content(question)['sections']
+                self.assertNotIn('W=Q-mgd', plain(rich['stem']))
+                self.assertEqual(plain(rich['subQuestions'][1]['answer']), 'W=Q-mgd')
+
+    def test_inline_analysis_marker_keeps_following_numbered_steps_in_analysis(self):
+        question = parse_exam_questions([
+            '1. 计算。', '(1) 第一问。', '(2) 第二问。', '参考答案',
+            '1. 答案结果【解析】（1）第一步。', '（2）第二步。',
+        ])[0]
+        self.assertEqual(question['answer'], '答案结果')
+        self.assertEqual(question['analysis'], '（1）第一步。\n（2）第二步。')
+        self.assertEqual([sub['answer'] for sub in question['sub_questions']], ['', ''])
+
     def test_each_import_path_assigns_body_to_one_section_only(self):
         intro = '物块与传送带间有摩擦，完成下列问题。'
         parts = ['(1) 求物块的速度。', '已知初始条件如下。', '① 求初速度。',

@@ -1704,7 +1704,8 @@ def parse_exam_answer_blocks(paragraphs):
         if not current:
             continue
         sub_label, sub_content = extract_sub_question(text)
-        if sub_label:
+        # UTF-8: numbered solution steps stay in analysis, not sub-answers.
+        if sub_label and mode != "analysis":
             current["sub_answers"].append({"label": sub_label, "answer": sub_content})
             mode = "subanswer"
             continue
