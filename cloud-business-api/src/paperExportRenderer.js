@@ -351,7 +351,7 @@ function bodyRows(items, answerPosition) {
         data: media.bytes,
         type: media.kind === 'formula' ? 'svg' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
         ...(media.kind === 'formula' ? { fallback: { data: media.fallbackBytes, type: 'png' } } : {}),
-        transformation: media.kind === 'formula' ? { width: 240, height: 72 } : { width: 420, height: 280 },
+        transformation: media.kind === 'formula' ? { width: 240, height: 72 } : wordImageTransformation(media),
       })] }));
     }
     if (answerPosition === 'after') rows.push(...answerRows(item));
@@ -374,6 +374,13 @@ function wordFormulaTransformation(media, displayMode = 'block') {
   };
 }
 
+function wordImageTransformation(media) {
+  const width = Number.isFinite(media?.width) && media.width > 0 ? media.width : 420;
+  const height = Number.isFinite(media?.height) && media.height > 0 ? media.height : 280;
+  const scale = Math.min(420 / width, 280 / height, 1);
+  return { width: width * scale, height: height * scale };
+}
+
 function wordMediaRun(media, displayMode = 'block') {
   const formula = media.kind === 'formula';
   return new ImageRun({
@@ -382,7 +389,7 @@ function wordMediaRun(media, displayMode = 'block') {
     // directly so formula content remains visible in desktop Word.
     data: formula ? media.fallbackBytes : media.bytes,
     type: formula ? 'png' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
-    transformation: formula ? wordFormulaTransformation(media, displayMode) : { width: 420, height: 280 },
+    transformation: formula ? wordFormulaTransformation(media, displayMode) : wordImageTransformation(media),
   });
 }
 
