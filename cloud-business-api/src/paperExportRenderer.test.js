@@ -8,6 +8,7 @@ require('./pdfInlineLayout.test');
 require('./wordNativeFormula.test');
 
 (async () => {
+  await require('./paperExportHydration.test')();
   const drawn = [];
   const probe = {x:10,y:75,page:{width:100,height:100,margins:{left:10,right:10,bottom:10}},
     fontSize(){return this;},currentLineHeight(){return 12;},widthOfString(text){return [...text].length*5;},

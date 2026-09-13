@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.11.9",
+  "version": "8.11.10",
   "scripts": {
     "posttest": "npm run test:question-metadata && npm run test:teacher-schedule && npm run test:teacher-course && npm run test:managed-teacher && node src/desktopTeacherStudentAccess.test.js && node sql/teacher-student-scope.postgres.test.js && node sql/student-school-registration.postgres.test.js && node sql/student-source-classification.postgres.test.js && npm run test:teacher-institution && npm run test:desktop-student-ledger && node src/courseActiveUpdate.test.js && node sql/course-active-parity.postgres.test.js",
     "test:question-metadata": "node sql/question-metadata-parity.postgres.test.js && node sql/question-import-media-binding.postgres.test.js && node sql/question-pagination.postgres.test.js && node src/questionAuthorityService.test.js",

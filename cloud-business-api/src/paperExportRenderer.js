@@ -256,9 +256,17 @@ function questions(value, layout, formulaMode) {
   });
 }
 
+async function hydrateInOrder(values, hydrate) {
+  const hydrated = [];
+  // A failed/pending asset must leave no detached work behind for the next tick.
+  // Serial hydration also bounds native image decoding on small cloud hosts.
+  for (const value of values) hydrated.push(await hydrate(value));
+  return hydrated;
+}
+
 async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
   if (items.some(item => item.assets.length) && typeof resolveQuestionAsset !== 'function') throw failure('CLOUD_PAPER_RENDER_MEDIA_RESOLVER_REQUIRED');
-  const hydrateTokens = async tokens => Promise.all(tokens.map(async token => {
+  const hydrateTokens = async tokens => hydrateInOrder(tokens, async token => {
     if (token.kind !== 'formula') return token;
     if (nativeWord) return { ...token, nativeFormula: nativeFormulaComponent(token.latex) };
     const bytes = formulaSvg(token.latex);
@@ -269,10 +277,10 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
     } catch (_) {
       throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
     }
-  }));
-  return Promise.all(items.map(async item => ({
+  });
+  return hydrateInOrder(items, async item => ({
     ...item,
-    media: await Promise.all(item.assets.map(async asset => {
+    media: await hydrateInOrder(item.assets, async asset => {
       const bytes = await resolveQuestionAsset({ questionId: item.id, ...asset });
       if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > (64 * 1024 * 1024)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
       try {
@@ -281,17 +289,17 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
       } catch (_) {
         throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
       }
-    })),
+    }),
     stemTokens: await hydrateTokens(item.stemTokens),
-    options: await Promise.all(item.options.map(hydrateTokens)),
-    subQuestions: await Promise.all(item.subQuestions.map(async subQuestion => ({
+    options: await hydrateInOrder(item.options, hydrateTokens),
+    subQuestions: await hydrateInOrder(item.subQuestions, async subQuestion => ({
       ...subQuestion,
       contentTokens: await hydrateTokens(subQuestion.contentTokens),
       answerTokens: await hydrateTokens(subQuestion.answerTokens),
-    }))),
+    })),
     answerTokens: await hydrateTokens(item.answerTokens),
     explanationTokens: await hydrateTokens(item.explanationTokens),
-  })));
+  }));
 }
 
 function subQuestionAnswerLines(item, prefix = '') {
