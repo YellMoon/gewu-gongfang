@@ -44,6 +44,16 @@ CONTROL_PLANE_M27_SHA256 = "297f705391d59c85733505e8b84e708ce33e4c90abb24a8a9231
 NON_FIXTURE_ID_PREDICATE = "lower(id) NOT LIKE 'codex-%' AND lower(id) NOT LIKE 'e2e-%'"
 
 
+def paper_export_lease_sql():
+    return (
+        "(SELECT count(*)=2 FROM pg_attribute WHERE attrelid=to_regclass('business.paper_export_tasks') AND NOT attisdropped "
+        "AND ((attname='claim_token' AND atttypid='uuid'::regtype) OR (attname='lease_expires_at' AND atttypid='timestamptz'::regtype))) "
+        "AND EXISTS (SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('business.paper_export_tasks_render_lease_idx') "
+        "AND indrelid=to_regclass('business.paper_export_tasks') AND indisvalid AND indisready "
+        "AND pg_get_expr(indpred,indrelid) LIKE '%rendering%' AND pg_get_expr(indpred,indrelid) LIKE '%claim_token%')"
+    )
+
+
 def verification_sql():
     count_queries = {
         "tenants": "SELECT count(*) FROM business.tenants",
@@ -255,6 +265,8 @@ def verification_sql():
         "'businessUniqueSuperAdminIndex'",
         "EXISTS (SELECT 1 FROM pg_index WHERE indexrelid=to_regclass('business.miniapp_cloud_role_grants_one_active_super_admin') "
         "AND indisunique AND pg_get_expr(indpred,indrelid) LIKE '%super_admin%' AND pg_get_expr(indpred,indrelid) LIKE '%active%')",
+        "'paperExportExecutionLease'",
+        paper_export_lease_sql(),
     ))
     if len(fields) % 2 != 0:
         raise RuntimeError("CLOUD_BUSINESS_RELEASE_VERIFICATION_QUERY_INVALID")
@@ -279,7 +291,7 @@ def validate(payload):
         "scheduleCreateFunction", "institutionCreateFunction", "schoolCreateFunction", "writerScheduleExecute",
         "taxonomySystemTable", "taxonomyNodeTable", "taxonomyFunctions", "writerTaxonomyExecute",
         "supplementalAuthorityTables", "writerSupplementalInsert",
-        "runtimeProjectionRead",
+        "runtimeProjectionRead", "paperExportExecutionLease",
     )
     missing_functions = [key for key in required_functions if payload.get(key) is not True]
     if missing_functions:

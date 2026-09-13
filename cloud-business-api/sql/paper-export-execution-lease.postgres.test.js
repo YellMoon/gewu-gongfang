@@ -3,12 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const {execFileSync} = require('node:child_process');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery: withQuery } = require('../../shared/vnext-pg17/disposableRuntime');
 const { createPaperExportTaskRepository } = require('../src/paperExportTaskRepository');
 const { createPaperExportArtifactRepository } = require('../src/paperExportArtifactRepository');
 
 module.exports = (async () => {
   const migration = fs.readFileSync(path.join(__dirname, '20260913-paper-export-execution-lease.sql'), 'utf8');
+  const gateSql = execFileSync('python', ['-c', 'import sys; sys.path.insert(0,"scripts"); import verify_cloud_business_release as v; print(v.paper_export_lease_sql())'], {cwd:path.join(__dirname,'../..'),encoding:'utf8',windowsHide:true}).trim();
   const runtime = createDisposablePg17Runtime();
   await runtime.start(); const handle = await runtime.createIsolatedHandle();
   try {
@@ -18,7 +20,9 @@ module.exports = (async () => {
       for (const file of ['20260823-cloud-paper-export-tasks.sql','20260823-paper-export-artifact-storage.sql','20260823-paper-export-task-results.sql']) {
         await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
       }
+      assert.equal((await db.query('SELECT ('+gateSql+') AS ok')).rows[0].ok, false, 'release gate rejects the old schema');
       await db.query(migration); await db.query(migration);
+      assert.equal((await db.query('SELECT ('+gateSql+') AS ok')).rows[0].ok, true, 'the actual release SQL accepts the migrated schema');
       const query = db.query.bind(db);
       const repo = createPaperExportTaskRepository({ query });
       const put = async (id, status = 'queued', phase = 'queued') => db.query(
@@ -67,6 +71,8 @@ module.exports = (async () => {
       assert.equal(claims.filter(Boolean).length, 1, 'independent database connections cannot both claim one task');
       assert.equal(claims.find(Boolean).taskId, 'paper_task_race');
       await assert.rejects(() => repo.renew({taskId:'paper_task_race'}), /CLOUD_PAPER_EXPORT_INPUT_INVALID/);
+      await db.query('DROP INDEX business.paper_export_tasks_render_lease_idx');
+      assert.equal((await db.query('SELECT ('+gateSql+') AS ok')).rows[0].ok, false, 'missing lease index is not a verified release');
     });
     console.log('paper export real PostgreSQL lease, stale owner, and atomic archive checks passed');
   } finally { await runtime.disposeHandle(handle); await runtime.stop(); }

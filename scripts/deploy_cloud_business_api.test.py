@@ -1,6 +1,10 @@
 import base64
 import hashlib
 import unittest
+import shutil
+import subprocess
+import os
+from pathlib import Path
 from unittest import mock
 
 import deploy_cloud_business_api as module
@@ -70,6 +74,18 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
 
     def test_candidate_name_uses_the_release_tag(self):
         self.assertEqual(candidate_name("8.1.0-8c425eab"), "gewu-cloud-business-api-candidate-8.1.0-8c425eab")
+
+    def test_candidate_never_consumes_production_export_queue(self):
+        command = candidate_command("8.1.0-8c425eab", "a" * 32)
+        self.assertIn("'CLOUD_PAPER_EXPORT_WORKER_ENABLED=0'", command)
+        self.assertNotIn("'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1'", command)
+        self.assertIn("--memory 256m --memory-swap 384m --cpus 0.5 --pids-limit 128", command)
+
+    def test_promoted_worker_has_explicit_resource_budget(self):
+        command = switch_command("8.1.0-8c425eab", "a" * 32)
+        self.assertIn("'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1'", command)
+        self.assertIn("--memory 768m --memory-swap 1g --cpus 1.5 --pids-limit 192", command)
+        self.assertLess(command.index('docker stop "$rollback"'), command.index('docker run -d'))
 
     def test_candidate_health_waits_for_startup(self):
         command = candidate_command("8.1.0-8c425eab", "a" * 32)
@@ -193,10 +209,37 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         )
         sftp.close.assert_called_once_with()
 
-    def test_candidate_and_promoted_cloud_service_enable_the_paper_export_worker(self):
-        for command in (candidate_command("8.1.0-8c425eab", "a" * 32), switch_command("8.1.0-8c425eab", "b" * 32)):
-            self.assertIn("CLOUD_PAPER_EXPORT_WORKER_ENABLED=1", command)
+    def test_worker_setting_is_replaced_for_each_deployment_phase(self):
+        for command, enabled in ((candidate_command("8.1.0-8c425eab", "a" * 32), 0), (switch_command("8.1.0-8c425eab", "b" * 32), 1)):
+            self.assertIn(f"CLOUD_PAPER_EXPORT_WORKER_ENABLED={enabled}", command)
             self.assertIn("sed -i", command)
+
+    def test_runtime_budget_guard_checks_actual_docker_state_without_dumping_secrets(self):
+        for worker, expected in [(False, '268435456 402653184 500000000 128'), (True, '805306368 1073741824 1500000000 192')]:
+            command = module.runtime_budget_guard('"$candidate"', worker)
+            self.assertIn(expected, command)
+            self.assertIn('.HostConfig.Memory', command)
+            self.assertIn(f'CLOUD_PAPER_EXPORT_WORKER_ENABLED={int(worker)}', command)
+            self.assertNotIn('{{println .}}', command)
+
+    def test_runtime_budget_guard_fails_closed_in_a_real_shell(self):
+        git = shutil.which('git')
+        shell = str(Path(git).resolve().parents[1] / 'bin' / 'bash.exe') if os.name == 'nt' and git else shutil.which('bash')
+        self.assertIsNotNone(shell, 'a shell is required to verify generated deployment commands')
+        self.assertTrue(Path(shell).is_file(), 'use Git Bash on Windows, not the unrelated WSL launcher')
+        for worker, memory in [(False, '268435456 402653184 500000000 128'), (True, '805306368 1073741824 1500000000 192')]:
+            guard = module.runtime_budget_guard('"$candidate"', worker)
+            for observed_memory, observed_worker, code in [(memory, '1', 0), ('0 0 0 0', '1', 23), (memory, '', 23), (memory, '11', 23)]:
+                script = ('set -eu; candidate=synthetic; docker() { case "$3" in *HostConfig*) printf "%s" "' + observed_memory
+                          + '" ;; *) printf "%s" "' + observed_worker + '" ;; esac; }; '
+                          + guard + ' || exit 23; printf verified')
+                result = subprocess.run([shell, '-c', script], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual(result.stdout, 'verified' if code == 0 else '')
+        for command in [candidate_command('8.1.0-8c425eab','a'*32), switch_command('8.1.0-8c425eab','a'*32)]:
+            parsed = subprocess.run([shell, '-n'], input=command, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
+            self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        self.assertIn("CLOUD_DOCKER_RUNTIME_BUDGET_INVALID", candidate_command('8.1.0-8c425eab','a'*32))
 
     def test_switch_always_removes_the_copied_environment_file(self):
         command = switch_command("8.1.0-8c425eab", "b" * 32)

@@ -24,6 +24,10 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
         self.assertIn("jsonb_object_agg", sql)
         self.assertNotIn("SELECT json_build_object(", sql)
         self.assertIn("VALUES", sql)
+        self.assertIn("paperExportExecutionLease", sql)
+        self.assertIn("claim_token", sql)
+        self.assertIn("lease_expires_at", sql)
+        self.assertIn("paper_export_tasks_render_lease_idx", sql)
         self.assertEqual(MODULE.CONTROL_PLANE_M25_ID, "vnext-pg17-desktop-session-source-lock-25")
         self.assertEqual(MODULE.CONTROL_PLANE_M25_SHA256, "0b9a7a2f7cbd29fcbfb12391636657396ed3be153ccd5fef88a9487aa1b245bb")
         self.assertEqual(MODULE.CONTROL_PLANE_M26_ID, "vnext-pg17-desktop-device-revoke-authorization-lock-26")
@@ -104,6 +108,7 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "runtimeSupplementalInsert": False,
             "readerSupplementalWrite": False,
             "runtimeProjectionRead": True,
+            "paperExportExecutionLease": True,
             "runtimeCoreDirectWrite": False,
             "controlPlaneM20": True,
             "controlPlaneM21": True,
@@ -130,6 +135,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "fixedSuperAdminPhone": True,
         })
         self.assertEqual(MODULE.validate(valid), valid)
+        with self.assertRaisesRegex(RuntimeError, "FUNCTION_MISSING:paperExportExecutionLease"):
+            MODULE.validate(dict(valid, paperExportExecutionLease=False))
         grown = dict(valid, institutions=MODULE.IMPORTED_COUNT_BASELINES["institutions"] + 1)
         self.assertEqual(MODULE.validate(grown), grown)
         invalid = dict(valid, schedules=554)
