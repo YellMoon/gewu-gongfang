@@ -47,5 +47,6 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
     assert.strictEqual(calls.length, before, 'invalid read scopes never reach SQL');
   }
   await assert.rejects(repository.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }, { includeDrafts: 'true' }), /INPUT_INVALID/);
+  await require('./paperExportMediaLifetime.postgres.test');
   console.log('question asset delivery repository checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
