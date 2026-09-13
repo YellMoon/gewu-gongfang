@@ -46,7 +46,7 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
   assert.ok(calls[1][0].includes("asset.asset_type IN ('image','formula_preview')"), 'formula preview media must be frozen with the selected paper instead of being silently omitted');
   assert.ok(calls[1][0].includes("asset.mime_type IN ('image/png','image/jpeg','image/jpg')"), 'paper snapshots must not misclassify OLE or opaque binary objects as exportable images');
   assert.ok(calls[2][0].includes('INSERT INTO business.paper_export_tasks'));
-  const deferred = await repository.defer({ taskId: 'paper-task-1' });
+  const deferred = await repository.defer({ taskId: 'paper-task-1', claimToken: 'a08dc8cc-23c9-48ee-bb85-d3a0b786a1a0' });
   assert.strictEqual(deferred.phase, 'media_pending');
   await assert.rejects(() => repository.create({
     tenantId: 'default', actor: { accountId: 'account-1', roles: ['teacher'] }, idempotencyKey: 'export-2',
@@ -61,4 +61,5 @@ const { createPaperExportTaskRepository } = require('./paperExportTaskRepository
     taskType: 'paper-export-pdf', request: { questionIds: ['question-1'], title: 'paper', subject: 'physics', answerPosition: 'after', formulaMode: 'word-native', layout: { items: [{ id: 'question-1', sectionTitle: 'Part one', score: 2.55 }] } },
   }), /CLOUD_PAPER_EXPORT_INPUT_INVALID/);
   console.log('paper export task repository checks passed');
+  await require('../sql/paper-export-execution-lease.postgres.test');
 })().catch(error => { console.error(error); process.exitCode = 1; });

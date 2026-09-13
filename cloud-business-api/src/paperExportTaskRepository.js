@@ -134,31 +134,46 @@ const cancelSql = [
 ].join(' ');
 const deferSql = [
   'UPDATE business.paper_export_tasks',
-  "SET phase='media_pending',progress=20,updated_at=transaction_timestamp()",
-  "WHERE task_id=$1 AND status='processing' AND phase='rendering'",
+  "SET phase='media_pending',progress=20,claim_token=NULL,lease_expires_at=NULL,updated_at=transaction_timestamp()",
+  "WHERE task_id=$1 AND status='processing' AND phase='rendering' AND claim_token=$2::uuid AND lease_expires_at>clock_timestamp()",
   'RETURNING task_id AS "taskId",status,phase,progress,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
 ].join(' ');
 const claimSql = [
-  'WITH candidate AS (',
+  'WITH interrupted AS (',
+  "UPDATE business.paper_export_tasks SET status='failed',phase='failed',error_code='CLOUD_PAPER_EXPORT_INTERRUPTED',updated_at=transaction_timestamp()",
+  "WHERE status='processing' AND phase='rendering' AND claim_token IS NOT NULL AND lease_expires_at<=clock_timestamp() RETURNING task_id",
+  '), candidate AS (',
   "SELECT task_id FROM business.paper_export_tasks WHERE status='queued' OR (status='processing' AND phase='media_pending' AND updated_at<=transaction_timestamp()-interval '5 seconds') ORDER BY created_at,task_id FOR UPDATE SKIP LOCKED LIMIT 1",
   '), claimed AS (',
-  "UPDATE business.paper_export_tasks task SET status='processing',phase='rendering',progress=10,updated_at=transaction_timestamp()",
+  "UPDATE business.paper_export_tasks task SET status='processing',phase='rendering',progress=10,claim_token=$1::uuid,lease_expires_at=clock_timestamp()+interval '5 minutes',updated_at=transaction_timestamp()",
   "FROM candidate WHERE task.task_id=candidate.task_id AND (task.status='queued' OR (task.status='processing' AND task.phase='media_pending'))",
-  'RETURNING task.task_id AS "taskId",task.tenant_id AS "tenantId",task.account_id AS "accountId",task.task_type AS "taskType",task.request_json AS "request",task.question_snapshot_json AS "snapshot"',
+  'RETURNING task.task_id AS "taskId",task.tenant_id AS "tenantId",task.account_id AS "accountId",task.task_type AS "taskType",task.request_json AS "request",task.question_snapshot_json AS "snapshot",task.claim_token AS "claimToken"',
   ') SELECT * FROM claimed',
 ].join(' ');
 const completeSql = [
-  'UPDATE business.paper_export_tasks',
-  "SET phase='storage_pending',progress=90,result_artifact_id=$2,updated_at=transaction_timestamp()",
-  "WHERE task_id=$1 AND status='processing'",
-  'RETURNING task_id AS "taskId"',
+  'SELECT task_id AS "taskId" FROM business.paper_export_tasks',
+  "WHERE task_id=$1 AND claim_token=$3::uuid AND result_artifact_id=$2 AND ((status='processing' AND phase='storage_pending') OR status='completed')",
 ].join(' ');
 const failSql = [
   'UPDATE business.paper_export_tasks',
   "SET status='failed',phase='failed',error_code=$2,updated_at=transaction_timestamp()",
-  "WHERE task_id=$1 AND status='processing'",
+  "WHERE task_id=$1 AND status='processing' AND phase='rendering' AND claim_token=$3::uuid AND lease_expires_at>clock_timestamp()",
   'RETURNING task_id AS "taskId"',
 ].join(' ');
+const renewSql = [
+  "UPDATE business.paper_export_tasks SET lease_expires_at=clock_timestamp()+interval '5 minutes'",
+  "WHERE task_id=$1 AND status='processing' AND phase='rendering' AND claim_token=$2::uuid AND lease_expires_at>clock_timestamp()",
+  'RETURNING task_id AS "taskId"',
+].join(' ');
+
+function claimToken(value) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+  return value;
+}
+function requireOwnedResult(result) {
+  if (!result || !Array.isArray(result.rows) || result.rows.length > 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+  if (result.rows.length === 0) throw failure('CLOUD_PAPER_EXPORT_CLAIM_LOST');
+}
 
 function createPaperExportTaskRepository({ query, randomId = () => crypto.randomUUID() } = {}) {
   if (typeof query !== 'function' || typeof randomId !== 'function') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
@@ -210,13 +225,17 @@ function createPaperExportTaskRepository({ query, randomId = () => crypto.random
       return taskRow(result.rows[0]);
     },
     async defer(input) {
-      if (!plainObject(input) || Reflect.ownKeys(input).length !== 1 || !Object.hasOwn(input, 'taskId')) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
-      const result = await query(deferSql, [text(input.taskId, 160)]);
-      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(deferSql, [text(input.taskId, 160), claimToken(input.claimToken)]);
+      requireOwnedResult(result);
       return taskRow(result.rows[0]);
     },
+    async renew(input) {
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      requireOwnedResult(await query(renewSql, [text(input.taskId, 160), claimToken(input.claimToken)]));
+    },
     async claimNext() {
-      const result = await query(claimSql, []);
+      const result = await query(claimSql, [crypto.randomUUID()]);
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
       if (result.rows.length === 0) return null;
       if (result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
@@ -227,21 +246,22 @@ function createPaperExportTaskRepository({ query, randomId = () => crypto.random
       }
       return {
         taskId: row.taskId, tenantId: row.tenantId, accountId: row.accountId,
+        claimToken: claimToken(row.claimToken),
         format: row.taskType === 'paper-export-word' ? 'word' : 'pdf',
         fileName: 'paper-' + row.taskId + (row.taskType === 'paper-export-word' ? '.docx' : '.pdf'),
         request: row.request, snapshot: row.snapshot,
       };
     },
     async complete(input) {
-      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2 || typeof input.artifact?.artifactId !== 'string') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
-      const result = await query(completeSql, [text(input.taskId, 160), input.artifact.artifactId]);
-      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 3 || typeof input.artifact?.artifactId !== 'string') throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      const result = await query(completeSql, [text(input.taskId, 160), input.artifact.artifactId, claimToken(input.claimToken)]);
+      requireOwnedResult(result);
     },
     async fail(input) {
-      if (!plainObject(input) || Reflect.ownKeys(input).length !== 2) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
+      if (!plainObject(input) || Reflect.ownKeys(input).length !== 3) throw failure('CLOUD_PAPER_EXPORT_INPUT_INVALID');
       const code = text(input.code, 128);
-      const result = await query(failSql, [text(input.taskId, 160), code]);
-      if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PAPER_EXPORT_UNAVAILABLE');
+      const result = await query(failSql, [text(input.taskId, 160), code, claimToken(input.claimToken)]);
+      requireOwnedResult(result);
     },
   });
 }

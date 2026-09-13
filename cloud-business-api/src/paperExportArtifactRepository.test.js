@@ -20,7 +20,7 @@ const { renderPaperExport } = require('./paperExportRenderer');
   });
   await assert.rejects(
     () => repository.archive({
-      taskId: 'paper_task_1', tenantId: 'default', accountId: 'account-1', format: 'pdf',
+      taskId: 'paper_task_1', claimToken: 'a08dc8cc-23c9-48ee-bb85-d3a0b786a1a0', tenantId: 'default', accountId: 'account-1', format: 'pdf',
       fileName: 'paper.pdf', mimeType: 'application/pdf', bytes: Buffer.from('%PDF-test'),
     }),
     error => error.code === 'CLOUD_PAPER_ARTIFACT_PDF_INVALID',
@@ -30,7 +30,7 @@ const { renderPaperExport } = require('./paperExportRenderer');
     snapshot: [{ id: 'q1', stem: 'Question', options: ['A. choice'], answer: 'A', explanation: 'Explanation' }],
   });
   const archived = await repository.archive({
-    taskId: 'paper_task_1', tenantId: 'default', accountId: 'account-1', format: 'pdf',
+    taskId: 'paper_task_1', claimToken: 'a08dc8cc-23c9-48ee-bb85-d3a0b786a1a0', tenantId: 'default', accountId: 'account-1', format: 'pdf',
     fileName: 'paper.pdf', mimeType: 'application/pdf', bytes: rendered.bytes,
   });
   assert.deepStrictEqual(archived, { artifactId: 'paper_artifact_artifact-id-12345678' });
