@@ -96,3 +96,27 @@ The fresh export run uses one task per format and durable resume receipts in
 `gewu-cloud-corrected-108-8_11_15-20260920-geometry`. At the time of this note,
 Word task `paper_task_7e631002-ced2-43c7-b881-b6692281a945` is processing; no
 successful artifact or completed multi-end release is claimed.
+
+## Bulk-export contention found after the first UI repair
+
+Student runtime verification failed while the 108-question export was active:
+its first two images were queued behind 80 earlier export deliveries. Both were
+still queued after the miniapp's new 120-second deadline. Evidence:
+`gewu-miniapp-media-886-student-yomgi48x`; a read-only queue check returned
+`earlierpending: 80/81`. This failure is not hidden by the successful visitor
+and teacher checks, and miniapp 8.8.6 has not been uploaded yet.
+
+Cloud candidate 8.11.16 changes only the storage-image lease ordering to earliest
+expiry first, then creation time and ID. Active exports already renew their
+temporary-media lifetimes (capped at one hour); interactive deliveries do not.
+This prioritizes expiring browsing images without adding roles, changing access
+checks, stealing active leases, copying another account's delivery, or changing
+the NAS protocol. Equal deadlines retain deterministic FIFO order.
+
+A new disposable PostgreSQL test reproduced the failure with 80 export images
+ahead of two browsing images. The old ordering failed; the new ordering passed
+both browsing selections, subsequent export progress, live-lease preservation,
+expired-lease reclamation and expired-row cleanup. Full-schema PostgreSQL media
+authorization, repository, route and permission tests also passed, along with
+56 deployment-script tests. This is not yet production evidence: frozen-source
+verification, backup/deployment and a repeated contention test remain required.

@@ -33,6 +33,7 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
   assert.strictEqual(calls[0][1][6], false, 'draft access is disabled by default');
   assert.match(calls[0][0], /asset_id IN \(SELECT "assetId" FROM asset\)/, 'cached deliveries must still be currently visible');
   assert.ok(calls[1][0].includes('FOR UPDATE SKIP LOCKED'), 'agent lease must be concurrency-safe');
+  assert.match(calls[1][0], /ORDER BY expires_at ASC,created_at ASC,delivery_id ASC/, 'deadline priority must preserve deterministic FIFO ties');
   assert.ok(calls[2][0].includes('expected_sha256'), 'uploaded bytes must be checked against immutable metadata');
   rows.unshift([{ deliveryId: 'question_asset_delivery_12345678', status: 'queued', assetId: 'question_asset_import_question_1_0', fileName: 'diagram.png', mimeType: 'image/png', expiresAt: EXPIRY }]);
   const exportRequested = await repository.requestForPaperExport({ tenantId: 'default', accountId: 'account-1', taskId: 'paper_task_1', questionId: 'question-1', assetKey: HASH });
@@ -48,5 +49,6 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
   }
   await assert.rejects(repository.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }, { includeDrafts: 'true' }), /INPUT_INVALID/);
   await require('./paperExportMediaLifetime.postgres.test');
+  await require('./questionAssetDeliveryPriority.postgres.test');
   console.log('question asset delivery repository checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

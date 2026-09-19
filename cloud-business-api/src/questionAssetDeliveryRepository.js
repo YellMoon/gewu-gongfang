@@ -125,7 +125,10 @@ function createQuestionAssetDeliveryRepository({ query, randomId = () => crypto.
       const leaseExpiresAt = future(leaseSeconds);
       const result = await query([
         'WITH purged AS (DELETE FROM business.question_asset_deliveries WHERE expires_at<=transaction_timestamp()),',
-        "candidate AS (SELECT delivery_id FROM business.question_asset_deliveries WHERE expires_at>transaction_timestamp() AND (status='queued' OR (status='leased' AND lease_expires_at<=transaction_timestamp())) ORDER BY created_at ASC,delivery_id ASC FOR UPDATE SKIP LOCKED LIMIT 1),",
+        // Active exports renew their preparation lifetime. Serve earlier deadlines
+        // first so those bulk queues cannot strand short-lived browsing images.
+        // Equal deadlines keep FIFO; live leases and ownership remain untouched.
+        "candidate AS (SELECT delivery_id FROM business.question_asset_deliveries WHERE expires_at>transaction_timestamp() AND (status='queued' OR (status='leased' AND lease_expires_at<=transaction_timestamp())) ORDER BY expires_at ASC,created_at ASC,delivery_id ASC FOR UPDATE SKIP LOCKED LIMIT 1),",
         "leased AS (UPDATE business.question_asset_deliveries delivery SET status='leased',lease_agent_id=$1,lease_token_sha256=$2,lease_expires_at=$3::timestamptz,attempts=attempts+1,updated_at=transaction_timestamp() FROM candidate WHERE delivery.delivery_id=candidate.delivery_id RETURNING delivery.delivery_id AS \"deliveryId\",delivery.status,delivery.asset_id AS \"assetId\",delivery.object_id AS \"objectId\",delivery.object_version AS \"objectVersion\",delivery.expected_sha256 AS \"expectedSha256\",delivery.expected_bytes AS \"expectedBytes\",delivery.file_name AS \"fileName\",delivery.mime_type AS \"mimeType\",delivery.expires_at AS \"expiresAt\",delivery.lease_expires_at AS \"leaseExpiresAt\") SELECT * FROM leased",
       ].join(' '), [agent(input.agentId), hash(leaseToken), leaseExpiresAt.toISOString()]);
       if (!result || !Array.isArray(result.rows)) throw failure('QUESTION_ASSET_DELIVERY_UNAVAILABLE');
