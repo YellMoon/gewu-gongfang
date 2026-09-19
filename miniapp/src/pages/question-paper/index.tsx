@@ -9,6 +9,8 @@ import { questionBasketStore, useQuestionBasket } from '../../utils/questionBask
 import QuestionBasketOverlay from '../../components/QuestionBasketOverlay';
 // @ts-ignore CommonJS workflow module has no TypeScript declarations.
 import * as workflow from '../../utils/questionPaperWorkflow';
+// @ts-ignore CommonJS download workflow is covered by direct contract tests.
+import { downloadPaperDocument } from '../../utils/questionPaperDownload';
 // @ts-ignore CommonJS shared display module has no TypeScript declarations.
 import * as questionDisplayRuntime from '../../utils/questionDisplay';
 import './index.scss';
@@ -488,17 +490,20 @@ export default function QuestionPaperPage() {
   };
   const download = async (task: PaperTask) => {
     if (!task.taskId || taskBusyId) return;
+    const session = authSessionRuntime.capture();
+    const isActive = () => pageActiveRef.current && authSessionRuntime.isSameSession(session);
     setTaskBusyId(task.localId);
     try {
-      const prepared: any = await miniappCloudBusinessApi.requestPaperExportDelivery(authSessionRuntime.capture().token, task.taskId);
-      const delivery = prepared.data?.delivery;
-      if (!prepared.success || !delivery) throw new Error('暂时无法准备导出文件');
-      if (delivery.status !== 'ready') { Taro.showToast({ title: '文件正在准备，请稍后刷新', icon: 'none' }); return; }
-      const file: any = await miniappCloudBusinessApi.downloadPaperExportDelivery(authSessionRuntime.capture().token, delivery.deliveryId);
-      if (!file.success || !file.data?.tempFilePath) throw new Error('下载失败，请稍后重试');
-      await Taro.openDocument({ filePath: file.data.tempFilePath, showMenu: true });
-    } catch (error: any) { Taro.showToast({ title: error?.message || '下载失败', icon: 'none' }); }
-    finally { setTaskBusyId(''); }
+      await downloadPaperDocument({
+        token: session.token, taskId: task.taskId, format: task.request.taskType === 'paper-export-pdf' ? 'pdf' : 'word', isActive,
+        request: miniappCloudBusinessApi.requestPaperExportDelivery, read: miniappCloudBusinessApi.readPaperExportDelivery,
+        download: miniappCloudBusinessApi.downloadPaperExportDelivery, open: (options: any) => Taro.openDocument(options),
+      });
+    } catch (error: any) {
+      if (isActive() && error?.code !== 'PAPER_DOWNLOAD_INACTIVE') Taro.showToast({
+        title: error?.code === 'PAPER_DOWNLOAD_TIMEOUT' ? '\u6587\u4ef6\u51c6\u5907\u8d85\u65f6\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5' : '\u6682\u65f6\u65e0\u6cd5\u6253\u5f00\u6587\u4ef6\uff0c\u8bf7\u91cd\u8bd5', icon: 'none',
+      });
+    } finally { if (isActive()) setTaskBusyId(''); }
   };
 
   usePullDownRefresh(async () => {

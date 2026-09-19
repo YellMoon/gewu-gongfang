@@ -1,6 +1,6 @@
 {
   "name": "scheduling-miniapp",
-  "version": "8.8.4",
+  "version": "8.8.5",
   "private": true,
   "description": "格物工坊微信小程序",
   "templateInfo": {
@@ -17,7 +17,8 @@
     "build:rn": "taro build --type rn",
     "build:qq": "taro build --type qq",
     "typecheck": "tsc --noEmit",
-    "ci:weapp": "npm run typecheck && npm run build:weapp",
+    "test:paper-download": "node src/utils/questionPaperDownload.test.js && node src/pages/question-paper/downloadHandler.test.js",
+    "ci:weapp": "npm run test:paper-download && npm run typecheck && npm run build:weapp",
     "dev:weapp": "npm run build:weapp -- --watch",
     "dev:swan": "npm run build:swan -- --watch",
     "dev:alipay": "npm run build:alipay -- --watch",

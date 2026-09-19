@@ -3,6 +3,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const version = require('./update-version');
+assert.strictEqual(version.analyzeVersionBump({
+  files: ['miniapp/src/pages/question-paper/index.tsx', 'miniapp/src/utils/questionPaperDownload.js'],
+  diff: 'fix: finish existing paper download after preparation using the same cloud delivery contract',
+}), 'patch', 'completing an existing download button is a compatible bug fix');
 
 const source = fs.readFileSync('scripts/update-version.js', 'utf-8');
 const packageJson = fs.readFileSync('package.json', 'utf-8');
