@@ -20,8 +20,8 @@ MATHTYPE_BATCH_SENTINEL = "__GEWU_MATHTYPE_BATCH_JSON__"
 _CACHE: dict[str, str | None] = {}
 
 
-def mathtype_cache_key(ole_data: bytes) -> str:
-    return hashlib.sha256(ole_data).hexdigest()
+def mathtype_cache_key(ole_data: bytes, file_suffix: str = '.bin') -> str:
+    return ('' if file_suffix == '.bin' else file_suffix + ':') + hashlib.sha256(ole_data).hexdigest()
 
 
 def clear_mathtype_cache() -> None:
@@ -81,11 +81,14 @@ def _ruby_environment(ruby: str) -> dict[str, str]:
 def convert_mathtype_oles_to_mathml_batch(
     ole_datas: Iterable[bytes],
     runner: Callable = subprocess.run,
+    *, file_suffix: str = '.bin',
 ) -> dict[str, str | None]:
+    if file_suffix not in {'.bin', '.wmf'}:
+        raise ValueError('unsupported MathType container format')
     unique: list[tuple[str, bytes]] = []
     seen: set[str] = set()
     for ole_data in ole_datas:
-        key = mathtype_cache_key(ole_data)
+        key = mathtype_cache_key(ole_data, file_suffix)
         if key in seen:
             continue
         seen.add(key)
@@ -103,12 +106,12 @@ def convert_mathtype_oles_to_mathml_batch(
         with tempfile.TemporaryDirectory(prefix="gewu-mathtype-") as temp_dir:
             paths: list[str] = []
             for index, (_key, data) in enumerate(unique):
-                path = Path(temp_dir) / ("formula_%d.bin" % index)
+                path = Path(temp_dir) / ("formula_%d%s" % (index, file_suffix))
                 path.write_bytes(data)
                 paths.append(str(path))
             script = (
                 "require 'json'; require 'mathtype_to_mathml_plus'; "
-                "results = ARGV.map { |path| begin MathTypeToMathMLPlus::Converter.new(path).convert rescue nil end }; "
+                "results = ARGV.map { |path| begin; MathTypeToMathMLPlus::Converter.new(path).convert; rescue StandardError, NotImplementedError; nil end }; "
                 "print '%s'; puts JSON.generate(results)" % MATHTYPE_BATCH_SENTINEL
             )
             completed = runner(
@@ -150,6 +153,19 @@ def convert_mathtype_ole(
     runner: Callable = subprocess.run,
 ) -> FormulaConversionResult:
     mathml = convert_mathtype_ole_to_mathml(ole_data, runner=runner)
+    return _conversion_result(mathml, preview_ref)
+
+
+def convert_mathtype_wmf(data: bytes, preview_ref: str | None = None, runner: Callable = subprocess.run) -> FormulaConversionResult:
+    results = convert_mathtype_oles_to_mathml_batch([data], runner=runner, file_suffix='.wmf')
+    return _conversion_result(results.get(mathtype_cache_key(data, '.wmf')), preview_ref)
+
+
+def is_mathtype_wmf(data: bytes) -> bool:
+    return b'MathTypeUU' in data or b'AppsMFCC\x01' in data
+
+
+def _conversion_result(mathml: str | None, preview_ref: str | None) -> FormulaConversionResult:
     if not mathml:
         return FormulaConversionResult(
             "preview_only" if preview_ref else "failed",

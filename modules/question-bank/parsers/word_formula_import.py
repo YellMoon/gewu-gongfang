@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from formula_eq import collect_eq_fields, convert_eq_to_latex
-from formula_mathtype import convert_mathtype_ole, convert_mathtype_oles_to_mathml_batch
+from formula_mathtype import convert_mathtype_ole, convert_mathtype_wmf, convert_mathtype_oles_to_mathml_batch, is_mathtype_wmf
 from formula_model import FormulaDocument, FormulaSource
 from formula_omml import convert_omml_to_latex
 from word_content import WordParagraph, read_word_part
@@ -73,6 +73,7 @@ def _import_row(archive: zipfile.ZipFile, row: WordParagraph) -> ImportedFormula
     candidates: list[tuple[int, FormulaDocument]] = []
     images = [token.target for token in row.tokens if token.kind == "image" and token.target]
     preview_ref = images[0] if images else None
+    ole_preview = preview_ref if any(token.kind == 'ole' for token in row.tokens) else None
 
     for token in row.tokens:
         if token.kind == "omml" and token.xml:
@@ -96,6 +97,19 @@ def _import_row(archive: zipfile.ZipFile, row: WordParagraph) -> ImportedFormula
                     ),
                 )
             )
+
+    for token in row.tokens:
+        if token.kind != 'image' or not token.target or token.target == ole_preview or not token.target.lower().endswith('.wmf') or token.target not in archive.namelist():
+            continue
+        data = archive.read(token.target)
+        if not is_mathtype_wmf(data):
+            continue
+        conversion = convert_mathtype_wmf(data, preview_ref=token.target)
+        # Keep failed conversions in the review inventory; never invent formula text.
+        candidates.append((token.source.content_index, _document(
+            row, token.source.content_index, 'mathtype', conversion, data,
+            payload_ref=token.target, preview_ref=token.target, rel_id=token.rel_id,
+        )))
 
     for field in collect_eq_fields(row.tokens):
         conversion = convert_eq_to_latex(field.conversion_instruction or field.instruction, field.visible_result)
@@ -126,4 +140,10 @@ def import_part_formulas(docx_path: str | Path, part_name: str) -> list[Imported
         ]
         if ole_payloads:
             convert_mathtype_oles_to_mathml_batch(ole_payloads)
+        wmf_payloads = [archive.read(token.target) for row in rows for token in row.tokens
+                        if token.kind == 'image' and token.target and token.target.lower().endswith('.wmf')
+                        and token.target in archive.namelist()]
+        wmf_payloads = [data for data in wmf_payloads if is_mathtype_wmf(data)]
+        if wmf_payloads:
+            convert_mathtype_oles_to_mathml_batch(wmf_payloads, file_suffix='.wmf')
         return [_import_row(archive, row) for row in rows]

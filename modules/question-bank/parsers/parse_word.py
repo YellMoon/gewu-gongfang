@@ -28,6 +28,8 @@ PARSER_DIR = os.path.dirname(os.path.abspath(__file__))
 if PARSER_DIR not in sys.path:
     sys.path.insert(0, PARSER_DIR)
 
+from metafile_image import convert_wmf_to_png
+
 from formula_omml import convert_omml_to_latex
 from word_formula_import import import_part_formulas
 from word_content import read_word_part
@@ -716,7 +718,7 @@ def _convert_windows_metafile_to_png(data, file_name):
     if not re.search(r"\.(?:emf|wmf)$", file_name or "", re.I):
         return None
     if os.name != "nt":
-        return None
+        return convert_wmf_to_png(data, file_name)
 
     def ps_quote(value):
         return "'" + value.replace("'", "''") + "'"
@@ -915,6 +917,8 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
             field_depth = 0
             for token in paragraph.tokens:
                 formula = formula_by_index.get(token.source.content_index)
+                if formula and token.kind == 'image' and (formula.get('conversion_status') != 'complete' or not formula.get('canonical_latex')):
+                    formula = None  # Preserve the image; its formula metadata still requires review.
                 if formula:
                     parts.append(_formula_span(formula))
                     if token.kind == "ole" and token.target:

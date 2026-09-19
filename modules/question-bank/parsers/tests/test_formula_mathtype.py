@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -71,6 +72,27 @@ class MathTypeFormulaTests(unittest.TestCase):
         self.assertEqual(result.status, "complete")
         self.assertEqual(result.canonical_latex, r"\frac{v_{0}}{2}")
         self.assertEqual(result.normalized_mathml, MATHML_FRACTION)
+
+    def test_wmf_conversion_uses_wmf_suffix_and_separate_cache(self):
+        completed=Mock(returncode=0,stdout=mathtype.MATHTYPE_BATCH_SENTINEL+json.dumps([MATHML_FRACTION]),stderr='')
+        runner=Mock(return_value=completed)
+        mathtype.set_cached_mathml(mathtype.mathtype_cache_key(b'wmf'),None)
+        with patch.object(mathtype,'find_ruby_executable',return_value='ruby'):
+            result=mathtype.convert_mathtype_wmf(b'wmf',preview_ref='word/media/formula.wmf',runner=runner)
+        self.assertEqual(result.canonical_latex,r'\frac{v_{0}}{2}')
+        self.assertTrue(runner.call_args.args[0][-1].endswith('.wmf'))
+        self.assertIn('rescue StandardError, NotImplementedError',runner.call_args.args[0][2])
+
+    def test_batch_ruby_exception_handler_has_valid_syntax(self):
+        ruby=mathtype.find_ruby_executable()
+        if not ruby:
+            self.skipTest('Ruby runtime not installed')
+        runner=Mock(return_value=Mock(stdout=mathtype.MATHTYPE_BATCH_SENTINEL+'[null]'))
+        with patch.object(mathtype,'find_ruby_executable',return_value=ruby):
+            mathtype.convert_mathtype_oles_to_mathml_batch([b'syntax'],runner=runner,file_suffix='.wmf')
+        script=runner.call_args.args[0][2]
+        checked=subprocess.run([ruby,'-c','-e',script],capture_output=True,timeout=10)
+        self.assertEqual(checked.returncode,0,checked.stderr.decode('utf-8',errors='replace'))
 
 
 if __name__ == "__main__":
