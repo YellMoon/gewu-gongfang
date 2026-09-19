@@ -35,19 +35,16 @@ assert.match(source, /if \(isVisitor\) \{[\s\S]*?if \(hasMoreQuestions\) request
 assert.doesNotMatch(source, /className='question-more-entry'/, 'the visitor limit must not be announced as permanent page chrome');
 assert.match(source, /question\.source/, 'question cards must show the cloud-provided source label');
 assert.match(source, /question\.knowledgeLabels/, 'question cards must show cloud-resolved knowledge labels');
-assert.match(source, /requestQuestionAssetDelivery/, 'question cards must fetch NAS-backed media only through the cloud delivery boundary');
+assert.match(source, /import \{ loadQuestionAsset \} from '..\/..\/utils\/questionAssetDelivery'/, 'question cards must fetch NAS-backed media through the shared tested cloud delivery boundary');
 const listLoadBlock = source.match(/const loadQuestionPage = async \(append: boolean, cursor: string \| null\) => \{([\s\S]*?)\n  \};\s+const loadQuestions/);
 assert.ok(listLoadBlock, 'question list loading must remain an explicit, testable boundary');
 assert.doesNotMatch(listLoadBlock[1], /requestQuestionAssetDelivery/, 'loading the question list must not prepare every rich-media delivery');
 assert.match(source, /const loadQuestionAssets = async \(question: QuestionPreview\)/, 'one question must prepare its rich media only on demand');
 const onDemandAssetBlock = source.match(/const loadQuestionAssets = async \(question: QuestionPreview\) => \{([\s\S]*?)\n  \};\s+const prefetchQuestionAssets/);
 assert.ok(onDemandAssetBlock, 'on-demand question media loading must remain an explicit, testable boundary');
-assert.strictEqual((onDemandAssetBlock[1].match(/requestQuestionAssetDelivery/g) || []).length, 1, 'one on-demand asset may create at most one delivery per attempt');
-assert.match(onDemandAssetBlock[1], /readQuestionAssetDelivery\(token, deliveryId\)/, 'queued media must poll the prepared delivery by the locked id');
-assert.match(onDemandAssetBlock[1], /const deliveryId = delivery\.deliveryId/, 'question-bank delivery polling must lock the original delivery id');
-assert.match(onDemandAssetBlock[1], /refreshed\.data\.delivery\.deliveryId !== deliveryId/, 'a changed delivery id must be rejected instead of followed');
-assert.match(onDemandAssetBlock[1], /\['queued', 'leased'\]\.includes\(delivery\.status\)/, 'terminal delivery failures must not be polled repeatedly');
-assert.match(onDemandAssetBlock[1], /downloadQuestionAssetDelivery\(token, deliveryId\)/, 'question-bank download must use the locked delivery id');
+assert.strictEqual((onDemandAssetBlock[1].match(/await loadQuestionAsset\(/g) || []).length, 1, 'each asset uses one bounded lifecycle; runtime tests verify locked-id polling and terminal states');
+assert.match(onDemandAssetBlock[1], /api: miniappCloudBusinessApi, token, questionId, assetKey/, 'the shared lifecycle must receive the real cloud client and the scoped session');
+require('../../utils/questionAssetDelivery.test');
 assert.match(source, /const QUESTION_ASSET_CONCURRENCY = 4/, 'question-bank media loading must keep a small device-safe concurrency ceiling');
 assert.match(onDemandAssetBlock[1], /Math\.min\(QUESTION_ASSET_CONCURRENCY, requests\.length\)/, 'question-bank media workers must never exceed the concurrency ceiling');
 assert.match(onDemandAssetBlock[1], /await Promise\.all\(workers\)/, 'only the bounded question-bank worker pool may run concurrently');
@@ -109,7 +106,7 @@ assert.match(paperSource, /display\.options/, 'the paper editor must retain the 
 assert.match(paperSource, /answerPosition === 'after'/, 'the paper editor must render answers immediately after questions when that option is selected');
 assert.match(paperSource, /参考答案与解析/, 'the paper editor must render the desktop-equivalent answer sheet when answers are placed at the end');
 assert.match(paperSource, /knowledgeLabels/, 'the paper editor must retain the selected question knowledge labels');
-assert.match(paperSource, /requestQuestionAssetDelivery/, 'the paper editor must fetch the same cloud-backed media as the question bank');
+assert.match(paperSource, /await loadQuestionAsset\(/, 'the paper editor must fetch the same cloud-backed media as the question bank');
 assert.match(paperSource, /<RichText/, 'the paper editor must render resolved question media');
 assert.match(paperSource, /layout/, 'the edited layout must be submitted with the cloud export task');
 for (const retired of ['authorityProjectionApi', 'createPaperTaskV2', 'getMiniappTaskResult', 'cancelMiniappTask', 'readQuestionPreview', 'hostBaseUrl', 'targetHostDeviceId']) {

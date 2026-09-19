@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, Picker, RichText, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
 import { miniappCloudBusinessApi } from '../../utils/api';
+import { loadQuestionAsset } from '../../utils/questionAssetDelivery';
 import { authSessionRuntime } from '../../utils/authSession';
 import { canUserSubmitMiniappWrite, isRetiredIdentity, roleOf } from '../../utils/miniappAuthorizationRuntime';
 import { questionBasketStore, useQuestionBasket } from '../../utils/questionBasketStore';
@@ -191,22 +192,14 @@ export default function QuestionBankPage() {
       let requestCompleted = false;
       try {
         if (!pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-        const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, questionId, assetKey);
-        let delivery = prepared.data?.delivery;
-        if (!prepared.success || !delivery) return null;
-        const deliveryId = delivery.deliveryId;
-        for (let attempt = 0; ['queued', 'leased'].includes(delivery.status) && attempt < 5; attempt += 1) {
-          await new Promise(resolve => setTimeout(resolve, 1500));
-          if (!pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-          const refreshed: any = await miniappCloudBusinessApi.readQuestionAssetDelivery(token, deliveryId);
-          if (!refreshed.success || !refreshed.data?.delivery || refreshed.data.delivery.deliveryId !== deliveryId) return null;
-          delivery = refreshed.data.delivery;
-        }
-        if (delivery.status !== 'ready' || !pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-        const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, deliveryId);
-        if (!downloaded.success || !downloaded.data?.tempFilePath) return null;
+        const tempFilePath = await loadQuestionAsset({
+          api: miniappCloudBusinessApi, token, questionId, assetKey,
+          isActive: () => pageActiveRef.current && authSessionRuntime.isSameSession(session),
+        });
+        if (!tempFilePath || !pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
         requestCompleted = true;
-        return [assetKey, downloaded.data.tempFilePath] as const;
+        setAssetPaths(current => ({ ...current, [assetKey]: tempFilePath }));
+        return [assetKey, tempFilePath] as const;
       } catch {
         return null;
       } finally {

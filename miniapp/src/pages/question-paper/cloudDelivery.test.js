@@ -32,12 +32,9 @@ assert.match(source, /const QUESTION_ASSET_CONCURRENCY = 4;/, 'question media lo
 assert.doesNotMatch(loader[1], /Promise\.all\(requests\.map/, 'question media loading must not start every selected asset at once');
 assert.match(loader[1], /Math\.min\(QUESTION_ASSET_CONCURRENCY, requests\.length\)/, 'the worker pool must never exceed the media concurrency ceiling');
 assert.match(loader[1], /await Promise\.all\(workers\)/, 'only the bounded worker pool may run concurrently');
-assert.strictEqual((loader[1].match(/requestQuestionAssetDelivery/g) || []).length, 1, 'one questionId + assetKey may issue at most one POST');
-assert.match(loader[1], /const deliveryId = delivery\.deliveryId/, 'queued and leased deliveries must retain the original delivery id');
-assert.match(loader[1], /\['queued', 'leased'\]\.includes\(delivery\.status\)/, 'only pending delivery states may be polled');
-assert.match(loader[1], /attempt < QUESTION_ASSET_POLL_ATTEMPTS/, 'delivery polling must have a fixed upper bound');
-assert.match(loader[1], /readQuestionAssetDelivery\(token, deliveryId\)/, 'pending delivery status must be read by the original id instead of preparing again');
-assert.match(loader[1], /downloadQuestionAssetDelivery\(token, deliveryId\)/, 'the ready asset must download through that same delivery');
+assert.strictEqual((loader[1].match(/await loadQuestionAsset\(/g) || []).length, 1, 'each asset uses one bounded lifecycle; runtime tests verify locked-id polling and terminal states');
+assert.match(loader[1], /api: miniappCloudBusinessApi, token, questionId, assetKey/, 'the editor must use the real scoped cloud client');
+require('../../utils/questionAssetDelivery.test');
 assert.match(loader[1], /let requestCompleted = false;/, 'one asset attempt must distinguish a completed download from every failure exit');
 assert.match(loader[1], /requestCompleted = true;/, 'only a completed asset download may keep its request key reserved');
 assert.match(loader[1], /finally \{\s*if \(!requestCompleted\) requestedQuestionAssetsRef\.current\.delete\(requestKey\);\s*\}/, 'preparation, polling, timeout, download, and exception failures must release the request key');
@@ -78,7 +75,7 @@ assert.match(source, /statusText\.timed_out\s*=\s*'\\u5df2\\u8d85\\u65f6'/, 'tim
 assert.ok(downloadBlock, 'completed-task download must remain an explicit interaction boundary');
 assert.match(downloadBlock[1], /if \(!task\.taskId \|\| taskBusyId\) return;/, 'download must reject repeated taps while another task action is busy');
 assert.match(downloadBlock[1], /setTaskBusyId\(task\.localId\)/, 'download must expose its busy state to the task button');
-assert.match(downloadBlock[1], /finally \{ setTaskBusyId\(''\); \}/, 'download must always release its busy lock');
+assert.match(downloadBlock[1], /finally \{ if \(isActive\(\)\) setTaskBusyId\(''\); \}/, 'download must release the live session busy lock without changing a new session');
 
 assert.match(apiSource, /listQuestionPreviewsByIds/, 'the miniapp API must expose exact basket hydration over the cloud authority');
 assert.match(apiSource, /fetchQuestionPreviewsByIds/, 'exact basket hydration must paginate instead of trusting the current browse page');

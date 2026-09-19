@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, Picker, RichText } from '@tarojs/components';
 import Taro, { usePullDownRefresh } from '@tarojs/taro';
 import { miniappCloudBusinessApi } from '../../utils/api';
+import { loadQuestionAsset } from '../../utils/questionAssetDelivery';
 import { authSessionRuntime } from '../../utils/authSession';
 import { canUserSubmitMiniappWrite, createQuestionPaperTaskCacheRuntime } from '../../utils/miniappAuthorizationRuntime';
 import { storage } from '../../utils/storage';
@@ -105,8 +106,6 @@ function questionSourceLabel(question: PaperItem) {
   return Array.from(new Set(parts)).join(' / ');
 }
 const QUESTION_ASSET_REF = /question-asset:\/\/([0-9a-f]{64})/g;
-const QUESTION_ASSET_POLL_ATTEMPTS = 5;
-const QUESTION_ASSET_POLL_INTERVAL_MS = 1500;
 const QUESTION_ASSET_CONCURRENCY = 4;
 function questionAssetKeys(value: unknown): string[] { return Array.from((typeof value === 'string' ? value : JSON.stringify(value || {})).matchAll(QUESTION_ASSET_REF)).map(match => match[1]); }
 function questionAssetRequests(item: PaperItem): Array<{ questionId: string; assetKey: string }> {
@@ -192,22 +191,14 @@ export default function QuestionPaperPage() {
       let requestCompleted = false;
       try {
         if (!pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-        const prepared: any = await miniappCloudBusinessApi.requestQuestionAssetDelivery(token, questionId, assetKey);
-        let delivery = prepared.data?.delivery;
-        if (!prepared.success || !delivery) return null;
-        const deliveryId = delivery.deliveryId;
-        for (let attempt = 0; ['queued', 'leased'].includes(delivery.status) && attempt < QUESTION_ASSET_POLL_ATTEMPTS; attempt += 1) {
-          await new Promise(resolve => setTimeout(resolve, QUESTION_ASSET_POLL_INTERVAL_MS));
-          if (!pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-          const refreshed: any = await miniappCloudBusinessApi.readQuestionAssetDelivery(token, deliveryId);
-          if (!refreshed.success || !refreshed.data?.delivery || refreshed.data.delivery.deliveryId !== deliveryId) return null;
-          delivery = refreshed.data.delivery;
-        }
-        if (delivery.status !== 'ready' || !pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
-        const downloaded: any = await miniappCloudBusinessApi.downloadQuestionAssetDelivery(token, deliveryId);
-        if (!downloaded.success || !downloaded.data?.tempFilePath) return null;
+        const tempFilePath = await loadQuestionAsset({
+          api: miniappCloudBusinessApi, token, questionId, assetKey,
+          isActive: () => pageActiveRef.current && authSessionRuntime.isSameSession(session),
+        });
+        if (!tempFilePath || !pageActiveRef.current || !authSessionRuntime.isSameSession(session)) return null;
         requestCompleted = true;
-        return [assetKey, downloaded.data.tempFilePath] as const;
+        setAssetPaths(current => ({ ...current, [assetKey]: tempFilePath }));
+        return [assetKey, tempFilePath] as const;
       } catch {
         return null;
       } finally {
