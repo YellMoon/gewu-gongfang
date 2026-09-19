@@ -3,6 +3,7 @@
 const assert = require('assert');
 require('./prepare-question-formula-correction.test');
 require('./apply-question-formula-corrections.test');
+require('./prepare-question-image-geometry-correction.test');
 const {
   changesForPublishedQuestion, importedQuestionIds, questionCreateCommand, questionPublishCommand,
   questionRecordFromImportItem,
