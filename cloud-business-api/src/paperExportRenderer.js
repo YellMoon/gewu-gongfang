@@ -288,7 +288,7 @@ function questions(value, layout, formulaMode) {
       answerTokens: tokensOrFallback(subQuestion?.answer, ''),
     })).filter(subQuestion => subQuestion.label || subQuestion.contentTokens.length || subQuestion.answerTokens.length) : [];
     return {
-      id: item.id, number: index + 1, stemTokens,
+      id: item.id, number: index + 1, stemTokens, hasStructuredPlacement: Boolean(sections),
       options: optionGroups,
       optionColumns: paperOptionColumns(sourceOptions),
       subQuestions,
@@ -371,9 +371,10 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
       answerTokens: await hydrate(item.answerTokens),
       explanationTokens: await hydrate(item.explanationTokens),
     };
-    // Only legacy, unplaced attachments belong at the end of the body. Images
-    // owned by an answer/analysis must never be duplicated in the question.
-    result.media = item.media.filter(media => !placed.has(media.assetKey));
+    // A structured document defines its image occurrences, like the desktop
+    // viewer. Its asset inventory also contains old formula previews; those
+    // are not extra body content. Only legacy documents need implicit placement.
+    result.media = item.hasStructuredPlacement ? [] : item.media.filter(media => !placed.has(media.assetKey));
     return result;
   });
 }
@@ -471,8 +472,8 @@ function wordMediaRun(media, displayMode = 'block', maxWidth = Infinity) {
   });
 }
 
-function wordMediaRow(media, displayMode = 'block', alignment, maxWidth) {
-  return new Paragraph({ alignment, children: [wordMediaRun(media, displayMode, maxWidth)] });
+function wordMediaRow(media, displayMode = 'block', alignment, maxWidth, keepNext = false) {
+  return new Paragraph({ alignment, keepNext, children: [wordMediaRun(media, displayMode, maxWidth)] });
 }
 
 function tableGrid(rows) {
@@ -516,11 +517,14 @@ function wordTable(token, maxWidth) {
     }) })) });
 }
 
-function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
+function appendWordTokens(rows, tokens, prefix = '', maxWidth, keepWithFollowing = false) {
+  // Keep only the final stem paragraph/image with the first option row. Earlier
+  // paragraphs still flow normally; do not force a long question onto one page.
+  const lastContentIndex = (tokens || []).findLastIndex(token => token.kind !== 'break');
   let nextPrefix = prefix;
   let children = [];
   const flush = (keepNext = false) => {
-    if (children.length) rows.push(new Paragraph({ children, keepNext }));
+    if (children.length) rows.push(new Paragraph({ children, keepNext, widowControl: keepWithFollowing ? true : undefined }));
     children = [];
   };
   for (const [index, token] of (tokens || []).entries()) {
@@ -536,18 +540,18 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
       flush(true);
       rows.push(wordTable(token, maxWidth));
     } else if (token.kind === 'break') {
-      flush(tokens[index + 1]?.kind === 'image');
+      flush(tokens[index + 1]?.kind === 'image' || (keepWithFollowing && index > lastContentIndex));
     } else if (token.kind === 'image' && token.media) {
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
       nextPrefix = '';
       flush(true);
-      rows.push(wordMediaRow(token.media, 'block', token.align, maxWidth));
+      rows.push(wordMediaRow(token.media, 'block', token.align, maxWidth, keepWithFollowing && index === lastContentIndex));
     } else if (token.kind === 'formula' && token.nativeFormula) {
       if (token.displayMode !== 'inline') flush();
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
       nextPrefix = '';
       children.push(token.nativeFormula);
-      if (token.displayMode !== 'inline') flush();
+      if (token.displayMode !== 'inline') flush(keepWithFollowing && index === lastContentIndex);
     } else if (token.kind === 'formula' && token.media) {
       if (token.displayMode === 'inline') {
         if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -558,11 +562,11 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
       flush();
       if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
       nextPrefix = '';
-      rows.push(wordMediaRow(token.media, token.displayMode, undefined, maxWidth));
+      rows.push(wordMediaRow(token.media, token.displayMode, undefined, maxWidth, keepWithFollowing && index === lastContentIndex));
     }
   }
   if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
-  flush();
+  flush(keepWithFollowing);
 }
 
 function orderedAnswerRows(item, prefix = '') {
@@ -584,11 +588,12 @@ function appendWordOptions(rows, options, columns) {
   const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
   const tableRows = [];
   for (let start = 0; start < options.length; start += columns) {
+    const keepNextRow = start + columns < options.length;
     tableRows.push(new TableRow({ cantSplit: true, children: Array.from({ length: columns }, (_, index) => {
       const children = [];
-      appendWordTokens(children, options[start + index] || [], '', (cellWidth - 240) / 15);
+      appendWordTokens(children, options[start + index] || [], '', (cellWidth - 240) / 15, keepNextRow);
       return new TableCell({ width: { size: cellWidth, type: WidthType.DXA }, borders,
-        margins: { top: 0, bottom: 80, left: 0, right: 240 }, children: children.length ? children : [new Paragraph('')] });
+        margins: { top: 0, bottom: 80, left: 0, right: 240 }, children: children.length ? children : [new Paragraph({ text: '', keepNext: keepNextRow })] });
     }) }));
   }
   rows.push(new Table({ width: { size: width, type: WidthType.DXA }, columnWidths: Array(columns).fill(cellWidth),
@@ -604,7 +609,7 @@ function orderedBodyRows(items, answerPosition) {
       previousSection = item.sectionTitle;
     }
     const score = paperScoreSuffix(item.score);
-    appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ');
+    appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', undefined, item.options.length > 0);
     appendWordOptions(rows, item.options, item.optionColumns);
     for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
     for (const media of item.media || []) rows.push(wordMediaRow(media));
