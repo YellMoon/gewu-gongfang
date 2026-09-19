@@ -8,7 +8,7 @@ const { layoutInlineRuns } = require('./pdfInlineLayout');
 const { nativeFormulaComponent } = require('./wordNativeFormula');
 const { withFormulaTagScope } = require('./formulaTagScope');
 const sharp = require('sharp');
-const { Document, ImageRun, Packer, Paragraph, TextRun } = require('docx');
+const { Document, ImageRun, Packer, Paragraph, TextRun, sectionMarginDefaults, sectionPageSizeDefaults } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
 const { TeX } = require('mathjax-full/js/input/tex.js');
 const { SVG } = require('mathjax-full/js/output/svg.js');
@@ -129,6 +129,18 @@ function richTokens(value, seen = new Set(), tokens = []) {
     for (const item of value) richTokens(item, seen, tokens);
     return tokens;
   }
+  if (value.type === 'image') {
+    const attrs = value.attrs || {};
+    if (typeof attrs.assetKey !== 'string' || !/^[0-9a-f]{64}$/.test(attrs.assetKey)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+    for (const dimension of ['width', 'height']) {
+      if (attrs[dimension] != null && (!Number.isFinite(attrs[dimension]) || attrs[dimension] <= 0 || attrs[dimension] > 10000)) {
+        throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      }
+    }
+    if (attrs.align != null && !['left', 'center', 'right'].includes(attrs.align)) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+    tokens.push({ kind: 'image', assetKey: attrs.assetKey, displayWidth: attrs.width, displayHeight: attrs.height, align: attrs.align || 'center' });
+    return tokens;
+  }
   const latex = canonicalFormula(value);
   if (latex) {
     tokens.push({ kind: 'formula', latex, displayMode: formulaDisplayMode(value) });
@@ -150,7 +162,7 @@ function tokensOrFallback(value, fallback) {
 
 function prefixedTokens(prefix, tokens) {
   const result = tokens.map(token => ({ ...token }));
-  const firstText = result.find(token => token.kind === 'text');
+  const firstText = result[0]?.kind === 'text' ? result[0] : null;
   if (firstText) firstText.text = prefix + firstText.text;
   else if (prefix) result.unshift({ kind: 'text', text: prefix });
   return result;
@@ -158,8 +170,8 @@ function prefixedTokens(prefix, tokens) {
 
 function suffixedTokens(tokens, suffix) {
   const result = tokens.map(token => ({ ...token }));
-  const textTokens = result.filter(token => token.kind === 'text');
-  if (textTokens.length) textTokens[textTokens.length - 1].text += suffix;
+  const lastText = result.at(-1)?.kind === 'text' ? result.at(-1) : null;
+  if (lastText) lastText.text += suffix;
   else if (suffix) result.push({ kind: 'text', text: suffix });
   return result;
 }
@@ -294,7 +306,13 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
     }),
   }));
   if (pending) throw pending;
-  const hydrateTokens = async tokens => hydrateInOrder(tokens, async token => {
+  const hydrateTokens = async (tokens, mediaByKey, placed) => hydrateInOrder(tokens, async token => {
+    if (token.kind === 'image') {
+      const media = mediaByKey.get(token.assetKey);
+      if (!media) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
+      placed.add(token.assetKey);
+      return { ...token, media: { ...media, displayWidth: token.displayWidth, displayHeight: token.displayHeight } };
+    }
     if (token.kind !== 'formula') return token;
     if (nativeWord) return { ...token, nativeFormula: nativeFormulaComponent(token.latex) };
     const bytes = formulaSvg(token.latex);
@@ -306,18 +324,27 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
       throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID');
     }
   });
-  return hydrateInOrder(prepared, async item => ({
-    ...item,
-    stemTokens: await hydrateTokens(item.stemTokens),
-    options: await hydrateInOrder(item.options, hydrateTokens),
-    subQuestions: await hydrateInOrder(item.subQuestions, async subQuestion => ({
-      ...subQuestion,
-      contentTokens: await hydrateTokens(subQuestion.contentTokens),
-      answerTokens: await hydrateTokens(subQuestion.answerTokens),
-    })),
-    answerTokens: await hydrateTokens(item.answerTokens),
-    explanationTokens: await hydrateTokens(item.explanationTokens),
-  }));
+  return hydrateInOrder(prepared, async item => {
+    const mediaByKey = new Map(item.media.map(media => [media.assetKey, media]));
+    const placed = new Set();
+    const hydrate = tokens => hydrateTokens(tokens, mediaByKey, placed);
+    const result = {
+      ...item,
+      stemTokens: await hydrate(item.stemTokens),
+      options: await hydrateInOrder(item.options, hydrate),
+      subQuestions: await hydrateInOrder(item.subQuestions, async subQuestion => ({
+        ...subQuestion,
+        contentTokens: await hydrate(subQuestion.contentTokens),
+        answerTokens: await hydrate(subQuestion.answerTokens),
+      })),
+      answerTokens: await hydrate(item.answerTokens),
+      explanationTokens: await hydrate(item.explanationTokens),
+    };
+    // Only legacy, unplaced attachments belong at the end of the body. Images
+    // owned by an answer/analysis must never be duplicated in the question.
+    result.media = item.media.filter(media => !placed.has(media.assetKey));
+    return result;
+  });
 }
 
 function subQuestionAnswerLines(item, prefix = '') {
@@ -375,9 +402,29 @@ function wordFormulaTransformation(media, displayMode = 'block') {
 }
 
 function wordImageTransformation(media) {
+  const source = sourceImageSize(media);
+  if (source) {
+    // Match the existing docx page defaults, in CSS pixels (15 twips/px).
+    return fitImageSize(source,
+      (sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT) / 15,
+      (sectionPageSizeDefaults.HEIGHT - sectionMarginDefaults.TOP - sectionMarginDefaults.BOTTOM) / 15 - 24);
+  }
   const width = Number.isFinite(media?.width) && media.width > 0 ? media.width : 420;
   const height = Number.isFinite(media?.height) && media.height > 0 ? media.height : 280;
   const scale = Math.min(420 / width, 280 / height, 1);
+  return { width: width * scale, height: height * scale };
+}
+
+function sourceImageSize(media) {
+  if (media.displayWidth == null && media.displayHeight == null) return null;
+  return {
+    width: media.displayWidth ?? media.displayHeight * media.width / media.height,
+    height: media.displayHeight ?? media.displayWidth * media.height / media.width,
+  };
+}
+
+function fitImageSize({ width, height }, maxWidth, maxHeight) {
+  const scale = Math.min(maxWidth / width, maxHeight / height, 1);
   return { width: width * scale, height: height * scale };
 }
 
@@ -393,21 +440,26 @@ function wordMediaRun(media, displayMode = 'block') {
   });
 }
 
-function wordMediaRow(media, displayMode = 'block') {
-  return new Paragraph({ children: [wordMediaRun(media, displayMode)] });
+function wordMediaRow(media, displayMode = 'block', alignment) {
+  return new Paragraph({ alignment, children: [wordMediaRun(media, displayMode)] });
 }
 
 function appendWordTokens(rows, tokens, prefix = '') {
   let nextPrefix = prefix;
   let children = [];
-  const flush = () => {
-    if (children.length) rows.push(new Paragraph({ children }));
+  const flush = (keepNext = false) => {
+    if (children.length) rows.push(new Paragraph({ children, keepNext }));
     children = [];
   };
   for (const token of tokens || []) {
     if (token.kind === 'text') {
       children.push(new TextRun({ text: nextPrefix + token.text }));
       nextPrefix = '';
+    } else if (token.kind === 'image' && token.media) {
+      if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
+      nextPrefix = '';
+      flush(true);
+      rows.push(wordMediaRow(token.media, 'block', token.align));
     } else if (token.kind === 'formula' && token.nativeFormula) {
       if (token.displayMode !== 'inline') flush();
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -518,7 +570,9 @@ function pdfBytes(input, items) {
   });
 }
 
-function pdfMediaSize(media) {
+function pdfMediaSize(media, maxPageWidth = 480, maxPageHeight = 360) {
+  const source = media.kind === 'image' ? sourceImageSize(media) : null;
+  if (source) return fitImageSize({ width: source.width * 0.75, height: source.height * 0.75 }, maxPageWidth, maxPageHeight);
   const naturalWidth = Number.isFinite(media.width) && media.width > 0 ? media.width : 280;
   const naturalHeight = Number.isFinite(media.height) && media.height > 0 ? media.height : 72;
   const maxWidth = media.kind === 'formula' ? 280 : 480;
@@ -532,11 +586,15 @@ function ensurePdfSpace(document, height) {
   if (document.y + height > bottom) document.addPage();
 }
 
-function drawPdfMedia(document, media) {
+function drawPdfMedia(document, media, alignment = 'left') {
   try {
-    const { width, height } = pdfMediaSize(media);
+    const left = document.page.margins.left;
+    const pageWidth = document.page.width - left - document.page.margins.right;
+    const pageHeight = document.page.height - document.page.margins.top - document.page.margins.bottom - 6;
+    const { width, height } = pdfMediaSize(media, pageWidth, pageHeight);
     ensurePdfSpace(document, height + 6);
-    document.image(media.kind === 'formula' ? media.fallbackBytes : media.bytes, document.x, document.y, { width, height });
+    const x = alignment === 'center' ? left + (pageWidth - width) / 2 : alignment === 'right' ? left + pageWidth - width : left;
+    document.image(media.kind === 'formula' ? media.fallbackBytes : media.bytes, x, document.y, { width, height });
     document.y += height + 6;
     document.x = document.page.margins.left;
   } catch (_) {
@@ -546,7 +604,7 @@ function drawPdfMedia(document, media) {
 
 function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SVGtoPDF) {
   let inline = prefix ? [{ kind: 'text', text: prefix }] : [];
-  const flush = () => {
+  const flush = (followingHeight = 0) => {
     if (!inline.length) return;
     document.fontSize(size);
     const left = document.page.margins.left;
@@ -555,6 +613,10 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
       maxWidth:document.page.width-left-document.page.margins.right,
       measureText:text=>document.widthOfString(text)});
     for (const line of lines) {
+      if (followingHeight && line === lines.at(-1)) {
+        const groupHeight = line.height + 2 + size * 0.25 + followingHeight;
+        if (groupHeight <= document.page.height - document.page.margins.top - document.page.margins.bottom) ensurePdfSpace(document, groupHeight);
+      }
       ensurePdfSpace(document,line.height);
       const top = document.y;
       let x = left;
@@ -585,6 +647,11 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
   for (const token of tokens || []) {
     if (token.kind === 'text') {
       inline.push(token);
+    } else if (token.kind === 'image' && token.media) {
+      const pageWidth = document.page.width - document.page.margins.left - document.page.margins.right;
+      const pageHeight = document.page.height - document.page.margins.top - document.page.margins.bottom - 6;
+      flush(pdfMediaSize(token.media, pageWidth, pageHeight).height + 6);
+      drawPdfMedia(document, token.media, token.align);
     } else if (token.kind === 'formula' && token.media) {
       if (token.displayMode === 'inline') {
         inline.push(token);

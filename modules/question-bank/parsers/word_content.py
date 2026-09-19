@@ -38,6 +38,18 @@ def _local_name(node: ET.Element) -> str:
     return node.tag.rsplit("}", 1)[-1]
 
 
+def _image_container_xml(container: ET.Element, image: ET.Element) -> str:
+    # A run/VML group may contain several images with different display sizes.
+    # Bind the geometry to this occurrence, never to the first image in a run.
+    parents = {child: parent for parent in container.iter() for child in parent}
+    current = image
+    while current is not container:
+        if _local_name(current) in {"inline", "anchor", "shape"}:
+            return ET.tostring(current, encoding="unicode")
+        current = parents.get(current, container)
+    return ET.tostring(container, encoding="unicode")
+
+
 def _toggle(run: ET.Element, tag: str) -> bool:
     node = run.find("./w:rPr/w:%s" % tag, NS)
     if node is None:
@@ -218,9 +230,9 @@ def _paragraph_tokens(
                 rel_id = ole.attrib.get("{%s}id" % R)
                 add_relationship_token("ole", rel_id, prog_id=ole.attrib.get("ProgID") or ole.attrib.get("Type"))
             for blip in node.findall(".//a:blip", NS):
-                add_relationship_token("image", blip.attrib.get("{%s}embed" % R) or blip.attrib.get("{%s}link" % R))
+                add_relationship_token("image", blip.attrib.get("{%s}embed" % R) or blip.attrib.get("{%s}link" % R), xml=_image_container_xml(node, blip))
             for image in node.findall(".//v:imagedata", NS):
-                add_relationship_token("image", image.attrib.get("{%s}id" % R))
+                add_relationship_token("image", image.attrib.get("{%s}id" % R), xml=_image_container_xml(node, image))
     for child in list(paragraph):
         visit(child)
     return tuple(tokens)

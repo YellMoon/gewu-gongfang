@@ -522,21 +522,21 @@ def _display_size_from_container(container, ns):
     extent = container.find(".//wp:extent", ns) if "wp" in ns else None
     if extent is not None:
         try:
-            width = round(int(extent.attrib.get("cx", "0")) / EMU_PER_PIXEL)
-            height = round(int(extent.attrib.get("cy", "0")) / EMU_PER_PIXEL)
+            width = int(extent.attrib.get("cx", "0")) / EMU_PER_PIXEL
+            height = int(extent.attrib.get("cy", "0")) / EMU_PER_PIXEL
             if width > 0 and height > 0:
                 return {"display_width": width, "display_height": height}
         except Exception:
             pass
-    shape = container.find(".//v:shape", ns) if "v" in ns else None
+    shape = container if _local_name(container) == "shape" else container.find(".//v:shape", ns) if "v" in ns else None
     style = shape.attrib.get("style", "") if shape is not None else ""
     if style:
         width_match = re.search(r"width\s*:\s*([\d.]+)pt", style)
         height_match = re.search(r"height\s*:\s*([\d.]+)pt", style)
         if width_match and height_match:
             return {
-                "display_width": round(float(width_match.group(1)) * 96 / 72),
-                "display_height": round(float(height_match.group(1)) * 96 / 72),
+                "display_width": float(width_match.group(1)) * 96 / 72,
+                "display_height": float(height_match.group(1)) * 96 / 72,
             }
     return {}
 
@@ -942,6 +942,11 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
                 elif token.kind == "image" and token.target:
                     asset = _asset_from_part(archive, token.target, "image", token.rel_id, token.rel_type)
                     if asset:
+                        if token.xml:
+                            asset.update(_display_size_from_container(ET.fromstring(token.xml), {
+                                "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+                                "v": "urn:schemas-microsoft-com:vml",
+                            }))
                         assets.append(asset)
                         if token.target not in converted_previews:
                             parts.append(_image_tag(asset))
@@ -1004,6 +1009,14 @@ def _question_rich_text(question):
     return "\n".join(str(part or "") for part in parts)
 
 
+def _image_display_dimension(value):
+    try:
+        number = float(value)
+        return number if 0 < number <= 10000 else None
+    except (TypeError, ValueError):
+        return None
+
+
 class _TipTapHtmlParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -1039,8 +1052,7 @@ class _TipTapHtmlParser(HTMLParser):
             self.current.append({"type": "formula", "attrs": {"id": values.get("data-formula-id") or "formula-%s" % uuid.uuid4().hex[:12], "canonicalLatex": values.get("data-latex") or None, "displayMode": "inline", "sourceRef": values.get("data-source-ref") or None, "conversionStatus": values.get("data-conversion-status") or "complete", "sourceFormat": values.get("data-source-format") or "unknown", "previewRef": values.get("data-preview-ref") or None}})
             return
         if tag == "img" and values.get("src"):
-            width = values.get("width")
-            self.current.append({"type": "image", "attrs": {"src": values["src"], "assetKey": values["src"].split("://", 1)[-1] if values["src"].startswith("question-asset://") else None, "alt": values.get("alt", ""), "width": int(width) if str(width or "").isdigit() else None, "align": "center"}})
+            self.current.append({"type": "image", "attrs": {"src": values["src"], "assetKey": values["src"].split("://", 1)[-1] if values["src"].startswith("question-asset://") else None, "alt": values.get("alt", ""), "width": _image_display_dimension(values.get("width")), "height": _image_display_dimension(values.get("height")), "align": "center"}})
             return
         if tag == "br":
             self.new_paragraph()
