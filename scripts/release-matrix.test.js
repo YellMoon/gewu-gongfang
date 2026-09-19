@@ -24,6 +24,30 @@ const versions = {
 const manifest = matrix.createReleaseManifest({ componentVersions: versions, commit: 'abc123' });
 const reviewedCompatibility = matrix.readCompatibilityDeclaration();
 
+const currentStorageManifest = matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.8.3' },
+  commit: 'retain-reviewed-nas-runtime',
+});
+matrix.recordReceipt(currentStorageManifest, {
+  target: 'storage_proxy', version: '8.8.3', runtimeVersion: '8.8.3',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.3' },
+  evidence: 'test fixture: independently released storage keeps the reviewed protocol and parser proof',
+});
+assert.deepStrictEqual(matrix.validateManifest(currentStorageManifest).issues, [],
+  'the reviewed 8.8.3 runtime must not require an unrelated NAS upgrade for a desktop or miniapp fix');
+assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.8.3' },
+  commit: 'reject-unreviewed-nas-runtime',
+}), {
+  target: 'storage_proxy', version: '8.8.3', runtimeVersion: '8.8.4',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.4' },
+  evidence: 'unreviewed future runtime',
+}), /runtime version is not approved/i, 'reviewing 8.8.3 must not approve future runtime versions');
+
 assert.deepStrictEqual(
   reviewedCompatibility.contracts.desktopCloudSession,
   {

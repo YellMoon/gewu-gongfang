@@ -31,7 +31,9 @@ assert.ok(deployCloudBusiness.includes('require_release_manifest("cloud_business
 assert.ok(deployCloudBusiness.includes('record_release_receipt("cloud_business"'), 'cloud business health success must write an exact-version receipt');
 assert.ok(deployCloudBusiness.includes('payload.get("version") != expected_version'), 'cloud business public health must match the exact release version');
 assert.ok(
-  /backup = create_verified_backup\(\)[\s\S]*deploy_retirement_gateway\(\)[\s\S]*run_cloud_migrations\(\)/.test(deployCloudBusiness),
+  /backup = create_verified_backup\(\)[\s\S]*deploy_retirement_gateway\(\)[\s\S]*run_cloud_migrations\(source_root\)/.test(
+    deployCloudBusiness.split('def deploy_frozen_release(version, tag, source_root):')[1]?.split('\ndef ')[0] || '',
+  ),
   'cloud deployment must install and verify the retirement gateway before migrations or promotion',
 );
 assert.ok(
