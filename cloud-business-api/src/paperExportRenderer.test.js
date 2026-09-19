@@ -40,6 +40,7 @@ require('./wordNativeFormula.test');
   await require('./paperExportHydration.test')();
   await require('./paperExportImageGeometry.test')();
   await require('./paperExportTextStyle.test')();
+  await require('./paperExportAnswerOrder.test')();
   require('./paperOptionLayout.test');
   await require('./paperExportOptionColumns.test')();
   await require('./paperExportFormulaLifetime.test')();

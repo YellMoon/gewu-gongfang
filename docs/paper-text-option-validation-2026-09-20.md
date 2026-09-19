@@ -42,3 +42,26 @@ PDF strict parsing succeeds, is unencrypted, and all 16 pages rasterized and wer
 - The 16-page count is not evidence of final pagination quality. Restoring paragraph boundaries changes pagination; do not compare it with the earlier 13-page flattened-text result as a size improvement.
 - No production record, cloud/NAS deployment, desktop feed or miniapp upload was changed. Existing component versions remain in place. New parser geometry still requires a source/hash/version-bound correction plan and backup before applying to existing production questions.
 - Continue export acceptance and then resume the multi-role, all-page miniapp/desktop/course audit. Do not mark the overall migration or multi-end release complete.
+
+## Follow-up: emphasis and answer order
+
+The following supersedes the earlier open emphasis/answer-order items, not the other acceptance gates.
+
+- Retain bold, italic, underline and strike marks in native Word text. Keep generated labels separate from the first styled content run; a bold-option-label regression covers this boundary.
+- PDF retains the same marks. The bundled CJK face is regular: bold uses bounded synthetic stroke, not a newly supplied bold font face; italic uses PDFKit oblique rendering. This is not a claim of exact font-family parity.
+- Answers now appear as primary answer, subquestion answers, then analysis, in both formats and both supported answer positions. This matches the original desktop backend's end-of-paper Word ordering. The original after-each/PDF helper itself differed, so this is a consistent source-order correction, not a claim that all old modes already behaved identically.
+- `paperExportTextStyle.test.js` initially failed on missing Word bold; `paperExportAnswerOrder.test.js` initially failed on answer sequence. Both pass after the implementation. The answer-order test renders Word and PDF for `end` and `after`, retaining all fixture answers.
+- The full `test:paper-export-regressions` suite passed with exit 0, including real PostgreSQL atomic-archive checks.
+
+Updated real-source artifacts: directory basename `render-PHfLJp`, same 21-question input as above.
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| geometry.docx | 6191090 | 54a4603575c233fb7067da4911801f554b3d64c02a9306d8760018e1aaa02ee6 |
+| geometry.pdf | 10949743 | cdb18f0f26bed22c5d6a4b16460c3df231dcf7fcdc20162959d1da28689426f5 |
+
+All 23 image occurrences retain original bytes/display sizes, 299 Word equations remain native, and the strict unencrypted PDF has 16 rasterized pages. All 16 pages were individually viewed. Pages 8-9 show restored italic physical quantities and lowered indices; pages 13-15 show the corrected numbered answer sequence. Packed subquestion options, long-flow pagination, orphan answer headings, source-specific template parity and the nearly empty final page remain open.
+
+Word visual acceptance is still pending. In addition to the missing LibreOffice renderer noted above, the Windows UI verification entry failed before application discovery with `failed to write kernel assets` / OS error 3. One reset and retry produced the same failure. No Word window was opened or manipulated; XML checks are not a replacement for visual acceptance.
+
+A read-only production health request still returned `ok: true`, cloud version `8.11.14`. No deployment, production question mutation, desktop update feed or miniapp upload occurred in this follow-up.

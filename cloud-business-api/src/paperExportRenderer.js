@@ -149,8 +149,10 @@ function richTokens(value, seen = new Set(), tokens = []) {
   }
   if (value.type === 'text' && typeof value.text === 'string') {
     const text = value.text;
-    const verticalAlign = (value.marks || []).find(mark => ['subscript', 'superscript'].includes(mark.type))?.type;
-    if (text) tokens.push({ kind: 'text', text, ...(verticalAlign ? { verticalAlign } : {}) });
+    const marks = Array.isArray(value.marks) ? value.marks : [];
+    const verticalAlign = marks.find(mark => ['subscript', 'superscript'].includes(mark?.type))?.type;
+    const emphasis = Object.fromEntries(['bold', 'italic', 'underline', 'strike'].filter(type => marks.some(mark => mark?.type === type)).map(type => [type, true]));
+    if (text) tokens.push({ kind: 'text', text, ...emphasis, ...(verticalAlign ? { verticalAlign } : {}) });
     return tokens;
   }
   if (value.type === 'hardBreak') {
@@ -169,7 +171,7 @@ function tokensOrFallback(value, fallback) {
 
 function prefixedTokens(prefix, tokens) {
   const result = tokens.map(token => ({ ...token }));
-  const firstText = result[0]?.kind === 'text' && !result[0].verticalAlign ? result[0] : null;
+  const firstText = result[0]?.kind === 'text' && !styledText(result[0]) ? result[0] : null;
   if (firstText) firstText.text = prefix + firstText.text;
   else if (prefix) result.unshift({ kind: 'text', text: prefix });
   return result;
@@ -177,10 +179,14 @@ function prefixedTokens(prefix, tokens) {
 
 function suffixedTokens(tokens, suffix) {
   const result = tokens.map(token => ({ ...token }));
-  const lastText = result.at(-1)?.kind === 'text' && !result.at(-1).verticalAlign ? result.at(-1) : null;
+  const lastText = result.at(-1)?.kind === 'text' && !styledText(result.at(-1)) ? result.at(-1) : null;
   if (lastText) lastText.text += suffix;
   else if (suffix) result.push({ kind: 'text', text: suffix });
   return result;
+}
+
+function styledText(token) {
+  return token.verticalAlign || token.bold || token.italic || token.underline || token.strike;
 }
 
 function optionTokens(value, index) {
@@ -461,8 +467,10 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
   };
   for (const [index, token] of (tokens || []).entries()) {
     if (token.kind === 'text') {
-      if (nextPrefix && token.verticalAlign) children.push(new TextRun({ text: nextPrefix }));
-      children.push(new TextRun({ text: (token.verticalAlign ? '' : nextPrefix) + token.text, subScript: token.verticalAlign === 'subscript', superScript: token.verticalAlign === 'superscript' }));
+      if (nextPrefix && styledText(token)) children.push(new TextRun({ text: nextPrefix }));
+      children.push(new TextRun({ text: (styledText(token) ? '' : nextPrefix) + token.text,
+        bold: token.bold, italics: token.italic, underline: token.underline ? {} : undefined, strike: token.strike,
+        subScript: token.verticalAlign === 'subscript', superScript: token.verticalAlign === 'superscript' }));
       nextPrefix = '';
     } else if (token.kind === 'break') {
       flush(tokens[index + 1]?.kind === 'image');
@@ -496,8 +504,8 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
 
 function orderedAnswerRows(item, prefix = '') {
   const rows = [];
-  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) appendWordTokens(rows, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
   if (item.answerTokens.length) appendWordTokens(rows, item.answerTokens, prefix + paperLabels.answer);
+  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) appendWordTokens(rows, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
   if (item.explanationTokens.length) appendWordTokens(rows, item.explanationTokens, prefix + paperLabels.analysis);
   return rows;
 }
@@ -655,7 +663,17 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
       let x = left;
       for (const run of line.runs) {
         const y = top + (line.height-run.height)/2 + (run.offsetY || 0);
-        if (run.kind === 'text') document.fontSize(run.fontSize || size).text(run.text,x,y,{lineBreak:false});
+        if (run.kind === 'text') {
+          const draw = () => document.fontSize(run.fontSize || size).text(run.text, x, y,
+            { lineBreak: false, oblique: run.italic, underline: run.underline, strike: run.strike, fill: true, stroke: Boolean(run.bold) });
+          if (run.bold) {
+            // The bundled CJK face is regular. Use bounded synthetic emphasis
+            // without substituting a font that may drop Chinese characters.
+            document.save();
+            try { document.lineWidth((run.fontSize || size) * 0.025); draw(); }
+            finally { document.restore(); }
+          } else draw();
+        }
         else {
           // SVG text fallbacks select their own font. Graphics save/restore does
           // not restore PDFKit's JS font selection for the following CJK runs.
@@ -702,8 +720,8 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
 }
 
 function drawPdfAnswers(document, item, prefix = '') {
-  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) drawPdfTokens(document, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
   if (item.answerTokens.length) drawPdfTokens(document, item.answerTokens, prefix + paperLabels.answer);
+  for (const subQuestion of item.subQuestions || []) if (subQuestion.answerTokens.length) drawPdfTokens(document, subQuestion.answerTokens, prefix + subQuestion.label + paperLabels.answer);
   if (item.explanationTokens.length) drawPdfTokens(document, item.explanationTokens, prefix + paperLabels.analysis);
 }
 
@@ -723,6 +741,7 @@ function drawPdfOptions(document, options, columns) {
       const probe = { x: margins.left, y: margins.top,
         page: { ...document.page, margins: { ...margins, right: document.page.width - margins.left - width } },
         fontSize(value) { document.fontSize(value); return this; },
+        save() { return this; }, restore() { return this; }, lineWidth() { return this; },
         currentLineHeight: () => document.currentLineHeight(true), widthOfString: text => document.widthOfString(text),
         text() { return this; }, image() { return this; }, addPage() { overflow = true; this.y = margins.top; return this; } };
       drawPdfTokens(probe, tokens, '', 10, () => {});

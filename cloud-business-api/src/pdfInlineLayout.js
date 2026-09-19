@@ -23,7 +23,8 @@ function layoutInlineRuns({ tokens, maxWidth, size, lineHeight, measureText }) {
       const script = ['subscript', 'superscript'].includes(token.verticalAlign);
       const fontSize = script ? size * 0.75 : size;
       const offsetY = token.verticalAlign === 'subscript' ? size * 0.25 : token.verticalAlign === 'superscript' ? -size * 0.2 : 0;
-      const textRun = text => ({kind:'text',text,width:measureText(text,fontSize),height:lineHeight,fontSize,offsetY});
+      const textRun = text => ({kind:'text',text,width:measureText(text,fontSize),height:lineHeight,fontSize,offsetY,
+        bold: token.bold, italic: token.italic, underline: token.underline, strike: token.strike});
       // Keep Latin words intact when possible while allowing Chinese wrapping.
       const parts = String(token.text).replace(/\r\n?/g, '\n').match(/[A-Za-z0-9]+(?:[.,:/_-][A-Za-z0-9]+)*|[^\S\n]+|\n|[^\s]/gu) || [];
       for (const text of parts) {
