@@ -5,6 +5,7 @@ const { stableJson } = require('../shared/authorityProtocol');
 const { prepareFormulaCorrection } = require('./prepare-question-formula-correction');
 const { prepareSubquestionCorrection } = require('./prepare-question-subquestion-correction');
 const { prepareAnswerSectionCorrection } = require('./prepare-question-answer-section-correction');
+const { prepareOptionFormulaCorrection } = require('./prepare-question-option-formula-correction');
 const { nativeFormulaComponent } = require('../cloud-business-api/src/wordNativeFormula');
 const { listAllQuestionPages } = require('./real-question-import-publish');
 const { PUBLIC_BASE_URL } = require('./real-cloud-business-acceptance');
@@ -19,7 +20,8 @@ async function applyFormulaCorrections({plan,baseUrl,sessionToken,deviceId,fetch
   // Closed set of reviewed repairs shares backup, REST, conflict and resume gates.
   const prepare = plan?.schema==='source-formula-correction-review-v1' ? prepareFormulaCorrection
     : plan?.schema==='source-subquestion-correction-review-v1' ? prepareSubquestionCorrection
-    : plan?.schema==='source-answer-section-correction-review-v1' ? prepareAnswerSectionCorrection : null;
+    : plan?.schema==='source-answer-section-correction-review-v1' ? prepareAnswerSectionCorrection
+    : plan?.schema==='source-option-formula-correction-review-v1' ? prepareOptionFormulaCorrection : null;
   if (baseUrl!==PUBLIC_BASE_URL || typeof sessionToken!=='string' || !sessionToken || typeof deviceId!=='string' || !deviceId
     || typeof fetchImpl!=='function' || typeof execute!=='boolean' || !prepare
     || !Array.isArray(plan.entries) || !plan.entries.length || plan.entries.length>100
@@ -117,5 +119,5 @@ async function main(env=process.env) {
 module.exports={applyFormulaCorrections,main};
 if(require.main===module) main().then(result=>console.log(JSON.stringify(result))).catch(error=>{
   // Never print transport errors, URLs with credentials, or raw backup subprocess output.
-  console.error(/^(FORMULA|SUBQUESTION|ANSWER_SECTION)_CORRECTION_[A-Z0-9_]+$/.test(error.message)?error.message:'FORMULA_CORRECTION_EXECUTION_FAILED');process.exitCode=1;
+  console.error(/^(FORMULA|SUBQUESTION|ANSWER_SECTION|OPTION_FORMULA)_CORRECTION_[A-Z0-9_]+$/.test(error.message)?error.message:'FORMULA_CORRECTION_EXECUTION_FAILED');process.exitCode=1;
 });
