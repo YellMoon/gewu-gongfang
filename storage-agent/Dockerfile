@@ -1,6 +1,11 @@
 FROM node:20-alpine
 
-RUN apk add --no-cache python3 ruby ruby-nokogiri
+ARG ALPINE_REPOSITORY=https://dl-cdn.alpinelinux.org/alpine
+RUN ALPINE_SERIES="v$(cut -d. -f1,2 /etc/alpine-release)" \
+    && apk add --no-cache --repositories-file /dev/null \
+       --repository "${ALPINE_REPOSITORY}/${ALPINE_SERIES}/main" \
+       --repository "${ALPINE_REPOSITORY}/${ALPINE_SERIES}/community" \
+       python3 ruby ruby-nokogiri
 
 # Match the validated desktop MathType converter without copying Windows binaries.
 RUN gem install --no-document --ignore-dependencies ruby-ole:1.2.13.1 bindata:2.5.1 mathtype:0.0.8 mathtype_to_mathml_plus:0.0.16 \

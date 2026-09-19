@@ -8,8 +8,12 @@ const dockerfile = fs.readFileSync(path.join(__dirname, 'Dockerfile'), 'utf8');
 const dockerignore = fs.readFileSync(path.join(__dirname, '..', '.dockerignore'), 'utf8');
 
 assert.match(dockerfile, /^FROM node:20-alpine$/m, 'the NAS agent must use the validated Node Alpine runtime');
-assert.match(dockerfile, /^RUN apk add --no-cache python3 ruby ruby-nokogiri$/m,
+assert.match(dockerfile, /^ARG ALPINE_REPOSITORY=https:\/\/dl-cdn\.alpinelinux\.org\/alpine$/m,
+  'build mirror overrides must retain the official HTTPS default');
+assert.match(dockerfile, /apk add --no-cache --repositories-file \/dev\/null[\s\S]*--repository .*\/main[\s\S]*--repository .*\/community[\s\S]*python3 ruby ruby-nokogiri/,
   'the Linux importer must include the MathType runtime, not silently depend on the desktop Ruby installation');
+assert.doesNotMatch(dockerfile, /--allow-untrusted|--no-check-certificate/,
+  'a mirror override must never bypass TLS or Alpine package signatures');
 assert.match(dockerfile, /gem install --no-document --ignore-dependencies ruby-ole:1\.2\.13\.1 bindata:2\.5\.1 mathtype:0\.0\.8 mathtype_to_mathml_plus:0\.0\.16/,
   'MathType converter dependencies must use the versions validated with the original Word files');
 assert.match(dockerfile, /ruby -e "require 'json'; require 'mathtype_to_mathml_plus'"/,
