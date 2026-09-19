@@ -14,8 +14,10 @@ assert.match(dockerfile, /apk add --no-cache --repositories-file \/dev\/null[\s\
   'the Linux importer must include the MathType runtime, not silently depend on the desktop Ruby installation');
 assert.doesNotMatch(dockerfile, /--allow-untrusted|--no-check-certificate/,
   'a mirror override must never bypass TLS or Alpine package signatures');
-assert.match(dockerfile, /community" libwmf[\s\S]*wmf2gd --version/,
+assert.match(dockerfile, /community" libwmf[\s\S]*test -x "\$\(command -v wmf2gd\)"/,
   'legacy WMF option diagrams must be rendered as browser-readable PNG in Linux');
+assert.doesNotMatch(dockerfile, /&& wmf2gd --version/,
+  'wmf2gd returns 2 for its successful version display; verify the executable instead');
 assert.match(dockerfile, /gem install --no-document --ignore-dependencies ruby-ole:1\.2\.13\.1 bindata:2\.5\.1 mathtype:0\.0\.8 mathtype_to_mathml_plus:0\.0\.16/,
   'MathType converter dependencies must use the versions validated with the original Word files');
 assert.match(dockerfile, /ruby -e "require 'json'; require 'mathtype_to_mathml_plus'"/,
