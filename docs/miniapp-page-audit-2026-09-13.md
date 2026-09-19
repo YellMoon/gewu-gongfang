@@ -1,5 +1,9 @@
 # 小程序逐页收口检查（UTF-8，2026-09-13）
 
+## 2026-09-20 teacher paper workflow follow-up
+
+Actual basket-to-editor navigation, score editing, Word/PDF task submission and both real downloads now have targeted evidence in [the paper-download validation record](miniapp-paper-download-validation-2026-09-20.md). Miniapp 8.8.5 development upload succeeded. The exact downloaded two-question PDF was strictly parsed, rasterized and visually checked; its Word file contains 12 native equations and zero media files. Original test drafts and login state were restored. This supplements only the teacher question-paper flow; the remaining role/page/course/offline gates below stay open, and Word viewer appearance is not claimed.
+
 ## 16:12 组卷导航对照与教师编辑实测
 
 - 延续原窗口，不重复登录：隐私页 reLaunch 后页栈为 privacy（57fba7），静态页面数据 1746 字节（1e477c）；从隐私页进入组卷成功，页栈含 privacy/question-paper（da49ee），截图实际显示角色限制和申请按钮。说明页面文件及基础挂载可工作，不代表早先间歇性超时已修复。

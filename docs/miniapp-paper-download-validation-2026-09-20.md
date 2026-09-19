@@ -40,3 +40,21 @@ Local evidence directory basename: `gewu-teacher-paper-actions-20260920-eydx764s
 The first download-only retest could not install a read-only-result observer on native `wx.openDocument`; the method did not accept replacement. No download button was clicked by that failed attempt. Do not treat it as an application failure or native-open success. The next run uses ordinary real button clicks and sanitized network evidence; only compilation cache was cleared, not user storage or authorization.
 
 Actual native document appearance, the full multi-role course workflows and remaining page audit are still required. The old export-history-before-editor layout remains visible and is not silently redesigned in this repair.
+
+## Development upload and Word network confirmation
+
+- Source commit `5f0f8e443bd798c13b41c185791b349bc92683c7` was pushed to `gewu/master` and independently matched with `ls-remote`.
+- WeChat Developer Tools upload of version `8.8.5` returned `success: true`, total package size 1,459,907 bytes. This is development code upload, not production approval or the full release matrix.
+- The download-only retest clicked the existing Word task once. Its automator screenshot subsequently timed out; the network tool returned a different question-list entry instead of the requested delivery records. Neither tool result was counted as download success.
+- A bounded read of the production nginx access log supplied independent evidence: the same delivery was polled at 02:39:53, :55, :58 and 02:40:02 (Asia/Shanghai), then `/download` returned HTTP 200 and 9,468 bytes at 02:40:02.
+- A read-only database transaction tied that delivery to the exact Word task above: `delivery_2b3078ff-7b7a-4498-923d-e1e401d3a57a`, ready, DOCX MIME type, expected bytes 9,468, SHA-256 `f7884a5998a0db095160412d19c3b3c8470d5fedc8dc694af5896ce5c0d79e90`, downloaded_at `2026-09-19T18:40:02.678Z`. This proves real one-click preparation and transfer, not visual Word acceptance.
+
+## PDF click and exact-artifact review
+
+- A fresh teacher UI run clicked the existing PDF task once. Read-only before/after queries show a new ready PDF delivery `delivery_b38d5499-d4c7-4fc2-ac74-609eb270c706` for the exact PDF task, 278,911 bytes, SHA-256 `81b7acbfb7aa9b1c8aa804b180b1e6f0d59e4e4b53315d960e1feb94e936af3c`, downloaded_at `2026-09-19T18:46:12.706Z`.
+- Nginx independently records four status reads and an HTTP 200 `/download` response with 278,911 bytes at 02:46:12 Asia/Shanghai. No repeated export task was generated. The test exited 0 and restored the prior login.
+- The native simulator screenshot was successfully captured and viewed: `gewu-paper-pdf-download-proof-20260920-d5_0meo4/pdf-downloaded.png`, SHA-256 `87c728c4a0195b68f3a8ff12fdd6d585c4ec92877d6c6ea4b741e95d3f209832`. It shows the editor after download, NOT a native document viewer; do not claim viewer appearance from this screenshot.
+- Retrieved the exact two delivery byte arrays for independent local file review, using a read-only database transaction. Both lengths and SHA-256 values match their delivery metadata. These checks do not replace the earlier actual UI download/access-log evidence.
+- DOCX ZIP validation passes: 12 native Word equations and zero media files in this two-question sample. This is not a claim about all 108 questions or Word visual layout.
+- PDF strict parsing passes, unencrypted, one page with extractable text. Poppler rasterization succeeded and the complete page was opened and inspected: both questions, options, edited scores 7/6, answers and formulas are visible. Existing cloud 8.11.14 still uses its old one-column/template/text-style behavior; the newer local renderer fixes are not yet deployed.
+- Exact reviewed files and `review.json` are retained locally under directory basename `gewu-ui-export-artifact-review-20260920-p6u11vyn`. No production question data or core business data was corrected during these checks.
