@@ -16,3 +16,4 @@ assert.doesNotMatch(source, /GRANT [^;]*(?:INSERT|UPDATE|DELETE)[^;]* TO gewu_cl
 assert.match(source, /GRANT SELECT,INSERT,UPDATE ON TABLE business\.payments TO vnext_pg17_writer/);
 assert.doesNotMatch(source, /GRANT [^;]* ON TABLE business\.payments TO vnext_pg17_runtime/);
 console.log('supplemental business authority schema checks passed');
+require('./supplemental-runtime.postgres.test');

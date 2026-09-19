@@ -115,6 +115,22 @@ def verification_sql():
         "OR has_table_privilege('vnext_pg17_runtime','business.consumptions','INSERT') "
         "OR has_table_privilege('vnext_pg17_runtime','business.grades','INSERT') "
         "OR has_table_privilege('vnext_pg17_runtime','business.personal_asset_manual_records','INSERT')",
+        "'writerSupplementalReferences'",
+        "NOT EXISTS (SELECT 1 FROM (VALUES "
+        "('students','id'),('students','tenant_id'),('students','legacy_deleted'),"
+        "('schedules','id'),('schedules','tenant_id'),('schedules','legacy_deleted'),"
+        "('personal_asset_categories','tenant_id'),('personal_asset_categories','account_id'),"
+        "('personal_asset_categories','category_id'),('personal_asset_categories','category_type')"
+        ") AS refs(table_name,column_name) WHERE NOT has_column_privilege('vnext_pg17_writer','business.'||table_name,column_name,'SELECT')) "
+        "AND NOT has_column_privilege('vnext_pg17_writer','business.students','name','SELECT') "
+        "AND NOT has_table_privilege('vnext_pg17_writer','business.students','INSERT,UPDATE,DELETE') "
+        "AND NOT has_table_privilege('vnext_pg17_writer','business.schedules','INSERT,UPDATE,DELETE')",
+        "'supplementalVersionContract'",
+        "(SELECT count(*)=5 FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid "
+        "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='business' "
+        "AND c.relname IN ('payments','consumptions','grades','personal_asset_manual_categories','personal_asset_manual_records') "
+        "AND t.tgname='vnext_supplemental_version_ms_v1' AND t.tgfoid=to_regprocedure('business.vnext_supplemental_version_ms_v1()') "
+        "AND NOT t.tgisinternal AND t.tgenabled IN ('O','A') AND (t.tgtype::integer & 23)=23)",
         "'readerSupplementalWrite'",
         "has_table_privilege('gewu_cloud_schedule_reader','business.payments','INSERT') "
         "OR has_table_privilege('gewu_cloud_schedule_reader','business.payments','UPDATE') "
@@ -290,7 +306,7 @@ def validate(payload):
     required_functions = (
         "scheduleCreateFunction", "institutionCreateFunction", "schoolCreateFunction", "writerScheduleExecute",
         "taxonomySystemTable", "taxonomyNodeTable", "taxonomyFunctions", "writerTaxonomyExecute",
-        "supplementalAuthorityTables", "writerSupplementalInsert",
+        "supplementalAuthorityTables", "writerSupplementalInsert", "writerSupplementalReferences", "supplementalVersionContract",
         "runtimeProjectionRead", "paperExportExecutionLease",
     )
     missing_functions = [key for key in required_functions if payload.get(key) is not True]

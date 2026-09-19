@@ -105,6 +105,8 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "writerDirectTaxonomyInsert": False,
             "supplementalAuthorityTables": True,
             "writerSupplementalInsert": True,
+            "writerSupplementalReferences": True,
+            "supplementalVersionContract": True,
             "runtimeSupplementalInsert": False,
             "readerSupplementalWrite": False,
             "runtimeProjectionRead": True,
@@ -135,6 +137,10 @@ class VerifyCloudBusinessReleaseTest(unittest.TestCase):
             "fixedSuperAdminPhone": True,
         })
         self.assertEqual(MODULE.validate(valid), valid)
+        for key in ("writerSupplementalReferences", "supplementalVersionContract"):
+            self.assertIn("'" + key + "'", MODULE.verification_sql())
+            with self.assertRaisesRegex(RuntimeError, "FUNCTION_MISSING:" + key):
+                MODULE.validate(dict(valid, **{key: False}))
         with self.assertRaisesRegex(RuntimeError, "FUNCTION_MISSING:paperExportExecutionLease"):
             MODULE.validate(dict(valid, paperExportExecutionLease=False))
         grown = dict(valid, institutions=MODULE.IMPORTED_COUNT_BASELINES["institutions"] + 1)
