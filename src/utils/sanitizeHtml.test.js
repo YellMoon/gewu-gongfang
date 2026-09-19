@@ -22,4 +22,7 @@ assert(!sanitizeHtml('<img src="data:image/svg+xml;base64,PHN2Zz4=">').includes(
 const richStructure = '<h2>Heading</h2><blockquote><p>Quote</p></blockquote><ul><li>One</li></ul><ol><li>Two</li></ol><pre><code>const x = 1;</code></pre><hr>';
 assert.strictEqual(sanitizeHtml(richStructure), richStructure, 'editor block and list structure must survive sanitized paste');
 assert(!sanitizeHtml('<blockquote onclick="evil()"><code style="background:url(javascript:evil)">safe</code></blockquote>').includes('onclick'));
+const tableHtml = sanitizeHtml('<table><tr><th colspan="2">Road</th><td rowspan="3">Value</td></tr></table>');
+assert(tableHtml.includes('colspan="2"') && tableHtml.includes('rowspan="3"'));
+assert(!sanitizeHtml('<p colspan="2">bad</p><table><tr><td colspan="0" rowspan="1001" onclick="evil()">safe</td></tr></table>').match(/colspan|rowspan|onclick/));
 console.log('sanitizeHtml behavior tests passed');

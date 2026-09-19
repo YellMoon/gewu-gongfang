@@ -13,6 +13,7 @@ const ALLOWED_ATTRS = new Set([
   'xmlns', 'display', 'data-formula', 'data-id', 'data-display-mode',
   'data-source-ref', 'data-preview-ref', 'data-conversion-status', 'data-source-format',
   'data-asset-key', 'data-align', 'data-formula-block', 'data-warnings',
+  'colspan', 'rowspan',
 ]);
 
 function isSafeUri(value: string): boolean {
@@ -74,6 +75,10 @@ export function sanitizeHtml(html: string): string {
           continue;
         }
         if (URI_ATTRS.has(name) && !isSafeUri(attr.value)) {
+          element.removeAttribute(attr.name);
+          continue;
+        }
+        if (['colspan', 'rowspan'].includes(name) && (!['td', 'th'].includes(tagName) || !/^[1-9]\d{0,3}$/.test(attr.value) || Number(attr.value) > 1000)) {
           element.removeAttribute(attr.name);
           continue;
         }

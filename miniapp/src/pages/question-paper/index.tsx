@@ -83,12 +83,7 @@ function sectionFor(type: string) {
 }
 function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
 function questionTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    single_choice: String.fromCharCode(21333, 36873, 39064), multiple_choice: String.fromCharCode(22810, 36873, 39064),
-    true_false: String.fromCharCode(21028, 26029, 39064), fill_blank: String.fromCharCode(22635, 31354, 39064),
-    essay: String.fromCharCode(31616, 31572, 39064), calculation: String.fromCharCode(35745, 31639, 39064), experiment: String.fromCharCode(23454, 39564, 39064),
-  };
-  return labels[type] || type;
+  return questionDisplayRuntime.questionTypeLabel(type);
 }
 function subjectLabel(subject: string) {
   const labels: Record<string, string> = {

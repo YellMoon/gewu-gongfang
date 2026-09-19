@@ -275,6 +275,17 @@ function testStructuredRichContentRoundTrip() {
     const updated = questionBank.getQuestion(db, created.id, 'default');
     assert.strictEqual(updated.rich_content.sections.answer.content[0].content[0].text, 'updated answer');
     assert.strictEqual(updated.answer, 'updated answer');
+    const tableRich = structuredClone(updatedRich);
+    tableRich.sections.stem.content = [{ type: 'table', content: [{ type: 'tableRow', content: [{
+      type: 'tableCell', attrs: { colspan: 2, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Road' }] }],
+    }] }] }];
+    questionBank.updateQuestion(db, created.id, { rich_content: tableRich }, 'default');
+    assert.deepStrictEqual(questionBank.getQuestion(db, created.id, 'default').rich_content, tableRich);
+    for (const span of [0, -1, 1.5, 1001, '2']) {
+      const invalid = structuredClone(tableRich);
+      invalid.sections.stem.content[0].content[0].content[0].attrs.rowspan = span;
+      assert.throws(() => questionBank.updateQuestion(db, created.id, { rich_content: invalid }, 'default'), /rowspan/);
+    }
   });
 }
 

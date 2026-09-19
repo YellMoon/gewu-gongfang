@@ -897,7 +897,77 @@ def _styled_token_text(token):
     return value
 
 
-def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
+def _positive_table_span(value):
+    try:
+        return min(1000, max(1, int(value or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _table_from_token_rows(table, token_rows, cursor):
+    """Reassemble table structure without reparsing or rasterizing cell tokens."""
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    value_key = "{%s}val" % ns["w"]
+    rendered_rows, assets, formulas = [], [], []
+    active_merges = {}
+    start = cursor
+    for tr in table.findall("./w:tr", ns):
+        cells, column = [], 0
+        next_merges = {}
+        for tc in tr.findall("./w:tc", ns):
+            span_node = tc.find("./w:tcPr/w:gridSpan", ns)
+            span = _positive_table_span(span_node.get(value_key) if span_node is not None else None)
+            parts = []
+            for child in tc:
+                if _local_name(child) == "p":
+                    rich = token_rows[cursor]
+                    cursor += 1
+                    parts.append("<p>%s</p>" % rich.get("text", ""))
+                    assets.extend(rich.get("assets", []))
+                    formulas.extend(rich.get("formulas", []))
+                elif _local_name(child) == "tbl":
+                    nested, cursor = _table_from_token_rows(child, token_rows, cursor)
+                    parts.append(nested["text"])
+                    assets.extend(nested["assets"])
+                    formulas.extend(nested["formulas"])
+            cell = {"parts": parts, "colspan": span, "rowspan": 1}
+            merge = tc.find("./w:tcPr/w:vMerge", ns)
+            prior = active_merges.get(column)
+            if merge is not None and merge.get(value_key) != "restart" and prior is not None and prior["colspan"] == span:
+                prior["rowspan"] += 1
+                prior["parts"].extend(part for part in parts if part != "<p></p>")
+                next_merges[column] = prior
+            else:
+                cells.append(cell)
+                if merge is not None:
+                    next_merges[column] = cell
+            column += span
+        rendered_rows.append(cells)
+        active_merges = next_merges
+    markup = '<table class="question-table">' + ''.join('<tr>' + ''.join(
+        '<td colspan="%d" rowspan="%d">%s</td>' % (cell["colspan"], cell["rowspan"], ''.join(cell["parts"]))
+        for cell in row) + '</tr>' for row in rendered_rows) + '</table>'
+    return {"text": markup, "assets": assets, "formulas": formulas, "block_type": "table",
+            "source": {"part_name": "word/document.xml", "paragraph_index": start}}, cursor
+
+
+def _collapse_token_tables(file_path, token_rows):
+    with zipfile.ZipFile(file_path, "r") as archive:
+        root = ET.fromstring(archive.read("word/document.xml"))
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    body = root.find("./w:body", ns)
+    result, cursor = [], 0
+    for child in list(body) if body is not None else []:
+        if _local_name(child) == "p":
+            result.append(token_rows[cursor])
+            cursor += 1
+        elif _local_name(child) == "tbl":
+            rich, cursor = _table_from_token_rows(child, token_rows, cursor)
+            result.append(rich)
+    return result
+
+
+def read_docx_token_rich_blocks(file_path, part_name="word/document.xml", *, collapse_tables=False):
     """Build the only rich block stream directly from ordered Word tokens."""
     paragraphs = read_word_part(file_path, part_name)
     imported = import_part_formulas(file_path, part_name)
@@ -970,7 +1040,7 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml"):
                     "cell_paragraph": source.cell_paragraph if source else None,
                 },
             })
-    return rows
+    return _collapse_token_tables(file_path, rows) if collapse_tables and part_name == "word/document.xml" else rows
 
 
 def attach_rich_content(question, rich):
@@ -1020,16 +1090,20 @@ def _image_display_dimension(value):
 class _TipTapHtmlParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
-        self.paragraphs = [[]]
+        self.blocks = []
+        self.frames = [("doc", self.blocks)]
         self.marks = []
 
     @property
     def current(self):
-        return self.paragraphs[-1]
+        content = self.frames[-1][1]
+        if not content or content[-1].get("type") != "paragraph":
+            content.append({"type": "paragraph", "content": []})
+        return content[-1]["content"]
 
     def new_paragraph(self):
         if self.current:
-            self.paragraphs.append([])
+            self.frames[-1][1].append({"type": "paragraph", "content": []})
 
     def append_text(self, value):
         chunks = str(value or "").split("\n")
@@ -1048,6 +1122,17 @@ class _TipTapHtmlParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
         tag = tag.lower()
+        node_types = {"table": "table", "tr": "tableRow", "td": "tableCell", "th": "tableHeader"}
+        if tag in node_types:
+            content = self.frames[-1][1]
+            if content and content[-1] == {"type": "paragraph", "content": []}:
+                content.pop()
+            node = {"type": node_types[tag], "content": []}
+            if tag in ("td", "th"):
+                node["attrs"] = {name: _positive_table_span(values.get(name)) for name in ("colspan", "rowspan")}
+            content.append(node)
+            self.frames.append((tag, node["content"]))
+            return
         if tag == "span" and (values.get("data-formula-id") or values.get("data-latex")):
             self.current.append({"type": "formula", "attrs": {"id": values.get("data-formula-id") or "formula-%s" % uuid.uuid4().hex[:12], "canonicalLatex": values.get("data-latex") or None, "displayMode": "inline", "sourceRef": values.get("data-source-ref") or None, "conversionStatus": values.get("data-conversion-status") or "complete", "sourceFormat": values.get("data-source-format") or "unknown", "previewRef": values.get("data-preview-ref") or None}})
             return
@@ -1063,7 +1148,19 @@ class _TipTapHtmlParser(HTMLParser):
 
     def handle_endtag(self, tag):
         tag = tag.lower()
-        if tag in ("p", "div", "tr"):
+        if tag in ("table", "tr", "td", "th"):
+            if tag in ("td", "th") and self.frames[-1][0] == tag:
+                blocks = self.frames[-1][1]
+                while len(blocks) > 1 and blocks[-1].get("type") == "paragraph" and not blocks[-1].get("content"):
+                    blocks.pop()
+            if tag in ("td", "th") and self.frames[-1][0] == tag and not self.frames[-1][1]:
+                self.current  # Empty cells must remain in their original column.
+            for index in range(len(self.frames) - 1, 0, -1):
+                if self.frames[index][0] == tag:
+                    del self.frames[index:]
+                    break
+            return
+        if tag in ("p", "div"):
             self.new_paragraph()
         mark_types = {"strong": "bold", "b": "bold", "i": "italic", "em": "italic", "u": "underline", "sub": "subscript", "sup": "superscript"}
         mark_type = mark_types.get(tag)
@@ -1074,10 +1171,12 @@ class _TipTapHtmlParser(HTMLParser):
                     break
 
     def handle_data(self, data):
+        if self.frames[-1][0] in ("table", "tr") and not data.strip():
+            return
         self.append_text(data)
 
     def document(self):
-        return {"type": "doc", "content": [{"type": "paragraph", "content": content} for content in self.paragraphs if content]}
+        return {"type": "doc", "content": [node for node in self.blocks if node.get("type") != "paragraph" or node.get("content")]}
 
 
 def html_to_rich_document(value):
@@ -1221,22 +1320,9 @@ def extract_numbered_items_from_xml(file_path, definitions, comments, counters, 
                 return []
             for child in list(body):
                 if _local_name(child) == "tbl":
-                    paragraph_count = len(child.findall(".//w:p", namespace))
-                    for offset in range(paragraph_count):
-                        row_index = paragraph_cursor + offset
-                        rich = token_rows[row_index] if row_index < len(token_rows) else {"text": "", "assets": [], "formulas": []}
-                        text = rich.get("text", "")
-                        if not text:
-                            continue
-                        items.append({
-                            "text": text,
-                            "number_label": "",
-                            "number_kind": "",
-                            "comments": [],
-                            "rich": rich,
-                            "is_heading": False,
-                        })
-                    paragraph_cursor += paragraph_count
+                    rich, paragraph_cursor = _table_from_token_rows(child, token_rows, paragraph_cursor)
+                    items.append({"text": rich["text"], "number_label": "", "number_kind": "",
+                                  "comments": [], "rich": rich, "is_heading": False})
                     continue
                 if _local_name(child) != "p":
                     continue
@@ -2082,13 +2168,13 @@ def main():
             raise ImportError("forced docx xml fallback")
         from docx import Document
         doc = Document(file_path)
-        rich_rows = read_docx_token_rich_blocks(file_path)
+        rich_rows = read_docx_token_rich_blocks(file_path, collapse_tables=True)
         comment_assets = read_docx_comment_assets(file_path)
         paragraphs = [row.get("text", "") for row in rich_rows] or [paragraph.text for paragraph in doc.paragraphs]
         numbered_items = extract_numbered_items(doc, file_path)
     except ImportError:
         try:
-            rich_rows = read_docx_token_rich_blocks(file_path)
+            rich_rows = read_docx_token_rich_blocks(file_path, collapse_tables=True)
             paragraphs = [row.get("text", "") for row in rich_rows]
             comment_assets = read_docx_comment_assets(file_path)
             definitions = read_numbering_definitions(file_path)
@@ -2103,7 +2189,7 @@ def main():
             sys.exit(1)
     except Exception as exc:
         try:
-            rich_rows = read_docx_token_rich_blocks(file_path)
+            rich_rows = read_docx_token_rich_blocks(file_path, collapse_tables=True)
             paragraphs = [row.get("text", "") for row in rich_rows]
             comment_assets = read_docx_comment_assets(file_path)
             definitions = read_numbering_definitions(file_path)

@@ -21,6 +21,7 @@ import { storeQuestionAsset } from '../services/questionAssetStore';
 import { appendSequentialTask, clampSelection, decideExternalSync, enqueueEmission, mapPendingBookmarks, maskPersistedImagesForEditor, requireStoredAssetRef, restorePersistedImagesFromEditor } from './richQuestionEditorState';
 import { RichAssetImage } from './RichAssetImage';
 import { QuestionFormulaContent } from './QuestionFormulaContent';
+import { QuestionTableNodes } from './question-editor/questionTableNodes';
 
 export interface RichQuestionEditorProps { value?: string | JSONContent; onChange?: (value: string | JSONContent) => void; onHtmlChange?: (html: string) => void; output?: 'html' | 'json'; placeholder?: string; minHeight?: number; onStoreImage?: (assetKey: string, dataUrl: string, file: File) => Promise<string>; disabled?: boolean; }
 const t = (value: string) => value;
@@ -71,7 +72,7 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
   const pendingImagePositions = useRef(new Map<number, { from: number; to: number }>());
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const editor = useEditor({
-    extensions: [StarterKit, RichTextStyle, ParagraphTypography, Color, FontFamily, Underline, Highlight.configure({ multicolor: true }), Subscript, Superscript, TextAlign.configure({ types: ['heading', 'paragraph'] }), RichImage.configure({ allowBase64: false }), Formula, FormulaBlock],
+    extensions: [StarterKit, RichTextStyle, ParagraphTypography, Color, FontFamily, Underline, Highlight.configure({ multicolor: true }), Subscript, Superscript, TextAlign.configure({ types: ['heading', 'paragraph'] }), RichImage.configure({ allowBase64: false }), Formula, FormulaBlock, ...QuestionTableNodes],
     content: maskPersistedImagesForEditor(value || ''),
     editorProps: {
       attributes: { class: 'rich-question-editor__surface', 'data-placeholder': placeholder || '', 'aria-label': placeholder || t('\u9898\u76ee\u5bcc\u6587\u672c\u7f16\u8f91\u533a') },
@@ -167,4 +168,4 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
   </div>;
 };
 export default RichQuestionEditor;
-export { RichImage, Formula, FormulaBlock };
+export { RichImage, Formula, FormulaBlock, QuestionTableNodes };

@@ -391,6 +391,17 @@ td,
   background: #dce2eb;
 }
 
+.question-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+}
+.question-table td, .question-table th {
+  border: 1px solid #777;
+  padding: 4px 6px;
+  vertical-align: top;
+}
+.question-table p { margin: 0; }
 .rich-question-editor__surface {
   padding: 10px 12px;
   outline: none;

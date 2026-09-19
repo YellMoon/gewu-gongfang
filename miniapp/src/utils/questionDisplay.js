@@ -435,6 +435,13 @@ function blockStyle(attrs) {
   return styles.length ? ` style="${escapeHtml(styles.join(';'))}"` : '';
 }
 
+function tableTag(name, attrs = {}) {
+  if (name === 'table') return '<table style="border-collapse:collapse;width:100%;margin:6px 0">';
+  if (name === 'tr') return '<tr>';
+  const spans = ['colspan', 'rowspan'].map(key => Number.isInteger(attrs[key]) && attrs[key] > 0 && attrs[key] <= 1000 ? ` ${key}="${attrs[key]}"` : '').join('');
+  return `<${name}${spans} style="border:1px solid #777;padding:4px;vertical-align:top">`;
+}
+
 function renderStructuredNode(node, state, depth = 0) {
   if (!node || typeof node !== 'object' || depth > MAX_RENDER_DEPTH || state.ancestors.has(node)) return '';
   state.ancestors.add(node);
@@ -462,6 +469,10 @@ function renderStructuredNode(node, state, depth = 0) {
       .map(child => renderStructuredNode(child, state, depth + 1)).join('');
     const style = blockStyle(node.attrs);
     if (type === 'doc') html = children;
+    else if (['table', 'tableRow', 'tableCell', 'tableHeader'].includes(type)) {
+      const tag = { table: 'table', tableRow: 'tr', tableCell: 'td', tableHeader: 'th' }[type];
+      html = `${tableTag(tag, node.attrs)}${children}</${tag}>`;
+    }
     else if (type === 'paragraph') html = `<p${style}>${children}</p>`;
     else if (type === 'heading') {
       const level = Math.min(6, Math.max(1, Number(node.attrs?.level) || 2));
@@ -548,6 +559,14 @@ function renderLegacyRichText(value) {
   source = source.replace(/<\s*(\/?)\s*(p|br|strong|b|em|i|u|s|sub|sup|ul|ol|li|blockquote|code|pre|hr|table|thead|tbody|tr|td|th)\b[^>]*>/gi, (_match, closing, rawName) => {
     const name = String(rawName).toLowerCase();
     if (['br', 'hr'].includes(name)) return protectTag(`<${name} />`);
+    if (!closing && ['table', 'tr', 'td', 'th'].includes(name)) {
+      const attrs = {};
+      for (const key of ['colspan', 'rowspan']) {
+        const match = _match.match(new RegExp(`\\b${key}\\s*=\\s*["']([1-9]\\d{0,3})["']`, 'i'));
+        if (match) attrs[key] = Number(match[1]);
+      }
+      return protectTag(tableTag(name, attrs));
+    }
     return protectTag(closing ? `</${name}>` : `<${name}>`);
   });
   source = source
@@ -618,7 +637,22 @@ function createQuestionDisplay(question) {
   };
 }
 
+function questionTypeLabel(type) {
+  const value = String(type || '').trim();
+  /** @type {Array<[string, string[]]>} */
+  const groups = [
+    ['\u5355\u9009\u9898', ['single', 'single-choice', '\u9009\u62e9\u9898', '\u5355\u9009']],
+    ['\u591a\u9009\u9898', ['multi', 'multiple', 'multiple-choice', '\u591a\u9009']],
+    ['\u5224\u65ad\u9898', ['judge', 'true-false', '\u5224\u65ad']],
+    ['\u5b9e\u9a8c\u9898', ['experiment', '\u5b9e\u9a8c']],
+    ['\u89e3\u7b54\u9898', ['calculation', 'problem', 'fill', 'fill-blank', 'short', 'drawing', 'essay', '\u586b\u7a7a\u9898', '\u7b80\u7b54\u9898', '\u4f5c\u56fe\u9898', '\u8ba1\u7b97\u9898', '\u95ee\u7b54\u9898']],
+  ];
+  const key = value.toLowerCase().replace(/[\s_]+/g, '-');
+  return groups.find(([label, aliases]) => label === value || aliases.includes(key))?.[0] || '\u5176\u4ed6\u9898\u578b';
+}
+
 module.exports = {
+  questionTypeLabel,
   classifyOptionLength,
   columnsForOptions,
   createQuestionDisplay,

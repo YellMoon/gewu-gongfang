@@ -4,7 +4,7 @@ import { useDidShow } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, CourseType } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
-import ForbiddenPage from '../forbidden';
+import ForbiddenPage from '../../components/ForbiddenContent';
 import './index.scss';
 
 interface StatsData {

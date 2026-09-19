@@ -247,4 +247,24 @@ assert.doesNotMatch(oversizedAsset, /(?:width|height)="\d|2600|1800|[";]width:10
 assert.match(oversizedAsset, /alt="diagram"/);
 assert.strictEqual((oversizedAsset.match(/\sstyle=/g) || []).length, 1);
 
+const tableDisplay = createQuestionDisplay({ richContent: { version: 1, type: 'question-document', sections: {
+  stem: { type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [
+    { type: 'tableHeader', attrs: { colspan: 2, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Road' }] }] },
+    { type: 'tableCell', attrs: { rowspan: 2 }, content: [{ type: 'paragraph', content: [{ type: 'formula', attrs: { canonicalLatex: 'x^2', displayMode: 'inline' } }] }] },
+  ] }] }] }, options: [], subQuestions: [], answer: { type: 'doc' }, analysis: { type: 'doc' },
+} } });
+assert.match(tableDisplay.stem, /<table\b/);
+assert.match(tableDisplay.stem, /<th[^>]*colspan="2"/);
+assert.match(tableDisplay.stem, /<td[^>]*rowspan="2"/);
+assert.match(tableDisplay.stem, /question-formula/);
+const legacyTable = createQuestionDisplay({ stem: '<table><tr><td colspan="2" rowspan="2" onclick="bad()">Road</td></tr></table>' }).stem;
+assert.match(legacyTable, /colspan="2"/);
+assert.match(legacyTable, /rowspan="2"/);
+assert(!legacyTable.includes('onclick'));
+const { questionTypeLabel } = require('./questionDisplay');
+const { normalizeQuestionType } = require('../../../src/constants/questionTypes.ts');
+for (const type of ['single', 'single_choice', 'multiple', 'multiple-choice', 'judge', 'calculation', 'problem', 'experiment', '\u9009\u62e9\u9898', '\u586b\u7a7a\u9898', '\u8ba1\u7b97\u9898']) {
+  assert.strictEqual(questionTypeLabel(type), normalizeQuestionType(type), `miniapp type label matches desktop: ${type}`);
+}
+assert.strictEqual(questionTypeLabel('internal-type-id'), '\u5176\u4ed6\u9898\u578b');
 console.log('miniapp question display checks passed');

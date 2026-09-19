@@ -93,16 +93,7 @@ function appendUniqueQuestions(current: QuestionPreview[], incoming: QuestionPre
 }
 
 function questionTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    single_choice: '单选题',
-    multiple_choice: '多选题',
-    true_false: '判断题',
-    fill_blank: '填空题',
-    essay: '简答题',
-    calculation: '计算题',
-    experiment: '实验题',
-  };
-  return labels[type] || type || '其他题型';
+  return questionDisplayRuntime.questionTypeLabel(type);
 }
 
 function subjectLabel(subject: string) {

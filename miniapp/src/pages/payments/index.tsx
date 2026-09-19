@@ -6,7 +6,7 @@ import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync'
 import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
 import { sortPaymentsNewestFirst } from './paymentsRuntime';
 import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
-import ForbiddenPage from '../forbidden';
+import ForbiddenPage from '../../components/ForbiddenContent';
 import './index.scss';
 
 export default function Payments() {

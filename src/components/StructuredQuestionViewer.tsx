@@ -34,6 +34,13 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
   if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} style={{ width: node.attrs?.width || undefined }} data-align={node.attrs?.align || 'center'} />;
   const children = (node.content || []).map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`));
   const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight } as React.CSSProperties;
+  if (node.type === 'table') return <div key={key} style={{ overflowX: 'auto' }}><table className="question-table"><tbody>{children}</tbody></table></div>;
+  if (node.type === 'tableRow') return <tr key={key}>{children}</tr>;
+  if (node.type === 'tableCell' || node.type === 'tableHeader') {
+    const Tag = node.type === 'tableHeader' ? 'th' : 'td';
+    const span = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 1000 ? value : 1;
+    return <Tag key={key} colSpan={span(node.attrs?.colspan)} rowSpan={span(node.attrs?.rowspan)}>{children}</Tag>;
+  }
   if (node.type === 'paragraph') return <p key={key} style={style}>{children}</p>;
   if (node.type === 'heading') { const Tag = `h${Math.min(6, Math.max(1, node.attrs?.level || 2))}` as keyof JSX.IntrinsicElements; return <Tag key={key} style={style}>{children}</Tag>; }
   if (node.type === 'bulletList') return <ul key={key}>{children}</ul>;

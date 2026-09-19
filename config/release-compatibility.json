@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "questionRichTables": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
+      "rule": "version 1 question-documents preserve table/tableRow/tableCell/tableHeader nodes, bounded integer colspan/rowspan, nested cell blocks and native Word formulas; this restores source fidelity without changing teaching workflows; deploy and verify desktop/miniapp readers and cloud exporters before activating the parser revision or repairing cloud content; old readers cannot consume the additive table nodes, so activation remains gated until reader rollout is verified; never silently flatten or clip an unsupported table"
+    },
     "desktopQuestionMetadata": {
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],

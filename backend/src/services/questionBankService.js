@@ -35,6 +35,7 @@ const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const RICH_CONTENT_NODE_TYPES = new Set([
   'doc', 'paragraph', 'text', 'hardBreak', 'heading', 'blockquote', 'bulletList', 'orderedList',
     'listItem', 'horizontalRule', 'codeBlock', 'formula', 'formulaBlock', 'image',
+    'table', 'tableRow', 'tableCell', 'tableHeader',
 ]);
 const RICH_CONTENT_MARK_TYPES = new Set([
   'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'textStyle', 'fontFamily', 'fontSize', 'highlight', 'link',
@@ -95,7 +96,19 @@ function normalizeRichContent(value) {
     if (depth > RICH_CONTENT_MAX_DEPTH) throw new Error('rich_content nesting is too deep');
     if (node.type === 'text' && typeof node.text !== 'string') throw new Error('rich_content text node requires text');
     const attrs = node.attrs && typeof node.attrs === 'object' && !Array.isArray(node.attrs) ? node.attrs : {};
-    if (['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule'].includes(node.type)) allowKeys(attrs, [], node.type);
+    if (['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule', 'table', 'tableRow'].includes(node.type)) allowKeys(attrs, [], node.type);
+    if (['tableCell', 'tableHeader'].includes(node.type)) {
+      allowKeys(attrs, ['colspan', 'rowspan'], node.type);
+      for (const span of ['colspan', 'rowspan']) {
+        if (attrs[span] !== undefined && (!Number.isInteger(attrs[span]) || attrs[span] < 1 || attrs[span] > 1000)) throw new Error(`rich_content ${node.type} ${span} is invalid`);
+      }
+    }
+    if (['table', 'tableRow', 'tableCell', 'tableHeader'].includes(node.type)) {
+      const children = node.type === 'tableRow' ? node.content ?? [] : node.content;
+      const allowed = node.type === 'table' ? ['tableRow'] : node.type === 'tableRow' ? ['tableCell', 'tableHeader']
+        : ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'codeBlock', 'table', 'image', 'formulaBlock', 'horizontalRule'];
+      if (!Array.isArray(children) || (!children.length && node.type !== 'tableRow') || children.some(child => !child || !allowed.includes(child.type))) throw new Error(`rich_content ${node.type} structure is invalid`);
+    }
     if (['paragraph', 'heading'].includes(node.type)) {
       allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight', 'indent'] : ['textAlign', 'lineHeight', 'indent'], node.type);
       if (attrs.textAlign != null && !RICH_TEXT_ALIGNS.has(String(attrs.textAlign))) throw new Error(`rich_content ${node.type} textAlign is invalid`);

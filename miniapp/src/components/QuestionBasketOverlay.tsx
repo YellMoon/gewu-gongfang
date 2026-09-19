@@ -35,16 +35,7 @@ const copy = {
 };
 
 function questionTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    single_choice: '\u5355\u9009\u9898',
-    multiple_choice: '\u591a\u9009\u9898',
-    true_false: '\u5224\u65ad\u9898',
-    fill_blank: '\u586b\u7a7a\u9898',
-    essay: '\u7b80\u7b54\u9898',
-    calculation: '\u8ba1\u7b97\u9898',
-    experiment: '\u5b9e\u9a8c\u9898',
-  };
-  return labels[type] || type || '\u5176\u4ed6\u9898\u578b';
+  return questionDisplayRuntime.questionTypeLabel(type);
 }
 
 function subjectLabel(subject: string) {

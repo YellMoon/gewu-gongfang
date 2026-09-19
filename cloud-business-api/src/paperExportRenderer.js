@@ -159,6 +159,20 @@ function richTokens(value, seen = new Set(), tokens = []) {
     tokens.push({ kind: 'break' });
     return tokens;
   }
+  if (value.type === 'table') {
+    if (!Array.isArray(value.content) || !value.content.length || value.content.length > 1000) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+    const rows = value.content.map(row => {
+      if (row?.type !== 'tableRow' || (row.content !== undefined && !Array.isArray(row.content))) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+      return (row.content || []).map(cell => {
+        if (!['tableCell', 'tableHeader'].includes(cell?.type)) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+        const colspan = cell.attrs?.colspan ?? 1, rowspan = cell.attrs?.rowspan ?? 1;
+        return { colspan, rowspan, header: cell.type === 'tableHeader', tokens: richTokens(cell.content, seen, []) };
+      });
+    });
+    tableGrid(rows);
+    tokens.push({ kind: 'table', rows });
+    return tokens;
+  }
   if (value.type === 'paragraph' && tokens.length && tokens.at(-1).kind !== 'break') tokens.push({ kind: 'break' });
   for (const field of ['content', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'blocks']) richTokens(value[field], seen, tokens);
   return tokens;
@@ -321,6 +335,9 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
   }));
   if (pending) throw pending;
   const hydrateTokens = async (tokens, mediaByKey, placed) => hydrateInOrder(tokens, async token => {
+    if (token.kind === 'table') return { ...token, rows: await hydrateInOrder(token.rows, row => hydrateInOrder(row, async cell => ({
+      ...cell, tokens: await hydrateTokens(cell.tokens, mediaByKey, placed),
+    }))) };
     if (token.kind === 'image') {
       const media = mediaByKey.get(token.assetKey);
       if (!media) throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
@@ -458,6 +475,47 @@ function wordMediaRow(media, displayMode = 'block', alignment, maxWidth) {
   return new Paragraph({ alignment, children: [wordMediaRun(media, displayMode, maxWidth)] });
 }
 
+function tableGrid(rows) {
+  if (!Array.isArray(rows) || !rows.length || rows.length > 1000) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+  const occupied = rows.map(() => []), cells = [];
+  let columns = 0, area = 0;
+  rows.forEach((row, y) => {
+    let x = 0;
+    for (const cell of row) {
+      while (occupied[y][x]) x++;
+      const colspan = cell.colspan ?? 1, rowspan = cell.rowspan ?? 1;
+      if (![colspan, rowspan].every(n => Number.isInteger(n) && n > 0 && n <= 1000) || y + rowspan > rows.length || x + colspan > 1000) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+      area += colspan * rowspan;
+      if (area > 20000) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+      for (let r = y; r < y + rowspan; r++) for (let c = x; c < x + colspan; c++) {
+        if (occupied[r][c]) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+        occupied[r][c] = true;
+      }
+      cells.push({ ...cell, colspan, rowspan, row: y, column: x });
+      x += colspan;
+      columns = Math.max(columns, x);
+    }
+  });
+  if (!columns || occupied.some(row => row.length !== columns || Array.from({ length: columns }, (_, i) => row[i]).some(value => !value))) throw failure('CLOUD_PAPER_RENDER_TABLE_INVALID');
+  return { cells, columns };
+}
+
+function wordTable(token, maxWidth) {
+  const { columns } = tableGrid(token.rows);
+  const width = Math.floor(Math.min(maxWidth == null ? Infinity : maxWidth * 15, sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT));
+  const cellWidth = width / columns;
+  const border = { style: BorderStyle.SINGLE, size: 4, color: '777777' };
+  const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
+  return new Table({ width: { size: width, type: WidthType.DXA }, columnWidths: Array(columns).fill(Math.floor(cellWidth)), layout: TableLayoutType.FIXED, borders,
+    rows: token.rows.map(row => new TableRow({ cantSplit: true, children: row.map(cell => {
+      const children = [];
+      appendWordTokens(children, cell.tokens, '', Math.max(1, (cellWidth * cell.colspan - 160) / 15));
+      if (!children.length || children.at(-1) instanceof Table) children.push(new Paragraph(''));
+      return new TableCell({ columnSpan: cell.colspan, rowSpan: cell.rowspan, width: { size: Math.floor(cellWidth * cell.colspan), type: WidthType.DXA },
+        margins: { top: 60, bottom: 60, left: 80, right: 80 }, borders, children });
+    }) })) });
+}
+
 function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
   let nextPrefix = prefix;
   let children = [];
@@ -472,6 +530,11 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
         bold: token.bold, italics: token.italic, underline: token.underline ? {} : undefined, strike: token.strike,
         subScript: token.verticalAlign === 'subscript', superScript: token.verticalAlign === 'superscript' }));
       nextPrefix = '';
+    } else if (token.kind === 'table') {
+      if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
+      nextPrefix = '';
+      flush(true);
+      rows.push(wordTable(token, maxWidth));
     } else if (token.kind === 'break') {
       flush(tokens[index + 1]?.kind === 'image');
     } else if (token.kind === 'image' && token.media) {
@@ -623,6 +686,7 @@ function pdfMediaSize(media, maxPageWidth = 480, maxPageHeight = 360) {
 }
 
 function ensurePdfSpace(document, height) {
+  if (document._measureOnly) return;
   const bottom = document.page.height - document.page.margins.bottom;
   if (document.y + height > bottom) document.addPage();
 }
@@ -641,6 +705,59 @@ function drawPdfMedia(document, media, alignment = 'left') {
   } catch (_) {
     throw failure('CLOUD_PAPER_RENDER_MEDIA_INVALID');
   }
+}
+
+function measurePdfTokens(document, tokens, width, size) {
+  const margins = { ...document.page.margins, left: 0, right: document.page.width - width };
+  const probe = { x: 0, y: 0, _measureOnly: true, page: { ...document.page, margins },
+    fontSize(value) { document.fontSize(value); return this; },
+    currentLineHeight: () => document.currentLineHeight(true), widthOfString: text => document.widthOfString(text),
+    save() { return this; }, restore() { return this; }, lineWidth() { return this; },
+    text() { return this; }, image() { return this; }, rect() { return this; }, stroke() { return this; } };
+  drawPdfTokens(probe, tokens, '', size, () => {});
+  return probe.y;
+}
+
+function drawPdfTable(document, token, size, drawVector) {
+  const { cells, columns } = tableGrid(token.rows);
+  const margins = { ...document.page.margins };
+  const width = document.page.width - margins.left - margins.right, unit = width / columns, padding = 4;
+  if (unit <= padding * 2) throw failure('CLOUD_PAPER_RENDER_TABLE_TOO_WIDE');
+  const heights = token.rows.map(() => size + padding * 2);
+  const measured = cells.map(cell => ({ ...cell, height: measurePdfTokens(document, cell.tokens, unit * cell.colspan - padding * 2, size) + padding * 2 }));
+  for (const cell of measured.filter(cell => cell.rowspan === 1)) heights[cell.row] = Math.max(heights[cell.row], cell.height);
+  for (const cell of measured.filter(cell => cell.rowspan > 1)) {
+    const available = heights.slice(cell.row, cell.row + cell.rowspan).reduce((sum, value) => sum + value, 0);
+    if (cell.height > available) heights[cell.row + cell.rowspan - 1] += cell.height - available;
+  }
+  // Break only between independent rows, never through a merged cell. A cell
+  // taller than a page fails explicitly instead of clipping or flattening it.
+  for (let start = 0; start < heights.length;) {
+    let end = start + 1;
+    for (let row = start; row < end; row++) for (const cell of measured.filter(cell => cell.row === row)) end = Math.max(end, row + cell.rowspan);
+    const height = heights.slice(start, end).reduce((sum, value) => sum + value, 0);
+    if (!document._measureOnly && height > document.page.height - margins.top - margins.bottom) throw failure('CLOUD_PAPER_RENDER_TABLE_TOO_TALL');
+    ensurePdfSpace(document, height);
+    const top = document.y;
+    try {
+      for (const cell of measured.filter(cell => cell.row >= start && cell.row < end)) {
+        const left = margins.left + cell.column * unit;
+        const y = top + heights.slice(start, cell.row).reduce((sum, value) => sum + value, 0);
+        const height = heights.slice(cell.row, cell.row + cell.rowspan).reduce((sum, value) => sum + value, 0);
+        document.save().lineWidth(0.5).rect(left, y, unit * cell.colspan, height).stroke().restore();
+        document.page.margins = { ...margins, left: left + padding, right: document.page.width - left - unit * cell.colspan + padding };
+        document.x = left + padding;
+        document.y = y + padding;
+        drawPdfTokens(document, cell.tokens, '', size, drawVector);
+      }
+    } finally {
+      document.page.margins = { ...margins };
+      document.x = margins.left;
+      document.y = top + height;
+    }
+    start = end;
+  }
+  document.y += 4;
 }
 
 function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SVGtoPDF) {
@@ -699,6 +816,9 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
   for (const [index, token] of (tokens || []).entries()) {
     if (token.kind === 'text') {
       inline.push(token);
+    } else if (token.kind === 'table') {
+      flush();
+      drawPdfTable(document, token, size, drawVector);
     } else if (token.kind === 'break') {
       // Let the image flush its preceding line with a keep-together height.
       if (tokens[index + 1]?.kind !== 'image') flush();
@@ -737,16 +857,8 @@ function drawPdfOptions(document, options, columns) {
   for (let start = 0; start < options.length; start += columns) {
     const row = options.slice(start, start + columns);
     let overflow = false;
-    const heights = row.map(tokens => {
-      const probe = { x: margins.left, y: margins.top,
-        page: { ...document.page, margins: { ...margins, right: document.page.width - margins.left - width } },
-        fontSize(value) { document.fontSize(value); return this; },
-        save() { return this; }, restore() { return this; }, lineWidth() { return this; },
-        currentLineHeight: () => document.currentLineHeight(true), widthOfString: text => document.widthOfString(text),
-        text() { return this; }, image() { return this; }, addPage() { overflow = true; this.y = margins.top; return this; } };
-      drawPdfTokens(probe, tokens, '', 10, () => {});
-      return probe.y - margins.top;
-    });
+    const heights = row.map(tokens => measurePdfTokens(document, tokens, width, 10));
+    overflow = heights.some(height => height > document.page.height - margins.top - margins.bottom);
     if (overflow) {
       // A very tall option must flow normally instead of clipping a fixed row.
       for (const tokens of row) drawPdfTokens(document, tokens);

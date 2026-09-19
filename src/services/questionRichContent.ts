@@ -9,6 +9,7 @@ const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 const ALLOWED_NODES = new Set([
   'doc', 'paragraph', 'text', 'hardBreak', 'heading', 'blockquote', 'bulletList', 'orderedList',
   'listItem', 'horizontalRule', 'codeBlock', 'formula', 'formulaBlock', 'image',
+  'table', 'tableRow', 'tableCell', 'tableHeader',
 ]);
 const ALLOWED_MARKS = new Set([
   'bold', 'italic', 'underline', 'strike', 'code', 'subscript', 'superscript', 'textStyle', 'fontFamily', 'fontSize', 'highlight', 'link',
@@ -50,8 +51,20 @@ function validateNode(node: unknown, depth = 0): asserts node is JSONContent {
   if (node.type === 'doc' && node.text !== undefined) fail('doc cannot contain text');
   if (node.type === 'text' && typeof node.text !== 'string') fail('text node requires text');
   const attrs = isRecord(node.attrs) ? node.attrs : {};
-  const noAttrs = ['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule'];
+  const noAttrs = ['doc', 'text', 'hardBreak', 'blockquote', 'bulletList', 'listItem', 'horizontalRule', 'table', 'tableRow'];
   if (noAttrs.includes(node.type)) allowKeys(attrs, [], node.type);
+  if (['tableCell', 'tableHeader'].includes(node.type)) {
+    allowKeys(attrs, ['colspan', 'rowspan'], node.type);
+    for (const span of ['colspan', 'rowspan']) {
+      if (attrs[span] !== undefined && (!Number.isInteger(attrs[span]) || attrs[span] < 1 || attrs[span] > 1000)) fail(`${node.type} ${span} is invalid`);
+    }
+  }
+  if (['table', 'tableRow', 'tableCell', 'tableHeader'].includes(node.type)) {
+    const children = node.type === 'tableRow' ? node.content ?? [] : node.content;
+    const allowed = node.type === 'table' ? ['tableRow'] : node.type === 'tableRow' ? ['tableCell', 'tableHeader']
+      : ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'codeBlock', 'table', 'image', 'formulaBlock', 'horizontalRule'];
+    if (!Array.isArray(children) || (!children.length && node.type !== 'tableRow') || children.some(child => !child || !allowed.includes(child.type))) fail(`${node.type} structure is invalid`);
+  }
   if (['paragraph', 'heading'].includes(node.type)) {
     allowKeys(attrs, node.type === 'heading' ? ['level', 'textAlign', 'lineHeight', 'indent'] : ['textAlign', 'lineHeight', 'indent'], node.type);
     if (attrs.textAlign != null && !TEXT_ALIGNS.has(String(attrs.textAlign))) fail(`${node.type} textAlign is invalid`);

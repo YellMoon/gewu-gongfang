@@ -39,6 +39,7 @@ require('./wordNativeFormula.test');
   failedFontProbe.end();
   await require('./paperExportHydration.test')();
   await require('./paperExportImageGeometry.test')();
+  await require('./paperExportTables.test')();
   await require('./paperExportTextStyle.test')();
   await require('./paperExportAnswerOrder.test')();
   require('./paperOptionLayout.test');

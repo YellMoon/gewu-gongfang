@@ -48,6 +48,10 @@ assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
   evidence: 'unreviewed future runtime',
 }), /runtime version is not approved/i, 'reviewing 8.8.3 must not approve future runtime versions');
 
+assert.deepStrictEqual(reviewedCompatibility.contracts.questionRichTables.participants, ['desktop', 'cloud_business', 'miniapp', 'storage_proxy']);
+assert.strictEqual(reviewedCompatibility.contracts.questionRichTables.version, '1');
+assert.match(reviewedCompatibility.contracts.questionRichTables.rule, /before activating the parser revision/);
+assert.match(reviewedCompatibility.contracts.questionRichTables.rule, /old readers cannot consume/);
 assert.deepStrictEqual(
   reviewedCompatibility.contracts.desktopCloudSession,
   {

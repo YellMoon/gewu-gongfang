@@ -7,7 +7,7 @@ import { assertMiniappWriteAllowed } from '../../utils/permission';
 import { getLocalData } from '../../utils/sync';
 import { EmptyState, NetworkStatus } from '../../components/shared';
 import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
-import ForbiddenPage from '../forbidden';
+import ForbiddenPage from '../../components/ForbiddenContent';
 // @ts-ignore CommonJS CSV parser has no TypeScript declarations.
 import { parsePersonalAssetCsv } from '../../utils/personalAssetCsv';
 import './index.scss';

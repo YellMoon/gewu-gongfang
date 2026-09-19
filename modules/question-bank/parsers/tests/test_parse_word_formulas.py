@@ -323,7 +323,10 @@ class ParseWordFormulaIntegrationTests(unittest.TestCase):
             self.assertEqual(result["quality_report"]["formula_import"]["by_source"], {"omml": 2, "eq_field": 1, "mathtype": 1})
             table_formula = next(item for item in question["formulas"] if item["source"]["source_format"] == "mathtype")
             self.assertEqual((table_formula["source"]["table_row"], table_formula["source"]["table_cell"], table_formula["source"]["cell_paragraph"]), (0, 0, 0))
-            stem_nodes = [node for paragraph in question["rich_content"]["sections"]["stem"]["content"] for node in paragraph.get("content", [])]
+            stem_table = next(node for node in question["rich_content"]["sections"]["stem"]["content"] if node["type"] == "table")
+            self.assertEqual(len(stem_table["content"]), 1)
+            self.assertEqual(len(stem_table["content"][0]["content"]), 1)
+            stem_nodes = [node for paragraph in stem_table["content"][0]["content"][0]["content"] for node in paragraph.get("content", [])]
             ole_node_index = next(index for index, node in enumerate(stem_nodes) if node.get("type") == "formula" and node.get("attrs", {}).get("id") == table_formula["id"])
             ole_node = stem_nodes[ole_node_index]
             self.assertEqual(ole_node["attrs"]["conversionStatus"], "preview_only")

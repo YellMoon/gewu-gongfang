@@ -17,7 +17,7 @@ require.extensions['.tsx'] = (module, file) => {
 const filename = require.resolve('./RichQuestionEditor.tsx');
 const result = babel.transformFileSync(filename, { presets: [['@babel/preset-env', { targets: { node: 'current' } }], ['@babel/preset-react', { runtime: 'automatic' }], '@babel/preset-typescript'] });
 const loaded = new Module(filename); loaded.filename = filename; loaded.paths = Module._nodeModulePaths(__dirname); loaded._compile(result.code, filename);
-const { RichImage, Formula, FormulaBlock } = loaded.exports;
+const { RichImage, Formula, FormulaBlock, QuestionTableNodes = [] } = loaded.exports;
 const { createQuestionRichDocument } = require('../types/questionRichContent.ts');
 const { createRichDocumentDirtyCoordinator } = require('./question-editor/questionEditorSession.ts');
 const { Editor } = require('@tiptap/core');
@@ -47,7 +47,7 @@ const hydrationBaseline = createQuestionRichDocument({ sections: {
   analysis: { type: 'doc', content: [] },
 } });
 const hydrate = value => {
-  const instance = new Editor({ extensions: [StarterKit, RichImage.configure({ allowBase64: false }), Formula, FormulaBlock], content: value });
+  const instance = new Editor({ extensions: [StarterKit, RichImage.configure({ allowBase64: false }), Formula, FormulaBlock, ...QuestionTableNodes], content: value });
   const result = instance.getJSON();
   instance.destroy();
   return result;
@@ -64,6 +64,24 @@ const hydratedDocument = {
 };
 const hydrationDirty = createRichDocumentDirtyCoordinator(hydrationBaseline);
 assert.strictEqual(hydrationDirty.update(hydratedDocument).dirty, false, `actual TipTap hydration must be baseline-equivalent: ${JSON.stringify(hydratedDocument)}`);
+const tableHtml = '<table><tbody><tr><th colspan="2"><p>Road</p></th></tr><tr><td rowspan="2"><p><span data-formula="latex" data-id="f-table" data-latex="x^2" data-display-mode="inline"></span></p></td><td><p>Dry</p></td></tr><tr><td><p></p><table><tr><td><p>Nested</p></td></tr></table></td></tr></tbody></table>';
+const tableJson = hydrate(tableHtml);
+assert.strictEqual(tableJson.content[0].type, 'table', 'TipTap must not flatten imported tables');
+assert.strictEqual(tableJson.content[0].content[0].content[0].attrs.colspan, 2);
+assert.strictEqual(tableJson.content[0].content[1].content[0].attrs.rowspan, 2);
+assert.deepStrictEqual(hydrate(tableJson), tableJson, 'loading and saving cannot lose table cells');
+const tableDocument = normalizeQuestionRichContent({ ...rich, sections: { ...rich.sections, stem: tableJson } });
+const viewer = require('./StructuredQuestionViewer.tsx').default;
+const renderedTable = require('react-dom/server').renderToStaticMarkup(require('react').createElement(viewer, { value: tableDocument }));
+const renderedDom = new JSDOM(renderedTable).window.document;
+assert.strictEqual(renderedDom.querySelectorAll('table').length, 2);
+assert.strictEqual(renderedDom.querySelector('th').colSpan, 2);
+assert.strictEqual(renderedDom.querySelector('td').rowSpan, 2);
+assert(renderedDom.body.textContent.includes('Nested'));
+const fullyMerged = hydrate('<table><tr><td rowspan="2"><p>Whole column</p></td></tr><tr></tr></table>');
+assert.strictEqual(fullyMerged.content[0].content.length, 2, 'an empty continuation row is not discarded');
+assert.strictEqual(fullyMerged.content[0].content[1].content?.length || 0, 0);
+normalizeQuestionRichContent({ ...rich, sections: { ...rich.sections, stem: fullyMerged } });
 editor.destroy();
 console.log('rich editor TipTap HTML/JSON roundtrip tests passed');
 process.exit(0);

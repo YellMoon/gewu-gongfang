@@ -162,6 +162,24 @@ function testPreviewOnlyFormulaPreservesOriginal() {
     assert.throws(() => normalizeQuestionRichContent(candidate), /formula/);
   }
 }
+const tableDoc = migrateLegacyQuestion({ stem: '' });
+const cell = { type: 'tableCell', attrs: { colspan: 2, rowspan: 1 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Road' }] }] };
+tableDoc.sections.stem.content = [{ type: 'table', content: [{ type: 'tableRow', content: [cell] }] }];
+assert.deepStrictEqual(normalizeQuestionRichContent(tableDoc), tableDoc, 'table structure and merged cells must survive validation');
+for (const span of [0, -1, 1.5, 1001, '2']) {
+  const invalid = structuredClone(tableDoc);
+  invalid.sections.stem.content[0].content[0].content[0].attrs.colspan = span;
+  assert.throws(() => normalizeQuestionRichContent(invalid), /colspan/);
+}
+for (const invalidTable of [
+  { type: 'table', content: [cell] },
+  { type: 'tableRow', content: [{ type: 'paragraph' }] },
+  { type: 'tableCell', content: [{ type: 'text', text: 'unwrapped' }] },
+]) {
+  const invalid = structuredClone(tableDoc);
+  invalid.sections.stem.content = [invalidTable];
+  assert.throws(() => normalizeQuestionRichContent(invalid), /table/);
+}
 testPreviewOnlyFormulaPreservesOriginal();
 testWordParserFormulaSourceFormats();
 testLegacyMigrationAndDeterministicProjection();

@@ -201,7 +201,7 @@ const pageInventory = [
     verificationStates: ['blocked-module'],
     realFeatureBasis: ['hasModulePermission', 'pages/index/index handleModuleClick forbidden redirect', 'app.config.ts registered page'],
     screenshotRequired: true,
-    files: ['src/pages/forbidden/index.tsx', 'src/pages/forbidden/index.scss'],
+    files: ['src/pages/forbidden/index.tsx', 'src/components/ForbiddenContent.tsx', 'src/components/ForbiddenContent.scss'],
   },
   {
     route: 'pages/account-application/index',
