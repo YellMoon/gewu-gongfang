@@ -81,9 +81,20 @@ test listener open. Only that identified test process was terminated. The
 unchanged lock test passed when run independently. Its wrapper had launched
 system npm through Node 24.15 despite a prepended PATH; the fresh full run now
 invokes npm's CLI explicitly with bundled Node 24.19.0 and system Python with
-Paramiko. Evidence: `gewu-root-regression-20260920-0pj1f9bo`. Its final outcome
-must be appended; this is not yet a full-suite pass or proof of the lock error's
-root cause.
+Paramiko. Evidence: `gewu-root-regression-20260920-0pj1f9bo`: exit 1 after 711.2
+seconds, at the final release-matrix stage. All earlier root stages, including
+the cloud pretest/test/posttest lifecycle and backend suites, passed. The failed
+assertion still expected only approved NAS 8.8.2, while the previously committed
+compatibility declaration also approved verified runtime 8.8.3. The test now
+matches both approved versions and additionally rejects a mismatched 8.8.3
+parser proof and unapproved 8.8.4. The exact failed test passes. The entire
+release-matrix stage and remaining three root checks then passed separately
+(44.3 seconds, `gewu-root-regression-tail-20260920-ox_4c188/receipt.json`,
+all four commands exit 0).
+This is not one successful uninterrupted `npm test` invocation, nor proof of
+the earlier lock error's root cause. These are working-tree checks, not frozen
+deployment-candidate receipts; pre-existing user changes remain excluded from
+the source commit.
 
 Miniapp actual simulator evidence: `gewu-miniapp-table-visual-20260920-htyk5z2c`,
 `teacher-pages-question-bank-index.png`. The D-source 2x4 table, all values,
@@ -100,6 +111,19 @@ was added. Earlier failed evidence (including `nz_jfhrc`) remains available.
 The table response is a display-only fixture, not production question data or
 authorization evidence. The helper restores the wx API and prior login state
 and does not submit cloud question writes.
+
+Permission-component runtime follow-up: `gewu-miniapp-boundary-ui-20260920-e1uhxajg`
+contains 12 successful route/identity/content checks and screenshots: visitor,
+student and super-admin across forbidden, payments, stats and assets. Visitors
+and students see restricted content on these direct routes; super-admin sees
+the actual financial/asset screens. These runs use the real cloud identity
+service without mocked data responses. Existing admin identity is used only
+for reads; no financial import or business mutation is submitted. Prior login
+state is restored. All 12 screenshots were individually inspected: no blank
+page or overlapping content was seen in these captured empty/restricted states.
+Visitor guidance includes the application path; formal-user guidance does not
+suggest applying for an account again. This does not verify populated
+financial calculations, period/filter interactions or all 18 registered pages.
 
 Still required: successful actual desktop screen evidence, rollout
 compatibility checks, scoped content repair with version conflict protection,
