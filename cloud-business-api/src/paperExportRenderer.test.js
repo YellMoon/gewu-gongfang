@@ -39,6 +39,9 @@ require('./wordNativeFormula.test');
   failedFontProbe.end();
   await require('./paperExportHydration.test')();
   await require('./paperExportImageGeometry.test')();
+  await require('./paperExportTextStyle.test')();
+  require('./paperOptionLayout.test');
+  await require('./paperExportOptionColumns.test')();
   await require('./paperExportFormulaLifetime.test')();
   const drawn = [];
   const probe = {x:10,y:75,page:{width:100,height:100,margins:{left:10,right:10,bottom:10}},

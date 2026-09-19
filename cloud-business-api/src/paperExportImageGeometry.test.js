@@ -66,7 +66,7 @@ async function testImageGeometry() {
     fontSize() { return this; }, currentLineHeight() { return 12; }, widthOfString(text) { return text.length * 5; },
     text(text) { events.push({ kind: 'text', text, page }); return this; }, image() { events.push({ kind: 'image', page }); return this; },
     addPage() { page++; this.x = 10; this.y = 10; return this; } };
-  drawPdfTokens(probe, [{ kind: 'image', align: 'center', media: { kind: 'image', width: 100, height: 60, displayWidth: 100, displayHeight: 60, bytes: Buffer.from('fixture') } }], 'C. ');
+  drawPdfTokens(probe, [{ kind: 'break' }, { kind: 'image', align: 'center', media: { kind: 'image', width: 100, height: 60, displayWidth: 100, displayHeight: 60, bytes: Buffer.from('fixture') } }], 'C. ');
   assert(events.every(event => event.page === 2), 'move the option label and image together instead of orphaning the label');
   events.length = 0; page = 1; probe.page.height = 200; probe.y = 110;
   drawPdfTokens(probe, [{ kind: 'text', text: 'x'.repeat(100) }, { kind: 'image', align: 'center', media: { kind: 'image', width: 100, height: 60, displayWidth: 100, displayHeight: 60, bytes: Buffer.from('fixture') } }]);

@@ -20,14 +20,18 @@ function layoutInlineRuns({ tokens, maxWidth, size, lineHeight, measureText }) {
   };
   for (const token of tokens) {
     if (token.kind === 'text') {
+      const script = ['subscript', 'superscript'].includes(token.verticalAlign);
+      const fontSize = script ? size * 0.75 : size;
+      const offsetY = token.verticalAlign === 'subscript' ? size * 0.25 : token.verticalAlign === 'superscript' ? -size * 0.2 : 0;
+      const textRun = text => ({kind:'text',text,width:measureText(text,fontSize),height:lineHeight,fontSize,offsetY});
       // Keep Latin words intact when possible while allowing Chinese wrapping.
       const parts = String(token.text).replace(/\r\n?/g, '\n').match(/[A-Za-z0-9]+(?:[.,:/_-][A-Za-z0-9]+)*|[^\S\n]+|\n|[^\s]/gu) || [];
       for (const text of parts) {
         if (text === '\n') { flush(); continue; }
-        const width = measureText(text);
+        const width = measureText(text, fontSize);
         if (width > maxWidth) {
-          for (const character of text) append({kind:'text',text:character,width:measureText(character),height:lineHeight});
-        } else append({kind:'text',text,width,height:lineHeight});
+          for (const character of text) append(textRun(character));
+        } else append(textRun(text));
       }
     } else if (token.kind === 'formula') {
       const {width, height} = token.media || {};

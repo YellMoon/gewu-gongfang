@@ -5,10 +5,11 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { layoutInlineRuns } = require('./pdfInlineLayout');
+const { paperOptionColumns } = require('./paperOptionLayout');
 const { nativeFormulaComponent } = require('./wordNativeFormula');
 const { withFormulaTagScope } = require('./formulaTagScope');
 const sharp = require('sharp');
-const { Document, ImageRun, Packer, Paragraph, TextRun, sectionMarginDefaults, sectionPageSizeDefaults } = require('docx');
+const { Document, ImageRun, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, BorderStyle, sectionMarginDefaults, sectionPageSizeDefaults } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
 const { TeX } = require('mathjax-full/js/input/tex.js');
 const { SVG } = require('mathjax-full/js/output/svg.js');
@@ -147,10 +148,16 @@ function richTokens(value, seen = new Set(), tokens = []) {
     return tokens;
   }
   if (value.type === 'text' && typeof value.text === 'string') {
-    const text = stripMarkup(value.text);
-    if (text) tokens.push({ kind: 'text', text });
+    const text = value.text;
+    const verticalAlign = (value.marks || []).find(mark => ['subscript', 'superscript'].includes(mark.type))?.type;
+    if (text) tokens.push({ kind: 'text', text, ...(verticalAlign ? { verticalAlign } : {}) });
     return tokens;
   }
+  if (value.type === 'hardBreak') {
+    tokens.push({ kind: 'break' });
+    return tokens;
+  }
+  if (value.type === 'paragraph' && tokens.length && tokens.at(-1).kind !== 'break') tokens.push({ kind: 'break' });
   for (const field of ['content', 'children', 'nodes', 'runs', 'items', 'paragraphs', 'body', 'blocks']) richTokens(value[field], seen, tokens);
   return tokens;
 }
@@ -162,7 +169,7 @@ function tokensOrFallback(value, fallback) {
 
 function prefixedTokens(prefix, tokens) {
   const result = tokens.map(token => ({ ...token }));
-  const firstText = result[0]?.kind === 'text' ? result[0] : null;
+  const firstText = result[0]?.kind === 'text' && !result[0].verticalAlign ? result[0] : null;
   if (firstText) firstText.text = prefix + firstText.text;
   else if (prefix) result.unshift({ kind: 'text', text: prefix });
   return result;
@@ -170,7 +177,7 @@ function prefixedTokens(prefix, tokens) {
 
 function suffixedTokens(tokens, suffix) {
   const result = tokens.map(token => ({ ...token }));
-  const lastText = result.at(-1)?.kind === 'text' ? result.at(-1) : null;
+  const lastText = result.at(-1)?.kind === 'text' && !result.at(-1).verticalAlign ? result.at(-1) : null;
   if (lastText) lastText.text += suffix;
   else if (suffix) result.push({ kind: 'text', text: suffix });
   return result;
@@ -263,6 +270,7 @@ function questions(value, layout, formulaMode) {
     return {
       id: item.id, number: index + 1, stemTokens,
       options: optionGroups,
+      optionColumns: paperOptionColumns(sourceOptions),
       subQuestions,
       answerTokens: tokensOrFallback(sections?.answer, item.answer),
       explanationTokens: tokensOrFallback(sections?.analysis, item.explanation),
@@ -428,7 +436,7 @@ function fitImageSize({ width, height }, maxWidth, maxHeight) {
   return { width: width * scale, height: height * scale };
 }
 
-function wordMediaRun(media, displayMode = 'block') {
+function wordMediaRun(media, displayMode = 'block', maxWidth = Infinity) {
   const formula = media.kind === 'formula';
   return new ImageRun({
     // Word 2021 may select an embedded SVG formula and render it as a blank
@@ -436,30 +444,33 @@ function wordMediaRun(media, displayMode = 'block') {
     // directly so formula content remains visible in desktop Word.
     data: formula ? media.fallbackBytes : media.bytes,
     type: formula ? 'png' : (media.mimeType === 'image/png' ? 'png' : 'jpg'),
-    transformation: formula ? wordFormulaTransformation(media, displayMode) : wordImageTransformation(media),
+    transformation: fitImageSize(formula ? wordFormulaTransformation(media, displayMode) : wordImageTransformation(media), maxWidth, Infinity),
   });
 }
 
-function wordMediaRow(media, displayMode = 'block', alignment) {
-  return new Paragraph({ alignment, children: [wordMediaRun(media, displayMode)] });
+function wordMediaRow(media, displayMode = 'block', alignment, maxWidth) {
+  return new Paragraph({ alignment, children: [wordMediaRun(media, displayMode, maxWidth)] });
 }
 
-function appendWordTokens(rows, tokens, prefix = '') {
+function appendWordTokens(rows, tokens, prefix = '', maxWidth) {
   let nextPrefix = prefix;
   let children = [];
   const flush = (keepNext = false) => {
     if (children.length) rows.push(new Paragraph({ children, keepNext }));
     children = [];
   };
-  for (const token of tokens || []) {
+  for (const [index, token] of (tokens || []).entries()) {
     if (token.kind === 'text') {
-      children.push(new TextRun({ text: nextPrefix + token.text }));
+      if (nextPrefix && token.verticalAlign) children.push(new TextRun({ text: nextPrefix }));
+      children.push(new TextRun({ text: (token.verticalAlign ? '' : nextPrefix) + token.text, subScript: token.verticalAlign === 'subscript', superScript: token.verticalAlign === 'superscript' }));
       nextPrefix = '';
+    } else if (token.kind === 'break') {
+      flush(tokens[index + 1]?.kind === 'image');
     } else if (token.kind === 'image' && token.media) {
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
       nextPrefix = '';
       flush(true);
-      rows.push(wordMediaRow(token.media, 'block', token.align));
+      rows.push(wordMediaRow(token.media, 'block', token.align, maxWidth));
     } else if (token.kind === 'formula' && token.nativeFormula) {
       if (token.displayMode !== 'inline') flush();
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -470,13 +481,13 @@ function appendWordTokens(rows, tokens, prefix = '') {
       if (token.displayMode === 'inline') {
         if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
         nextPrefix = '';
-        children.push(wordMediaRun(token.media, token.displayMode));
+        children.push(wordMediaRun(token.media, token.displayMode, maxWidth));
         continue;
       }
       flush();
       if (nextPrefix) rows.push(new Paragraph({ children: [new TextRun({ text: nextPrefix })] }));
       nextPrefix = '';
-      rows.push(wordMediaRow(token.media, token.displayMode));
+      rows.push(wordMediaRow(token.media, token.displayMode, undefined, maxWidth));
     }
   }
   if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -491,6 +502,28 @@ function orderedAnswerRows(item, prefix = '') {
   return rows;
 }
 
+function appendWordOptions(rows, options, columns) {
+  if (columns === 1 || !options.length) {
+    for (const tokens of options) appendWordTokens(rows, tokens);
+    return;
+  }
+  const width = sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT;
+  const cellWidth = Math.floor(width / columns);
+  const border = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
+  const tableRows = [];
+  for (let start = 0; start < options.length; start += columns) {
+    tableRows.push(new TableRow({ cantSplit: true, children: Array.from({ length: columns }, (_, index) => {
+      const children = [];
+      appendWordTokens(children, options[start + index] || [], '', (cellWidth - 240) / 15);
+      return new TableCell({ width: { size: cellWidth, type: WidthType.DXA }, borders,
+        margins: { top: 0, bottom: 80, left: 0, right: 240 }, children: children.length ? children : [new Paragraph('')] });
+    }) }));
+  }
+  rows.push(new Table({ width: { size: width, type: WidthType.DXA }, columnWidths: Array(columns).fill(cellWidth),
+    layout: TableLayoutType.FIXED, borders, rows: tableRows }));
+}
+
 function orderedBodyRows(items, answerPosition) {
   const rows = [new Paragraph({ children: [new TextRun({ text: paperLabels.questions, bold: true })] })];
   let previousSection = '';
@@ -501,7 +534,7 @@ function orderedBodyRows(items, answerPosition) {
     }
     const score = paperScoreSuffix(item.score);
     appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ');
-    for (const tokens of item.options) appendWordTokens(rows, tokens);
+    appendWordOptions(rows, item.options, item.optionColumns);
     for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
     for (const media of item.media || []) rows.push(wordMediaRow(media));
     if (answerPosition === 'after') rows.push(...orderedAnswerRows(item));
@@ -577,7 +610,7 @@ function pdfMediaSize(media, maxPageWidth = 480, maxPageHeight = 360) {
   const naturalHeight = Number.isFinite(media.height) && media.height > 0 ? media.height : 72;
   const maxWidth = media.kind === 'formula' ? 280 : 480;
   const maxHeight = media.kind === 'formula' ? 96 : 360;
-  const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, 1);
+  const scale = Math.min(maxWidth / naturalWidth, maxHeight / naturalHeight, maxPageWidth / naturalWidth, maxPageHeight / naturalHeight, 1);
   return { width: Math.max(1, naturalWidth * scale), height: Math.max(1, naturalHeight * scale) };
 }
 
@@ -611,7 +644,7 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
     const lineHeight = document.currentLineHeight(true);
     const lines = layoutInlineRuns({tokens:inline,size,lineHeight,
       maxWidth:document.page.width-left-document.page.margins.right,
-      measureText:text=>document.widthOfString(text)});
+      measureText:(text, runSize = size)=>document.fontSize(runSize).widthOfString(text)});
     for (const line of lines) {
       if (followingHeight && line === lines.at(-1)) {
         const groupHeight = line.height + 2 + size * 0.25 + followingHeight;
@@ -621,8 +654,8 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
       const top = document.y;
       let x = left;
       for (const run of line.runs) {
-        const y = top + (line.height-run.height)/2;
-        if (run.kind === 'text') document.fontSize(size).text(run.text,x,y,{lineBreak:false});
+        const y = top + (line.height-run.height)/2 + (run.offsetY || 0);
+        if (run.kind === 'text') document.fontSize(run.fontSize || size).text(run.text,x,y,{lineBreak:false});
         else {
           // SVG text fallbacks select their own font. Graphics save/restore does
           // not restore PDFKit's JS font selection for the following CJK runs.
@@ -642,11 +675,15 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
       document.y = top + line.height + 2;
     }
     document.y += size * 0.25;
+    document.fontSize(size);
     inline = [];
   };
-  for (const token of tokens || []) {
+  for (const [index, token] of (tokens || []).entries()) {
     if (token.kind === 'text') {
       inline.push(token);
+    } else if (token.kind === 'break') {
+      // Let the image flush its preceding line with a keep-together height.
+      if (tokens[index + 1]?.kind !== 'image') flush();
     } else if (token.kind === 'image' && token.media) {
       const pageWidth = document.page.width - document.page.margins.left - document.page.margins.right;
       const pageHeight = document.page.height - document.page.margins.top - document.page.margins.bottom - 6;
@@ -670,6 +707,51 @@ function drawPdfAnswers(document, item, prefix = '') {
   if (item.explanationTokens.length) drawPdfTokens(document, item.explanationTokens, prefix + paperLabels.analysis);
 }
 
+function drawPdfOptions(document, options, columns) {
+  if (columns === 1 || !options.length) {
+    for (const tokens of options) drawPdfTokens(document, tokens);
+    return;
+  }
+  const margins = { ...document.page.margins };
+  const availableWidth = document.page.width - margins.left - margins.right;
+  const gap = 16;
+  const width = (availableWidth - gap * (columns - 1)) / columns;
+  for (let start = 0; start < options.length; start += columns) {
+    const row = options.slice(start, start + columns);
+    let overflow = false;
+    const heights = row.map(tokens => {
+      const probe = { x: margins.left, y: margins.top,
+        page: { ...document.page, margins: { ...margins, right: document.page.width - margins.left - width } },
+        fontSize(value) { document.fontSize(value); return this; },
+        currentLineHeight: () => document.currentLineHeight(true), widthOfString: text => document.widthOfString(text),
+        text() { return this; }, image() { return this; }, addPage() { overflow = true; this.y = margins.top; return this; } };
+      drawPdfTokens(probe, tokens, '', 10, () => {});
+      return probe.y - margins.top;
+    });
+    if (overflow) {
+      // A very tall option must flow normally instead of clipping a fixed row.
+      for (const tokens of row) drawPdfTokens(document, tokens);
+      continue;
+    }
+    const height = Math.max(...heights);
+    ensurePdfSpace(document, height);
+    const top = document.y;
+    try {
+      row.forEach((tokens, index) => {
+        const left = margins.left + index * (width + gap);
+        document.page.margins = { ...margins, left, right: document.page.width - left - width };
+        document.x = left;
+        document.y = top;
+        drawPdfTokens(document, tokens);
+      });
+    } finally {
+      document.page.margins = { ...margins };
+      document.x = margins.left;
+      document.y = top + height;
+    }
+  }
+}
+
 function orderedPdfBytes(input, items) {
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({ size: 'A4', margin: 48, compress: false });
@@ -690,7 +772,7 @@ function orderedPdfBytes(input, items) {
       }
       const score = paperScoreSuffix(item.score);
       drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', 11);
-      for (const tokens of item.options) drawPdfTokens(document, tokens);
+      drawPdfOptions(document, item.options, item.optionColumns);
       for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.contentTokens, subQuestion.label);
       for (const media of item.media || []) drawPdfMedia(document, media);
       if (input.answerPosition === 'after') drawPdfAnswers(document, item);
@@ -710,4 +792,4 @@ async function renderPaperExport(input, { resolveQuestionAsset } = {}) {
   return { bytes, mimeType: current.format === 'word' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf', extension: current.format === 'word' ? 'docx' : 'pdf' };
 }
 
-module.exports = Object.freeze({ drawPdfTokens, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport });
+module.exports = Object.freeze({ drawPdfTokens, drawPdfOptions, normalizeOptionTokenGroups, wordFormulaTransformation, renderPaperExport });
