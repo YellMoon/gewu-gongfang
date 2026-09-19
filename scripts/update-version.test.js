@@ -4,6 +4,10 @@ const os = require('os');
 const path = require('path');
 const version = require('./update-version');
 assert.strictEqual(version.analyzeVersionBump({
+  files: ['cloud-business-api/sql/20260920-supplemental-runtime-contract.sql', 'cloud-business-api/src/businessSupplementalLifecycleMutationService.js'],
+  diff: 'fix: existing supplemental REST reference permissions, timestamp round trips, and nullable asset student SQL; no new user capability\n+CREATE OR REPLACE FUNCTION business.vnext_supplemental_version_ms_v1()',
+}), 'patch', 'repairing existing business mutations does not introduce a new REST capability');
+assert.strictEqual(version.analyzeVersionBump({
   files: ['miniapp/src/pages/question-paper/index.tsx', 'miniapp/src/utils/questionPaperDownload.js'],
   diff: 'fix: finish existing paper download after preparation using the same cloud delivery contract',
 }), 'patch', 'completing an existing download button is a compatible bug fix');
