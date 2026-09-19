@@ -22,7 +22,7 @@ function nullable(value) {
 
 function scheduleInstant(value) {
   if (typeof value !== 'string' || !value.trim()) {
-    throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+    throw businessDraftError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
   }
   const local = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(value);
   let parsed;
@@ -34,12 +34,12 @@ function scheduleInstant(value) {
     if (parsed.getFullYear() !== Number(local[1]) || parsed.getMonth() !== Number(local[2]) - 1
       || parsed.getDate() !== Number(local[3]) || parsed.getHours() !== Number(local[4])
       || parsed.getMinutes() !== Number(local[5])) {
-      throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+      throw businessDraftError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
     }
   } else {
     parsed = new Date(value);
   }
-  if (!Number.isFinite(parsed.getTime())) throw adapterError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
+  if (!Number.isFinite(parsed.getTime())) throw businessDraftError('CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
   return parsed.toISOString();
 }
 

@@ -130,6 +130,39 @@ require('./desktopAuthorityDependencies.test');
   }
   assert.strictEqual(businessSubmissions, cloudBusinessEntities.length * 3);
 
+  const { createHash } = require('crypto');
+  const { createDesktopCloudBusinessDraftAdapter } = await import('./desktopCloudBusinessDraft.mjs');
+  const invalidScheduleHarness = createHarness('invalid-schedule');
+  let invalidScheduleNetworkCalls = 0;
+  const scheduleAdapter = createDesktopCloudBusinessDraftAdapter({
+    cloudClient: { createCloudSchedule: async () => { invalidScheduleNetworkCalls += 1; } },
+    baseUrl: 'https://business.example',
+    sha256: value => createHash('sha256').update(value).digest('hex'),
+  });
+  const invalidScheduleClient = createDesktopAuthorityClient({
+    outbox: invalidScheduleHarness.outbox,
+    createCloudBusinessCommand: scheduleAdapter.createCommand,
+    submitCloudBusiness: scheduleAdapter.submit,
+  });
+  const invalidSchedule = await invalidScheduleClient.appendDraft({
+    type: 'schedule.create.v1',
+    payload: { record: { id: 'invalid-schedule', start_time: '2026-02-30 09:00', end_time: '2026-03-02 10:00' } },
+  });
+  assert.strictEqual(await invalidScheduleClient.submit(invalidSchedule.id), undefined);
+  assert.strictEqual((await invalidScheduleHarness.outbox.get(invalidSchedule.id)).status, 'awaiting_confirmation');
+  await assert.rejects(
+    () => invalidScheduleClient.confirmAndSubmit(invalidSchedule.id, { sessionToken: 'test-session' }),
+    error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
+  );
+  const retainedSchedule = await invalidScheduleHarness.outbox.get(invalidSchedule.id);
+  assert.strictEqual(retainedSchedule.status, 'submitted', 'local validation failure must not complete the draft');
+  assert.deepStrictEqual(retainedSchedule.payload, invalidSchedule.payload, 'keep the original draft for recovery');
+  await assert.rejects(
+    () => invalidScheduleClient.submit(invalidSchedule.id, { sessionToken: 'test-session' }),
+    error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
+  );
+  assert.strictEqual(invalidScheduleNetworkCalls, 0);
+
   const failClosedHarness = createHarness('closed');
   const failClosedClient = createDesktopAuthorityClient({ outbox: failClosedHarness.outbox });
   for (const [type, expectedCode] of [

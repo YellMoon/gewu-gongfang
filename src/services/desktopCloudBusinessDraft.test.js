@@ -264,6 +264,26 @@ const assert = require('assert');
   }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'deleteCloudSchedule');
   assert.strictEqual(calls.at(-1).input.expectedUpdatedAt, '2026-08-24T03:00:00.000Z');
+  for (const invalidTime of [undefined, null, 0, '', '   ', 'not-a-date', '2026-02-30 09:00', '2026-08-26 25:00']) {
+    for (const field of ['start_time', 'end_time']) {
+      for (const operation of ['create', 'update']) {
+        const record = { ...scheduleRecord, [field]: invalidTime };
+        const command = adapter.createCommand({
+          id: `draft-invalid-time-${operation}-${field}`, type: `schedule.${operation}.v1`,
+          payload: operation === 'create' ? { record } : {
+            id: record.id, expectedVersion: '2026-08-24T03:00:00.000Z', changes: record,
+          },
+        });
+        const callsBefore = calls.length;
+        await assert.rejects(
+          () => adapter.submit(command, { sessionToken: 'desktop-session-token' }),
+          error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
+          `${operation} must report an invalid ${field} without masking it with a ReferenceError`,
+        );
+        assert.strictEqual(calls.length, callsBefore, 'invalid schedule times must not reach the cloud');
+      }
+    }
+  }
   await assert.rejects(
     () => adapter.submit(adapter.createCommand({ id: 'draft-no-version', type: 'room.update.v1', payload: { id: 'room-1', changes: { name: 'Room' } } }), { sessionToken: 'desktop-session-token' }),
     error => error?.code === 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED',
