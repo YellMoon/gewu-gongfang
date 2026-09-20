@@ -2,7 +2,26 @@
 
 > **Current execution phase (2026-08-24):** Source version 8.4.0 (`cd4fd2b2`) is pushed to `gewu/master`; the cloud service, NAS storage agent, miniapp development build, desktop installer, and OSS update feed are deployed with exact-version receipts. All applicable desktop business draft types map to the managed `cloud-business-api` REST contract after explicit confirmation, and update/delete operations carry `expectedUpdatedAt`. Production database migration/count/ACL checks and public health pass. These receipts prove deployment, not end-user business acceptance: the 42-page miniapp matrix is fixture-only, the packaged desktop check is launch/render smoke only, and the production cloud verifier does not perform a public REST mutation. The active phase is therefore to complete production-safe, reversible real-operation acceptance before any full-release claim.
 
-## Current priority 2026-09-20 supplied paper template (UTF-8)
+## Current continuation 2026-09-20 miniapp student ledger (UTF-8)
+
+Cloud 8.11.19 / commit abc4bc05 is deployed after 182 frozen-source checks,
+fresh code/template backup and restore-verified PostgreSQL backup. Miniapp
+8.8.7 passes typecheck/build/read/UI-contract tests and its development upload
+is verified at 2026-09-20T02:26:17.013Z after post-upload public health checks.
+The missing balances and forcibly empty payment/grade cache are corrected using
+the original desktop calculation and existing scoped cloud ledger. No teaching
+workflow or NAS change. Real REST checks passed for teacher/student/family;
+visitor access denied. Temporary rows/registration from failed UI runs cleaned.
+
+Current issue: developer-tool reLaunch/screenshot timeouts prevent new visual
+proof. Continue actual page/interaction diagnosis; do not relabel API checks as
+UI acceptance or mark the whole goal blocked. Do not repeatedly rerun completed
+cloud checks or template exports. See docs/miniapp-student-ledger-2026-09-20.md.
+Still pending: complete page/role visual audit, next
+desktop OSS update including the already-committed parser correction. Preserve
+the six unrelated dirty files/hunks and all user output directories.
+
+## Prior priority 2026-09-20 supplied paper template (UTF-8)
 
 Status: in progress. Template commit 6a065598 is pushed and deployed as cloud
 8.11.18 after all 181 frozen-source checks and restore-verified backup.
