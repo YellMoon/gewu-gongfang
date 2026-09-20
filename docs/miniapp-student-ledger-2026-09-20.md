@@ -83,7 +83,9 @@ A subsequent bounded UI attempt and project-window reopen still encountered
 navigation/screenshot timeouts. No new valid page screenshots were obtained.
 Its four fixture rows were removed and temporary registration revoked:
 `gewu-miniapp-ledger-live-20260920-7v3795yr/receipt.json`.
-Desktop parser OSS update and full multi-page acceptance remain open.
+Desktop parser OSS update subsequently completed as 8.9.8 with full public
+installer byte verification; see desktop-template-release-2026-09-20.md.
+Full multi-page acceptance remains open.
 This is a partial release; NAS remains 8.8.3 and needs no ledger update.
 
 Existing unrelated edits (including the room-history SQL hunk in app.js) are

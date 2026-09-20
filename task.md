@@ -17,13 +17,18 @@ Current issue: developer-tool reLaunch/screenshot timeouts prevent new visual
 proof. Continue actual page/interaction diagnosis; do not relabel API checks as
 UI acceptance or mark the whole goal blocked. Do not repeatedly rerun completed
 cloud checks or template exports. See docs/miniapp-student-ledger-2026-09-20.md.
-Still pending: complete page/role visual audit, next
-desktop OSS update including the already-committed parser correction. Preserve
-the six unrelated dirty files/hunks and all user output directories.
+Desktop 8.9.8 OSS update is now published and publicly byte-verified, including
+the committed parser correction. Frozen-source build, 74 parser tests, export
+handler tests, packaged login screenshot, native ABI and protected-file checks
+passed. See docs/desktop-template-release-2026-09-20.md.
+Still pending: complete page/role visual audit and actual authenticated flows;
+do not replace those with startup or API checks. Preserve the six unrelated
+dirty files/hunks and all user output directories.
 
 ## Prior priority 2026-09-20 supplied paper template (UTF-8)
 
-Status: in progress. Template commit 6a065598 is pushed and deployed as cloud
+Status: template change verified and desktop update published. Template commit
+6a065598 is pushed and deployed as cloud
 8.11.18 after all 181 frozen-source checks and restore-verified backup.
 Real cloud export/download/render validation passed for the 20-question exam;
 do not claim full multi-end release or whole-project acceptance.
@@ -47,7 +52,8 @@ with a new page after each question. Do not modify teaching workflows.
 - [x] Complete real cloud template export/download/render validation: Word task
   6f26b138 and PDF task 5309069a completed; downloaded Word has 294 native
   equations; 23 Word + 19 PDF page images exactly match verified local renders.
-- [ ] Include parser section-finalization correction in the next desktop OSS update.
+- [x] Include parser section-finalization correction in desktop 8.9.8 OSS update;
+  public installer byte verification and packaged startup checks passed.
 
 Current-source export regressions, Docker resource check and all 74 parser tests
 pass. Full committed-source/deployment receipts are separate gates. Evidence:

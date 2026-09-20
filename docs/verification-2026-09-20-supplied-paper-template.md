@@ -148,8 +148,9 @@ single-choice category appears after the intervening multiple-choice question.
   separate checks. Non-solution PDF questions can split across pages;
   no claim is made that PDF and Word have identical line/page breaks.
 - NAS remains unchanged. No user business record or source document was changed.
-- The parser correction is also packaged in the desktop application. It is not
-  distributed by this cloud deployment; the next applicable desktop OSS update
-  must include it. Already-imported exam records were previously classified
+- The parser correction is also packaged in the desktop application. It was not
+  distributed by the cloud deployment; the subsequent desktop 8.9.8 OSS update
+  includes it and its public installer bytes were verified (see
+  desktop-template-release-2026-09-20.md). Already-imported exam records were previously classified
   correctly in the captured cloud snapshot, so no data rewrite is needed for
   the real exam export test.
