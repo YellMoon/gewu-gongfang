@@ -4,8 +4,10 @@
 
 ## Current priority 2026-09-20 supplied paper template (UTF-8)
 
-Status: in progress. Cloud remains 8.11.17. Commit 1b5a2df1 is pushed;
-deployment of 8.11.18 is paused pending the user's template requirement.
+Status: in progress. Template commit 6a065598 is pushed and deployed as cloud
+8.11.18 after all 181 frozen-source checks and restore-verified backup.
+Real cloud export/download/render validation passed for the 20-question exam;
+do not claim full multi-end release or whole-project acceptance.
 Use the user's D-drive output DOCX as the actual base, replace the paper title,
 preserve native editable equations, and give solution questions writing space
 with a new page after each question. Do not modify teaching workflows.
@@ -18,8 +20,15 @@ with a new page after each question. Do not modify teaching workflows.
 - [x] Apply the same template layout to PDF and verify actual rendered pages.
 - [x] Reparse and export the actual 20-question source exam; inspect all 23 Word
   render pages and all 19 PDF pages; Word contains 294 editable equations.
-- [ ] Repeat the template-specific lecture sample check (not covered by the exam receipt).
-- [ ] Run regressions and frozen-source checks, then backup/deploy/real-export validation.
+- [x] Check a bounded 3-question lecture sample: 2 Word pages, 2 PDF pages, all
+  inspected; 11 native equations. This is not full 88-question content acceptance.
+- [x] Frozen committed-source cloud check: 181 commands, exit 0 (6a065598).
+- [x] Fresh restore-verified DB/code backups, deploy cloud 8.11.18, verify public
+  health/authority contracts. NAS remains unchanged.
+- [x] Complete real cloud template export/download/render validation: Word task
+  6f26b138 and PDF task 5309069a completed; downloaded Word has 294 native
+  equations; 23 Word + 19 PDF page images exactly match verified local renders.
+- [ ] Include parser section-finalization correction in the next desktop OSS update.
 
 Current-source export regressions, Docker resource check and all 74 parser tests
 pass. Full committed-source/deployment receipts are separate gates. Evidence:
