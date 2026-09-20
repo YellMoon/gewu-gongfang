@@ -49,9 +49,45 @@ storage-proxy 8.8.3 remain independently versioned.
 
 ## Release gate
 
-Local implementation is not a production deployment receipt. Before claiming
-the new export rule is live: complete final PDF page inspection, run the full
-committed-source cloud lifecycle tests, back up database/code, deploy the exact
-commit, verify public/private contracts, then download real Word/PDF tasks.
+Final local PDF: all 21 pages individually inspected. The heat-engine grid is
+on page 8. Blank pages 9 and 13 are retained solution writing space. No content
+overlap or clipping observed. PDF SHA256:
+`9f9ede035837a49179fc7040613717a69272cf9fe108213fb6e59d4391126426`.
+The corresponding inspected DOCX SHA256 is
+`6a35ec772617035c7dd951057589aace176e89d8e36f6527b637e999c5b02a51`.
+
+Committed source `080f1bb8ee30e510c109202a2bc71a348b0c5a16` passed all 182
+cloud lifecycle commands. Receipt: `gewu-frozen-cloud-bundled-tests-20260920-qodpn3w_`.
+Six unrelated tracked modifications and all protected untracked work were
+excluded from both the committed test archive and deployment source.
+
+Cloud 8.11.20 deployed from that exact commit, exit 0. Evidence directory:
+`gewu-cloud-81120-release-20260920-avfaow6o`. The release matrix records the
+cloud target as verified, with public/private health, authority permissions,
+retired routes and WebSocket rejection checked. Database backup at
+`/root/scheduling-backups/postgres/20260920-043005` was independently restored
+and its ownership/privileges verified before promotion; dump SHA256:
+`0c491c11db4a9d306da3800f992c2949ecd7044dd532a9004eecff8f27c5e989`.
+Gateway code backup: `/root/scheduling-backups/gateway/20260920-043014`.
+The previous business container/image remains the rollback target.
+
+Fresh production exports used the existing 20-question selection from the
+previous successful 8.11.18 task receipt (no reimport or question changes).
+Both new tasks completed, were stored through the existing NAS agent, and
+were downloaded through the real cloud teacher-scoped delivery API:
+
+- Word task `paper_task_337c48ba-401a-4995-9edb-541ef4b77ef8`, 6,212,298 bytes;
+  SHA256 `df8747576e4c67761c5112dacb259bdb6742d895ffa5ec8656b0c289e719d05f`.
+- PDF task `paper_task_795409e3-fe56-4a56-a23d-daf9d1304e8c`, 11,023,929 bytes;
+  SHA256 `6c116982bd1379f041933ac2ff63f4a3b87917d7dd68c005061ae03bf9e0c63e`.
+- Evidence: `gewu-cloud-template-exam-20-8_11_20-20260920/report.json`, ok=true.
+  Every uncompressed production DOCX part matches the inspected Word document.
+  Production PDF opens/parses as 21 A4 pages; all 21 rendered page-image hashes
+  exactly match the individually inspected final local pages. The production
+  heat-engine grid on page 8 was also directly viewed.
+- This proves real cloud/NAS export and delivery, plus desktop/miniapp handler
+  regression coverage; it is not a new WeChat phone-login or download-domain
+  acceptance claim. No NAS image replacement or desktop update was needed.
+
 Miniapp download-domain validation remains a separate unresolved runtime check.
 The user confirmed the intended miniapp is Gewu Zhilin; do not ask that again.
