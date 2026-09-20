@@ -6,6 +6,7 @@ const PDFDocument = require('pdfkit');
 const SVGtoPDF = require('svg-to-pdfkit');
 const { layoutInlineRuns } = require('./pdfInlineLayout');
 const { paperOptionColumns } = require('./paperOptionLayout');
+const { BODY_SIZE, INDENT_PT, INDENT_TWIPS, OPTION_GAP_PT, imageOptionColumns, questionBlocks } = require('./paperExportQuestionLayout');
 const { nativeFormulaComponent } = require('./wordNativeFormula');
 const { withFormulaTagScope } = require('./formulaTagScope');
 const { applyPaperTemplate, pdfTemplateProfile, questionCategory, isSolution, PAGE } = require('./paperExportTemplate');
@@ -475,8 +476,8 @@ function wordMediaRun(media, displayMode = 'block', maxWidth = Infinity) {
   });
 }
 
-function wordMediaRow(media, displayMode = 'block', alignment, maxWidth, keepNext = false) {
-  return new Paragraph({ alignment, keepNext, children: [wordMediaRun(media, displayMode, maxWidth)] });
+function wordMediaRow(media, displayMode = 'block', alignment, maxWidth, keepNext = false, indent = 0) {
+  return new Paragraph({ alignment, keepNext, indent: indent ? { left: indent } : undefined, children: [wordMediaRun(media, displayMode, maxWidth)] });
 }
 
 function tableGrid(rows) {
@@ -520,14 +521,14 @@ function wordTable(token, maxWidth) {
     }) })) });
 }
 
-function appendWordTokens(rows, tokens, prefix = '', maxWidth, keepWithFollowing = false) {
+function appendWordTokens(rows, tokens, prefix = '', maxWidth, keepWithFollowing = false, indent = 0, widowControl = keepWithFollowing) {
   // Keep only the final stem paragraph/image with the first option row. Earlier
   // paragraphs still flow normally; do not force a long question onto one page.
   const lastContentIndex = (tokens || []).findLastIndex(token => token.kind !== 'break');
   let nextPrefix = prefix;
   let children = [];
   const flush = (keepNext = false) => {
-    if (children.length) rows.push(new Paragraph({ children, keepNext, widowControl: keepWithFollowing ? true : undefined }));
+    if (children.length) rows.push(new Paragraph({ children, keepNext, indent: indent ? { left: indent } : undefined, widowControl: widowControl ? true : undefined }));
     children = [];
   };
   for (const [index, token] of (tokens || []).entries()) {
@@ -548,7 +549,7 @@ function appendWordTokens(rows, tokens, prefix = '', maxWidth, keepWithFollowing
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
       nextPrefix = '';
       flush(true);
-      rows.push(wordMediaRow(token.media, 'block', token.align, maxWidth, keepWithFollowing && index === lastContentIndex));
+      rows.push(wordMediaRow(token.media, 'block', token.align, maxWidth, keepWithFollowing && index === lastContentIndex, indent));
     } else if (token.kind === 'formula' && token.nativeFormula) {
       if (token.displayMode !== 'inline') flush();
       if (nextPrefix) children.push(new TextRun({ text: nextPrefix }));
@@ -581,12 +582,16 @@ function orderedAnswerRows(item, prefix = '') {
 }
 
 function appendWordOptions(rows, options, columns) {
+  const width = PAGE.width - PAGE.left - PAGE.right - INDENT_TWIPS;
+  columns = imageOptionColumns(options, width / 20, columns);
   if (columns === 1 || !options.length) {
-    for (const [index, tokens] of options.entries()) appendWordTokens(rows, tokens, '', undefined, index < options.length - 1);
+    const hasImages = options.some(tokens => tokens.some(t => t.kind === 'image'));
+    for (const [index, tokens] of options.entries()) appendWordTokens(rows, tokens, '', width / 15, !hasImages && index < options.length - 1, INDENT_TWIPS);
     return;
   }
-  const width = PAGE.width - PAGE.left - PAGE.right;
-  const cellWidth = Math.floor(width / columns);
+  const gap = OPTION_GAP_PT * 20;
+  const cellWidth = Math.floor((width + gap) / columns);
+  const columnWidths = Array.from({ length: columns }, (_, i) => cellWidth - (i === columns - 1 ? gap : 0));
   const border = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
   const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
   const tableRows = [];
@@ -594,22 +599,32 @@ function appendWordOptions(rows, options, columns) {
     const keepNextRow = start + columns < options.length;
     tableRows.push(new TableRow({ cantSplit: true, children: Array.from({ length: columns }, (_, index) => {
       const children = [];
-      appendWordTokens(children, options[start + index] || [], '', (cellWidth - 240) / 15, keepNextRow);
-      return new TableCell({ width: { size: cellWidth, type: WidthType.DXA }, borders,
-        margins: { top: 0, bottom: 80, left: 0, right: 240 }, children: children.length ? children : [new Paragraph({ text: '', keepNext: keepNextRow })] });
+      appendWordTokens(children, options[start + index] || [], '', (cellWidth - gap) / 15, keepNextRow);
+      return new TableCell({ width: { size: columnWidths[index], type: WidthType.DXA }, borders,
+        margins: { top: 0, bottom: 80, left: 0, right: index === columns - 1 ? 0 : gap }, children: children.length ? children : [new Paragraph({ text: '', keepNext: keepNextRow })] });
     }) }));
   }
-  rows.push(new Table({ width: { size: width, type: WidthType.DXA }, columnWidths: Array(columns).fill(cellWidth),
+  rows.push(new Table({ width: { size: width, type: WidthType.DXA }, indent: { size: INDENT_TWIPS, type: WidthType.DXA }, columnWidths,
     layout: TableLayoutType.FIXED, borders, rows: tableRows }));
+}
+
+function appendWordQuestionTokens(rows, tokens, prefix = '', forceIndent = false, keepFollowing = false) {
+  const blocks = questionBlocks(tokens, prefix, forceIndent);
+  blocks.forEach((block, index) => {
+    if (block.kind === 'options') return appendWordOptions(rows, block.options, 1);
+    const indent = block.indent ? INDENT_TWIPS : 0;
+    const keep = index === blocks.length - 1 ? keepFollowing : blocks[index + 1].kind === 'options' || blocks[index + 1].tokens?.[0]?.kind === 'image';
+    appendWordTokens(rows, block.tokens, block.prefix, (PAGE.width - PAGE.left - PAGE.right - indent) / 15, keep, indent, keepFollowing);
+  });
 }
 
 async function wordBytes(input, items) {
   const rows = [], blocks = [];
   for (const item of items) {
     const start = rows.length;
-    appendWordTokens(rows, suffixedTokens(item.stemTokens, paperScoreSuffix(item.score)), String(item.number) + '. ', undefined, item.options.length > 0);
+    appendWordQuestionTokens(rows, suffixedTokens(item.stemTokens, paperScoreSuffix(item.score)), String(item.number) + '. ', false, item.options.length > 0);
     appendWordOptions(rows, item.options, item.optionColumns);
-    for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
+    for (const subQuestion of item.subQuestions || []) appendWordQuestionTokens(rows, subQuestion.contentTokens, subQuestion.label, true);
     for (const media of item.media || []) rows.push(wordMediaRow(media));
     if (input.answerPosition === 'after') rows.push(...orderedAnswerRows(item));
     blocks.push({ start, end: rows.length, questionType: item.questionType, sectionTitle: item.sectionTitle,
@@ -683,8 +698,13 @@ function pdfMediaSize(media, maxPageWidth = 480, maxPageHeight = 360) {
 
 function ensurePdfSpace(document, height) {
   if (document._measureOnly) return;
-  const bottom = document.page.height - document.page.margins.bottom;
-  if (document.y + height > bottom) document.addPage();
+  const bottom = document.page.height - document.page.margins.bottom - (document._paperFooterClearance || 0);
+  if (document.y + height > bottom) {
+    const margins = { ...document.page.margins };
+    document.addPage();
+    document.page.margins = margins;
+    document.x = margins.left;
+  }
 }
 
 function drawPdfMedia(document, media, alignment = 'left') {
@@ -851,13 +871,21 @@ function drawPdfAnswers(document, item, prefix = '') {
 }
 
 function drawPdfOptions(document, options, columns) {
+  const originalMargins = { ...document.page.margins };
+  document.page.margins = { ...originalMargins, left: originalMargins.left + INDENT_PT };
+  try { drawPdfOptionGrid(document, options, columns); }
+  finally { document.page.margins = originalMargins; document.x = originalMargins.left; }
+}
+
+function drawPdfOptionGrid(document, options, columns) {
+  columns = imageOptionColumns(options, document.page.width - document.page.margins.left - document.page.margins.right, columns);
   if (columns === 1 || !options.length) {
     for (const tokens of options) drawPdfTokens(document, tokens);
     return;
   }
   const margins = { ...document.page.margins };
   const availableWidth = document.page.width - margins.left - margins.right;
-  const gap = 16;
+  const gap = OPTION_GAP_PT;
   const width = (availableWidth - gap * (columns - 1)) / columns;
   for (let start = 0; start < options.length; start += columns) {
     const row = options.slice(start, start + columns);
@@ -888,11 +916,24 @@ function drawPdfOptions(document, options, columns) {
   }
 }
 
+function drawPdfQuestionTokens(document, tokens, prefix = '', forceIndent = false, size = BODY_SIZE) {
+  for (const block of questionBlocks(tokens, prefix, forceIndent)) {
+    if (block.kind === 'options') { drawPdfOptions(document, block.options, 1); continue; }
+    const margins = { ...document.page.margins };
+    document.page.margins = { ...margins, left: margins.left + (block.indent ? size * 2 : 0) };
+    try { drawPdfTokens(document, block.tokens, block.prefix, size); }
+    finally { document.page.margins = margins; document.x = margins.left; }
+  }
+}
+
 async function orderedPdfBytes(input, items) {
   const template = await pdfTemplateProfile();
   return new Promise((resolve, reject) => {
     const margins = { top: PAGE.top / 20, left: PAGE.left / 20, right: PAGE.right / 20, bottom: PAGE.bottom / 20 };
     const document = new PDFDocument({ size: [PAGE.width / 20, PAGE.height / 20], margins, compress: false, bufferPages: true });
+    // The supplied footer's page number sits above its rule, inside the nominal
+    // bottom margin. Leave room for that real furniture without changing A4 geometry.
+    document._paperFooterClearance = 16;
     const font = pdfFontPath();
     if (!font) return reject(failure('CLOUD_PAPER_RENDER_FONT_UNAVAILABLE'));
     const chunks = [];
@@ -915,9 +956,9 @@ async function orderedPdfBytes(input, items) {
         previousSection = section; sectionNumber++;
       }
       const score = paperScoreSuffix(item.score);
-      drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', template.fontSize);
+      drawPdfQuestionTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', false, template.fontSize);
       drawPdfOptions(document, item.options, item.optionColumns);
-      for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.contentTokens, subQuestion.label);
+      for (const subQuestion of item.subQuestions || []) drawPdfQuestionTokens(document, subQuestion.contentTokens, subQuestion.label, true);
       for (const media of item.media || []) drawPdfMedia(document, media);
       if (input.answerPosition === 'after') drawPdfAnswers(document, item);
       if (solution) {

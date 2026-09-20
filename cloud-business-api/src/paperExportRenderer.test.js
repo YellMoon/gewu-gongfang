@@ -50,6 +50,7 @@ require('./wordNativeFormula.test');
   await require('./paperExportAnswerOrder.test')();
   require('./paperOptionLayout.test');
   await require('./paperExportOptionColumns.test')();
+  await require('./paperExportIndent.test')();
   await require('./paperExportFormulaLifetime.test')();
   const drawn = [];
   const probe = {x:10,y:75,page:{width:100,height:100,margins:{left:10,right:10,bottom:10}},

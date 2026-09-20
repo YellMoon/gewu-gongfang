@@ -41,16 +41,16 @@ async function verifyOptionColumns() {
     const resolveQuestionAsset = async () => imageBytes;
     const word = await renderPaperExport({ ...input, format: 'word' }, { resolveQuestionAsset });
     const xml = await questionXml(await JSZip.loadAsync(word.bytes));
-    assert.equal((xml.match(/<w:gridCol\b/g) || []).length, 4);
+    assert.equal((xml.match(/<w:gridCol\b/g) || []).length, node.type === 'image' ? 0 : 4);
     if (node.type === 'formula') assert.equal((xml.match(/<m:oMath>/g) || []).length, 4, 'column formulas remain native editable Word equations');
     else {
       const widths = [...xml.matchAll(/<wp:extent cx="(\d+)"/g)].map(match => Number(match[1]) / 9525);
       assert.equal(widths.length, 4);
-      assert(widths.every(width => width > 0 && width < 150), 'Word option images fit inside their columns');
+      assert(widths.every(width => Math.abs(width - 600) < 0.1), 'wide images keep their readable source size in one column');
       const pdf = await renderPaperExport({ ...input, format: 'pdf' }, { resolveQuestionAsset });
       const draws = [...pdf.bytes.toString('latin1').matchAll(/([\d.]+) 0 0 (-?[\d.]+) [\d.-]+ [\d.-]+ cm\s*\/I\d+ Do/g)];
       assert.equal(draws.length, 4);
-      assert(draws.every(match => Number(match[1]) > 0 && Number(match[1]) < 115), 'PDF option images fit inside their columns');
+      assert(draws.every(match => Math.abs(Number(match[1]) - 450) < 0.1), 'PDF wide images keep their readable source size in one column');
     }
   }
   console.log('Word and PDF option column checks passed');
