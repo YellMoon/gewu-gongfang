@@ -13,7 +13,7 @@ const {
 (async () => {
   const writes = [];
   const projection = {
-    students: [{ id: 'student-1', name: 'Student One' }],
+    students: [{ id: 'student-1', name: 'Student One', balance_hours: 10.5, balance_money: 1020 }],
     studentContacts: [{ id: 'contact-1', student_id: 'student-1' }],
     teachers: [{ id: 'teacher-1', name: 'Teacher One' }],
     courses: [{ id: 'course-1', name: 'Course One' }],
@@ -29,6 +29,8 @@ const {
     rooms: [{ id: 'room-1', name: 'Room One' }],
     assetRecords: [{ id: 'asset_record-1', amount: 8 }],
     assetCategories: [{ id: 'asset_category-1', name: 'Tuition' }],
+    payments: [{ id: 'payment-1', student_id: 'student-1', amount: 1200, payment_type: 1 }],
+    grades: [{ id: 'grade-1', student_id: 'student-1', subject: 'Physics', score: 86 }],
   };
   const runtime = createCloudBusinessProjectionRuntime({
     readProjection: async token => {
@@ -57,8 +59,8 @@ const {
     ['rooms', projection.rooms],
     ['assetRecords', projection.assetRecords],
     ['assetCategories', projection.assetCategories],
-    ['payments', []],
-    ['grades', []],
+    ['payments', projection.payments],
+    ['grades', projection.grades],
   ]);
   assert.deepStrictEqual(normalizedSchedules[0].student_ids, ['student-1'], 'projection normalization must preserve the authoritative roster');
 
@@ -74,6 +76,18 @@ const {
   resolveStaleProjection({ success: true, data: { ok: true, projection } });
   await assert.rejects(staleRefresh, /CLOUD_BUSINESS_PROJECTION_SESSION_CHANGED/);
   assert.deepStrictEqual(staleWrites, [], 'a response from the previous account must not write into the current account cache');
+  for (const missing of ['payments', 'grades', 'balance_hours', 'balance_money']) {
+    const incomplete = structuredClone(projection);
+    if (missing.startsWith('balance_')) delete incomplete.students[0][missing];
+    else delete incomplete[missing];
+    const incompleteWrites = [];
+    const incompleteRuntime = createCloudBusinessProjectionRuntime({
+      readProjection: async () => ({ success: true, data: { ok: true, projection: incomplete } }),
+      writeCache: (...args) => incompleteWrites.push(args),
+    });
+    await assert.rejects(incompleteRuntime.refresh('ticket', () => true), /CLOUD_BUSINESS_PROJECTION_UNAVAILABLE/);
+    assert.deepStrictEqual(incompleteWrites, [], 'missing records or balances must not replace the cache with false empty data');
+  }
   assert.strictEqual(shanghaiDateKey('2026-08-24T16:30:00.000Z'), '2026-08-25', 'calendar filtering must use the product time zone instead of UTC date slicing');
   assert.strictEqual(shiftShanghaiDateKey('2026-08-25', -1), '2026-08-24');
   assert.deepStrictEqual(shanghaiWeekDateKeys('2026-08-25'), [

@@ -36,6 +36,11 @@
       "participants": ["desktop", "cloud_business"],
       "rule": "desktop teacher projection supplies existing payments/consumptions arrays for its authorized students, in the same database snapshot; preserve original student-wide balance calculation and tenant/deleted boundaries; missing arrays fail closed; cloud-only correction using existing schema and client fields, no miniapp or storage_proxy change required"
     },
+    "miniappStudentLedger": {
+      "version": "1",
+      "participants": ["cloud_business", "miniapp"],
+      "rule": "miniapp projection reads scoped payments/grades and calculates student balances with the original desktop payment-minus-consumption formula in one database statement; no raw consumptions, internal ledger notes or extra write capabilities; missing arrays or balances fail closed; deploy additive cloud support before the miniapp reader; existing schema, desktop and storage_proxy unchanged"
+    },
     "studentDeletionReferences": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

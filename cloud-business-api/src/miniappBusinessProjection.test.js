@@ -35,18 +35,23 @@ async function request(app, path, { headers = {} } = {}) {
       if (token === 'family-ticket.signature') {
         return { accountId: 'miniapp-account-4', status: 'active', roles: ['family_member'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } };
       }
+      if (token === 'visitor-ticket.signature') return { accountId: 'visitor', status: 'visitor', roles: [], profile: null };
+      if (token === 'unbound-ticket.signature') return { accountId: 'unbound', status: 'active', roles: ['student'], profile: null };
       throw new Error('rejected');
     },
     pendingAccounts: async () => [],
     assignRole: async () => { throw new Error('not used'); },
   };
   const projection = {
-    students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
+    students: [{ id: 'student-1', balance_hours: 10.5, balance_money: 1020 }], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
+    payments: [{ id: 'payment-1', student_id: 'student-1', payment_type: 1, amount: 1200 }],
+    grades: [{ id: 'grade-1', student_id: 'student-1', subject: 'Physics', score: 86 }],
   };
+  let returned = projection;
   const app = createCloudBusinessApp({
     query: async (text, values) => {
       queries.push([text, values]);
-      return { rows: [{ projection }] };
+      return { rows: [{ projection: returned }] };
     },
     miniappCloudAccount,
     businessTenantId: 'default',
@@ -69,8 +74,9 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[0][0].includes('business.personal_asset_manual_records'), 'manual desktop asset records must join the same cloud projection');
   assert.ok(queries[0][0].includes('JOIN scoped_students s ON s.id=d.student_id'), 'contacts inherit tenant scope from the selected student');
   assert.ok(!queries[0][0].includes('d.tenant_id'), 'the contact directory has no tenant_id column');
-  assert.ok(!queries[0][0].includes('business.payments') && !queries[0][0].includes('business.consumptions'),
-    'desktop ledger enrichment must not expose payment or consumption ledgers to miniapp users');
+  assert.ok(queries[0][0].includes('business.payments') && queries[0][0].includes('business.consumptions')
+    && queries[0][0].includes('business.grades'), 'student balances and visible record tabs must read the cloud ledger');
+  assert.ok(!Object.hasOwn(response.body.projection, 'consumptions'), 'raw consumption records are not part of the miniapp response');
 
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },
@@ -97,6 +103,21 @@ async function request(app, path, { headers = {} } = {}) {
   const scheduleResponse = await request(app, '/api/business/schedules', { headers: { authorization: 'Bearer student-ticket.signature' } });
   assert.strictEqual(scheduleResponse.status, 200);
   assert.ok(queries.at(-1)[0].includes(STUDENT_SCHEDULE_TUITION_SQL), 'schedule list and projection must use the same scoped tuition calculation');
+  for (const missing of ['payments', 'grades', 'balance_hours', 'balance_money']) {
+    returned = structuredClone(projection);
+    if (missing.startsWith('balance_')) delete returned.students[0][missing];
+    else delete returned[missing];
+    const incomplete = await request(app, '/api/business/miniapp-projection', { headers: { authorization: 'Bearer student-ticket.signature' } });
+    assert.equal(incomplete.status, 503, 'incomplete student records must fail closed, not look like no payments or no balance');
+  }
+  for (const token of ['visitor-ticket.signature', 'unbound-ticket.signature']) {
+    const before = queries.length;
+    const denied = await request(app, '/api/business/miniapp-projection', { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(denied.status, 403);
+    assert.equal(queries.length, before, 'unauthorized accounts must not query the student ledger');
+  }
+  const contract = require('../../config/release-compatibility.json').contracts.miniappStudentLedger;
+  assert.deepStrictEqual(contract.participants, ['cloud_business', 'miniapp']);
   console.log('cloud miniapp business projection checks passed');
 })().catch(error => {
   console.error(error);

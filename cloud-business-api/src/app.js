@@ -3,6 +3,7 @@
 const express = require('express');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
+const { withMiniappStudentLedgerProjection, hasMiniappStudentLedger } = require('./miniappStudentLedgerProjection');
 const { withScheduleCourseContextSql, applyScheduleCourseContext } = require('./scheduleCoursePresentation');
 
 const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
@@ -1091,9 +1092,9 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
     if ((!desktopRegistration && !miniappCloudAccount) || !businessTenantId) return businessUnavailable(response);
     try {
       const scope = miniappProjectionScope(await miniappBusinessContext(request));
-      const result = await query(withScheduleCourseContextSql(miniappProjectionSql), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+      const result = await query(withScheduleCourseContextSql(withMiniappStudentLedgerProjection(miniappProjectionSql)), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
       const projection = applyScheduleCourseContext(result?.rows?.[0]?.projection);
-      if (!isMiniappProjection(projection)) return businessUnavailable(response);
+      if (!isMiniappProjection(projection) || !hasMiniappStudentLedger(projection)) return businessUnavailable(response);
       response.json({ ok: true, projection });
     } catch (error) {
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });

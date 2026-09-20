@@ -12,7 +12,7 @@ function loadTs(filename, customRequire = require, clock = Date) {
   return module.exports;
 }
 const desktop = loadTs(path.join(__dirname, '../../..', 'src/utils/helpers.ts'));
-const { studentSchoolLabel, studentGradeLabel } = loadTs(path.join(__dirname, 'studentDisplay.ts'), name => {
+const { studentSchoolLabel, studentGradeLabel, studentPaymentAmount } = loadTs(path.join(__dirname, 'studentDisplay.ts'), name => {
   assert.equal(name, '../../../src/utils/helpers');
   return desktop;
 });
@@ -27,6 +27,12 @@ for (const year of [2019, 2023, 2024, 2025, 2026, 2027]) {
 }
 assert.equal(studentGradeLabel({ grade_current: 'Existing grade' }), 'Existing grade');
 assert.equal(studentGradeLabel({}), '');
+assert.equal(studentPaymentAmount({ payment_type: 1, amount: 1200 }), '+\u00a51200');
+assert.equal(studentPaymentAmount({ payment_type: 2, amount: 12 }), '+12 \u8bfe\u65f6');
+const detail = fs.readFileSync(path.join(__dirname, '../pages/student-detail/index.tsx'), 'utf8');
+assert.match(detail, /studentPaymentAmount\(p\)/);
+assert.match(detail, /const refreshed = await pullFromCloudBusinessProjection\(\)/);
+assert.match(detail, /if \(!refreshed\)/, 'failed reads cannot be rendered as empty ledger records');
 for (const timestamp of ['2026-08-31T12:00:00', '2026-09-01T12:00:00']) {
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [timestamp])); } }
   const original = loadTs(path.join(__dirname, '../../..', 'src/utils/helpers.ts'), require, FixedDate);

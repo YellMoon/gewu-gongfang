@@ -13,6 +13,10 @@ export function studentSchoolLabel(value: unknown): string {
   return text;
 }
 
+export function studentPaymentAmount(payment: { payment_type: number; amount: number }): string {
+  return payment.payment_type === 2 ? `+${payment.amount} \u8bfe\u65f6` : `+\u00a5${payment.amount}`;
+}
+
 export function studentGradeLabel(student: { grade_year?: number; grade_current?: string }): string {
   if (!student.grade_year) return student.grade_current || '';
   // Same September school-year boundary as desktop calculateGrade; parity is

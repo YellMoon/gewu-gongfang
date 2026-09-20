@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, Button } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { isStudentScopedUser } from '../../utils/permission';
-import { studentSchoolLabel, studentGradeLabel } from '../../utils/studentDisplay';
+import { studentSchoolLabel, studentGradeLabel, studentPaymentAmount } from '../../utils/studentDisplay';
 import './index.scss';
 
 export default function StudentDetail() {
@@ -14,13 +14,22 @@ export default function StudentDetail() {
   const [student, setStudent] = useState<Student | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reload, setReload] = useState(0);
   const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'grades'>('info');
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setLoadFailed(false);
+    setStudent(null);
     const load = async () => {
-      await pullFromCloudBusinessProjection();
-      if (!active || !id) return;
+      const refreshed = await pullFromCloudBusinessProjection();
+      if (!active) return;
+      setLoading(false);
+      if (!refreshed) { setLoadFailed(true); return; }
+      if (!id) return;
       const s = getLocalItem<Student>('students', id);
       setStudent(s || null);
 
@@ -32,7 +41,18 @@ export default function StudentDetail() {
     };
     void load();
     return () => { active = false; };
-  }, [id]);
+  }, [id, reload]);
+
+  if (loading || loadFailed) {
+    return (
+      <View className='container'>
+        <View className='empty-state'>
+          <Text className='empty-state-text'>{loading ? '\u6b63\u5728\u52a0\u8f7d' : '\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5'}</Text>
+          {loadFailed && <Button size='mini' onClick={() => setReload(value => value + 1)}>{'\u91cd\u8bd5'}</Button>}
+        </View>
+      </View>
+    );
+  }
 
   if (!student) {
     return (
@@ -113,7 +133,7 @@ export default function StudentDetail() {
                     <Text className='list-item-title'>{getPaymentTypeLabel(p.payment_type)}</Text>
                     <Text className='list-item-desc'>{formatDate(p.payment_date)} · {p.payment_method || '未记录'}</Text>
                   </View>
-                  <Text className='list-item-extra income'>+¥{p.amount}</Text>
+                  <Text className='list-item-extra income'>{studentPaymentAmount(p)}</Text>
                 </View>
               ))}
             </View>

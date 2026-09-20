@@ -11,6 +11,8 @@ const TABLES = Object.freeze([
   ['rooms', 'rooms'],
   ['assetRecords', 'assetRecords'],
   ['assetCategories', 'assetCategories'],
+  ['payments', 'payments'],
+  ['grades', 'grades'],
 ]);
 
 const SHANGHAI_DATE_TIME = new Intl.DateTimeFormat('en-CA', {
@@ -79,7 +81,8 @@ function normalizeProjection(projection) {
 
 function validProjection(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-    && TABLES.every(([key]) => Array.isArray(value[key]));
+    && TABLES.every(([key]) => Array.isArray(value[key]))
+    && value.students.every(student => Number.isFinite(student?.balance_hours) && Number.isFinite(student?.balance_money));
 }
 
 function createCloudBusinessProjectionRuntime({ readProjection, writeCache }) {
@@ -94,8 +97,6 @@ function createCloudBusinessProjectionRuntime({ readProjection, writeCache }) {
       const normalized = normalizeProjection(projection);
       if (!isCurrentSession()) throw new Error('CLOUD_BUSINESS_PROJECTION_SESSION_CHANGED');
       TABLES.forEach(([projectionKey, cacheKey]) => writeCache(cacheKey, normalized[projectionKey]));
-      writeCache('payments', []);
-      writeCache('grades', []);
       return normalized;
     },
   });
