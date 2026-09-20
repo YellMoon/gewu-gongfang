@@ -13,10 +13,14 @@ the original desktop calculation and existing scoped cloud ledger. No teaching
 workflow or NAS change. Real REST checks passed for teacher/student/family;
 visitor access denied. Temporary rows/registration from failed UI runs cleaned.
 
-Current issue: developer-tool reLaunch/screenshot timeouts prevent new visual
-proof. Continue actual page/interaction diagnosis; do not relabel API checks as
-UI acceptance or mark the whole goal blocked. Do not repeatedly rerun completed
-cloud checks or template exports. See docs/miniapp-student-ledger-2026-09-20.md.
+Current progress: the dist lite-mode project window restored actual automation.
+Teacher/student/family ledger journeys now pass, including real card/tab taps,
+18 individually inspected screenshots, role-scoped fees, original-login restore
+and exact-ID fixture cleanup. Receipt: gewu-miniapp-ledger-live-20260920-ybzksx8e.
+The test-only course-view inventory omission is corrected. Do not relabel these
+specific flows as all-page acceptance. Continue remaining page/state coverage
+and the visitor question-image placeholder. Do not rerun completed template
+exports. See docs/miniapp-student-ledger-2026-09-20.md.
 Desktop 8.9.8 OSS update is now published and publicly byte-verified, including
 the committed parser correction. Frozen-source build, 74 parser tests, export
 handler tests, packaged login screenshot, native ABI and protected-file checks

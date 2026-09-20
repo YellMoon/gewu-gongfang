@@ -90,3 +90,52 @@ This is a partial release; NAS remains 8.8.3 and needs no ledger update.
 
 Existing unrelated edits (including the room-history SQL hunk in app.js) are
 preserved in the worktree and excluded from this change's release source.
+
+## Actual three-role UI acceptance, 2026-09-20 11:23 local
+
+The existing production 8.8.7 dist opened successfully in a separate lite-mode
+project window. No source/config, login permissions or AppID were changed.
+The former root-project window's timeout is not a current acceptance blocker.
+One earlier run failed because the automation bridge returned numeric score 86
+while the test expected a string. Normalizing the test value corrected the
+assertion; no product change was necessary. Another earlier tool failure was
+APPID_ERROR wrapping a TLS connection failure, despite the authorized AppID.
+The final run completed with no platform retry needed.
+
+Receipt: `gewu-miniapp-ledger-live-20260920-ybzksx8e/receipt.json`, ok=true.
+Three real cloud-issued test sessions exercised automatic startup, populated
+schedule, actual schedule-card tap, actual linked-student tap, payment and grade
+tab taps, and the scoped course list. No fixture/mock response replaced cloud
+business data. This does not test WeChat phone consent or personal phone login.
+
+All six PNGs in each of these evidence directories were individually viewed:
+
+- `gewu-ledger-actions-teacher-20260920-v_yueulc`
+- `gewu-ledger-actions-student-20260920-ztans710`
+- `gewu-ledger-actions-family-20260920-s09cc6yl`
+
+The per-role report.json records exact screenshot filenames and SHA256 values.
+Each role showed 10.5 remaining hours, balance 1020, payments +12 hours/+1200
+currency units, score 86, four visible schedule cards and one scoped course.
+Only the teacher had two schedule cost rows and a teacher-fee course label.
+Student/family had neither, and their student information contained four rows
+rather than the teacher's seven. The actual rendered layouts did not overlap;
+secondary text is small/faint and remains a whole-page audit consideration.
+
+Cleanup removed the four exact temporary ledger IDs through version-checked
+REST. Original balances and payment/grade record lists were restored. All three
+simulator sessions restored their prior state. Temporary registration cleanup
+reported zero active sessions, links, installations and devices. No core
+teaching record or user login was changed.
+
+The audit inventory had omitted student/family course-list views. A failing
+coverage test exposed the omission; both views and their empty-state scenarios
+are now listed, and coverage/login/binding/route checks pass. These are test-only
+metadata changes, not a new app runtime build or an additional release.
+The newly listed empty-state scenarios have not been visually captured by this
+populated-data run and must not be represented as completed visual acceptance.
+
+Visitor question-bank and schedule screenshots also worked in the dist window:
+`gewu-miniapp-887-visitor-20260920`. The visitor question page still displayed an
+unloaded image23.png placeholder. Media fidelity, remaining routes, offline,
+restricted actions and formal WeChat release remain open. NAS stays 8.8.3.

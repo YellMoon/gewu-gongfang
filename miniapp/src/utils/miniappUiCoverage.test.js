@@ -231,6 +231,7 @@ for (const [route, roles] of Object.entries({
   'pages/schedule/detail/index': ['student', 'family_member'],
   'pages/schedule/edit/index': ['student', 'family_member'],
   'pages/student-detail/index': ['student', 'family_member'],
+  'pages/courses/index': ['student', 'family_member'],
   'pages/question-bank/index': ['super_admin', 'student', 'family_member'],
   'pages/settings/index': ['student', 'family_member'],
   'pages/forbidden/index': ['family_member'],

@@ -45,6 +45,8 @@ const scenarioTemplates = [
   scenario('student-detail-student-missing', 'pages/student-detail/index', 'student', 'student', 'missing-student', '未找到该学生信息', ['student-path', 'empty']),
   scenario('courses-super-admin-empty', 'pages/courses/index', 'super_admin', 'super_admin', 'empty', '暂无课程', ['super-admin-path', 'empty']),
   scenario('courses-teacher-empty', 'pages/courses/index', 'teacher', 'teacher', 'empty', '暂无课程', ['teacher-path', 'empty']),
+  scenario('courses-student-empty', 'pages/courses/index', 'student', 'student', 'empty', '\u6682\u65e0\u8bfe\u7a0b', ['student-path', 'empty']),
+  scenario('courses-family-member-empty', 'pages/courses/index', 'family_member', 'guardian', 'empty', '\u6682\u65e0\u8bfe\u7a0b', ['family-member-path', 'empty']),
   scenario('teachers-super-admin-empty', 'pages/teachers/index', 'super_admin', 'super_admin', 'empty', '暂无教师数据', ['super-admin-path', 'empty']),
   scenario('teachers-teacher-empty', 'pages/teachers/index', 'teacher', 'teacher', 'empty', '暂无教师数据', ['teacher-path', 'empty']),
   scenario('payments-super-admin-empty', 'pages/payments/index', 'super_admin', 'super_admin', 'empty', '暂无缴费记录', ['super-admin-path', 'empty']),
