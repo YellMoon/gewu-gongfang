@@ -43,6 +43,7 @@ require('./wordNativeFormula.test');
   await require('./paperExportPagination.test')();
   await require('./paperExportAttachmentPlacement.test')();
   await require('./paperExportTextStyle.test')();
+  await require('./paperExportPdfSymbols.test')();
   await require('./paperExportAnswerOrder.test')();
   require('./paperOptionLayout.test');
   await require('./paperExportOptionColumns.test')();

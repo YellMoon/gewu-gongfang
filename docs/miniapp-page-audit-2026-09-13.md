@@ -1,5 +1,43 @@
 # 小程序逐页收口检查（UTF-8，2026-09-13）
 
+## 2026-09-20 07:53 三角色有数据课程流程复验
+
+使用原开发者工具窗口、现有云端隔离教师/学生/家庭成员账号和既有测试课程；
+云端为 8.11.17，本机小程序构建为 8.8.6。没有新增或修改课程、排课、学生或
+账务，没有要求用户重新扫码，没有模拟云业务响应。每种身份检查后均恢复原登录键。
+
+- 三种身份真实云投影均返回 5 条相关排课、1 门课程、1 位学生。实际点击上一周，
+  9 月 7 日显示四节课；实际点击第一节进入排课详情，再点击参与学生进入学生资料。
+- 教师详情截图显示 08:00–09:30、课时费 270、教师费 180；学生及家庭成员详情中
+  没有费用区，两种身份课程资料显示学费 180/时且不显示教师费。只验证该样本的
+  权限显示，不扩大为全部计费、请假、出勤或调课验收。
+- 三种身份都实际切换“缴费记录”和“成绩记录”，活动标签文本与点击一致；
+  当前截图均为空态。这是标签操作证据，不是财务数据准确性证据。
+- 每种身份六张截图（课程表、排课详情、学生基本信息、缴费、成绩、课程资料），
+  共 18 张已逐张查看。交互检查退出 0，但页面整体未判合格：学生头部剩余课时
+  无数值、余额只显示 ¥；浅灰次要文字偏淡。长测试姓名和 E2E 课程名称来自测试
+  数据，不通过改写用户业务名称来改善截图。
+- 对照代码确认 `cloudBusinessProjection.js` 仍将 payments/grades 缓存写为空数组，
+  因此“暂无缴费记录/成绩记录”不能证明真实数据为空。此项与余额字段/账务读取
+  契约需一起修正，不能仅填零或换占位文案掩盖数据缺口。本轮未修改产品代码。
+
+本机证据目录：`gewu-course-actions-student-20260920-r36voyou`、
+`gewu-course-actions-family-20260920-x9j6h_ci`、
+`gewu-course-actions-teacher-20260920-g3m94g4y`，包含报告和 PNG，不上传业务截图。
+三份报告均为 `ok=true`、`businessWrites=false`、`previousLoginRestored=true`。
+排课详情截图 SHA-256：学生
+`1094aac3cc9c4396194152fbd2bb5e3f3244cd696f3b15bf516ba13e702753ec`，家庭
+`77af7db45b867e004c76f96ecf8714147c502069e50b8b114042611261498683`，教师
+`3ccae2e72a8943b2eb6001b0f413620e6a1d98468b9623a7daa67cf5cad0a466`。
+
+保留失败记录：首次学生检查因测试脚本只接受 e2e 前缀排课 ID 而退出 1；实际
+REST 创建的排课使用 UUID。改为读取已经核验身份的账号范围投影后通过，没有
+放宽产品授权或创建新课程配合测试。全部 18 页、离线、申请审核和正式微信手机号
+授权等剩余门禁仍未完成；此次没有发布新的小程序版本。
+
+本轮 `test:miniapp-ui` 全部退出 0，包括页面清单、角色路由、财务页进入/读取
+权限、家庭成员角色、题库布局和截图脚本测试；不将这些自动检查替代上述视觉缺口。
+
 ## 2026-09-20 teacher paper workflow follow-up
 
 Actual basket-to-editor navigation, score editing, Word/PDF task submission and both real downloads now have targeted evidence in [the paper-download validation record](miniapp-paper-download-validation-2026-09-20.md). Miniapp 8.8.5 development upload succeeded. The exact downloaded two-question PDF was strictly parsed, rasterized and visually checked; its Word file contains 12 native equations and zero media files. Original test drafts and login state were restored. This supplements only the teacher question-paper flow; the remaining role/page/course/offline gates below stay open, and Word viewer appearance is not claimed.

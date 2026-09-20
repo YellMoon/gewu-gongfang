@@ -803,7 +803,16 @@ function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SV
           const fontFamily = document._fontFamily;
           try {
             drawVector(document,run.token.media.bytes.toString('utf8'),x,y,
-              {width:run.width,height:run.height,preserveAspectRatio:'xMidYMid meet'});
+              {width:run.width,height:run.height,preserveAspectRatio:'xMidYMid meet',
+                // MathJax uses SVG text for upright Greek and full-width operators.
+                // PDF standard serif fonts silently omit these Unicode glyphs.
+                fontCallback(_family, bold, italic, options) {
+                  const fallback = pdfFontPath();
+                  if (!fallback) throw failure('CLOUD_PAPER_RENDER_FONT_UNAVAILABLE');
+                  options.fauxBold = bold;
+                  options.fauxItalic = italic;
+                  return fallback;
+                }});
           } catch (_) { throw failure('CLOUD_PAPER_RENDER_FORMULA_INVALID'); }
           finally {
             if (fontSource !== undefined) document.font(fontSource, fontFamily, size);

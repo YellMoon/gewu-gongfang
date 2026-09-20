@@ -1,5 +1,18 @@
 'use strict';
 
+const scriptGlyphs = new Map();
+for (const [characters, verticalAlign] of [['₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎', 'subscript'], ['⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾', 'superscript']]) {
+  [...characters].forEach((character, index) => scriptGlyphs.set(character, { text: '0123456789+-=()'[index], verticalAlign }));
+}
+
+function supportedScriptTokens(token) {
+  if (token.kind !== 'text') return [token];
+  // The bundled CJK font lacks Unicode subscript digits. Position supported
+  // base glyphs instead; this is display-only, never a source-content rewrite.
+  return String(token.text).split(/([₀-₉₊₋₌₍₎⁰¹²³⁴-⁹⁺⁻⁼⁽⁾])/u).filter(Boolean)
+    .map(text => ({ ...token, text, ...scriptGlyphs.get(text) }));
+}
+
 // Lay out prose and already-rendered math together. Math is an indivisible run:
 // wrapping it must never replace superscripts/fractions with source-like text.
 function layoutInlineRuns({ tokens, maxWidth, size, lineHeight, measureText }) {
@@ -18,7 +31,7 @@ function layoutInlineRuns({ tokens, maxWidth, size, lineHeight, measureText }) {
     line.width += run.width;
     line.height = Math.max(line.height, run.height);
   };
-  for (const token of tokens) {
+  for (const token of tokens.flatMap(supportedScriptTokens)) {
     if (token.kind === 'text') {
       const script = ['subscript', 'superscript'].includes(token.verticalAlign);
       const fontSize = script ? size * 0.75 : size;
