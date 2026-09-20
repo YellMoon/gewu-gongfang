@@ -129,6 +129,38 @@ def user_for_session(key, account_id):
     return user
 
 
+def verify_download_domain(project):
+    """Prove wx.downloadFile works with domain validation, not just wx.request.
+
+    The public health payload needs no account/session and creates no cloud
+    task. This is a domain gate only; actual media/export bytes need their own
+    acceptance. Never modify local flags or substitute an HTTP request.
+    """
+    try:
+        shared = json.loads((project / "project.config.json").read_text(encoding="utf-8"))
+        enabled = shared["setting"]["urlCheck"]
+        private_path = project / "project.private.config.json"
+        if private_path.is_file():
+            private = json.loads(private_path.read_text(encoding="utf-8"))
+            enabled = private.get("setting", {}).get("urlCheck", enabled)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_CONFIG_INVALID") from error
+    if enabled is not True:
+        raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_CHECK_DISABLED")
+    try:
+        downloaded = run_wx_api(project, "downloadFile", [{
+            "url": "https://physicsedu.xyz/cloud-business/api/health", "timeout": 30000,
+        }])
+    except RuntimeError as error:
+        if "url not in domain list" in str(error):
+            raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz") from None
+        raise
+    if not isinstance(downloaded, dict) or downloaded.get("statusCode") != 200 \
+            or not isinstance(downloaded.get("tempFilePath"), str) or not downloaded["tempFilePath"].strip():
+        raise RuntimeError("REAL_MINIAPP_DOWNLOAD_PROBE_FAILED")
+    return {"downloadDomain": "https://physicsedu.xyz", "statusCode": 200, "domainCheckEnabled": True}
+
+
 def is_test_account(value):
     return isinstance(value, str) and ACCOUNT_PATTERN.fullmatch(value) is not None
 
@@ -475,10 +507,15 @@ def main(argv=None):
     parser.add_argument("--pages", action="store_true")
     parser.add_argument("--role", choices=ROLE_KEYS)
     parser.add_argument("--screenshots-dir")
+    parser.add_argument("--download-domain-only", action="store_true")
     args = parser.parse_args(argv)
     project = Path(args.project).resolve()
     if not project.is_dir():
         raise RuntimeError("REAL_MINIAPP_ROLE_UI_PROJECT_MISSING")
+    download_check = verify_download_domain(project) if args.pages or args.download_domain_only else None
+    if args.download_domain_only:
+        print(json.dumps({"ok": True, "downloadCheck": download_check}, sort_keys=True))
+        return
     screenshots_dir = Path(args.screenshots_dir).resolve() if args.screenshots_dir else None
     checks = {}
     keys = (args.role,) if args.role else ROLE_KEYS
@@ -498,7 +535,7 @@ def main(argv=None):
             pages = verify_pages(project, ROLE_PAGES[key], role=key, account_id=receipt["sessions"][key]["accountId"], screenshots_dir=screenshots_dir) if args.pages else []
             checks[key] = redact_safe_receipt({"identity": identity, "pages": pages})
             print(json.dumps({'role': key, 'stage': 'checked', 'pageCount': len(pages)}), file=sys.stderr, flush=True)
-        print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks}, ensure_ascii=True, sort_keys=True))
+        print(json.dumps({"ok": True, "marker": receipt["marker"], "checks": checks, "downloadCheck": download_check}, ensure_ascii=True, sort_keys=True))
     finally:
         try:
             if injection_state["started"]:

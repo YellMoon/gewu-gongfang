@@ -4,6 +4,16 @@
 
 ## Current continuation 2026-09-20 miniapp student ledger (UTF-8)
 
+Latest follow-up: the question-image placeholder is traced to WeChat downloadFile
+domain rejection, not missing NAS bytes. The strict dist window rejects the cloud
+download origin; the older root window disables URL checks in private configuration.
+A real-download gate (41 passing tests) now prevents that false acceptance. The
+user was asked to add https://physicsedu.xyz to downloadFile server domains because
+browser site-safety policy blocks agent access to the platform. No workaround or
+local validation bypass is allowed. Continue independent page/state checks while
+awaiting that platform change; do not mark the whole goal blocked. Then rerun strict
+image and Word/PDF button downloads. See docs/miniapp-download-domain-2026-09-20.md.
+
 Cloud 8.11.19 / commit abc4bc05 is deployed after 182 frozen-source checks,
 fresh code/template backup and restore-verified PostgreSQL backup. Miniapp
 8.8.7 passes typecheck/build/read/UI-contract tests and its development upload

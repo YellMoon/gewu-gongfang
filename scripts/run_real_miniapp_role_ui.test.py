@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -484,6 +485,7 @@ class RoleUiReceiptTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             with patch("run_real_miniapp_role_ui.snapshot_session_state", return_value={}), \
+                    patch("run_real_miniapp_role_ui.verify_download_domain", return_value={"statusCode": 200}), \
                     patch("run_real_miniapp_role_ui.fetch_sessions", return_value=receipt), \
                     patch("run_real_miniapp_role_ui.verify_identity", return_value={"accountId": account_id, "role": "super_admin"}), \
                     patch("run_real_miniapp_role_ui.wait_for_startup_home"), \
@@ -503,6 +505,16 @@ class RoleUiReceiptTests(unittest.TestCase):
             json.loads(safe_receipt)["checks"]["super_admin"]["pages"],
             [{"route": "pages/index/index", "runtime": {}}],
         )
+
+
+def load_tests(loader, tests, pattern):
+    # Keep the download gate in the existing default release-matrix command.
+    spec = importlib.util.spec_from_file_location(
+        "miniapp_download_domain_tests", Path(__file__).with_name("miniapp-download-domain.test.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    tests.addTests(loader.loadTestsFromModule(module))
+    return tests
 
 
 if __name__ == "__main__":

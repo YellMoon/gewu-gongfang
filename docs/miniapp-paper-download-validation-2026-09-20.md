@@ -2,6 +2,13 @@
 
 Date: 2026-09-20. This is incremental evidence, not completion of the 18-page/multi-role audit or unified release.
 
+Later strict-domain recheck: the original project's private configuration disables
+URL validation. Its successful transfers below do not prove production download
+domain permission. The dist window with validation enabled rejects wx.downloadFile
+for the cloud origin. Artifact byte/content evidence below remains valid; real
+WeChat-domain acceptance and button downloads must be repeated after the platform
+configuration is corrected. See miniapp-download-domain-2026-09-20.md.
+
 ## Actual teacher workflow
 
 Used the existing WeChat Developer Tools project and a short-lived cloud-signed isolated teacher session. No user login was requested. The two existing selected questions, saved editor draft and previous login storage were restored after the test. Only two intended export tasks were created; no core business records were changed.
