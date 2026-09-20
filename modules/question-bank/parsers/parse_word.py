@@ -1609,7 +1609,18 @@ def finalize_question_type(question):
     normalize_leading_image_positions(question)
     normalize_subquestion_image_positions(question)
     annotate_format_warnings(question)
-    question["question_types"] = classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
+    # A source section is stronger evidence than incidental words in a stem.
+    # Keep generic non-choice headings neutral, but never discard an explicit
+    # solution/experiment/fill section during the second pass after answers.
+    section = normalize_heading_text(question.get("section_title", ""))
+    section_type = None
+    for label, kind in (("\u89e3\u7b54\u9898", "problem"), ("\u7efc\u5408\u9898", "problem"), ("\u8ba1\u7b97\u9898", "calculation"),
+                        ("\u5b9e\u9a8c\u9898", "experiment"), ("\u586b\u7a7a\u9898", "fill"),
+                        ("\u591a\u9009\u9898", "multi"), ("\u5355\u9009\u9898", "single")):
+        if re.match(r"^(?:[\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u767e\d]+[\u3001\uff0e.]?)?" + label + r"(?:$|[\uff08(:\uff1a])", section):
+            section_type = kind
+            break
+    question["question_types"] = [section_type] if section_type else classify_question(question.get("stem", ""), question.get("options", []), question.get("answer", ""))
     return question
 
 

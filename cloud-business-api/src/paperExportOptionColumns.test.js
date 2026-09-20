@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const { renderPaperExport, drawPdfOptions } = require('./paperExportRenderer');
 
@@ -8,7 +9,7 @@ async function verifyOptionColumns() {
   for (const [length, columns] of [[1, 4], [13, 2], [29, 1]]) {
     const options = Array.from({ length: 4 }, (_, index) => ({ label: String.fromCharCode(65 + index), content: 'x'.repeat(length) }));
     const result = await renderPaperExport({ format: 'word', title: 'Options', snapshot: [{ id: 'options', stem: 'Choose', options, answer: 'A' }] });
-    const xml = await (await JSZip.loadAsync(result.bytes)).file('word/document.xml').async('string');
+    const xml = await questionXml(await JSZip.loadAsync(result.bytes));
     assert.equal((xml.match(/<w:gridCol\b/g) || []).length, columns === 1 ? 0 : columns, 'Word option grid follows desktop');
     assert.equal((xml.match(/<w:tr>/g) || []).length, columns === 1 ? 0 : 4 / columns);
   }
@@ -39,7 +40,7 @@ async function verifyOptionColumns() {
     const input = { title: 'Rich options', snapshot, formulaMode: 'word-native' };
     const resolveQuestionAsset = async () => imageBytes;
     const word = await renderPaperExport({ ...input, format: 'word' }, { resolveQuestionAsset });
-    const xml = await (await JSZip.loadAsync(word.bytes)).file('word/document.xml').async('string');
+    const xml = await questionXml(await JSZip.loadAsync(word.bytes));
     assert.equal((xml.match(/<w:gridCol\b/g) || []).length, 4);
     if (node.type === 'formula') assert.equal((xml.match(/<m:oMath>/g) || []).length, 4, 'column formulas remain native editable Word equations');
     else {

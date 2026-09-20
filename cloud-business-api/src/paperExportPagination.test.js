@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const { renderPaperExport } = require('./paperExportRenderer');
 
@@ -21,7 +22,7 @@ async function verifyWordPagination() {
       }, { id: 'q2', stem: 'Next independent question', answer: 'Independent answer', options: [] }] };
       const result = await renderPaperExport(input, { resolveQuestionAsset: async () => bytes });
       const archive = await JSZip.loadAsync(result.bytes);
-      const xml = await archive.file('word/document.xml').async('string');
+      const xml = await questionXml(archive);
       const paragraphs = [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].map(match => match[0]);
       const marker = lastBlock.type === 'image' ? '<w:drawing>' : lastBlock.type === 'formula' ? '<m:oMath>' : 'Stem tail';
       assert.match(paragraphs.find(p => p.includes(marker)), /<w:keepNext\/>/,
@@ -42,9 +43,14 @@ async function verifyWordPagination() {
         assert.doesNotMatch(optionRows[1], /<w:keepNext\/>/,
           'the last compact option row must not chain into unrelated later questions');
       }
+      if (length === 30) {
+        for (const label of ['A. ', 'B. ', 'C. ']) assert.match(paragraphs.find(p => p.includes(label)), /<w:keepNext\/>/,
+          'single-column options stay together instead of leaving the final option at the top of the next page');
+        assert.doesNotMatch(paragraphs.find(p => p.includes('D. ')), /<w:keepNext\/>/);
+      }
       if (lastBlock.type === 'formula') {
         assert.equal((xml.match(/<m:oMath>/g) || []).length, 1);
-        assert(!Object.keys(archive.files).some(name => /^word\/media\/.+/.test(name)), 'pagination must not rasterize native equations');
+        assert(!Object.keys(archive.files).some(name => /^word\/media\/export-.+/.test(name)), 'pagination must not rasterize native equations');
       }
     }
   }

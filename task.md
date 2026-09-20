@@ -2,6 +2,35 @@
 
 > **Current execution phase (2026-08-24):** Source version 8.4.0 (`cd4fd2b2`) is pushed to `gewu/master`; the cloud service, NAS storage agent, miniapp development build, desktop installer, and OSS update feed are deployed with exact-version receipts. All applicable desktop business draft types map to the managed `cloud-business-api` REST contract after explicit confirmation, and update/delete operations carry `expectedUpdatedAt`. Production database migration/count/ACL checks and public health pass. These receipts prove deployment, not end-user business acceptance: the 42-page miniapp matrix is fixture-only, the packaged desktop check is launch/render smoke only, and the production cloud verifier does not perform a public REST mutation. The active phase is therefore to complete production-safe, reversible real-operation acceptance before any full-release claim.
 
+## Current priority 2026-09-20 supplied paper template (UTF-8)
+
+Status: in progress. Cloud remains 8.11.17. Commit 1b5a2df1 is pushed;
+deployment of 8.11.18 is paused pending the user's template requirement.
+Use the user's D-drive output DOCX as the actual base, replace the paper title,
+preserve native editable equations, and give solution questions writing space
+with a new page after each question. Do not modify teaching workflows.
+
+- [x] Locate and read-only render the reference; all 3 pages inspected.
+- [x] Record SHA256 fb8ac8d5b95f18ac72110a9161583fbf92736a991545980dd6b6b7b9a19060f2,
+  26 package parts, two section geometries, footer fields and answer-grid slots.
+- [x] Preserve a bundled copy and fidelity contract; add failing template tests.
+- [x] Integrate template-based Word generation, solution writing space and page breaks.
+- [x] Apply the same template layout to PDF and verify actual rendered pages.
+- [x] Reparse and export the actual 20-question source exam; inspect all 23 Word
+  render pages and all 19 PDF pages; Word contains 294 editable equations.
+- [ ] Repeat the template-specific lecture sample check (not covered by the exam receipt).
+- [ ] Run regressions and frozen-source checks, then backup/deploy/real-export validation.
+
+Current-source export regressions, Docker resource check and all 74 parser tests
+pass. Full committed-source/deployment receipts are separate gates. Evidence:
+`docs/verification-2026-09-20-supplied-paper-template.md`.
+
+Keep existing explicit item order, section titles and answer-position settings.
+Never overwrite the reference or user work. Do not rasterize native equations.
+Only publish applicable independent components; no accompanying NAS update.
+Rollback uses retained original template and commits, plus a restore-verified
+database/code backup before any production cutover. Local QA is not publication.
+
 > **Real-operation acceptance gate (active):**
 >
 > - [ ] Cloud: with a controlled temporary test identity and short-lived desktop session, create a uniquely-prefixed disposable record through the public REST API, read it back, update with the observed timestamp, prove stale `expectedUpdatedAt` conflict, delete it, and prove absence. Never request or reuse the user's credentials. Record only redacted IDs/statuses; clean up in `finally`.

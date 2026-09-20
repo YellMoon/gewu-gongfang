@@ -6,6 +6,7 @@ COPY cloud-business-api/server.js ./
 COPY cloud-business-api/src ./src
 COPY cloud-business-api/sql ./sql
 COPY cloud-business-api/scripts ./scripts
+COPY cloud-business-api/resources ./resources
 COPY backend/assets/fonts ./assets/fonts
 COPY shared /shared
 USER node

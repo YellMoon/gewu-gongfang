@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const PDFDocument = require('pdfkit');
 const path = require('node:path');
@@ -38,6 +39,8 @@ require('./wordNativeFormula.test');
   assert.strictEqual(failedFontProbe._font, failedBodyFont, 'a failed SVG also restores the body font');
   failedFontProbe.end();
   await require('./paperExportHydration.test')();
+  await require('./paperExportTemplate.test')();
+  await require('./paperExportPdfTemplate.test')();
   await require('./paperExportImageGeometry.test')();
   await require('./paperExportTables.test')();
   await require('./paperExportPagination.test')();
@@ -90,34 +93,34 @@ require('./wordNativeFormula.test');
   const word = await renderPaperExport({ ...input, format: 'word' }, { resolveQuestionAsset });
   assert.strictEqual(word.extension, 'docx');
   assert.ok(word.bytes.subarray(0, 2).equals(Buffer.from('PK')));
-  const wordXml = await (await JSZip.loadAsync(word.bytes)).file('word/document.xml').async('string');
+  const wordXml = await questionXml(await JSZip.loadAsync(word.bytes));
   for (const expected of ['first option', 'second option', 'First explanation', 'Second explanation']) assert.ok(wordXml.includes(expected), `Word must retain ${expected}`);
   assert.ok(wordXml.includes('（2.5 分）'), 'one-decimal paper scores accepted by the editor must survive Word rendering with user-facing Chinese copy');
   assert.ok(!wordXml.includes(' pts'), 'Chinese paper exports must not expose the internal English score abbreviation');
   assert.ok(!wordXml.includes('x^{2}'), 'LaTeX source must be rendered as a formula instead of being falsely presented as finished paper text');
-  for (const expected of ['试题', '参考答案', '答案：A', '解析：First explanation']) assert.ok(wordXml.includes(expected), `Word export must use Chinese paper labels: ${expected}`);
+  for (const expected of ['Part one', '参考答案', '答案：A', '解析：First explanation']) assert.ok(wordXml.includes(expected), `Word export retains explicit sections and Chinese answer labels: ${expected}`);
   assert.ok(wordXml.indexOf('Second stem') < wordXml.indexOf('答案：A'), 'end-position answers must follow every question in Word');
   const wordArchive = await JSZip.loadAsync(word.bytes);
   assert.ok(Object.keys(wordArchive.files).some(name => /^word\/media\/.+\.png$/.test(name)), 'Word must embed verified question images rather than omit them');
   assert.ok(Object.keys(wordArchive.files).some(name => /^word\/media\/.+\.png$/.test(name)), 'Word must embed a raster formula representation that Microsoft Word can display');
   assert.deepStrictEqual(assetCalls, [{ questionId: 'q1', assetKey: 'a'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png', assetType: 'image' }, { questionId: 'q1', assetKey: 'b'.repeat(64), fileName: 'formula-preview.png', mimeType: 'image/png', assetType: 'formula_preview' }]);
   const wordAfter = await renderPaperExport({ ...input, format: 'word', answerPosition: 'after' }, { resolveQuestionAsset });
-  const wordAfterXml = await (await JSZip.loadAsync(wordAfter.bytes)).file('word/document.xml').async('string');
+  const wordAfterXml = await questionXml(await JSZip.loadAsync(wordAfter.bytes));
   assert.ok(wordAfterXml.indexOf('答案：A') < wordAfterXml.indexOf('Second stem'), 'after-position answers must follow their own question in Word');
   const pdf = await renderPaperExport({ ...input, format: 'pdf' }, { resolveQuestionAsset });
   assert.strictEqual(pdf.extension, 'pdf');
   assert.ok(pdf.bytes.subarray(0, 5).equals(Buffer.from('%PDF-')));
   assert.ok(!pdf.bytes.includes(Buffer.from('x^{2}')), 'PDF must contain formula vectors rather than raw LaTeX source');
-  assert.ok(pdf.bytes.includes(Buffer.from('NotoSansCJKsc-Regular')), 'PDF must embed the CJK-capable font used by Chinese question papers');
+  assert.ok(pdf.bytes.includes(Buffer.from('NotoSerifCJKsc-Regular')), 'PDF must embed the template-compatible open CJK serif font');
   const after = await renderPaperExport({ ...input, format: 'pdf', answerPosition: 'after' }, { resolveQuestionAsset });
-  assert.ok(after.bytes.subarray(0, 5).equals(Buffer.from('%PDF-')) && after.bytes.includes(Buffer.from('NotoSansCJKsc-Regular')),
+  assert.ok(after.bytes.subarray(0, 5).equals(Buffer.from('%PDF-')) && after.bytes.includes(Buffer.from('NotoSerifCJKsc-Regular')),
     'after-position PDF must be rendered through the same CJK-capable renderer');
   const richWord = await renderPaperExport({
     format: 'word', title: 'Structured formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-rich', stem: 'Fallback stem', answer: 'A', explanation: 'Explanation', richContent: productionRichContent }],
   });
   const richArchive = await JSZip.loadAsync(richWord.bytes);
-  const richXml = await richArchive.file('word/document.xml').async('string');
+  const richXml = await questionXml(richArchive);
   assert.ok(richXml.includes('Structured stem'), 'formal rich content text must remain in the exported paper');
   for (const expected of ['Structured option', 'Structured subquestion', 'Structured subanswer', 'Structured answer', 'Structured analysis']) {
     assert.ok(richXml.includes(expected), `formal rich content must retain ${expected}`);
@@ -131,7 +134,7 @@ require('./wordNativeFormula.test');
   assert.ok(richAnswerIndex < richXml.indexOf('<w:drawing>', richAnswerIndex),
     'an answer formula must retain its position after its answer text instead of moving into the question body');
   const richFormulaSvg = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.svg$/.test(name));
-  const richFormulaPng = Object.keys(richArchive.files).filter(name => /^word\/media\/.+\.png$/.test(name));
+  const richFormulaPng = Object.keys(richArchive.files).filter(name => /^word\/media\/export-.+\.png$/.test(name));
   assert.strictEqual(richFormulaSvg.length, 0, 'Word formula runs must not select SVG because current Microsoft Word renders those formula slots blank');
   assert.ok(richFormulaPng.length >= 5, 'all formulas in formal sections, options, subquestions, answer and analysis must embed a Word-readable PNG');
   const richPdf = await renderPaperExport({
@@ -176,7 +179,7 @@ require('./wordNativeFormula.test');
       },
     } }],
   });
-  const inlineXml = await (await JSZip.loadAsync(inlineWord.bytes)).file('word/document.xml').async('string');
+  const inlineXml = await questionXml(await JSZip.loadAsync(inlineWord.bytes));
   const inlineBefore = inlineXml.indexOf('Before');
   const inlineAfter = inlineXml.indexOf('after');
   const inlineParagraph = inlineXml.slice(inlineXml.lastIndexOf('<w:p', inlineBefore), inlineXml.indexOf('</w:p>', inlineBefore));
@@ -193,10 +196,10 @@ require('./wordNativeFormula.test');
     } }],
   });
   const nativeArchive = await JSZip.loadAsync(nativeWord.bytes);
-  const nativeXml = await nativeArchive.file('word/document.xml').async('string');
+  const nativeXml = await questionXml(nativeArchive);
   assert.ok(nativeXml.includes('<m:oMath>') && nativeXml.includes('<m:f>') && nativeXml.includes('<m:sSup>'),
     'word-native must contain editable OMML fraction and superscript, not formula images');
-  assert.ok(!Object.keys(nativeArchive.files).some(name => /^word\/media\/.+/.test(name)),
+  assert.ok(!Object.keys(nativeArchive.files).some(name => /^word\/media\/export-.+/.test(name)),
     'a native-only formula paper must not silently embed raster formulas');
   const nativeStart = nativeXml.indexOf('Before native');
   const nativeParagraph = nativeXml.slice(nativeXml.lastIndexOf('<w:p', nativeStart), nativeXml.indexOf('</w:p>', nativeStart));

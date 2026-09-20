@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const { renderPaperExport, drawPdfTokens } = require('./paperExportRenderer');
 
@@ -19,7 +20,7 @@ async function verifyTables() {
   const bytes = await sharp({ create: { width: 100, height: 50, channels: 3, background: '#336677' } }).png().toBuffer();
   const input = { title: 'Table fidelity', snapshot, formulaMode: 'word-native' };
   const word = await renderPaperExport({ ...input, format: 'word' }, { resolveQuestionAsset: async () => bytes });
-  const xml = await (await JSZip.loadAsync(word.bytes)).file('word/document.xml').async('string');
+  const xml = await questionXml(await JSZip.loadAsync(word.bytes));
   assert.match(xml, /<w:tbl>/, 'Word must contain a real table');
   assert.match(xml, /<w:gridSpan w:val="2"/);
   assert.match(xml, /<w:vMerge w:val="restart"/);

@@ -8,8 +8,10 @@ const { layoutInlineRuns } = require('./pdfInlineLayout');
 const { paperOptionColumns } = require('./paperOptionLayout');
 const { nativeFormulaComponent } = require('./wordNativeFormula');
 const { withFormulaTagScope } = require('./formulaTagScope');
+const { applyPaperTemplate, pdfTemplateProfile, questionCategory, isSolution, PAGE } = require('./paperExportTemplate');
+const { isChoiceQuestionType } = require('./questionChoiceStructure');
 const sharp = require('sharp');
-const { Document, ImageRun, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, BorderStyle, sectionMarginDefaults, sectionPageSizeDefaults } = require('docx');
+const { Document, ImageRun, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, BorderStyle } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
 const { TeX } = require('mathjax-full/js/input/tex.js');
 const { SVG } = require('mathjax-full/js/output/svg.js');
@@ -37,6 +39,7 @@ function paperScoreSuffix(value) {
 
 function pdfFontPath() {
   const candidates = [
+    path.join(__dirname, '..', 'resources', 'fonts', 'NotoSerifCJKsc-Regular.otf'),
     path.join(__dirname, '..', 'assets', 'fonts', 'NotoSansCJKsc-Regular.otf'),
     path.join(__dirname, '..', '..', 'backend', 'assets', 'fonts', 'NotoSansCJKsc-Regular.otf'),
   ];
@@ -288,7 +291,7 @@ function questions(value, layout, formulaMode) {
       answerTokens: tokensOrFallback(subQuestion?.answer, ''),
     })).filter(subQuestion => subQuestion.label || subQuestion.contentTokens.length || subQuestion.answerTokens.length) : [];
     return {
-      id: item.id, number: index + 1, stemTokens, hasStructuredPlacement: Boolean(sections),
+      id: item.id, number: index + 1, questionType: item.questionType, stemTokens, hasStructuredPlacement: Boolean(sections),
       options: optionGroups,
       optionColumns: paperOptionColumns(sourceOptions),
       subQuestions,
@@ -436,10 +439,10 @@ function wordFormulaTransformation(media, displayMode = 'block') {
 function wordImageTransformation(media) {
   const source = sourceImageSize(media);
   if (source) {
-    // Match the existing docx page defaults, in CSS pixels (15 twips/px).
+    // Match the supplied template content box, in CSS pixels (15 twips/px).
     return fitImageSize(source,
-      (sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT) / 15,
-      (sectionPageSizeDefaults.HEIGHT - sectionMarginDefaults.TOP - sectionMarginDefaults.BOTTOM) / 15 - 24);
+      (PAGE.width - PAGE.left - PAGE.right) / 15,
+      (PAGE.height - PAGE.top - PAGE.bottom) / 15 - 24);
   }
   const width = Number.isFinite(media?.width) && media.width > 0 ? media.width : 420;
   const height = Number.isFinite(media?.height) && media.height > 0 ? media.height : 280;
@@ -503,7 +506,7 @@ function tableGrid(rows) {
 
 function wordTable(token, maxWidth) {
   const { columns } = tableGrid(token.rows);
-  const width = Math.floor(Math.min(maxWidth == null ? Infinity : maxWidth * 15, sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT));
+  const width = Math.floor(Math.min(maxWidth == null ? Infinity : maxWidth * 15, PAGE.width - PAGE.left - PAGE.right));
   const cellWidth = width / columns;
   const border = { style: BorderStyle.SINGLE, size: 4, color: '777777' };
   const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
@@ -579,10 +582,10 @@ function orderedAnswerRows(item, prefix = '') {
 
 function appendWordOptions(rows, options, columns) {
   if (columns === 1 || !options.length) {
-    for (const tokens of options) appendWordTokens(rows, tokens);
+    for (const [index, tokens] of options.entries()) appendWordTokens(rows, tokens, '', undefined, index < options.length - 1);
     return;
   }
-  const width = sectionPageSizeDefaults.WIDTH - sectionMarginDefaults.LEFT - sectionMarginDefaults.RIGHT;
+  const width = PAGE.width - PAGE.left - PAGE.right;
   const cellWidth = Math.floor(width / columns);
   const border = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
   const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border };
@@ -600,34 +603,22 @@ function appendWordOptions(rows, options, columns) {
     layout: TableLayoutType.FIXED, borders, rows: tableRows }));
 }
 
-function orderedBodyRows(items, answerPosition) {
-  const rows = [new Paragraph({ children: [new TextRun({ text: paperLabels.questions, bold: true })] })];
-  let previousSection = '';
+async function wordBytes(input, items) {
+  const rows = [], blocks = [];
   for (const item of items) {
-    if (item.sectionTitle && item.sectionTitle !== previousSection) {
-      rows.push(new Paragraph({ children: [new TextRun({ text: item.sectionTitle, bold: true })] }));
-      previousSection = item.sectionTitle;
-    }
-    const score = paperScoreSuffix(item.score);
-    appendWordTokens(rows, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', undefined, item.options.length > 0);
+    const start = rows.length;
+    appendWordTokens(rows, suffixedTokens(item.stemTokens, paperScoreSuffix(item.score)), String(item.number) + '. ', undefined, item.options.length > 0);
     appendWordOptions(rows, item.options, item.optionColumns);
     for (const subQuestion of item.subQuestions || []) appendWordTokens(rows, subQuestion.contentTokens, subQuestion.label);
     for (const media of item.media || []) rows.push(wordMediaRow(media));
-    if (answerPosition === 'after') rows.push(...orderedAnswerRows(item));
+    if (input.answerPosition === 'after') rows.push(...orderedAnswerRows(item));
+    blocks.push({ start, end: rows.length, questionType: item.questionType, sectionTitle: item.sectionTitle,
+      number: item.number, choiceAnswer: item.answerTokens.filter(t => t.kind === 'text').map(t => t.text).join('') });
   }
-  if (answerPosition !== 'after') {
-    rows.push(new Paragraph({ children: [new TextRun({ text: paperLabels.answerSheet, bold: true })] }));
-    for (const item of items) rows.push(...orderedAnswerRows(item, String(item.number) + '. '));
-  }
-  return rows;
-}
-
-async function wordBytes(input, items) {
-  const document = new Document({ sections: [{ children: [
-    new Paragraph({ children: [new TextRun({ text: input.title, bold: true, size: 32 })] }),
-    ...orderedBodyRows(items, input.answerPosition),
-  ] }] });
-  return Buffer.from(await Packer.toBuffer(document));
+  const bodyCount = rows.length;
+  if (input.answerPosition !== 'after') for (const item of items) rows.push(...orderedAnswerRows(item, String(item.number) + '. '));
+  const document = new Document({ sections: [{ children: rows }] });
+  return applyPaperTemplate(await Packer.toBuffer(document), { title: input.title, answerPosition: input.answerPosition, blocks, bodyCount });
 }
 
 function pdfBytes(input, items) {
@@ -765,7 +756,7 @@ function drawPdfTable(document, token, size, drawVector) {
   document.y += 4;
 }
 
-function drawPdfTokens(document, tokens, prefix = '', size = 10, drawVector = SVGtoPDF) {
+function drawPdfTokens(document, tokens, prefix = '', size = 10.5, drawVector = SVGtoPDF) {
   let inline = prefix ? [{ kind: 'text', text: prefix }] : [];
   const flush = (followingHeight = 0) => {
     if (!inline.length) return;
@@ -871,7 +862,7 @@ function drawPdfOptions(document, options, columns) {
   for (let start = 0; start < options.length; start += columns) {
     const row = options.slice(start, start + columns);
     let overflow = false;
-    const heights = row.map(tokens => measurePdfTokens(document, tokens, width, 10));
+    const heights = row.map(tokens => measurePdfTokens(document, tokens, width, 10.5));
     overflow = heights.some(height => height > document.page.height - margins.top - margins.bottom);
     if (overflow) {
       // A very tall option must flow normally instead of clipping a fixed row.
@@ -897,9 +888,11 @@ function drawPdfOptions(document, options, columns) {
   }
 }
 
-function orderedPdfBytes(input, items) {
+async function orderedPdfBytes(input, items) {
+  const template = await pdfTemplateProfile();
   return new Promise((resolve, reject) => {
-    const document = new PDFDocument({ size: 'A4', margin: 48, compress: false });
+    const margins = { top: PAGE.top / 20, left: PAGE.left / 20, right: PAGE.right / 20, bottom: PAGE.bottom / 20 };
+    const document = new PDFDocument({ size: [PAGE.width / 20, PAGE.height / 20], margins, compress: false, bufferPages: true });
     const font = pdfFontPath();
     if (!font) return reject(failure('CLOUD_PAPER_RENDER_FONT_UNAVAILABLE'));
     const chunks = [];
@@ -907,24 +900,65 @@ function orderedPdfBytes(input, items) {
     document.on('error', reject);
     document.on('end', () => resolve(Buffer.concat(chunks)));
     document.font(font);
-    document.fontSize(18).text(input.title);
-    document.moveDown();
-    let previousSection = '';
+    const contentWidth = document.page.width - margins.left - margins.right;
+    document.lineWidth(template.titleSize * 0.025).fontSize(template.titleSize).text(template.title.replace('\u8bd5\u5377\u540d', input.title), { align: 'center', fill: true, stroke: true });
+    document.moveDown(0.5).fontSize(template.fontSize).text(template.metadata, { align: 'center' });
+    document.moveDown(2);
+    let previousSection = '', sectionNumber = 0, previousSolution = false;
     for (const item of items) {
-      if (item.sectionTitle && item.sectionTitle !== previousSection) {
-        document.fontSize(13).text(item.sectionTitle).moveDown(0.25);
-        previousSection = item.sectionTitle;
+      const solution = isSolution(item), section = item.sectionTitle || questionCategory(item);
+      if ((solution && item.number > 1) || previousSolution) document.addPage();
+      if (section !== previousSection) {
+        const label = item.sectionTitle || `${['\u4e00','\u4e8c','\u4e09','\u56db','\u4e94','\u516d','\u4e03','\u516b','\u4e5d','\u5341'][sectionNumber] || sectionNumber + 1}\u3001${section}`;
+        ensurePdfSpace(document, 48);
+        document.lineWidth(template.fontSize * 0.025).fontSize(template.fontSize).text(label, { fill: true, stroke: true }).moveDown(0.3);
+        previousSection = section; sectionNumber++;
       }
       const score = paperScoreSuffix(item.score);
-      drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', 11);
+      drawPdfTokens(document, suffixedTokens(item.stemTokens, score), String(item.number) + '. ', template.fontSize);
       drawPdfOptions(document, item.options, item.optionColumns);
       for (const subQuestion of item.subQuestions || []) drawPdfTokens(document, subQuestion.contentTokens, subQuestion.label);
       for (const media of item.media || []) drawPdfMedia(document, media);
       if (input.answerPosition === 'after') drawPdfAnswers(document, item);
+      if (solution) {
+        ensurePdfSpace(document, 240);
+        document.y += 240;
+      }
+      previousSolution = solution;
     }
+    let answerPage = Infinity;
     if (input.answerPosition !== 'after') {
-      document.moveDown().fontSize(13).text(paperLabels.answerSheet);
+      document.addPage();
+      answerPage = document.bufferedPageRange().count - 1;
+      document.lineWidth(template.fontSize * 0.025).fontSize(template.fontSize).text(template.answerTitle.replace('\u8bd5\u5377\u540d', input.title), { align: 'center', fill: true, stroke: true }).moveDown();
+      const choices = items.filter(item => isChoiceQuestionType(item.questionType));
+      for (let start = 0; start < choices.length; start += 10) {
+        ensurePdfSpace(document, 40);
+        const batch = choices.slice(start, start + 10), top = document.y, width = contentWidth / 11;
+        for (let row = 0; row < 2; row++) for (let column = 0; column < 11; column++) {
+          const item = batch[column - 1], x = margins.left + column * width, y = top + row * 20;
+          const value = column === 0 ? (row ? '\u7b54\u6848' : '\u9898\u53f7') : item ? (row ? item.answerTokens.filter(t => t.kind === 'text').map(t => t.text).join('') : String(item.number)) : '';
+          document.lineWidth(0.5).rect(x, y, width, 20).stroke();
+          document.fontSize(template.fontSize).text(value, x + 2, y + 3, { width: width - 4, align: 'center', lineBreak: false });
+        }
+        document.x = margins.left; document.y = top + 40;
+      }
+      document.moveDown();
       for (const item of items) drawPdfAnswers(document, item, String(item.number) + '. ');
+    }
+    const total = document.bufferedPageRange().count;
+    for (let index = 0; index < total; index++) {
+      document.switchToPage(index);
+      // Footer text sits outside the body margin; prevent PDFKit from treating
+      // it as overflowing body content and creating phantom extra pages.
+      document.page.margins.bottom = 0;
+      const number = index >= answerPage ? index - answerPage + 1 : index + 1;
+      // The reference has contact and trailing paragraphs beneath the rule.
+      const ruleY = document.page.height - PAGE.footer / 20 - 30;
+      document.font(font).fontSize(template.footerSize).text(`\u7b2c ${number} \u9875 \u5171 ${total} \u9875`, margins.left, ruleY - 13, { width: contentWidth, align: 'center', lineBreak: false });
+      document.lineWidth(1.5).moveTo(margins.left, ruleY).lineTo(document.page.width - margins.right, ruleY).stroke();
+      document.text(template.contact, margins.left, ruleY + 3, { width: contentWidth, align: 'right', lineBreak: false });
+      document.page.margins.bottom = margins.bottom;
     }
     document.end();
   });

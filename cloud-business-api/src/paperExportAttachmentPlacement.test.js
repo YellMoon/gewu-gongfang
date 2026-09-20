@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const { renderPaperExport } = require('./paperExportRenderer');
 
@@ -22,7 +23,7 @@ async function verifyAttachmentPlacement() {
     } },
   }] };
   const resolveQuestionAsset = async () => bytes;
-  const wordXml = async value => (await JSZip.loadAsync((await renderPaperExport({ ...value, format: 'word' }, { resolveQuestionAsset })).bytes)).file('word/document.xml').async('string');
+  const wordXml = async value => questionXml(await JSZip.loadAsync((await renderPaperExport({ ...value, format: 'word' }, { resolveQuestionAsset })).bytes));
   const xml = await wordXml(input);
   assert.equal((xml.match(/<m:oMath>/g) || []).length, 1, 'the formula remains native and editable');
   assert.equal((xml.match(/<w:drawing>/g) || []).length, 2,

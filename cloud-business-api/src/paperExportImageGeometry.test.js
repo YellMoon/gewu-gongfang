@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const JSZip = require('jszip');
+const { questionXml } = require('./paperExportTestContent');
 const sharp = require('sharp');
 const { renderPaperExport, drawPdfTokens } = require('./paperExportRenderer');
 
@@ -26,7 +27,7 @@ async function testSourceGeometryAndPlacement() {
   const resolveQuestionAsset = async () => { calls++; return bytes; };
   const word = await renderPaperExport({ ...input, format: 'word' }, { resolveQuestionAsset });
   const archive = await JSZip.loadAsync(word.bytes);
-  const xml = await archive.file('word/document.xml').async('string');
+  const xml = await questionXml(archive);
   const extents = [...xml.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"/g)];
   const answerHeading = '\u53c2\u8003\u7b54\u6848';
   assert.equal(extents.length, 3, 'each placed image occurrence survives; no appended duplicate or early answer image');
@@ -81,7 +82,7 @@ async function testImageGeometry() {
         assets: [{ assetKey: 'a'.repeat(64), fileName: 'diagram.png', mimeType: 'image/png', assetType: 'image' }] }],
     }, { resolveQuestionAsset: async () => bytes });
     const archive = await JSZip.loadAsync(result.bytes);
-    const xml = await archive.file('word/document.xml').async('string');
+    const xml = await questionXml(archive);
     const extents = [...xml.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"/g)];
     assert.equal(extents.length, 1, 'the source diagram appears exactly once');
     const actualWidth = Number(extents[0][1]) / 9525;
@@ -89,7 +90,7 @@ async function testImageGeometry() {
     const scale = Math.min(420 / width, 280 / height, 1);
     assert(Math.abs(actualWidth - width * scale) < 0.001, 'Word diagram width must preserve its natural aspect ratio without upscaling');
     assert(Math.abs(actualHeight - height * scale) < 0.001, 'Word diagram height must preserve its natural aspect ratio without upscaling');
-    const media = Object.keys(archive.files).filter(name => /^word\/media\/.+\.png$/.test(name));
+    const media = Object.keys(archive.files).filter(name => /^word\/media\/export-.+\.png$/.test(name));
     assert.equal(media.length, 1);
     assert((await archive.file(media[0]).async('nodebuffer')).equals(bytes), 'sizing must not rewrite the original diagram bytes');
   }
