@@ -85,6 +85,9 @@ async function captureMiniapp(format, retry) {
 }
 
 (async () => {
+  const template = await JSZip.loadAsync(fs.readFileSync(path.resolve(__dirname,
+    '../../cloud-business-api/resources/paper/output-template.docx')));
+  const mediaNames = archive => Object.keys(archive.files).filter(name => /^word\/media\/[^/]+$/.test(name)).sort();
   for (const [page, capture] of [['desktop', captureDesktop], ['miniapp', captureMiniapp]]) {
     for (const format of ['word', 'pdf']) {
       const request = await capture(format);
@@ -98,8 +101,15 @@ async function captureMiniapp(format, retry) {
         const xml = await archive.file('word/document.xml').async('string');
         assert.equal((xml.match(/<m:oMath>/g) || []).length, 1, `${page}: output must contain native OMML`);
         assert.ok(xml.includes('<m:f>') && xml.includes('<m:sSup>'), 'Fraction and exponent must remain editable');
-        assert.ok(!xml.includes('<w:drawing'), 'Formula must not become a picture');
-        assert.equal(Object.keys(archive.files).filter(name => /^word\/media\/[^/]+$/.test(name)).length, 0);
+        const formulaParagraphs = [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)]
+          .map(match => match[0]).filter(paragraph => paragraph.includes('<m:oMath>'));
+        assert.equal(formulaParagraphs.length, 1);
+        assert.ok(!/<w:(?:drawing|pict)\b/.test(formulaParagraphs[0]), 'Formula must not become a picture');
+        assert.deepEqual(mediaNames(archive), mediaNames(template), 'No formula raster images may be added to the supplied template');
+        for (const name of mediaNames(template)) {
+          assert.deepEqual(await archive.file(name).async('nodebuffer'), await template.file(name).async('nodebuffer'),
+            `Template media must stay byte-identical: ${name}`);
+        }
       } else {
         assert.equal(artifact.extension, 'pdf');
         assert.equal(artifact.bytes.subarray(0, 5).toString(), '%PDF-');
