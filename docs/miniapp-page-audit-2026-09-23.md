@@ -9,7 +9,63 @@ Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. Baseline checks were read-only; later reversible
 test writes and their cleanup are explicitly recorded in their sections.
 
-## Student detail and boundary recovery (8.8.17 candidate, UTF-8)
+## Question filter miss and restricted-role recovery (8.8.18 candidate, UTF-8)
+
+Real teacher baseline `gewu-question-runtime-20260923-9st7onfu` reads 40 of
+108 questions from the production API. Answer expansion/collapse, local basket
+add/remove/drawer, secondary-filter sheet and native pull work. Searching an
+unmatched string wrongly displayed "题库中暂无题目"; its screenshot was inspected.
+The earlier `g2dza7xy` harness failed because its helper rejected compound CSS
+selectors; it is not relabeled as a page failure or a successful full run.
+Both baseline runs restored original auth and scoped storage.
+
+Actual TSX regression first failed on the wrong empty message, then passed
+all five roles, source/text filtering, clear action, true empty library and
+loading/offline/denied states. The fix derives empty-filter state from existing
+state (no new effect/state or API) and adds a local Clear Filters recovery.
+Full UI tests, question display/basket/cloud-delivery regressions, typecheck,
+weapp build and independent-version checks pass. Full miniapp-cloud-read suite,
+including isolated PostgreSQL and paper-export regression, also passes.
+Miniapp alone is 8.8.18; development upload remains pending.
+
+Final-build combined run `sjoz2yo5` passed teacher/admin real reads, default
+collapsed answers, toggles, local basket add/remove/drawer, corrected unmatched
+search recovery and native pull. Its student branch then failed in the harness:
+an unquoted no-space arrow expression crossed cmd.exe's redirection boundary.
+It remains an overall failed receipt (two completed cases), original auth/storage
+restored. The expression helper now forces a quoted argument; remaining S/F/V
+run separately. This failure does not justify repeating the completed A/T cases.
+The next `ugbrc264` student run captured a real native permission modal but the
+assertion failed because identity setup had refreshed away the earlier mock.
+Moving mock installation after identity setup resolved the harness issue; the
+failed receipt/screenshot remain preserved and original auth/storage restored.
+
+`ojhr4o9l` passed S/F/V: formal roles read 40 rows, visitor reads 20; answers
+default collapsed and toggle, restricted basket action writes no selection,
+unmatched search shows the corrected message and Clear Filters restores the
+list; native pull passes. Nine screenshots individually inspected, plus all nine
+completed teacher/admin case screenshots from `sjoz2yo5`. Auth/storage restored;
+no cloud business writes or mocked projection/question responses. The native
+modal is controlled only to capture parameters/cancel; phone consent is not tested.
+S/F/V report SHA256:
+`b9e1e5eabfa2ed42ef5eb8743faeaebd571b080bc3330d5699fdd39912dcbc00`.
+
+This audit also found the old student/family "去申请" action leads to the
+visitor-only application page, which relaunches Login for formal roles. A second
+actual-component red/green test now preserves visitor application but gives
+formal roles a non-navigating "知道了" explanation requiring a teacher account.
+No role grant or application eligibility changed. Final UI/typecheck/build pass.
+Prompt-only final-build follow-up `gk5sfrhe` passed S/F/V: formal accounts receive
+"知道了" with no cancel/route change; visitor retains "去申请". Real page button
+handlers used, only native modal response controlled/cancelled; no basket writes.
+Original auth/scoped storage restored. No new phone-consent or native-modal
+visual acceptance claimed. UTF-8 evidence remains separate from media delivery.
+
+Strict download-domain failure is NOT bypassed. Real screenshots show missing
+question media; neither media quality nor full question-bank visual acceptance
+is claimed. No new import/export/cloud business mutation was performed.
+
+## Student detail and boundary recovery (8.8.17, UTF-8)
 
 The detail page previously loaded only on mount, lacked its own pre-read page
 permission gate, discarded usable cache on failed refresh and did not guard
@@ -737,7 +793,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | teachers/index | A/T; deny S/F/V | Scope, contact display and long text | A/T counts/native pull and S/F/V denial/recovery passed; T cached-failure/recovery and zero-fee correction observed; physical offline/no-cache/cold-auth/touch checks remain |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |
 | stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
-| question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
+| question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Five-role real reads/answer toggle/native pull/no-match recovery pass; A/T local basket add/remove/drawer pass; S/F/V write restriction verified; 18 screenshots inspected. Media-download gate, full filter combinations, late-page option geometry and complete visual acceptance remain open |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T; deny S/F/V | Personal import only, CSV/error/empty state, scope | Real A/T reads, S/F/V denial; teacher real 24-row CSV import/replay/conflict/owner isolation/readback/native pull and exact cleanup pass; populated month/year/all/bottom inspected (five PNGs), original auth/cache restored; physical-device consent/offline still open |
 | settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |

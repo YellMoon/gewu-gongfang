@@ -390,6 +390,16 @@ export default function QuestionBankPage() {
   };
 
   const requestRoleApplication = () => {
+    // UTF-8: The application page accepts visitors, not existing formal roles.
+    if (!isVisitor) {
+      Taro.showModal({
+        title: '组卷需要教师角色',
+        content: '请使用教师账号选题、组卷和导出。',
+        confirmText: '知道了',
+        showCancel: false,
+      });
+      return;
+    }
     Taro.showModal({
       title: '组卷需要教师角色',
       content: '申请教师角色后即可选题、组卷和导出。',
@@ -464,10 +474,12 @@ export default function QuestionBankPage() {
   const moreFilterCount = [selectedSource, selectedKnowledge, selectedGrade, selectedSemester, selectedExamType, selectedExamYear]
     .filter(Boolean).length;
 
+  // UTF-8: A successful filtered search with no matches is not an empty library.
+  const emptyFilteredResult = previewState === 'empty' && hasActiveFilters;
   const stateText = previewState === 'loading'
     ? '正在加载题库'
     : previewState === 'empty'
-      ? '题库中暂无题目'
+      ? emptyFilteredResult ? '没有符合条件的题目' : '题库中暂无题目'
       : previewState === 'forbidden'
         ? '当前账号暂无题库访问权限'
         : '暂时无法加载题库';
@@ -652,6 +664,10 @@ export default function QuestionBankPage() {
       ? <View className={'question-preview-empty state-' + previewState}>
         <Text className='question-empty-title'>{stateText}</Text>
         {previewMessage ? <Text className='question-empty-message'>{previewMessage}</Text> : null}
+        {emptyFilteredResult ? <>
+          <Text className='question-empty-message'>{'换一个筛选条件试试'}</Text>
+          <Button className='question-retry' onClick={clearFilters}>{'清除筛选'}</Button>
+        </> : null}
         {previewState === 'offline' ? <Button className='question-retry' onClick={loadQuestions}>{'重试'}</Button> : null}
       </View>
       : !visibleQuestions.length
