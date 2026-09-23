@@ -59,6 +59,17 @@ schedule records, without creating teaching data or changing the device clock.
 - All 17 final screenshots were individually inspected (four per formal role,
   plus the visitor boundary). No card clipping or date-control overlap seen.
 
-Development upload is pending; do not infer it from the local runtime. Physical
-phone touch, offline/cold-session behavior and the full 18-page audit remain
-separate gates. Programmatic taps do not prove physical touch accessibility.
+Committed source `613908f82964bbbd38141174f78fec737831f90a` was pushed to
+`gewu/master`. Re-ran the complete miniapp UI suite, typecheck, independent
+version tests and weapp build (13.72s), all exit zero. The existing guarded
+fixed-egress CI workflow uploaded 8.8.20 and finalized its development receipt
+after post-upload checks at `2026-09-23T15:26:21.821Z`. Evidence directory:
+`gewu-miniapp-8820-upload-20260923-awi5hqyc`; `active.json` marks miniapp verified.
+No desktop feed, cloud deployment or NAS update was performed or needed here.
+
+The strict wx.downloadFile gate was retried after upload and still returns
+`REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz`.
+The active dist project retains urlCheck=true and has no private config override.
+This is not full multi-end release acceptance. Physical phone touch,
+offline/cold-session behavior and the full 18-page audit remain separate gates.
+Programmatic taps do not prove physical touch accessibility.
