@@ -8,6 +8,51 @@ explicitly failed teaching-page baseline cleanup below is an exception.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## Personal assets import integrity (8.8.15 / cloud 8.11.21 prepared, UTF-8)
+
+Not deployed yet. Existing teacher import was exposed by the UI but rejected by
+the cloud repository. A changed idempotent retry was validated after COMMIT and
+could leave extra categories/records despite a conflict response. Isolated PG17
+reproduced the partial write; validation now happens inside the real transaction
+callback, matching server.js BEGIN/work/COMMIT/ROLLBACK wiring. Teacher imports
+remain owned by the verified account; student/family/visitor/retired admin imports
+are denied. HTTP route tests use the actual repository and reject body-supplied
+account IDs. Decimal tests reproduced valid 2.55/18.35 rejection from binary
+floating-point multiplication; both parsers now enforce exact two-decimal values
+and the existing 100,000,000 maximum without that false rejection.
+
+Actual TSX tests first reproduced two simultaneous file pickers. The page now
+captures its session before file selection, locks concurrent submissions, asks
+for explicit confirmation, and hashes normalized records for the existing
+account-scoped idempotency header. It never submits on show/reconnect. Cancel is
+quiet; raw CSV/transport codes are replaced with actionable messages. Deferred
+picker/read/modal/POST responses cannot submit or notify a replaced account,
+hidden/unmounted page, or denied role. Picker hide/show retains its original lock.
+Read-only projection refresh follows successful import and page return/native
+pull; loading, fresh empty data, failed reads and scoped cached data are distinct.
+Displayed amounts retain cents. Existing periods/category calculations remain.
+
+Current checks: assetsRuntime, CSV/hash, repository, actual HTTP route and isolated
+PG17 rollback/replay/owner tests pass; full miniapp UI/read suites and typecheck/
+weapp build pass. Final 8.8.15 typecheck/build and repeated HTTP/PG checks also
+pass. The frozen cloud lifecycle release gate is still required. Tests are included in npm UI
+pretest and cloud-read posttest hooks. No desktop or NAS runtime change.
+
+DevTools baseline `gewu-assets-baseline-20260923-hp5pcs2l` confirmed a raw
+PERSONAL_ASSET_CSV_HEADER_INVALID toast argument (zero requests, original auth/
+cache restored); its initial screenshot was inspected. New runtime run
+`gewu-assets-runtime-20260923-kj3iszut` passed teacher/admin real cloud reads,
+invalid CSV, cancelled confirmation, two same-key failed retries with amount
+2.55, replay notice, failed post-import read and native-pull recovery, plus
+student denial. Five screenshots inspected. Import/file/modal responses were
+controlled; no production financial writes or native phone/file consent claimed.
+The combined run remains FAILED because the harness addressed family_member
+instead of its existing family fixture key. Original auth/cache were restored.
+Follow-up `gewu-assets-runtime-20260923-l6s13bjb` passed family and visitor denial;
+both screenshots inspected, original auth/cache restored. Seven inspected images
+show no clipping in these empty/failure/denied states. Populated long-list layout,
+physical offline and real production import/replay/readback remain unverified.
+
 ## Teaching page read-state correction (8.8.14, UTF-8)
 
 Scope: course list, timetable and lesson detail, preserving original course

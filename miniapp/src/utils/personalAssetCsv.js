@@ -45,7 +45,7 @@ function parsePersonalAssetCsv(source) {
     if (row.length !== 5) throw failure('PERSONAL_ASSET_CSV_ROW_INVALID');
     const [date, type, amountText, category, note] = row.map(value => value.trim());
     const amount = Number(amountText);
-    if (!validDate(date) || !['income', 'expense'].includes(type) || !Number.isFinite(amount) || amount <= 0 || Math.round(amount * 100) !== amount * 100
+    if (!validDate(date) || !['income', 'expense'].includes(type) || !Number.isFinite(amount) || amount <= 0 || amount > 100000000 || Number(amount.toFixed(2)) !== amount
       || !category || category.length > 128 || note.length > 2000) throw failure('PERSONAL_ASSET_CSV_ROW_INVALID');
     return { date, type, amount, category, note };
   });

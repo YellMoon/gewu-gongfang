@@ -38,13 +38,13 @@ function optionalText(value, max) {
 
 function amount(value) {
   const parsed = typeof value === 'number' ? value : (typeof value === 'string' && value.trim() ? Number(value) : NaN);
-  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100000000 || Math.round(parsed * 100) !== parsed * 100) throw failure('CLOUD_PERSONAL_ASSET_INPUT_INVALID');
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100000000 || Number(parsed.toFixed(2)) !== parsed) throw failure('CLOUD_PERSONAL_ASSET_INPUT_INVALID');
   return parsed;
 }
 
 function actor(value) {
   if (!plainObject(value) || !Array.isArray(value.roles) || typeof value.accountId !== 'string' || !value.accountId.trim()) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
-  if (!value.roles.includes('super_admin')) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
+  if (!value.roles.some(role => role === 'super_admin' || role === 'teacher')) throw failure('CLOUD_PERSONAL_ASSET_ACCESS_DENIED');
   return { accountId: text(value.accountId, 512) };
 }
 
@@ -67,17 +67,20 @@ function createPersonalAssetImportRepository({ transaction, randomId = () => cry
       const requestHash = crypto.createHash('sha256').update(stableJson(records), 'utf8').digest('hex');
       const importId = `asset_import_${String(randomId()).replace(/^asset_import_/, '').replace(/[^A-Za-z0-9_-]/g, '')}`;
       if (!/^asset_import_[A-Za-z0-9_-]{8,128}$/.test(importId)) throw failure('CLOUD_PERSONAL_ASSET_INPUT_INVALID');
-      const result = await transaction(query => query([
+      // UTF-8: Validate conflicts and receipts before COMMIT so failed retries leave no partial rows.
+      return transaction(async query => {
+      const result = await query([
         'WITH input_rows AS (SELECT row_number() OVER ()::integer AS ordinal,(item->>\'date\')::date AS record_date,item->>\'type\' AS record_type,(item->>\'amount\')::numeric(14,2) AS amount,item->>\'category\' AS category_name,item->>\'note\' AS note FROM jsonb_array_elements($5::jsonb) item),',
         'current_import AS (INSERT INTO business.personal_asset_imports(import_id,tenant_id,account_id,idempotency_key,request_hash,record_count) SELECT $4,$1,$2,$3,$6,(SELECT count(*) FROM input_rows) ON CONFLICT (tenant_id,account_id,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING import_id AS "importId",record_count AS "recordCount",request_hash AS "requestHash",created_at AS "createdAt",(xmax<>0) AS replayed),',
         'categories AS (INSERT INTO business.personal_asset_categories(category_id,tenant_id,account_id,name,category_type) SELECT \'asset_category_\'||md5($1||\':\'||$2||\':\'||record_type||\':\'||category_name),$1,$2,category_name,record_type FROM input_rows,current_import ON CONFLICT (tenant_id,account_id,category_type,name) DO NOTHING RETURNING category_id),',
         'records AS (INSERT INTO business.personal_asset_records(record_id,import_id,source_ordinal,tenant_id,account_id,record_date,record_type,category_id,category_name,amount,note) SELECT \'asset_record_\'||md5(current_import."importId"||\':\'||input_rows.ordinal::text),current_import."importId",input_rows.ordinal,$1,$2,input_rows.record_date,input_rows.record_type,\'asset_category_\'||md5($1||\':\'||$2||\':\'||input_rows.record_type||\':\'||input_rows.category_name),input_rows.category_name,input_rows.amount,input_rows.note FROM input_rows,current_import ON CONFLICT (import_id,source_ordinal) DO NOTHING RETURNING record_id) SELECT "importId","recordCount","requestHash","createdAt",replayed FROM current_import',
-      ].join(' '), [tenantId, currentActor.accountId, idempotencyKey, importId, JSON.stringify(records), requestHash]));
+      ].join(' '), [tenantId, currentActor.accountId, idempotencyKey, importId, JSON.stringify(records), requestHash]);
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_PERSONAL_ASSET_UNAVAILABLE');
       const row = result.rows[0];
       if (row.requestHash !== requestHash) throw failure('CLOUD_PERSONAL_ASSET_IDEMPOTENCY_CONFLICT');
       if (typeof row.importId !== 'string' || !Number.isSafeInteger(Number(row.recordCount)) || !(row.createdAt instanceof Date)) throw failure('CLOUD_PERSONAL_ASSET_UNAVAILABLE');
       return { importId: row.importId, recordCount: Number(row.recordCount), createdAt: row.createdAt.toISOString(), replayed: Boolean(row.replayed) };
+      });
     },
   });
 }

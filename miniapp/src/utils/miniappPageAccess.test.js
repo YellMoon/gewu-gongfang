@@ -78,6 +78,7 @@ function load(sourcePath, customRequire) {
       } };
       if (name === './paymentsRuntime') return require('../pages/payments/paymentsRuntime');
       if (name.endsWith('/studentDisplay')) return {};
+      if (name.endsWith('/personalAssetImport')) return require('./personalAssetImport');
       if (name.endsWith('.scss') || name.endsWith('/permission') || name.endsWith('/api') || name.endsWith('/authSession') || name.endsWith('/personalAssetCsv') || name.endsWith('/shared') || name.endsWith('/types')) return {};
       throw Error(`${page}: ${name}`);
     });

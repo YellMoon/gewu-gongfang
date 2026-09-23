@@ -42,7 +42,28 @@ async function main() {
     () => repository.import({ tenantId: 'default', actor: { accountId: 'retired-admin-1', roles: ['admin'] }, idempotencyKey: 'asset-import-4', records: [{ date: '2026-08-03', type: 'income', amount: 1, category: 'Tuition', note: '' }] }),
     /CLOUD_PERSONAL_ASSET_ACCESS_DENIED/,
   );
-  console.log('cloud personal asset import repository checks passed');
+  await repository.import({tenantId:'default',actor:{accountId:'teacher-1',roles:['teacher']},idempotencyKey:'teacher-import',records:[{date:'2026-09-23',type:'expense',amount:12,category:'Books',note:''}]});
+  assert.equal(queryCalls.at(-1).values[1],'teacher-1','teacher imports are owned by the authenticated account');
+  for(const invalidRow of [null,{requestHash:'different'}, {requestHash:'same',importId:null}]) {
+    let committed=false, rolledBack=false;
+    const failing=createPersonalAssetImportRepository({transaction:async work=>{
+      try {
+        const result=await work(async (_sql,values)=>({rows:invalidRow?[{...invalidRow,requestHash:invalidRow.requestHash==='same'?values[5]:invalidRow.requestHash}]:[]}));
+        committed=true;return result;
+      } catch(error) {rolledBack=true;throw error;}
+    }});
+    await assert.rejects(failing.import({tenantId:'default',actor:{accountId:'admin',roles:['super_admin']},idempotencyKey:'failure',records:[{date:'2026-09-23',type:'expense',amount:12,category:'Books',note:''}]}));
+    assert.equal(committed,false,'invalid/conflicting receipt must not COMMIT');assert.equal(rolledBack,true);
+  }
+  const centsInput = {tenantId:'default',actor:{accountId:'teacher-1',roles:['teacher']},idempotencyKey:'cents',records:[{date:'2026-09-23',type:'expense',amount:2.55,category:'Books',note:''}]};
+  for (const amount of [2.55, 18.35, 0.01, 100000000, '18.35']) {
+    await repository.import({...centsInput,records:[{...centsInput.records[0],amount}]});
+    assert.equal(JSON.parse(queryCalls.at(-1).values[4])[0].amount,Number(amount));
+  }
+  for (const amount of [100000000.01, 1.001, 0.00000000001, true, null]) {
+    await assert.rejects(repository.import({...centsInput,records:[{...centsInput.records[0],amount}]}), /CLOUD_PERSONAL_ASSET_INPUT_INVALID/);
+  }
+  console.log('cloud personal asset import repository and cent precision checks passed');
 }
 
 main().catch(error => { console.error(error.stack || error.message); process.exitCode = 1; });

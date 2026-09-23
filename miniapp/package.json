@@ -1,6 +1,6 @@
 {
   "name": "scheduling-miniapp",
-  "version": "8.8.14",
+  "version": "8.8.15",
   "private": true,
   "description": "格物工坊微信小程序",
   "templateInfo": {
@@ -28,6 +28,7 @@
     "dev:qq": "npm run build:qq -- --watch"
   },
   "dependencies": {
+    "crypto-js": "4.2.0",
     "@tarojs/components": "^3.6.23",
     "@tarojs/helper": "^3.6.23",
     "@tarojs/plugin-framework-react": "^3.6.23",
