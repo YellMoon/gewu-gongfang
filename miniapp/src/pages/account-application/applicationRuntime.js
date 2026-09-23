@@ -30,20 +30,33 @@ function copyForApplicationState(state) {
   return { state: normalized, title, description };
 }
 
+// UTF-8: Only local validation messages and known service codes are user-facing.
+class ApplicationInputError extends Error {}
+
+function applicationErrorMessage(error) {
+  if (error instanceof ApplicationInputError) return error.message;
+  const messages = {
+    CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED: '填写的手机号与当前账号已验证手机号不一致',
+    CLOUD_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT: '申请内容已变更，请刷新页面后重新提交',
+  };
+  return Object.hasOwn(messages, error?.code) ? messages[error.code] : '暂时无法提交申请，请稍后重试';
+}
+
 function buildRoleApplicationRequest(input = {}) {
   const requestedIdentity = String(input.requestedIdentity || '').trim();
   if (!['teacher', 'student', 'family_member'].includes(requestedIdentity)) {
-    throw new Error('requested identity must be teacher, student, or family_member');
+    throw new ApplicationInputError('请选择学生、教师或家庭成员');
   }
   const profileMode = String(input.profileMode || '').trim();
-  if (!['existing', 'new'].includes(profileMode)) throw new Error('profile mode must be existing or new');
+  if (!['existing', 'new'].includes(profileMode)) throw new ApplicationInputError('请选择申请方式');
   if (requestedIdentity === 'family_member' && profileMode !== 'existing') {
-    throw new Error('family_member requires existing profile mode');
+    throw new ApplicationInputError('家庭成员需要关联已有学生');
   }
   const profileName = String(input.profileName || '').trim();
   const contactPhone = String(input.contactPhone || '').replace(/[\s-]/g, '');
-  if (!profileName || profileName.length > 64) throw new Error('profile name is required and must not exceed 64 characters');
-  if (!/^1[3-9]\d{9}$/.test(contactPhone)) throw new Error('a valid mainland China mobile phone is required');
+  if (!profileName) throw new ApplicationInputError('请填写姓名');
+  if (profileName.length > 64) throw new ApplicationInputError('姓名不能超过64个字');
+  if (!/^1[3-9]\d{9}$/.test(contactPhone)) throw new ApplicationInputError('请输入正确的11位手机号');
   return {
     requestedIdentity,
     profileMode,
@@ -70,6 +83,7 @@ function createApplicationOperationLock() {
 module.exports = {
   APPLICATION_STATES,
   buildRoleApplicationRequest,
+  applicationErrorMessage,
   copyForApplicationState,
   createApplicationOperationLock,
 };

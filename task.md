@@ -84,11 +84,19 @@ Only miniapp changed; desktop/cloud/NAS versions remain unchanged.
 Privacy UI-only follow-up gewu-privacy-live-20260923-o_u6wa6q passed actual entry,
 five-section/end-note rendering, scroll and API back to Login. All five screenshots
 inspected; original login/cache restored. No phone consent or business writes.
-Open measured finding: privacy link hit target is 88x17 CSS pixels. Enlarge hit
-area without redesign and remeasure. Application source also exposes English
-validation errors through error.message; reproduce empty-name/invalid-phone in
-the UI before localized validation correction. Preserve role policies/payloads.
-Next: those bounded corrections, application states/role matrix, then other page
+8.8.12 follow-up fixes both findings with failing-first tests. The actual TSX
+test confirms localized validation, no invalid request, all five role/mode
+payloads and sanitized unknown service errors. UI/read/typecheck/build/version
+checks pass. Real visitor form run gewu-application-validation-20260923-gzxt19dg
+passed empty-name/phone Submit taps and three role changes; six screenshots
+inspected, captured toast args Chinese, zero network submits. Privacy run
+gewu-privacy-live-20260923-bhgp7lcy passed entry/scroll/back; five screens inspected,
+target measured 88x45, text/layout preserved. Both restore original login/cache.
+Only miniapp 8.8.12 changed; upload pending.
+Separate source/SQL finding: persistent role/mode-only idempotency keys cannot
+resubmit corrected or rejected applications correctly. Reproduce full retry and
+rejection paths, keeping ambiguous-network duplicate protection, before fixing.
+Next: application resubmission/states/role matrix, then other page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.

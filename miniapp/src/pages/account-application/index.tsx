@@ -5,6 +5,7 @@ import { isVisitorIdentity } from '../../utils/accountExperience';
 import { miniappCloudBusinessApi } from '../../utils/api';
 import {
   buildRoleApplicationRequest,
+  applicationErrorMessage,
   copyForApplicationState,
   createApplicationOperationLock,
 } from './applicationRuntime';
@@ -34,11 +35,7 @@ function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity
 
 function responseData(response: any): any {
   if (!response?.success) {
-    const messages: Record<string, string> = {
-      CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED: '\u586b\u5199\u7684\u624b\u673a\u53f7\u4e0e\u5f53\u524d\u8d26\u53f7\u5df2\u9a8c\u8bc1\u624b\u673a\u53f7\u4e0d\u4e00\u81f4',
-      CLOUD_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT: '\u7533\u8bf7\u5185\u5bb9\u5df2\u53d8\u66f4\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u540e\u91cd\u65b0\u63d0\u4ea4',
-    };
-    throw new Error(messages[response?.code] || response?.error || '\u8bf7\u6c42\u5931\u8d25');
+    throw Object.assign(new Error(response?.error || '\u8bf7\u6c42\u5931\u8d25'), { code: response?.code });
   }
   return response.data || response;
 }
@@ -107,7 +104,7 @@ export default function AccountApplicationPage() {
       Taro.showToast({ title: '\u89d2\u8272\u7533\u8bf7\u5df2\u63d0\u4ea4', icon: 'success' });
     } catch (error: any) {
       setState('invalid');
-      Taro.showToast({ title: error?.message || '\u63d0\u4ea4\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5', icon: 'none' });
+      Taro.showToast({ title: applicationErrorMessage(error), icon: 'none' });
     } finally {
       operationLock.current.release('submit');
     }

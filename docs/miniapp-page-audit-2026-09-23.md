@@ -7,6 +7,53 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## Privacy hit target and application error correction (8.8.12, UTF-8)
+
+Two regression tests first failed: actual application TSX emitted English for
+empty name, and the privacy link stylesheet provided no usable minimum target.
+The link now has a 44px minimum height with equal negative vertical margins,
+preserving text baseline/adjacent layout. Local validation uses Chinese messages;
+only known service error codes receive specific copy. Unrecognized service or
+transport errors show a safe retry message, never raw internal error text.
+Submission stays in its existing event handler. No role policy, request fields,
+idempotency contract, routes, privacy policy wording or core business changes.
+
+The new actual-TSX test covers empty name/invalid phone/no invalid request,
+editable recovery, all five role/mode payloads, phone normalization, known-phone
+mismatch, and unknown service/transport errors. Included in test:miniapp-ui.
+UI/cloud-read, typecheck, weapp build and independent-version tests pass.
+The classifier selects miniapp patch 8.8.11 -> 8.8.12; other components unchanged.
+
+Real DevTools evidence:
+
+1. `gewu-application-validation-20260923-gzxt19dg/report.json`, ok=true. Existing
+   cloud-signed visitor session read its real application state. Actual Submit
+   taps with empty name and empty phone produced the expected Chinese messages;
+   request interception counted zero network attempts. Toast arguments were
+   captured through a controlled showToast mock, not a native toast screenshot.
+2. Picker change events selected teacher/family/student. The family form shows
+   Student Name and no profile-mode selector; teacher/student retain both modes.
+   All six screenshots individually inspected; form/error sections fit. Native
+   picker gestures, keyboard coverage and complete submitted/review flow remain.
+3. `gewu-privacy-live-20260923-bhgp7lcy/report.json`, ok=true. Actual link size is
+   88x45 CSS pixels, versus 88x17 before; text position stays visually unchanged.
+   Real tap opens guidance, five sections/end note render, scrolling works and
+   API Back returns to Login. All five screenshots individually inspected.
+   No full accessibility, legal compliance, physical-offline or phone-login claim.
+
+Both successful runs restored original auth/cache state and removed all mocks;
+no business writes. The earlier `gewu-application-validation-20260923-rjgi68bj`
+captured both English messages but stopped at the harness's class-only count
+selector guard. It remains ok=false, original state restored. The helper was
+corrected to count the existing .picker-value class, not a fictitious app fix.
+
+Development upload is pending. Separate open finding from source/SQL review:
+the role/mode-only stored idempotency key survives changed name/phone and rejected
+applications, while SQL rejects changed payloads under the same key and returns
+an old rejected application for identical retries. The refresh-page suggestion
+does not reset that persisted key. Reproduce the complete correction/resubmission
+path before changing it; preserve ambiguous-network retry deduplication.
+
 ## My-page interaction correction (8.8.11, UTF-8)
 
 Before screenshot: `gewu-settings-before-20260923-mppa0nb0/01-settings-before.png`,
@@ -327,7 +374,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | Route under pages/ | Roles / boundary | Inspection focus | Sep 23 evidence and remaining gap |
 | --- | --- | --- | --- |
 | login/index | G | Compact normal login; privacy, denied/failed/retry, phone consent | Pending real consent/error flow |
-| login/privacy | G | Readable text, full scroll, return | 8.8.11 real entry/5 sections/end note/scroll/API back passed, five screenshots inspected; 88x17 entry hit target needs correction; native back tap/large-font/assistive input remain |
+| login/privacy | G | Readable text, full scroll, return | 8.8.12 real entry/5 sections/end note/scroll/API back passed, five screenshots inspected; target enlarged and measured 88x45; native back tap/large-font/assistive input remain |
 | index/index | A/T/S/F/V | Only real authorized entries; navigation and empty state | Student return-home action verified; full role audit pending |
 | forbidden/index | A/T/S/F/V | Reason/application guidance appropriate to role; recovery | Shared denial content checked on payments; dedicated route pending |
 | schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | Earlier ledger flow exists; this audit pending |

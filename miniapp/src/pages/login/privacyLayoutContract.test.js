@@ -17,4 +17,9 @@ assert.doesNotMatch(styles, /privacy-header|privacy-back|privacy-title|safe-area
 assert.match(page, /privacy-content/, 'keep the guidance body');
 assert.match(fs.readFileSync('miniapp/src/pages/login/index.tsx', 'utf8'), /navigateTo\(\{ url: '\/pages\/login\/privacy' \}\)/, 'open on the page stack so native back returns to login');
 
+const loginStyles = require('fs').readFileSync(__dirname + '/index.scss', 'utf8');
+const linkRules = [...loginStyles.matchAll(/\.privacy-link\s*\{([^}]+)\}/g)].map(match => match[1]).join('\n');
+assert.match(linkRules, /min-height:\s*44px/, 'privacy link needs a finger-sized target, not only the text line');
+assert.match(linkRules, /display:\s*inline-flex/, 'text target must respect its minimum height');
+assert.match(linkRules, /align-items:\s*center/, 'keep the link text aligned within its target');
 console.log('miniapp privacy layout contract checks passed');

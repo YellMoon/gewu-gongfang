@@ -37,15 +37,15 @@ assert.deepStrictEqual(buildRoleApplicationRequest({
 });
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'family_member', profileMode: 'new', profileName: '\u674e\u56db', contactPhone: '13900139000' }),
-  /family_member.*existing/,
+  /家庭成员需要关联已有学生/,
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'operator', profileMode: 'existing', profileName: '\u5f20\u4e09', contactPhone: '13800138000' }),
-  /teacher, student, or family_member/,
+  /请选择学生、教师或家庭成员/,
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'teacher', profileMode: 'create', profileName: '\u5f20\u4e09', contactPhone: '13800138000' }),
-  /existing or new/,
+  /请选择申请方式/,
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', profileName: 'x'.repeat(65), contactPhone: '13800138000' }),
@@ -53,7 +53,7 @@ assert.throws(
 );
 assert.throws(
   () => buildRoleApplicationRequest({ requestedIdentity: 'student', profileMode: 'existing', profileName: '\u5f20\u4e09', contactPhone: '12345' }),
-  /mobile phone/,
+  /请输入正确的11位手机号/,
 );
 
 const lock = createApplicationOperationLock();
@@ -91,7 +91,7 @@ assert.ok(!invalidCopy.description.includes('档案'), 'validation guidance must
 assert.ok(!pageSource.includes("className='state-kicker'"), 'the role-application page must not repeat an internal account-identity heading above the user-facing action title');
 assert.ok(pageSource.includes("label: '\\u6559\\u5e08'"), 'the formal role name must be teacher, not the conversational teacher label');
 assert.ok(!pageSource.includes('\\u65b0\\u8eab\\u4efd') && !pageSource.includes('\\u5173\\u8054\\u5bf9\\u8c61'), 'role choices must not expose internal identity terminology');
-assert.ok(pageSource.includes('CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED'), 'a mismatched hand-entered phone must produce an explicit verified-account-phone message');
+assert.ok(runtimeSource.includes('CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED') && pageSource.includes('applicationErrorMessage(error)'), 'a mismatched hand-entered phone must produce an explicit verified-account-phone message');
 assert.ok(pageSource.includes('\\u5f53\\u524d\\u8d26\\u53f7\\u624b\\u673a\\u53f7'), 'the phone field must clearly refer to the current verified account');
 
 console.log('account application runtime checks passed');
