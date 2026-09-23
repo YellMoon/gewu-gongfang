@@ -46,7 +46,13 @@ Local screenshot hashes (same evidence directory):
 - 05-return-refresh-failure.png: b07c0f9957a798b8d1e1a7518a85bfd424423665a3d164130e200f842e09e9f9
 
 Miniapp-only patch 8.8.8 -> 8.8.9. No desktop/cloud/NAS/API/schema changes.
-Upload receipt pending until the guarded CI lifecycle completes. Remaining:
+Source cdbead73cd5ba0e1eb1239b978b6fe924d5b1c55 was pushed to gewu/master.
+Guarded fixed-egress CI upload rebuilt the package and passed compatibility and
+public health checks before/after upload; receipt finalized at
+2026-09-23T08:18:34.663Z, exit 0. Evidence:
+`gewu-miniapp-889-upload-20260923-axrr2a8g/active.json`, miniapp verified,
+releaseLevel development, version 8.8.9. Other unchanged targets remain pending
+in this new manifest; no full-matrix/formal-release claim. Remaining:
 physical offline/cold-auth behavior, rendered loading capture, exact touch-target
 measurements and other rows in the page inventory. No all-page completion claim.
 

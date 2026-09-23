@@ -45,7 +45,9 @@ UI/read/typecheck/build/version tests pass. Real teacher DevTools run
 gewu-stats-refresh-20260923-pug48qqb verifies actual cloud reads, controlled
 503 failure with/without cache, retry tap, native pull and return freshness;
 five screenshots were individually inspected, request mock/cache/login restored.
-This is not physical offline verification. Guarded development upload pending.
+This is not physical offline verification. Source cdbead73 is pushed; guarded
+development upload verified 2026-09-23T08:18:34.663Z, evidence
+gewu-miniapp-889-upload-20260923-axrr2a8g/active.json, miniapp 8.8.9 only.
 Next: rendered loading, physical offline/cold authorization, touch dimensions,
 then students/teachers/settings actions. Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.
