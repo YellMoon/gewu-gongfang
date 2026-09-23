@@ -13,7 +13,10 @@ restored. Five populated/period/bottom/native-pull screenshots inspected.
 Two failed harness receipts retained, not relabeled. See audit report details.
 Real layout defects corrected: category width, joined date/amount, missing
 record context, nested scroll and phantom tab padding. TDD/UI/typecheck/build/
-version tests pass; miniapp alone bumped to 8.8.16. Development upload pending.
+version tests pass; miniapp alone bumped to 8.8.16. Source 147997a3 pushed;
+development upload verified 2026-09-23T12:26:40.115Z, receipt/manifest in
+gewu-miniapp-8816-upload-20260923-tud34x8l. Pre/post health gates pass.
+Cloud 8.11.21, desktop 8.9.8 and NAS 8.8.3 unchanged. No full release claim.
 Do not repeat this completed real import case; next finish remaining route
 detail states (schedule edit, student detail, forbidden, question/download).
 
