@@ -4,7 +4,7 @@
 
 ## Current continuation 2026-09-23 page-detail audit (UTF-8)
 
-Active assets work: cloud 8.11.21 and miniapp 8.8.15 are prepared, NOT deployed.
+Active assets work: cloud 8.11.21 is deployed; miniapp 8.8.15 development uploaded.
 Personal import conflict validation moved inside the transaction after isolated
 PG17 proved partial writes on changed retry; teacher imports use verified owner,
 valid cents no longer fail floating-point validation. Miniapp locks duplicate
@@ -14,10 +14,15 @@ UI/read/typecheck/build and focused HTTP/PG tests pass; seven runtime screenshot
 inspected across five roles (controlled import responses, no financial writes).
 The combined runtime receipt failed on a family fixture key; targeted follow-up
 passed, both restored original auth/cache. See audit report for exact receipts.
-Next: final-version build, selective commit/push, committed-source cloud test
-gate, backup/restore verification, cloud deploy, reversible real import/replay/
-owner readback and populated layout check, then guarded miniapp upload. Do not
-claim deployed or full-page acceptance from these local/controlled tests.
+Source 9b5d87bf is pushed. Final-version build and 183/183 frozen-source cloud
+test commands passed; deployment tests 56 passed. Cloud receipt verified
+2026-09-23T12:02:30Z at gewu-cloud-81121-release-20260923-xb39l0jf/active.json;
+fresh backup/restore/security checks passed before promotion. Guarded miniapp
+development upload verified 2026-09-23T12:03:51.078Z in the SAME manifest;
+receipt gewu-miniapp-8815-upload-20260923-g613xt28. Desktop/NAS unchanged.
+Next: reversible real import/replay/owner readback and populated layout check,
+then remaining page-detail audit. Controlled import responses are not real
+financial writes. Full project and formal miniapp release remain unproven.
 
 The pure-image option correction is complete in cloud 8.11.20 / 080f1bb8;
 production Word/PDF receipts were pushed in 9806a62c. Preserve the supplied

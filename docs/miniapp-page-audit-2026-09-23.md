@@ -8,9 +8,10 @@ explicitly failed teaching-page baseline cleanup below is an exception.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
-## Personal assets import integrity (8.8.15 / cloud 8.11.21 prepared, UTF-8)
+## Personal assets import integrity (8.8.15 development / cloud 8.11.21, UTF-8)
 
-Not deployed yet. Existing teacher import was exposed by the UI but rejected by
+Cloud and development upload verified below; end-to-end import acceptance remains open.
+Existing teacher import was exposed by the UI but rejected by
 the cloud repository. A changed idempotent retry was validated after COMMIT and
 could leave extra categories/records despite a conflict response. Isolated PG17
 reproduced the partial write; validation now happens inside the real transaction
@@ -35,7 +36,7 @@ Displayed amounts retain cents. Existing periods/category calculations remain.
 Current checks: assetsRuntime, CSV/hash, repository, actual HTTP route and isolated
 PG17 rollback/replay/owner tests pass; full miniapp UI/read suites and typecheck/
 weapp build pass. Final 8.8.15 typecheck/build and repeated HTTP/PG checks also
-pass. The frozen cloud lifecycle release gate is still required. Tests are included in npm UI
+pass. The frozen cloud lifecycle release gate passed below. Tests are included in npm UI
 pretest and cloud-read posttest hooks. No desktop or NAS runtime change.
 
 DevTools baseline `gewu-assets-baseline-20260923-hp5pcs2l` confirmed a raw
@@ -52,6 +53,35 @@ Follow-up `gewu-assets-runtime-20260923-l6s13bjb` passed family and visitor deni
 both screenshots inspected, original auth/cache restored. Seven inspected images
 show no clipping in these empty/failure/denied states. Populated long-list layout,
 physical offline and real production import/replay/readback remain unverified.
+
+Source `9b5d87bf77592467c4b088eef903d1e154be8f2d` is pushed to gewu/master.
+Frozen committed-source test receipt `gewu-assets-frozen-tests-20260923-0gzhkb1_`
+records 183/183 commands, exit 0, including nested npm pre/post hooks and the
+new PostgreSQL import test. No unrelated dirty source was included. Direct
+deployment-script verification ran 56 tests, exit 0 (the earlier unittest
+discovery command found zero tests and is not counted as a passing run).
+
+Cloud release evidence: `gewu-cloud-81121-release-20260923-xb39l0jf/active.json`,
+verified 2026-09-23T12:02:30Z, cloud 8.11.21, source above. Database recovery point
+`/root/scheduling-backups/postgres/20260923-120115` was restored and ownership/
+privileges checked before promotion; dump SHA256
+`003ee5dc96859a2711618740910cc9a21d23f9d16b1ab558f3c9a86388489e8d`.
+Gateway backup: `/root/scheduling-backups/gateway/20260923-120126`.
+Public/private health, authority permissions, retired endpoints and WebSocket
+rejection passed; a separate public health read returned ok=true, 8.11.21, cloud.
+
+Guarded fixed-egress development upload used the SAME compatibility manifest.
+Receipt `gewu-miniapp-8815-upload-20260923-g613xt28/receipt.json` records success,
+miniapp 8.8.15, same source commit, verified 2026-09-23T12:03:51.078Z, with
+pre/post health checks and finalized platform upload receipt. Desktop 8.9.8 and
+NAS 8.8.3 are unchanged; their pending slots in this new ledger are not failure
+claims about the earlier deployed versions. This remains a partial development
+release, not a full project or formal miniapp release.
+
+Runtime report hashes: failed combined receipt
+`48451045fca878510d97a0e2d7491f9b0e32ff57fbc5cc20b36843abf3bf3069`;
+successful family/visitor follow-up
+`775e1bf2977ed0b58e71d62290a9a6f1b5e74e333b44a2c887debe194662ea58`.
 
 ## Teaching page read-state correction (8.8.14, UTF-8)
 
@@ -591,7 +621,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
-| assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |
+| assets/index | A/T; deny S/F/V | Personal import only, CSV/error/empty state, scope | Real A/T cloud reads and S/F/V denial checked; controlled CSV/cancel/retry/replay/read-failure/native-pull cases passed; seven screenshots inspected, auth/cache restored; real financial import/readback and populated layout still pending |
 | settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |
 | account-application/index | V | Names/phone instead of internal IDs; role choices and errors | 8.8.12 real state read/invalid Submit/three role events passed; 8.8.13 real handlers with controlled retry/rejection/pending/approved/conflict/failure responses passed, six final screenshots inspected, original state restored; production submission/review, cold auth, formal-role visual denial and native picker/keyboard checks remain |
 
