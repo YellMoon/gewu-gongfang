@@ -23,7 +23,9 @@ Real super-admin UI shows 65 authorized students / 66 controls; last-student
 tap and All reset pass. Teacher scoped filtering and student/family/visitor
 denial with Return Home taps also pass; every original simulator session was
 restored. Miniapp 8.8.8 passes UI/read
-regressions, typecheck and build. Development upload is not yet confirmed.
+regressions, typecheck and build. Code 33425296 is pushed to gewu/master;
+the guarded CI development upload and post-upload health checks succeeded at
+2026-09-23T07:38:16.531Z. Receipt: gewu-miniapp-888-upload-20260923-3i04_emd.
 No desktop, cloud, NAS, permission, schema or teaching-workflow change.
 The 18-route audit remains incomplete; track gaps explicitly in
 docs/miniapp-page-audit-2026-09-23.md. Preserve six unrelated dirty files and

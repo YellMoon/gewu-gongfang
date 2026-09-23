@@ -24,7 +24,19 @@ React review retained render-derived filters/totals rather than duplicate state.
   miniapp typecheck, weapp build, version classification and independent-version
   tests, and `git diff --check`.
 - Miniapp patch 8.8.7 -> 8.8.8; desktop 8.9.8, cloud 8.11.20, storage 8.8.3 unchanged.
-  No protocol or schema change. Upload receipt is pending; not fully released.
+  No protocol or schema change. Development upload is verified below; not fully released.
+
+## Development upload receipt
+
+Source `33425296a12bfe88cdd63f586bc48cc37e847462` pushed to gewu/master.
+Existing fixed-egress CI lifecycle rebuilt and release-checked the package,
+checked compatibility/public health before and after upload, then finalized
+the development receipt at `2026-09-23T07:38:16.531Z`. Exit 0.
+Receipt: `gewu-miniapp-888-upload-20260923-3i04_emd/active.json`,
+miniapp status verified / version 8.8.8 / releaseLevel development. The receipt
+and upload lock were kept outside protected output directories. Unchanged
+component receipts were not fabricated or copied into the new manifest.
+This is development upload only, not formal release or full UI acceptance.
 
 ## Fresh evidence (local temporary-directory basenames)
 
