@@ -111,7 +111,30 @@ UI/read/role-application/typecheck/build/version checks pass. Miniapp-only 8.8.1
 source 5677ec1b is pushed; guarded development upload/post-health verified at
 2026-09-23T10:28:19.896Z, receipt gewu-miniapp-8813-upload-20260923-4pv9pbza.
 No new desktop/cloud/NAS release; partial development release, not full acceptance.
-Next: remaining page
+Current teaching-page follow-up (8.8.14 local): course list/detail/timetable
+falsely presented unavailable uncached reads as empty/missing data. Five current
+baseline screenshots inspected. Baseline cleanup timed out and exact original
+state was lost with runner exit: run rnkksiwf remains failed, marked test login
+was cleared and request mock removed, simulator verified signed out. No business
+writes. New harness uses a signed-out baseline and one batched scoped restoration.
+Failing-first actual TSX tests now pass loading/error/cache/native-refresh/return,
+role/session races, original fee/filter behavior and retained historical labels.
+UI/history/typecheck/build/version checks pass; cloud read suite rerun passed
+after an earlier exit-1 run without diagnostic. Failed live runs u5aewp_x and
+2p6em2mb exposed incorrect harness policy/fixture assumptions; both restored
+state. Screens also revealed the last timetable card hidden below the tab bar;
+a failing-first viewport regression and flex scroll fix now pass. Run ks6dhlex
+passed 16 cases with all four formal roles' cards visible (measured), restoring
+state, but failed the last visitor detail check: unauthorized request showed a
+network retry. Visitor-only pre-read denial now has failing-first/passing TSX
+coverage; final UI/history/typecheck/build pass. Targeted visitor run i5_h89tw
+still rendered old code; official compile-cache-only clear resolved the mismatch.
+Final visitor run y0q3is2o passed application entry/course-detail denial/home
+recovery; three screenshots inspected, original session/cache/mocks restored.
+Real identity/session runtime now backs the TSX harness; session tests pass too.
+Version 8.8.14 is ready for source commit/development upload. All failed
+receipts remain failures; do not repeat all formal-role flows to hide this fact.
+Next: finish teaching-page role/interaction evidence, then remaining page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.

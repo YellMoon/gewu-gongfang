@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro';
 import { Schedule, ScheduleStatus, Course, Student } from '../../types';
 import { getCachedList } from '../../utils/storage';
 import { pullFromCloudBusinessProjection } from '../../utils/sync';
@@ -10,7 +10,10 @@ import {
   shanghaiWeekDateKeys,
   shanghaiDateParts,
 } from '../../utils/cloudBusinessProjection';
-import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
+import { EmptyState, LoadingSkeleton } from '../../components/shared';
+import ForbiddenPage from '../../components/ForbiddenContent';
+import { authSessionRuntime } from '../../utils/authSession';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
 import { isVisitorIdentity } from '../../utils/accountExperience';
 import { isStudentScopedUser } from '../../utils/permission';
 import './index.scss';
@@ -32,7 +35,7 @@ function displayStudentName(student: Student) {
 }
 
 export default function SchedulePage() {
-  const [identity, setIdentity] = useState<any>(() => Taro.getStorageSync('user_info'));
+  const identity = authSessionRuntime.capture().identity;
   const isVisitor = isVisitorIdentity(identity);
   const isStudent = isStudentScopedUser(identity);
   const isLimitedIdentity = isVisitor;
@@ -44,22 +47,9 @@ export default function SchedulePage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  useDidShow(() => {
-    setIdentity(Taro.getStorageSync('user_info'));
-  });
-
-  useEffect(() => {
-    setSelectedStudentId('');
-    setSchedules([]);
-    setCourses([]);
-    setStudents([]);
-    setLoading(true);
-  }, [identity?.id, identity?.user_type, identity?.identity_kind]);
-
-  useEffect(() => {
-    void handleRefresh();
-  }, [currentDateKey, identity?.id, identity?.user_type, identity?.identity_kind]);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const requestSequence = useRef(0);
+  const resultSession = useRef<ReturnType<typeof authSessionRuntime.capture> | null>(null);
 
   const loadData = () => {
     if (isLimitedIdentity) {
@@ -85,25 +75,34 @@ export default function SchedulePage() {
     setLoading(false);
   };
 
-  const handleRefresh = useCallback(async () => {
-    if (isLimitedIdentity) {
-      setSchedules([]);
-      setCourses([]);
-      setStudents([]);
-      setLoading(false);
-      setRefreshing(false);
-      return;
-    }
+  const handleRefresh = async () => {
+    const sequence = ++requestSequence.current;
+    const session = authSessionRuntime.capture();
+    const isCurrent = () => sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
+    if (resultSession.current !== null && !authSessionRuntime.isSameSession(resultSession.current)) setSelectedStudentId('');
+    setSchedules([]); setCourses([]); setStudents([]);
+    setLoading(true); setLoadFailed(false);
     setRefreshing(true);
     try {
-      await pullFromCloudBusinessProjection();
+      if (isVisitorIdentity(session.identity) || !await refreshMiniappPageAccess('/pages/schedule/index') || !isCurrent()) return;
+      let refreshed = false;
+      try { refreshed = await pullFromCloudBusinessProjection(); } catch { /* Authorized cache below. */ }
+      if (!isCurrent() || !canAccessMiniappPage('/pages/schedule/index')) return;
       loadData();
-    } catch {
-      loadData();
+      resultSession.current = session;
+      setLoadFailed(!refreshed);
     } finally {
-      setRefreshing(false);
+      if (sequence === requestSequence.current) {
+        setLoading(false); setRefreshing(false);
+        void Taro.stopPullDownRefresh();
+      }
     }
-  }, [isLimitedIdentity]);
+  };
+
+  useDidShow(handleRefresh);
+  usePullDownRefresh(handleRefresh);
+  useDidHide(() => { requestSequence.current++; setSchedules([]); setCourses([]); setStudents([]); setLoading(true); });
+  useEffect(() => () => { requestSequence.current++; }, []);
 
   const weekRange = useMemo(() => {
     if (viewMode === 'day') return null;
@@ -203,9 +202,18 @@ export default function SchedulePage() {
     );
   }
 
+  if (!canAccessMiniappPage('/pages/schedule/index')) return <ForbiddenPage />;
+  if (resultSession.current !== null && !authSessionRuntime.isSameSession(resultSession.current)) {
+    return <View className='schedule-page'><LoadingSkeleton /></View>;
+  }
+  // UTF-8: Do not represent an unavailable uncached projection as an empty week.
+  if (!loading && loadFailed && schedules.length === 0) {
+    return <View className='schedule-page'><EmptyState text='暂时无法读取课表' actionText='重试' onAction={handleRefresh} /></View>;
+  }
+
   return (
     <View className="schedule-page">
-      <NetworkStatus onRetry={handleRefresh} />
+      {loadFailed && <View className='teaching-cache-notice'><Text>暂时无法更新，显示已保存的数据</Text></View>}
 
 
 

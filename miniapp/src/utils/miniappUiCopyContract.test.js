@@ -126,7 +126,7 @@ assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和�
 assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请角色'), 'the schedule empty state must give a concise, user-facing next step without labeling the account as a visitor');
 assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
 assert.ok(schedulePage.includes('const isStudent = isStudentScopedUser(identity);') && schedulePage.includes('{!isStudent && students.length > 0 && ('), 'student and household-member schedules must not expose the teacher student-filter controls');
-assert.ok(schedulePage.includes('useDidShow') && schedulePage.includes('setIdentity(Taro.getStorageSync'), 'the tabbed schedule page must refresh its identity when a different account opens an already-mounted tab');
+assert.ok(schedulePage.includes('useDidShow(handleRefresh)') && schedulePage.includes('const identity = authSessionRuntime.capture().identity;'), 'the tabbed schedule page must read the current session when an already-mounted tab returns; teachingPagesRuntime tests the actual account switch');
 assert.ok(!homePage.includes('申请关联身份') && homePage.includes('申请角色'), 'the visitor home must not expose internal identity-binding language');
 assert.ok(homePage.includes('查看课程安排。') && !homePage.includes('已关联的课程安排'), 'the visitor schedule entry must not imply an existing relationship before one exists');
 assert.ok(homePage.includes('教师、学生或家庭成员') && !homePage.includes('申请老师、学生或家庭成员'), 'the visitor application entry must use a concise action title rather than a sentence-length button');

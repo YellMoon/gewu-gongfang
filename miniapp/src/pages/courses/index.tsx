@@ -1,13 +1,16 @@
 /**
  * 课程管理 v2 — 筛选 + 下拉刷新 + 完整信息展示
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro';
 import { Course, CourseType } from '../../types';
 import { getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { isStudentScopedUser } from '../../utils/permission';
-import { NetworkStatus, EmptyState, LoadingSkeleton } from '../../components/shared';
+import { EmptyState, LoadingSkeleton } from '../../components/shared';
+import ForbiddenPage from '../../components/ForbiddenContent';
+import { authSessionRuntime } from '../../utils/authSession';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
 import './index.scss';
 
 const TYPE_LABELS: Record<number, string> = { 1: '一对一', 2: '一对二', 3: '小组课', 4: '大班课' };
@@ -19,22 +22,48 @@ export default function Courses() {
   const [filter, setFilter] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  useDidShow(() => { void handleRefresh(); });
-
-  const loadCourses = () => {
-    setCourses(getLocalData<Course>('courses'));
-    setLoading(false);
-  };
+  const [loadFailed, setLoadFailed] = useState(false);
+  const requestSequence = useRef(0);
+  const resultSession = useRef<ReturnType<typeof authSessionRuntime.capture> | null>(null);
 
   const handleRefresh = async () => {
+    const sequence = ++requestSequence.current;
+    const session = authSessionRuntime.capture();
+    const isCurrent = () => sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
+    setCourses([]);
+    setLoading(true);
+    setLoadFailed(false);
     setRefreshing(true);
     try {
-      await pullFromCloudBusinessProjection();
-      loadCourses();
-    } catch { loadCourses(); }
-    finally { setRefreshing(false); }
+      if (!await refreshMiniappPageAccess('/pages/courses/index') || !isCurrent()) return;
+      let refreshed = false;
+      try { refreshed = await pullFromCloudBusinessProjection(); } catch { /* Authorized cache below. */ }
+      if (!isCurrent() || !canAccessMiniappPage('/pages/courses/index')) return;
+      setCourses(getLocalData<Course>('courses'));
+      resultSession.current = session;
+      setLoadFailed(!refreshed);
+    } finally {
+      if (sequence === requestSequence.current) {
+        setLoading(false);
+        setRefreshing(false);
+        void Taro.stopPullDownRefresh();
+      }
+    }
   };
+
+  useDidShow(handleRefresh);
+  usePullDownRefresh(handleRefresh);
+  useDidHide(() => { requestSequence.current++; setCourses([]); setLoading(true); });
+  useEffect(() => () => { requestSequence.current++; }, []);
+
+  if (!canAccessMiniappPage('/pages/courses/index')) return <ForbiddenPage />;
+  if (resultSession.current !== null && !authSessionRuntime.isSameSession(resultSession.current)) {
+    return <View className='courses-page'><LoadingSkeleton /></View>;
+  }
+  // UTF-8: A failed read must not claim the authorized course list is empty.
+  if (!loading && loadFailed && courses.length === 0) {
+    return <View className='courses-page'><EmptyState text='暂时无法读取课程资料' actionText='重试' onAction={handleRefresh} /></View>;
+  }
 
   const filteredCourses = filter === 0 ? courses : courses.filter(c => c.type === filter);
   const activeCourses = filteredCourses.filter(c => c.active);
@@ -42,7 +71,7 @@ export default function Courses() {
 
   return (
     <View className="courses-page">
-      <NetworkStatus onRetry={handleRefresh} />
+      {loadFailed && <View className='teaching-cache-notice'><Text>暂时无法更新，显示已保存的数据</Text></View>}
 
       {/* 筛选栏 */}
       <ScrollView scrollX className="filter-bar">

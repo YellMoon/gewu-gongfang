@@ -3,9 +3,96 @@
 Scope: existing UI, wording, fit, interactions and role boundaries. No redesign
 of original desktop business behavior. Source coverage is not visual acceptance.
 Official DevTools agent CLI, confirmed AppID wx3d570539bbe6ba1b, dist project,
-URL checks enabled. All listed Sep 23 role runs restored the original session.
+URL checks enabled. Successful role runs restore their original session; the
+explicitly failed teaching-page baseline cleanup below is an exception.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
+
+## Teaching page read-state correction (8.8.14, UTF-8)
+
+Scope: course list, timetable and lesson detail, preserving original course
+labels, fee values/calculations, filters, date navigation and core-edit boundary.
+Current-run baseline `gewu-teaching-before-20260923-rnkksiwf` captured five images,
+all individually inspected: actual teacher course/detail, then three controlled
+503 failures after removing only the test identity's selected cache tables.
+The course list falsely said no courses; lesson detail falsely said no record;
+the timetable presented an empty week instead of request failure. These are
+confirmed UI defects, not evidence of empty production data.
+
+That baseline run failed during restoration: a setStorageSync tool observation
+timed out and the runner exited with its original snapshot only in memory.
+Exact original-login/cache restoration is NOT proven. Follow-up removed only
+the marked teacher test session, restored the request API and verified the
+simulator is signed out. This does not erase the failed receipt or imply the
+original state was restored. No production business records were changed.
+The subsequent harness batches its scoped restore into one idempotent call,
+keeps snapshots in memory for retries, and explicitly starts from signed out.
+
+Actual-TSX regression first failed because loading lesson detail rendered a
+missing-record state. All three pages now distinguish loading, fresh empty,
+authorized stale cache and uncached failure/retry. Native pull works in empty
+states, page return refreshes, and sequence/session checks reject hidden, unmounted,
+replaced-account or denied-role responses before reading/rendering cache.
+Historical detail uses the existing cloud lesson-name/type snapshot when the
+course no longer appears in selectors; school/grade use existing desktop-parity
+display helpers. Timetable date switches filter the already-loaded projection;
+page return/native pull remain the refresh entry points. No business write added.
+
+New teachingPagesRuntime tests are included in test:miniapp-ui. UI tests, retained
+course-history test, typecheck/build and independent-version tests pass. The first
+combined cloud-read run stopped with exit 1 after paper repository output and no
+diagnostic; the explicit cloud read-suite rerun completed successfully. This is
+not relabeled as a first-run pass. Scoped version classifier selected miniapp-only
+patch 8.8.13 -> 8.8.14. Final five-role runtime checks and upload are pending.
+
+First runtime run `gewu-teaching-live-20260923-u5aewp_x` passed six teacher
+cases, including cached/uncached failure and real-cloud retry on all three pages.
+It then correctly denied student course-list access, contrary to the harness's
+incorrect expectation. Existing policy is preserved: student/family enter their
+scoped lesson through the timetable; they cannot open the staff course list.
+The actual-TSX harness now consumes the real route policy for this boundary.
+The second run `gewu-teaching-live-20260923-2p6em2mb` passed seven student/family/
+admin interaction cases but stopped when an unscoped fixture selector chose an
+old administrator-visible lesson. Both failed runs restored their original signed-out
+session/cache and removed mocks. Neither is labeled a successful full matrix.
+
+Their bottom-scroll screenshots exposed a real layout defect: the last Sunday
+lesson was still below the fixed tab bar. A failing-first layout regression now
+bounds the page to the viewport and makes only the remaining timetable space
+scrollable, retaining existing tab/safe-area padding. No card content/date/business
+logic changes. The final harness selects only the marked test student's lesson,
+filters staff views to that student, and measures the card/scroll/window bounds
+before accepting screenshots. Build/UI/history/typecheck/version tests reran
+successfully after this correction. Run `ks6dhlex` passed 16 cases and restored
+its signed-out session/cache/mocks, but its last visitor-detail assertion failed:
+the visitor timetable module allowed a detail request that the cloud rejected,
+so the UI misleadingly offered a network retry. This remains a failed receipt,
+SHA256 `9c473a4ab4f26cea4ad9f092ef59499304919cc360c3f65fdc1651599dcb0789`.
+All 31 captured images were individually inspected, including the failure image.
+Four formal roles had full visible last-card bounds: bottom 622.2–622.6 CSS px,
+within scroll bottom 643.6. The visitor still correctly entered role application
+from the empty timetable and was denied the staff course list.
+
+A further failing-first actual-TSX regression reproduced the visitor-detail
+request. That page now rejects visitor identity before any projection/cache read
+and renders the existing role-application guidance. No cloud grant or business
+rule changed. UI/history/typecheck/build checks pass again. Targeted final-build
+visitor denial/return-home run `i5_h89tw` still observed the old retry UI and
+failed, restoring state. The compiled disk chunk contained the new guard.
+After official `cleanCompileCache` only (no storage/auth cleanup), the same build's
+targeted run `y0q3is2o` passed both visitor cases, with three screenshots individually
+inspected: application entry, course-list denial and detail denial; both denial
+buttons returned home. Identity shape was a valid, non-invalidated visitor.
+Original signed-out session/cache were restored, no mocks or business writes.
+Report SHA256 `11c36f70f2a8ca9bc0a4fc9610a702d4a97e08d34e0720cf6820fdff4d9ccaa0`.
+The actual-TSX harness now uses the real identity classifier and session runtime,
+not simplified role/session stubs; it and the underlying session tests pass.
+This supports stale DevTools compile cache as the cause of the post-fix mismatch.
+The four formal-role
+screens above predate only this visitor-only guard; they are not relabeled as
+a second complete five-role run. Day-view interactions, physical offline,
+cold consent, long-list bottom reachability and broader touch/accessibility
+checks remain, as does the rest of the 18-route audit.
 
 ## Application resubmission correction (8.8.13, UTF-8)
 
@@ -438,12 +525,12 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | login/privacy | G | Readable text, full scroll, return | 8.8.12 real entry/5 sections/end note/scroll/API back passed, five screenshots inspected; target enlarged and measured 88x45; native back tap/large-font/assistive input remain |
 | index/index | A/T/S/F/V | Only real authorized entries; navigation and empty state | Student return-home action verified; full role audit pending |
 | forbidden/index | A/T/S/F/V | Reason/application guidance appropriate to role; recovery | Shared denial content checked on payments; dedicated route pending |
-| schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | Earlier ledger flow exists; this audit pending |
-| schedule/detail/index | A/T/S/F | Original details, attendance/fees, missing ID | Earlier ledger flow exists; full states pending |
+| schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | A/T/S/F real week/card/detail/return and visible bottom-card geometry passed; T controlled cached/uncached failure/retry passed; V application entry passed; day view, physical offline/cold auth/touch remain |
+| schedule/detail/index | A/T/S/F; deny V | Original details, attendance/fees, missing ID | Four formal roles real details/student/back/missing record and fee boundary passed; T cached/uncached failure/retry passed; final V pre-read denial and return-home passed after compile-cache refresh; physical offline/cold auth remain |
 | schedule/edit/index | A/T/S/F | Core-edit boundary, recovery; no unauthorized save | Pending |
 | students/index | A/T; deny S/F/V | Complete list/search, details, long labels | A/T counts/search/clear/last detail/native pull and S/F/V denial/recovery passed; T controlled failure/recovery/top notice capture passed; physical offline/no-cache/cold-auth/touch checks remain |
 | student-detail/index | A/T/S/F | Scoped balances/history, tabs, missing ID | Earlier ledger flow exists; full states pending |
-| courses/index | A/T/S/F | Original course semantics, details and empty state | Earlier ledger flow exists; full states pending |
+| courses/index | A/T; deny S/F/V | Original course semantics, details and empty state | A/T real list/filter/reset/native refresh passed; S/F/V denial observed; T cached/uncached failure/retry passed; long-list last-card/physical offline/cold auth/touch remain |
 | teachers/index | A/T; deny S/F/V | Scope, contact display and long text | A/T counts/native pull and S/F/V denial/recovery passed; T cached-failure/recovery and zero-fee correction observed; physical offline/no-cache/cold-auth/touch checks remain |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |
 | stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
