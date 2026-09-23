@@ -39,10 +39,16 @@ timeout is preserved as a failed combined receipt, not relabeled successful;
 independent follow-up passed after runtime recovery. Exact-ID cloud cleanup
 removed the four created room/course/schedule records, original lists/student
 objects matched, temporary registration was revoked and each UI session restored.
-No app release needed. Next: reproduce and fix statistics loading/offline/
-return freshness and confirm touch-target dimensions, then continue students,
-teachers and settings actions. Do not repeat successful paper exports or this
-statistics amount/collapse fixture merely because context is compacted.
+Statistics loading/return/native-refresh/request-failure issues are now fixed
+with TDD in miniapp 8.8.9, preserving existing calculations and normal layout.
+UI/read/typecheck/build/version tests pass. Real teacher DevTools run
+gewu-stats-refresh-20260923-pug48qqb verifies actual cloud reads, controlled
+503 failure with/without cache, retry tap, native pull and return freshness;
+five screenshots were individually inspected, request mock/cache/login restored.
+This is not physical offline verification. Guarded development upload pending.
+Next: rendered loading, physical offline/cold authorization, touch dimensions,
+then students/teachers/settings actions. Do not repeat successful paper exports
+or statistics amount/collapse fixtures merely because context is compacted.
 
 ## Prior continuation 2026-09-20 miniapp student ledger (UTF-8)
 

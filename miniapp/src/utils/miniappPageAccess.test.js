@@ -60,10 +60,12 @@ function load(sourcePath, customRequire) {
     const exports = load(path.join(__dirname, '../pages', page, 'index.tsx'), name => {
       if (name === 'react') return {
         useState: initial => [initial, () => {}], useMemo: fn => fn(), useEffect: fn => callbacks.push(fn),
+        useRef: initial => ({ current: initial }),
       };
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
       if (name === '@tarojs/components') return { View: 'View', Text: 'Text', ScrollView: 'ScrollView' };
-      if (name === '@tarojs/taro') return { useDidShow: fn => callbacks.push(fn) };
+      if (name === '@tarojs/taro') return { useDidShow: fn => callbacks.push(fn), useDidHide: () => {}, usePullDownRefresh: () => {}, default: { stopPullDownRefresh: () => {} } };
+      if (name.endsWith('/authSession')) return { authSessionRuntime: { capture: () => 'session', isSameSession: value => value === 'session' } };
       if (name.endsWith('/miniappPageAccess')) return {
         canAccessMiniappPage: () => currentAccess,
         refreshMiniappPageAccess: async () => { if (page === 'assets' && scenario === 'changed-during-load') currentAccess = false; return permitted; },
@@ -72,6 +74,7 @@ function load(sourcePath, customRequire) {
       if (name.endsWith('/sync')) return { getLocalData: key => { reads.push(key); return []; }, pullFromCloudBusinessProjection: async () => {
         reads.push('cloud');
         if (scenario === 'changed-during-load') currentAccess = false;
+        return true;
       } };
       if (name === './paymentsRuntime') return require('../pages/payments/paymentsRuntime');
       if (name.endsWith('.scss') || name.endsWith('/permission') || name.endsWith('/api') || name.endsWith('/authSession') || name.endsWith('/personalAssetCsv') || name.endsWith('/shared') || name.endsWith('/types')) return {};

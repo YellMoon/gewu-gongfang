@@ -7,6 +7,49 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## Fixed finding: statistics loading, refresh and stale responses (8.8.9)
+
+The real TSX test first failed because initial render showed zero income before
+the cloud response. The correction keeps the existing completed-lesson filter,
+tuition calculation, type/month groups, sort order and normal card layout.
+Page entry/return and native pull-down now refresh once; request sequence and
+account-session guards discard late responses after hide, unmount, superseding
+requests or account/access changes. Failed requests distinguish saved data from
+no available cache; retrying a genuinely empty cloud projection still shows zero.
+The React review keeps these requests in lifecycle/action handlers rather than
+duplicating an initial effect request.
+
+Passed: statsRefresh.test.js (initial loading, return, native refresh, boolean
+failure and thrown error, no-cache retry, verified empty data, racing requests,
+identity changes and denied access); financial pre-read access; test:miniapp-ui;
+test:miniapp-cloud-read including PostgreSQL/export checks; miniapp typecheck;
+weapp build; independent version tests; git diff --check. A first build reported
+shared-style ordering warnings; matching the existing shared/Forbidden import
+order removed those warnings in the next successful build.
+
+Real DevTools teacher session, AppID wx3d570539bbe6ba1b, URL checks unchanged:
+`gewu-stats-refresh-20260923-pug48qqb/report.json`, ok=true. Actual cloud reads
+were used before/after deliberate wx.request 503 failure injection. Native
+startPullDownRefresh triggered the page handler; retry was tapped; navigating
+away and back to the same stats page triggered a new request. This is request
+failure testing, not physical device offline testing. No business mutations.
+Request mocks, test-cache values and the original login were restored.
+
+All five screenshots were individually inspected: cached-data banner and retry
+fit without overlap/clipping; successful state retains the original card layout.
+Local screenshot hashes (same evidence directory):
+
+- 01-cloud-statistics.png: b997a1cd908bfee81869de593051b6130b664f11a54fa7f87adaf942290188fc
+- 02-failed-refresh-with-cache.png: 0821ba5ae07c80f9e5c9cb4d177c5ff6032351247e3e1ad858ca9b747c491e3c
+- 03-failed-refresh-no-cache.png: 6499c77363846a157c1b42e03814e008c6eb15876194fd72e83d3ebc1fb8fa1e
+- 04-real-cloud-retry-recovered.png: ffbfb8cb56167221fa09b644304c9e4cd9fe11f6c553e8fe15ce41fa899697a3
+- 05-return-refresh-failure.png: b07c0f9957a798b8d1e1a7518a85bfd424423665a3d164130e200f842e09e9f9
+
+Miniapp-only patch 8.8.8 -> 8.8.9. No desktop/cloud/NAS/API/schema changes.
+Upload receipt pending until the guarded CI lifecycle completes. Remaining:
+physical offline/cold-auth behavior, rendered loading capture, exact touch-target
+measurements and other rows in the page inventory. No all-page completion claim.
+
 ## Fixed finding: payment filters silently stopped after 20 students
 
 Removed only `students.slice(0, 20)` from the existing horizontal filter.
@@ -146,7 +189,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | courses/index | A/T/S/F | Original course semantics, details and empty state | Earlier ledger flow exists; full states pending |
 | teachers/index | A/T | Scope, contact display and long text | Pending |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |
-| stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T non-empty totals and collapse/expand, A empty state, S/F/V denial/recovery passed; offline/loading/freshness/touch targets pending |
+| stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |
