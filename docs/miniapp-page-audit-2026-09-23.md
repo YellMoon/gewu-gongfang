@@ -7,7 +7,7 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
-## People-list correction in verification (8.8.10, UTF-8)
+## People-list correction (8.8.10, UTF-8)
 
 Direct student navigation previously rendered its own scoped student row on a
 list route that the existing role policy denies; it did not expose all students.
@@ -23,7 +23,13 @@ cache exists. No core business mutation, projection widening or API change.
 Actual TSX runtime tests cover search, detail click, empty/no-match states,
 native/return refresh, failure/retry, hide/unmount and identity/access changes.
 They are included in test:miniapp-ui. UI/read regressions, typecheck and automatic
-independent-version checks pass. Release/upload evidence is not yet recorded.
+independent-version checks and 8.8.10 weapp build pass. Source 36b80a7f is
+pushed to gewu/master. Guarded fixed-egress CI rebuilt/release-checked 8.8.10,
+passed compatibility/public-health checks before and after upload, and finalized
+the verified development receipt at 2026-09-23T09:03:34.407Z, exit 0:
+`gewu-miniapp-8810-upload-20260923-vfaaa0fy/active.json`.
+Desktop 8.9.8, cloud 8.11.20 and storage 8.8.3 are unchanged; their targets are
+pending in this new manifest. No formal or full-matrix release claim.
 
 Test diagnostics are not app findings: a mixed DevTools compile cache produced
 React #130 and a skeleton without running the new page handler. Clearing only
@@ -49,7 +55,13 @@ All 16 screenshots were viewed individually. Long names are ellipsized on list
 cards and readable after opening student details; no card/header overlap seen.
 The student failure screenshot retained bottom scroll after a prior last-card
 test, so it is NOT evidence that the notice is visible; a top-of-page follow-up
-is required. The teacher failure notice fits above the existing list header.
+was required. The teacher failure notice fits above the existing list header.
+The rebuilt 8.8.10 student follow-up
+`gewu-people-pages-20260923-fweiyuwe/report.json` passed actual cloud loading,
+native refresh, controlled failure and recovery, with original login/mock
+restored. Both new screenshots were individually inspected at scroll top:
+notice, search and card fit without overlap. Student failure screenshot SHA256:
+`b4564ece5d199e3960eea2467f8551529d96e4388f5887347cbd9c5c484c19df`.
 Remaining: physical offline, rendered no-cache retry and cold authorization,
 touch dimensions and other detail-page tabs/states. This is not full UI acceptance.
 
@@ -236,7 +248,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | Earlier ledger flow exists; this audit pending |
 | schedule/detail/index | A/T/S/F | Original details, attendance/fees, missing ID | Earlier ledger flow exists; full states pending |
 | schedule/edit/index | A/T/S/F | Core-edit boundary, recovery; no unauthorized save | Pending |
-| students/index | A/T; deny S/F/V | Complete list/search, details, long labels | A/T counts/search/clear/last detail/native pull and S/F/V denial/recovery passed; T controlled failure/recovery passed; top notice capture, physical offline/no-cache/cold-auth/touch checks remain |
+| students/index | A/T; deny S/F/V | Complete list/search, details, long labels | A/T counts/search/clear/last detail/native pull and S/F/V denial/recovery passed; T controlled failure/recovery/top notice capture passed; physical offline/no-cache/cold-auth/touch checks remain |
 | student-detail/index | A/T/S/F | Scoped balances/history, tabs, missing ID | Earlier ledger flow exists; full states pending |
 | courses/index | A/T/S/F | Original course semantics, details and empty state | Earlier ledger flow exists; full states pending |
 | teachers/index | A/T; deny S/F/V | Scope, contact display and long text | A/T counts/native pull and S/F/V denial/recovery passed; T cached-failure/recovery and zero-fee correction observed; physical offline/no-cache/cold-auth/touch checks remain |

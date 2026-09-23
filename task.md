@@ -56,10 +56,14 @@ Real five-role matrix gewu-people-pages-20260923-cqhkbod4 passed ten cases:
 teacher 1 student/1 teacher, super admin 65/3, list search/last detail, native pull,
 controlled 503/cache recovery, all three restricted roles denied/Return Home.
 Original login/request mock restored; no business writes. All screenshots were
-inspected; the student failure notice needs a top-scroll follow-up capture.
-Miniapp-only patch 8.8.10: UI/read/typecheck/weapp/version checks pass; not uploaded
-yet. Six unrelated dirty files/output remain untouched. Full audit stays open.
-Next: complete this development receipt, then remaining settings/page actions,
+inspected; rebuilt 8.8.10 top-scroll follow-up gewu-people-pages-20260923-fweiyuwe
+also passed with notice/search/card fitting and original login/mock restored.
+Miniapp-only patch 8.8.10: UI/read/typecheck/weapp/version checks pass; source
+36b80a7f is pushed, guarded development upload and post-upload health verified
+2026-09-23T09:03:34.407Z, receipt gewu-miniapp-8810-upload-20260923-vfaaa0fy.
+Desktop/cloud/NAS unchanged; only partial development release. Six unrelated
+dirty files/output remain untouched. Full audit stays open.
+Next: remaining settings/page actions,
 rendered loading, physical offline/cold authorization and touch dimensions.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.
