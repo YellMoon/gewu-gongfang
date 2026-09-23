@@ -38,7 +38,18 @@ Historical transfer evidence from the original project is therefore insufficient
 to prove downloads with production domain validation enabled. This does not
 invalidate its artifact hashes or the independently checked course/ledger UI.
 
-## Required platform action and boundary
+## Sep 23 follow-up
+
+The user has confirmed the downloadFile domain addition and that the intended
+miniapp is Gewu Zhilin (wx3d570539bbe6ba1b). Do not request that confirmation
+again. The Sep 23 strict dist probe still fails with
+`REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz`.
+Effective urlCheck remains true. The remaining platform/configuration cause
+has not been established; working public HTTP is not download acceptance.
+Continue independent page audits without disabling this gate or replacing NAS.
+The following Sep 20 platform-action section is historical, not a new request.
+
+## Sep 20 required platform action and boundary
 
 Add `https://physicsedu.xyz` to this miniapp's downloadFile server-domain list,
 preserving all existing domains. Request-domain access already works but is not

@@ -79,7 +79,7 @@ export default function Payments() {
           <View className={`filter-tag ${!filterStudentId ? 'active' : ''}`} onClick={() => setFilterStudentId('')}>
             <Text>全部</Text>
           </View>
-          {students.slice(0, 20).map(s => (
+          {students.map(s => (
             <View key={s.id} className={`filter-tag ${filterStudentId === s.id ? 'active' : ''}`} onClick={() => setFilterStudentId(s.id)}>
               <Text>{s.name}</Text>
             </View>

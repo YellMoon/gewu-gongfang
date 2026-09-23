@@ -30,3 +30,4 @@ assert.ok(pageSource.includes('sortPaymentsNewestFirst(filteredPayments)'));
 assert.strictEqual(pageSource.includes('filteredPayments.sort('), false);
 
 console.log('miniapp payments immutable sorting tests passed');
+require('./paymentsFilterRender.test');

@@ -2,7 +2,34 @@
 
 > **Current execution phase (2026-08-24):** Source version 8.4.0 (`cd4fd2b2`) is pushed to `gewu/master`; the cloud service, NAS storage agent, miniapp development build, desktop installer, and OSS update feed are deployed with exact-version receipts. All applicable desktop business draft types map to the managed `cloud-business-api` REST contract after explicit confirmation, and update/delete operations carry `expectedUpdatedAt`. Production database migration/count/ACL checks and public health pass. These receipts prove deployment, not end-user business acceptance: the 42-page miniapp matrix is fixture-only, the packaged desktop check is launch/render smoke only, and the production cloud verifier does not perform a public REST mutation. The active phase is therefore to complete production-safe, reversible real-operation acceptance before any full-release claim.
 
-## Current continuation 2026-09-20 miniapp student ledger (UTF-8)
+## Current continuation 2026-09-23 page-detail audit (UTF-8)
+
+The pure-image option correction is complete in cloud 8.11.20 / 080f1bb8;
+production Word/PDF receipts were pushed in 9806a62c. Preserve the supplied
+template, native equations, two-character indentation and 4/2/1 size-aware
+option columns. Do not reimport or re-export this completed case without cause.
+See docs/verification-2026-09-20-paper-indent.md.
+
+The user has confirmed both the downloadFile domain addition and the correct
+miniapp (Gewu Zhilin, wx3d570539bbe6ba1b). A fresh strict dist check on Sep 23
+still returns REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED. Do not ask those same
+questions again or disable URL checks. This does not block non-download page
+checks. See docs/miniapp-download-domain-2026-09-20.md.
+
+Payments audit found and corrected a silent first-20-students filter cutoff.
+The actual TSX regression first failed (21 controls instead of 36), then passed
+last-student selection, empty results, All reset, totals and denied-role hiding.
+Real super-admin UI shows 65 authorized students / 66 controls; last-student
+tap and All reset pass. Teacher scoped filtering and student/family/visitor
+denial with Return Home taps also pass; every original simulator session was
+restored. Miniapp 8.8.8 passes UI/read
+regressions, typecheck and build. Development upload is not yet confirmed.
+No desktop, cloud, NAS, permission, schema or teaching-workflow change.
+The 18-route audit remains incomplete; track gaps explicitly in
+docs/miniapp-page-audit-2026-09-23.md. Preserve six unrelated dirty files and
+all user output directories; stage only task-owned files.
+
+## Prior continuation 2026-09-20 miniapp student ledger (UTF-8)
 
 Latest follow-up: the question-image placeholder is traced to WeChat downloadFile
 domain rejection, not missing NAS bytes. The strict dist window rejects the cloud
@@ -11,7 +38,7 @@ A real-download gate (41 passing tests) now prevents that false acceptance. The
 user was asked to add https://physicsedu.xyz to downloadFile server domains because
 browser site-safety policy blocks agent access to the platform. No workaround or
 local validation bypass is allowed. Continue independent page/state checks while
-awaiting that platform change; do not mark the whole goal blocked. Then rerun strict
+investigating the remaining platform rejection; do not mark the whole goal blocked. Then rerun strict
 image and Word/PDF button downloads. See docs/miniapp-download-domain-2026-09-20.md.
 
 Cloud 8.11.19 / commit abc4bc05 is deployed after 182 frozen-source checks,
