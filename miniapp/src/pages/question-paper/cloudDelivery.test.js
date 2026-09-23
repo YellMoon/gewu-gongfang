@@ -51,7 +51,7 @@ assert.doesNotMatch(source, /setTimeout\(\(\) => \{ void reload\(\); \}, 1500\)/
 
 assert.match(source, /function isPaperScore\(value: unknown\): value is number/, 'saved paper scores need one explicit validation contract');
 assert.match(source, /normalizePaperLayoutField\('score', value\)\.valid/, 'draft restore must share the interactive cloud score constraint');
-assert.match(source, /score: isPaperScore\(saved\.items\[index\]\.score\)/, 'draft restore must use the same one-decimal paper score contract');
+assert.match(source, /score: isPaperScore\(savedItem\.score\)/, 'ID-based draft restore must use the same one-decimal paper score contract');
 assert.doesNotMatch(source, /score: Number\.isSafeInteger\(saved\.items\[index\]\.score\)/, 'draft restore must not discard a valid decimal score');
 assert.match(source, /const handleLayoutFieldEdit = /, 'score and section editors must share one event boundary');
 assert.match(source, /applyPaperLayoutFieldEdit\(item, \{ field, value, phase \}\)/, 'input and blur events must use the tested workflow normalization');

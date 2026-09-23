@@ -122,7 +122,8 @@ assert.ok(questionBankStyles.includes('.basket-toggle'), 'question cards must ex
 assert.ok(!questionBankPage.includes('访客题库浏览') && !questionBankPage.includes('题库文字内容由云端权威提供'), 'question-bank must not expose identity labels or implementation explanations as user-facing content');
 assert.ok(!questionBankPage.includes('可浏览的题目'), 'question-bank must not describe its browsing allowance as permanent page copy');
 assert.ok(!questionBankPage.includes('关联身份后可组卷') && questionBankPage.includes('组卷需要教师角色'), 'limited paper-building prompts must name the required role without internal binding wording');
-assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和导出') && questionPaperPage.includes('组卷和导出需要教师角色'), 'paper access guidance must use the same direct role wording');
+// UTF-8: Use the shared role-aware boundary; formal users must not be sent to apply again.
+assert.ok(!questionPaperPage.includes('关联教师身份后可选题组卷和导出') && questionPaperPage.includes('return <ForbiddenContent />'), 'paper access guidance must use the shared role-aware access explanation');
 assert.ok(schedulePage.includes('暂无课程安排') && schedulePage.includes('申请角色'), 'the schedule empty state must give a concise, user-facing next step without labeling the account as a visitor');
 assert.ok(!schedulePage.includes('访客账号'), 'the schedule page must not turn visitor state into a persistent identity label');
 assert.ok(schedulePage.includes('const isStudent = isStudentScopedUser(identity);') && schedulePage.includes('{!isStudent && students.length > 0 && ('), 'student and household-member schedules must not expose the teacher student-filter controls');

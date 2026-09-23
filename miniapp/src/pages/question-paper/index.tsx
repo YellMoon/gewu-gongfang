@@ -8,6 +8,7 @@ import { canUserSubmitMiniappWrite, createQuestionPaperTaskCacheRuntime } from '
 import { storage } from '../../utils/storage';
 import { questionBasketStore, useQuestionBasket } from '../../utils/questionBasketStore';
 import QuestionBasketOverlay from '../../components/QuestionBasketOverlay';
+import ForbiddenContent from '../../components/ForbiddenContent';
 // @ts-ignore CommonJS workflow module has no TypeScript declarations.
 import * as workflow from '../../utils/questionPaperWorkflow';
 // @ts-ignore CommonJS download workflow is covered by direct contract tests.
@@ -78,10 +79,11 @@ function isPaperScore(value: unknown): value is number {
 }
 
 function sectionFor(type: string) {
-  const sections: Record<string, string> = { single_choice: '一、单选题', multiple_choice: '二、多选题', true_false: '三、判断题', fill_blank: '四、填空题', calculation: '五、计算题', experiment: '六、实验题', essay: '七、简答题' };
-  return sections[type] || '综合题';
+  // UTF-8: Match the desktop's canonical question types, section order and defaults.
+  const sections: Record<string, string> = { 单选题: '一、单选题', 多选题: '二、多选题', 判断题: '三、判断题', 实验题: '四、实验题', 解答题: '五、解答题' };
+  return sections[questionTypeLabel(type)] || '五、解答题';
 }
-function scoreFor(type: string) { return ['single_choice', 'true_false', 'fill_blank'].includes(type) ? 3 : 6; }
+function scoreFor(type: string) { return ['单选题', '判断题'].includes(questionTypeLabel(type)) ? 3 : 6; }
 function questionTypeLabel(type: string) {
   return questionDisplayRuntime.questionTypeLabel(type);
 }
@@ -122,15 +124,23 @@ function defaultItems(questions: QuestionPreview[], ids: string[]): PaperItem[] 
 }
 function restoreItems(questions: QuestionPreview[], ids: string[], saved: PaperDraft | null): PaperItem[] {
   const defaults = defaultItems(questions, ids);
-  if (!saved || !Array.isArray(saved.items) || saved.items.length !== defaults.length || saved.items.some((item, index) => item?.id !== defaults[index].id)) return defaults;
-  return defaults.map((item, index) => {
-    const savedSection = normalizePaperLayoutField('sectionTitle', saved.items[index].sectionTitle);
-    return {
+  if (!saved || !Array.isArray(saved.items)) return defaults;
+  // A refreshed catalog supplies content; the local draft owns ordering/layout only.
+  const remaining = new Map(defaults.map(item => [item.id, item]));
+  const restored: PaperItem[] = [];
+  for (const savedItem of saved.items) {
+    if (!savedItem || typeof savedItem.id !== 'string') continue;
+    const item = remaining.get(savedItem.id);
+    if (!item) continue;
+    const savedSection = normalizePaperLayoutField('sectionTitle', savedItem.sectionTitle);
+    restored.push({
       ...item,
       sectionTitle: savedSection.valid ? String(savedSection.value) : item.sectionTitle,
-      score: isPaperScore(saved.items[index].score) ? saved.items[index].score : item.score,
-    };
-  });
+      score: isPaperScore(savedItem.score) ? savedItem.score : item.score,
+    });
+    remaining.delete(item.id);
+  }
+  return [...restored, ...remaining.values()];
 }
 
 function mergeQuestions(current: QuestionPreview[], incoming: QuestionPreview[]): QuestionPreview[] {
@@ -219,6 +229,8 @@ export default function QuestionPaperPage() {
   const reload = async () => {
     setLoading(true);
     setCatalogError('');
+    // UTF-8: A denied route must not hydrate a paper or offer a visitor-only action.
+    if (!canBuildPaper) { setLoading(false); return; }
     const session = authSessionRuntime.capture();
     questionBasketStore.reconcileIdentity();
     const currentBasket = questionBasketStore.snapshot();
@@ -291,7 +303,7 @@ export default function QuestionPaperPage() {
     return result;
   }, [items]);
   const sectionOptions = useMemo(() => Array.from(new Set([
-    ...Object.values({ single_choice: sectionFor('single_choice'), multiple_choice: sectionFor('multiple_choice'), true_false: sectionFor('true_false'), fill_blank: sectionFor('fill_blank'), calculation: sectionFor('calculation'), experiment: sectionFor('experiment'), essay: sectionFor('essay'), other: sectionFor('other') }),
+    ...['单选题', '多选题', '判断题', '实验题', '解答题'].map(sectionFor),
     ...items.map(item => item.sectionTitle).filter(Boolean),
   ])), [items]);
   const updateItem = (id: string, patch: Partial<PaperItem>) => setItems(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -436,6 +448,7 @@ export default function QuestionPaperPage() {
     } finally { setSubmitting(null); }
   };
   const refreshTasks = async () => {
+    if (!canBuildPaper) return;
     const current = taskRuntime.snapshot();
     if (!current.scopeKey) return;
     setTaskSyncState('refreshing');
@@ -539,7 +552,7 @@ export default function QuestionPaperPage() {
     </View>;
   };
 
-  if (!canBuildPaper) return <View className='question-paper-page access-boundary'><Text>{'组卷和导出需要教师角色。'}</Text><Button onClick={() => Taro.navigateTo({ url: '/pages/account-application/index' })}>{'去申请'}</Button></View>;
+  if (!canBuildPaper) return <ForbiddenContent />;
   const taskProgress = (task: PaperTask) => Math.max(0, Math.min(100, Number(task.progress) || 0));
   return <View className='question-paper-page'>
     <View className='paper-form'>
@@ -586,7 +599,7 @@ export default function QuestionPaperPage() {
       </View>)}</View> : null}
     </View> : null}
 
-    {loading && !items.length ? <View className='paper-empty'><Text>{'\u6b63\u5728\u8bfb\u53d6\u5df2\u9009\u9898\u76ee'}</Text></View> : !items.length ? (catalogError ? null : <View className='paper-empty'><Text>{'\u8bd5\u9898\u7bee\u4e2d\u6682\u65e0\u9898\u76ee'}</Text><Button onClick={() => Taro.navigateBack()}>{'\u8fd4\u56de\u9898\u5e93\u9009\u9898'}</Button></View>) : <View className='paper-item-list'>{groupedItems.map(group => <View key={group.title} className='paper-section'>
+    {loading && !items.length ? <View className='paper-empty'><Text>{'\u6b63\u5728\u8bfb\u53d6\u5df2\u9009\u9898\u76ee'}</Text></View> : !items.length ? (catalogError ? null : <View className='paper-empty'><Text>{'\u8bd5\u9898\u7bee\u4e2d\u6682\u65e0\u9898\u76ee'}</Text><Button onClick={() => Taro.switchTab({ url: '/pages/question-bank/index' })}>{'\u8fd4\u56de\u9898\u5e93\u9009\u9898'}</Button></View>) : <View className='paper-item-list'>{groupedItems.map(group => <View key={group.title} className='paper-section'>
       <View className='paper-section-head'><Text className='paper-section-title'>{group.title}</Text><Text className='paper-section-count'>{group.rows.length + ' \u9898'}</Text></View>
       <View className='paper-section-questions'>{group.rows.map(({ item, index }) => renderPaperItem(item, index))}</View>
     </View>)}</View>}
