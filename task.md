@@ -63,7 +63,7 @@ Miniapp-only patch 8.8.10: UI/read/typecheck/weapp/version checks pass; source
 2026-09-23T09:03:34.407Z, receipt gewu-miniapp-8810-upload-20260923-vfaaa0fy.
 Desktop/cloud/NAS unchanged; only partial development release. Six unrelated
 dirty files/output remain untouched. Full audit stays open.
-My-page follow-up (8.8.11 pending upload): actual TSX tests reproduced stale
+My-page follow-up (8.8.11 development uploaded): actual TSX tests reproduced stale
 logout clearing a replacement account, duplicate refresh, late toasts and stale
 return status. Session/lifecycle guards fix those without UI redesign. Network
 state now comes from WeChat getNetworkType/events, not the never-initialized old
@@ -78,7 +78,17 @@ gewu-settings-live-20260923-q9dwf_0l passed cancel/confirm and login navigation;
 both screenshots inspected, original login/cache and mocks restored. Actual
 persistent-session runtime regression also passes. Earlier failed runtime receipt
 remains failed; successful retry followed disposable compile-cache cleanup only.
-Next: finish this development receipt, then application/privacy and other page
+Source 29066753 pushed; guarded development upload and post-upload health verified
+2026-09-23T09:33:00.203Z, receipt gewu-miniapp-8811-upload-20260923-9if1lkqh.
+Only miniapp changed; desktop/cloud/NAS versions remain unchanged.
+Privacy UI-only follow-up gewu-privacy-live-20260923-o_u6wa6q passed actual entry,
+five-section/end-note rendering, scroll and API back to Login. All five screenshots
+inspected; original login/cache restored. No phone consent or business writes.
+Open measured finding: privacy link hit target is 88x17 CSS pixels. Enlarge hit
+area without redesign and remeasure. Application source also exposes English
+validation errors through error.message; reproduce empty-name/invalid-phone in
+the UI before localized validation correction. Preserve role policies/payloads.
+Next: those bounded corrections, application states/role matrix, then other page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.

@@ -7,7 +7,7 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
-## My-page interaction correction in verification (8.8.11, UTF-8)
+## My-page interaction correction (8.8.11, UTF-8)
 
 Before screenshot: `gewu-settings-before-20260923-mppa0nb0/01-settings-before.png`,
 SHA256 76be7f1a70a5c8708c5d1d4f29c61a4e860abb6752f5f4598fe4bd4dbe51a799.
@@ -29,7 +29,13 @@ application and listener cleanup. Included in test:miniapp-ui; UI/read/API-sessi
 typecheck/weapp/version checks pass. A follow-up test also protects local sign-out
 of an already-invalidated but unchanged session; it still cannot clear a newer
 generation/account. The same boundaries pass against the actual persistent
-session runtime as well as the isolated page harness. Development upload is pending.
+session runtime as well as the isolated page harness. Source 29066753 is pushed
+to gewu/master. Guarded fixed-egress upload rebuilt/release-checked 8.8.11,
+passed compatibility/public-health checks, and finalized the development receipt
+at 2026-09-23T09:33:00.203Z, exit 0:
+`gewu-miniapp-8811-upload-20260923-9if1lkqh/active.json`.
+Desktop 8.9.8, cloud 8.11.20 and storage 8.8.3 are unchanged; no new receipts
+were fabricated for them. This is partial development release, not full acceptance.
 
 Real matrix `gewu-settings-live-20260923-h1sc8qsk/report.json`, ok=true:
 
@@ -64,6 +70,27 @@ APIs restored. No business writes. The earlier `l80mwpny` run timed out waiting
 for Login and remains failed. The follow-up passed after clearing only DevTools
 disposable compile cache, with no source change; this correlation alone does
 not prove the failure's root cause. No auth/storage cache was cleared to recover.
+
+## Login privacy interaction audit (8.8.11, unchanged source)
+
+Receipt `gewu-privacy-live-20260923-o_u6wa6q/report.json`, ok=true, SHA256
+14c0d11dc9b3da590b6ccbd2bcc4d2252dafa0b90cba083b3bbf3f9af225b165.
+From the signed-out Login UI, the real privacy link opened pages/login/privacy.
+All five sections and the effective-date note rendered. Top/middle/end scroll
+captures were inspected individually; no horizontal clipping or text overlap
+was seen at this simulator size. Official navigateBack returned to Login and
+the phone-login button remained present. This tests navigation API back, not a
+manual native navigation-bar tap. All five screenshots were inspected. Original
+login and scoped caches were restored; no phone authorization or business writes.
+
+Open finding: the measured privacy link is only 88x17 CSS pixels. It is tappable
+in automation, but that does not establish comfortable touch use. Enlarge its
+hit target while preserving the existing visible layout, then verify dimensions
+and return navigation. This is UI inspection only, not legal/privacy compliance.
+Separately, account-application/applicationRuntime.js throws English validation
+messages and index.tsx displays error.message directly in a toast. This is a
+source-confirmed user-copy issue; capture/reproduce the actual empty-name and
+invalid-phone actions before correcting it. Preserve role policy and REST payloads.
 
 ## People-list correction (8.8.10, UTF-8)
 
@@ -300,7 +327,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | Route under pages/ | Roles / boundary | Inspection focus | Sep 23 evidence and remaining gap |
 | --- | --- | --- | --- |
 | login/index | G | Compact normal login; privacy, denied/failed/retry, phone consent | Pending real consent/error flow |
-| login/privacy | G | Readable text, full scroll, return | Pending |
+| login/privacy | G | Readable text, full scroll, return | 8.8.11 real entry/5 sections/end note/scroll/API back passed, five screenshots inspected; 88x17 entry hit target needs correction; native back tap/large-font/assistive input remain |
 | index/index | A/T/S/F/V | Only real authorized entries; navigation and empty state | Student return-home action verified; full role audit pending |
 | forbidden/index | A/T/S/F/V | Reason/application guidance appropriate to role; recovery | Shared denial content checked on payments; dedicated route pending |
 | schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | Earlier ledger flow exists; this audit pending |
