@@ -19,7 +19,8 @@
 
 .toggle-btn {
   flex: 1;
-  min-height: 70rpx;
+  // UTF-8: Keep the existing controls while making them usable on phones.
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -50,7 +51,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 58rpx;
+  min-height: 44px;
   padding: 0 24rpx;
   margin-right: 12rpx;
   border-radius: 999rpx;
@@ -86,9 +87,11 @@
 
 .nav-arrow {
   width: 64rpx;
-  height: 58rpx;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
   font-size: 42rpx;
-  line-height: 54rpx;
+  line-height: 44px;
   text-align: center;
   color: #1f6f68;
   font-weight: 800;
@@ -110,8 +113,9 @@
 }
 
 .nav-today {
-  min-width: 72rpx;
-  height: 46rpx;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
