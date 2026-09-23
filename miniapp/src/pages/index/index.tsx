@@ -253,7 +253,11 @@ export default function Index() {
       Taro.navigateTo({ url: '/pages/forbidden/index' });
       return;
     }
-    Taro.navigateTo({ url: config.pages });
+    if (mod.id === 'scheduling' || mod.id === 'question-bank') {
+      Taro.switchTab({ url: config.pages });
+    } else {
+      Taro.navigateTo({ url: config.pages });
+    }
   }, [access.modules]);
 
   const handleLogout = () => {
@@ -432,7 +436,10 @@ export default function Index() {
           </View>
           <View className="home-shortcut-grid">
             {shortcuts.map((item) => (
-              <View key={item.url} className="home-shortcut-card" onClick={() => Taro.navigateTo({ url: item.url })}>
+              <View key={item.url} className="home-shortcut-card" onClick={() => {
+                if (isStudent) Taro.switchTab({ url: item.url });
+                else Taro.navigateTo({ url: item.url });
+              }}>
                 <Text className="home-shortcut-card__mark">{item.mark}</Text>
                 <Text className="home-shortcut-card__title">{item.label}</Text>
                 <Text className="home-shortcut-card__desc">{item.desc}</Text>

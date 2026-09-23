@@ -93,3 +93,4 @@ assert.ok(
 );
 
 console.log('miniapp home visual checks passed');
+require('../pages/index/homeNavigationRuntime.test');
