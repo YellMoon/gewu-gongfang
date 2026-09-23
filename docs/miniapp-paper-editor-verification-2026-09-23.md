@@ -62,4 +62,17 @@ of question media, phone consent, physical offline/cold authentication, native
 picker/keyboard accessibility or the complete 18-route audit. Do not disable
 domain checks, repeat question imports or replace the NAS image for this patch.
 
-Development upload receipt will be recorded only after verified upload.
+## Development upload receipt
+
+Source `f88edc2e0feabc15fe8c0e15281910bb270b5c7a` was pushed to `gewu/master`.
+The guarded existing fixed-egress upload exited zero and recorded miniapp
+8.8.19 as `verified`, releaseLevel `development`, at
+`2026-09-23T14:41:12.656Z`. Evidence directory:
+`gewu-miniapp-8819-upload-20260923-99j9vdrs` (`active.json`, `receipt.json`,
+`upload.log`). The receipt was finalized only after post-upload health checks.
+The platform result reported the full package as 1,076,584 bytes.
+
+Compatibility remains `gewu.protocol-data-compatibility.v1`; no protocol or
+schema change. Other component slots in this new per-upload manifest remain
+pending, not new deployment receipts. This is a verified miniapp development
+upload, not official WeChat review/release or full multi-end completion.
