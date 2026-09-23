@@ -78,7 +78,22 @@ write), and records baseline digests plus exact source hashes. This avoids
 conflating runtime-context readiness with storage restoration and retains the
 same exact-equality requirement.
 
-No development upload or complete home/all-page acceptance is claimed here yet.
+Final-build `gewu-home-runtime-20260924-351n7k3w` exited 0 with
+ok=true, checksPassed=true, authRestored=true and storageRestored=true.
+All five roles passed metrics, financial boundaries, home return and logout
+target checks; the logout target measured 45x45px for each role. Teacher/admin
+rendered four metrics, student/family two, and visitor none. All ten top/bottom
+screenshots were inspected. Exact auth/cache restoration was reread synchronously
+before refresh. This completes that run, not the earlier failed receipts.
+
+Source commit `b050944907660d93da98dd7589cf73c9c747d535` was pushed to
+gewu/master. Development upload receipt
+`gewu-miniapp-8822-upload-20260924-9gp2ljz7` confirms miniapp 8.8.22,
+releaseLevel=development, target status=verified, and post-health validation at
+2026-09-23T23:45:31.249Z (2026-09-24 07:45 CST). This is a development upload,
+not a WeChat production release. No desktop, cloud or NAS upgrade was performed.
+
+Complete home/all-page acceptance is not claimed.
 Native phone consent, physical offline/touch, strict media download, and the
 other open states in the 18-route audit remain separate gates. Sessions used
 for automated checks are existing cloud-signed test-account sessions, not a
