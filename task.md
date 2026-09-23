@@ -96,10 +96,20 @@ Only miniapp 8.8.12 changed; source 37fe9367 pushed. Guarded development upload
 and post-upload health verified at 2026-09-23T09:52:28.610Z, receipt
 gewu-miniapp-8812-upload-20260923-vvab4fwn/active.json. No new cloud/NAS/desktop
 release, and no full acceptance claim.
-Separate source/SQL finding: persistent role/mode-only idempotency keys cannot
-resubmit corrected or rejected applications correctly. Reproduce full retry and
-rejection paths, keeping ambiguous-network duplicate protection, before fixing.
-Next: application resubmission/states/role matrix, then other page
+8.8.13 application correction: rejected predecessor scopes new attempts; each
+explicit Submit first reconciles cloud state, pending/approved prevents POST,
+ambiguous retries/reopening/role changes retain one key. Conflict reads only.
+Actual TSX and isolated PostgreSQL tests pass, including session/page races,
+four formal-role entry denials and immutable rejected-key replay. Live controlled
+run el2r07yh passed six cases and restored all scoped state; its first screenshot
+found service errors mislabeled as invalid input. A failing-first regression now
+separates submit_error while preserving form values and layout. Final-build run
+gewu-application-retry-20260923-my9ehm4d passes all six controlled cases, fourteen
+GETs/six intercepted POSTs, no unexpected requests or production writes. All six
+screenshots individually inspected; original login/cache/attempt keys restored.
+UI/read/role-application/typecheck/build/version checks pass. Miniapp-only 8.8.13
+development upload remains pending; no new desktop/cloud/NAS release.
+Next: finish that receipt, then other page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.

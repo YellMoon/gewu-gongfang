@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import Taro from '@tarojs/taro';
+import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { Button, Input, Picker, Text, View } from '@tarojs/components';
 import { isVisitorIdentity } from '../../utils/accountExperience';
 import { miniappCloudBusinessApi } from '../../utils/api';
+import { authSessionRuntime } from '../../utils/authSession';
 import {
   buildRoleApplicationRequest,
   applicationErrorMessage,
+  applicationErrorState,
   copyForApplicationState,
   createApplicationOperationLock,
 } from './applicationRuntime';
@@ -24,10 +26,19 @@ const PROFILE_MODE_OPTIONS = [
   { value: 'new' as ProfileMode, label: '\u9996\u6b21\u767b\u8bb0' },
 ];
 
-function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode): string {
-  const storageKey = `cloud_role_application_key:${identityId}:${requestedIdentity}:${profileMode}`;
+function idempotencyKey(identityId: string, requestedIdentity: RequestedIdentity, profileMode: ProfileMode, rejectedApplicationId: string): string {
+  // Each rejected application closes an attempt. Persist only opaque keys, not form data.
+  const scope = rejectedApplicationId ? `:after:${rejectedApplicationId}` : '';
+  const storageKey = `cloud_role_application_attempt:${identityId}${scope}`;
   const existing = String(Taro.getStorageSync(storageKey) || '').trim();
   if (existing) return existing;
+  const legacyKey = !rejectedApplicationId
+    ? String(Taro.getStorageSync(`cloud_role_application_key:${identityId}:${requestedIdentity}:${profileMode}`) || '').trim()
+    : '';
+  if (legacyKey) {
+    Taro.setStorageSync(storageKey, legacyKey);
+    return legacyKey;
+  }
   const created = `miniapp-role-${identityId}-${requestedIdentity}-${profileMode}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   Taro.setStorageSync(storageKey, created);
   return created;
@@ -41,8 +52,10 @@ function responseData(response: any): any {
 }
 
 export default function AccountApplicationPage() {
-  const identity: any = Taro.getStorageSync('user_info') || {};
   const operationLock = useRef(createApplicationOperationLock());
+  const visible = useRef(true);
+  const requestSequence = useRef(0);
+  const refreshQueued = useRef(false);
   const [state, setState] = useState('loading');
   const [application, setApplication] = useState<any>(null);
   const [roleIndex, setRoleIndex] = useState(0);
@@ -50,37 +63,58 @@ export default function AccountApplicationPage() {
   const [profileName, setProfileName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
 
-  const load = async () => {
-    if (!operationLock.current.tryAcquire('refresh')) return;
-    setState('loading');
-    try {
-      const token = String(Taro.getStorageSync('auth_token') || '').trim();
-      const result = responseData(await miniappCloudBusinessApi.readRoleApplication(token));
-      const nextApplication = result.application || null;
-      setApplication(nextApplication);
-      setState(result.state || 'not_submitted');
-      if (nextApplication?.requestedIdentity) {
-        setRoleIndex(nextApplication.requestedIdentity === 'teacher' ? 1 : nextApplication.requestedIdentity === 'family_member' ? 2 : 0);
-      }
-      if (nextApplication?.profileMode === 'new') setProfileModeIndex(1);
-    } catch (error: any) {
-      const message = String(error?.message || '').toLowerCase();
-      setState(message.includes('network') || message.includes('\u7f51\u7edc') ? 'offline' : 'network_error');
-    } finally {
-      operationLock.current.release('refresh');
+  useDidShow(() => { visible.current = true; void load(); });
+  useDidHide(() => { visible.current = false; requestSequence.current++; });
+
+  const applyApplication = (result: any) => {
+    const nextApplication = result.application || null;
+    setApplication(nextApplication);
+    setState(result.state || 'not_submitted');
+    if (nextApplication?.requestedIdentity) {
+      setRoleIndex(nextApplication.requestedIdentity === 'teacher' ? 1 : nextApplication.requestedIdentity === 'family_member' ? 2 : 0);
+      setProfileModeIndex(nextApplication.profileMode === 'new' ? 1 : 0);
     }
   };
 
-  useEffect(() => {
-    if (!isVisitorIdentity(identity)) {
+  const load = async () => {
+    const session = authSessionRuntime.capture();
+    if (!visible.current) return;
+    if (!isVisitorIdentity(session.identity)) {
       Taro.reLaunch({ url: '/pages/login/index' });
       return;
     }
-    void load();
-  }, []);
+    if (!operationLock.current.tryAcquire('refresh')) { refreshQueued.current = true; return; }
+    const sequence = ++requestSequence.current;
+    const isCurrent = () => visible.current && sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
+    setState('loading');
+    try {
+      const result = responseData(await miniappCloudBusinessApi.readRoleApplication(session.token));
+      if (isCurrent()) applyApplication(result);
+    } catch (error: any) {
+      if (!isCurrent()) return;
+      const message = String(error?.message || '').toLowerCase();
+      setState(message.includes('network') || message.includes('\u7f51\u7edc') ? 'offline' : 'network_error');
+    } finally {
+      finishOperation('refresh');
+    }
+  };
+
+  function finishOperation(operation: string) {
+    operationLock.current.release(operation);
+    if (refreshQueued.current && visible.current) {
+      refreshQueued.current = false;
+      void load();
+    }
+  }
+
+  useEffect(() => () => { visible.current = false; requestSequence.current++; refreshQueued.current = false; }, []);
 
   const submit = async () => {
+    const session = authSessionRuntime.capture();
+    if (!visible.current || !authSessionRuntime.isSameSession(session) || !isVisitorIdentity(session.identity)) return;
     if (!operationLock.current.tryAcquire('submit')) return;
+    const sequence = ++requestSequence.current;
+    const isCurrent = () => visible.current && sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
     setState('submitting');
     const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
     const profileMode = requestedIdentity === 'family_member'
@@ -93,25 +127,47 @@ export default function AccountApplicationPage() {
         profileName: string;
         profilePhone: string;
       };
-      const token = String(Taro.getStorageSync('auth_token') || '').trim();
+      // Reconcile a lost response/review before writing. Reading never auto-submits.
+      const latest = responseData(await miniappCloudBusinessApi.readRoleApplication(session.token));
+      if (!isCurrent()) return;
+      if (latest.state === 'submitted' || latest.state === 'approved') {
+        applyApplication(latest);
+        // UTF-8: Make it explicit that edited inputs did not replace a pending request.
+        Taro.showToast({ title: latest.state === 'submitted' ? '已有申请待审核，本次未提交' : '申请已通过，请重新登录', icon: 'none' });
+        return;
+      }
+      if (!['not_submitted', 'rejected'].includes(latest.state)
+        || (latest.state === 'rejected' && !latest.application?.applicationId)) throw new Error('APPLICATION_STATE_INVALID');
+      const rejectedApplicationId = latest.state === 'rejected' ? latest.application.applicationId : '';
       const result = responseData(await miniappCloudBusinessApi.submitRoleApplication(
-        token,
+        session.token,
         request,
-        idempotencyKey(String(identity.id), requestedIdentity, profileMode),
+        idempotencyKey(String(session.identity.id), requestedIdentity, profileMode, rejectedApplicationId),
       ));
-      setApplication(result.application || null);
-      setState(result.state || 'submitted');
-      Taro.showToast({ title: '\u89d2\u8272\u7533\u8bf7\u5df2\u63d0\u4ea4', icon: 'success' });
+      if (!isCurrent()) return;
+      applyApplication(result);
+      if (result.state === 'submitted') Taro.showToast({ title: '\u89d2\u8272\u7533\u8bf7\u5df2\u63d0\u4ea4', icon: 'success' });
     } catch (error: any) {
-      setState('invalid');
+      if (!isCurrent()) return;
+      if (error?.code === 'CLOUD_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT') {
+        // Another response may already have committed. Never rotate/repost blindly.
+        try {
+          const latest = responseData(await miniappCloudBusinessApi.readRoleApplication(session.token));
+          if (isCurrent()) applyApplication(latest);
+        } catch (_) {
+          if (isCurrent()) setState('network_error');
+        }
+        return;
+      }
+      setState(applicationErrorState(error));
       Taro.showToast({ title: applicationErrorMessage(error), icon: 'none' });
     } finally {
-      operationLock.current.release('submit');
+      finishOperation('submit');
     }
   };
 
   const copy = copyForApplicationState(state);
-  const editable = ['not_submitted', 'invalid', 'rejected'].includes(state);
+  const editable = ['not_submitted', 'invalid', 'submit_error', 'rejected'].includes(state);
   const requestedIdentity = ROLE_OPTIONS[roleIndex].value;
   const profileMode = requestedIdentity === 'family_member'
     ? 'existing' as ProfileMode

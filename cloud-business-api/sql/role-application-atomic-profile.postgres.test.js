@@ -142,6 +142,21 @@ const hash = character => character.repeat(64);
         () => facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v3('tenant-1','account-super-admin','application-family-invalid','approved',NULL,transaction_timestamp())"),
         error => error?.message === 'VNEXT_ROLE_APPLICATION_GUARDIAN_RELATION_REQUIRED',
       );
+      // A rejected attempt stays immutable; a new key is required for a corrected application.
+      await facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v3('tenant-1','account-super-admin','application-family-invalid','rejected',NULL,transaction_timestamp())");
+      const submitAgain = 'SELECT * FROM business.vnext_submit_cloud_role_application_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,transaction_timestamp())';
+      const oldRetry = await facade.query(submitAgain, ['tenant-1', 'account-family-invalid', 'discarded-id', 'key-family-invalid', 'family_member', 'existing', 'Existing Student', '13800000003', hash('3'), null]);
+      assert.strictEqual(oldRetry.rows[0].status, 'rejected');
+      await assert.rejects(
+        () => facade.query(submitAgain, ['tenant-1', 'account-family-invalid', 'discarded-id', 'key-family-invalid', 'family_member', 'existing', 'Corrected Student', '13800000003', hash('3'), null]),
+        error => error?.message === 'VNEXT_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT',
+      );
+      const correctedRequest = ['tenant-1', 'account-family-invalid', 'application-family-retry', 'key-after-rejection', 'family_member', 'existing', 'Corrected Student', '13800000003', hash('3'), null];
+      const corrected = await facade.query(submitAgain, correctedRequest);
+      assert.strictEqual(corrected.rows[0].status, 'submitted');
+      assert.strictEqual(corrected.rows[0].profile_name, 'Corrected Student');
+      const ambiguousRetry = await facade.query(submitAgain, [...correctedRequest.slice(0, 2), 'discarded-retry-id', ...correctedRequest.slice(3)]);
+      assert.strictEqual(ambiguousRetry.rows[0].application_id, 'application-family-retry');
     });
 
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {

@@ -4,6 +4,7 @@ const APPLICATION_STATES = Object.freeze([
   'loading',
   'not_submitted',
   'invalid',
+  'submit_error',
   'submitting',
   'submitted',
   'rejected',
@@ -16,6 +17,8 @@ const STATE_COPY = Object.freeze({
   loading: ['正在读取申请状态', '请稍候。'],
   not_submitted: ['申请角色', '请选择教师、学生或家庭成员，按提示填写信息。'],
   invalid: ['请检查填写内容', '请填写姓名和正确的手机号。'],
+  // UTF-8: An unavailable response is not evidence that valid inputs are wrong.
+  submit_error: ['暂时无法确认提交结果', '填写内容已保留，请稍后重试。'],
   submitting: ['正在提交申请', '请勿重复操作。'],
   submitted: ['等待审核', '申请已提交；审核通过后会自动更新可用功能。'],
   rejected: ["申请未通过", "请调整资料后重新提交。"],
@@ -33,11 +36,15 @@ function copyForApplicationState(state) {
 // UTF-8: Only local validation messages and known service codes are user-facing.
 class ApplicationInputError extends Error {}
 
+function applicationErrorState(error) {
+  return error instanceof ApplicationInputError || error?.code === 'CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED'
+    ? 'invalid' : 'submit_error';
+}
+
 function applicationErrorMessage(error) {
   if (error instanceof ApplicationInputError) return error.message;
   const messages = {
     CLOUD_ROLE_APPLICATION_VERIFIED_PHONE_REQUIRED: '填写的手机号与当前账号已验证手机号不一致',
-    CLOUD_ROLE_APPLICATION_IDEMPOTENCY_CONFLICT: '申请内容已变更，请刷新页面后重新提交',
   };
   return Object.hasOwn(messages, error?.code) ? messages[error.code] : '暂时无法提交申请，请稍后重试';
 }
@@ -84,6 +91,7 @@ module.exports = {
   APPLICATION_STATES,
   buildRoleApplicationRequest,
   applicationErrorMessage,
+  applicationErrorState,
   copyForApplicationState,
   createApplicationOperationLock,
 };

@@ -9,7 +9,7 @@ const {
 } = require('./applicationRuntime');
 
 for (const state of [
-  'loading', 'not_submitted', 'invalid', 'submitting', 'submitted',
+  'loading', 'not_submitted', 'invalid', 'submit_error', 'submitting', 'submitted',
   'rejected', 'approved',
   'offline', 'network_error',
 ]) {

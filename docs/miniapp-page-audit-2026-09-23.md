@@ -7,6 +7,51 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## Application resubmission correction (8.8.13, UTF-8)
+
+The persisted role/mode-only key reproduced two failures: a rejected application
+could only replay its old result, and changing roles after an uncertain response
+could bypass duplicate protection. The current page reconciles authoritative
+state before each explicit Submit. A pending/approved result prevents a POST;
+a rejected application ID scopes a new persistent attempt, while network retries,
+role changes and page re-entry preserve the same key. Legacy unresolved keys are
+retained. A conflict triggers one read, never automatic key rotation or repost.
+Only opaque attempt keys are stored; form names and phone numbers are not.
+
+Page/session guards suppress stale preflight writes and late response/toast
+updates. Return during an in-flight operation queues a read and recovers the form.
+The first live screenshot additionally exposed misleading invalid-input copy on
+service failure. A failing-first test now distinguishes an uncertain submission
+from bad input; the form remains editable with its current values. No business
+rules, layout, roles, API or SQL production contract changes.
+
+Actual TSX tests cover rejection, retry, reopening, edited inputs, role changes,
+lost response reconciliation, double taps, conflicts, failed reads, invalid states,
+legacy keys, four formal-role entry denials and stale preflight/POST responses.
+The isolated PostgreSQL test demonstrates old rejected-key replay, changed-body
+conflict, new-key submission and identical retry returning exactly one application.
+UI/cloud-read/role-application suites, typecheck, build and version tests pass.
+The cloud change is test-only; desktop/cloud/NAS versions remain unchanged.
+
+Final-build run `gewu-application-retry-20260923-my9ehm4d/report.json` passed all
+six controlled cases: retry/role change, reopen, pending duplicate prevention,
+new rejected attempt, conflict reconciliation, and read-failure recovery/approved
+write prevention. Fourteen controlled GETs and six intercepted POST attempts;
+zero unexpected requests and no production application writes. All six images
+were individually inspected, including corrected service-failure copy, editable
+rejected form, pending/no-form, offline recovery and approved/no-form. Original
+login, scoped cache and this account's attempt keys were restored; mocks removed.
+This exercises real TSX handlers and DevTools UI, not physical offline, native
+phone consent/pickers, production submission/review, or all-role visual acceptance.
+Development upload is pending. Earlier controlled run
+`gewu-application-retry-20260923-el2r07yh` passed six handler cases,
+restoring the original login, cache and account attempt keys, but predates the
+service-error copy correction. Its first screenshot is the evidence for that fix.
+The two preceding runs `rkl6rgcn` / `bzpx7rf9` remain failed: the temporary mock
+used native callbacks instead of returning the DevTools response value. The
+minimal API mock check then passed. Neither run made production writes; both
+restored original state. No claim of physical offline or production review flow.
+
 ## Privacy hit target and application error correction (8.8.12, UTF-8)
 
 Two regression tests first failed: actual application TSX emitted English for
@@ -55,12 +100,12 @@ Desktop 8.9.8, cloud 8.11.20 and storage 8.8.3 are unchanged. This is a partial
 development release, not formal release or a full multi-end acceptance claim.
 Report hashes: application 03323fd433fb62b26d1b2c2e8a63777d69114cb7ff07a8460508b0ccfb7cf3a3;
 privacy 1aa769c495dd09d41c4274353b9d8618b289cfee8ce711f8916af063917cef74.
-Separate open finding from source/SQL review:
+Separate finding from source/SQL review, addressed by 8.8.13 above:
 the role/mode-only stored idempotency key survives changed name/phone and rejected
 applications, while SQL rejects changed payloads under the same key and returns
 an old rejected application for identical retries. The refresh-page suggestion
-does not reset that persisted key. Reproduce the complete correction/resubmission
-path before changing it; preserve ambiguous-network retry deduplication.
+does not reset that persisted key. The correction must preserve
+ambiguous-network retry deduplication.
 
 ## My-page interaction correction (8.8.11, UTF-8)
 
@@ -398,7 +443,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |
 | settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |
-| account-application/index | V | Names/phone instead of internal IDs; role choices and errors | 8.8.12 real state read, invalid Submit taps with zero requests, localized toast arguments and three role picker events passed; six screenshots inspected; retry/idempotency, submitted/rejected/approved, cold auth and native picker/keyboard checks remain |
+| account-application/index | V | Names/phone instead of internal IDs; role choices and errors | 8.8.12 real state read/invalid Submit/three role events passed; 8.8.13 real handlers with controlled retry/rejection/pending/approved/conflict/failure responses passed, six final screenshots inspected, original state restored; production submission/review, cold auth, formal-role visual denial and native picker/keyboard checks remain |
 
 Earlier 18-image ledger journey: docs/miniapp-student-ledger-2026-09-20.md.
 Completed production paper correction: docs/verification-2026-09-20-paper-indent.md.
