@@ -43,7 +43,8 @@ course-history test, typecheck/build and independent-version tests pass. The fir
 combined cloud-read run stopped with exit 1 after paper repository output and no
 diagnostic; the explicit cloud read-suite rerun completed successfully. This is
 not relabeled as a first-run pass. Scoped version classifier selected miniapp-only
-patch 8.8.13 -> 8.8.14. Final five-role runtime checks and upload are pending.
+patch 8.8.13 -> 8.8.14. Focused role checks and the verified development upload
+are documented below; full-route acceptance remains incomplete.
 
 First runtime run `gewu-teaching-live-20260923-u5aewp_x` passed six teacher
 cases, including cached/uncached failure and real-cloud retry on all three pages.
@@ -93,6 +94,15 @@ screens above predate only this visitor-only guard; they are not relabeled as
 a second complete five-role run. Day-view interactions, physical offline,
 cold consent, long-list bottom reachability and broader touch/accessibility
 checks remain, as does the rest of the 18-route audit.
+
+Source commit `4ce776df8c5ee6f0dcc4bb12017a7d1a210144e3` is pushed to gewu/master.
+Guarded fixed-egress upload rebuilt and verified miniapp development version
+8.8.14 at `2026-09-23T11:13:47.769Z`, including pre/post public health gates,
+exit 0. Receipt: `gewu-miniapp-8814-upload-20260923-6ul5g7qy/active.json`.
+Desktop 8.9.8, cloud 8.11.20 and NAS 8.8.3 remain unchanged; the pending slots
+for those components are not new-deployment claims. Partial development release,
+not formal WeChat release or full multi-end acceptance. Six unrelated tracked
+changes and protected untracked output were excluded from both commits.
 
 ## Application resubmission correction (8.8.13, UTF-8)
 

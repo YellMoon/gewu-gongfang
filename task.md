@@ -132,8 +132,12 @@ still rendered old code; official compile-cache-only clear resolved the mismatch
 Final visitor run y0q3is2o passed application entry/course-detail denial/home
 recovery; three screenshots inspected, original session/cache/mocks restored.
 Real identity/session runtime now backs the TSX harness; session tests pass too.
-Version 8.8.14 is ready for source commit/development upload. All failed
-receipts remain failures; do not repeat all formal-role flows to hide this fact.
+Source 4ce776df is pushed to gewu/master; miniapp-only 8.8.14 development upload
+verified at 2026-09-23T11:13:47.769Z, receipt
+gewu-miniapp-8814-upload-20260923-6ul5g7qy/active.json. Pre/post public health and
+build/release gates passed. Desktop/cloud/NAS unchanged; partial development
+release only. All failed receipts remain failures; do not repeat all formal-role
+flows to hide this fact.
 Next: finish teaching-page role/interaction evidence, then remaining page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
