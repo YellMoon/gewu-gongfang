@@ -57,8 +57,12 @@ each tab 117 x 45px. All four final screenshots individually inspected; all
 three tabs remain operable, missing-record recovery works, auth/cache restored,
 no business writes. Report SHA256:
 `eccd0c21411a916274fb769da8e65e0962999502d719c7c185c59a8971b7e7e4`.
-Full UI tests rerun after the final touch patch and passed. Development upload
-still pending; this is UTF-8 evidence, not a full-release claim.
+Full UI tests rerun after the final touch patch and passed. Source `77cdee1f`
+is pushed to gewu/master. Guarded miniapp 8.8.17 development upload is verified
+at `2026-09-23T13:15:32.490Z`; manifest/receipt:
+`gewu-miniapp-8817-upload-20260923-6qen3__m`. Pre/post health gates pass.
+Desktop 8.9.8, cloud 8.11.21 and NAS 8.8.3 unchanged. This is UTF-8 evidence,
+not a full-release claim.
 After the official compile-cache refresh and final touch checks, the strict
 download-domain probe still exits 1 with
 `REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz`.

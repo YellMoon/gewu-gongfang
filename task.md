@@ -12,8 +12,11 @@ Real five-role run gewu-detail-runtime-20260923-w492u3y1 passed 18 cases;
 Three failed harness/cache receipts retained in the audit report. A subsequent
 page-local touch-target correction passed teacher/student runtime checks:
 actions 98x45px, tabs 117x45px, four final screenshots inspected, original
-auth/cache restored. Full UI rerun passes. Development upload not yet completed.
-Other components unchanged. UTF-8 receipt: gewu-detail-runtime-20260923-48n62ih9.
+auth/cache restored. Full UI rerun passes. Source 77cdee1f pushed gewu/master;
+8.8.17 development upload verified 2026-09-23T13:15:32.490Z, pre/post health pass.
+Receipt: gewu-miniapp-8817-upload-20260923-6qen3__m. Other components unchanged.
+UTF-8 touch receipt: gewu-detail-runtime-20260923-48n62ih9. Strict download domain
+still fails after compile-cache refresh; no full release/download acceptance claim.
 
 Latest: real assets acceptance passed in gewu-assets-real-20260923-54svwujq,
 nine cases against production cloud 8.11.21 from the actual DevTools page.
