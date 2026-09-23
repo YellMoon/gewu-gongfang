@@ -1,9 +1,9 @@
 /**
  * 首页仪表盘 v3 - 最近更新 + 今日摘要 + 角色入口
  */
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { authSessionRuntime } from '../../utils/authSession';
 import { captureTrustedAuthSession, clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime';
 import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils/accountExperience';
@@ -72,6 +72,7 @@ const STUDENT_SHORTCUTS = [
 
 export default function Index() {
   const homeLoadGeneration = useRef(0);
+  const visible = useRef(true);
   const [user, setUser] = useState<UserInfo | null>(null);
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,12 +84,23 @@ export default function Index() {
   });
 
   useDidShow(() => {
+    visible.current = true;
     checkLogin();
   });
+  useDidHide(() => {
+    visible.current = false;
+    homeLoadGeneration.current++;
+  });
+  useEffect(() => () => {
+    visible.current = false;
+    homeLoadGeneration.current++;
+  }, []);
 
-  const checkLogin = async () => {
+  const checkLogin = async (retryChangedAuthorization = true) => {
+    if (!visible.current) return;
     const generation = ++homeLoadGeneration.current;
-    const stillCurrent = () => homeLoadGeneration.current === generation;
+    const sameLoad = () => visible.current && homeLoadGeneration.current === generation;
+    const stillCurrent = () => sameLoad() && authSessionRuntime.isSameSession(session);
     setUser(null);
     setModules([]);
     setLoading(true);
@@ -125,10 +137,23 @@ export default function Index() {
       return;
     }
     await fetchPermissions();
-    if (!stillCurrent()) return;
+    if (!sameLoad()) return;
     const confirmedSession = captureTrustedAuthSession(authSessionRuntime);
     if (!confirmedSession) {
       Taro.redirectTo({ url: '/pages/login/index' });
+      return;
+    }
+    if (!authSessionRuntime.isSameSession(session)) {
+      // Authorization may legitimately refresh this account's scope. Start a
+      // fresh bounded load; never continue the old account/scope's request.
+      if (confirmedSession.token === session.token && confirmedSession.identity.id === savedUser.id) {
+        if (retryChangedAuthorization) void checkLogin(false);
+        else {
+          setUser({ ...confirmedSession.identity, name: getMiniappHomeDisplayName(confirmedSession.identity) });
+          setCloudConnection('unavailable');
+          setLoading(false);
+        }
+      }
       return;
     }
     const confirmedUser = confirmedSession.identity as UserInfo;
@@ -261,11 +286,14 @@ export default function Index() {
   }, [access.modules]);
 
   const handleLogout = () => {
+    const session = authSessionRuntime.capture();
+    const generation = homeLoadGeneration.current;
     Taro.showModal({
       title: '确认退出',
       content: '确定要退出登录吗？',
       success: (res) => {
-        if (res.confirm) {
+        if (res.confirm && visible.current && homeLoadGeneration.current === generation
+          && authSessionRuntime.isSameSession(session, { allowInvalidated: true })) {
           const currentUser = Taro.getStorageSync('user_info');
           clearAuthenticatedSession({
             invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
@@ -326,7 +354,7 @@ export default function Index() {
 
   return (
     <View className="home-page">
-      <NetworkStatus onRetry={loadDashboard} />
+      <NetworkStatus onRetry={() => { void checkLogin(); }} />
 
       <View className="home-hero">
         <View className="home-hero__topline">
@@ -373,7 +401,7 @@ export default function Index() {
         </View>
       </View>
 
-      <View className="home-metric-grid">
+      {access.modules.includes('scheduling') && <View className="home-metric-grid">
         <View className="home-metric-card tone-teal">
           <Text className="home-metric-card__label">今日课程</Text>
           <View className="home-metric-card__value-row">
@@ -396,7 +424,7 @@ export default function Index() {
             <Text className="home-metric-card__suffix">人</Text>
           </View>
         </View>}
-      </View>
+      </View>}
 
       <View className="home-section">
         <View className="home-section__header">
