@@ -49,8 +49,8 @@ function load(sourcePath, customRequire) {
   failRefresh = false; replaceDuringRefresh = true;
   assert.equal(await boundary.refreshMiniappPageAccess('/pages/payments/index'), false, 'recheck current identity after async permission response');
 
-  // Execute the actual three page components and their lifecycle callbacks.
-  for (const scenario of ['denied', 'allowed', 'changed-during-load']) for (const page of ['payments', 'stats', 'assets']) {
+  // Execute actual page components and their lifecycle callbacks.
+  for (const scenario of ['denied', 'allowed', 'changed-during-load']) for (const page of ['payments', 'stats', 'assets', 'students', 'teachers']) {
     const permitted = scenario !== 'denied';
     let currentAccess = permitted;
     const callbacks = [];
@@ -77,6 +77,7 @@ function load(sourcePath, customRequire) {
         return true;
       } };
       if (name === './paymentsRuntime') return require('../pages/payments/paymentsRuntime');
+      if (name.endsWith('/studentDisplay')) return {};
       if (name.endsWith('.scss') || name.endsWith('/permission') || name.endsWith('/api') || name.endsWith('/authSession') || name.endsWith('/personalAssetCsv') || name.endsWith('/shared') || name.endsWith('/types')) return {};
       throw Error(`${page}: ${name}`);
     });

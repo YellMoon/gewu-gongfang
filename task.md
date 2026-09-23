@@ -48,8 +48,20 @@ five screenshots were individually inspected, request mock/cache/login restored.
 This is not physical offline verification. Source cdbead73 is pushed; guarded
 development upload verified 2026-09-23T08:18:34.663Z, evidence
 gewu-miniapp-889-upload-20260923-axrr2a8g/active.json, miniapp 8.8.9 only.
-Next: rendered loading, physical offline/cold authorization, touch dimensions,
-then students/teachers/settings actions. Do not repeat successful paper exports
+Students/teachers follow-up: existing list-role boundaries are now enforced
+before reads/render, failed refresh distinguishes authorized cache from no data,
+native empty-state/return refresh and session-race protection are tested. The
+teacher zero-rate stray numeric node is fixed without changing fee semantics.
+Real five-role matrix gewu-people-pages-20260923-cqhkbod4 passed ten cases:
+teacher 1 student/1 teacher, super admin 65/3, list search/last detail, native pull,
+controlled 503/cache recovery, all three restricted roles denied/Return Home.
+Original login/request mock restored; no business writes. All screenshots were
+inspected; the student failure notice needs a top-scroll follow-up capture.
+Miniapp-only patch 8.8.10: UI/read/typecheck/weapp/version checks pass; not uploaded
+yet. Six unrelated dirty files/output remain untouched. Full audit stays open.
+Next: complete this development receipt, then remaining settings/page actions,
+rendered loading, physical offline/cold authorization and touch dimensions.
+Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.
 
 ## Prior continuation 2026-09-20 miniapp student ledger (UTF-8)

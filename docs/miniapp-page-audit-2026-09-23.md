@@ -7,6 +7,52 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## People-list correction in verification (8.8.10, UTF-8)
+
+Direct student navigation previously rendered its own scoped student row on a
+list route that the existing role policy denies; it did not expose all students.
+Both student and teacher lists now enforce the existing route policy before
+projection/cache reads and at render. Their normal card contents, search rules,
+student-detail destination and fee semantics remain unchanged. Boolean coercion
+removes an orphan numeric zero beside a teacher with no hourly rate.
+
+Both pages use native pull-down refresh, including empty states, and refresh on
+return. Request sequence and account-session checks discard late responses;
+failed reads show authorized saved rows with a notice or a retry action when no
+cache exists. No core business mutation, projection widening or API change.
+Actual TSX runtime tests cover search, detail click, empty/no-match states,
+native/return refresh, failure/retry, hide/unmount and identity/access changes.
+They are included in test:miniapp-ui. UI/read regressions, typecheck and automatic
+independent-version checks pass. Release/upload evidence is not yet recorded.
+
+Test diagnostics are not app findings: a mixed DevTools compile cache produced
+React #130 and a skeleton without running the new page handler. Clearing only
+the disposable compilation cache restored the unchanged page source. No storage
+or auth cache was cleared; speculative lifecycle workarounds were removed.
+The live harness also corrected a Windows empty-argument issue using the real
+Input event and now observes navigation completion before querying the new page
+(a selector wait on the old page cannot detect the new page). Failed receipts
+remain failures, with original login restored; they are not accepted UI runs.
+
+Real cloud/DevTools matrix: `gewu-people-pages-20260923-cqhkbod4/report.json`,
+ok=true, ten role/page cases. Teacher counts: one student / one teacher;
+super-admin counts: 65 students / three teachers. Both student lists passed
+known-name search, no-match, clear, last-card tap and exact detail-ID match;
+teacher also exercised school search. Real phone-search data was absent from
+these selected rows; phone filtering is covered by the TSX test, not claimed as
+a live phone test. Both roles passed native pull-down refresh. Teacher's two
+pages passed controlled wx.request 503/cache recovery. Student/family/visitor
+each denied both lists and tapped Return Home successfully. No business writes;
+request mock and original login restored, exit 0.
+
+All 16 screenshots were viewed individually. Long names are ellipsized on list
+cards and readable after opening student details; no card/header overlap seen.
+The student failure screenshot retained bottom scroll after a prior last-card
+test, so it is NOT evidence that the notice is visible; a top-of-page follow-up
+is required. The teacher failure notice fits above the existing list header.
+Remaining: physical offline, rendered no-cache retry and cold authorization,
+touch dimensions and other detail-page tabs/states. This is not full UI acceptance.
+
 ## Fixed finding: statistics loading, refresh and stale responses (8.8.9)
 
 The real TSX test first failed because initial render showed zero income before
@@ -190,10 +236,10 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | Earlier ledger flow exists; this audit pending |
 | schedule/detail/index | A/T/S/F | Original details, attendance/fees, missing ID | Earlier ledger flow exists; full states pending |
 | schedule/edit/index | A/T/S/F | Core-edit boundary, recovery; no unauthorized save | Pending |
-| students/index | A/T | Complete list/search, details, long labels | Pending |
+| students/index | A/T; deny S/F/V | Complete list/search, details, long labels | A/T counts/search/clear/last detail/native pull and S/F/V denial/recovery passed; T controlled failure/recovery passed; top notice capture, physical offline/no-cache/cold-auth/touch checks remain |
 | student-detail/index | A/T/S/F | Scoped balances/history, tabs, missing ID | Earlier ledger flow exists; full states pending |
 | courses/index | A/T/S/F | Original course semantics, details and empty state | Earlier ledger flow exists; full states pending |
-| teachers/index | A/T | Scope, contact display and long text | Pending |
+| teachers/index | A/T; deny S/F/V | Scope, contact display and long text | A/T counts/native pull and S/F/V denial/recovery passed; T cached-failure/recovery and zero-fee correction observed; physical offline/no-cache/cold-auth/touch checks remain |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |
 | stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
