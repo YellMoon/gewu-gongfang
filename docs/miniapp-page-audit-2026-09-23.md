@@ -65,6 +65,67 @@ The corrected-version screenshots were individually viewed. Hashes:
 
 ## Complete registered-page checklist, not a completion claim
 
+### Statistics follow-up (8.8.8, unchanged production code)
+
+Current screenshots and real taps, not the historical fixture matrix:
+
+1. Empty state: super admin returned zero completed lessons and zero revenue;
+   screenshot `gewu-miniapp-page-step-20260923-zyoalquu/super_admin-pages-stats-index.png`
+   matches that result. SHA256 `46d6cf82fc35b76ba56d49e3a82ab39cf545df32e00d1a9649b2c2913fbd18ab`.
+2. Non-empty teacher state: created one marked temporary room/course and two
+   completed lessons (different months, tuition 100 and 200) through real cloud
+   REST, linked only to canonical E2E teacher/student IDs. UI shows 300.00,
+   two lessons, one course-type group and two months in descending order.
+3. Teacher course-type heading: tap collapses exactly one row; tap again
+   restores it. Month heading collapses/restores exactly two rows. Revenue
+   summary is unchanged. All three screenshots inspected, no overlap/clipping.
+4. Super admin: same exact totals and independent collapse/expand operations
+   verified; all three screenshots inspected.
+5. Student, family and visitor: no revenue card or group rows; denial message
+   and Return Home tap verified independently after the interrupted combined
+   run. Visitor gets the existing role-application guidance; family/student
+   do not receive that invitation. All three screenshots inspected.
+
+Receipt directories:
+
+- `gewu-miniapp-financial-live-20260923-nc6ntd2g/receipt.json`: the combined run
+  completed teacher/admin checks, then failed on the student startup bridge
+  (`route:null`, account matched). It correctly remains ok=false. This is not
+  a passing five-role receipt. The failed step restored its original session.
+- Teacher `gewu-miniapp-page-step-20260923-qwabbf52`: expanded screenshot
+  SHA256 `606706798bb6b666e3b7dd3c75efcac04a4eafb43d29533af5e99a001ecfc563`;
+  type collapsed `4728e69f5d5c5f9d2a12b699e1485217ea8f778a38d950e247ed63197e2ab3ea`;
+  month collapsed `d4e47f666e838e7d36cff41b11fd060bbdf7122956e4ebe660459b84409306f7`.
+- Admin `gewu-miniapp-page-step-20260923-hsczik4r`: expanded screenshot
+  SHA256 `53eb807fd33dea2946b721517fa83393752bd8aa6bd8ace3b05633bfbec88527`;
+  type collapsed `79fbf316580fb6ade34fe971b7e62e4a7c01e710e05f48e848b4b820c6252b7c`;
+  month collapsed `d399205499e8915570708554c679c7dcb77516ebb6eb2662b47915e0bf03edee`.
+- Independent student recovery `gewu-miniapp-page-step-20260923-22r7bsno`:
+  SHA256 `d3d10c3ef54cb74a90650ee28ecb375834bffe2ef15139b0f3a500b0b95f007d`;
+  denial/recovery passed and original session restored.
+- Family `gewu-miniapp-page-step-20260923-woamlhby`:
+  SHA256 `e5e09c1df1d4bc4c496e5e48e40d0a74236925ef5741be1b65a25299e738135b`.
+- Visitor `gewu-miniapp-page-step-20260923-j6vv23n2`:
+  SHA256 `d09ccbd7620ec5e2066fe586ee9ede4b52a234fb674ae92e86da9585280e2be0`.
+  Both denial/recovery checks passed and original sessions were restored.
+
+Cleanup is verified despite the interrupted combined audit: exact-ID CAS
+deletes removed only the four newly marked test records, original course/room/
+schedule ID lists and the original student objects matched, and the temporary
+installation/device/session/link active counts are all zero. No existing
+business record was overwritten. Earlier harness attempts made no business
+records: test-course identity guard rejected one attempt; the next course POST
+returned 400 because a real room ID is required. Their cleanup receipts remain
+failed, not relabeled successful. The successful seed then used its own room.
+
+Remaining statistics risks, not acceptance claims: the clickable heading uses
+the global 42rpx minimum height and looks narrow in these screenshots; inspect
+actual touch dimensions before changing it. Source review confirms this page
+has no NetworkStatus, pull-to-refresh or loading indicator; offline/failure and
+return-to-page freshness still need runtime tests. Numeric groups/collapse
+passing is not a claim that the whole statistics page is finished. No code,
+component version, deployment, template or NAS change was made for this audit.
+
 All 18 routes from app.config.ts are represented. A/T/S/F/V denote super admin,
 teacher, student, family member and visitor; G denotes not signed in. "Pending"
 means this audit has not reverified all applicable roles/states/actions, even if
@@ -85,7 +146,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | courses/index | A/T/S/F | Original course semantics, details and empty state | Earlier ledger flow exists; full states pending |
 | teachers/index | A/T | Scope, contact display and long text | Pending |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |
-| stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | Pending |
+| stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T non-empty totals and collapse/expand, A empty state, S/F/V denial/recovery passed; offline/loading/freshness/touch targets pending |
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |

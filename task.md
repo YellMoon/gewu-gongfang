@@ -31,6 +31,19 @@ The 18-route audit remains incomplete; track gaps explicitly in
 docs/miniapp-page-audit-2026-09-23.md. Preserve six unrelated dirty files and
 all user output directories; stage only task-owned files.
 
+Statistics follow-up: real teacher/admin UI matched two temporary completed
+lessons (300 tuition, one type, two months); both headings collapsed/expanded
+correctly, six screenshots individually inspected. All three restricted roles
+passed data hiding and Return Home taps. An intervening student startup bridge
+timeout is preserved as a failed combined receipt, not relabeled successful;
+independent follow-up passed after runtime recovery. Exact-ID cloud cleanup
+removed the four created room/course/schedule records, original lists/student
+objects matched, temporary registration was revoked and each UI session restored.
+No app release needed. Next: reproduce and fix statistics loading/offline/
+return freshness and confirm touch-target dimensions, then continue students,
+teachers and settings actions. Do not repeat successful paper exports or this
+statistics amount/collapse fixture merely because context is compacted.
+
 ## Prior continuation 2026-09-20 miniapp student ledger (UTF-8)
 
 Latest follow-up: the question-image placeholder is traced to WeChat downloadFile
