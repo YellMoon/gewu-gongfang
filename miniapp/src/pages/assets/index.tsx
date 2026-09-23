@@ -1,6 +1,6 @@
 // UTF-8: Keep imports explicit and scoped to the initiating session.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, Text, View } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro';
 import { miniappCloudBusinessApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
@@ -15,7 +15,7 @@ import { parsePersonalAssetCsv } from '../../utils/personalAssetCsv';
 import { personalAssetImportKey, personalAssetImportError } from '../../utils/personalAssetImport';
 import './index.scss';
 
-interface AssetRecord { id: string; category_id: string; amount: number; type: 'income' | 'expense'; date: string; notes?: string; }
+interface AssetRecord { id: string; category_id: string; category_name?: string; amount: number; type: 'income' | 'expense'; date: string; note?: string; }
 interface AssetCategory { id: string; name: string; type: 'income' | 'expense'; color: string; }
 
 export default function Assets() {
@@ -99,17 +99,18 @@ export default function Assets() {
   }, [records, period, monthKey, yearKey]);
   const totalIncome = filteredRecords.filter(record => record.type === 'income').reduce((sum, record) => sum + record.amount, 0);
   const totalExpense = filteredRecords.filter(record => record.type === 'expense').reduce((sum, record) => sum + record.amount, 0);
+  const categoryById = useMemo(() => new Map(categories.map(category => [category.id, category])), [categories]);
   const categoryStats = useMemo(() => {
     const values = new Map<string, { name: string; amount: number; color: string; type: string }>();
     for (const record of filteredRecords) {
-      const category = categories.find(item => item.id === record.category_id);
+      const category = categoryById.get(record.category_id);
       const key = record.category_id || 'unknown';
       const value = values.get(key) || { name: category?.name || '\u672a\u5206\u7c7b', amount: 0, color: category?.color || '#999', type: record.type };
       value.amount += record.amount;
       values.set(key, value);
     }
     return Array.from(values.values()).sort((left, right) => right.amount - left.amount);
-  }, [filteredRecords, categories]);
+  }, [filteredRecords, categoryById]);
 
   if (!canAccessMiniappPage('/pages/assets/index')) return <ForbiddenPage />;
   // UTF-8: Loading and read failures are not empty financial records.
@@ -132,10 +133,17 @@ export default function Assets() {
       <View className='period-bar'>
         {[{ key: 'month' as const, label: '\u672c\u6708' }, { key: 'year' as const, label: '\u672c\u5e74' }, { key: 'all' as const, label: '\u5168\u90e8' }].map(item => <View key={item.key} className={`period-tag ${period === item.key ? 'active' : ''}`} onClick={() => setPeriod(item.key)}><Text>{item.label}</Text></View>)}
       </View>
-      {filteredRecords.length === 0 ? <EmptyState icon={'\u8d26'} text={'\u6682\u65e0\u8d44\u4ea7\u8bb0\u5f55'} /> : <ScrollView scrollY className='stats-scroll'><View className='stats-content'>
+      {filteredRecords.length === 0 ? <EmptyState icon={'\u8d26'} text={'\u6682\u65e0\u8d44\u4ea7\u8bb0\u5f55'} /> : <View className='stats-content'>
         {categoryStats.map((item, index) => <View key={`${item.name}-${index}`} className='cat-row'><View className='cat-dot' style={{ background: item.color }} /><Text className='cat-name'>{item.name}</Text><Text className={`cat-amount ${item.type}`}>{'\u00a5'}{item.amount.toFixed(2)}</Text></View>)}
-        <View className='cat-section'><Text className='cat-title'>{'\u6700\u8fd1\u8bb0\u5f55'}</Text>{filteredRecords.slice(0, 20).map(record => <View key={record.id} className='record-row'><Text>{record.date}</Text><Text className={record.type}>{'\u00a5'}{record.amount.toFixed(2)}</Text></View>)}</View>
-      </View></ScrollView>}
+        <View className='cat-section'><Text className='cat-title'>{'\u6700\u8fd1\u8bb0\u5f55'}</Text>{filteredRecords.slice(0, 20).map(record => <View key={record.id} className='record-row'>
+          <View className='record-info'>
+            <Text className='record-name'>{categoryById.get(record.category_id)?.name || record.category_name || '未分类'}</Text>
+            {record.note && <Text className='record-note'>{record.note}</Text>}
+            <Text className='record-date'>{record.date}</Text>
+          </View>
+          <Text className={`record-amount ${record.type}`}>{record.type === 'income' ? '+' : '-'}¥{record.amount.toFixed(2)}</Text>
+        </View>)}</View>
+      </View>}
     </View>
   );
 }

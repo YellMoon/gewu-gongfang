@@ -4,6 +4,19 @@
 
 ## Current continuation 2026-09-23 page-detail audit (UTF-8)
 
+Latest: real assets acceptance passed in gewu-assets-real-20260923-54svwujq,
+nine cases against production cloud 8.11.21 from the actual DevTools page.
+24 rows/two categories imported and replayed; changed-key-payload rollback,
+denied roles, owner spoof rejection and other-account projection isolation pass.
+Exact cleanup restores all three asset-table snapshots; original auth/cache
+restored. Five populated/period/bottom/native-pull screenshots inspected.
+Two failed harness receipts retained, not relabeled. See audit report details.
+Real layout defects corrected: category width, joined date/amount, missing
+record context, nested scroll and phantom tab padding. TDD/UI/typecheck/build/
+version tests pass; miniapp alone bumped to 8.8.16. Development upload pending.
+Do not repeat this completed real import case; next finish remaining route
+detail states (schedule edit, student detail, forbidden, question/download).
+
 Active assets work: cloud 8.11.21 is deployed; miniapp 8.8.15 development uploaded.
 Personal import conflict validation moved inside the transaction after isolated
 PG17 proved partial writes on changed retry; teacher imports use verified owner,

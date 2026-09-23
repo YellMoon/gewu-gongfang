@@ -72,6 +72,16 @@ function harness(role='teacher') {
   r.cache.assetRecords=[{id:'one',category_id:'cat',date:'2026-09-23',type:'expense',amount:2.55}];
   r.cache.assetCategories=[{id:'cat',name:'Books',type:'expense'}];await r.refresh();byClass(r,'period-tag')[2].props.onClick();
   assert.ok(text(r.render()).includes('2.55'),'do not round cents away');assert.equal(byClass(r,'asset-cache-notice').length,1);
+  // UTF-8: Real populated-page audit found dates and amounts stuck together.
+  r.cache.assetRecords[0].note='Exercise books';await r.refresh();
+  const recordRow=byClass(r,'record-row')[0];
+  assert.ok(text(recordRow).includes('Books'),'each record keeps its category context');
+  assert.ok(text(recordRow).includes('Exercise books'),'cloud note remains visible');
+  assert.equal(byClass(r,'record-date').length,1,'date has a separate secondary line');
+  assert.equal(text(byClass(r,'record-amount')[0]),'-¥2.55','expenses have a visible direction');
+  assert.equal(nodes(r.render()).filter(n=>n.type==='ScrollView').length,0,'use native page scrolling and pull refresh');
+  const styles=fs.readFileSync(path.join(__dirname,'index.scss'),'utf8');
+  assert.doesNotMatch(styles,/height:\s*calc\(100vh\s*-\s*360rpx\)/,'no hardcoded nested viewport');
   r.epoch++;assert.ok(!text(r.render()).includes('2.55'),'never render old account balances');
   const uncertain=harness();uncertain.mount();await uncertain.refresh();uncertain.post=async()=>({success:false,error:'network timeout'});await uncertain.import();
   uncertain.post=async()=>({success:true,data:{receipt:{replayed:true}}});await uncertain.import();assert.equal(uncertain.posts[0][2],uncertain.posts[1][2]);assert.equal(uncertain.toasts.at(-1),'这份文件已导入');

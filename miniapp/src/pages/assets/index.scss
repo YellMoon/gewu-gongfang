@@ -1,6 +1,8 @@
 .assets-page {
   min-height: 100vh;
-  padding-bottom: calc(148rpx + env(safe-area-inset-bottom));
+  // UTF-8: This secondary page has no tab bar; keep only its safe-area inset.
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom);
   background: #f7f4ee;
 }
 
@@ -114,10 +116,6 @@
   border-color: #1f6f68;
 }
 
-.stats-scroll {
-  height: calc(100vh - 360rpx);
-}
-
 .stats-content {
   padding: 0 24rpx 32rpx;
 }
@@ -169,8 +167,10 @@
 }
 
 .cat-name {
-  width: 124rpx;
-  flex: 0 0 124rpx;
+  flex: 1;
+  min-width: 0;
+  margin-right: 20rpx;
+  overflow-wrap: anywhere;
   font-size: 25rpx;
   line-height: 34rpx;
   color: #4d5a6a;
@@ -192,8 +192,7 @@
 }
 
 .cat-amount {
-  width: 132rpx;
-  flex: 0 0 132rpx;
+  flex: 0 0 auto;
   text-align: right;
   font-size: 25rpx;
   line-height: 34rpx;
@@ -221,6 +220,16 @@
   line-height: 34rpx;
   color: #172033;
   font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.record-note {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 23rpx;
+  line-height: 32rpx;
+  color: #6b7280;
+  overflow-wrap: anywhere;
 }
 
 .record-date {
@@ -235,6 +244,7 @@
 }
 
 .record-amount {
+  flex: 0 0 auto;
   margin-left: 14rpx;
   font-size: 27rpx;
   line-height: 34rpx;

@@ -6,11 +6,61 @@ Official DevTools agent CLI, confirmed AppID wx3d570539bbe6ba1b, dist project,
 URL checks enabled. Successful role runs restore their original session; the
 explicitly failed teaching-page baseline cleanup below is an exception.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
-prove WeChat phone consent/login. No business rows were created or changed.
+prove WeChat phone consent/login. Baseline checks were read-only; later reversible
+test writes and their cleanup are explicitly recorded in their sections.
+
+## Real personal asset import and populated layout (8.8.16, UTF-8)
+
+DevTools + public cloud 8.11.21 run `gewu-assets-real-20260923-54svwujq`
+passed nine cases, exit 0. The actual page reads a temporary CSV, parses it,
+derives its content-based retry key and submits the real API request; API/DB/
+projection responses are NOT mocked. Only native message-file selection, modal
+confirmation and toast capture are controlled; native phone/file consent is not
+claimed. Existing marked teacher account only; no account/role/DDL changes.
+
+- Cancel: no import row. Confirm: 24 actual records / two categories; verified
+  owner, exact numeric 2.55 / 18.35 amounts and cloud projection readback.
+- Repeat same file: same import and unchanged whole-table snapshot, replay toast.
+- Changed same-key payload with an extra row: current HTTP contract returns 400
+  CLOUD_BUSINESS_INPUT_INVALID, and all three asset tables remain unchanged.
+- Student/family/visitor imports return 403; body-supplied owner returns 400.
+  Admin/student/family projections contain none of the teacher test records;
+  visitor projection is denied (403), rather than leaking financial data.
+- Actual month/year/all taps match income/expense totals 25.50/183.50,
+  28.05/201.85 and 30.60/220.20. Native pull performs no new import.
+- Exact cleanup removes 24 created records, their import and two newly created
+  categories. Original three asset-table snapshots match byte-for-byte:
+  `1adc642d99d8bcdcaeb75087a2f248c4572c2de6dbd813b02943f373c5fccb90`.
+  Original signed-out auth and business cache are restored and compared equal.
+
+Five PNGs in that receipt directory individually inspected: month, year, all,
+records-bottom and native-pull. Populated baseline exposed cramped category names
+and joined date/amount text. Fix reuses existing detail styles, shows category,
+cloud note and secondary date, right-aligns signed amounts, lets category names
+use available width, and uses native page scrolling instead of a fixed nested
+viewport plus phantom tab-bar padding. Recent-20 policy, statistics, roles and
+confirmation/write flow remain unchanged. Baseline screenshot:
+`gewu-assets-real-20260923-u7dh0x3e/teacher-month-populated.png` (inspected).
+
+Actual TSX test first failed on absent record category, then passed category/note,
+date/amount separation, native scrolling and existing race/permission/import
+coverage. Full miniapp UI suite, typecheck, final-version weapp build and
+version/independent-component tests pass. Only miniapp patch 8.8.15 -> 8.8.16;
+cloud/desktop/NAS unchanged. Development upload receipt pending below.
+Successful real receipt SHA256:
+`ea51a00de96ebf4c74d6fb27c79414c29429e73e42543b49fb62067fcd53e2e1`.
+
+Keep failed harness runs visible: `6062prw8` failed before any import because it
+expected visitor projection 200; its cleanup verifier deadlocked on a held
+single-connection pool (fixed to snapshot via that connection). `u7dh0x3e`
+performed and cleaned 24 rows, but expected conflict 409 instead of the existing
+400 contract; it remains failed, not relabeled. Both restored auth/cache.
+The succeeding run starts from the same empty three-table baseline.
+Physical-device consent/offline and full 18-route acceptance remain open.
 
 ## Personal assets import integrity (8.8.15 development / cloud 8.11.21, UTF-8)
 
-Cloud and development upload verified below; end-to-end import acceptance remains open.
+Cloud and development upload verified below; later real acceptance is recorded above.
 Existing teacher import was exposed by the UI but rejected by
 the cloud repository. A changed idempotent retry was validated after COMMIT and
 could leave extra categories/records despite a conflict response. Isolated PG17
@@ -621,7 +671,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | stats/index | A/T; deny S/F/V | Real totals, groups, expansion/collapse, empty state | A/T totals/collapse, A empty, S/F/V denial passed; 8.8.9 T request-failure/cache/retry/native pull/return passed; loading and stale-session unit tests passed; physical offline/loading capture/touch measurements pending |
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
-| assets/index | A/T; deny S/F/V | Personal import only, CSV/error/empty state, scope | Real A/T cloud reads and S/F/V denial checked; controlled CSV/cancel/retry/replay/read-failure/native-pull cases passed; seven screenshots inspected, auth/cache restored; real financial import/readback and populated layout still pending |
+| assets/index | A/T; deny S/F/V | Personal import only, CSV/error/empty state, scope | Real A/T reads, S/F/V denial; teacher real 24-row CSV import/replay/conflict/owner isolation/readback/native pull and exact cleanup pass; populated month/year/all/bottom inspected (five PNGs), original auth/cache restored; physical-device consent/offline still open |
 | settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |
 | account-application/index | V | Names/phone instead of internal IDs; role choices and errors | 8.8.12 real state read/invalid Submit/three role events passed; 8.8.13 real handlers with controlled retry/rejection/pending/approved/conflict/failure responses passed, six final screenshots inspected, original state restored; production submission/review, cold auth, formal-role visual denial and native picker/keyboard checks remain |
 
