@@ -47,7 +47,15 @@ captured both English messages but stopped at the harness's class-only count
 selector guard. It remains ok=false, original state restored. The helper was
 corrected to count the existing .picker-value class, not a fictitious app fix.
 
-Development upload is pending. Separate open finding from source/SQL review:
+Source 37fe9367 is pushed to gewu/master. Guarded fixed-egress upload rebuilt and
+verified miniapp 8.8.12, with pre/post public health and compatibility checks,
+exit 0; development receipt verified at 2026-09-23T09:52:28.610Z:
+`gewu-miniapp-8812-upload-20260923-vvab4fwn/active.json`.
+Desktop 8.9.8, cloud 8.11.20 and storage 8.8.3 are unchanged. This is a partial
+development release, not formal release or a full multi-end acceptance claim.
+Report hashes: application 03323fd433fb62b26d1b2c2e8a63777d69114cb7ff07a8460508b0ccfb7cf3a3;
+privacy 1aa769c495dd09d41c4274353b9d8618b289cfee8ce711f8916af063917cef74.
+Separate open finding from source/SQL review:
 the role/mode-only stored idempotency key survives changed name/phone and rejected
 applications, while SQL rejects changed payloads under the same key and returns
 an old rejected application for identical retries. The refresh-page suggestion
@@ -390,7 +398,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |
 | settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |
-| account-application/index | V | Names/phone instead of internal IDs; role choices and errors | Pending |
+| account-application/index | V | Names/phone instead of internal IDs; role choices and errors | 8.8.12 real state read, invalid Submit taps with zero requests, localized toast arguments and three role picker events passed; six screenshots inspected; retry/idempotency, submitted/rejected/approved, cold auth and native picker/keyboard checks remain |
 
 Earlier 18-image ledger journey: docs/miniapp-student-ledger-2026-09-20.md.
 Completed production paper correction: docs/verification-2026-09-20-paper-indent.md.

@@ -92,7 +92,10 @@ passed empty-name/phone Submit taps and three role changes; six screenshots
 inspected, captured toast args Chinese, zero network submits. Privacy run
 gewu-privacy-live-20260923-bhgp7lcy passed entry/scroll/back; five screens inspected,
 target measured 88x45, text/layout preserved. Both restore original login/cache.
-Only miniapp 8.8.12 changed; upload pending.
+Only miniapp 8.8.12 changed; source 37fe9367 pushed. Guarded development upload
+and post-upload health verified at 2026-09-23T09:52:28.610Z, receipt
+gewu-miniapp-8812-upload-20260923-vvab4fwn/active.json. No new cloud/NAS/desktop
+release, and no full acceptance claim.
 Separate source/SQL finding: persistent role/mode-only idempotency keys cannot
 resubmit corrected or rejected applications correctly. Reproduce full retry and
 rejection paths, keeping ambiguous-network duplicate protection, before fixing.
