@@ -31,8 +31,10 @@ assert.equal(studentPaymentAmount({ payment_type: 1, amount: 1200 }), '+\u00a512
 assert.equal(studentPaymentAmount({ payment_type: 2, amount: 12 }), '+12 \u8bfe\u65f6');
 const detail = fs.readFileSync(path.join(__dirname, '../pages/student-detail/index.tsx'), 'utf8');
 assert.match(detail, /studentPaymentAmount\(p\)/);
-assert.match(detail, /const refreshed = await pullFromCloudBusinessProjection\(\)/);
-assert.match(detail, /if \(!refreshed\)/, 'failed reads cannot be rendered as empty ledger records');
+// UTF-8: Cache-aware failure behavior is executed in detailRuntime.test.js.
+assert.match(detail, /refreshed = await pullFromCloudBusinessProjection\(\)/);
+assert.match(detail, /setLoadFailed\(!refreshed\)/);
+assert.match(detail, /if \(!student && loadFailed\)/, 'failed uncached reads cannot be rendered as empty ledger records');
 for (const timestamp of ['2026-08-31T12:00:00', '2026-09-01T12:00:00']) {
   class FixedDate extends Date { constructor(...args) { super(...(args.length ? args : [timestamp])); } }
   const original = loadTs(path.join(__dirname, '../../..', 'src/utils/helpers.ts'), require, FixedDate);

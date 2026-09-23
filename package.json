@@ -6,7 +6,7 @@
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
-    "pretest:miniapp-ui": "node miniapp/src/pages/assets/assetsRuntime.test.js",
+    "pretest:miniapp-ui": "node miniapp/src/pages/assets/assetsRuntime.test.js && node miniapp/src/pages/student-detail/detailRuntime.test.js && node miniapp/src/pages/schedule/edit/recoveryRuntime.test.js",
     "pretest": "node miniapp/src/utils/miniappOfflineQueue.test.js && node miniapp/src/pages/settings/settingsExperience.test.js && npm run test:business-parity && npm run test:course-active",
     "test:course-active": "node src/pages/CourseList.active-parity.test.js && node public/desktopAuthorityRuntime.course-active.test.js && python scripts/business_parity_course_active.test.py",
     "test:business-parity": "node src/App.projection-refresh.test.js && node src/pages/ScheduleCalendar.batch-parity.test.js && node src/pages/ScheduleCalendar.refresh-parity.test.js && node src/utils/batchSelectionGeometry.test.js && node src/pages/useBatchSelection.time.test.js && node src/services/studentCloudReadbackParity.test.js && node src/components/sync/SyncQuickPanel.placement.test.js && node scripts/business-parity-window-size.test.cjs && node scripts/cloud_postgres_security_fingerprint.test.cjs && python scripts/backup_cloud_postgres.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/run_business_parity_shadow.test.py && python scripts/business_parity_course_refresh.test.py && python scripts/verify_cloud_schedule_snapshot_recovery.test.py",

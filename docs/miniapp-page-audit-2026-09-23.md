@@ -9,6 +9,64 @@ Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. Baseline checks were read-only; later reversible
 test writes and their cleanup are explicitly recorded in their sections.
 
+## Student detail and boundary recovery (8.8.17 candidate, UTF-8)
+
+The detail page previously loaded only on mount, lacked its own pre-read page
+permission gate, discarded usable cache on failed refresh and did not guard
+already-rendered data against account changes. It now uses verified page access
+and session/request sequencing. Show/native pull refreshes read-only projection;
+hide/unmount invalidates late responses; only the same still-authorized account
+can read scoped cache. Cached failures carry a notice; uncached failures offer
+retry, not false empty records. Missing/no-ID records offer Return Home.
+Student fields, staff-only notes/source, balances, payment units and grades remain.
+No cloud write, schema, role grant, desktop business window or NAS change.
+
+The retired schedule edit route remains read-only; Return falls back to Home
+when directly opened without a previous page. Actual TSX tests first failed on
+visitor pre-read denial and rejected root navigation, then passed roles/tabs/
+record filtering/cache/retry/native pull/return/missing ID and stale identity,
+hide/unmount/permission/request-order races. Tests use actual studentDisplay.ts,
+including hours vs currency. The older static refresh assertion now checks the
+cache-aware branch backed by behavioral tests. Both new tests are in UI pretest.
+
+Official DevTools real-cloud run `gewu-detail-runtime-20260923-w492u3y1`
+passed 18 cases across A/T/S/F/V, exit 0. Four formal roles read the existing
+marked test student's real zero balances and empty payment/grade tabs, native
+pull, missing/no-ID recovery, normal and root edit-boundary Return. T/S/F cannot
+read an unrelated student ID from the admin result. Visitor detail displays
+denial/application guidance. All five roles passed the dedicated forbidden route
+and Return Home. Teacher exercised controlled HTTP 503 with/without cache and
+retried against the real cloud successfully. No business writes. All 19 PNGs
+individually inspected; original signed-out auth/cache restored and equal.
+Report SHA256: `52b7b3813a2e20d3dd5b6ae08b07aa60d004b63817ea59428a7e26e7114a1693`.
+
+Failed runs retained: `6g29x7st` and `oilsmo3x` reached real details but timed out
+waiting for the new missing-record selector. The latter screenshot showed the
+old page without Return Home while current dist contained it. Official
+cleanCompileCache (not storage/auth cleanup) followed by refresh resolved the
+stale compiled page. `lfbfh9ya` checked root-return too early; its failure
+screenshot and route already show Home. Harness now waits for the Home selector
+before checking the final route. All three restored auth/cache.
+
+Full UI/typecheck/weapp build, display/desktop-grade parity, page access,
+API/auth session and independent-version tests pass. Visual review found small
+detail tabs/recovery targets; page-local minimum heights now 88rpx with
+regressions. Final touch-size run `gewu-detail-runtime-20260923-48n62ih9`
+passed for teacher/student on the final build: recovery action 98 x 45px,
+each tab 117 x 45px. All four final screenshots individually inspected; all
+three tabs remain operable, missing-record recovery works, auth/cache restored,
+no business writes. Report SHA256:
+`eccd0c21411a916274fb769da8e65e0962999502d719c7c185c59a8971b7e7e4`.
+Full UI tests rerun after the final touch patch and passed. Development upload
+still pending; this is UTF-8 evidence, not a full-release claim.
+After the official compile-cache refresh and final touch checks, the strict
+download-domain probe still exits 1 with
+`REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz`.
+URL checking remains enabled. No new export/download acceptance is claimed.
+Physical offline, phone consent/cold authentication and full app audit remain
+open. No new non-empty ledger fixtures were created; earlier real ledger receipt
+and current actual-component tests remain separate evidence.
+
 ## Real personal asset import and populated layout (8.8.16, UTF-8)
 
 DevTools + public cloud 8.11.21 run `gewu-assets-real-20260923-54svwujq`
@@ -665,12 +723,12 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | login/index | G | Compact normal login; privacy, denied/failed/retry, phone consent | Pending real consent/error flow |
 | login/privacy | G | Readable text, full scroll, return | 8.8.12 real entry/5 sections/end note/scroll/API back passed, five screenshots inspected; target enlarged and measured 88x45; native back tap/large-font/assistive input remain |
 | index/index | A/T/S/F/V | Only real authorized entries; navigation and empty state | Student return-home action verified; full role audit pending |
-| forbidden/index | A/T/S/F/V | Reason/application guidance appropriate to role; recovery | Shared denial content checked on payments; dedicated route pending |
+| forbidden/index | A/T/S/F/V | Reason/application guidance appropriate to role; recovery | Dedicated route/Return Home passed for five roles; five screenshots inspected, visitor-only application guidance verified |
 | schedule/index | A/T/S/F/V | Original course label/time/address; week/day, empty/offline | A/T/S/F real week/card/detail/return and visible bottom-card geometry passed; T controlled cached/uncached failure/retry passed; V application entry passed; day view, physical offline/cold auth/touch remain |
 | schedule/detail/index | A/T/S/F; deny V | Original details, attendance/fees, missing ID | Four formal roles real details/student/back/missing record and fee boundary passed; T cached/uncached failure/retry passed; final V pre-read denial and return-home passed after compile-cache refresh; physical offline/cold auth remain |
-| schedule/edit/index | A/T/S/F | Core-edit boundary, recovery; no unauthorized save | Pending |
+| schedule/edit/index | A/T/S/F | Core-edit boundary, recovery; no unauthorized save | Four formal roles passed normal and direct-root Return; four screenshots inspected; read-only/no-service dependency regression passes |
 | students/index | A/T; deny S/F/V | Complete list/search, details, long labels | A/T counts/search/clear/last detail/native pull and S/F/V denial/recovery passed; T controlled failure/recovery/top notice capture passed; physical offline/no-cache/cold-auth/touch checks remain |
-| student-detail/index | A/T/S/F | Scoped balances/history, tabs, missing ID | Earlier ledger flow exists; full states pending |
+| student-detail/index | A/T/S/F; deny V | Scoped balances/history, tabs, missing ID | A/T/S/F detail/tabs/empty ledgers/native pull/missing recovery; T/S/F unrelated ID hidden; V denial/recovery; T controlled cache/no-cache failure and real retry passed; final T/S action 98x45px and tabs 117x45px verified with four inspected screenshots; physical offline/cold auth remain |
 | courses/index | A/T; deny S/F/V | Original course semantics, details and empty state | A/T real list/filter/reset/native refresh passed; S/F/V denial observed; T cached/uncached failure/retry passed; long-list last-card/physical offline/cold auth/touch remain |
 | teachers/index | A/T; deny S/F/V | Scope, contact display and long text | A/T counts/native pull and S/F/V denial/recovery passed; T cached-failure/recovery and zero-fee correction observed; physical offline/no-cache/cold-auth/touch checks remain |
 | payments/index | A/T; deny S/F/V | All authorized filters, counts/totals, empty/loading/offline | A/T filter interaction and S/F/V denial/recovery passed; non-empty/offline runtime checks remain |

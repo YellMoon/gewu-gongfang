@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react';
-import { View, Text, Button } from '@tarojs/components';
-import Taro, { useRouter } from '@tarojs/taro';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text } from '@tarojs/components';
+import Taro, { useRouter, useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro';
 import { Student, Payment, PaymentType, Grade } from '../../types';
 import { getLocalItem, getLocalData, pullFromCloudBusinessProjection } from '../../utils/sync';
 import { isStudentScopedUser } from '../../utils/permission';
 import { studentSchoolLabel, studentGradeLabel, studentPaymentAmount } from '../../utils/studentDisplay';
+import { authSessionRuntime } from '../../utils/authSession';
+import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
+import { EmptyState, LoadingSkeleton } from '../../components/shared';
+import ForbiddenPage from '../../components/ForbiddenContent';
 import './index.scss';
 
 export default function StudentDetail() {
@@ -16,51 +20,52 @@ export default function StudentDetail() {
   const [grades, setGrades] = useState<Grade[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [reload, setReload] = useState(0);
+  const requestSequence = useRef(0);
+  const resultSession = useRef<ReturnType<typeof authSessionRuntime.capture> | null>(null);
   const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'grades'>('info');
 
-  useEffect(() => {
-    let active = true;
+  // UTF-8: Only the initiating, still-authorized account may read or render its cache.
+  const handleRefresh = async () => {
+    const sequence = ++requestSequence.current;
+    const session = authSessionRuntime.capture();
+    const current = () => sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
     setLoading(true);
     setLoadFailed(false);
-    setStudent(null);
-    const load = async () => {
-      const refreshed = await pullFromCloudBusinessProjection();
-      if (!active) return;
-      setLoading(false);
-      if (!refreshed) { setLoadFailed(true); return; }
-      if (!id) return;
+    setStudent(null); setPayments([]); setGrades([]);
+    try {
+      if (!id || !await refreshMiniappPageAccess('/pages/student-detail/index') || !current()) return;
+      let refreshed = false;
+      try { refreshed = await pullFromCloudBusinessProjection(); } catch { /* Only this account's authorized cache is read below. */ }
+      if (!current() || !canAccessMiniappPage('/pages/student-detail/index')) return;
       const s = getLocalItem<Student>('students', id);
       setStudent(s || null);
+      if (s) {
+        setPayments(getLocalData<Payment>('payments').filter(p => p.student_id === id));
+        setGrades(getLocalData<Grade>('grades').filter(g => g.student_id === id));
+      }
+      resultSession.current = session;
+      setLoadFailed(!refreshed);
+    } finally {
+      if (sequence === requestSequence.current) { setLoading(false); void Taro.stopPullDownRefresh(); }
+    }
+  };
+  useDidShow(handleRefresh);
+  usePullDownRefresh(handleRefresh);
+  useDidHide(() => { requestSequence.current++; setStudent(null); setPayments([]); setGrades([]); setLoading(true); });
+  useEffect(() => () => { requestSequence.current++; }, []);
 
-      const allPayments = getLocalData<Payment>('payments');
-      setPayments(allPayments.filter((p) => p.student_id === id));
-
-      const allGrades = getLocalData<Grade>('grades');
-      setGrades(allGrades.filter((g) => g.student_id === id));
-    };
-    void load();
-    return () => { active = false; };
-  }, [id, reload]);
-
-  if (loading || loadFailed) {
-    return (
-      <View className='container'>
-        <View className='empty-state'>
-          <Text className='empty-state-text'>{loading ? '\u6b63\u5728\u52a0\u8f7d' : '\u6682\u65f6\u65e0\u6cd5\u52a0\u8f7d\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u540e\u91cd\u8bd5'}</Text>
-          {loadFailed && <Button size='mini' onClick={() => setReload(value => value + 1)}>{'\u91cd\u8bd5'}</Button>}
-        </View>
-      </View>
-    );
+  if (!canAccessMiniappPage('/pages/student-detail/index')) return <ForbiddenPage />;
+  if (loading || (resultSession.current !== null && !authSessionRuntime.isSameSession(resultSession.current))) {
+    return <View className='container student-detail-page'><LoadingSkeleton rows={3} /></View>;
+  }
+  if (!student && loadFailed) {
+    return <View className='container student-detail-page'><EmptyState text='暂时无法读取学生资料' actionText='重试' onAction={handleRefresh} /></View>;
   }
 
   if (!student) {
     return (
-      <View className='container'>
-        <View className='empty-state'>
-          <Text className='empty-state-icon'>生</Text>
-          <Text className='empty-state-text'>未找到该学生信息</Text>
-        </View>
+      <View className='container student-detail-page'>
+        <EmptyState icon='生' text='未找到该学生信息' actionText='返回首页' onAction={() => Taro.switchTab({ url: '/pages/index/index' })} />
       </View>
     );
   }
@@ -74,7 +79,8 @@ export default function StudentDetail() {
   };
 
   return (
-    <View className='container'>
+    <View className='container student-detail-page'>
+      {loadFailed && <View className='student-cache-notice'><Text>暂时无法更新，显示已保存的数据</Text></View>}
       {/* 学生头像和信息 */}
       <View className='student-header card'>
         <View className='student-avatar'>

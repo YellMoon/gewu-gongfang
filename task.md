@@ -4,6 +4,17 @@
 
 ## Current continuation 2026-09-23 page-detail audit (UTF-8)
 
+Latest candidate: miniapp 8.8.17 student-detail session/cache/refresh/recovery
+and schedule-edit direct-root Return correction. Actual TSX red/green tests,
+full UI/typecheck/build/display parity/page-access/session/version checks pass.
+Real five-role run gewu-detail-runtime-20260923-w492u3y1 passed 18 cases;
+19 screenshots individually inspected, original auth/cache restored, no writes.
+Three failed harness/cache receipts retained in the audit report. A subsequent
+page-local touch-target correction passed teacher/student runtime checks:
+actions 98x45px, tabs 117x45px, four final screenshots inspected, original
+auth/cache restored. Full UI rerun passes. Development upload not yet completed.
+Other components unchanged. UTF-8 receipt: gewu-detail-runtime-20260923-48n62ih9.
+
 Latest: real assets acceptance passed in gewu-assets-real-20260923-54svwujq,
 nine cases against production cloud 8.11.21 from the actual DevTools page.
 24 rows/two categories imported and replayed; changed-key-payload rollback,
@@ -318,7 +329,9 @@ database/code backup before any production cutover. Local QA is not publication.
 >
 > 最近的隔离双端 E2E 停在数据主机“身份与设备”页：`HOST_IDENTITY_UI_MISSING`。该运行没有完成普通端审批、LAN、中继或双向同步。本文件规定：下一会话先完成架构替换，之后以新运行时重新做真实双端验收；不得绕过该失败来修补旧链路。
 
-## 1. 目标、范围和硬约束
+> **历史方案警告（UTF-8，2026-09-23）：** 下方 2026-07/08 的“本地数据主机唯一权威”、设备人工审批、两阶段 activation 和旧三通道中继规划已被用户后续云端唯一写入权威要求取代，仅为追溯保留，不是当前执行指令或完成门槛。当前以 AGENTS.md、本文顶部最新证据及用户要求为准：云端裁决，设备登录后静默登记，NAS 仅存储，离线草稿确认后提交，各端独立版本并统一兼容性管理。
+
+## 1. 目标、范围和硬约束（已失效的历史规划）
 
 ### 最终结果
 

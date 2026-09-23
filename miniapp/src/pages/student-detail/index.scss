@@ -1,3 +1,13 @@
+.student-cache-notice {
+  // UTF-8: Cached details must not be mistaken for a fresh cloud result.
+  padding: 16rpx 24rpx;
+  margin-bottom: 20rpx;
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: #825b24;
+  background: #fff4dc;
+}
+
 .student-header {
   display: flex;
   flex-direction: column;
@@ -91,7 +101,7 @@
 
 .tab {
   flex: 1;
-  min-height: 66rpx;
+  min-height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -160,4 +170,10 @@
 
 .score-low {
   color: #c94f3d;
+}
+.student-detail-page .es-action {
+  // UTF-8: Enlarge this page's recovery action without changing other pages.
+  min-height: 88rpx;
+  min-width: 176rpx;
+  box-sizing: border-box;
 }
