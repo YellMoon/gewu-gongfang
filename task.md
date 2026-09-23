@@ -108,8 +108,10 @@ gewu-application-retry-20260923-my9ehm4d passes all six controlled cases, fourte
 GETs/six intercepted POSTs, no unexpected requests or production writes. All six
 screenshots individually inspected; original login/cache/attempt keys restored.
 UI/read/role-application/typecheck/build/version checks pass. Miniapp-only 8.8.13
-development upload remains pending; no new desktop/cloud/NAS release.
-Next: finish that receipt, then other page
+source 5677ec1b is pushed; guarded development upload/post-health verified at
+2026-09-23T10:28:19.896Z, receipt gewu-miniapp-8813-upload-20260923-4pv9pbza.
+No new desktop/cloud/NAS release; partial development release, not full acceptance.
+Next: remaining page
 actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.

@@ -43,7 +43,15 @@ rejected form, pending/no-form, offline recovery and approved/no-form. Original
 login, scoped cache and this account's attempt keys were restored; mocks removed.
 This exercises real TSX handlers and DevTools UI, not physical offline, native
 phone consent/pickers, production submission/review, or all-role visual acceptance.
-Development upload is pending. Earlier controlled run
+Source `5677ec1b` is pushed to gewu/master. Guarded fixed-egress development
+upload rebuilt and verified miniapp 8.8.13 at 2026-09-23T10:28:19.896Z,
+including pre/post public health checks; exit 0. Receipt:
+`gewu-miniapp-8813-upload-20260923-4pv9pbza/active.json`.
+Desktop 8.9.8, cloud 8.11.20 and storage 8.8.3 stay unchanged; their pending
+slots in this new receipt are not claimed as new deployments. Partial development
+release only. Runtime report SHA256:
+`99ba9d1b9801e7a14c081962353252f863ab9c096c753f33683b2b2ff5d09455`.
+Earlier controlled run
 `gewu-application-retry-20260923-el2r07yh` passed six handler cases,
 restoring the original login, cache and account attempt keys, but predates the
 service-error copy correction. Its first screenshot is the evidence for that fix.
