@@ -4,7 +4,7 @@
 
 ## Current continuation 2026-09-23 page-detail audit (UTF-8)
 
-Latest candidate: miniapp 8.8.18 corrects false empty-library wording after
+Latest verified development upload: miniapp 8.8.18 corrects false empty-library wording after
 an unmatched filter and removes the dead-end application action for formal
 student/family roles (visitor application retained). Actual TSX red/green,
 full UI/cloud-read, typecheck/build and version tests pass. Real question reads,
@@ -12,8 +12,9 @@ answer toggles, local A/T baskets, S/F/V restrictions, empty-search recovery and
 native pull verified across split receipts sjoz2yo5/ojhr4o9l, 18 screenshots
 inspected. Failed harness receipts preserved; all auth/scoped storage restored.
 Final S/F/V prompt-only follow-up gk5sfrhe passed and restored auth/storage;
-development upload pending. No cloud/NAS/desktop
-change. Media/download domain and full question-page visual acceptance remain
+source 2756ca32 pushed; development upload verified 2026-09-23T13:49:10.958Z,
+receipt gewu-miniapp-8818-upload-20260923-hdjmniym, pre/post health pass.
+No cloud/NAS/desktop change. Media/download domain and full question-page visual acceptance remain
 open. Details: docs/miniapp-page-audit-2026-09-23.md. Do not repeat completed
 pure-image export or asset import work; continue remaining page audit.
 

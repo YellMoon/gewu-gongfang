@@ -9,7 +9,7 @@ Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. Baseline checks were read-only; later reversible
 test writes and their cleanup are explicitly recorded in their sections.
 
-## Question filter miss and restricted-role recovery (8.8.18 candidate, UTF-8)
+## Question filter miss and restricted-role recovery (8.8.18, UTF-8)
 
 Real teacher baseline `gewu-question-runtime-20260923-9st7onfu` reads 40 of
 108 questions from the production API. Answer expansion/collapse, local basket
@@ -26,7 +26,10 @@ state (no new effect/state or API) and adds a local Clear Filters recovery.
 Full UI tests, question display/basket/cloud-delivery regressions, typecheck,
 weapp build and independent-version checks pass. Full miniapp-cloud-read suite,
 including isolated PostgreSQL and paper-export regression, also passes.
-Miniapp alone is 8.8.18; development upload remains pending.
+Miniapp alone is 8.8.18. Source `2756ca32` is pushed to gewu/master;
+guarded development upload verified `2026-09-23T13:49:10.958Z`, pre/post health
+gates passed. Manifest/receipt: `gewu-miniapp-8818-upload-20260923-hdjmniym`.
+Desktop 8.9.8, cloud 8.11.21 and NAS 8.8.3 unchanged. Not a full-release claim.
 
 Final-build combined run `sjoz2yo5` passed teacher/admin real reads, default
 collapsed answers, toggles, local basket add/remove/drawer, corrected unmatched
