@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { View, Text } from '@tarojs/components'
-import Taro from '@tarojs/taro'
+import Taro, { useDidShow, useDidHide } from '@tarojs/taro'
 import { onNetworkStatusChange, offNetworkStatusChange } from '@tarojs/taro'
 import { authSessionRuntime } from '../../utils/authSession'
 import { clearAuthenticatedSession } from '../../utils/miniappApiSessionRuntime'
 import { accountSessionCleanupStorageKeys, isFormalIdentity, isVisitorIdentity } from '../../utils/accountExperience'
-import { isOnline, getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
+import { getLastSyncTimestamp, clearBusinessCache } from '../../utils/storage'
 import { clearPermissionCache } from '../../utils/permission'
 import { pullFromCloud } from '../../utils/sync'
 import MembershipBadge from '../../components/MembershipBadge'
@@ -19,29 +19,60 @@ const APP_VERSION = typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim(
   : miniappPackage.version
 
 export default function Settings() {
-  const currentIdentity = Taro.getStorageSync('user_info')
+  const [currentIdentity, setCurrentIdentity] = useState(() => Taro.getStorageSync('user_info'))
   const isLimitedIdentity = !isFormalIdentity(currentIdentity)
   const [online, setOnline] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [lastSync, setLastSync] = useState(0)
-
-  useEffect(() => {
-    refreshStatus()
-    const handleNetworkStatusChange = (res: { isConnected: boolean }) => {
-      setOnline(res.isConnected)
-      refreshStatus()
-    }
-    onNetworkStatusChange(handleNetworkStatusChange)
-    return () => offNetworkStatusChange(handleNetworkStatusChange)
-  }, [])
+  const [lastSync, setLastSync] = useState(getLastSyncTimestamp)
+  const requestSequence = useRef(0)
+  const refreshInFlight = useRef(false)
+  const visible = useRef(true)
+  const networkSequence = useRef(0)
 
   const refreshStatus = () => {
-    setOnline(isOnline())
     setLastSync(getLastSyncTimestamp())
+    setCurrentIdentity(Taro.getStorageSync('user_info'))
   }
 
+  useDidShow(() => {
+    visible.current = true
+    requestSequence.current++
+    refreshInFlight.current = false
+    setRefreshing(false)
+    refreshStatus()
+    const sequence = ++networkSequence.current
+    void Taro.getNetworkType().then(result => {
+      if (visible.current && sequence === networkSequence.current) setOnline(result.networkType !== 'none')
+    }).catch(() => { /* A failed network check does not prove offline; manual refresh can retry. */ })
+  })
+  useDidHide(() => {
+    visible.current = false
+    requestSequence.current++
+    networkSequence.current++
+    refreshInFlight.current = false
+  })
+
+  useEffect(() => {
+    const handleNetworkStatusChange = (res: { isConnected: boolean }) => {
+      networkSequence.current++
+      if (visible.current) {
+        setOnline(res.isConnected)
+        refreshStatus()
+      }
+    }
+    onNetworkStatusChange(handleNetworkStatusChange)
+    return () => {
+      visible.current = false
+      requestSequence.current++
+      networkSequence.current++
+      refreshInFlight.current = false
+      offNetworkStatusChange(handleNetworkStatusChange)
+    }
+  }, [])
+
   const handleRefresh = async () => {
-    if (isLimitedIdentity) {
+    if (!visible.current || refreshInFlight.current) return
+    if (!isFormalIdentity(Taro.getStorageSync('user_info'))) {
       Taro.showToast({ title: '\u5173\u8054\u8eab\u4efd\u540e\u53ef\u8bfb\u53d6\u4e91\u7aef\u6570\u636e', icon: 'none' })
       return
     }
@@ -49,18 +80,27 @@ export default function Settings() {
       Taro.showToast({ title: '\u5f53\u524d\u79bb\u7ebf', icon: 'none' })
       return
     }
+    const session = authSessionRuntime.capture()
+    const sequence = ++requestSequence.current
+    const isCurrent = () => visible.current && sequence === requestSequence.current && authSessionRuntime.isSameSession(session)
+    refreshInFlight.current = true
     setRefreshing(true)
     try {
       const success = await pullFromCloud()
+      if (!isCurrent()) return
       Taro.showToast({
         title: success ? '\u6570\u636e\u5df2\u5237\u65b0' : '\u6682\u65f6\u65e0\u6cd5\u5237\u65b0\u6570\u636e',
         icon: success ? 'success' : 'none',
       })
       refreshStatus()
     } catch (_error) {
+      if (!isCurrent()) return
       Taro.showToast({ title: '\u6682\u65f6\u65e0\u6cd5\u5237\u65b0\u6570\u636e', icon: 'none' })
     } finally {
-      setRefreshing(false)
+      if (sequence === requestSequence.current) {
+        refreshInFlight.current = false
+        if (visible.current) setRefreshing(false)
+      }
     }
   }
 
@@ -71,11 +111,12 @@ export default function Settings() {
   }
 
   const handleLogout = () => {
+    const session = authSessionRuntime.capture()
     Taro.showModal({
       title: '\u786e\u8ba4\u9000\u51fa',
       content: '\u786e\u5b9a\u8981\u9000\u51fa\u767b\u5f55\u5417\uff1f',
       success: (res) => {
-        if (!res.confirm) return
+        if (!res.confirm || !visible.current || !authSessionRuntime.isSameSession(session, { allowInvalidated: true })) return
         const currentUser = Taro.getStorageSync('user_info')
         const exitingExperience = isVisitorIdentity(currentUser)
         clearAuthenticatedSession({

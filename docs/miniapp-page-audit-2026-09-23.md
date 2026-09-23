@@ -7,6 +7,64 @@ URL checks enabled. All listed Sep 23 role runs restored the original session.
 Cloud-signed existing test sessions verify UI/cloud authorization; they do not
 prove WeChat phone consent/login. No business rows were created or changed.
 
+## My-page interaction correction in verification (8.8.11, UTF-8)
+
+Before screenshot: `gewu-settings-before-20260923-mppa0nb0/01-settings-before.png`,
+SHA256 76be7f1a70a5c8708c5d1d4f29c61a4e860abb6752f5f4598fe4bd4dbe51a799.
+The teacher page layout fits; existing sections, wording and positions remain.
+Actual TSX tests reproduced stale logout confirmation clearing a replacement
+account, duplicate refresh clicks, late refresh toasts after an account change,
+and missing status updates on return. The old storage network state never got
+initialized because initSyncManager has no caller; settings now checks WeChat
+getNetworkType on show and listens to its real network-change event. This does
+not re-enable the retired automatic synchronization manager.
+
+Session checks protect confirmation and refresh responses; refs suppress double
+clicks and cancel hidden/unmounted responses. The original formal/visitor logout
+branches and cleanup contract remain. Page return updates profile/timestamp
+without starting a business refresh; interaction requests stay in click handlers.
+Tests cover platform offline state, network event/query races, refresh failure,
+logout cancel/confirm, account replacement, return, hide/unmount, visitor role
+application and listener cleanup. Included in test:miniapp-ui; UI/read/API-session,
+typecheck/weapp/version checks pass. A follow-up test also protects local sign-out
+of an already-invalidated but unchanged session; it still cannot clear a newer
+generation/account. The same boundaries pass against the actual persistent
+session runtime as well as the isolated page harness. Development upload is pending.
+
+Real matrix `gewu-settings-live-20260923-h1sc8qsk/report.json`, ok=true:
+
+1. All five cloud-signed roles opened My; the four formal roles tapped Refresh
+   and the actual cloud-read timestamp advanced. Visitor had no refresh control.
+2. Teacher network-type injection returned none; offline notice appeared and
+   the real refresh button disabled. Restoring the API and returning recovered.
+   This is controlled platform-output testing, not physical offline acceptance.
+3. All five roles tapped Logout. With controlled showModal cancel/confirm
+   results, cancellation retained the account; confirmation reached Login and
+   cleared auth/token/permission/cache-identity state while invalidating the
+   generation. Native dialog appearance/manual buttons were not validated.
+4. Visitor tapped Apply Role, reached the existing form and returned; no form
+   was submitted. That form's full role/profile/validation matrix remains open.
+
+All twelve screenshots were individually inspected. No section/button overlap;
+offline state adds a readable notice without hiding Logout. Actual refresh and
+logout button sizes were 335x45 and 366x45 CSS pixels on the simulator; this does
+not establish all-device or assistive-technology compliance. Original auth and
+scoped cache/timestamp keys were restored and mocks removed. No business writes.
+Earlier `gewu-settings-live-20260923-aqhs54kc` stopped at a harness rejection of
+a compound selector; its screenshot shows recovery, but the run remains failed.
+Both original auth/cache were restored there too. Full page acceptance still
+needs native dialog/physical offline, cold consent and assistive-input coverage.
+
+Final-build invalidated-session follow-up:
+`gewu-settings-live-20260923-q9dwf_0l/report.json`, ok=true, teacher role. Cancel
+retained the account; confirming local logout of the unchanged invalidated
+session reached Login and cleared auth/cache identity. Both screenshots were
+individually inspected (8.8.11 visible on My); original login, cache and mocked
+APIs restored. No business writes. The earlier `l80mwpny` run timed out waiting
+for Login and remains failed. The follow-up passed after clearing only DevTools
+disposable compile cache, with no source change; this correlation alone does
+not prove the failure's root cause. No auth/storage cache was cleared to recover.
+
 ## People-list correction (8.8.10, UTF-8)
 
 Direct student navigation previously rendered its own scoped student row on a
@@ -257,7 +315,7 @@ state/route contracts, not as evidence that every screenshot has been inspected.
 | question-bank/index | A/T/S/F/V | Desktop-derived filters/options/media, answers toggle, floating basket | Strict media-download gate unresolved; full audit pending |
 | question-paper/index | A/T | Edit/reorder, Word/PDF buttons, permission/error recovery | Handler/export regressions pass, strict WeChat download acceptance pending |
 | assets/index | A/T | Personal import only, CSV/error/empty state, scope | Pending |
-| settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | T screenshot inspected; remaining roles/actions pending |
+| settings/index | A/T/S/F/V | Actual account/status/actions, role application and logout | Five-role page/refresh-or-application/logout handlers passed; T controlled offline/recovery passed; button dimensions measured; native modal/physical offline/cold consent/accessibility remain |
 | account-application/index | V | Names/phone instead of internal IDs; role choices and errors | Pending |
 
 Earlier 18-image ledger journey: docs/miniapp-student-ledger-2026-09-20.md.

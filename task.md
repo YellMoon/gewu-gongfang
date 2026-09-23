@@ -63,8 +63,23 @@ Miniapp-only patch 8.8.10: UI/read/typecheck/weapp/version checks pass; source
 2026-09-23T09:03:34.407Z, receipt gewu-miniapp-8810-upload-20260923-vfaaa0fy.
 Desktop/cloud/NAS unchanged; only partial development release. Six unrelated
 dirty files/output remain untouched. Full audit stays open.
-Next: remaining settings/page actions,
-rendered loading, physical offline/cold authorization and touch dimensions.
+My-page follow-up (8.8.11 pending upload): actual TSX tests reproduced stale
+logout clearing a replacement account, duplicate refresh, late toasts and stale
+return status. Session/lifecycle guards fix those without UI redesign. Network
+state now comes from WeChat getNetworkType/events, not the never-initialized old
+sync-manager variable. Invalidated unchanged sessions retain local logout.
+UI/read/API-session/typecheck/build/version checks pass. Five-role real run
+gewu-settings-live-20260923-h1sc8qsk passed refresh, visitor application entry,
+controlled cancel/confirm logout and teacher controlled offline/recovery; twelve
+screens individually inspected, 45px action heights measured. Original auth,
+scoped caches/timestamp and mocks restored. Not a physical-offline/native-modal
+or phone-login claim. Final-build invalidated-session follow-up
+gewu-settings-live-20260923-q9dwf_0l passed cancel/confirm and login navigation;
+both screenshots inspected, original login/cache and mocks restored. Actual
+persistent-session runtime regression also passes. Earlier failed runtime receipt
+remains failed; successful retry followed disposable compile-cache cleanup only.
+Next: finish this development receipt, then application/privacy and other page
+actions, rendered loading and physical offline/cold authorization.
 Do not repeat successful paper exports
 or statistics amount/collapse fixtures merely because context is compacted.
 
