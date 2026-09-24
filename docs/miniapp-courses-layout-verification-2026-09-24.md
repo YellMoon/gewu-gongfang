@@ -55,4 +55,14 @@ This supplements the unchanged-TSX five-role interaction receipt above, not a
 second claim to have repeated every flow. Final report SHA256:
 `2e7fd19ad977a38fcc2dff5b91754ce2b017331046a970e08c68f60de19060fe`.
 
-Development upload remains pending until its platform receipt is recorded.
+Source `548adc998386be84c26df19dd4d193995afb8c22` was pushed to gewu/master.
+Guarded development upload exited 0; receipt directory:
+`gewu-miniapp-8823-upload-20260924-mcgh7hmn` (active.json, receipt.json, upload.log).
+The platform reported a 1,078,439-byte package. The miniapp target is verified,
+releaseLevel=development at 2026-09-24T00:54:34.441Z, only after the post-upload
+health gate. Independent public health then reconfirmed cloud 8.11.21 / PostgreSQL
+healthy. Protocol/data compatibility remains gewu.protocol-data-compatibility.v1.
+Other component targets in this per-upload manifest are pending, not fresh
+deployment claims. No NAS replacement or desktop rebuild was required for this
+miniapp-only stylesheet patch. This is partial release, not official WeChat
+review/release or completion of the full multi-end objective.
