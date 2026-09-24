@@ -86,3 +86,49 @@ Current live checks correctly fail: dist reports DOWNLOAD_DOMAIN_NOT_ALLOWED;
 the root project reports DOWNLOAD_DOMAIN_CHECK_DISABLED without attempting a
 download. No release/version change is needed for this test-tool correction.
 The full goal remains active and release remains partial.
+
+## Sep 24: refreshed metadata and callback-based strict probe
+
+Actual Windows DevTools project information confirmed Gewu Zhilin,
+AppID `wx3d570539bbe6ba1b`. Project Configuration initially showed request
+domain `https://physicsedu.xyz`, but uploadFile/downloadFile were unset.
+Clicking the domain-list refresh control (read-only metadata sync) immediately
+showed that origin under both uploadFile and downloadFile. No allowlist,
+security setting, account, project configuration or NAS container was changed.
+
+The existing simulator still rejected the origin after that refresh and normal
+compilation. Closing/reopening the dist project replaced the old runtime.
+The first reopen returned `terminated` after the last window closed; window
+inventory and runtime lookup confirmed no project, then the official open call
+succeeded. No write operation was blindly repeated.
+
+The generic `automation_wx_api downloadFile` bridge then timed out with
+`An object could not be cloned` in the DevTools appservice log. A controlled
+`automation_evaluate` calling the same real `wx.downloadFile` and awaiting its
+completion callback returned HTTP 200 with a nonempty temporary file. The
+native DownloadTask returned synchronously by downloadFile is not a completed
+download result and cannot be cloned through that bridge.
+
+The regression probe now awaits callbacks and returns only status/temporary-file
+presence. It still requires effective urlCheck=true, rejects missing files,
+non-200 responses and domain failures, and never substitutes wx.request.
+Tests execute the exact callback expression against an asynchronous API double
+returning an uncloneable task object; no private temporary path reaches the
+receipt. Tests failed before correction, then passed: domain 8, aggregate
+role-runtime 39 (includes domain tests), startup-wait 3.
+
+The corrected real strict dist probe passed with statusCode=200 and
+domainCheckEnabled=true on Sep 24. This resolves the origin-access gate only.
+Actual role-scoped question images and paper-button downloads are being checked
+separately; neither all-page acceptance nor physical-device downloads follow
+from this health-endpoint probe.
+
+Actual question-media follow-up on miniapp 8.8.22 / live cloud 8.11.21:
+`gewu-media-runtime-20260924-ilfjsoom` (teacher) and
+`gewu-media-runtime-20260924-t0asn6bi` (super admin, student, family, visitor)
+both exited 0 with ok=true and exact authRestored/storageRestored=true.
+All five roles loaded the first real cloud question's diagram with no placeholder;
+native getImageInfo confirmed 2680x2060. Answers were initially collapsed and
+actual expand/collapse passed. All ten question/answer screenshots were inspected.
+These are first-question media samples, not every image/filter/late-page geometry.
+No teaching/question records were modified and no response was mocked.

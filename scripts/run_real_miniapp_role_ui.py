@@ -147,16 +147,28 @@ def verify_download_domain(project):
         raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_CONFIG_INVALID") from error
     if enabled is not True:
         raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_CHECK_DISABLED")
+    # downloadFile returns a native DownloadTask immediately, not its eventual
+    # result. The generic API-call bridge cannot clone that task over DevTools
+    # IPC. Await the real callbacks and return only a serializable summary.
+    source = (
+        "() => new Promise(resolve => { wx.downloadFile({"
+        "url:'https://physicsedu.xyz/cloud-business/api/health',timeout:30000,"
+        "success: result => resolve({statusCode:result.statusCode,"
+        "hasTempFile:typeof result.tempFilePath==='string' && result.tempFilePath.trim().length>0}),"
+        "fail: error => resolve({error:String(error.errMsg || '')})}); })"
+    )
     try:
-        downloaded = run_wx_api(project, "downloadFile", [{
-            "url": "https://physicsedu.xyz/cloud-business/api/health", "timeout": 30000,
-        }])
+        downloaded = run_wechatide([
+            "automation_evaluate", "--project", str(project), "--fn-source", source,
+        ])
     except RuntimeError as error:
         if "url not in domain list" in str(error):
             raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz") from None
         raise
+    if isinstance(downloaded, dict) and "url not in domain list" in str(downloaded.get("error", "")):
+        raise RuntimeError("REAL_MINIAPP_DOWNLOAD_DOMAIN_NOT_ALLOWED:downloadFile:https://physicsedu.xyz")
     if not isinstance(downloaded, dict) or downloaded.get("statusCode") != 200 \
-            or not isinstance(downloaded.get("tempFilePath"), str) or not downloaded["tempFilePath"].strip():
+            or downloaded.get("hasTempFile") is not True or downloaded.get("error"):
         raise RuntimeError("REAL_MINIAPP_DOWNLOAD_PROBE_FAILED")
     return {"downloadDomain": "https://physicsedu.xyz", "statusCode": 200, "domainCheckEnabled": True}
 
