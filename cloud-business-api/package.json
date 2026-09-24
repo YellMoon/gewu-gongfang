@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.11.21",
+  "version": "8.11.22",
   "scripts": {
     "posttest:miniapp-cloud-read": "node sql/personal-asset-import.postgres.test.js",
     "test:paper-export-regressions": "node src/paperExportHydration.test.js && node src/paperExportFormulaLifetime.test.js && node src/wordNativeFormula.test.js && node src/paperExportRenderer.test.js && node src/paperExportMediaResolver.test.js && node src/paperExportExecutionLease.test.js && node src/paperExportWorkerRuntime.test.js && node src/paperExportTaskProcessor.test.js && node src/paperExportTaskRepository.test.js && node src/paperExportArtifactRepository.test.js",

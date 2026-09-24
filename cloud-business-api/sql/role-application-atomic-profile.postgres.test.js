@@ -97,6 +97,11 @@ const hash = character => character.repeat(64);
       assert.strictEqual(repeatedApproval.rows[0].profile_id, 'teacher-new-1');
       const teacherState = await facade.query("SELECT business.test_role_state('teacher-new-1','account-new-teacher','application-new-teacher') AS state");
       assert.strictEqual(teacherState.rows[0].state.teacherCount, 1);
+      const approvedHistory = await facade.query("SELECT * FROM business.vnext_read_latest_cloud_role_application_v3('tenant-1','account-new-teacher')");
+      assert.strictEqual(approvedHistory.rows[0].application_id, 'application-new-teacher');
+      assert.strictEqual(approvedHistory.rows[0].status, 'approved');
+      assert.strictEqual((await facade.query("SELECT * FROM business.vnext_read_latest_cloud_role_application_v3('tenant-other','account-new-teacher')")).rows.length, 0);
+      assert.strictEqual((await facade.query("SELECT * FROM business.vnext_read_latest_cloud_role_application_v3('tenant-1','account-new-student')")).rows.length, 0);
 
       await facade.query('SELECT * FROM business.vnext_submit_cloud_role_application_v3($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,transaction_timestamp())', ['tenant-1', 'account-new-student', 'application-new-student', 'key-new-student', 'student', 'new', 'New Student', '13800000002', hash('c'), 'student-new-1']);
       const approvedStudent = await facade.query("SELECT * FROM business.vnext_review_cloud_role_application_v3('tenant-1','account-super-admin','application-new-student','approved',NULL,transaction_timestamp())");

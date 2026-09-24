@@ -50,16 +50,24 @@ function createMiniappRoleApplicationService(config) {
     || !settings.repository || typeof settings.repository.readLatest !== 'function' || typeof settings.repository.submit !== 'function'
     || typeof settings.repository.listSubmitted !== 'function' || typeof settings.repository.review !== 'function') throw invalid();
 
-  async function visitor(token) {
+  async function currentAccount(token) {
     const value = text(token, 8192);
     if (!value) throw denied();
     const context = await settings.cloudAccount.context({ token: value });
-    if (!context || !text(context.accountId, 512) || !Array.isArray(context.roles) || context.roles.length !== 0) throw denied();
+    if (!context || !text(context.accountId, 512) || !Array.isArray(context.roles)) throw denied();
+    return context;
+  }
+
+  async function visitor(token) {
+    const context = await currentAccount(token);
+    if (context.roles.length !== 0) throw denied();
     return { accountId: context.accountId };
   }
 
   async function mine({ token }) {
-    const account = await visitor(token);
+    // Approval updates the live role immediately. The same verified session
+    // must still read its own outcome; only submission is visitor-only.
+    const account = await currentAccount(token);
     const application = await settings.repository.readLatest({ accountId: account.accountId });
     return { state: applicationState(application), application };
   }

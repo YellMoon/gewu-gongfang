@@ -118,5 +118,6 @@ const service = createMiniappRoleApplicationService({
     error => error.code === 'CLOUD_ROLE_APPLICATION_INVALID',
   );
   assert.ok(!Object.hasOwn(service, 'listSubmitted') && !Object.hasOwn(service, 'review'));
+  await require('./miniappRoleApplicationContinuity.test')();
   console.log('miniapp role application service checks passed');
 })();
