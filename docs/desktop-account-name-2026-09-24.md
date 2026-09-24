@@ -28,6 +28,13 @@ No schema, core teaching UI or NAS changes are included.
   cloudDesktopIdentityServerWiring, desktopAccountDisplayName,
   desktopIdentityClient, desktopIdentityClient.http and root typecheck.
 - The name-reader regression is included in the cloud npm-test lifecycle.
+- Frozen committed source `9605c30f1428e7557ce8e985e224bf70df0851bc` passed all
+  183 expanded cloud npm-test lifecycle commands, exit 0. Receipt directory:
+  `gewu-frozen-cloud-bundled-tests-20260920-wkq85bcl` (Sep 24 execution; retained
+  harness prefix). This includes real disposable PostgreSQL original-course,
+  original-student, schedule confirmation/undo, financial ledger and role-scope
+  checks. The archive excludes all six unrelated tracked dirty files and
+  protected untracked output work. No production migration was run by these tests.
 - Production read-only receipt `gewu-desktop-name-read-20260924-t_2vcnm2/report.json`
   used the actual application database role, not an owner/admin role. The new
   reader matched the existing marked E2E teacher's stored name. Mismatched teacher
