@@ -58,7 +58,7 @@ temporary device/session/link/installation active counts are zero. Original auth
 and all sch_ storage compared equal after restoration. No user teaching records,
 question records or unmarked payments were edited.
 
-Development upload is pending below.
+Development upload is recorded below.
 Full multi-end release and all-page acceptance remain incomplete.
 
 The first final-layout attempt started before the refreshed simulator exposed
@@ -79,3 +79,17 @@ balances, auth and all sch_ storage again compared equal.
 
 This verifies the current default simulator viewport, not every physical device,
 font scale, native gesture, offline radio or cold-login state.
+
+## Development upload
+
+Source commit `8183903ccc35fa7ebb8b4cd09550094b4d002632` was pushed to
+gewu/master. The guarded release checked both real-run receipts, cleanup and
+exact final source hashes before upload. Evidence basename:
+`gewu-miniapp-8824-upload-20260924-6e1ea0xf`.
+
+The existing fixed-egress lifecycle exited 0 and finalized the platform upload
+receipt: miniapp 8.8.24, releaseLevel=development,
+verifiedAt=2026-09-24T01:26:42.996Z. Build/release smoke checks passed during
+upload as well. Public cloud health was re-read after completion.
+No cloud deployment, NAS replacement, desktop feed or platform formal release
+was performed. This is a miniapp development patch, not full-release completion.
