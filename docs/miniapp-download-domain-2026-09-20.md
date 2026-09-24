@@ -132,3 +132,35 @@ native getImageInfo confirmed 2680x2060. Answers were initially collapsed and
 actual expand/collapse passed. All ten question/answer screenshots were inspected.
 These are first-question media samples, not every image/filter/late-page geometry.
 No teaching/question records were modified and no response was mocked.
+
+## Sep 24: actual teacher Word and PDF buttons
+
+`gewu-paper-live-download-20260924-15qmauro` completed against live cloud
+8.11.21 with URL checking enabled. Existing marked teacher account, two existing
+questions, actual basket/editor/export/download handlers; no mocked API responses.
+Two test export tasks were deliberately created and retained; no core teaching
+or question records were written. Original auth and all `sch_` storage were
+restored and compared equal.
+
+| Format | Completed task | Downloaded bytes | SHA256 |
+| --- | --- | --- | --- |
+| Word | paper_task_288dc47d-0c77-4025-8c19-b2a76ba6a479 | 309831 | d2bd51a89d22fa85058ebd69dc8b69a31765e3d27e8b00f72f261a0c93c95b3d |
+| PDF | paper_task_69968f6e-5e8d-4b11-b141-40f089ac8f82 | 1769682 | 88d204b2787d8b09a4f032f90b685db1af59e064e9999892058304fbcf77c09e |
+
+Bytes were recovered from files created by the actual WeChat download-button
+flow, not from a substitute desktop HTTP download. A separate read-only cloud
+delivery query confirmed both exact sizes/hashes and populated downloaded_at.
+DOCX ZIP/XML checks found 68 native OMML equations and four raster media files;
+this is not a classification of every raster image. PDF parsed/rendered as five
+pages; all five page images and both editor/task screenshots were inspected in
+this task. The reserved answer-space page is intentional. Answer-section page
+numbers restart at 1 with a whole-document total; Sep 24 source-template check
+confirmed both original sections use `w:pgNumType w:start="1"`, and the retained
+footer uses NUMPAGES. Preserve that supplied-template behavior, not an unrequested
+pagination change.
+
+Native wx.openDocument viewer success and this DOCX's Word pagination remain
+unproven. The receipt explicitly records nativeOpenPending=true; download-byte
+success does not close those gates or physical-phone acceptance. Three earlier
+harness attempts (342jva1h, svl5hhe2, 5fxi5yre) created no export tasks and restored
+auth/cache; their failures remain recorded, not relabeled as successful tests.

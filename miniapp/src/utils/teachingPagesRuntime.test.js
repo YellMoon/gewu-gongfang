@@ -96,6 +96,21 @@ function harness(page, role='teacher') {
   const courses=harness('courses');courses.mount();await courses.refresh();
   assert.equal(byClass(courses.render(),'course-card').length,2);byClass(courses.render(),'filter-tag')[2].props.onClick();assert.equal(byClass(courses.render(),'course-card').length,1);
   byClass(courses.render(),'filter-tag')[0].props.onClick();assert.equal(byClass(courses.render(),'course-card').length,2);
+  // UTF-8: 课程资料不是 tab 页面；筛选变高后列表仍须适配剩余高度。
+  const courseCss=fs.readFileSync(path.join(__dirname,'../pages/courses/index.scss'),'utf8');
+  const courseRule=selector=>courseCss.match(new RegExp('\\.'+selector+'\\s*\\{([^}]+)\\}'))[1];
+  assert.match(courseRule('filter-tag'),/min-height:\s*44px/,'course filters need usable touch targets');
+  assert.match(courseRule('filter-tag'),/min-width:\s*44px/);
+  assert.match(courseRule('filter-tag'),/box-sizing:\s*border-box/,'minimum touch width includes padding, avoiding needless horizontal overflow');
+  assert.match(courseRule('courses-page'),/(?:^|[;\s])height:\s*100vh/);
+  assert.match(courseRule('courses-page'),/display:\s*flex/);
+  assert.match(courseRule('courses-page'),/flex-direction:\s*column/);
+  assert.match(courseRule('courses-page'),/box-sizing:\s*border-box/);
+  assert.match(courseRule('courses-page'),/padding-bottom:\s*env\(safe-area-inset-bottom\)/,'non-tab route reserves safe area only');
+  assert.match(courseRule('filter-bar'),/flex-shrink:\s*0/);
+  assert.match(courseRule('course-scroll'),/flex:\s*1/);
+  assert.match(courseRule('course-scroll'),/height:\s*0/);
+  assert.match(courseRule('course-scroll'),/min-height:\s*0/);
   const visitor=harness('schedule','visitor');visitor.mount();await visitor.refresh();assert.equal(visitor.pulls,0);assert.equal(visitor.reads.length,0);
   find(visitor,'EmptyState').props.onAction();assert.deepEqual(visitor.routes,['/pages/account-application/index']);
   const visitorDetail=harness('schedule/detail','visitor');visitorDetail.mount();await visitorDetail.refresh();
