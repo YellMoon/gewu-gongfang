@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import Taro, { useDidShow, useDidHide } from '@tarojs/taro';
 import { Button, Input, Picker, Text, View } from '@tarojs/components';
-import { isVisitorIdentity } from '../../utils/accountExperience';
+import { accountSessionCleanupStorageKeys, isVisitorIdentity } from '../../utils/accountExperience';
 import { miniappCloudBusinessApi } from '../../utils/api';
 import { authSessionRuntime } from '../../utils/authSession';
+import { createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
+import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
+import { clearPermissionCache } from '../../utils/permission';
+import { cloudSessionUser } from '../login/cloudSessionIdentityRuntime';
 import {
   buildRoleApplicationRequest,
   applicationErrorMessage,
@@ -62,6 +66,7 @@ export default function AccountApplicationPage() {
   const [profileModeIndex, setProfileModeIndex] = useState(0);
   const [profileName, setProfileName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [entering, setEntering] = useState(false);
 
   useDidShow(() => { visible.current = true; void load(); });
   useDidHide(() => { visible.current = false; requestSequence.current++; });
@@ -84,6 +89,8 @@ export default function AccountApplicationPage() {
       return;
     }
     if (!operationLock.current.tryAcquire('refresh')) { refreshQueued.current = true; return; }
+    // UTF-8: A hidden entry request may have finished without updating the UI.
+    setEntering(false);
     const sequence = ++requestSequence.current;
     const isCurrent = () => visible.current && sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
     setState('loading');
@@ -109,6 +116,49 @@ export default function AccountApplicationPage() {
 
   useEffect(() => () => { visible.current = false; requestSequence.current++; refreshQueued.current = false; }, []);
 
+  // UTF-8: Refresh the approved account only on entry; never infer its role
+  // from the application form. The cloud context remains authoritative.
+  const enterApprovedAccount = async () => {
+    const session = authSessionRuntime.capture();
+    if (!visible.current || state !== 'approved' || !operationLock.current.tryAcquire('enter')) return;
+    const sequence = ++requestSequence.current;
+    const current = () => visible.current && sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
+    let committed = false;
+    const sameCommittedAccount = () => {
+      const next = authSessionRuntime.capture();
+      return committed && visible.current && sequence === requestSequence.current
+        && next.token === session.token && next.identity?.id === session.identity?.id;
+    };
+    setEntering(true);
+    try {
+      const result = responseData(await miniappCloudBusinessApi.readAuthorization(session.token));
+      if (!current()) return;
+      const user = cloudSessionUser(result.identity);
+      if (!user || isVisitorIdentity(user) || user.id !== session.identity?.id) throw new Error('APPROVED_IDENTITY_UNAVAILABLE');
+      const committer = createNormalSessionCommitter({
+        readUser: () => Taro.getStorageSync('user_info'),
+        clearBusinessCache, clearPermissionCache, setBusinessCacheIdentity,
+        removeStorage: (key: string) => Taro.removeStorageSync(key),
+        cleanupStorageKeys: accountSessionCleanupStorageKeys,
+        writeUser: (value: any) => Taro.setStorageSync('user_info', value),
+        invalidateAndAdvance: () => authSessionRuntime.invalidateAndAdvance(),
+        writeToken: (token: string) => Taro.setStorageSync('auth_token', token),
+        activateSession: () => authSessionRuntime.activate(),
+        // A navigation error must not discard the refreshed valid session.
+        relaunch: async () => undefined,
+      });
+      const receipt = await committer.commit({ token: session.token, user });
+      committed = receipt.success;
+      if (!committed) throw new Error('APPROVED_SESSION_COMMIT_FAILED');
+      if (sameCommittedAccount()) await Taro.reLaunch({ url: '/pages/index/index' });
+    } catch (_) {
+      if (current() || sameCommittedAccount()) Taro.showToast({ title: '暂时无法进入，请稍后重试', icon: 'none' });
+    } finally {
+      if (visible.current && sequence === requestSequence.current) setEntering(false);
+      finishOperation('enter');
+    }
+  };
+
   const submit = async () => {
     const session = authSessionRuntime.capture();
     if (!visible.current || !authSessionRuntime.isSameSession(session) || !isVisitorIdentity(session.identity)) return;
@@ -133,7 +183,7 @@ export default function AccountApplicationPage() {
       if (latest.state === 'submitted' || latest.state === 'approved') {
         applyApplication(latest);
         // UTF-8: Make it explicit that edited inputs did not replace a pending request.
-        Taro.showToast({ title: latest.state === 'submitted' ? '已有申请待审核，本次未提交' : '申请已通过，请重新登录', icon: 'none' });
+        Taro.showToast({ title: latest.state === 'submitted' ? '已有申请待审核，本次未提交' : '申请已通过', icon: 'none' });
         return;
       }
       if (!['not_submitted', 'rejected'].includes(latest.state)
@@ -246,7 +296,8 @@ export default function AccountApplicationPage() {
         </View>
       ) : null}
 
-      {['submitted', 'approved', 'offline', 'network_error'].includes(state)
+      {state === 'approved' ? <Button className='primary-action approved-entry' loading={entering} disabled={entering} onClick={() => void enterApprovedAccount()}>{'进入首页'}</Button> : null}
+      {['submitted', 'offline', 'network_error'].includes(state)
         ? <Button className='secondary-action' onClick={() => void load()}>{'\u5237\u65b0\u72b6\u6001'}</Button>
         : null}
     </View>

@@ -20,9 +20,10 @@ const STATE_COPY = Object.freeze({
   // UTF-8: An unavailable response is not evidence that valid inputs are wrong.
   submit_error: ['暂时无法确认提交结果', '填写内容已保留，请稍后重试。'],
   submitting: ['正在提交申请', '请勿重复操作。'],
-  submitted: ['等待审核', '申请已提交；审核通过后会自动更新可用功能。'],
+  submitted: ['等待审核', '申请已提交，请稍后查看审核结果。'],
   rejected: ["申请未通过", "请调整资料后重新提交。"],
-  approved: ['申请已通过', '请重新登录以更新可用功能。'],
+  // UTF-8: The existing signed session can refresh its approved role.
+  approved: ['申请已通过', '进入首页即可开始使用。'],
   offline: ['当前离线', '恢复网络后可查看或提交申请。'],
   network_error: ['暂时无法读取', '请检查网络后重试。'],
 });

@@ -11,7 +11,9 @@ const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof
 const byClass = (tree, name) => nodes(tree).filter(n => (n.props.className || '').split(' ').includes(name));
 function harness({ storage = new Map(), initialState = { state: 'not_submitted' } } = {}) {
   const state = [], effects = []; let cursor = 0;
-  const h = { toasts: [], reads: 0, writes: [], routes: [], storage, epoch: 1 };
+  // UTF-8: Track verified entry separately from application writes.
+  const h = { toasts: [], reads: 0, writes: [], routes: [], storage, epoch: 1, authorizationReads: 0, cacheClears: 0 };
+  h.authorizationResult = async () => ({ success: false });
   const user = { id: 'v', role: 'visitor', user_type: 'visitor', identity_kind: 'visitor', account_state: 'visitor', token_use: 'miniapp-visitor', authority_id: 'cloud:v', capabilities: [...experience.VISITOR_CAPABILITIES] };
   storage.set('user_info', user); storage.set('auth_token', 'fixture-token');
   h.result = async () => ({ success: true, data: { state: 'submitted' } });
@@ -21,10 +23,14 @@ function harness({ storage = new Map(), initialState = { state: 'not_submitted' 
   const deps = {
     react: { useState: initial => { const i = slot(initial); return [state[i], next => { state[i] = next; }]; }, useRef: initial => state[slot({ current: initial })], useEffect: fn => { if (!h.mounted) effects.push(fn); } },
     'react/jsx-runtime': { jsx, jsxs: jsx }, '@tarojs/components': Object.fromEntries(['Button','Input','Picker','Text','View'].map(x => [x,x])),
-    '@tarojs/taro': { useDidShow: fn => { h.show = fn; }, useDidHide: fn => { h.hide = fn; }, default: { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), showToast: value => h.toasts.push(value), reLaunch: value => h.routes.push(value) } },
+    '@tarojs/taro': { useDidShow: fn => { h.show = fn; }, useDidHide: fn => { h.hide = fn; }, default: { getStorageSync: key => storage.get(key), setStorageSync: (key, value) => storage.set(key, value), removeStorageSync: key => storage.delete(key), showToast: value => h.toasts.push(value), reLaunch: async value => { if (h.navigationFails) throw new Error('navigation failed'); h.routes.push(value); } } },
     '../../utils/accountExperience': experience,
-    '../../utils/api': { miniappCloudBusinessApi: { readRoleApplication: async () => { h.reads++; return h.readResult(); }, submitRoleApplication: (...args) => { h.writes.push(args); return h.result(); } } },
-    '../../utils/authSession': { authSessionRuntime: { capture: () => ({ epoch: h.epoch, identity: storage.get('user_info'), token: storage.get('auth_token') }), isSameSession: session => session.epoch === h.epoch } },
+    '../../utils/api': { miniappCloudBusinessApi: { readAuthorization: async () => { h.authorizationReads++; return h.authorizationResult(); }, readRoleApplication: async () => { h.reads++; return h.readResult(); }, submitRoleApplication: (...args) => { h.writes.push(args); return h.result(); } } },
+    '../../utils/authSession': { authSessionRuntime: { capture: () => ({ epoch: h.epoch, identity: storage.get('user_info'), token: storage.get('auth_token') }), isSameSession: session => session.epoch === h.epoch, invalidateAndAdvance: () => h.epoch++, activate: () => {} } },
+    '../../utils/miniappApiSessionRuntime': require('../../utils/miniappApiSessionRuntime'),
+    '../login/cloudSessionIdentityRuntime': require('../login/cloudSessionIdentityRuntime'),
+    '../../utils/storage': { clearBusinessCache: () => h.cacheClears++, setBusinessCacheIdentity: () => {} },
+    '../../utils/permission': { clearPermissionCache: () => {} },
     './applicationRuntime': runtime, './index.scss': {},
   };
   const module = { exports: {} };
@@ -37,6 +43,52 @@ function harness({ storage = new Map(), initialState = { state: 'not_submitted' 
   return h;
 }
 async function resubmissionTests() {
+  // UTF-8: Approval must have an actionable exit without another phone login.
+  for (const role of ['teacher', 'student', 'family_member']) {
+    const entered = harness({ initialState: { state: 'approved' } });
+    await entered.mount();
+    const button = byClass(entered.render(), 'approved-entry')[0];
+    assert.ok(button, 'approved result needs an Enter Home action');
+    assert.equal(button.props.children, '进入首页');
+    entered.authorizationResult = async () => ({ success: true, data: { identity: { accountId: 'v', status: 'active', roles: [role], profile: { type: role === 'teacher' ? 'teacher' : 'student', id: 'profile', relationship: role === 'teacher' ? null : role === 'student' ? 'student' : 'guardian' } } } });
+    button.props.onClick(); await tick();
+    assert.equal(entered.storage.get('user_info').role, role);
+    assert.equal(entered.storage.get('auth_token'), 'fixture-token', 'reuse the validated session, no phone login');
+    assert.equal(entered.routes.at(-1).url, '/pages/index/index');
+    assert.equal(entered.writes.length, 0); assert.equal(entered.authorizationReads, 1);
+    assert.equal(entered.cacheClears, 1);
+  }
+  for (const response of [{ success: false }, { success: true, data: { identity: { accountId: 'other', status: 'active', roles: ['super_admin'] } } }, { success: true, data: { identity: { accountId: 'v', status: 'visitor', roles: [] } } }]) {
+    const h = harness({ initialState: { state: 'approved' } }); await h.mount();
+    h.authorizationResult = async () => response;
+    byClass(h.render(), 'approved-entry')[0].props.onClick(); await tick();
+    assert.equal(h.storage.get('user_info').role, 'visitor'); assert.equal(h.routes.length, 0);
+    assert.equal(h.toasts.at(-1).title, '暂时无法进入，请稍后重试'); assert.equal(h.cacheClears, 0);
+  }
+  for (const reason of ['account', 'hide', 'unmount']) {
+    const h = harness({ initialState: { state: 'approved' } }); await h.mount();
+    let finish; h.authorizationResult = () => new Promise(resolve => { finish = resolve; });
+    const enter = byClass(h.render(), 'approved-entry')[0].props.onClick; enter(); enter(); await tick();
+    assert.equal(h.authorizationReads, 1, 'double tap cannot start two identity transitions');
+    if (reason === 'account') h.epoch++; else if (reason === 'hide') h.hide(); else h.cleanups.forEach(fn => fn?.());
+    finish({ success: true, data: { identity: { accountId: 'v', status: 'active', roles: ['super_admin'] } } }); await tick();
+    assert.equal(h.cacheClears, 0); assert.equal(h.routes.length, 0); assert.equal(h.toasts.length, 0);
+    if (reason === 'hide') {
+      // UTF-8: Returning after a discarded request must not leave a stuck button.
+      h.show(); await tick();
+      assert.equal(byClass(h.render(), 'approved-entry')[0].props.disabled, false);
+    }
+  }
+  const retryEntry = harness({ initialState: { state: 'approved' } }); await retryEntry.mount();
+  retryEntry.authorizationResult = async () => ({ success: true, data: { identity: { accountId: 'v', status: 'active', roles: ['teacher'], profile: { type: 'teacher', id: 't' } } } });
+  retryEntry.navigationFails = true;
+  byClass(retryEntry.render(), 'approved-entry')[0].props.onClick(); await tick();
+  assert.equal(retryEntry.storage.get('user_info').role, 'teacher');
+  assert.equal(retryEntry.storage.get('auth_token'), 'fixture-token', 'failed navigation retains verified session');
+  assert.equal(retryEntry.toasts.at(-1).title, '暂时无法进入，请稍后重试');
+  retryEntry.navigationFails = false;
+  byClass(retryEntry.render(), 'approved-entry')[0].props.onClick(); await tick();
+  assert.equal(retryEntry.routes.at(-1).url, '/pages/index/index');
   for (const role of ['teacher', 'student', 'family_member', 'super_admin']) {
     const denied = harness();
     denied.storage.set('user_info', { id: 'formal', role, account_state: 'formal' });
