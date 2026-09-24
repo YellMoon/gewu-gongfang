@@ -57,3 +57,34 @@ publish-oss-feed.test. All changes remain a desktop-only patch.
 Still open: full desktop navigation, cold authentication, physical-device
 picker/keyboard/phone-consent checks, remaining role/page audit states and
 whole-project independent acceptance. Do not infer full multi-end completion.
+
+## Desktop publication verified (UTF-8)
+
+Source `b8325f4a2db5efdd2a796fce2b76e8304df80b89` was archived into independent
+build directory `D:/gewu-desktop-899-20260924-jzi00yvw`. Dependencies were copied,
+not linked, so Electron ABI rebuilds could not alter the working directory.
+All six protected tracked dirty files remained byte-identical. All protected
+untracked output work was excluded from the archive and untouched.
+
+`dist:win` exited 0, including optimized production renderer compilation,
+Electron root/backend ABI verification and installer generation. Node ABI was
+restored and verified in both the build and original workspace; post-build
+identity tests passed. A fresh isolated packaged process reached the normal
+password/WeChat-scan login screen; no blocking console/page errors or obsolete
+generic identity failure. `packaged-login.png` was visually inspected. No user
+installation/profile was changed. This is startup, not authenticated navigation.
+
+`publish-receipt.json` reports upload exit 0 and complete public-download byte
+verification. Installer `GewuGongfang-Desktop-8.9.9-x64.exe`: 150,306,948 bytes,
+SHA-256 `ae56f249fd47431635f887e31fd2c6cf8c3ae12585f8e3a348f277a18410640a`.
+Both public latest and archived 8.9.9 feeds match the local SHA-512 and filename.
+The previous 8.9.8 feed is saved as `previous-public-latest.yml` for rollback;
+previous release artifacts were retained.
+
+Matrix `active.json` contains desktop 8.9.9, cloud 8.11.22, storage proxy 8.8.3
+and miniapp 8.8.25 development. The unchanged cloud and miniapp receipts retain
+their original verification times, not fabricated redeployments. Fresh public
+cloud health and a cloud-recorded NAS heartbeat confirmed retained versions,
+3/3/1 storage contracts and the approved parser digest. No NAS update occurred.
+Miniapp production review and whole-project acceptance remain incomplete; this
+is a verified desktop update within a partial multi-end release.

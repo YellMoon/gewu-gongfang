@@ -149,3 +149,23 @@ This is a partial release, not completed multi-end acceptance.
 
 The Word visual gate, desktop window interactions and full multi-role miniapp
 page audit remain separate unfinished acceptance work.
+
+## Current-production revalidation, 2026-09-24 (UTF-8)
+
+Receipt `gewu-real-draft-chain-20260920-v5wb9jgd/receipt.json` is a new Sep 24
+run despite the retained harness directory prefix. Against cloud **8.11.22**,
+all twelve types again passed create, update, stale-version conflict rejection
+and exact-ID deletion. The current desktop REST client, draft mapper, encrypted
+outbox and authority client hashes are recorded in `client.sourceSha256`.
+Every awaiting-confirmation submission made zero network requests; every
+confirmed mutation used direct cloud REST, with no retired relay fallback.
+Projection reads verified persisted values and preserved the moved schedule
+after the stale command was refused.
+
+All twelve isolated records were removed and absence checked. Four temporary
+device/session active counts are zero. Runtime writer control-plane/business
+owner membership was false before and after. Synthetic contact numbers were
+collision-checked before use; no existing profile or teaching record was changed.
+Audit/tombstone history is intentionally retained. This is actual module/API
+integration, not physical offline, password/WeChat login or full desktop UI
+acceptance. No migration, NAS replacement or production data rewrite occurred.
