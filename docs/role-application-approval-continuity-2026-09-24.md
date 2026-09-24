@@ -109,6 +109,78 @@ source tree. Existing fixed-egress pre/post health gates passed; upload is
 development level, not formal WeChat release. Desktop 8.9.8 and NAS 8.8.3
 were not rebuilt or replaced for this compatible flow correction.
 
-Student/family production application/review UI, desktop reviewer UI, cold
-login and physical-device picker/keyboard/consent checks remain open. This is
-not whole-page-matrix or whole-project acceptance.
+## Student and family production continuation (UTF-8)
+
+Student run `gewu-application-real-20260924-86nqcevz` and family-member run
+`gewu-application-real-20260924-gipno6ef` both completed on cloud 8.11.22 and
+miniapp 8.8.25. Each used the actual form, submitted state, production desktop
+review HTTP, approved state and Enter Home action without replacing the ticket
+or logging in again. All eight screenshots were individually inspected.
+The student landed in student scope; the family member landed in family scope
+and cloud context identified exactly the newly created student with guardian
+relationship. Formal reapplication and miniapp access to desktop review were
+both rejected with 403. Source hashes match the delivered application page.
+
+The family student's profile was created through the production desktop REST
+contract with only a new fixture guardian contact in slot 2. Two earlier runs
+(`y7_vwu5v`, `sufqadfk`) failed before form submission because the harness had
+incorrectly used student-only slot 1 for that guardian. The second receipt
+records 400 / CLOUD_BUSINESS_INPUT_INVALID. This was a fixture correction,
+not a product contract or permission change, and neither run is called a pass.
+
+All successful and failed runs verified zero remaining fixture accounts,
+applications, grants, profiles and contacts; temporary desktop device/session/
+link/installation active counts are zero. The original simulator login and
+all original sch_ cache entries were restored and checked after refresh.
+No real account or profile was reassigned, and no phone-consent flow is claimed.
+
+## Native desktop review interaction (UTF-8)
+
+`gewu-application-real-20260924-ddl3k703` completed the student flow with
+actual Electron review clicks, not a direct approval HTTP call in the runner.
+It launched the existing Electron main module with an isolated temporary
+userData directory, reused the unchanged preload IPC, authority runtime and
+actual AuthorityRoleApplicationsPanel, and fetched live desktop session
+context. Only the renderer entry and in-memory test-session setup were supplied
+by the harness. The embedded local cache backend was disabled for this focused
+test; no native-module rebuild or desktop installation was performed.
+
+Clicking Confirm Approval opened the real confirmation modal. Cancel kept the
+exact application pending (verified by production readback). A second click
+and confirmation removed it from the pending list, and the miniapp then read
+approved and entered student home with the original ticket. Source SHA256 for
+the actual main/preload/runtime/component/session modules is in the nested
+desktop-review/report.json. The process exited zero, fixtures were removed,
+temporary device sessions revoked and the original simulator state restored.
+
+The first native attempt `xv86ccjm` hit a harness navigation race with the
+main startup loadFile. The second `snw4wd6o` incorrectly expected activeRole
+inside a v1 ticket. Both failed before review and cleaned up completely. The
+successful runner creates a separate isolated review window and reads the
+live session-context endpoint; it does not relax the product's authorization.
+
+Three native screenshots were inspected. The interaction is verified, but
+the first modal/list screenshots caught animation transitions and are not
+claimed as settled visual acceptance. Existing review wording still exposes
+cloud terminology and the internal application ID as a large primary column;
+these remain user-facing audit findings, not a completed design review.
+
+Family-member native run `gewu-application-real-20260924-zyza7ml7` also passed
+the full submission -> actual Electron review -> same-ticket formal entry
+chain. It additionally opened and cancelled the reject dialog before approving;
+the row remained pending, as did the explicit production read after approval
+cancel. Final confirmation removed only this marked application from pending.
+The three native screenshots disable animations and wait for modal closure;
+these and all four miniapp screenshots were individually inspected. All five
+fixture entity counts and four active-device counts are zero, auth/cache
+restored and cleanupFailures empty. Source-pinned nested and outer receipts
+are retained together. The UTF-8 form and button labels render correctly,
+while the wording/internal-ID audit findings above remain unresolved.
+
+Current verification reruns: AuthorityRoleApplicationsPanel.test,
+applicationPageRuntime.test, desktopAuthorityRuntime.test and
+miniappUiCoverage.test all passed. This continuation changes only evidence
+documents, so no desktop/miniapp/cloud/NAS version or release was repeated.
+Full desktop navigation, reject-submit/retry, cold login and physical-device
+picker/keyboard/consent checks remain open. This is not whole-page-matrix or
+whole-project acceptance.
