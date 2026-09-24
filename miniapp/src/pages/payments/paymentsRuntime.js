@@ -1,7 +1,8 @@
 'use strict';
 
 function sortPaymentsNewestFirst(payments) {
-  return [...payments].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const timestamp = payment => payment.created_at || payment.payment_date || '';
+  return [...payments].sort((a, b) => timestamp(b).localeCompare(timestamp(a)));
 }
 
 module.exports = { sortPaymentsNewestFirst };
