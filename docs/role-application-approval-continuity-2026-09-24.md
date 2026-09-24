@@ -97,7 +97,18 @@ A later read confirmed no signed-in test account. The successful baseline and
 final run boundedly retry only that transient observation and prove exact
 pre/post-refresh restoration. They do not relabel those earlier runs as passes.
 
-Development upload for 8.8.25 remains pending. Student/family production
-application/review UI, desktop reviewer UI, cold login and physical-device
-picker/keyboard/consent checks remain open. This is not whole-page-matrix or
-whole-project acceptance.
+## Development delivery (UTF-8)
+
+Miniapp 8.8.25 was uploaded and its deferred receipt finalized successfully at
+2026-09-24T02:06:05.761Z from commit
+324338cbef6964bdb1ee507ed0a019815377dad4, pushed to gewu/master.
+Receipt/manifest directory: `gewu-miniapp-8825-upload-20260924-4sy7n82t`.
+The release runner required exact source hashes from the final real UI test,
+all zero fixture cleanup counts, restored auth/cache, and a clean miniapp
+source tree. Existing fixed-egress pre/post health gates passed; upload is
+development level, not formal WeChat release. Desktop 8.9.8 and NAS 8.8.3
+were not rebuilt or replaced for this compatible flow correction.
+
+Student/family production application/review UI, desktop reviewer UI, cold
+login and physical-device picker/keyboard/consent checks remain open. This is
+not whole-page-matrix or whole-project acceptance.
