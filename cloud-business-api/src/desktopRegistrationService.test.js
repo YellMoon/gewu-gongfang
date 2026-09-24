@@ -16,6 +16,7 @@ const records = [{ phoneHmac: hmacPhone(pepper, '13700000000'), authorityId: 'te
 const calls = { issued: [], registered: [], sessionContexts: [], phoneLookups: [] };
 const privateKey = crypto.generateKeyPairSync('ed25519').privateKey;
 const publicKey = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' });
+let displayName;
 
 const service = createCloudDesktopRegistrationService({
   now: () => new Date(now),
@@ -42,6 +43,7 @@ const service = createCloudDesktopRegistrationService({
       roles: ['super_admin'],
       teacherId: null,
       studentId: null,
+      ...(displayName !== undefined ? { displayName } : {}),
     };
   },
 });
@@ -139,6 +141,20 @@ const service = createCloudDesktopRegistrationService({
   });
   assert.strictEqual(resumed.session.activeRole, 'super_admin');
   assert.strictEqual(resumed.session.rowVersion, 1);
+  assert.strictEqual(resumed.profile.user.name, '我的账号', 'unnamed accounts must not show internal English placeholders');
+  // UTF-8: cold recovery preserves the cloud-resolved name without altering identity.
+  for (const [name, expected] of [[' 测试教师 ', '测试教师'], [null, '我的账号'], ['bad\nname', '我的账号']]) {
+    displayName = name;
+    const named = await service.issueSession({
+      authorityId: 'tenant-1', accountId: 'account-1', deviceId: calls.issued[0].deviceId,
+      installationId: 'installation-1', sessionId: 'resumed-session-1',
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000).toISOString(), rowVersion: 1, activeRole: 'super_admin',
+    });
+    assert.strictEqual(named.profile.user.name, expected);
+    assert.strictEqual(named.profile.user.id, 'account-1');
+    assert.deepStrictEqual(named.profile.eligibleRoles, ['super_admin']);
+  }
+  displayName = undefined;
   assert.strictEqual((await service.sessionContext({ sessionToken: resumed.token })).activeRole, 'super_admin');
   await assert.rejects(
     () => service.sessionContext({ sessionToken: `${registered.sessionToken}x` }),

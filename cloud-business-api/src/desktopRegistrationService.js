@@ -1,5 +1,7 @@
 'use strict';
 
+const { desktopDisplayName } = require('./desktopAccountDisplayName');
+
 const crypto = require('crypto');
 const { types } = require('util');
 const { normalizeMainlandPhone } = require('./mainlandPhone');
@@ -104,7 +106,10 @@ function inspectSessionTicket(secret, token, now) {
 }
 
 function sessionContext(value, ticket) {
-  const copy = exact(value, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'roles', 'teacherId', 'studentId']);
+  const keys = ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'roles', 'teacherId', 'studentId'];
+  if (value && typeof value === 'object' && !types.isProxy(value) && Object.hasOwn(value, 'displayName')) keys.push('displayName');
+  const copy = exact(value, keys);
+  if (Object.hasOwn(copy, 'displayName')) copy.displayName = desktopDisplayName(copy.displayName);
   if (copy.authorityId !== ticket.authorityId || copy.accountId !== ticket.accountId
     || copy.deviceId !== ticket.deviceId || copy.installationId !== ticket.installationId
     || copy.sessionId !== ticket.sessionId || copy.expiresAt !== new Date(ticket.expiresAt).toISOString()
@@ -273,7 +278,7 @@ function createCloudDesktopRegistrationService(config) {
     });
     const profile = Object.freeze({
       userId: current.accountId,
-      user: Object.freeze({ id: current.accountId, name: 'Cloud account' }),
+      user: Object.freeze({ id: current.accountId, name: current.displayName || '我的账号' }),
       eligibleRoles: current.roles,
       activeRole: selectedRole,
       teacherId: session.teacherId,

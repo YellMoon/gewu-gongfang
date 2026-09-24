@@ -674,9 +674,13 @@ export function createDesktopIdentityClient({
       lastPhoneVerifiedAt,
       phoneReverifyDueAt: context.expiresAt,
     };
+    // UTF-8: the cloud-resolved name is presentation only, never an identity key.
+    const displayName = typeof context.displayName === 'string' ? context.displayName.trim() : '';
+    const usableDisplayName = displayName && displayName.length <= 120
+      && !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(displayName);
     const profile = {
       userId: context.accountId,
-      user: { id: context.accountId, name: '\u6211\u7684\u8d26\u53f7' },
+      user: { id: context.accountId, name: usableDisplayName ? displayName : '\u6211\u7684\u8d26\u53f7' },
       eligibleRoles,
       activeRole,
       teacherId: activeRole === 'teacher' ? context.teacherId : null,

@@ -3,6 +3,7 @@
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
 const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desktopRegistrationService');
+const { createDesktopAccountDisplayNameReader } = require('./src/desktopAccountDisplayName');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createBusinessScheduleLifecycleMutations } = require('./src/businessScheduleLifecycleMutationService');
@@ -155,6 +156,10 @@ function createDesktopRegistrationFromEnvironment() {
     query: (text, values) => pool.query(text, values),
     tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
   });
+  const readDesktopDisplayName = createDesktopAccountDisplayNameReader({
+    query: (text, values) => pool.query(text, values),
+    tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
+  });
   const randomId = prefix => `${prefix}-${require('crypto').randomUUID()}`;
   const canonicalAccount = createCanonicalAccountProvisioning({
     records, identityPool, randomId,
@@ -233,6 +238,7 @@ function createDesktopRegistrationFromEnvironment() {
         expiresAt: row.expiresAt.toISOString(),
         rowVersion: Number(row.rowVersion),
         roles: desktopSessionRoles(account.roles),
+        displayName: await readDesktopDisplayName(account),
         teacherId: account.profile?.type === 'teacher' ? account.profile.id : null,
         studentId: account.profile?.type === 'student' ? account.profile.id : null,
       };

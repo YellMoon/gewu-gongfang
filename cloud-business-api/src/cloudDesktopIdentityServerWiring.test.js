@@ -16,6 +16,9 @@ assert.match(source, /s\.row_version AS "rowVersion"/,
   'the signed desktop role-elevation proof must bind to the current cloud session version');
 assert.match(source, /desktopCloudIdentity: desktopRuntime\?\.desktopCloudIdentity \|\| null/);
 assert.match(source, /createDesktopPairingCanonicalPhoneReader/);
+assert.match(source, /createDesktopAccountDisplayNameReader/);
+assert.match(source, /displayName: await readDesktopDisplayName\(account\)/,
+  'the resolved business account, including phone-merged accounts, supplies the display name');
 assert.match(source, /query: \(text, values\) => writerPool\.query\(text, values\)/);
 assert.doesNotMatch(source, /vnext_read_canonical_account_by_verified_contact\(\$1,\$2\)'\s*,\s*\['phone'/u,
   'desktop pairing must not pass a phone hash to the WeChat OpenID/UnionID lookup function');

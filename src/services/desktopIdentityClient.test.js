@@ -331,6 +331,7 @@ async function main() {
   );
 
   const unifiedCloudRequests = [];
+  let unifiedDisplayName;
   const unifiedCloudEvents = [];
   let unifiedCloudSealed = null;
   let unifiedCloudStored = null;
@@ -400,6 +401,7 @@ async function main() {
         assert.strictEqual(options.headers.Authorization, 'Bearer session-token-cloud-1');
         return { ok: true, json: async () => ({ ok: true,
           authorityId: 'authority-cloud-1', accountId: 'account-cloud-1',
+          ...(unifiedDisplayName !== undefined ? { displayName: unifiedDisplayName } : {}),
           deviceId: 'desktop-device-a1b2c3d4e5f60708', installationId: 'desktop-device-a1b2c3d4e5f60708',
           sessionId: 'session-cloud-1', expiresAt: '2026-08-21T13:00:00.000Z', rowVersion: 1, activeRole: 'teacher', roles: ['teacher'], teacherId: 'teacher-cloud-1', studentId: null,
         }) };
@@ -640,6 +642,16 @@ async function main() {
   assert.strictEqual(unifiedCompleted.gateState.kind, 'online-unlocked');
   assert.strictEqual(unifiedCompleted.profile.user.name, '\u6211\u7684\u8d26\u53f7',
     'the desktop shell must use natural Chinese when the cloud session has no display name');
+  // UTF-8: cloud teacher names survive first-login vault sealing as well as resume.
+  for (const [name, expected] of [[' 林老师 ', '林老师'], [null, '我的账号'], ['name\nrole', '我的账号']]) {
+    unifiedDisplayName = name;
+    const named = await unifiedCloudClient.completeUnifiedOnlineRegistration({
+      pending: { ...unifiedVerified, desktopAccess: selfRegisteredTeacher.desktopAccess },
+    });
+    assert.strictEqual(named.profile.user.name, expected);
+    assert.strictEqual(unifiedCloudSealed.profile.user.name, expected);
+    assert.strictEqual(named.profile.user.id, 'account-cloud-1');
+  }
 
   const recoveryRequests = [];
   let passwordRegistrationPending = false;
