@@ -3,6 +3,24 @@ const fs = require('fs');
 
 const source = fs.readFileSync('src/components/AuthorityRoleApplicationsPanel.tsx', 'utf8');
 const page = fs.readFileSync('src/pages/IdentityDeviceCenter.tsx', 'utf8');
+// UTF-8: Read TS string literals so escaped CJK and literal CJK are equivalent.
+const ts = require('typescript');
+function literals(content) {
+  const values = [];
+  const visit = node => { if (ts.isStringLiteral(node)) values.push(node.text); ts.forEachChild(node, visit); };
+  visit(ts.createSourceFile('component.tsx', content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX));
+  return values;
+}
+const copy = literals(source);
+assert(copy.includes('申请审核'), 'use the user task as the review heading');
+assert(!source.includes('<div>{item.applicationId}</div>'), 'internal IDs remain row keys, never primary user-facing columns');
+assert(!copy.some(value => /云端|裁决|离线草稿/.test(value)), 'review copy must not explain backend architecture');
+assert(!source.includes("error?.message ||"), 'unknown transport errors must not leak developer text');
+assert(source.includes('reviewConfirmationText(item)'), 'confirmation must identify the applicant and role');
+const navigation = fs.readFileSync('src/navigation/appNavigation.tsx', 'utf8');
+assert(navigation.includes("description: '管理登录设备与账号申请'"), 'device navigation must not describe manual device approval');
+assert(!literals(page).some(value => /云端|裁决|离线草稿|人工设备审批|主机放行/.test(value)), 'device page uses user-oriented copy');
+assert(!/>\\u[0-9a-f]/i.test(page), 'UTF-8: JSX text must render Chinese, not literal Unicode escape sequences');
 
 assert.ok(!source.includes('readProjection()'), 'role review must not read the retired authority projection');
 assert.ok(source.includes("authContext.activeRole !== 'super_admin'"), 'ordinary users must fail closed against the online cloud session role');
@@ -21,7 +39,7 @@ assert.ok(!source.includes('buildRoleReviewDraft'), 'role approval must not crea
 assert.ok(!source.includes('appendDraft('), 'role approval must not enter the offline command outbox');
 assert.ok(!source.includes('AuthorityOutboxPanel'), 'role approval must not be coupled to the legacy relay queue');
 assert.ok(
-  page.includes('snapshot?.access?.canReview && <Card'),
+  page.includes('snapshot?.access?.canReview && <div'),
   'role review must mount only for a cloud-approved reviewer'
 );
 

@@ -184,3 +184,12 @@ documents, so no desktop/miniapp/cloud/NAS version or release was repeated.
 Full desktop navigation, reject-submit/retry, cold login and physical-device
 picker/keyboard/consent checks remain open. This is not whole-page-matrix or
 whole-project acceptance.
+
+## Follow-up: rejection retry and desktop review copy (UTF-8)
+
+The formerly open rejection/edit/resubmit chain and reviewer wording/internal-ID
+findings are now verified in `desktop-role-review-2026-09-24.md`. The complete
+device-page production-read test additionally found and fixed unbounded device
+history pushing review off-screen. Full-shell navigation and cold/physical-device
+checks remain open. Desktop 8.9.9 publication requires its separate build/OSS
+receipts; the application-flow tests alone do not prove publication.
