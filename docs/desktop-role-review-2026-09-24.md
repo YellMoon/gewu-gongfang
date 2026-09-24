@@ -88,3 +88,49 @@ cloud health and a cloud-recorded NAS heartbeat confirmed retained versions,
 3/3/1 storage contracts and the approved parser digest. No NAS update occurred.
 Miniapp production review and whole-project acceptance remain incomplete; this
 is a verified desktop update within a partial multi-end release.
+
+## Full packaged navigation and cold session recovery (UTF-8)
+
+Two settled runs used the published 8.9.9 unpacked executable from the exact
+build above, with its unchanged production renderer, main, preload and login
+gate. Each used a fresh isolated user-data directory. Playwright controlled the
+actual menu and buttons; no renderer entry replacement or API mocking was used.
+
+| Role | Receipt directory | Result |
+| --- | --- | --- |
+| Super administrator | `gewu-packaged-navigation-20260924-xs0x9oxt` | Passed |
+| Existing marked E2E teacher | `gewu-packaged-navigation-20260924-ak8fzgbn` | Passed |
+
+Both `receipt.json` files report client exit 0 and `ok: true`. `report.json`
+records actual online registration, native encrypted credential storage, stock
+gate recovery, full application entry, menu navigation to IdentityDeviceCenter,
+live device refresh and cold recovery in a second packaged process using the
+same new device. Initial and cold-process business projection reads returned
+200. No renderer page errors were captured. The first and final test processes
+closed. This does not claim that the installer was run on another computer.
+
+The administrator sees five device rows, pagination and the loaded review empty
+state. The ordinary teacher has neither administrator switching nor review UI;
+the teacher sees the device page and real refresh. Both settled device-page
+screenshots and the teacher cold-restart screenshot were inspected. Capturing
+waits for the unpinned hover navigation to close and for review loading to end,
+not merely for a heading to appear. The original overlay navigation is unchanged.
+
+These are controlled verified-account fixtures followed by the real production
+registration/session challenge contracts. They do not test password entry,
+WeChat scan/phone consent or physical-device authorization. No formal account was
+given a new role. Read-only checks before and after the teacher run confirm the
+existing business teacher grant and canonical role grants were unchanged.
+
+Exact cleanup revoked only each newly generated device/installation pair. Both
+receipts confirm active sessions, account-device links, installations and devices
+are all zero for that pair. Existing devices were not revoked; audit/history rows
+remain. Credentials were kept out of reports and screenshots.
+
+New visual findings remain open: the session profile still renders the literal
+`Cloud account` from `desktopRegistrationService.js`, and device rows show the
+unnamed fallback. Passing navigation/session tests does not close those findings.
+Ordinary-teacher navigation is now covered; password/phone-consent authentication,
+physical offline/picker/keyboard checks and the remaining multi-page audit are not.
+This continuation changes evidence only: no new desktop package, cloud deployment,
+miniapp upload or NAS image update is warranted.

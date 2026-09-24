@@ -190,6 +190,9 @@ whole-project acceptance.
 The formerly open rejection/edit/resubmit chain and reviewer wording/internal-ID
 findings are now verified in `desktop-role-review-2026-09-24.md`. The complete
 device-page production-read test additionally found and fixed unbounded device
-history pushing review off-screen. Full-shell navigation and cold/physical-device
-checks remain open. Desktop 8.9.9 publication requires its separate build/OSS
-receipts; the application-flow tests alone do not prove publication.
+history pushing review off-screen. The same document now contains separate
+desktop 8.9.9 build/OSS receipts and full packaged administrator/ordinary-teacher
+menu, device refresh and cold-process session-recovery evidence. These use
+controlled verified-account fixtures; password/WeChat phone consent and physical
+device checks remain open. The application-flow tests alone do not prove these
+later results or whole-project acceptance.
