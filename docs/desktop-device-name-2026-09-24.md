@@ -57,8 +57,13 @@ is unchanged. A complete frozen rerun is required; the failed run is retained at
 Release classification on the owned diff from `b8325f4a` to `8216bdee` is cloud
 minor (`8.11.22 -> 8.12.0`) and desktop patch (`8.9.9 -> 8.9.10`). The classifier
 now recognizes ADD COLUMN inside JavaScript SQL literals (red/green regression).
-The protocol matrix records cloud-first rollout and capability gating. Versions
-have not yet been changed; NAS and miniapp are unchanged.
+The protocol matrix records cloud-first rollout and capability gating. Candidate
+package versions are now prepared at cloud 8.12.0 and desktop 8.9.10; this is not
+a deployment. NAS and miniapp are unchanged. The user's dirty generated version
+file remains untouched; packaging must regenerate it only in the frozen build.
+M29 post-check additionally verifies the exact name-constraint definition digest;
+an actual weakened-constraint mutation first escaped the gate, and is now rejected
+by its red/green PostgreSQL regression.
 
 Full frozen-source cloud lifecycle, production backup/migration/deployment, new
 packaged desktop real-session smoke and OSS publication have NOT been performed

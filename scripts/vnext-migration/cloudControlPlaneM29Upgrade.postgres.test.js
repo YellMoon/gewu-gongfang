@@ -36,6 +36,11 @@ async function main() {
       assert.equal((await readState()).metadataValid, false, 'gate rejects an unauthorized execute grant');
       await db.query('REVOKE EXECUTE ON FUNCTION vnext_control_plane.vnext_list_named_desktop_account_devices(text,text) FROM PUBLIC');
       assert.equal((await readState()).metadataValid, true);
+      await db.query('BEGIN');
+      await db.query('ALTER TABLE vnext_control_plane.vnext_trusted_devices DROP CONSTRAINT vnext_trusted_devices_display_name_check');
+      await db.query('ALTER TABLE vnext_control_plane.vnext_trusted_devices ADD CONSTRAINT vnext_trusted_devices_display_name_check CHECK (display_name IS NULL OR true)');
+      assert.equal((await readState()).metadataValid, false, 'gate rejects a weakened name constraint, not just a missing constraint');
+      await db.query('ROLLBACK');
     });
     console.log('M28 to M29 actual PostgreSQL upgrade and drift rejection checks passed');
   } finally {
