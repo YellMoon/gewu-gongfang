@@ -2,7 +2,7 @@
 // UTF-8: real isolated PostgreSQL, through the production registration adapter.
 const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
-const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery, issueVNextPg17OnlineIdentityAssertion } = require('./disposableRuntime');
+const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
 const { createUnifiedDesktopRegistrationEvidence } = require('./unifiedDesktopRegistrationEvidence');
 const { createDesktopRegistrationPgAdapter } = require('../../cloud-business-api/src/desktopRegistrationPgAdapter');
@@ -23,11 +23,15 @@ async function runDesktopDeviceNamesCases() {
     await query('fixture-provisioner', "INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES('authority-name','active',now(),now())");
     await query('fixture-provisioner', "INSERT INTO vnext_control_plane.vnext_accounts(account_id,authority_id,status,auth_version,access_version,revocation_version,row_version,created_at,updated_at) VALUES('account-name','authority-name','active',2,3,4,1,now(),now()),('other-account','authority-name','active',1,1,1,1,now(),now())");
     async function candidate(suffix, deviceName, deviceSuffix = suffix) {
+      // Use PostgreSQL's clock: a fresh Windows timestamp can be marginally
+      // ahead of transaction_timestamp(), which the assertion rejects by design.
+      const databaseNow = (await query('identity-verifier', 'SELECT clock_timestamp() AS now')).rows[0].now.getTime();
       const canonicalRequestJson = JSON.stringify({ authorityId: 'authority-name', accountId: 'account-name', deviceId: `device-${deviceSuffix}`, installationId: `install-${deviceSuffix}`, keyFingerprint: sha(deviceSuffix), idempotencyKey: `idempotency-${suffix}`, ...(deviceName === undefined ? {} : { deviceName }) });
-      await issueVNextPg17OnlineIdentityAssertion(runtime, handle, {
+      const assertion = {
         assertionId: `assertion-${suffix}`, authorityId: 'authority-name', accountId: 'account-name', deviceId: `device-${deviceSuffix}`, installationId: `install-${deviceSuffix}`,
-        installationPublicKey: `public-${deviceSuffix}`, keyFingerprint: sha(deviceSuffix), audience: 'unified-desktop', nonceSha256: sha(suffix), canonicalRequestSha256: sha(canonicalRequestJson), identityProofSha256: sha('proof'), hardwareEvidenceSha256: sha(deviceSuffix), issuedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 600000).toISOString(),
-      });
+        installationPublicKey: `public-${deviceSuffix}`, keyFingerprint: sha(deviceSuffix), audience: 'unified-desktop', nonceSha256: sha(suffix), canonicalRequestSha256: sha(canonicalRequestJson), identityProofSha256: sha('proof'), hardwareEvidenceSha256: sha(deviceSuffix), issuedAt: new Date(databaseNow - 1000).toISOString(), expiresAt: new Date(databaseNow + 600000).toISOString(),
+      };
+      await query('identity-verifier', 'SELECT vnext_control_plane.vnext_issue_online_identity_assertion($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)', Object.values(assertion));
       return { assertionId: `assertion-${suffix}`, idempotencyKey: `idempotency-${suffix}`, receiptId: `receipt-${suffix}`, auditEventId: `audit-${suffix}`, outboxEventId: `outbox-${suffix}`, sessionId: `session-${suffix}`, linkId: `link-${suffix}`, sessionExpiresAt: new Date(Date.now() + 3600000).toISOString(), ...createUnifiedDesktopRegistrationEvidence({ sessionId: `session-${suffix}` }), ...(deviceName === undefined ? {} : { deviceName, canonicalRequestJson }) };
     }
     const state = async () => (await query('fixture-provisioner', `SELECT

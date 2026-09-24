@@ -46,6 +46,20 @@ Executed on 2026-09-24 in the current checkout:
 
 ## Remaining release gate
 
+Frozen source `8216bdee` initially passed 145/186 lifecycle commands, then the
+new test's host-clock assertion timestamp was rejected. Repeating the isolated
+test exposed `VNEXT_ONLINE_IDENTITY_ASSERTION_INVALID`, not an unavailable
+database: the helper had hidden that SQL error. The test now uses the database
+clock minus one second and exposes raw SQL failures. Production time validation
+is unchanged. A complete frozen rerun is required; the failed run is retained at
+`gewu-frozen-cloud-bundled-tests-20260920-_7u2exm4`.
+
+Release classification on the owned diff from `b8325f4a` to `8216bdee` is cloud
+minor (`8.11.22 -> 8.12.0`) and desktop patch (`8.9.9 -> 8.9.10`). The classifier
+now recognizes ADD COLUMN inside JavaScript SQL literals (red/green regression).
+The protocol matrix records cloud-first rollout and capability gating. Versions
+have not yet been changed; NAS and miniapp are unchanged.
+
 Full frozen-source cloud lifecycle, production backup/migration/deployment, new
 packaged desktop real-session smoke and OSS publication have NOT been performed
 for this candidate. No production success is claimed. Existing unrelated dirty

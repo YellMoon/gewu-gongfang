@@ -4,6 +4,10 @@ const os = require('os');
 const path = require('path');
 const version = require('./update-version');
 assert.strictEqual(version.analyzeVersionBump({
+  files: ['shared/vnext-pg17/desktopDeviceNamesMigration.js'],
+  diff: 'diff --git a/shared/vnext-pg17/desktopDeviceNamesMigration.js b/shared/vnext-pg17/desktopDeviceNamesMigration.js\n+module.exports = String.raw`ALTER TABLE vnext_control_plane.vnext_trusted_devices\n+  ADD COLUMN display_name text;',
+}), 'minor', 'an additive column in a JavaScript SQL literal is a backward-compatible schema capability');
+assert.strictEqual(version.analyzeVersionBump({
   files: ['cloud-business-api/src/personalAssetImportRepository.js', 'miniapp/src/pages/assets/index.tsx'],
   diff: 'fix: existing personal asset import transaction rollback, teacher scope, cent validation, confirmation and session-safe retries; same REST contract',
 }), 'patch', 'repairing the existing personal import does not add a public capability');

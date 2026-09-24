@@ -115,6 +115,9 @@ function analyzeVersionBump(context = readChangeContext()) {
   const diff = context.diff || '';
   const corpus = `${files.join('\n')}\n${diff}`;
   const addedChangeText = sourceAddedChangeText(diff);
+  // UTF-8: SQL also lives inside JS template literals; the added-line filter
+  // removes diff '+' markers before schema classification.
+  const addsSchemaColumn = /\bALTER\s+TABLE\s+[^\r\n]+\s*\n?\s*ADD\s+COLUMN\b/i.test(addedChangeText);
 
   const majorSignals = [
     /BREAKING[\s_-]?CHANGE/i,
@@ -132,6 +135,7 @@ function analyzeVersionBump(context = readChangeContext()) {
   ];
   if (deletedFiles.some(file => executablePublicApiPaths.some(pattern => pattern.test(file)))) return 'major';
   if (hasAny(corpus, majorSignals)) return 'major';
+  if (addsSchemaColumn) return 'minor';
 
   const patchSignals = [
     /fix|fixed|bug|bugfix|hotfix|repair/i,

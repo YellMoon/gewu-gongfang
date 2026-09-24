@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopDisplayMetadata": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "apply additive control-plane M29 and deploy cloud support before publishing the desktop; verified-access deviceNameSupported boolean gates the optional registration deviceName field and its assertion digest; old clients omit names, old clouds receive unchanged requests, exact replay never overwrites newer names; displayName and deviceName are presentation metadata only, never role or trust evidence; NAS and miniapp remain unchanged"
+    },
     "questionRichTables": {
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
