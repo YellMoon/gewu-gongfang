@@ -60,6 +60,7 @@ const repository = {
     calls.push(['listDevices', input]);
     return [{
       deviceId: 'device-2', installationId: 'installation-2', status: 'active',
+      deviceName: '教室电脑',
       rowVersion: 4, createdAt: '2026-08-01T00:00:00.000Z',
       updatedAt: '2026-08-02T00:00:00.000Z', revokedAt: null,
     }];
@@ -157,6 +158,7 @@ const service = createCloudDesktopIdentityService({
   const devices = await service.listDevices({ sessionToken: 'admin-token' });
   assert.strictEqual(devices.length, 1);
   assert.strictEqual(devices[0].deviceId, 'device-2');
+  assert.strictEqual(devices[0].deviceName, '教室电脑');
   const revoked = await service.revokeDevice({
     sessionToken: 'admin-token', deviceId: 'device-2', expectedRowVersion: 4, reason: 'user_request',
   });

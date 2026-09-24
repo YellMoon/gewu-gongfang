@@ -315,7 +315,13 @@ function createCloudDesktopRegistrationService(config) {
       return issueVerificationForVerifiedAccount(identity);
     },
     async register(input) {
-      const request = exact(input, ['verificationToken', 'installationId', 'installationPublicKey', 'deviceProof', 'idempotencyKey']);
+      // UTF-8: optional device metadata is bound to the verified request digest.
+      const keys = ['verificationToken', 'installationId', 'installationPublicKey', 'deviceProof', 'idempotencyKey'];
+      if (input && typeof input === 'object' && !types.isProxy(input) && Object.hasOwn(input, 'deviceName')) keys.push('deviceName');
+      const request = exact(input, keys);
+      if (Object.hasOwn(request, 'deviceName') && (typeof request.deviceName !== 'string'
+        || !request.deviceName || request.deviceName !== request.deviceName.trim() || request.deviceName.length > 128
+        || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(request.deviceName))) throw rejected();
       if (!text(request.installationId) || typeof request.installationPublicKey !== 'string' || request.installationPublicKey.trim() === '' || request.installationPublicKey.length > 8192 || !text(request.deviceProof) || !text(request.idempotencyKey)) throw rejected();
       const ticket = inspectVerificationToken(request.verificationToken);
       const installationPublicKey = request.installationPublicKey.trim();
@@ -323,7 +329,9 @@ function createCloudDesktopRegistrationService(config) {
       const now = currentNow();
       const keyFingerprint = installationKeyFingerprint(installationPublicKey);
       const deviceId = `desktop-device-${keyFingerprint.slice(0, 32)}`;
-      const canonicalRequestSha256 = sha256(JSON.stringify({ authorityId: ticket.authorityId, accountId: ticket.accountId, deviceId, installationId: request.installationId, keyFingerprint, idempotencyKey: request.idempotencyKey }));
+      const canonicalRequestJson = JSON.stringify({ authorityId: ticket.authorityId, accountId: ticket.accountId, deviceId, installationId: request.installationId, keyFingerprint, idempotencyKey: request.idempotencyKey,
+        ...(request.deviceName ? { deviceName: request.deviceName } : {}) });
+      const canonicalRequestSha256 = sha256(canonicalRequestJson);
       const assertionId = opaqueId(settings.ticketSecret, 'assertion', `${ticket.proofId}:${request.installationId}`);
       const linkId = opaqueId(settings.ticketSecret, 'link', `${ticket.authorityId}:${ticket.accountId}:${request.installationId}`);
       const receiptId = opaqueId(settings.ticketSecret, 'receipt', `${ticket.authorityId}:${ticket.accountId}:${request.idempotencyKey}:${keyFingerprint}`);
@@ -344,6 +352,7 @@ function createCloudDesktopRegistrationService(config) {
         const result = await settings.register({
           assertionId, idempotencyKey: request.idempotencyKey, receiptId, auditEventId, outboxEventId, sessionId, linkId, sessionExpiresAt,
           canonicalRequestSha256, canonicalResultJson, resultSha256: sha256(canonicalResultJson), canonicalPayloadJson: canonicalResultJson, payloadSha256: sha256(canonicalResultJson),
+          ...(request.deviceName ? { deviceName: request.deviceName, canonicalRequestJson } : {}),
         });
         if (!result || result.receiptId !== receiptId || !text(result.sessionId) || typeof result.replayed !== 'boolean') throw rejected();
         const sessionToken = makeTicket(settings.ticketSecret, {

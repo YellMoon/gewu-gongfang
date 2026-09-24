@@ -1,0 +1,16 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { MIGRATIONS } = require('../../shared/vnext-pg17/migrationManifest');
+const { buildCloudControlPlaneM29UpgradeSql } = require('./cloudControlPlaneM29Upgrade');
+const result = buildCloudControlPlaneM29UpgradeSql();
+assert.equal(result.semanticVersion, 29);
+assert.equal(result.migrationCount, 1);
+assert.equal(result.migrationId, 'vnext-pg17-desktop-device-names-29');
+assert.match(result.sql, /count\(\*\).*<> 28/);
+assert.match(result.sql, /VNEXT_CLOUD_CONTROL_PLANE_M28_PREFIX_INVALID/);
+for (const item of MIGRATIONS.slice(0, 28)) assert(result.sql.includes(`('${item.migrationId}',${item.semanticVersion},'${item.manifestSha256}')`));
+assert.match(result.sql, /ADD COLUMN display_name/);
+assert.match(result.sql, /REVOKE vnext_pg17_owner FROM gewu_app;\nCOMMIT;/);
+assert.match(result.sql, /SET LOCAL ROLE vnext_pg17_owner/);
+assert.match(result.sql, /gewu-cloud-control-m29-upgrade/);
+console.log('Cloud control-plane M29 guarded upgrade checks passed');

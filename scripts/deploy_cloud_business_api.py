@@ -462,7 +462,7 @@ def build_image(ssh, tag):
 def run_cloud_migrations(source_root):
     # Only the dotenv *path* is inherited; secrets never enter the source archive.
     environment = {**os.environ, "DOTENV_CONFIG_PATH": str(deploy.dotenv_path.resolve())}
-    scripts = [f"apply_cloud_control_plane_m{version}.py" for version in range(20, 29)]
+    scripts = [f"apply_cloud_control_plane_m{version}.py" for version in range(20, 30)]
     scripts.append("apply_cloud_postgres_migrations.py")
     for name in scripts:
         subprocess.run([sys.executable, str(source_root / "scripts" / name)],

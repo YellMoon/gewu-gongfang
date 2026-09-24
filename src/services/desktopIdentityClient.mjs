@@ -558,14 +558,15 @@ export function createDesktopIdentityClient({
     });
     const roles = uniqueRoles(value?.roles);
     const teacherId = value?.teacherId === null ? null : String(value?.teacherId || '').trim();
+    const deviceNameCapability = value?.deviceNameSupported === true ? { deviceNameSupported: true } : {};
     if (value?.access === 'teacher_registration_required' && roles.length === 0 && teacherId === null) {
-      return Object.freeze({ access: value.access, roles: Object.freeze([]), teacherId: null });
+      return Object.freeze({ access: value.access, roles: Object.freeze([]), teacherId: null, ...deviceNameCapability });
     }
     if (value?.access !== 'allowed' || roles.length === 0
       || (roles.includes('teacher') && !teacherId)) {
       throw identityError('DESKTOP_VERIFIED_ACCESS_INVALID');
     }
-    return Object.freeze({ access: value.access, roles: Object.freeze(roles), teacherId });
+    return Object.freeze({ access: value.access, roles: Object.freeze(roles), teacherId, ...deviceNameCapability });
   }
 
   async function registerTeacherForVerifiedRegistration({ pending, name, subject = null } = {}) {
@@ -589,7 +590,8 @@ export function createDesktopIdentityClient({
       teacherId: registered.teacherId,
       updatedAt: registered.updatedAt,
       replayed: registered.replayed,
-      desktopAccess: Object.freeze({ access: 'allowed', roles: Object.freeze(['teacher']), teacherId: registered.teacherId }),
+      desktopAccess: Object.freeze({ access: 'allowed', roles: Object.freeze(['teacher']), teacherId: registered.teacherId,
+        ...(pending.desktopAccess?.deviceNameSupported === true ? { deviceNameSupported: true } : {}) }),
     });
   }
 
@@ -640,6 +642,8 @@ export function createDesktopIdentityClient({
         installationPublicKey: pending.publicIdentity.publicKey,
         deviceProof: proof.signature,
         idempotencyKey: pending.idempotencyKey,
+        ...(pending.desktopAccess?.deviceNameSupported === true && pending.publicIdentity.deviceName
+          ? { deviceName: pending.publicIdentity.deviceName } : {}),
       },
     });
     if (!registered?.sessionToken || !registered?.sessionId || !registered?.offlineLease

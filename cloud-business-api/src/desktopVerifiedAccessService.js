@@ -45,11 +45,11 @@ function createDesktopVerifiedAccessService(config) {
       if (account !== null && account?.status !== 'active') throw failure();
       const roles = desktopSessionRoles(account?.roles);
       if (roles.length === 0) {
-        return Object.freeze({ access: 'teacher_registration_required', roles, teacherId: null });
+        return Object.freeze({ access: 'teacher_registration_required', roles, teacherId: null, deviceNameSupported: true });
       }
       const teacherId = account?.profile?.type === 'teacher' && text(account.profile.id, 128) ? account.profile.id : null;
       if (roles.includes('teacher') && !teacherId) throw failure();
-      return Object.freeze({ access: 'allowed', roles, teacherId });
+      return Object.freeze({ access: 'allowed', roles, teacherId, deviceNameSupported: true });
     },
   });
 }

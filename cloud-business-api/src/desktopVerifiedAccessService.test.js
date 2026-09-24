@@ -21,16 +21,16 @@ const service = createDesktopVerifiedAccessService({
 
 (async () => {
   assert.deepStrictEqual(await service.read({ verificationToken: 'account-teacher' }), {
-    access: 'allowed', roles: ['teacher'], teacherId: 'teacher-1',
+    access: 'allowed', roles: ['teacher'], teacherId: 'teacher-1', deviceNameSupported: true,
   });
   assert.deepStrictEqual(await service.read({ verificationToken: 'account-super' }), {
-    access: 'allowed', roles: ['super_admin'], teacherId: null,
+    access: 'allowed', roles: ['super_admin'], teacherId: null, deviceNameSupported: true,
   });
   assert.deepStrictEqual(await service.read({ verificationToken: 'account-visitor' }), {
-    access: 'teacher_registration_required', roles: [], teacherId: null,
+    access: 'teacher_registration_required', roles: [], teacherId: null, deviceNameSupported: true,
   });
   assert.deepStrictEqual(await service.read({ verificationToken: 'account-student' }), {
-    access: 'teacher_registration_required', roles: [], teacherId: null,
+    access: 'teacher_registration_required', roles: [], teacherId: null, deviceNameSupported: true,
   }, 'a student account must not be admitted to the teacher desktop as a visitor');
   await assert.rejects(
     () => service.read({ verificationToken: 'invalid' }),

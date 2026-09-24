@@ -36,6 +36,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_exchange_desktop_session_challenge',
   'vnext_issue_online_identity_assertion',
   'vnext_list_desktop_account_devices',
+  'vnext_list_named_desktop_account_devices',
   'vnext_online_identity_assertion_consumptions_no_delete',
   'vnext_online_identity_assertion_consumptions_no_update',
   'vnext_online_identity_assertions_no_delete',
@@ -48,6 +49,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
+  'vnext_register_named_desktop_online',
   'vnext_register_unified_desktop_online',
   'vnext_revoke_desktop_device',
   'vnext_rotate_desktop_role_session',
@@ -68,6 +70,8 @@ const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
   vnext_exchange_desktop_session_challenge: 'p_challenge_id text, p_expected_row_version bigint, p_session_id text, p_session_expires_at timestamp with time zone, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_signature_sha256 text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
   vnext_issue_online_identity_assertion: 'p_assertion_id text, p_authority_id text, p_account_id text, p_device_id text, p_installation_id text, p_installation_public_key text, p_key_fingerprint text, p_audience text, p_nonce_sha256 text, p_canonical_request_sha256 text, p_identity_proof_sha256 text, p_hardware_evidence_sha256 text, p_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
   vnext_list_desktop_account_devices: 'p_authority_id text, p_account_id text',
+  vnext_list_named_desktop_account_devices: 'p_authority_id text, p_account_id text',
+  vnext_register_named_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text, p_named_request_json text',
   vnext_provision_canonical_phone_account: 'p_account_id text, p_contact_id text, p_phone_hash text, p_verification_evidence_hash text',
   vnext_bind_canonical_wechat_identity: 'p_authority_id text, p_account_id text, p_openid_contact_id text, p_openid_hash text, p_unionid_contact_id text, p_unionid_hash text, p_verification_evidence_hash text',
   vnext_read_canonical_account_by_verified_contact: 'p_contact_type text, p_contact_hash text',
@@ -81,6 +85,8 @@ const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
   vnext_start_desktop_session_challenge: 'p_challenge_id text, p_authorization_id text, p_device_id text, p_nonce_sha256 text, p_nonce_issued_at timestamp with time zone, p_expires_at timestamp with time zone',
 });
 const WRITER_COMMAND_FUNCTIONS = new Set([
+  'vnext_register_named_desktop_online',
+  'vnext_list_named_desktop_account_devices',
   'vnext_register_unified_desktop_online',
   'vnext_start_desktop_session_challenge',
   'vnext_exchange_desktop_session_challenge',
@@ -301,6 +307,7 @@ const FOUNDATION_COLUMNS = Object.freeze({
     Object.freeze({ name: 'created_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'updated_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'NO', collation: null }),
     Object.freeze({ name: 'revoked_at', dataType: 'timestamp with time zone', udtName: 'timestamptz', nullable: 'YES', collation: null }),
+    Object.freeze({ name: 'display_name', dataType: 'text', udtName: 'text', nullable: 'YES', collation: 'C' }),
   ]),
   vnext_device_installations: Object.freeze([
     Object.freeze({ name: 'installation_id', dataType: 'text', udtName: 'text', nullable: 'NO', collation: 'C' }),
@@ -414,7 +421,7 @@ const FOUNDATION_CONSTRAINTS = Object.freeze({
   vnext_data_scope_grants: Object.freeze({ count: 18, required: Object.freeze(['vnext_data_scope_grants_pkey', 'vnext_data_scope_grants_account_id_authority_id_fkey', 'vnext_data_scope_grants_scope_type_check', 'vnext_data_scope_grants_effect_check', 'vnext_data_scope_grants_status_check', 'vnext_data_scope_grants_row_version_check', 'vnext_data_scope_grants_check2']) }),
   vnext_profile_bindings: Object.freeze({ count: 15, required: Object.freeze(['vnext_profile_bindings_pkey', 'vnext_profile_bindings_account_id_authority_id_fkey', 'vnext_profile_bindings_profile_type_check', 'vnext_profile_bindings_status_check', 'vnext_profile_bindings_row_version_check', 'vnext_profile_bindings_check1']) }),
   vnext_verified_contacts: Object.freeze({ count: 17, required: Object.freeze(['vnext_verified_contacts_pkey', 'vnext_verified_contacts_authority_id_contact_type_normalize_key', 'vnext_verified_contacts_account_id_authority_id_fkey', 'vnext_verified_contacts_contact_type_check', 'vnext_verified_contacts_verification_state_check', 'vnext_verified_contacts_row_version_check', 'vnext_verified_contacts_check1']) }),
-  vnext_trusted_devices: Object.freeze({ count: 16, required: Object.freeze(['vnext_trusted_devices_pkey', 'vnext_trusted_devices_device_id_authority_id_key', 'vnext_trusted_devices_authority_id_fkey', 'vnext_trusted_devices_status_check', 'vnext_trusted_devices_check1']) }),
+  vnext_trusted_devices: Object.freeze({ count: 17, required: Object.freeze(['vnext_trusted_devices_pkey', 'vnext_trusted_devices_device_id_authority_id_key', 'vnext_trusted_devices_authority_id_fkey', 'vnext_trusted_devices_status_check', 'vnext_trusted_devices_check1', 'vnext_trusted_devices_display_name_check']) }),
   vnext_device_installations: Object.freeze({ count: 17, required: Object.freeze(['vnext_device_installations_pkey', 'vnext_device_installations_authority_id_key_fingerprint_key', 'vnext_device_installations_installation_id_device_id_author_key', 'vnext_device_installations_device_id_authority_id_fkey', 'vnext_device_installations_check1']) }),
   vnext_account_device_links: Object.freeze({ count: 20, required: Object.freeze(['vnext_account_device_links_pkey', 'vnext_account_device_links_authority_id_account_id_installa_key', 'vnext_account_device_links_link_id_authority_id_account_id__key', 'vnext_account_device_links_account_id_authority_id_fkey', 'vnext_account_device_links_device_id_authority_id_fkey', 'vnext_account_device_links_installation_id_device_id_autho_fkey', 'vnext_account_device_links_check1']) }),
   vnext_role_grants: Object.freeze({ count: 19, required: Object.freeze(['vnext_role_grants_pkey', 'vnext_role_grants_account_id_authority_id_fkey', 'vnext_role_grants_granted_by_account_id_authority_id_fkey', 'vnext_role_grants_granted_by_account_id_check', 'vnext_role_grants_role_check', 'vnext_role_grants_status_check', 'vnext_role_grants_check2']) }),
@@ -467,7 +474,7 @@ const FOUNDATION_CONSTRAINT_DEFINITIONS = Object.freeze({
   vnext_trust_root_evidence_authority_id_fkey: 'FOREIGN KEY (authority_id) REFERENCES vnext_control_plane.vnext_authorities(authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
   vnext_trust_root_evidence_receipt_id_authority_id_fkey: 'FOREIGN KEY (receipt_id, authority_id) REFERENCES vnext_control_plane.vnext_authorization_command_receipts(receipt_id, authority_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
 });
-const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '97715f239ca7131c633466ebf2e0f8013e510d297f3318fff817b41aff92413d';
+const FOUNDATION_CONSTRAINT_CATALOG_SHA256 = '2a38bda49dde33ce79e8c80d194be4609c0b2e444de9a6c98f8cae75b8f42ed2';
 const FOUNDATION_INDEX_CATALOG_SHA256 = '2455625d99696aa4a0cc576681f016a24b9a23fc232a0265e7d73fe4298d06d6';
 const FOUNDATION_INDEX_DEFINITIONS = Object.freeze({
   vnext_capability_overrides_one_active_capability: "CREATE UNIQUE INDEX vnext_capability_overrides_one_active_capability ON vnext_control_plane.vnext_capability_overrides USING btree (authority_id, account_id, capability_id) WHERE (status = 'active'::text)",

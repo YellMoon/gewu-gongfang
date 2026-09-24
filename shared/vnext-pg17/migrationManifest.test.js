@@ -69,7 +69,9 @@ async function runManifestCases() {
     'vnext_recent_reauthentication_events_no_delete',
   ]);
   assert.strictEqual(sha256(FIRST_MIGRATION.sql), FIRST_MIGRATION.manifestSha256);
-  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28]);
+  assert.deepStrictEqual(MIGRATIONS.map(migration => migration.semanticVersion), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+  assert.strictEqual(MIGRATIONS[28].migrationId, 'vnext-pg17-desktop-device-names-29');
+  assert.match(MIGRATIONS[28].sql, /ADD COLUMN display_name/);
   assert.strictEqual(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.semanticVersion, 20);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /vnext_role_grants_one_active_super_admin/);
   assert.match(FIXED_SUPER_ADMIN_INVARIANT_MIGRATION.sql, /role='super_admin' AND status='active'/);

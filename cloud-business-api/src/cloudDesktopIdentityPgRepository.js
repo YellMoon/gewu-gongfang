@@ -115,7 +115,7 @@ function createCloudDesktopIdentityPgRepository({ writerPool } = {}) {
   async function listDevices(input) {
     const result = await writerPool.query(
       `SELECT *
-         FROM vnext_control_plane.vnext_list_desktop_account_devices($1::text, $2::text)`,
+         FROM vnext_control_plane.vnext_list_named_desktop_account_devices($1::text, $2::text)`,
       [input.authorityId, input.accountId],
     );
     return Object.freeze((result?.rows || []).map(normalize));

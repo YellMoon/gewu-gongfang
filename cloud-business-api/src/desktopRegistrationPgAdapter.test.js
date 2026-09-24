@@ -41,6 +41,9 @@ const { createDesktopRegistrationPgAdapter } = require('./desktopRegistrationPgA
   });
   assert.strictEqual(calls.length, 1);
   assert.deepStrictEqual(calls[0].values, Object.values(input));
+  await register({ ...input, deviceName: '教室电脑', canonicalRequestJson: '{"deviceName":"教室电脑"}' });
+  assert.match(calls[1].text, /vnext_register_named_desktop_online/);
+  assert.strictEqual(calls[1].values.at(-1), '{"deviceName":"教室电脑"}');
 
   const missing = createDesktopRegistrationPgAdapter({
     writerPool: { query: async () => ({ rows: [] }) },

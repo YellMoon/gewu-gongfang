@@ -84,6 +84,18 @@ const service = createCloudDesktopRegistrationService({
   });
   assert.deepStrictEqual({ receiptId: registered.receiptId, sessionId: registered.sessionId, replayed: registered.replayed }, { receiptId: calls.registered[0].receiptId, sessionId: calls.registered[0].sessionId, replayed: false });
   assert.ok(typeof registered.sessionToken === 'string' && registered.sessionToken.length > 40);
+  // UTF-8: metadata is optional, but when present is bound to the verified request.
+  const namedInput = { verificationToken: started.verificationToken, installationId: 'installation-1', installationPublicKey: publicKey, deviceProof: proof, idempotencyKey: 'registration-named', deviceName: '教室电脑' };
+  for (const bad of ['', ' padded ', 'line\nbreak', 'x'.repeat(129), null, {}, 'bad\u202Ename']) {
+    await assert.rejects(() => service.register({ ...namedInput, deviceName: bad }));
+  }
+  const beforeNamed = calls.registered.length;
+  await service.register(namedInput);
+  assert.strictEqual(calls.registered.length, beforeNamed + 1);
+  const namedRequest = calls.registered.at(-1);
+  assert.strictEqual(namedRequest.deviceName, '教室电脑');
+  assert.strictEqual(JSON.parse(namedRequest.canonicalRequestJson).deviceName, '教室电脑');
+  assert.strictEqual(crypto.createHash('sha256').update(namedRequest.canonicalRequestJson).digest('hex'), calls.issued.at(-1).canonicalRequestSha256);
   const unsignedLease = { ...registered.offlineLease };
   delete unsignedLease.signature;
   assert.deepStrictEqual(unsignedLease, {
@@ -108,8 +120,8 @@ const service = createCloudDesktopRegistrationService({
     Buffer.from(registered.offlineLease.signature, 'base64url'),
   ), true,
     'the lease is signed by the cloud service over every locally persisted binding');
-  assert.strictEqual(calls.issued.length, 1);
-  assert.strictEqual(calls.registered.length, 1);
+  assert.strictEqual(calls.issued.length, 2);
+  assert.strictEqual(calls.registered.length, 2);
   assert.strictEqual(calls.issued[0].authorityId, 'tenant-1');
   assert.strictEqual(calls.issued[0].accountId, 'account-1');
   assert.strictEqual(calls.issued[0].deviceId, `desktop-device-${crypto.createHash('sha256').update(crypto.createPublicKey(publicKey).export({ type: 'spki', format: 'der' })).digest('hex').slice(0, 32)}`);
@@ -132,7 +144,7 @@ const service = createCloudDesktopRegistrationService({
     },
     'a desktop session context must be derived from the signed current cloud session',
   );
-  assert.strictEqual(calls.sessionContexts.length, 2, 'registration re-reads the cloud session before issuing its lease');
+  assert.strictEqual(calls.sessionContexts.length, 3, 'each registration re-reads the cloud session before issuing its lease');
   const resumed = await service.issueSession({
     authorityId: 'tenant-1', accountId: 'account-1', deviceId: calls.issued[0].deviceId,
     installationId: 'installation-1', sessionId: 'resumed-session-1',

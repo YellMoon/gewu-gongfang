@@ -292,7 +292,7 @@ function createCloudDesktopIdentityService({ repository, sessionContext, issueSe
     return Object.freeze(rows.map(row => Object.freeze({
       id: text(row.deviceId, 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID', 128),
       deviceId: row.deviceId,
-      deviceName: null,
+      deviceName: row.deviceName == null ? null : text(row.deviceName, 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID', 128),
       status: text(row.status, 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID', 32),
       approvedAt: row.createdAt ? instant(row.createdAt, 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID') : null,
       rowVersion: version(row.rowVersion, 'DESKTOP_DEVICE_CENTER_RESPONSE_INVALID'),

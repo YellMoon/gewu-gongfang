@@ -28,7 +28,7 @@ const writerPool = {
       authorityId: values[0], accountId: values[1], deviceId: 'device-1', installationId: 'installation-1',
       sessionId: values[4], expiresAt: new Date('2026-09-01T09:00:00Z'), rowVersion: '1',
     }] };
-    if (sql.includes('vnext_list_desktop_account_devices')) return { rows: [{
+    if (sql.includes('vnext_list_named_desktop_account_devices')) return { rows: [{
       deviceId: 'device-2', installationId: 'installation-2', status: 'active', rowVersion: '4',
       createdAt: new Date('2026-08-01T00:00:00Z'), updatedAt: new Date('2026-08-02T00:00:00Z'),
       lastSeenAt: new Date('2026-08-02T00:00:00Z'), revokedAt: null,

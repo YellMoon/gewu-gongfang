@@ -332,6 +332,7 @@ async function main() {
 
   const unifiedCloudRequests = [];
   let unifiedDisplayName;
+  let deviceNameSupported;
   const unifiedCloudEvents = [];
   let unifiedCloudSealed = null;
   let unifiedCloudStored = null;
@@ -388,7 +389,7 @@ async function main() {
       if (url === 'https://cloud.test/api/desktop/verified-access') {
         assert.strictEqual(options.method, 'POST');
         assert.deepStrictEqual(JSON.parse(options.body), { verificationToken: 'verification-token-1' });
-        return { ok: true, json: async () => ({ ok: true, access: 'teacher_registration_required', roles: [], teacherId: null }) };
+        return { ok: true, json: async () => ({ ok: true, access: 'teacher_registration_required', roles: [], teacherId: null, ...(deviceNameSupported !== undefined ? { deviceNameSupported } : {}) }) };
       }
       if (url === 'https://cloud.test/api/desktop/online-registration') {
         return { ok: true, json: async () => ({ ok: true, receiptId: 'receipt-cloud-1', sessionId: 'session-cloud-1', replayed: false, sessionToken: 'session-token-cloud-1', offlineLease: {
@@ -651,6 +652,22 @@ async function main() {
     assert.strictEqual(named.profile.user.name, expected);
     assert.strictEqual(unifiedCloudSealed.profile.user.name, expected);
     assert.strictEqual(named.profile.user.id, 'account-cloud-1');
+  }
+  // UTF-8: old servers keep the existing body; capable servers receive the native name.
+  const nameRequestStart = unifiedCloudRequests.length;
+  await unifiedCloudClient.completeUnifiedOnlineRegistration({ pending: {
+    ...unifiedVerified, desktopAccess: { ...selfRegisteredTeacher.desktopAccess, deviceNameSupported: true },
+  } });
+  assert.strictEqual(unifiedCloudRequests[nameRequestStart].body.deviceName, unifiedVerified.publicIdentity.deviceName);
+  for (const capability of [true, false, 'true', 1]) {
+    deviceNameSupported = capability;
+    const polled = await unifiedCloudClient.pollUnifiedOnlineRegistration(unifiedPending);
+    assert.strictEqual(polled.desktopAccess.deviceNameSupported, capability === true ? true : undefined);
+    const teacher = await unifiedCloudClient.registerTeacherForVerifiedRegistration({ pending: polled, name: 'Cloud Teacher', subject: 'Math' });
+    assert.strictEqual(teacher.desktopAccess.deviceNameSupported, capability === true ? true : undefined);
+    const start = unifiedCloudRequests.length;
+    await unifiedCloudClient.completeUnifiedOnlineRegistration({ pending: { ...polled, desktopAccess: teacher.desktopAccess } });
+    assert.strictEqual(unifiedCloudRequests[start].body.deviceName, capability === true ? polled.publicIdentity.deviceName : undefined);
   }
 
   const recoveryRequests = [];

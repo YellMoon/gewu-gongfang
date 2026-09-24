@@ -1864,6 +1864,12 @@ const DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION = Object.freeze({
   manifestSha256: sha256(DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_SQL),
 });
 
+const DESKTOP_DEVICE_NAMES_SQL = require('./desktopDeviceNamesMigration');
+const DESKTOP_DEVICE_NAMES_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-device-names-29', semanticVersion: 29,
+  sql: DESKTOP_DEVICE_NAMES_SQL, manifestSha256: sha256(DESKTOP_DEVICE_NAMES_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1893,6 +1899,7 @@ const MIGRATIONS = Object.freeze([
   DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
+  DESKTOP_DEVICE_NAMES_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -2032,6 +2039,8 @@ $function$
   vnext_read_canonical_account_by_verified_contact: '19936f7f3f7bb08798ef064b51a321d07e132287a5c254cb2c09b5136b69f872',
   vnext_exchange_desktop_session_challenge: 'ea2c2d275682e8e24510f9c994bd90dbae0ffb08dbcb281e00b2ef0c2d707554',
   vnext_list_desktop_account_devices: 'a771a2026fa361bbbcfe5af338a33ace7d51f27c254fcad11367bbcfad364de6',
+  vnext_list_named_desktop_account_devices: '3a38fe2384722008f984570e618808815fb93c9bec5e3056425c9e8124d371a8',
+  vnext_register_named_desktop_online: '25007dd16e0fca118a55caa655d3ea0edd6c693bb9358b3ac172c537e0fcf1aa',
   vnext_read_desktop_session_installation: 'f53001ea28551e5ab6c8bf68c80876eeb0a1ac4b8c311fbcdc6547bd5e492356',
   vnext_revoke_desktop_device: '47d293c38deef43393a1e2a2ebe2f1d9367bf54b71a9ec82251c5ef427862469',
   vnext_rotate_desktop_role_session: '53fd3597b1da4d1342226c746dee7efcd15d5e4ac42104f4f304f6d8172c2f8a',
@@ -2127,6 +2136,7 @@ module.exports = {
   DESKTOP_DEVICE_REVOCATION_ACTOR_ACCOUNT_FIX_MIGRATION,
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
+  DESKTOP_DEVICE_NAMES_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

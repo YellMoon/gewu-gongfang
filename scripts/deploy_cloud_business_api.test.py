@@ -507,7 +507,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         with mock.patch.object(module.subprocess, "run") as run:
             run.return_value.returncode = 0
             self.assertEqual(REAL_RUN_CLOUD_MIGRATIONS(snapshot), 0)
-        self.assertEqual(len(run.call_args_list), 10)
+        self.assertEqual(len(run.call_args_list), 11)
         for call in run.call_args_list:
             self.assertEqual(call.kwargs['cwd'], snapshot)
             self.assertTrue(Path(call.args[0][1]).is_relative_to(snapshot))
@@ -521,7 +521,8 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertTrue(str(run.call_args_list[6].args[0][1]).endswith("apply_cloud_control_plane_m26.py"))
         self.assertTrue(str(run.call_args_list[7].args[0][1]).endswith("apply_cloud_control_plane_m27.py"))
         self.assertTrue(str(run.call_args_list[8].args[0][1]).endswith("apply_cloud_control_plane_m28.py"))
-        self.assertTrue(str(run.call_args_list[9].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
+        self.assertTrue(str(run.call_args_list[9].args[0][1]).endswith("apply_cloud_control_plane_m29.py"))
+        self.assertTrue(str(run.call_args_list[10].args[0][1]).endswith("apply_cloud_postgres_migrations.py"))
 
     def test_verified_backup_requires_exact_recovery_artifacts_and_checksum(self):
         for field in ('ownershipAndPrivilegesVerified', 'securityFingerprint'):
