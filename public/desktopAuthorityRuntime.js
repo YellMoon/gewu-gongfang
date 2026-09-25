@@ -306,6 +306,8 @@ function createDesktopAuthorityRuntime({
         type: input.type,
         payload: JSON.parse(JSON.stringify(input.payload)),
         preview: JSON.parse(JSON.stringify(input.preview || {})),
+        // UTF-8: online edits auto-submit; drafts created while offline await an aggregate confirmation.
+        createdOffline: (() => { try { return isOnline() !== true; } catch (_error) { return true; } })(),
         ...(input.type === 'schedule.delete.v1' && input.localUndoRecord?.id === input.payload.id
           ? { localUndo: { record: JSON.parse(JSON.stringify(input.localUndoRecord)) } } : {}),
         draftScope,

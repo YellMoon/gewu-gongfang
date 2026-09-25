@@ -37,6 +37,7 @@ import {
   resumeOfflineAfterNetworkFailure,
 } from '../services/desktopIdentityGateRuntime.mjs';
 import './DesktopIdentityGate.css';
+import DesktopAutoSync from './DesktopAutoSync';
 
 const BusinessApp = React.lazy(() => import('../App'));
 const { Paragraph, Text, Title } = Typography;
@@ -735,6 +736,7 @@ const DesktopIdentityGate: React.FC = () => {
             <BusinessApp key={gateState.partitionKey} />
           </Suspense>
         )}
+        <DesktopAutoSync />
       </div>
     );
   }
