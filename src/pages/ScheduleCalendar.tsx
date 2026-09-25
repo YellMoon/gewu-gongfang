@@ -51,6 +51,37 @@ function getCourseDisplayName(course?: Partial<Course>, fallback?: string) {
   return String(fallback || '').trim();
 }
 
+function applyCourseRefresh(
+  schedules: ScheduleEvent[],
+  ids: Iterable<string>,
+  findCourse: (courseId: string) => Course | undefined
+): { next: ScheduleEvent[]; count: number } {
+  const targetIds = new Set(ids);
+  let count = 0;
+  const next = schedules.map(s => {
+    if (!targetIds.has(s.id)) return s;
+    const course = findCourse(s.course_id);
+    if (!course) return s;
+    const displayCName = getCourseDisplayName(course);
+    count++;
+    const refreshed: ScheduleEvent = {
+      ...s,
+      course_name: displayCName || s.course_name,
+      room: course.room_name || s.room,
+      course_type: course.type || s.course_type,
+      course_year: course.year !== undefined ? String(course.year) : undefined,
+      course_semester: course.semester || undefined,
+      teacher_id: course.teacher_id,
+      teacher_name: course.teacher_name,
+    };
+    return {
+      ...refreshed,
+      ...buildCourseRefreshFinancialSnapshot(refreshed, course),
+    };
+  });
+  return { next, count };
+}
+
 function normalizeScheduleEvent(schedule: ScheduleEvent): ScheduleEvent {
   return {
     ...schedule,
@@ -127,6 +158,7 @@ interface DailyViewProps {
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
+  onRefreshSchedules?: (ids: string[]) => void;
 }
 
 const DailyView: React.FC<DailyViewProps> = ({
@@ -151,7 +183,8 @@ const DailyView: React.FC<DailyViewProps> = ({
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit
+  onOpenStudentEdit,
+  onRefreshSchedules
 }) => {
   const dateStr = day.format('YYYY-MM-DD');
   const daySchedules = schedules.filter(s => s.start_time.startsWith(dateStr));
@@ -463,6 +496,11 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
     onClick: () => onScheduleStatusChange(schedule.id, ScheduleStatus.CANCELLED)
   },
   { type: 'divider' },
+  {
+    key: 'refresh-course-info',
+    label: '刷新课程信息',
+    onClick: () => onRefreshSchedules?.([schedule.id])
+  },
   {
     key: 'student-edit',
     label: '学生出勤和费用',
@@ -829,6 +867,7 @@ interface TwoWeeksViewProps {
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
+  onRefreshSchedules?: (ids: string[]) => void;
   courseColorMap?: Record<string, string>;
 }
 
@@ -852,6 +891,7 @@ const OneWeekRow: React.FC<{
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
+  onRefreshSchedules?: (ids: string[]) => void;
   courseColorMap?: Record<string, string>;
 }> = ({
   startMonday,
@@ -873,7 +913,8 @@ const OneWeekRow: React.FC<{
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit
+  onOpenStudentEdit,
+  onRefreshSchedules
 }) => {
   const weekDays: Dayjs[] = [];
   for (let i = 0; i < 7; i++) {
@@ -928,6 +969,7 @@ const OneWeekRow: React.FC<{
             onResizeSchedule={onResizeSchedule}
             onDeleteSchedule={onDeleteSchedule}
             onOpenStudentEdit={onOpenStudentEdit}
+            onRefreshSchedules={onRefreshSchedules}
             courseColorMap={courseColorMap}
           />
         ))}
@@ -956,7 +998,8 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit
+  onOpenStudentEdit,
+  onRefreshSchedules
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -989,6 +1032,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         onResizeSchedule={onResizeSchedule}
         onDeleteSchedule={onDeleteSchedule}
         onOpenStudentEdit={onOpenStudentEdit}
+        onRefreshSchedules={onRefreshSchedules}
       />
       <OneWeekRow
         startMonday={currentMonday.add(1, 'week')}
@@ -1011,6 +1055,7 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         onResizeSchedule={onResizeSchedule}
         onDeleteSchedule={onDeleteSchedule}
         onOpenStudentEdit={onOpenStudentEdit}
+        onRefreshSchedules={onRefreshSchedules}
       />
     </div>
   );
@@ -1240,7 +1285,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     } else {
       message.success(`已删除 ${deletedIds.length} 节课程`);
     }
-  });
+  }, (ids: string[]) => handleRefreshSelectedSchedules(ids));
 
   // 鈶?鎾ら攢 Ctrl+Z
   const undo = useCallback(() => {
@@ -1906,30 +1951,34 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     }
     const [startDate, endDate] = normalizedRange;
     const db = (window as any).dbService;
-    let count = 0;
-    const updated = schedules.map(s => {
-      const sDate = dayjs(s.start_time).startOf('day');
-      if (sDate.isBefore(startDate) || sDate.isAfter(endDate)) return s;
-      const course = db?.getAllCourses?.()?.find((c: any) => c.id === s.course_id);
-      if (!course) return s;
-      const displayCName = getCourseDisplayName(course);
-      count++;
-      const refreshed: ScheduleEvent = { 
-        ...s, 
-        course_name: displayCName || s.course_name, 
-        room: course.room_name || s.room,
-        course_type: course.type || s.course_type,
-        course_year: course.year !== undefined ? String(course.year) : undefined,
-        course_semester: course.semester || undefined,
-        teacher_id: course.teacher_id,
-        teacher_name: course.teacher_name,
-      };
-      return {
-        ...refreshed,
-        ...buildCourseRefreshFinancialSnapshot(refreshed, course),
-      };
-    });
-    setSchedulesWithHistory(updated);
+    const targetIds = schedules
+      .filter(s => {
+        const sDate = dayjs(s.start_time).startOf('day');
+        return !sDate.isBefore(startDate) && !sDate.isAfter(endDate);
+      })
+      .map(s => s.id);
+    const { next, count } = applyCourseRefresh(schedules, targetIds, (courseId: string) => db?.getAllCourses?.()?.find((c: any) => c.id === courseId));
+    setSchedulesWithHistory(next);
+    message.success(`已更新 ${count} 条课程信息`);
+  }
+
+  function handleRefreshSelectedSchedules(ids: string[]) {
+    const targetIds = Array.from(new Set((ids || []).map(String).filter(Boolean)));
+    if (targetIds.length === 0) {
+      message.warning('请先选择要刷新的课程');
+      return;
+    }
+    const ok = window.confirm(
+      `刷新课程信息可能覆盖所选 ${targetIds.length} 节排课的学生学费、老师课时费、出勤状态和课程明细。\n\n费用和出勤属于敏感信息，请确认所选课程无误后再继续。`
+    );
+    if (!ok) return;
+    const db = (window as any).dbService;
+    const { next, count } = applyCourseRefresh(schedules, targetIds, (courseId: string) => db?.getAllCourses?.()?.find((c: any) => c.id === courseId));
+    if (count === 0) {
+      message.warning('所选课程未找到可刷新的课程信息');
+      return;
+    }
+    setSchedulesWithHistory(next);
     message.success(`已更新 ${count} 条课程信息`);
   }
 
@@ -2027,6 +2076,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   onResizeSchedule={handleResizeSchedule}
                   onDeleteSchedule={handleDeleteSchedule}
                   onOpenStudentEdit={handleOpenStudentEdit}
+                  onRefreshSchedules={handleRefreshSelectedSchedules}
                 />
                 {batchVisuals}
               </div>

@@ -72,7 +72,8 @@ export default function useBatchSelection(
   containerRef: React.RefObject<HTMLDivElement>,
   currentMonday: Dayjs,
   onSchedulesUpdated: (s: any[]) => void,
-  onBatchDelete: (ids: string[]) => void
+  onBatchDelete: (ids: string[]) => void,
+  onBatchRefresh: (ids: string[]) => void
 ) {
   const [phase, setPhase] = useState<'idle' | 'drawing' | 'selected' | 'dragging'>('idle');
   const [sel, setSel] = useState<{ ds: number; de: number; ss: number; se: number; ids: string[] } | null>(null);
@@ -658,6 +659,14 @@ export default function useBatchSelection(
             trigger={['contextMenu']}
             menu={{
               items: [
+                {
+                  key: 'batch-refresh',
+                  label: '刷新课程信息',
+                  onClick: () => {
+                    if (!sel || sel.ids.length === 0) return;
+                    onBatchRefresh(sel.ids);
+                  }
+                },
                 {
                   key: 'batch-delete',
                   label: '全部删除',

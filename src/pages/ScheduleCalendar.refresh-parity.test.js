@@ -8,12 +8,13 @@ async function verify(){
  const {normalizeRefreshDateRange}=await import('../utils/scheduleRefreshRange.mjs');
  const previous=process.env.TZ;process.env.TZ='Asia/Shanghai';let count=0;
  try{
-  const versions=[true,false].map(old=>{const types=load(source('src/types/index.ts',old));const financial=load(source('src/utils/financialDetails.ts',old),name=>name==='../types'?types:require(name));return {code:source('src/pages/ScheduleCalendar.tsx',old),financial};});
+   const versions=[true,false].map(old=>{const types=load(source('src/types/index.ts',old));const financial=load(source('src/utils/financialDetails.ts',old),name=>name==='../types'?types:require(name));return {code:source('src/pages/ScheduleCalendar.tsx',old),financial,old};});
   function run(v,rows,courses,range,accept=true){
    const state={rows,writes:0,warnings:[],notices:[],prompts:[]};
    const env={schedules:rows,refreshDateRange:range,dayjs,normalizeRefreshDateRange,window:{confirm:text=>{state.prompts.push(text);return accept;},dbService:{getAllCourses:()=>courses}},
     buildCourseRefreshFinancialSnapshot:v.financial.buildCourseRefreshFinancialSnapshot,setSchedulesWithHistory:next=>{state.rows=next;state.writes++;},message:{warning:text=>state.warnings.push(text),success:text=>state.notices.push(text)}};
-   if(!v.fn)v.fn=new Function(...Object.keys(env),ts.transpileModule(['stripCourseSystemPrefix','getCourseDisplayName','handleRefreshCourseInfo'].map(name=>named(v.code,name)).join('\n')+'\nhandleRefreshCourseInfo();',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText);
+   const names=['stripCourseSystemPrefix','getCourseDisplayName','handleRefreshCourseInfo'];if(!v.old)names.splice(2,0,'applyCourseRefresh');
+   if(!v.fn)v.fn=new Function(...Object.keys(env),ts.transpileModule(names.map(name=>named(v.code,name)).join('\n')+'\nhandleRefreshCourseInfo();',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText);
    v.fn(...Object.values(env));return state;
   }
   // UTF-8: refresh replaces the teacher name from course defaults even when it is null.
