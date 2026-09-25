@@ -106,7 +106,8 @@ const COLLECTIONS = Object.freeze({
 
 function requiredId(value) {
   const id = String(value || '').trim();
-  if (!id || id.length > 128) throw draftError('AUTHORITY_DRAFT_RECORD_ID_INVALID');
+  // UTF-8: legacy copied schedules carry chained ids beyond 128; the cloud stores schedule ids as text.
+  if (!id || id.length > 512) throw draftError('AUTHORITY_DRAFT_RECORD_ID_INVALID');
   return id;
 }
 

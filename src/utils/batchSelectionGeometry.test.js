@@ -130,6 +130,19 @@ assert.strictEqual(conflict.success, false);
 assert.strictEqual(conflict.conflictName, '旧复制课');
 assert.strictEqual(formatBatchConflictMessage('旧复制课'), '时间冲突：与「旧复制课」时间段重叠，批量操作已取消');
 
+// UTF-8: repeated copies must not grow the id past the draft adapter limit.
+const longBaseId = 'lesson-base' + '_copy_1781285984032_7z8r'.repeat(6);
+const longCopy = applyBatchScheduleDrag({
+  schedules: [{ id: longBaseId, course_name: '长ID课', start_time: '2026-06-29T01:00:00Z', end_time: '2026-06-29T02:00:00Z', status: 1,
+    calculated_tuition: 0, calculated_teacher_fee: 0, billing_unit: 1, teacher_fee_mode: 1, student_pricings: [] }],
+  selectedIds: [longBaseId],
+  weekDates: ['2026-06-29', '2026-06-30'],
+  dayDelta: 1, slotDelta: 12, isCopy: true,
+});
+const copiedId = longCopy.nextSchedules.find(item => item.id !== longBaseId).id;
+assert.ok(copiedId.length <= 128, 'copied schedule id must stay within the draft id limit');
+assert.strictEqual((copiedId.match(/_copy_/g) || []).length, 1, 'copied schedule id must not chain copy suffixes');
+
   console.log('batchSelectionGeometry tests passed');
 })().catch(error => {
   console.error(error);

@@ -174,6 +174,23 @@ require('./businessDeleteConfirmation.test');
     error => error.code === 'AUTHORITY_DRAFT_FIELDS_EMPTY',
   );
 
+  const legacyLongId = '964657ee-a884-407f-b7c8-dbb8c3b26014' + '_copy_1781285984032_7z8r'.repeat(5);
+  assert(legacyLongId.length > 128 && legacyLongId.length <= 512);
+  const longIdDraft = createAuthorityDraftFromLocalMutation({
+    collection: 'schedules', action: 'update', recordId: legacyLongId,
+    baseVersion: '2026-07-27T00:00:00.000Z',
+    value: { id: legacyLongId, start_time: '2026-07-29 09:00:00', end_time: '2026-07-29 10:00:00' },
+  });
+  assert.strictEqual(longIdDraft.payload.id, legacyLongId,
+    'legacy copied schedule ids longer than 128 chars must still produce a draft');
+  assert.throws(
+    () => createAuthorityDraftFromLocalMutation({
+      collection: 'schedules', action: 'update', recordId: 'x'.repeat(513),
+      value: { id: 'x'.repeat(513), start_time: '2026-07-29 09:00:00' },
+    }),
+    error => error.code === 'AUTHORITY_DRAFT_RECORD_ID_INVALID',
+  );
+
   console.log('authority draft adapter tests passed');
 })().catch(error => {
   console.error(error);

@@ -102,7 +102,8 @@ function applyBatchScheduleDrag({
     if (isCopy) {
       const id = typeof generateId === 'function'
         ? generateId(schedule)
-        : `${schedule.id}_copy_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        // UTF-8: base excludes any prior copy suffix so repeated copies cannot grow past the draft id limit.
+        : `${String(schedule.id || '').split(/_(?:cpy|copy)_/i)[0].slice(0, 64)}_copy_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       nextSchedules.push({ ...updated, id });
       changedIds.push(id);
     } else {
