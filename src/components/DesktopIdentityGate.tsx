@@ -435,6 +435,16 @@ const DesktopIdentityGate: React.FC = () => {
     const expire = async () => {
       // UTF-8: renew silently while online instead of forcing the login page.
       if (await renewSessionSilently()) return;
+      // UTF-8: if the online session lapsed while offline, keep running on the still-valid offline lease.
+      try {
+        const offlineResumed = await resumeOfflineAfterNetworkFailure({ client: clientRef.current, baseUrl });
+        if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+          acceptRuntime(offlineResumed);
+          return;
+        }
+      } catch (_offlineFallbackError) {
+        // Fall through to the login gate below.
+      }
       lockOut();
     };
     const renewMarginMs = 10 * 60 * 1000;
