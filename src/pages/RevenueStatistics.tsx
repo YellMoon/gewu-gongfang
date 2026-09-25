@@ -554,7 +554,8 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     allTeachers,
     allInstitutions,
     draftFiltersForOptions,
-    courseCatalogOptions
+    courseCatalogOptions,
+    { includeAllTeachers: true, includeAllTerms: true }
   ), [facetRows, allStudents, allTeachers, allInstitutions, draftFiltersForOptions, courseCatalogOptions]);
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));

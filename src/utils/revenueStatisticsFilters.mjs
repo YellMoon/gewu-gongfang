@@ -202,12 +202,36 @@ export function buildCourseCatalogOptionSources(courses = []) {
   return Array.from(map.values()).sort((a, b) => courseOptionLabel(a).localeCompare(courseOptionLabel(b), 'zh-CN'));
 }
 
-export function buildRevenueFacetOptions(rows = [], students = [], teachers = [], institutions = [], filters = {}, courses = []) {
+function mergeLabelOptions(base, extra) {
+  const map = new Map(base.map(option => [option.value, option]));
+  extra.forEach(option => {
+    if (option.value === undefined || option.value === null || option.value === '') return;
+    if (!map.has(option.value)) map.set(option.value, option);
+  });
+  return Array.from(map.values());
+}
+
+export function buildRevenueFacetOptions(rows = [], students = [], teachers = [], institutions = [], filters = {}, courses = [], options = {}) {
   const optionRows = Object.fromEntries(FACETS.map(facet => [facet, optionRowsFor(rows, filters, facet)]));
 
   const studentNameById = new Map(students.map(student => [student.id, student.name]));
   const teacherNameById = new Map(teachers.map(teacher => [teacher.id, teacher.name]));
   const institutionNameById = new Map(institutions.map(institution => [institution.id, institution.name]));
+
+  const sortByLabel = list => list.sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'));
+  // UTF-8: a super admin must be able to pick any teacher or term even when other filters would hide them.
+  const teacherOptions = sortByLabel(mergeLabelOptions(
+    uniqueOptions(optionRows.teacherId, row => row.teacherId, row => teacherNameById.get(row.teacherId) || row.teacherName || row.teacherId),
+    options.includeAllTeachers ? teachers.map(teacher => ({ value: teacher.id, label: teacher.name })) : []
+  ));
+  const yearOptions = mergeLabelOptions(
+    uniqueOptions(optionRows.year, row => Number(row.courseYear), (_row, value) => `${value}`),
+    options.includeAllTerms ? Array.from(new Set(courses.map(course => Number(course.year)).filter(Number.isFinite))).map(year => ({ value: year, label: `${year}` })) : []
+  ).sort((a, b) => Number(b.value) - Number(a.value));
+  const semesterOptions = sortByLabel(mergeLabelOptions(
+    uniqueOptions(optionRows.semester, row => row.semester, row => row.semester),
+    options.includeAllTerms ? Array.from(new Set(courses.map(course => course.semester).filter(Boolean))).map(semester => ({ value: semester, label: semester })) : []
+  ));
 
   return {
     students: uniqueOptions(
@@ -215,11 +239,7 @@ export function buildRevenueFacetOptions(rows = [], students = [], teachers = []
       row => row.studentId,
       row => studentNameById.get(row.studentId) || row.studentName || row.studentId
     ),
-    teachers: uniqueOptions(
-      optionRows.teacherId,
-      row => row.teacherId,
-      row => teacherNameById.get(row.teacherId) || row.teacherName || row.teacherId
-    ),
+    teachers: teacherOptions,
     courseTypes: uniqueOptions(
       optionRows.courseTypes,
       row => Number(row.courseType),
@@ -230,16 +250,8 @@ export function buildRevenueFacetOptions(rows = [], students = [], teachers = []
       row => row.institutionId,
       row => institutionNameById.get(row.institutionId) || row.institutionName || row.institutionId
     ),
-    years: uniqueOptions(
-      optionRows.year,
-      row => Number(row.courseYear),
-      (_row, value) => `${value}`
-    ).sort((a, b) => Number(b.value) - Number(a.value)),
-    semesters: uniqueOptions(
-      optionRows.semester,
-      row => row.semester,
-      row => row.semester
-    ),
+    years: yearOptions,
+    semesters: semesterOptions,
     courseNames: mergeCourseNameOptions(uniqueOptions(
       optionRows.courseName,
       row => row.courseName,

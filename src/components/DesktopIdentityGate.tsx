@@ -36,6 +36,7 @@ import {
   commitRoleSwitchRuntime,
   resumeOfflineAfterNetworkFailure,
 } from '../services/desktopIdentityGateRuntime.mjs';
+import { loadRememberedLogin, saveRememberedLogin, maskPhone } from '../services/desktopLoginMemory.mjs';
 import './DesktopIdentityGate.css';
 import DesktopAutoSync from './DesktopAutoSync';
 
@@ -75,8 +76,11 @@ const DesktopIdentityGate: React.FC = () => {
   const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [baseUrl, setBaseUrl] = useState('');
-  const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>('phone');
-  const [accountLogin, setAccountLogin] = useState('');
+  const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>(
+    () => (loadRememberedLogin()?.type === 'account_name' ? 'account_name' : 'phone')
+  );
+  const [accountLogin, setAccountLogin] = useState(() => loadRememberedLogin()?.value || '');
+  const [accountLoginFocused, setAccountLoginFocused] = useState(false);
   const [accountPassword, setAccountPassword] = useState('');
   const [cloudLoginName, setCloudLoginName] = useState('');
   const [cloudPassword, setCloudPassword] = useState('');
@@ -500,6 +504,7 @@ const DesktopIdentityGate: React.FC = () => {
         password: accountPassword,
       });
       setAccountPassword('');
+      saveRememberedLogin({ type: accountLoginType, value: accountLogin });
       setPending(started);
       setGateState({ kind: 'registration-active' });
     } catch (caught) {
@@ -680,7 +685,7 @@ const DesktopIdentityGate: React.FC = () => {
                 { value: 'phone', label: '\u624b\u673a\u53f7' },
                 { value: 'account_name', label: '\u8d26\u53f7\u540d' },
               ]} />
-              <Input value={accountLogin} autoComplete="username" onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u8d26\u53f7\u540d'} />
+              <Input value={accountLoginFocused || accountLoginType !== 'phone' ? accountLogin : maskPhone(accountLogin)} autoComplete="username" onFocus={() => setAccountLoginFocused(true)} onBlur={() => setAccountLoginFocused(false)} onChange={event => setAccountLogin(event.target.value)} placeholder={accountLoginType === 'phone' ? '\u8f93\u5165\u624b\u673a\u53f7' : '\u8f93\u5165\u8d26\u53f7\u540d'} />
               <Input.Password value={accountPassword} autoComplete="current-password" onChange={event => setAccountPassword(event.target.value)} placeholder={'\u8f93\u5165\u5bc6\u7801'} />
               <Button type="primary" htmlType="submit" loading={busy} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
             </Space>
