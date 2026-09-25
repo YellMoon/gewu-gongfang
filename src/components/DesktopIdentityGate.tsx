@@ -410,22 +410,48 @@ const DesktopIdentityGate: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [pending?.status, pollRegistration]);
 
+  const renewSessionSilently = useCallback(async () => {
+    if (!browserOnline()) return false;
+    try {
+      const result = await clientRef.current?.resume({ baseUrl, online: true });
+      if (!result) return false;
+      acceptRuntime(result);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }, [acceptRuntime, baseUrl]);
+
   useEffect(() => {
     const remaining = desktopIdentityExpiryDelay(gateState, new Date());
     if (remaining === null) return undefined;
+    const onlineRuntime = gateState.kind === 'online-unlocked';
     const expiredState = gateState.kind === 'offline-unlocked'
       ? { kind: 'offline-blocked' }
       : { kind: 'online-authentication-required' };
-    const expire = () => {
+    const lockOut = () => {
       void secureRelock(expiredState).catch(caught => setError(messageForError(caught)));
     };
+    const expire = async () => {
+      // UTF-8: renew silently while online instead of forcing the login page.
+      if (await renewSessionSilently()) return;
+      lockOut();
+    };
+    const renewMarginMs = 10 * 60 * 1000;
     if (remaining <= 0) {
-      expire();
+      void expire();
       return undefined;
     }
-    const timer = window.setTimeout(expire, Math.min(remaining, 2_147_000_000));
+    const delay = onlineRuntime && remaining > renewMarginMs ? remaining - renewMarginMs : remaining;
+    const timer = window.setTimeout(() => {
+      if (onlineRuntime && remaining > renewMarginMs) {
+        void renewSessionSilently().then(renewed => { if (!renewed) lockOut(); });
+      } else {
+        void expire();
+      }
+    }, Math.min(delay, 2_147_000_000));
     return () => window.clearTimeout(timer);
-  }, [gateState.expiresAt, gateState.kind, secureRelock]);
+  }, [gateState.expiresAt, gateState.kind, renewSessionSilently, secureRelock]);
 
   const beginRegistration = async () => {
     registrationFlowRef.current += 1;

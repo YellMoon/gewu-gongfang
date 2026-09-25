@@ -195,6 +195,9 @@ assert.ok((gateSource.match(/resumeOfflineAfterNetworkFailure\(/g) || []).length
   'cold-start and manual recovery must both call the shared offline resume path after a cloud outage');
 assert.ok(gateSource.includes('acceptRuntime(offlineResumed)'),
   'offline recovery must accept the result returned by the offline resume, which clears the online session store');
+assert.ok(gateSource.includes('renewSessionSilently')
+  && gateSource.includes('clientRef.current?.resume({ baseUrl, online: true })'),
+  'an expiring online session must renew silently before forcing the login page');
 assert.ok(decodedGateSource.includes('登录遇到问题') && decodedGateSource.includes('请重试'),
   'bootstrap failures must use concise, familiar login recovery copy');
 for (const rejectedFailureCopy of ['暂时无法打开登录', '身份验证未完成', '重新检查', '重新打开']) {
