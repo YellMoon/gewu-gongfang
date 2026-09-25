@@ -3,6 +3,7 @@
 const assert = require('assert');
 // UTF-8: exercise actual course/lesson boundaries, not only recorded SQL calls.
 require('../sql/course-address-confirmation.postgres.test.js');
+require('../sql/historical-room-scope.postgres.test.js');
 const { createBusinessCourseLifecycleMutations } = require('./businessCourseLifecycleMutationService');
 
 (async () => {

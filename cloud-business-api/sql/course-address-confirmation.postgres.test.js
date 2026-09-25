@@ -21,11 +21,13 @@ assert.equal(normalize(definition('20260908-course-address-confirmation.sql')), 
     await createVNextPg17CatalogBoundary(runtime).apply(handle, admission);
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, admission);
     await withQuery(handle, 'fixture-provisioner', async db => {
+      await db.query('CREATE ROLE gewu_cloud_schedule_reader');
       for (const file of ['20260823-zzzz-room-lifecycle.sql', '20260823-zzzzz-course-lifecycle.sql', '20260827-course-lifecycle-qualified.sql',
         '20260824-schedule-lifecycle.sql', '20260822-business-schedule-student-override.sql', '20260901-business-schedule-update-lifecycle.sql',
         '20260907-teacher-course-write-scope.sql', '20260907-teacher-schedule-write-scope.sql', '20260907-z-teacher-student-write-scope.sql',
         '20260907-zz-schedule-financial-snapshot.sql', '20260908-course-address-confirmation.sql',
-        '20260908-course-address-confirmation.sql', '20260908-created-room-visibility.sql']) await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
+        '20260908-course-address-confirmation.sql', '20260908-created-room-visibility.sql',
+        '20260908-teacher-room-history.sql']) await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant','Tenant',false,now(),now()),('foreign','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher','tenant','Teacher',false,now(),now()),('foreign-teacher','foreign','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.students(id,tenant_id,name,created_by_teacher_id,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student','tenant','Student','teacher',false,false,now(),now())");
