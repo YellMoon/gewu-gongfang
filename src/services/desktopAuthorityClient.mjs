@@ -102,6 +102,8 @@ export function createDesktopAuthorityClient({
     confirmAndSubmit,
     get: id => outbox.get(id),
     list: () => outbox.list(),
+    removeDraft: id => outbox.remove(id),
+    resetDraft: id => outbox.reset(id),
     submit,
   });
 }

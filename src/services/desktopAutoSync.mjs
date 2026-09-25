@@ -8,11 +8,13 @@ export function draftCreatedOffline(draft) {
 }
 
 export function planDesktopAutoSync(drafts) {
-  const awaiting = (Array.isArray(drafts) ? drafts : []).filter(draft => draft?.status === 'awaiting_confirmation');
+  const list = Array.isArray(drafts) ? drafts : [];
+  const awaiting = list.filter(draft => draft?.status === 'awaiting_confirmation');
   return {
-    blocked: (Array.isArray(drafts) ? drafts : []).some(draft => draft?.status === 'conflict'),
+    blocked: list.some(draft => draft?.status === 'conflict'),
     onlineIds: awaiting.filter(draft => !draftCreatedOffline(draft)).map(draft => draft.id),
     offlineIds: awaiting.filter(draftCreatedOffline).map(draft => draft.id),
+    retryIds: list.filter(draft => draft?.status === 'confirmed' || draft?.status === 'submitted').map(draft => draft.id),
   };
 }
 

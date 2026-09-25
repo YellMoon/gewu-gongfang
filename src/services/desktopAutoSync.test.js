@@ -9,9 +9,10 @@ const assert = require('node:assert/strict');
     { id: 'a', status: 'awaiting_confirmation', createdOffline: false },
     { id: 'b', status: 'awaiting_confirmation', createdOffline: true },
     { id: 'c', status: 'completed' },
-  ]), { blocked: false, onlineIds: ['a'], offlineIds: ['b'] });
+    { id: 'd', status: 'submitted' },
+  ]), { blocked: false, onlineIds: ['a'], offlineIds: ['b'], retryIds: ['d'] });
   assert.equal(planDesktopAutoSync([{ id: 'x', status: 'conflict' }]).blocked, true);
-  assert.deepEqual(planDesktopAutoSync(undefined), { blocked: false, onlineIds: [], offlineIds: [] });
+  assert.deepEqual(planDesktopAutoSync(undefined), { blocked: false, onlineIds: [], offlineIds: [], retryIds: [] });
 
   const items = [
     { id: 'a', type: 'schedule.update.v1', status: 'awaiting_confirmation', payload: { id: 'a', changes: { notes: 'x' } } },

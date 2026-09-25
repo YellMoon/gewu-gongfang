@@ -317,9 +317,12 @@ export function buildFinancialDetails(
     const billingUnit = schedule.billing_unit || course?.billing_unit || BillingUnit.PER_HOUR;
     const teacherFeeMode = schedule.teacher_fee_mode || course?.teacher_fee_mode || TeacherFeeMode.PER_SESSION;
     const durationHours = getDurationHours(schedule.start_time, schedule.end_time);
-    const date = schedule.start_time.split(' ')[0] || '';
-    const startClock = (schedule.start_time.split(' ')[1] || schedule.start_time).substring(0, 5);
-    const endClock = (schedule.end_time.split(' ')[1] || schedule.end_time).substring(0, 5);
+    // UTF-8: cloud schedules are ISO instants; render the local date/clock instead of split(' ').
+    const startAt = dayjs(schedule.start_time);
+    const endAt = dayjs(schedule.end_time);
+    const date = startAt.isValid() ? startAt.format('YYYY-MM-DD') : String(schedule.start_time || '').slice(0, 10);
+    const startClock = startAt.isValid() ? startAt.format('HH:mm') : String(schedule.start_time || '').slice(11, 16);
+    const endClock = endAt.isValid() ? endAt.format('HH:mm') : String(schedule.end_time || '').slice(11, 16);
     const timeRange = `${startClock}-${endClock}`;
     const teacherId = schedule.teacher_id || course?.teacher_id;
     const teacher = teachers.find(item => item.id === teacherId);

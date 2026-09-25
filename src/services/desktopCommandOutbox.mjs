@@ -152,6 +152,26 @@ export function createDesktopCommandOutbox({
     return clone(item);
   }
 
+  async function remove(id) {
+    const { state } = await itemFor(id);
+    delete state.items[String(id || '')];
+    await save(state);
+    return true;
+  }
+
+  async function reset(id) {
+    const { state, item } = await itemFor(id);
+    // UTF-8: return a failed/conflicted draft to the resubmittable state.
+    item.status = 'awaiting_confirmation';
+    item.confirmation = null;
+    item.submission = null;
+    item.receipt = null;
+    item.conflict = null;
+    item.updatedAt = new Date(now()).toISOString();
+    await save(state);
+    return clone(item);
+  }
+
   return Object.freeze({
     acknowledge,
     append,
@@ -183,6 +203,8 @@ export function createDesktopCommandOutbox({
     list,
     markSubmitted,
     recordTransport,
+    remove,
+    reset,
   });
 }
 

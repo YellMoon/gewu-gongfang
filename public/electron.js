@@ -286,7 +286,9 @@ ipcMain.on('desktop-authority:append-draft-batch-sync', (event, inputs) => {
   catch (error) { event.returnValue = { ok: false, error: { code: error?.code || 'AUTHORITY_DRAFT_BATCH_APPEND_FAILED' } }; }
 });
 ipcMain.handle('desktop-authority:get', (_event, id) => getDesktopAuthorityRuntime().get(id));
-ipcMain.handle('desktop-authority:list', () => getDesktopAuthorityRuntime().list());
+  ipcMain.handle('desktop-authority:list', () => getDesktopAuthorityRuntime().list());
+  ipcMain.handle('desktop-authority:remove-draft', (_event, id) => getDesktopAuthorityRuntime().removeDraft(id));
+  ipcMain.handle('desktop-authority:reset-draft', (_event, id) => getDesktopAuthorityRuntime().resetDraft(id));
 ipcMain.handle('desktop-authority:list-role-applications', (_event, input) => getDesktopAuthorityRuntime().listRoleApplications(input));
 ipcMain.handle('desktop-authority:review-role-application', (_event, applicationId, review, input) => getDesktopAuthorityRuntime().reviewRoleApplication(applicationId, review, input));
 ipcMain.handle('desktop-authority:submit', (_event, id, input) => getDesktopAuthorityRuntime().submit(id, input));

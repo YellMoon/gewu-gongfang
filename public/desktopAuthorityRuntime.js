@@ -505,6 +505,8 @@ function createDesktopAuthorityRuntime({
     },
     get: async id => (await getClient()).get(id),
     list: async () => (await getClient()).list(),
+    removeDraft: async id => (await getClient()).removeDraft(id),
+    resetDraft: async id => (await getClient()).resetDraft(id),
     listRoleApplications,
     reviewRoleApplication,
     submit: async (id, input) => {

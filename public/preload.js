@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('desktopAuthority', Object.freeze({
   },
   get: id => ipcRenderer.invoke('desktop-authority:get', id),
   list: () => ipcRenderer.invoke('desktop-authority:list'),
+  removeDraft: id => ipcRenderer.invoke('desktop-authority:remove-draft', id),
+  resetDraft: id => ipcRenderer.invoke('desktop-authority:reset-draft', id),
   listRoleApplications: input => ipcRenderer.invoke('desktop-authority:list-role-applications', input),
   reviewRoleApplication: (applicationId, review, input) => ipcRenderer.invoke('desktop-authority:review-role-application', applicationId, review, input),
   submit: (id, input) => ipcRenderer.invoke('desktop-authority:submit', id, input),

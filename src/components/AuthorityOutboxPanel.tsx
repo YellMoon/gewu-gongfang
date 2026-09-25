@@ -39,6 +39,9 @@ const copy = {
   actionConfirm: '\u67e5\u770b\u5e76\u786e\u8ba4',
   keep: '\u7ee7\u7eed\u4fdd\u7559\u8349\u7a3f',
   retry: '\u91cd\u8bd5\u63d0\u4ea4',
+  retryAll: '\u6279\u91cf\u91cd\u8bd5',
+  removeFailed: '\u5220\u9664\u5931\u8d25\u9879',
+  remove: '\u5220\u9664',
   retryAssets: '\u91cd\u8bd5\u9644\u4ef6',
   retained: '\u4fdd\u7559\uff0c\u7b49\u5f85\u5904\u7406',
   state: '\u72b6\u6001',
@@ -404,6 +407,52 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     }
   };
 
+  const retryAll = async () => {
+    setLoading(true);
+    try {
+      const bridge = requireBridge();
+      const current = await bridge.list();
+      for (const item of current) {
+        if (item.status === 'conflict') { await bridge.resetDraft?.(item.id); continue; }
+        if (item.status === 'confirmed' || item.status === 'submitted') {
+          try {
+            await bridge.submit(item.id, cloudDraftSubmissionInput(item));
+          } catch (error: any) {
+            message.error(authorityDraftError(error?.code || error?.message));
+          }
+        }
+      }
+      await (window as any).dbService?.refreshAuthorityProjection?.({});
+    } finally {
+      setLoading(false);
+      await refresh();
+    }
+  };
+
+  const removeFailed = async () => {
+    setLoading(true);
+    try {
+      const bridge = requireBridge();
+      const current = await bridge.list();
+      for (const item of current.filter(draft => draft.status === 'conflict')) await bridge.removeDraft?.(item.id);
+    } finally {
+      setLoading(false);
+      await refresh();
+    }
+  };
+
+  const removeItem = async (item: AuthorityOutboxItem) => {
+    setBusyId(item.id);
+    try {
+      await requireBridge().removeDraft?.(item.id);
+    } catch (error: any) {
+      message.error(authorityDraftError(error?.code || error?.message));
+    } finally {
+      setBusyId('');
+      await refresh();
+    }
+  };
+
   const visibleItems = focus === 'issues'
     ? items.filter(item => item.status === 'conflict')
     : focus === 'pending'
@@ -439,6 +488,14 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
           return <Button size="small" loading={busyId === item.id}
             onClick={() => void retry(item)}>{copy.retry}</Button>;
         }
+        if (item.status === 'conflict') {
+          return <Space size={4}>
+            <Button size="small" loading={busyId === item.id}
+              onClick={async () => { setBusyId(item.id); try { await requireBridge().resetDraft?.(item.id); } finally { setBusyId(''); await refresh(); } }}>{copy.retry}</Button>
+            <Button size="small" danger loading={busyId === item.id}
+              onClick={() => void removeItem(item)}>{copy.remove}</Button>
+          </Space>;
+        }
         return item.status === 'completed'
           ? (/^question\.(create|update)\.v\d+$/.test(item.type)
             ? <Button size="small" loading={busyId === item.id}
@@ -451,8 +508,11 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
 
   return (
     <Card title={<span><SafetyCertificateOutlined /> {copy.title}</span>}
-      extra={<Button icon={<ReloadOutlined />} loading={loading}
-        onClick={() => void refresh()}>{copy.refresh}</Button>}>
+      extra={<Space>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refresh()}>{copy.refresh}</Button>
+        <Button loading={loading} onClick={() => void retryAll()}>{copy.retryAll}</Button>
+        <Button loading={loading} danger onClick={() => void removeFailed()}>{copy.removeFailed}</Button>
+      </Space>}>
       {(errorCode || counts.issues > 0) && <Alert type={errorCode ? 'error' : 'warning'} showIcon
         message={errorCode ? authorityDraftError(errorCode) : copy.conflictMessage} style={{ marginBottom: 16 }} />}
       <Space size="large" wrap style={{ marginBottom: 20 }}>

@@ -27,9 +27,14 @@ const DesktopAutoSync: React.FC = () => {
         try { sessionToken = String(sessionTokenFromStore()); } catch { return; }
         if (plan.onlineIds.length) {
           const outcomes: any[] = await submitSequentially({ bridge, items, ids: plan.onlineIds, sessionToken });
-          if (outcomes.some(outcome => outcome.rejected || outcome.error)) { setPaused(true); return; }
           await refreshProjection();
+          if (outcomes.some(outcome => outcome.rejected)) return;
         }
+        // UTF-8: retry drafts that were confirmed/submitted but whose submission failed.
+        for (const id of plan.retryIds) {
+          try { await bridge.submit(id, { sessionToken }); } catch (_retryError) { /* next tick */ }
+        }
+        if (plan.retryIds.length) await refreshProjection();
         if (plan.offlineIds.length) {
           const signature = plan.offlineIds.join(',');
           if (dismissedRef.current === signature) return;
