@@ -279,9 +279,10 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
   }, []);
 
   useEffect(() => {
+    // UTF-8: refresh on demand only; a background poll made the embedded settings page redraw itself.
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(timer);
+    window.addEventListener('authority-projection-refreshed', refresh);
+    return () => window.removeEventListener('authority-projection-refreshed', refresh);
   }, [refresh]);
 
   const counts = useMemo(() => ({
@@ -434,7 +435,9 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
     try {
       const bridge = requireBridge();
       const current = await bridge.list();
-      for (const item of current.filter(draft => draft.status === 'conflict')) await bridge.removeDraft?.(item.id);
+      const removable = current.filter(draft => ['conflict', 'confirmed', 'submitted'].includes(draft.status));
+      for (const item of removable) await bridge.removeDraft?.(item.id);
+      if (removable.length) message.success(`已删除 ${removable.length} 条未完成的更改`);
     } finally {
       setLoading(false);
       await refresh();
@@ -480,34 +483,30 @@ const AuthorityOutboxPanel: React.FC<Props> = ({ compact = false, focus }) => {
       title: copy.actions,
       width: 170,
       render: (_: unknown, item: AuthorityOutboxItem) => {
-        if (item.status === 'awaiting_confirmation') {
-          return <Button type="primary" size="small" loading={busyId === item.id}
-            onClick={() => confirmAndSubmit(item)}>{copy.actionConfirm}</Button>;
-        }
-        if (item.status === 'confirmed' || item.status === 'submitted') {
-          return <Button size="small" loading={busyId === item.id}
-            onClick={() => void retry(item)}>{copy.retry}</Button>;
-        }
-        if (item.status === 'conflict') {
-          return <Space size={4}>
-            <Button size="small" loading={busyId === item.id}
-              onClick={async () => { setBusyId(item.id); try { await requireBridge().resetDraft?.(item.id); } finally { setBusyId(''); await refresh(); } }}>{copy.retry}</Button>
-            <Button size="small" danger loading={busyId === item.id}
-              onClick={() => void removeItem(item)}>{copy.remove}</Button>
-          </Space>;
-        }
-        return item.status === 'completed'
-          ? (/^question\.(create|update)\.v\d+$/.test(item.type)
+        if (item.status === 'completed') {
+          return /^question\.(create|update)\.v\d+$/.test(item.type)
             ? <Button size="small" loading={busyId === item.id}
               onClick={() => void retryQuestionAssets(item)}>{copy.retryAssets}</Button>
-            : <CheckCircleOutlined style={{ color: '#52c41a' }} />)
-          : <span style={{ color: '#cf1322' }}>{copy.retained}</span>;
+            : <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+        }
+        const primary = item.status === 'awaiting_confirmation'
+          ? <Button type="primary" size="small" loading={busyId === item.id}
+            onClick={() => confirmAndSubmit(item)}>{copy.actionConfirm}</Button>
+          : <Button size="small" loading={busyId === item.id}
+            onClick={() => void retry(item)}>{copy.retry}</Button>;
+        return <Space size={4}>
+          {primary}
+          <Button size="small" danger loading={busyId === item.id}
+            onClick={() => void removeItem(item)}>{copy.remove}</Button>
+        </Space>;
       },
     },
   ];
 
   return (
     <Card title={<span><SafetyCertificateOutlined /> {copy.title}</span>}
+      style={{ maxHeight: '62vh', display: 'flex', flexDirection: 'column' }}
+      styles={{ body: { overflowY: 'auto' } }}
       extra={<Space>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refresh()}>{copy.refresh}</Button>
         <Button loading={loading} onClick={() => void retryAll()}>{copy.retryAll}</Button>
