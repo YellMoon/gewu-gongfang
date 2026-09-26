@@ -642,10 +642,24 @@ const CourseList: React.FC = () => {
                   filterOption={(input, option) =>
                     (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
                   }
-                  options={[
-                    ...rooms.map(r => ({ label: r.name, value: r.id })),
-                    ...rooms.map(r => ({ label: r.name, value: r.name })),
-                  ]}
+                  options={(() => {
+                    // UTF-8: list each address once (value=id); keep legacy name-only values that no room matches.
+                    const byName = new Map<string, { label: string; value: string }>();
+                    rooms.forEach((r: { id: string; name: string }) => {
+                      if (r?.name && !byName.has(r.name)) byName.set(r.name, { label: r.name, value: r.id });
+                    });
+                    const extras: Array<{ label: string; value: string }> = [];
+                    const seen = new Set(byName.keys());
+                    (dbService.getAllCourses?.() || []).forEach((course: any) => {
+                      const value = course?.room_id || course?.room_name;
+                      if (typeof value === 'string' && value && !seen.has(value)
+                        && !rooms.some((r: { id: string; name: string }) => r.id === value || r.name === value)) {
+                        seen.add(value);
+                        extras.push({ label: value, value });
+                      }
+                    });
+                    return [...byName.values(), ...extras];
+                  })()}
                 />
               </Form.Item>
             </Col>
