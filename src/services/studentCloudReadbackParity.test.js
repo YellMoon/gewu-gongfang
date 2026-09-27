@@ -35,5 +35,7 @@ const path=require('node:path');
   const institutionLines=app.split('\n').filter(line=>line.includes("\"'institutions',COALESCE((SELECT jsonb_agg"));
   assert.equal(institutionLines.length,2);
   for(const line of institutionLines)assert(line.includes("'billing_student_id'")&&line.includes('business.institution_billing_students'),'readback must identify the canonical billing student');
+  const scopedStudentLine=app.split('\n').find(line=>line.includes('s.created_by_teacher_id=$3 OR EXISTS (SELECT 1 FROM business.course_student_pricings'));
+  assert(scopedStudentLine&&scopedStudentLine.includes('s.legacy_is_institution_student AND s.institution_id IS NOT NULL'),'teacher scope must expose institution billing students of institutions with a scoped course');
   console.log('student canonical contact and original source readback parity checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
