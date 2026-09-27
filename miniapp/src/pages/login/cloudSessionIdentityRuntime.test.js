@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { VISITOR_CAPABILITIES, cloudSessionUser } = require('./cloudSessionIdentityRuntime');
+const { VISITOR_CAPABILITIES, cloudSessionUser } = require('../../utils/cloudSessionIdentityRuntime');
 
 const visitor = cloudSessionUser({ accountId: 'account-visitor', status: 'visitor', roles: [] });
 assert.deepStrictEqual(visitor, {

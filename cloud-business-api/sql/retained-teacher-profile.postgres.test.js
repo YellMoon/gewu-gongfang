@@ -26,6 +26,7 @@ function originalDelete(){
    await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('enrolled','one','Enrolled',false,false,now(),now())");
    await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('room','one','Room',false,now(),now())");
    await db.query('CREATE ROLE gewu_cloud_schedule_reader NOLOGIN; GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+   await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
   });
   let context={roles:['teacher'],profile:{type:'teacher',id:'owner'}},requests=0,source;
   const app=createCloudBusinessApp({businessTenantId:'one',query:async sql=>{source=sql;return {rows:[]};},desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},

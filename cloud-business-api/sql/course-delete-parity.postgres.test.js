@@ -43,6 +43,7 @@ const removeSql='SELECT * FROM business.vnext_delete_scoped_course($1,$2,$3::tim
       const migration=fs.readFileSync(path.join(__dirname,'20260909-course-delete-original-behavior.sql'),'utf8');await db.query(migration);await db.query(migration);
       await db.query(fs.readFileSync(path.join(__dirname,'20260907-zz-schedule-financial-snapshot.sql'),'utf8'));
       await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+      await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
       await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Own',false,now(),now()),('tenant-2','Other',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Other',false,now(),now())");

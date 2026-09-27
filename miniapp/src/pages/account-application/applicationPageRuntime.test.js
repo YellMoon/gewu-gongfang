@@ -28,7 +28,7 @@ function harness({ storage = new Map(), initialState = { state: 'not_submitted' 
     '../../utils/api': { miniappCloudBusinessApi: { readAuthorization: async () => { h.authorizationReads++; return h.authorizationResult(); }, readRoleApplication: async () => { h.reads++; return h.readResult(); }, submitRoleApplication: (...args) => { h.writes.push(args); return h.result(); } } },
     '../../utils/authSession': { authSessionRuntime: { capture: () => ({ epoch: h.epoch, identity: storage.get('user_info'), token: storage.get('auth_token') }), isSameSession: session => session.epoch === h.epoch, invalidateAndAdvance: () => h.epoch++, activate: () => {} } },
     '../../utils/miniappApiSessionRuntime': require('../../utils/miniappApiSessionRuntime'),
-    '../login/cloudSessionIdentityRuntime': require('../login/cloudSessionIdentityRuntime'),
+    '../../utils/cloudSessionIdentityRuntime': require('../../utils/cloudSessionIdentityRuntime'),
     '../../utils/storage': { clearBusinessCache: () => h.cacheClears++, setBusinessCacheIdentity: () => {} },
     '../../utils/permission': { clearPermissionCache: () => {} },
     './applicationRuntime': runtime, './index.scss': {},

@@ -7,7 +7,7 @@ import { authSessionRuntime } from '../../utils/authSession';
 import { createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
 import { clearPermissionCache } from '../../utils/permission';
-import { cloudSessionUser } from '../login/cloudSessionIdentityRuntime';
+import { cloudSessionUser } from '../../utils/cloudSessionIdentityRuntime';
 import {
   buildRoleApplicationRequest,
   applicationErrorMessage,

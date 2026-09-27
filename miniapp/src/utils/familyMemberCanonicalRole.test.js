@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert');
-const { cloudSessionUser } = require('../pages/login/cloudSessionIdentityRuntime');
+const { cloudSessionUser } = require('./cloudSessionIdentityRuntime');
 const { isFormalIdentity } = require('./accountExperience');
 const { deriveAccess, roleOf, scopeDashboardCollections } = require('./miniappAuthorizationRuntime');
 const { canOpenMiniappRoute } = require('./miniappRouteAccess');

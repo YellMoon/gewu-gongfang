@@ -35,6 +35,7 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
         await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
       }
       await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
+      await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
       await db.query('GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('own','Own',false,now(),now()),('foreign','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher','own','Teacher',false,now(),now()),('other','own','Other',false,now(),now())");

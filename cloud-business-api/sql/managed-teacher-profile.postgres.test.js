@@ -23,6 +23,7 @@ const migration=path.join(__dirname,'20260912-managed-teacher-profile.sql');
    await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('room','one','Room',false,now(),now())");
    await db.query(fs.readFileSync(migration,'utf8'));await db.query(fs.readFileSync(migration,'utf8'));
    await db.query('CREATE ROLE gewu_cloud_schedule_reader NOLOGIN; GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+   await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
   });
   const create="SELECT * FROM business.vnext_create_scoped_teacher($1,$2,$3,NULL,'Physics',120,NULL,$4,$5)";
   const update="SELECT * FROM business.vnext_update_scoped_teacher($1,$2,$3::timestamptz,$4,NULL,'Physics',130,NULL,$5,$6)";

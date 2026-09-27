@@ -6,7 +6,7 @@ import Taro from '@tarojs/taro';
 import { miniappCloudBusinessApi } from './api';
 import { authSessionRuntime } from './authSession';
 import { clearAuthenticatedSession } from './miniappApiSessionRuntime';
-import { cloudSessionUser } from '../pages/login/cloudSessionIdentityRuntime';
+import { cloudSessionUser } from './cloudSessionIdentityRuntime';
 import {
   canUserSubmitMiniappWrite,
   deriveAccess,

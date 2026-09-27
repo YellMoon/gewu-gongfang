@@ -7,7 +7,7 @@ import { accountSessionCleanupStorageKeys } from '../../utils/accountExperience'
 import { clearPermissionCache } from '../../utils/permission';
 import { clearBusinessCache, setBusinessCacheIdentity } from '../../utils/storage';
 import { captureTrustedAuthSession, clearAuthenticatedSession, createAuthenticationEntryBoundary, createNormalSessionCommitter } from '../../utils/miniappApiSessionRuntime';
-import { cloudSessionUser } from './cloudSessionIdentityRuntime';
+import { cloudSessionUser } from '../../utils/cloudSessionIdentityRuntime';
 import {
   desktopLoginConfirmationError,
   resolveDesktopLoginConfirmationQuery,

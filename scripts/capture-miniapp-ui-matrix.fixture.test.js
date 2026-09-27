@@ -10,7 +10,7 @@ const {
   richPhysicsQuestions,
   RICH_VISITOR_QUESTION_LIMIT,
 } = require('./capture-miniapp-ui-matrix');
-const { cloudSessionUser } = require('../miniapp/src/pages/login/cloudSessionIdentityRuntime');
+const { cloudSessionUser } = require('../miniapp/src/utils/cloudSessionIdentityRuntime');
 const { createQuestionDisplay, columnsForOptions } = require('../miniapp/src/utils/questionDisplay');
 const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
 const fs = require('fs');
