@@ -18,8 +18,15 @@ destroy it on effect cleanup, and reject callbacks from a stopped effect.
   re-enter. Exercise dependencies and conflict boundaries before further changes.
 - [x] Include the test in test:business-parity; run relevant and full regression
   gates and typecheck.
-- [ ] Prepare a desktop patch with other compatible component versions unchanged;
+- [x] Prepare a desktop patch with other compatible component versions unchanged;
   commit/push gewu/master, dist:win, OSS feed/artifact verification and Node ABI.
+
+Completed source: 6e286674, desktop 8.9.21. All 425 regression commands passed
+individually (426 attempts including one Windows native exit), typecheck passed.
+Final package smoke, controlled live registration/cold resume, full OSS download
+hash and Node ABI restoration passed. Full evidence and remaining architecture
+acceptance: docs/architecture-closeout-2026-09-28.md. Overall release remains
+partial because miniapp formal publication is not verified.
 
 Existing evidence: packaged desktop 8.9.20 teacher registration, native device
 name, live device refresh and cold-process recovery passed. Only the newly

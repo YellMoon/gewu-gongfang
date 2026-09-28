@@ -1,6 +1,6 @@
 # Architecture continuation, 2026-09-28
 
-UTF-8. Status: in progress / partial release. This supersedes the old handoff
+UTF-8. Status: desktop 8.9.21 published / overall partial release. This supersedes the old handoff
 checkpoints for current execution; it does not erase historical evidence.
 
 ## Recovered baseline
@@ -66,7 +66,7 @@ re-entry, new batches, stale component cleanup, conflict-stop, historical draft
 classification, changed snapshots and exact dependency submission. New tests
 are part of test:business-parity. TypeScript checking passed.
 
-## Release gate in progress
+## Desktop release verified
 
 Automatic classification: desktop patch 8.9.20 -> 8.9.21. Cloud 8.12.3, NAS
 8.8.3 and miniapp 8.8.26 remain compatible and unchanged. The existing miniapp
@@ -84,9 +84,34 @@ Self-review checked confirmation snapshots, dependency ordering, lifecycle
 cleanup, retry rejection and default test registration. No independent reviewer
 or subagent was used. Typecheck and root/backend Node ABI 137 passed.
 
-Pending: commit/push only this change, build/publish
-desktop 8.9.21, verify package/feed and restored Node ABI, and append final
-evidence here. No 8.9.21 publication success is claimed at this checkpoint.
+Source commit 6e2866749450778e77f21aa8c0086b563ae6cd51 was pushed to
+gewu/master. The prepared matrix was archived and recreated against this exact
+source before packaging; the earlier draft matrix remains in its history.
+
+- dist:win passed; packaged root/backend Electron ABI 119 passed, followed by
+  restored root/backend Node ABI 137. Build log: gewu-sync-dist-20260928-98gb36fz.
+- Packaged smoke passed: gewu-sync-packaged-20260928-_5er5jxx.
+- Final 8.9.21 real online registration, teacher-only devices, device refresh
+  and cold-process session recovery passed with no page errors. Device and cold
+  home screenshots inspected. Evidence: gewu-architecture-resume-20260928-1qhmt77k.
+  New test sessions/links/installations/devices were revoked; active counts zero.
+  This remains controlled verified-account setup, not phone/password consent.
+- publish:desktop-update passed: gewu-sync-publish-20260928-1j9o7wh1. Current
+  and archived public feeds match local latest.yml. The complete public installer
+  download matches local/feed SHA-512 and size 150364281 bytes; archive HEAD size
+  and ETag match. Verification time: 2026-09-28T12:16:08.426Z.
+- After packaging, all three synchronization regression files passed again;
+  after publication, root/backend Node ABI 137 passed again.
+
+Feed SHA-512:
+H2ExSZIiw5ZUkZNhlexfjPLKG8lYiKm/QM4dh8R9doC9hND1EXqzMazUcnMMyI/ptmyz0NpPULDnUlB379JZlg==
+
+Release matrix and OSS verification evidence are in
+output/release-matrix-desktop-8.9.21__cloud-business-8.12.3__storage-proxy-8.8.3__miniapp-8.8.26/.
+Named runtime/test log directories above are under the local user's AppData/Local/Temp.
+Original unrelated document edit was preserved byte-for-byte (SHA-256
+13c7144c09d1260ffbb12f11a6c8a191a4c57a680629fa1a5aebee3f49c88e72).
+No independent installer delivery or Quark upload was performed.
 
 ## Remaining long-term acceptance
 
