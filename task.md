@@ -1,12 +1,16 @@
-# Active: 40/80 minute presets and financial statistics - 2026-09-29
+# Completed: 40/80 minute presets and financial statistics - 2026-09-29
 
-User requests integer-minute internals; hourly billing must retain hours in the UI,
-per-session duration counts remain distinct.
-Desktop 8.9.24 awaiting revised build; cloud 8.12.5 deployed and healthy. Targeted RED/GREEN checks passed.
-Preserve historical financial snapshots; no bulk recalculation. Cloud SQL precision
-change requires code/DB backups and cloud deployment. All 429 lifecycle checks and typecheck passed (one native process retry). Packaged UI and
-OSS release pending. Evidence: docs/desktop-duration-presets-2026-09-29.md.
-Preserve unrelated docs/desktop-device-name-2026-09-24.md exactly.
+Delivered desktop/OSS 8.9.24 and cloud 8.12.5. Integer-minute accumulation;
+hourly billing retains hours in the UI, per-session duration counts remain distinct.
+Core 429 lifecycle checks passed (430 attempts; one unchanged native process retry).
+Final display targeted tests, typecheck, business-parity, packaged UI/native/cold
+restart and packaged startup smoke passed. Real UI fixture: 40x3 + 80x1 =>
+3.33 displayed hours, tuition 400, teacher fee 200; zero production business writes.
+OSS live/archive feed and full 150,370,883-byte SHA-512 download verified.
+Root/backend Node ABI 137 restored. Cloud code and DB restore-verified backups made.
+Overall matrix remains partial: unchanged miniapp 8.8.26 development upload only.
+Evidence: docs/desktop-duration-presets-2026-09-29.md and output/desktop-duration-20260929.
+Preserved unrelated docs/desktop-device-name-2026-09-24.md exactly.
 
 ---
 # Active follow-up: failed drafts and early calendar dates - 2026-09-29

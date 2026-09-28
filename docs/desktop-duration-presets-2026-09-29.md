@@ -11,7 +11,7 @@
 验证计划：40 / 80 分钟真实选课与保存函数；分钟/节数汇总；学费与教师费用、
 按次/按小时/请假取消/历史金额保护；PostgreSQL 实际 SQL；完整 npm 生命周期及
 类型检查；打包桌面真实交互、Node ABI 恢复；云端代码/数据库备份和部署健康；
-OSS 安装包与 feed 哈希。状态：实施与验证中。
+OSS 安装包与 feed 哈希。状态：本次桌面/云端交付完成；整体多端正式发布仍为部分发布（小程序仅开发版）。
 
 ## 阶段验证
 
@@ -38,3 +38,32 @@ OSS 安装包与 feed 哈希。状态：实施与验证中。
 云端/NAS 运行回执：`C:/Users/83423/AppData/Local/Temp/gewu-live-closeout-20260929-4jws7977/receipt.json`。
 首次打包 UI 测试的添加课程按钮包含图标，精确可访问名称匹配超时；截图确认按钮存在，
 已修正测试定位器。测试身份/会话清理为零，无真实业务写入。
+
+## 最终发布和验收
+
+- 代码提交 `632c0429`，显示单位补充提交 `10cb518a`，均已推送 `gewu/master`。
+- 桌面 **8.9.24**：默认时长和排课可选 40/80 分钟；按小时课程统计保持小时显示，
+  底层整数分钟累计；按次课程按时长列出节数。金额仅在最终计算时保留到分。
+- 云端 **8.12.5**：学生学费 SQL 使用实际分钟计算；备份、隔离恢复校验、部署、
+  内外网健康与旧写入入口关闭检查通过。没有新增数据库结构或历史金额批量修改。
+- 最终 `test:business-parity` 通过：
+  `C:/Users/83423/AppData/Local/Temp/gewu-sync-duration-final-parity-20260928-vnxasqmo`。
+- 最终桌面构建通过：
+  `C:/Users/83423/AppData/Local/Temp/gewu-sync-duration-final-dist-20260928-a7dxzm1l`。
+  安装包 Electron ABI 119；构建结束及 OSS 发布后 root/backend Node ABI 137 均验证通过。
+- 最终真实安装包运行验证通过：`output/desktop-duration-20260929/runtime/report.json`。
+  验证课程默认值 40/80、07:00 排课结束 07:40/08:20、单一同步窗口、原生失败草稿
+  冲突暂停与放弃、冷启动不恢复已放弃记录。隔离只读费用数据三节40加一节80，
+  显示3.33小时、学费400元、教师费用200元；没有真实业务写入，测试会话清理为零。
+  定位器的按钮图标、Select 内部搜索框、嵌套统计卡匹配问题均已修正，最终页面错误为零。
+- 包装内 renderer 清单与本次生产构建 SHA-256 一致：
+  `e22c1b73a35c3e6ce7b2b8df09454408cdfd2fde79e09ced49cb58b58daccd37`。
+- 安装包启动 smoke 通过：
+  `C:/Users/83423/AppData/Local/Temp/gewu-sync-duration-final-smoke-20260928-f7u7quab`。
+- OSS live/archive `latest.yml` 均为 8.9.24，完整公网下载 **150,370,883 字节**，
+  SHA-512 `RtkawfrndgYDEKIuX1NFdfRJ6FGp7vpvxW/d9YApPqhuFC3UK/cyt3wSa3f+Hp9s9xrmSBlAKUKbVPw91jgt0g==`。
+  核验：`output/release-matrix-desktop-8.9.24__cloud-business-8.12.5__storage-proxy-8.8.3__miniapp-8.8.26/oss-runtime-verification.json`。
+- NAS 8.8.3 运行回执与合约正常。小程序源码/合约不变，沿用8.8.26已核验开发版上传；
+  没有本次新上传或正式发布，不能宣称整体多端正式发布完成。
+- 未提交或改写其他用户文件；`docs/desktop-device-name-2026-09-24.md` SHA-256 保持
+  `13c7144c09d1260ffbb12f11a6c8a191a4c57a680629fa1a5aebee3f49c88e72`。
