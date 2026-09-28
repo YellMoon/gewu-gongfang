@@ -21,21 +21,32 @@ const sql = file => fs.readFileSync(path.join(__dirname, file), 'utf8');
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('a','tenant','A',false,now(),now()),('b','tenant','B',false,now(),now())");
       await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) SELECT id,'tenant',id,false,now(),now() FROM (VALUES ('old'),('next'),('unrelated'),('unassigned')) AS x(id)");
       await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_room_id,room_name_snapshot,legacy_active,legacy_deleted,created_at,updated_at) SELECT id,'tenant',id,id,1,1,0,0,1,1,teacher,room,room,true,false,'2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z' FROM (VALUES ('legacy-course','a','old'),('other-course','b','unrelated')) AS x(id,teacher,room)");
+      await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('legacy-name','tenant','Legacy address',false,now(),now())");
+      await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_room_id,room_name_snapshot,legacy_active,legacy_deleted,created_at,updated_at) VALUES ('name-course','tenant','Name course','Name course',1,1,0,0,1,1,'a','Legacy address','Legacy address',false,true,now(),now())");
       await db.query(sql('20260908-teacher-room-history.sql'));
     });
     const line = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8').split(/\r?\n/).find(line => line.includes("\"'rooms',COALESCE") && line.includes('scoped_courses'));
     const expression = new Function('return ' + line.trim().replace(/,$/, ''))().replace(/,$/, '');
-    const read = (role = 'teacher', teacher = 'a') => withQuery(handle, 'fixture-provisioner', async db => (await db.query(
-      `WITH scoped_courses AS (SELECT * FROM business.courses WHERE tenant_id=$1 AND teacher_id=$3 AND legacy_deleted=false)
-       SELECT jsonb_build_object(${expression}) AS result`, ['tenant', role, teacher])).rows[0].result.rooms.map(r => r.id));
-    assert.deepEqual(await read(), ['old']);
+    const read = (role = 'teacher', teacher = 'a', managed = '') => withQuery(handle, 'fixture-provisioner', async db => (await db.query(
+      `WITH managed_teachers AS (SELECT id FROM business.teachers WHERE tenant_id=$1 AND id=$4), scoped_courses AS (SELECT * FROM business.courses WHERE tenant_id=$1 AND teacher_id=$3 AND legacy_deleted=false)
+       SELECT jsonb_build_object(${expression}) AS result`, ['tenant', role, teacher, managed])).rows[0].result.rooms.map(r => r.id));
+    assert.deepEqual(await read(), ['legacy-name', 'old'], 'historical name-valued room references must be visible without exposing unused addresses');
     const input = { actorScope: { role: 'teacher', teacherId: 'a' }, tenantId: 'tenant', courseId: 'legacy-course',
       expectedUpdatedAt: '2026-09-01T00:00:00Z', name: 'Physics', displayName: 'Physics', year: 2026, semester: 'autumn', type: 1, sourceType: 1,
       institutionId: null, priceTuition: 0, priceTeacher: 0, billingUnit: 1, teacherFeeMode: 1, roomId: 'next', roomName: 'ignored',
       teacherId: 'a', teacherName: 'ignored', active: true, defaultDurationMinutes: 90, notes: null, pricings: [] };
     await withQuery(handle, 'writer', async db => assert(await createBusinessCourseLifecycleMutations(db).update(input)));
-    assert.deepEqual(await read(), ['next', 'old'], 'moving the last referencing course must not hide the historical address');
-    assert.deepEqual(await read('teacher', 'b'), ['unrelated'], 'another teacher must not inherit the historical reference');
+    assert.deepEqual(await read(), ['legacy-name', 'next', 'old'], 'moving the last referencing course must not hide historical addresses');
+    assert.deepEqual(await read('teacher', 'b'), ['unrelated'], 'another teacher must not inherit historical references');
+    await withQuery(handle, 'fixture-provisioner', async db => {
+      await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('snapshot-room','tenant','Earlier address',false,now(),now()),('ambiguous-a','tenant','Ambiguous',false,now(),now()),('ambiguous-b','tenant','Ambiguous',false,now(),now())");
+      await db.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,calculated_tuition,calculated_teacher_fee,room_display_snapshot,legacy_deleted,created_at,updated_at) SELECT id,'tenant','name-course','2026-09-08T01:00Z','2026-09-08T02:00Z',1,0,0,room,true,now(),now() FROM (VALUES ('old-lesson','Earlier address'),('ambiguous-lesson','Ambiguous')) AS x(id,room)");
+      await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('foreign','Foreign',false,now(),now())");
+      await db.query("INSERT INTO business.rooms(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('foreign-room','foreign','Earlier address',false,now(),now())");
+    });
+    assert.deepEqual(await read(), ['legacy-name', 'next', 'old', 'snapshot-room'], 'deleted lesson snapshots retain unique historic addresses, not ambiguous matches or another tenant');
+    assert.deepEqual(await read('teacher', 'b'), ['unrelated']);
+    assert.deepEqual(await read('teacher', 'b', 'a'), ['legacy-name', 'next', 'old', 'snapshot-room', 'unrelated'], 'managed teacher history follows the existing delegated course scope');
     await withQuery(handle, 'fixture-provisioner', async db => {
       assert.equal((await db.query('SELECT count(*)::int AS n FROM business.rooms WHERE created_by_teacher_id IS NOT NULL')).rows[0].n, 0,
         'a proven course relationship is not evidence that the teacher created the room');

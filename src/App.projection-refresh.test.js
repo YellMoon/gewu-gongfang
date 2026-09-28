@@ -28,6 +28,7 @@ async function checkMountedCalendar() {
         element('button',{id:'calendar-nav',onClick:()=>onNavigate('course-calendar')},'calendar'),
         ...Object.keys(resources).map(name=>element('button',{key:name,id:name+'-nav',onClick:()=>onNavigate(name)},name)),
         element('button',{id:'course-nav',onClick:()=>onNavigate('course-info')},'course'),
+        element('button',{id:'sync-nav',onClick:()=>onNavigate('cloud-sync')},'sync'),
         element('button',{id:'manual-refresh',onClick:onRefresh},'refresh'),children);
       const modules={react:R,antd:{},'@ant-design/icons':{},
         './layout/AppShell':{default:shell,__esModule:true},
@@ -38,6 +39,7 @@ async function checkMountedCalendar() {
         './navigation/appNavigation':{questionBankPages:[]},
         './navigation/navigationContext':{normalizeNavigationTarget:input=>typeof input==='string'?{page:input}:input},
         './components/question-editor/questionEditorSession':{requestEditorSpaNavigation:callback=>callback()},
+        './components/AuthorityOutboxPanel':{openDesktopSync:()=>{window.syncOpened=(window.syncOpened||0)+1;}},
         './services/browserDatabase':{default:{refreshAuthorityProjection:async()=>{}},__esModule:true}};
       const exported={};
       Object.entries(resources).forEach(([name,file])=>{modules['./pages/'+file]={default:stateful(name),__esModule:true};});
@@ -79,6 +81,10 @@ async function checkMountedCalendar() {
       assert.equal(await page.locator('#course').innerText(),'1','projection refresh must preserve course filters and form state');
     }
     assert.deepEqual(await page.evaluate(()=>[mounts.course,unmounts.course]),[1,0]);
+    await page.locator('#sync-nav').click();
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('navigate-page',{detail:{page:'cloud-sync'}})));
+    assert.equal(await page.evaluate(()=>window.syncOpened),2);
+    assert.equal(await page.locator('#course').innerText(),'1','opening either sync entry must preserve the current editor');
     await page.locator('#manual-refresh').click();assert.equal(await page.locator('#course').innerText(),'0');
     await page.locator('#calendar-nav').click();await page.locator('#calendar').waitFor();
     assert.equal(await page.locator('#calendar').innerText(),'0','leaving/reopening keeps the original navigation reset');

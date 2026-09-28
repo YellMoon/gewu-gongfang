@@ -180,10 +180,13 @@ class BrowserDatabaseService {
   public async refreshAuthorityProjection({
     minSourceVersion = 0,
     notifyConsumers = true,
-  }: { minSourceVersion?: number; notifyConsumers?: boolean } = {}): Promise<void> {
+    businessOnly = false,
+  }: { minSourceVersion?: number; notifyConsumers?: boolean; businessOnly?: boolean } = {}): Promise<void> {
+    const identity = readCurrentDesktopIdentityContext();
+    const partition = this.partitionKey;
     const cloudProvider = window.desktopIdentitySessionProvider;
     if (typeof cloudProvider?.listCloudBusinessProjection !== 'function'
-      || typeof cloudProvider.listCloudQuestions !== 'function') {
+      || (!businessOnly && typeof cloudProvider.listCloudQuestions !== 'function')) {
       throw Object.assign(new Error('DESKTOP_CLOUD_PROJECTION_PROVIDER_REQUIRED'), {
         code: 'DESKTOP_CLOUD_PROJECTION_PROVIDER_REQUIRED',
       });
@@ -194,11 +197,18 @@ class BrowserDatabaseService {
       });
     }
     {
-      const [payload, questions, outbox] = await Promise.all([
+      const [payload, questionResponse] = await Promise.all([
         cloudProvider.listCloudBusinessProjection(),
-        cloudProvider.listCloudQuestions(),
-        window.desktopAuthority.list(),
+        businessOnly ? this.data.questions : cloudProvider.listCloudQuestions(),
       ]);
+      // Preserve drafts saved while the network projection request was in flight.
+      const outbox = await window.desktopAuthority.list();
+      const questions = businessOnly ? this.data.questions : questionResponse;
+      const currentIdentity = readCurrentDesktopIdentityContext();
+      if (partition !== this.partitionKey || identity?.userId !== currentIdentity?.userId
+        || identity?.activeRole !== currentIdentity?.activeRole) {
+        throw new Error('DESKTOP_IDENTITY_CHANGED_DURING_REFRESH');
+      }
       const cachedAt = new Date().toISOString();
       const cloudQuestions = questions.map(question => ({
         ...question,
@@ -484,6 +494,7 @@ class BrowserDatabaseService {
       }
       window.desktopAuthority.appendDraftSync(draft);
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
+    window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
 
   private recordAuthorityDraftBatch(changes: Array<{
@@ -511,6 +522,7 @@ class BrowserDatabaseService {
       }
       window.desktopAuthority.appendDraftBatchSync(drafts);
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
+    window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
 
   private compactLargeQuestionPayloads(): void {

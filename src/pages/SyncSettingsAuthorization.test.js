@@ -4,6 +4,9 @@ const fs = require('fs');
 const syncSettings = fs.readFileSync('src/pages/SyncSettings.tsx', 'utf8');
 const cloudSync = fs.readFileSync('src/pages/CloudSync.tsx', 'utf8');
 const outboxPanel = fs.readFileSync('src/components/AuthorityOutboxPanel.tsx', 'utf8');
+const controller = fs.readFileSync('src/services/desktopSyncController.mjs', 'utf8');
+const submissions = fs.readFileSync('src/services/desktopAutoSync.mjs', 'utf8');
+const dialog = fs.readFileSync('src/components/DesktopAutoSync.tsx', 'utf8');
 const todayWorkbench = fs.readFileSync('src/pages/TodayWorkbench.tsx', 'utf8');
 const syncQuickPanel = fs.readFileSync('src/components/sync/SyncQuickPanel.tsx', 'utf8');
 const preload = fs.readFileSync('public/preload.js', 'utf8');
@@ -25,12 +28,14 @@ for (const pageSource of [syncSettings, cloudSync]) {
   }
 }
 
-assert.ok(outboxPanel.includes('requireBridge().list()'));
-assert.ok(outboxPanel.includes('requireBridge().confirmAndSubmit(item.id, cloudDraftSubmissionInput(item), confirmation)'));
-assert.ok(outboxPanel.includes('draftConfirmationSnapshot([...dependencies, item])'));
-assert.ok(outboxPanel.includes('requireBridge().submit(item.id, cloudDraftSubmissionInput(item))'));
-assert.ok(outboxPanel.includes('Modal.confirm'));
-assert.ok(outboxPanel.includes('draftPresentation(item)'));
+assert.ok(controller.includes('await bridge.list()'));
+assert.ok(submissions.includes('bridge.confirmAndSubmit(id, { sessionToken }, confirmation)'));
+assert.ok(submissions.includes('draftConfirmationSnapshot'));
+assert.ok(controller.includes('bridge.submit(item.id, { sessionToken: token })'));
+assert.ok(dialog.includes('confirm(state.items)'));
+assert.ok(dialog.includes('describePendingChanges'));
+assert.ok(submissions.includes('readDesktopAuthorizationSession()'));
+assert.ok(!controller.includes('fetch('), 'scheduler cannot bypass the guarded native submission boundary');
 assert.ok(outboxPanel.includes('presentation.details.map'));
 assert.ok(!outboxPanel.includes('fetch('), 'renderer authority UI must never bypass the preload facade');
 assert.ok(preload.includes("contextBridge.exposeInMainWorld('desktopAuthority'"));

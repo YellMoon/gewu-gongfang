@@ -25,6 +25,7 @@ const ts = require('typescript');
   let builds = 0;
   let saves = 0;
   let events = 0;
+  let identity = { userId: 'teacher', activeRole: 'teacher' };
   const client = createDesktopIdentityClient({
     desktopIdentity: { status: async () => ({}) },
     fetchImpl: async url => {
@@ -39,14 +40,14 @@ const ts = require('typescript');
   const CacheHarness = vm.runInNewContext(compiled, {
     window: {
       desktopIdentitySessionProvider: {
-        listCloudBusinessProjection: async () => ({ students: [{ id: 'cloud-student' }] }),
+        listCloudBusinessProjection: async () => ({ students: [{ id: 'cloud-student' }], rooms: [{ id: 'cloud-room', name: 'Cloud address' }] }),
         listCloudQuestions: () => client.listCloudQuestions({ baseUrl: 'https://cloud.test', currentSession: { token: 'session', offline: false } }),
       },
       desktopAuthority: { list: async () => [{ id: 'pending-draft' }] },
       dispatchEvent: () => { events++; },
     },
     CustomEvent: class {},
-    readCurrentDesktopIdentityContext: () => ({ userId: 'teacher', activeRole: 'teacher' }),
+    readCurrentDesktopIdentityContext: () => identity,
     buildAuthorityBackedBrowserCache: ({ projection, outbox, localOnly }) => {
       builds++;
       assert.equal(projection.payload.questions.length, 426);
@@ -76,5 +77,15 @@ const ts = require('typescript');
   cache.migrateLegacyQuestionData = () => {};
   await cache.refreshAuthorityProjection({ notifyConsumers: false });
   assert.deepEqual([pageCalls, builds, saves, events], [11, 3, 2, 1], 'page-owned refresh must update its cache without remounting the initiating page');
+  failSecondPage = true;
+  await cache.refreshAuthorityProjection({ businessOnly: true });
+  assert.equal(cache.data.rooms[0].id, 'cloud-room', 'teaching catalog refresh must work even when question pagination is unavailable');
+  assert.equal(cache.data.questions.length, 426, 'business-only refresh preserves the complete question cache');
+  assert.deepEqual([pageCalls, builds, saves, events], [11, 4, 3, 2]);
+  const preserved = cache.data;
+  const oldRequest = cache.refreshAuthorityProjection({ businessOnly: true });
+  identity = { userId: 'other-account', activeRole: 'teacher' };
+  await assert.rejects(oldRequest, /DESKTOP_IDENTITY_CHANGED_DURING_REFRESH/);
+  assert.strictEqual(cache.data, preserved, 'an old account response cannot overwrite the new identity cache');
   console.log('browser question pagination cache checks passed: failed refresh preserves cache; complete refresh commits once');
 })().catch(error => { console.error(error); process.exitCode = 1; });

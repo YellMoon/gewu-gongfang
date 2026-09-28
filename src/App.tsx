@@ -21,6 +21,7 @@ import AppShell from './layout/AppShell';
 import { PageKey, questionBankPages } from './navigation/appNavigation';
 import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
 import { requestEditorSpaNavigation } from './components/question-editor/questionEditorSession';
+import { openDesktopSync } from './components/AuthorityOutboxPanel';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankTools = React.lazy(() => import('./pages/QuestionBankTools'));
@@ -68,7 +69,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const onNavigate = (event: Event) => {
-      const target = normalizeNavigationTarget((event as CustomEvent<NavigationInput>).detail);
+      const input = (event as CustomEvent<NavigationInput>).detail;
+      if ((typeof input === 'string' ? input : input.page) === 'cloud-sync') { openDesktopSync(); return; }
+      const target = normalizeNavigationTarget(input);
       requestEditorSpaNavigation(() => { if (target.page) {
         setCurrentPage(target.page);
         setPageContext(target.context);
@@ -95,6 +98,7 @@ const App: React.FC = () => {
           dbService = dbModule.default;
         }
         try {
+          await dbService.refreshAuthorityProjection({ businessOnly: true });
           await dbService.refreshAuthorityProjection();
         } catch (error) {
           console.warn('Authority projection refresh unavailable; using last verified local cache:', error);
@@ -111,6 +115,7 @@ const App: React.FC = () => {
   }, []);
 
   const navigateTo = (input: NavigationInput) => {
+    if ((typeof input === 'string' ? input : input.page) === 'cloud-sync') { openDesktopSync(); return; }
     const target = normalizeNavigationTarget(input);
     requestEditorSpaNavigation(() => { setCurrentPage(target.page); setPageContext(target.context); }, () => window.confirm('\u5f53\u524d\u8bd5\u9898\u4fee\u6539\u5c1a\u672a\u4fdd\u5b58\uff0c\u786e\u5b9a\u79bb\u5f00\u5417\uff1f'));
   };

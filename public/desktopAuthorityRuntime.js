@@ -289,9 +289,13 @@ function createDesktopAuthorityRuntime({
     });
     const appended = inputs.map(input => {
       const createdAt = new Date(now ? now() : new Date().toISOString()).toISOString();
+      const editedOffline = (() => { try { return isOnline() !== true; } catch (_error) { return true; } })();
       const merged = mergePendingBusinessDraft(state, input, createdAt, draftScope);
       if (merged !== undefined) {
-        if (merged !== null) assertQuestionMutationVersion(merged);
+        if (merged !== null) {
+          if (editedOffline) merged.createdOffline = true;
+          assertQuestionMutationVersion(merged);
+        }
         return merged;
       }
       input = confirmedScheduleRestoration(state, input, draftScope);
@@ -307,7 +311,7 @@ function createDesktopAuthorityRuntime({
         payload: JSON.parse(JSON.stringify(input.payload)),
         preview: JSON.parse(JSON.stringify(input.preview || {})),
         // UTF-8: online edits auto-submit; drafts created while offline await an aggregate confirmation.
-        createdOffline: (() => { try { return isOnline() !== true; } catch (_error) { return true; } })(),
+        createdOffline: editedOffline,
         ...(input.type === 'schedule.delete.v1' && input.localUndoRecord?.id === input.payload.id
           ? { localUndo: { record: JSON.parse(JSON.stringify(input.localUndoRecord)) } } : {}),
         draftScope,

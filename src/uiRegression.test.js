@@ -221,11 +221,12 @@ assert(
 
 assert(syncSettings.includes('AuthorityOutboxPanel'));
 assert(cloudSync.includes('AuthorityOutboxPanel'));
-assert(authorityOutboxPanel.includes('requireBridge().list()'));
-assert(authorityOutboxPanel.includes('confirmAndSubmit(item.id, cloudDraftSubmissionInput(item), confirmation)'));
-assert(authorityOutboxPanel.includes('draftConfirmationSnapshot([...dependencies, item])'));
-assert(authorityOutboxPanel.includes('submit(item.id, cloudDraftSubmissionInput(item))'));
-assert(authorityOutboxPanel.includes('Modal.confirm'));
+const syncController = read('src/services/desktopSyncController.mjs');
+const syncDialog = read('src/components/DesktopAutoSync.tsx');
+assert(syncController.includes('await bridge.list()'));
+assert(syncController.includes('submitSequentially'));
+assert(syncController.includes('await bridge.submit('));
+assert(syncDialog.includes('confirm(state.items)'));
 assert(authorityOutboxPanel.includes("item.status === 'conflict'"));
 assert(!authorityOutboxPanel.includes('fetch('));
 assert(!syncSettings.includes('runOneClickSync'));
@@ -239,9 +240,8 @@ assert(
 );
 
 assert(
-  syncQuickPanel.includes('onOpenChange={setOpen}') &&
-  syncQuickPanel.includes('setOpen(false)'),
-  'sync quick panel should close before navigating to system settings'
+  syncQuickPanel.includes('onClick={openDesktopSync}') && !syncQuickPanel.includes('Popover'),
+  'sync entry opens one modal directly without a floating panel'
 );
 
 assert(
@@ -253,8 +253,8 @@ assert(
 assert(
   syncSettings.includes("variant?: 'quick' | 'advanced'") &&
   syncSettings.includes('AuthorityOutboxPanel') &&
-  authorityOutboxPanel.includes('confirmAndSubmit') &&
-  authorityOutboxPanel.includes('projectionVersion') &&
+  authorityOutboxPanel.includes('openDesktopSync') &&
+  syncDialog.includes('confirm(state.items)') &&
   systemSettings.includes('id="sync-settings"') &&
   systemSettings.includes('<SyncSettings variant="advanced" />'),
   'sync UI should expose the authority outbox and explicit confirmation'

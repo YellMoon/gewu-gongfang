@@ -45,7 +45,7 @@ assert.equal(normalize(definition('20260908-course-address-confirmation.sql')), 
     assert(roomLine);
     const roomExpression = new Function('return ' + roomLine.trim().replace(/,$/, ''))().replace(/,$/, '');
     const readRooms = (role, teacher) => withQuery(handle, 'fixture-provisioner', async db => (await db.query(
-      `WITH scoped_courses AS (SELECT $3::text AS legacy_room_id WHERE false) SELECT jsonb_build_object(${roomExpression}) AS result`,
+      `WITH managed_teachers AS (SELECT id FROM business.teachers WHERE false), scoped_courses AS (SELECT $3::text AS legacy_room_id WHERE false) SELECT jsonb_build_object(${roomExpression}) AS result`,
       ['tenant', role, teacher])).rows[0].result.rooms);
     assert.deepEqual((await readRooms('teacher', 'teacher')).map(r => r.id), ['new', 'old'], 'created addresses must remain selectable without a current course reference');
     assert.deepEqual(await readRooms('teacher', 'other-teacher'), [], 'unrelated teachers must not gain address access');

@@ -777,7 +777,7 @@ const DesktopIdentityGate: React.FC = () => {
             <BusinessApp key={gateState.partitionKey} />
           </Suspense>
         )}
-        <DesktopAutoSync />
+        {!runtimeSuspended && <DesktopAutoSync key={gateState.partitionKey} />}
       </div>
     );
   }

@@ -1,0 +1,15 @@
+.desktop-sync-dialog .ant-modal-content { padding: 24px; }
+.desktop-sync-content { max-height: min(62vh, 620px); overflow-y: auto; padding-right: 4px; }
+.desktop-sync-explanation { color: #595959; margin: 0 0 16px; }
+.desktop-sync-item { padding: 16px 0; border-top: 1px solid #e8e8e8; overflow-wrap: anywhere; }
+.desktop-sync-item-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.desktop-sync-item p { margin: 8px 0; white-space: pre-wrap; }
+.desktop-sync-item summary { cursor: pointer; padding: 6px 0; color: #245bb2; }
+.desktop-sync-item-issue { margin-top: 10px; color: #a34000; }
+.desktop-sync-footer { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .desktop-sync-dialog .ant-modal-content { padding: 18px 14px; }
+  .desktop-sync-item-heading { flex-wrap: wrap; gap: 6px; }
+  .desktop-sync-footer .ant-btn { min-height: 40px; }
+  .desktop-sync-content { max-height: 60vh; }
+}

@@ -90,8 +90,10 @@ function staticRelativeModuleClosure(entryFile) {
   const vault = {
     status: () => offlineLeaseStatus,
   };
+  let draftNetworkOnline = true;
   const runtime = createDesktopAuthorityRuntime({
     filePath: outboxPath,
+    isOnline: () => draftNetworkOnline,
     safeStorage: {
       isEncryptionAvailable: () => true,
       encryptString: value => Buffer.from(`safe:${Buffer.from(value).toString('base64')}`),
@@ -602,6 +604,15 @@ function staticRelativeModuleClosure(entryFile) {
   assert.ok(preloadSource.includes("get: id => ipcRenderer.invoke('desktop-authority:get', id)"),
     'the renderer facade must read a command receipt by draft id');
 
+  const initiallyOnline = runtime.appendDraftSync({ type: 'room.create.v1', payload: { record: { id: 'connectivity-room', name: 'Online draft' } } });
+  assert.strictEqual(initiallyOnline.createdOffline, false);
+  draftNetworkOnline = false;
+  const editedOffline = runtime.appendDraftSync({ type: 'room.update.v1', payload: { id: 'connectivity-room', changes: { name: 'Offline revision' } } });
+  assert.strictEqual(editedOffline.id, initiallyOnline.id);
+  assert.strictEqual(editedOffline.createdOffline, true, 'offline edits merged into an online draft require aggregate confirmation');
+  draftNetworkOnline = true;
+  const editedAgain = runtime.appendDraftSync({ type: 'room.update.v1', payload: { id: 'connectivity-room', changes: { name: 'Final revision' } } });
+  assert.strictEqual(editedAgain.createdOffline, true, 'reconnection cannot erase a pending offline decision');
   fs.rmSync(workspace, { recursive: true, force: true });
   console.log('desktop authority runtime tests passed');
 })().catch(error => {

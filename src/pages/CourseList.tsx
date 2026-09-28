@@ -7,6 +7,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCi
 import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import { resolveCourseRoomSelection } from '../services/courseRoomSelection.mjs';
 import { getColorForRoom } from '../utils/courseColors';
 import { filterCourses } from '../utils/courseFilters';
 import DataPageLayout from '../layout/DataPageLayout';
@@ -95,6 +96,8 @@ const CourseList: React.FC = () => {
     loadData();
     // UTF-8: preserve the original filters and editing window across cloud readback.
     window.addEventListener('authority-projection-refreshed', loadData);
+    if (navigator.onLine !== false) void Promise.resolve().then(() =>
+      dbService?.refreshAuthorityProjection?.({ businessOnly: true, notifyConsumers: true })).catch(() => {});
     return () => window.removeEventListener('authority-projection-refreshed', loadData);
   }, []);
 
@@ -270,7 +273,7 @@ const CourseList: React.FC = () => {
     const pendingCourseDraft = editingCourse && await hasPendingCourseDraft(editingCourse.id);
     if (pendingRoomDraft || pendingCourseDraft) {
       stageLocalDraft();
-      message.warning(pendingRoomDraft ? '已保存课程和上课地址，请在待提交的更改中确认。' : '已保存更改，请在待提交的更改中确认。');
+      if (navigator.onLine === false) message.info('\u5df2\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u8054\u7f51\u540e\u4f1a\u63d0\u793a\u4e00\u6b21\u6279\u91cf\u63d0\u4ea4\u3002');
       return true;
     }
     if (!editingCourse && typeof cloudRuntime?.createCloudCourse !== 'function') {
@@ -354,13 +357,8 @@ const CourseList: React.FC = () => {
       }
       // 处理 room_name：始终从 room_id 同步最新房间名称，新地址自动录入教室表
       if (values.room_id) {
-        const roomId = String(values.room_id).split(',')[0].trim();
-        let room = (dbService.getAllRooms?.() || rooms).find((r: { id: string; name: string }) => r.id === roomId || r.name === roomId);
-        if (!room && dbService.addOrUpdateRoom) {
-          dbService.addOrUpdateRoom(roomId);
-          room = dbService.getAllRooms?.().find((r: { id: string; name: string }) => r.id === roomId || r.name === roomId);
-        }
-        if (!room) throw new Error('COURSE_ROOM_DRAFT_UNAVAILABLE');
+        const room = await resolveCourseRoomSelection({ value: values.room_id, dbService,
+          online: navigator.onLine !== false, existingCourse: editingCourse });
         values.room_id = room.id;
         values.room_name = room.name;
       } else {
@@ -386,6 +384,9 @@ const CourseList: React.FC = () => {
       return;
     } catch (error: any) {
       console.error('验证失败:', error);
+      if (!error?.errorFields) message.error(error?.message === 'COURSE_ROOM_AMBIGUOUS'
+        ? '\u5b58\u5728\u540c\u540d\u5730\u5740\uff0c\u8bf7\u4ece\u5217\u8868\u9009\u62e9\u5177\u4f53\u5730\u5740\u3002'
+        : '\u6682\u65f6\u65e0\u6cd5\u786e\u8ba4\u4e0a\u8bfe\u5730\u5740\uff0c\u8bf7\u8054\u7f51\u5237\u65b0\u540e\u91cd\u8bd5\u3002\u7f16\u8f91\u5185\u5bb9\u5df2\u4fdd\u7559\u3002');
     }
   };
 
@@ -629,12 +630,7 @@ const CourseList: React.FC = () => {
                       form.setFieldsValue({ room_id: [lastVal] });
                     }
                     const lastVal = values[values.length - 1];
-                    if (lastVal && !rooms.find(r => r.id === lastVal || r.name === lastVal)) {
-                      if (dbService.addOrUpdateRoom) {
-                        dbService.addOrUpdateRoom(lastVal);
-                        setTimeout(() => setRooms([...(dbService.getAllRooms?.() || [])]), 100);
-                      }
-                    }
+                    // Resolve typed names when saving, after reading the cloud catalog.
                     // 自动分配课程颜色
                     const color = getColorForRoom(lastVal, rooms);
                     form.setFieldsValue({ color });

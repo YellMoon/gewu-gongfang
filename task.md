@@ -1,4 +1,56 @@
-﻿# 格物工坊：权威数据主机架构重写与真实双端验收
+# Active desktop synchronization correction - 2026-09-28 (UTF-8)
+
+Status: implementation verified in targeted tests; database/full regression and release pending.
+Source baseline: d3511ae6, desktop/OSS 8.9.21.
+This section supersedes historical instructions below for current execution.
+User-approved outcome: online edits submit silently; offline edits trigger one
+aggregate review on reconnect; Cloud Sync opens the same pending-only window;
+remove the floating popover and completed-history clutter. Keep conflicts
+explicit, local drafts durable and all business decisions cloud-authoritative.
+No per-item offline confirmation, background offline submission, new authority,
+manual device approval, unrelated page redesign or automatic history deletion.
+
+- [x] Trace real business save -> native outbox -> account/session -> scheduler
+  -> REST receipt -> UI refresh; reproduce the failure before changing code.
+- [x] Add failing integration tests covering online edits and reconnect batching,
+  including historical conflicts, account switch, concurrency and dependent rows.
+- [x] Unify scheduling and manual/reconnect review into one pending-only dialog;
+  retain actionable attachment failures, conflict recovery and cancellation.
+- [x] Remove the popover; route Cloud Sync entries to the unified dialog; retain
+  audit history in storage without displaying it as pending work.
+- [ ] Verify actual rendered desktop at wide/narrow sizes and keyboard focus;
+  exercise real business save paths, offline/reconnect, one confirmation and
+  conflict stop. Record what uses controlled transport vs real cloud writes.
+- [ ] Run relevant/full regression and typecheck; bump desktop patch, check
+  component compatibility, commit/push gewu/master, build and publish OSS,
+  verify public feed/download and restored Node ABI; append evidence/status.
+
+Verified 2026-09-29: 9 historical addresses store names in legacy_room_id;
+restore teacher historical course/lesson scope, not global unowned-room access.
+Targeted native offline merge, real course save ID resolution, cache pagination/
+identity, scheduler concurrency and actual Ant Design wide/narrow keyboard tests
+pass. Visual evidence: output/desktop-sync-20260929. Transport is controlled.
+Disk-full recovery preserves all dist artifacts via junction to
+D:/Codex-task-artifacts/gewu-sync-20260929/dist; old unpacked 8.9.21 preserved
+next to it. Docker runtime sockets archived while stopped to recover local tests.
+
+Direction brief: Windows/Electron education operations, calm-operational;
+one modal with a restrained status line, scannable business-change summaries,
+one aggregate primary action and quiet Cancel/Close. Existing typography and
+Ant Design controls, neutral surfaces, semantic status color, no decoration or
+animation beyond existing transitions. Keep main work unobstructed while online.
+Success evidence: no manual action or prompt for online saves; no network write
+before offline approval; one approval covers the reviewed batch; completed rows
+vanish from review; keyboard and narrow layout remain usable. Runtime screenshots
+stay in local evidence directories, with safe check metadata in the report.
+Rollback: baseline is preserved in Git; revert only this task's scoped commits
+if needed. Preserve the unrelated dirty 2026-09-24 document and historical output.
+Publication requires passing tests and matching package/feed evidence; unchanged
+cloud/NAS/miniapp keep verified compatible versions; formal miniapp remains partial.
+
+
+
+# 格物工坊：权威数据主机架构重写与真实双端验收
 
 > **Current execution phase (2026-08-24):** Source version 8.4.0 (`cd4fd2b2`) is pushed to `gewu/master`; the cloud service, NAS storage agent, miniapp development build, desktop installer, and OSS update feed are deployed with exact-version receipts. All applicable desktop business draft types map to the managed `cloud-business-api` REST contract after explicit confirmation, and update/delete operations carry `expectedUpdatedAt`. Production database migration/count/ACL checks and public health pass. These receipts prove deployment, not end-user business acceptance: the 42-page miniapp matrix is fixture-only, the packaged desktop check is launch/render smoke only, and the production cloud verifier does not perform a public REST mutation. The active phase is therefore to complete production-safe, reversible real-operation acceptance before any full-release claim.
 
