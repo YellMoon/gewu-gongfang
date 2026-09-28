@@ -150,16 +150,15 @@ require('./desktopAuthorityDependencies.test');
   });
   assert.strictEqual(await invalidScheduleClient.submit(invalidSchedule.id), undefined);
   assert.strictEqual((await invalidScheduleHarness.outbox.get(invalidSchedule.id)).status, 'awaiting_confirmation');
-  await assert.rejects(
-    () => invalidScheduleClient.confirmAndSubmit(invalidSchedule.id, { sessionToken: 'test-session' }),
-    error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
-  );
+  const invalidScheduleResult = await invalidScheduleClient.confirmAndSubmit(invalidSchedule.id, { sessionToken: 'test-session' });
+  assert.strictEqual(invalidScheduleResult.receipt.status, 'rejected');
+  assert.strictEqual(invalidScheduleResult.receipt.result.error.code, 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
   const retainedSchedule = await invalidScheduleHarness.outbox.get(invalidSchedule.id);
-  assert.strictEqual(retainedSchedule.status, 'submitted', 'local validation failure must not complete the draft');
+  assert.strictEqual(retainedSchedule.status, 'conflict', 'local validation failure must expose recovery without completing the draft');
   assert.deepStrictEqual(retainedSchedule.payload, invalidSchedule.payload, 'keep the original draft for recovery');
   await assert.rejects(
     () => invalidScheduleClient.submit(invalidSchedule.id, { sessionToken: 'test-session' }),
-    error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
+    error => error?.code === 'AUTHORITY_DRAFT_NOT_SUBMITTABLE',
   );
   assert.strictEqual(invalidScheduleNetworkCalls, 0);
 

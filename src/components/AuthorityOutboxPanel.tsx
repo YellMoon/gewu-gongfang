@@ -26,10 +26,13 @@ export const PendingChangesPanel: React.FC<{ state: any; onDiscard: (id: string)
             <Descriptions size="small" column={1}>{presentation.details.map((detail: any, index: number) =>
               <Descriptions.Item key={index} label={detail.label}>{detail.value}</Descriptions.Item>)}</Descriptions>
           </details>}
-          {(failed || presentation.blocked) && <Space wrap className="desktop-sync-item-issue">
-            <span>{authorityDraftError(item.conflict?.code || 'AUTHORITY_DRAFT_TARGET_UNAVAILABLE')}</span>
+          {item.status !== 'completed' && <Space wrap className="desktop-sync-item-issue">
+            {(failed || presentation.blocked) && <span>{authorityDraftError(item.conflict?.code || 'AUTHORITY_DRAFT_TARGET_UNAVAILABLE')}</span>}
             <Popconfirm title={'\u653e\u5f03\u8fd9\u6761\u672c\u5730\u66f4\u6539\uff1f'}
-              description={'\u672c\u673a\u8349\u7a3f\u5c06\u88ab\u79fb\u9664\uff0c\u4e91\u7aef\u6570\u636e\u4e0d\u4f1a\u6539\u53d8\u3002'}
+              okButtonProps={{ disabled: state.busy }}
+              description={item.status === 'submitted'
+                ? '移除本机待同步记录并停止后续重试；已提交到云端的操作不会撤销。'
+                : '本机草稿将被移除，不会删除云端课程或其他业务数据。'}
               okText={'\u653e\u5f03\u66f4\u6539'} cancelText={'\u7ee7\u7eed\u4fdd\u7559'} onConfirm={() => onDiscard(item.id)}>
               <Button danger disabled={state.busy}>{'\u653e\u5f03\u8fd9\u6761\u66f4\u6539'}</Button></Popconfirm>
           </Space>}

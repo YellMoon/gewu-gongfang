@@ -275,19 +275,16 @@ const assert = require('assert');
           },
         });
         const callsBefore = calls.length;
-        await assert.rejects(
-          () => adapter.submit(command, { sessionToken: 'desktop-session-token' }),
-          error => error?.code === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
-          `${operation} must report an invalid ${field} without masking it with a ReferenceError`,
-        );
+        const invalidReceipt = await adapter.submit(command, { sessionToken: 'desktop-session-token' });
+        assert.strictEqual(invalidReceipt.status, 'rejected');
+        assert.strictEqual(invalidReceipt.result.error.code, 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID');
         assert.strictEqual(calls.length, callsBefore, 'invalid schedule times must not reach the cloud');
       }
     }
   }
-  await assert.rejects(
-    () => adapter.submit(adapter.createCommand({ id: 'draft-no-version', type: 'room.update.v1', payload: { id: 'room-1', changes: { name: 'Room' } } }), { sessionToken: 'desktop-session-token' }),
-    error => error?.code === 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED',
-  );
+  const noVersionReceipt = await adapter.submit(adapter.createCommand({ id: 'draft-no-version', type: 'room.update.v1', payload: { id: 'room-1', changes: { name: 'Room' } } }), { sessionToken: 'desktop-session-token' });
+  assert.strictEqual(noVersionReceipt.status, 'rejected');
+  assert.strictEqual(noVersionReceipt.result.error.code, 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED');
   await assert.rejects(
     () => adapter.submit(courseUpdate, {}),
     error => error?.code === 'DESKTOP_CLOUD_SESSION_REQUIRED',

@@ -23,9 +23,9 @@ function namedFunction(source,name){
   const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text===name)found=node;ts.forEachChild(node,visit);};visit(ast);assert(found,name);
   return ts.transpileModule(found.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 }
-async function saveWith(source,course,financialRules){
+async function saveWith(source,course,financialRules,time='10:00'){
   const dates=['2026-09-14','2026-09-16','2026-09-18'].map(date=>dayjs(date));
-  const values={startTime:dayjs('2026-09-14T10:00:00'),duration:1.5,teacherId:'teacher',courseId:course.id,room:'room',notes:'原批量排课'};
+  const values={startTime:dayjs('2026-09-14T'+time+':00'),duration:1.5,teacherId:'teacher',courseId:course.id,room:'room',notes:'原批量排课'};
   const state={schedules:[],warnings:[],modal:true,historyWrites:0};let validation;
   const env={form:{getFieldsValue:()=>values,validateFields:()=>({then:callback=>validation=Promise.resolve().then(()=>callback(values))})},
     courses:[course],rooms:[{id:'room',name:'东湖上课点'}],teachers:[{id:'teacher',name:'教师'}],dayjs,
@@ -63,6 +63,13 @@ function attendanceWith(source,course,schedule,statuses,financialRules){
   const {createAuthorityDraftFromLocalMutation}=await import('../services/authorityDraftAdapter.mjs');
   const {createDesktopCloudBusinessDraftAdapter}=await import('../services/desktopCloudBusinessDraft.mjs');
   try{
+    for(const time of ['00:00','07:30','07:59','08:00']){
+      const course={id:'early-course',display_name:'早课',type:1,source_type:1,billing_unit:1,teacher_fee_mode:1,teacher_id:'teacher',student_pricings:[]};
+      const result=await saveWith(currentCalendar,course,financial,time);
+      assert.deepEqual(result.schedules.map(row=>dayjs(row.start_time).format('YYYY-MM-DD HH:mm')),
+        ['2026-09-14 '+time,'2026-09-18 '+time], 'real save preserves intended local date/clock before 08:00');
+      assert(result.schedules.every(row=>row.start_time.endsWith('Z')), 'saved timestamps retain cloud UTC protocol');
+    }
     let cases=0;
     for(const source_type of [1,2,3])for(const type of [1,2,3,4])for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const attendance of [[1,1],[1,3],[4,1]]){
       const course={id:'course',display_name:'双人课程',type,source_type,billing_unit,teacher_fee_mode,teacher_id:'teacher',year:2026,semester:'秋学期',

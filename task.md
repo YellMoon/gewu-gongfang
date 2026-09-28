@@ -1,3 +1,14 @@
+# Active follow-up: failed drafts and early calendar dates - 2026-09-29
+
+User request: restore discard for old failed sync entries absent from the course
+list; prevent lessons before 08:00 from moving to the previous day.
+Implementation and targeted RED/GREEN checks complete. Desktop 8.9.23 patch.
+All 429 lifecycle checks passed. Packaged runtime and OSS verification pending.
+Plan: docs/superpowers/plans/2026-09-29-sync-recovery-calendar-date.md
+Evidence: docs/desktop-sync-recovery-2026-09-29.md
+Preserve unrelated docs/desktop-device-name-2026-09-24.md exactly.
+
+---
 # Active desktop synchronization correction - 2026-09-28 (UTF-8)
 
 Status: desktop synchronization correction complete; desktop/cloud delivered.

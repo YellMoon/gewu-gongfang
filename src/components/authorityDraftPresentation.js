@@ -53,13 +53,16 @@ function describeAuthorityDraft(item, cache={}) {
 }
 function authorityDraftError(code) {
   const text=String(code||'');
+  if (text === 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED') return '这条旧更改缺少云端版本信息，无法安全提交。请放弃后根据最新数据重新编辑。';
+  if (/^CLOUD_BUSINESS_.*NOT_FOUND$/.test(text)) return '云端已找不到这条记录，旧更改已保留。可以放弃这条更改。';
+  if (text === 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID') return '这条排课的时间无效，草稿已保留。请放弃后重新编辑。';
   // UTF-8: explain the recoverable user action, not the internal dependency protocol.
   if (text === 'AUTHORITY_DRAFT_TARGET_UNAVAILABLE') return '暂时无法读取要删除的对象，请联网刷新后重试。草稿已保留。';
   if (text === 'AUTHORITY_DRAFT_CONFIRMATION_CHANGED') return '更改内容已变化，请重新查看并确认。';
   if (text === 'AUTHORITY_DRAFT_DEPENDENCY_CONFIRMATION_REQUIRED') return '关联的上课地址尚未确认，请查看课程更改并一并确认。';
   if (text === 'AUTHORITY_DRAFT_DEPENDENCY_BLOCKED') return '上课地址尚未提交成功，请先处理对应的地址更改。课程草稿已保留。';
   if(/ACCESS_DENIED|FORBIDDEN/.test(text)) return '\u5f53\u524d\u8d26\u53f7\u6ca1\u6709\u4fee\u6539\u6743\u9650\uff0c\u8349\u7a3f\u5df2\u4fdd\u7559\u3002\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458\u3002';
-  if(/CONFLICT|VERSION|UPDATED_AT/.test(text)) return '\u8fd9\u6761\u8bb0\u5f55\u5df2\u53d1\u751f\u53d8\u5316\uff0c\u8349\u7a3f\u5df2\u4fdd\u7559\u3002\u8bf7\u6838\u5bf9\u540e\u518d\u63d0\u4ea4\u3002';
+  if(/CONFLICT|VERSION|UPDATED_AT/.test(text)) return '这条记录已变化、被删除或当前不可用。自动提交已暂停，可放弃旧更改后根据最新数据重新编辑。';
   if(/SESSION|LOGIN|AUTHENTICAT/.test(text)) return '\u8bf7\u91cd\u65b0\u767b\u5f55\u540e\u518d\u63d0\u4ea4\uff0c\u8349\u7a3f\u5df2\u4fdd\u7559\u3002';
   if(/ASSET|RELAY/.test(text)) return '\u9644\u4ef6\u6682\u672a\u4e0a\u4f20\u5b8c\u6210\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002';
   return '\u6682\u65f6\u65e0\u6cd5\u63d0\u4ea4\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002\u8349\u7a3f\u5df2\u4fdd\u7559\u3002';

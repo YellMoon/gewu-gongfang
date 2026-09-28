@@ -187,7 +187,9 @@ const DailyView: React.FC<DailyViewProps> = ({
   onRefreshSchedules
 }) => {
   const dateStr = day.format('YYYY-MM-DD');
-  const daySchedules = schedules.filter(s => s.start_time.startsWith(dateStr));
+  // Use the same local date as week filtering, card clocks and editing; UTC text
+  // before 08:00 in China still carries the previous calendar date.
+  const daySchedules = schedules.filter(s => dayjs(s.start_time).format('YYYY-MM-DD') === dateStr);
   const todayStr = dayjs().format('YYYY-MM-DD');
   const isToday = dateStr === todayStr;
   const isHighlighted = !!highlightedDate && day.isSame(highlightedDate, 'day');

@@ -32,7 +32,13 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
     working = true;
     emit({ busy: true });
     try { await job(); }
-    catch (error) { emit({ error: error?.code || error?.message || 'SUBMIT_FAILED' }); }
+    catch (error) {
+      emit({ error: error?.code || error?.message || 'SUBMIT_FAILED' });
+      // Submission may have durably changed status before throwing (e.g. a
+      // receipt conflict). Never leave the review showing the stale status.
+      try { await read(); } catch { /* retain the original actionable error */ }
+      if (state.items.some(item => item.status === 'conflict')) prompt(state.items);
+    }
     finally { working = false; emit({ busy: false }); }
   }
   async function acknowledge(items, outcomes) {

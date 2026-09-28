@@ -2,8 +2,9 @@
 // Render the shipped dialog and Ant Design controls; only the native transport is controlled.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const ts = require('typescript'), { chromium } = require('playwright');
+const { code: calendarCode } = require('../pages/ScheduleCalendar.local-date.test.js');
 const root = path.resolve(__dirname, '../..');
-const out = path.join(root, 'output/desktop-sync-20260929');
+const out = path.join(root, 'output/desktop-sync-recovery-20260929');
 fs.mkdirSync(out, { recursive: true });
 const files = ['src/components/DesktopAutoSync.tsx', 'src/components/AuthorityOutboxPanel.tsx',
   'src/components/authorityDraftPresentation.js', 'src/services/desktopSyncController.mjs',
@@ -14,7 +15,7 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const errors = [];
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Shanghai' });
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => route.abort());
     await page.setContent('<html lang="zh-CN"><head><meta charset="UTF-8"></head><body><button id="sync">云同步</button><div id="root"></div></body></html>');
@@ -81,8 +82,52 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
     await page.screenshot({ path: path.join(out, 'empty-after-submit.png'), fullPage: true });
     await page.getByRole('button', { name: /^关\s*闭$/ }).last().focus();
     await page.keyboard.press('Escape'); await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    // A legacy failed submission has no corresponding course in the live table.
+    await page.evaluate(() => {
+      window.desktopAuthority.submit = async () => { throw new Error('CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED'); };
+      window.rows.push({ id: 'old-failed', type: 'course.update.v1', status: 'submitted',
+        payload: { id: 'absent-course', changes: { name: '已不在课程表的旧更改' } } });
+    });
+    await page.locator('#sync').click();
+    const discard = page.getByRole('button', { name: '放弃这条更改', exact: true });
+    await discard.waitFor({ timeout: 3000 });
+    await discard.click();
+    await page.getByRole('button', { name: '继续保留', exact: true }).click();
+    await page.getByText('放弃这条本地更改？', { exact: true }).waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('listitem').count(), 1, 'cancel preserves the pending change');
+    await page.screenshot({ path: path.join(out, 'legacy-failed-discard.png'), fullPage: true });
+    await discard.click();
+    await page.getByRole('button', { name: '放弃更改', exact: true }).click();
+    await page.getByText('当前没有待同步的更改', { exact: true }).waitFor();
+    assert(!await page.evaluate(() => window.rows.some(row => row.id === 'old-failed')));
+    await page.getByRole('button', { name: /^关\s*闭$/ }).last().click();
+    await page.locator('#sync').click();
+    await page.getByText('当前没有待同步的更改', { exact: true }).waitFor();
+    await page.screenshot({ path: path.join(out, 'discarded-reopen-empty.png'), fullPage: true });
+    await page.getByRole('button', { name: /^关\s*闭$/ }).last().click();
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.evaluate(code => {
+      const env = { React: window.React, ...window.React, dayjs: window.dayjs, Dropdown: window.antd.Dropdown,
+        holidays2026: [], ScheduleStatus: { PLANNED: 1, CANCELLED: 3, LEAVE: 4 },
+        DEFAULT_COURSE_COLOR: '#1890ff', getTextColorForBackground: () => '#fff', resolveCalendarRoomDisplay: () => '华发天荟' };
+      const Week = new Function(...Object.keys(env), code)(...Object.values(env));
+      const container = document.createElement('div'); container.id = 'calendar'; document.body.appendChild(container);
+      window.ReactDOM.createRoot(container).render(window.React.createElement(Week, {
+        startMonday: window.dayjs('2026-09-28'), weekLabel: '本周', courses: [], rooms: [], schedules: [
+          { id: 'monday-early', course_id: 'a', course_name: '周一早课', status: 1, start_time: '2026-09-27T23:00:00Z', end_time: '2026-09-28T01:00:00Z' },
+          { id: 'tuesday-early', course_id: 'b', course_name: '周二早课', status: 1, start_time: '2026-09-28T23:30:00Z', end_time: '2026-09-29T01:30:00Z' }
+        ]
+      }));
+    }, calendarCode);
+    for (const [id, date, time] of [['monday-early', '2026-09-28', '07:00'], ['tuesday-early', '2026-09-29', '07:30']]) {
+      const card = page.locator(`[data-date="${date}"] [data-schedule-id="${id}"]`);
+      await card.waitFor(); assert((await card.textContent()).includes(time));
+      const bounds = await card.boundingBox(), body = await page.locator(`[data-date="${date}"] [data-day-body]`).boundingBox();
+      assert(bounds.y >= body.y, 'early card must remain below its own date heading');
+    }
+    await page.screenshot({ path: path.join(out, 'early-lessons-correct-days.png'), fullPage: true });
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(out, 'receipt.json'), JSON.stringify({ verified: true, transport: 'controlled native bridge', actualComponents: files, screenshots: ['wide-pending.png', 'narrow-pending.png', 'empty-after-submit.png'], keyboard: ['Enter batch confirmation', 'Escape close'], pageErrors: errors }, null, 2));
+    fs.writeFileSync(path.join(out, 'receipt.json'), JSON.stringify({ verified: true, transport: 'controlled native bridge', actualComponents: [...files, 'src/pages/ScheduleCalendar.tsx'], screenshots: ['wide-pending.png', 'narrow-pending.png', 'empty-after-submit.png', 'legacy-failed-discard.png', 'discarded-reopen-empty.png', 'early-lessons-correct-days.png'], keyboard: ['Enter batch confirmation', 'Escape close'], pageErrors: errors }, null, 2));
     console.log('actual Ant Design sync window wide/narrow, keyboard, silent online and aggregate offline checks passed');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

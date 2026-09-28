@@ -246,7 +246,11 @@ function callInput(baseUrl, sessionToken, values) {
 function stableCloudRejection(error) {
   const code = String(error?.code || '');
   if (code === 'CLOUD_BUSINESS_DRAFT_TYPE_RESTRICTED') return code;
-  return /^CLOUD_BUSINESS_[A-Z0-9_]*(CONFLICT|ACCESS_DENIED|RELATION_INVALID|REFERENCED|INPUT_INVALID|NAME_EXISTS)$/.test(code)
+  // These preflight failures cannot improve on retry. Keep the original draft
+  // behind a rejected receipt so the durable outbox exposes recovery/discard.
+  if (['CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED', 'CLOUD_BUSINESS_DRAFT_SCHEDULE_TIME_INVALID',
+    'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'].includes(code)) return code;
+  return /^CLOUD_BUSINESS_[A-Z0-9_]*(CONFLICT|ACCESS_DENIED|RELATION_INVALID|REFERENCED|INPUT_INVALID|NAME_EXISTS|NOT_FOUND)$/.test(code)
     ? code
     : null;
 }

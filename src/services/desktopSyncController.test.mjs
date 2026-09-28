@@ -87,3 +87,17 @@ function fixture(initial) {
   assert.deepEqual(refreshes, [{ businessOnly: false }], 'question commits must read back their new content version');
 }
 console.log('unified desktop sync batch, reconnect, conflict, race and history checks passed');
+{
+  const f = fixture([{ ...draft('bad-receipt'), status: 'submitted' }]);
+  let attempts = 0;
+  f.bridge.submit = async () => {
+    attempts++;
+    f.items[0].status = 'conflict';
+    f.items[0].conflict = { code: 'AUTHORITY_RECEIPT_CONFLICT' };
+    throw new Error('AUTHORITY_RECEIPT_CONFLICT');
+  };
+  await f.controller.tick();
+  assert.equal(f.controller.getState().items[0].status, 'conflict', 'thrown failure reads back durable state immediately');
+  assert.equal(f.controller.getState().open, true);
+  await f.controller.tick(); assert.equal(attempts, 1);
+}
