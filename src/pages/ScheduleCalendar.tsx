@@ -2176,7 +2176,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   }}
                   options={[
                     { value: 0.5, label: '30分钟' },
+                    { value: 40 / 60, label: '40分钟' },
                     { value: 1, label: '1小时' },
+                    { value: 80 / 60, label: '80分钟' },
                     { value: 1.5, label: '1.5小时' },
                     { value: 2, label: '2小时' },
                     { value: 2.5, label: '2.5小时' },
@@ -2233,7 +2235,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                       const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
                       if (course.default_duration_minutes) {
                         const durHours = course.default_duration_minutes / 60;
-                        const durOptions = [0.5, 1, 1.5, 2, 2.5, 3];
+                        const durOptions = [0.5, 40 / 60, 1, 80 / 60, 1.5, 2, 2.5, 3];
                         const closest = durOptions.reduce((prev, curr) => Math.abs(curr - durHours) < Math.abs(prev - durHours) ? curr : prev);
                         form.setFieldValue('duration', closest);
                         const sTime = form.getFieldValue('startTime');

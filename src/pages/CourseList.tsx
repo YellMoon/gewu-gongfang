@@ -454,7 +454,7 @@ const CourseList: React.FC = () => {
       dataIndex: 'default_duration_minutes', 
       key: 'default_duration_minutes',
       width: 90,
-      render: (v: number) => v ? `${(v / 60).toFixed(1)}小时` : '-'
+      render: (v: number) => v ? (v === 40 || v === 80 ? `${v}分钟` : `${(v / 60).toFixed(1)}小时`) : '-'
     },
     { title: '上课地址', dataIndex: 'room_name', key: 'room_name', width: 100 },
     { title: '老师', dataIndex: 'teacher_name', key: 'teacher_name', width: 100 },
@@ -675,8 +675,8 @@ const CourseList: React.FC = () => {
             <Col span={8}>
               <Form.Item name="default_duration_minutes" label="默认时长" initialValue={120}>
                 <Select style={{ width: '100%' }} placeholder="拖拽排课时默认使用">
-                  {[0.5,1,1.5,2,2.5,3,3.5,4].map(h => (
-                    <Option key={h} value={h * 60}>{h}小时</Option>
+                  {[30,40,60,80,90,120,150,180,210,240].map(minutes => (
+                    <Option key={minutes} value={minutes}>{minutes === 40 || minutes === 80 ? `${minutes}分钟` : `${minutes / 60}小时`}</Option>
                   ))}
                 </Select>
               </Form.Item>

@@ -50,6 +50,7 @@ export interface StudentCourseFeeDetail {
   studentName: string;
   teacherId?: string;
   teacherName: string;
+  durationMinutes: number;
   durationHours: number;
   billingUnit: BillingUnit;
   billingUnitName: string;
@@ -94,6 +95,7 @@ export interface TeacherFeeDetail {
   teacherName: string;
   studentNames: string;
   studentCount: number;
+  durationMinutes: number;
   durationHours: number;
   billingUnit: BillingUnit;
   billingUnitName: string;
@@ -139,8 +141,8 @@ const selectSnapshotPricings = (
   return [];
 };
 
-const amountByUnit = (unitPrice: number, billingUnit: BillingUnit, durationHours: number): number => {
-  if (billingUnit === BillingUnit.PER_HOUR) return roundMoney(unitPrice * durationHours);
+const amountByUnit = (unitPrice: number, billingUnit: BillingUnit, durationMinutes: number): number => {
+  if (billingUnit === BillingUnit.PER_HOUR) return roundMoney(unitPrice * durationMinutes / 60);
   return roundMoney(unitPrice);
 };
 
@@ -169,12 +171,13 @@ const scaleToSnapshot = <T extends Record<string, any>>(
   }));
 };
 
-const getDurationHours = (startTime: string, endTime: string): number => {
+const getDurationMinutes = (startTime: string, endTime: string): number => {
   const start = dayjs(startTime);
   const end = dayjs(endTime);
   if (start.isValid() && end.isValid()) {
     const minutes = end.diff(start, 'minute');
-    return Math.max(0, roundMoney(minutes / 60));
+    // Keep integer minutes; convert only when applying an hourly price.
+    return Math.max(0, minutes);
   }
 
   const startClock = startTime.split(' ')[1] || startTime;
@@ -182,19 +185,19 @@ const getDurationHours = (startTime: string, endTime: string): number => {
   const [startH, startM] = startClock.split(':').map(Number);
   const [endH, endM] = endClock.split(':').map(Number);
   if ([startH, startM, endH, endM].some(Number.isNaN)) return 0;
-  return Math.max(0, roundMoney(((endH * 60 + endM) - (startH * 60 + startM)) / 60));
+  return Math.max(0, (endH * 60 + endM) - (startH * 60 + startM));
 };
 
 export function calculateScheduleFinancialTotals(
   pricings: StudentCoursePricing[] = [],
   billingUnit: BillingUnit = BillingUnit.PER_HOUR,
   teacherFeeMode: TeacherFeeMode = TeacherFeeMode.PER_SESSION,
-  durationHours: number = 0
+  durationMinutes: number = 0
 ): { tuition: number; teacherFee: number } {
   const activePricings = pricings.filter(activePricing);
-  const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationHours : 1;
+  const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationMinutes / 60 : 1;
   const tuition = activePricings.reduce((sum, pricing) => (
-    sum + amountByUnit(Number(pricing.tuition || 0), billingUnit, durationHours)
+    sum + amountByUnit(Number(pricing.tuition || 0), billingUnit, durationMinutes)
   ), 0);
   const rawTeacherFee = activePricings.reduce((sum, pricing) => (
     sum + Number(pricing.teacher_fee ?? 0) * multiplier
@@ -224,7 +227,7 @@ export function buildScheduleFinancialSnapshot(
     studentPricings,
     billingUnit,
     teacherFeeMode,
-    getDurationHours(schedule.start_time || '', schedule.end_time || '')
+    getDurationMinutes(schedule.start_time || '', schedule.end_time || '')
   );
 
   return {
@@ -316,7 +319,8 @@ export function buildFinancialDetails(
     const course = courses.find(item => item.id === schedule.course_id);
     const billingUnit = schedule.billing_unit || course?.billing_unit || BillingUnit.PER_HOUR;
     const teacherFeeMode = schedule.teacher_fee_mode || course?.teacher_fee_mode || TeacherFeeMode.PER_SESSION;
-    const durationHours = getDurationHours(schedule.start_time, schedule.end_time);
+    const durationMinutes = getDurationMinutes(schedule.start_time, schedule.end_time);
+    const durationHours = durationMinutes / 60; // Compatibility for consumers using hourly unit prices.
     // UTF-8: cloud schedules are ISO instants; render the local date/clock instead of split(' ').
     const startAt = dayjs(schedule.start_time);
     const endAt = dayjs(schedule.end_time);
@@ -328,7 +332,7 @@ export function buildFinancialDetails(
     const teacher = teachers.find(item => item.id === teacherId);
     const { pricings, pricingSource } = getSchedulePricings(schedule, course);
     const studentCount = Math.max(1, pricings.length);
-    const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationHours : 1;
+    const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationMinutes / 60 : 1;
 
     const rawRows = pricings.map((pricing, index) => {
       const tuitionUnitPrice = Number(pricing.tuition || 0);
@@ -357,11 +361,12 @@ export function buildFinancialDetails(
         studentName: findStudentName(students, pricing.student_id),
         teacherId,
         teacherName: teacher?.name || schedule.teacher_name || course?.teacher_name || '未设置老师',
+        durationMinutes,
         durationHours,
         billingUnit,
         billingUnitName: billingUnit === BillingUnit.PER_HOUR ? '小时' : '次',
         tuitionUnitPrice: roundMoney(tuitionUnitPrice),
-        tuitionTotal: amountByUnit(tuitionUnitPrice, billingUnit, durationHours),
+        tuitionTotal: amountByUnit(tuitionUnitPrice, billingUnit, durationMinutes),
         teacherFeeUnitPrice: roundMoney(teacherFeeUnitPrice),
         teacherFeeTotal: roundMoney(teacherFeeUnitPrice * multiplier),
         teacherFeeMode,
@@ -404,6 +409,7 @@ export function buildFinancialDetails(
       teacherName: teacher?.name || schedule.teacher_name || course?.teacher_name || '未设置老师',
       studentNames: finalRows.map(row => row.studentName).join('、'),
       studentCount: finalRows.filter(row => row.studentId !== UNBOUND_STUDENT_ID && row.studentId !== INSTITUTION_UNBOUND_STUDENT_ID).length,
+      durationMinutes,
       durationHours,
       billingUnit,
       billingUnitName: billingUnit === BillingUnit.PER_HOUR ? '小时' : '次',

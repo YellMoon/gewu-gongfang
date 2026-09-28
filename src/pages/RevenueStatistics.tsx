@@ -49,7 +49,7 @@ import {
 } from '../utils/financialDetails';
 import type { RevenueStatisticsContext } from '../navigation/navigationContext';
 import { StudentAlertRow, buildStudentFinancialAlerts } from '../utils/todayWorkbenchData';
-import { buildSourceStats } from '../utils/revenueSourceStats';
+import { buildSourceStats, addDurationStats, formatDurationBreakdown } from '../utils/revenueSourceStats';
 import {
   buildTeacherDetailsFromStudentDetails,
   filterStudentDetailsForRevenue,
@@ -143,12 +143,14 @@ interface TeacherIncomeSummary {
   total: number;
   courseCount: number;
   studentCount: number;
-  durationHours: number;
+  durationMinutes: number;
+  durationCounts: Record<number, number>;
 }
 
 interface StudentTuitionSummary extends StudentTuitionStats {
   courseCount: number;
-  durationHours: number;
+  durationMinutes: number;
+  durationCounts: Record<number, number>;
   teacherFeeTotal: number;
   byCourseType?: Array<{ type: CourseType; typeName: string; amount: number; percentage: number }>;
 }
@@ -248,7 +250,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     'courseTypeName',
     'studentNames',
     'studentCount',
-    'durationHours',
+    'durationMinutes',
     'billingUnitName',
     'feeUnitPrice',
     'teacherFeeModeName',
@@ -261,7 +263,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     'courseName',
     'courseTypeName',
     'teacherName',
-    'durationHours',
+    'durationMinutes',
     'billingUnitName',
     'tuitionUnitPrice',
     'tuitionTotal',
@@ -412,12 +414,13 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
           total: 0,
           courseCount: 0,
           studentCount: 0,
-          durationHours: 0,
+          durationMinutes: 0,
+          durationCounts: {} as Record<number, number>,
         };
         current.total = roundMoney(current.total + row.teacherFeeTotal);
         current.courseCount += 1;
         current.studentCount += row.studentCount;
-        current.durationHours = roundMoney(current.durationHours + row.durationHours);
+        addDurationStats(current, row);
         teacherMap.set(row.teacherId, current);
       });
       setTeacherIncomeStats(Array.from(teacherMap.values()).sort((a, b) => b.total - a.total));
@@ -429,13 +432,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
           studentName: row.studentName,
           total: 0,
           courseCount: 0,
-          durationHours: 0,
+          durationMinutes: 0,
+          durationCounts: {} as Record<number, number>,
           teacherFeeTotal: 0,
           byCourseTypeMap: new Map<CourseType, number>(),
         };
         current.total = roundMoney(current.total + row.tuitionTotal);
         current.courseCount += 1;
-        current.durationHours = roundMoney(current.durationHours + row.durationHours);
+        addDurationStats(current, row);
         current.teacherFeeTotal = roundMoney(current.teacherFeeTotal + row.teacherFeeTotal);
         current.byCourseTypeMap.set(row.courseType, roundMoney((current.byCourseTypeMap.get(row.courseType) || 0) + row.tuitionTotal));
         studentMap.set(row.studentId, current);
@@ -446,7 +450,8 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         studentName: item.studentName,
         total: item.total,
         courseCount: item.courseCount,
-        durationHours: item.durationHours,
+        durationMinutes: item.durationMinutes,
+        durationCounts: item.durationCounts,
         teacherFeeTotal: item.teacherFeeTotal,
         byCourseType: Array.from(item.byCourseTypeMap.entries()).map(([type, amount]) => ({
           type,
@@ -560,7 +565,8 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
   const netIncome = roundMoney((stats?.total || 0) - totalTeacherFee);
-  const totalScheduleHours = roundMoney(teacherDetails.reduce((sum, row) => sum + row.durationHours, 0));
+  const scheduleDurations = { durationMinutes: 0, durationCounts: {} as Record<number, number> };
+  teacherDetails.forEach(row => addDurationStats(scheduleDurations, row));
 
   const courseTypeChartData = stats?.byCourseType ? {
     labels: stats.byCourseType.map(item => item.typeName),
@@ -594,14 +600,14 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 140 },
     { title: '课程节数', dataIndex: 'courseCount', key: 'courseCount', width: 100, render: (value: number) => `${value} 节` },
     { title: '学生人次', dataIndex: 'studentCount', key: 'studentCount', width: 100 },
-    { title: '总时长', dataIndex: 'durationHours', key: 'durationHours', width: 100, render: (value: number) => `${roundMoney(value)} 小时` },
+    { title: '总时长 / 各时长节数', dataIndex: 'durationMinutes', key: 'durationMinutes', width: 230, render: (value: number, row: { durationCounts: Record<number, number> }) => <><div>{value} 分钟</div><Text type="secondary">{formatDurationBreakdown(row.durationCounts)}</Text></> },
     { title: '总课时费', dataIndex: 'total', key: 'total', width: 120, render: (value: number) => moneyText(value, 'orange') },
   ];
 
   const studentColumns = [
     { title: '学生', dataIndex: 'studentName', key: 'studentName', width: 140 },
     { title: '课程次数', dataIndex: 'courseCount', key: 'courseCount', width: 100, render: (value: number) => `${value} 次` },
-    { title: '总时长', dataIndex: 'durationHours', key: 'durationHours', width: 100, render: (value: number) => `${roundMoney(value)} 小时` },
+    { title: '总时长 / 各时长节数', dataIndex: 'durationMinutes', key: 'durationMinutes', width: 230, render: (value: number, row: { durationCounts: Record<number, number> }) => <><div>{value} 分钟</div><Text type="secondary">{formatDurationBreakdown(row.durationCounts)}</Text></> },
     { title: '总学费', dataIndex: 'total', key: 'total', width: 120, render: (value: number) => moneyText(value) },
     { title: '对应课时费', dataIndex: 'teacherFeeTotal', key: 'teacherFeeTotal', width: 120, render: (value: number) => moneyText(value, 'orange') },
     {
@@ -624,7 +630,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     { title: '课程', dataIndex: 'courseName', key: 'courseName', width: 180 },
     { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '老师', dataIndex: 'teacherName', key: 'teacherName', width: 120 },
-    { title: '时长', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
+    { title: '时长', dataIndex: 'durationMinutes', key: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
     { title: '单位', dataIndex: 'billingUnitName', key: 'billingUnitName', width: 70 },
     {
       title: '学费单价',
@@ -664,7 +670,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     { title: '课程类型', dataIndex: 'courseTypeName', key: 'courseTypeName', width: 100 },
     { title: '学生', dataIndex: 'studentNames', key: 'studentNames', width: 220 },
     { title: '学生人数', dataIndex: 'studentCount', key: 'studentCount', width: 90 },
-    { title: '时长', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
+    { title: '时长', dataIndex: 'durationMinutes', key: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
     { title: '单位', dataIndex: 'billingUnitName', key: 'billingUnitName', width: 70 },
     {
       title: '课时费单价',
@@ -913,7 +919,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
             <Card><Statistic title="排课数量" value={stats.totalSchedules || 0} suffix="节" /></Card>
           </Col>
           <Col flex="1 1 160px">
-            <Card><Statistic title="课时数" value={totalScheduleHours} precision={2} suffix="小时" valueStyle={{ color: '#595959' }} /></Card>
+            <Card><Statistic title="上课总时长" value={scheduleDurations.durationMinutes} suffix="分钟" valueStyle={{ color: '#595959' }} /><Text type="secondary">{formatDurationBreakdown(scheduleDurations.durationCounts)}</Text></Card>
           </Col>
         </Row>
       )}
@@ -1060,7 +1066,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                     <Space wrap>
                       <Text strong>{summary.teacherName}</Text>
                       <Tag>{summary.courseCount} 节</Tag>
-                      <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                      <Tag>{summary.durationMinutes} 分钟</Tag><Text type="secondary">{formatDurationBreakdown(summary.durationCounts)}</Text>
                       <Tag>{summary.studentCount} 人次</Tag>
                       <Tag color="orange">¥{summary.total.toFixed(2)}</Tag>
                     </Space>
@@ -1096,7 +1102,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                     <Space wrap>
                       <Text strong>{summary.studentName}</Text>
                       <Tag>{summary.courseCount} 次</Tag>
-                      <Tag>{roundMoney(summary.durationHours)} 小时</Tag>
+                      <Tag>{summary.durationMinutes} 分钟</Tag><Text type="secondary">{formatDurationBreakdown(summary.durationCounts)}</Text>
                       {showGroupedStudentAmounts ? (
                         <>
                           <Tag color="green" style={{ cursor: 'pointer' }} onClick={() => setShowGroupedStudentAmounts(false)}>学费 ¥{summary.total.toFixed(2)}</Tag>
@@ -1185,7 +1191,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
                   { title: '明细数', dataIndex: 'courseCount', key: 'courseCount', width: 80 },
                   { title: '学费', dataIndex: 'tuitionAmount', key: 'tuitionAmount', width: 110, render: (amount: number) => `¥${amount.toFixed(2)}` },
                   { title: '课时费', dataIndex: 'teacherFeeAmount', key: 'teacherFeeAmount', width: 110, render: (amount: number) => `¥${amount.toFixed(2)}` },
-                  { title: '课时', dataIndex: 'durationHours', key: 'durationHours', width: 90, render: (value: number) => `${roundMoney(value)} 小时` },
+                  { title: '时长', dataIndex: 'durationMinutes', key: 'durationMinutes', width: 90, render: (value: number) => `${value} 分钟` },
                 ]}
                 dataSource={sourceStats}
                 rowKey="sourceName"

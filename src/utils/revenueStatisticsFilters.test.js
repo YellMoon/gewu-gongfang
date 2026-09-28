@@ -12,6 +12,17 @@ const dayjs = require('dayjs');
   } = await import('./revenueStatisticsFilters.mjs');
   assert.strictEqual(typeof filterRevenueSchedules, 'function', 'revenue schedule filtering should be reusable and testable');
 
+  const previousTimezone = process.env.TZ;
+  process.env.TZ = 'Asia/Shanghai';
+  try {
+    const early = [{id:'early',start_time:'2026-09-28T23:20:00Z'}];
+    assert.strictEqual(filterRevenueSchedules(early,[],{dateRange:['2026-09-29','2026-09-29']}).length,1);
+    assert.strictEqual(filterRevenueSchedules(early,[],{dateRange:['2026-09-28','2026-09-28']}).length,0);
+  } finally {
+    if (previousTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTimezone;
+  }
+
   const initialRange = [dayjs('2026-06-01'), dayjs('2026-06-30')];
   const startChanged = applyRevenueDateChange(initialRange, 'start', dayjs('2026-06-12'));
   assert.strictEqual(startChanged[0].format('YYYY-MM-DD'), '2026-06-12');

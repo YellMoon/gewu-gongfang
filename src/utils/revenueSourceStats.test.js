@@ -48,3 +48,14 @@ assert.strictEqual(result.find(item => item.sourceName === '排课机构').teach
 assert(!result.some(item => item.sourceName === '混合班'));
 
 console.log('revenueSourceStats tests passed');
+const minuteStats=buildSourceStats(Array.from({length:3},(_,i)=>({studentId:'student-self',durationHours:40/60,tuitionTotal:80,teacherFeeTotal:40})),students,institutions);
+assert.strictEqual(minuteStats[0].durationHours,2,'sum exact duration before display rounding');
+assert.strictEqual(minuteStats[0].tuitionAmount,240);
+assert.strictEqual(minuteStats[0].teacherFeeAmount,120);
+
+const { addDurationStats, formatDurationBreakdown } = require('./revenueSourceStats');
+const durations = { durationMinutes: 0, durationCounts: {} };
+for (const durationMinutes of [40,40,40,80,90,120]) addDurationStats(durations,{durationMinutes});
+assert.strictEqual(durations.durationMinutes,410);
+assert.strictEqual(formatDurationBreakdown(durations.durationCounts),'40分钟 × 3节、80分钟 × 1节、90分钟 × 1节、120分钟 × 1节');
+assert.strictEqual(formatDurationBreakdown({}),'');

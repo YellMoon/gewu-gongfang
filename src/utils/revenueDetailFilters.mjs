@@ -71,6 +71,7 @@ export function buildTeacherDetailsFromStudentDetails(rows = []) {
       teacherName: row.teacherName,
       studentNames: [],
       studentCount: 0,
+      durationMinutes: Number(row.durationMinutes ?? Math.round(Number(row.durationHours || 0) * 60)),
       durationHours: Number(row.durationHours || 0),
       billingUnit: row.billingUnit,
       billingUnitName: row.billingUnitName,

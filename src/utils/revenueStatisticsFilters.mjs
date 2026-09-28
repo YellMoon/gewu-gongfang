@@ -1,3 +1,5 @@
+import dayjs from 'dayjs';
+
 const COURSE_TYPE_LABELS = {
   1: '一对一',
   2: '一对二',
@@ -72,7 +74,8 @@ export function filterRevenueSchedules(schedules = [], courses = [], filters = {
   const selectedTypes = Array.isArray(filters.courseTypes) ? filters.courseTypes.map(Number) : [];
 
   return schedules.filter(schedule => {
-    const dateStr = String(schedule.start_time || '').split(' ')[0];
+    const start = schedule.start_time ? dayjs(schedule.start_time) : null;
+    const dateStr = start?.isValid() ? start.format('YYYY-MM-DD') : '';
     if (filters.dateRange && !isDateWithinRevenueRange(dateStr, filters.dateRange)) return false;
     if (excludedStatuses.has(schedule.status)) return false;
 

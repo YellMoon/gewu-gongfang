@@ -23,9 +23,9 @@ function namedFunction(source,name){
   const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name?.text===name)found=node;ts.forEachChild(node,visit);};visit(ast);assert(found,name);
   return ts.transpileModule(found.getText(ast),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 }
-async function saveWith(source,course,financialRules,time='10:00'){
+async function saveWith(source,course,financialRules,time='10:00',duration=1.5){
   const dates=['2026-09-14','2026-09-16','2026-09-18'].map(date=>dayjs(date));
-  const values={startTime:dayjs('2026-09-14T'+time+':00'),duration:1.5,teacherId:'teacher',courseId:course.id,room:'room',notes:'原批量排课'};
+  const values={startTime:dayjs('2026-09-14T'+time+':00'),duration,teacherId:'teacher',courseId:course.id,room:'room',notes:'原批量排课'};
   const state={schedules:[],warnings:[],modal:true,historyWrites:0};let validation;
   const env={form:{getFieldsValue:()=>values,validateFields:()=>({then:callback=>validation=Promise.resolve().then(()=>callback(values))})},
     courses:[course],rooms:[{id:'room',name:'东湖上课点'}],teachers:[{id:'teacher',name:'教师'}],dayjs,
@@ -41,6 +41,20 @@ async function saveWith(source,course,financialRules,time='10:00'){
   const execute=handlers.get(source);
   execute(...Object.values(env));await validation;
   return state;
+}
+function selectedDuration(course){
+  const ast=ts.createSourceFile(calendarPath,currentCalendar,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  let handler;
+  function visit(node){
+    if(ts.isJsxAttribute(node)&&node.name.text==='onChange'&&node.initializer?.expression?.parameters?.[0]?.name?.getText(ast)==='courseId')handler=node.initializer.expression;
+    ts.forEachChild(node,visit);
+  }
+  visit(ast);assert(handler,'real course selector callback');
+  const values={startTime:dayjs('2026-09-14 07:00')};
+  const env={courses:[course],rooms:[],dayjs,getCourseDisplayName:c=>c.display_name,
+    form:{setFieldValue:(key,value)=>{values[key]=value;},getFieldValue:key=>values[key]}};
+  new Function(...Object.keys(env),ts.transpileModule('return ('+handler.getText(ast)+');',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText)(...Object.values(env))(course.id);
+  return values;
 }
 // UTF-8: execute the actual per-student editor save path in both source versions.
 function attendanceWith(source,course,schedule,statuses,financialRules){
@@ -63,6 +77,26 @@ function attendanceWith(source,course,schedule,statuses,financialRules){
   const {createAuthorityDraftFromLocalMutation}=await import('../services/authorityDraftAdapter.mjs');
   const {createDesktopCloudBusinessDraftAdapter}=await import('../services/desktopCloudBusinessDraft.mjs');
   try{
+    for(const minutes of [40,80]){
+      const course={id:'duration-course',display_name:'分钟课',default_duration_minutes:minutes,type:1,source_type:1,billing_unit:1,teacher_fee_mode:1,teacher_id:'teacher',
+        student_pricings:[{student_id:'student',tuition:120,teacher_fee:60,status:1}]};
+      const selected=selectedDuration(course);
+      assert.equal(selected.duration*60,minutes,'course selection must not round a 40/80 minute default to 30/90');
+      assert.equal(selected.endTime.diff(selected.startTime,'minute'),minutes);
+      const saved=await saveWith(currentCalendar,course,financial,'07:00',selected.duration);
+      for(const record of saved.schedules){
+        assert.equal(dayjs(record.end_time).diff(dayjs(record.start_time),'minute'),minutes);
+        assert.equal(record.calculated_tuition,minutes*2,'hourly tuition uses exact minutes');
+        assert.equal(record.calculated_teacher_fee,minutes);
+        let submitted;
+        const adapter=createDesktopCloudBusinessDraftAdapter({baseUrl:'https://business.example',sha256:value=>'hash:'+value,
+          cloudClient:{createCloudSchedule:async input=>{submitted=input;return{id:record.id};}}});
+        const draft=createAuthorityDraftFromLocalMutation({collection:'schedules',action:'create',recordId:record.id,value:record});
+        await adapter.submit(adapter.createCommand({...draft,id:'duration-'+record.id}),{sessionToken:'test-session'});
+        assert.equal(dayjs(submitted.endAt).diff(dayjs(submitted.startAt),'minute'),minutes,'cloud request must retain exact minutes');
+        assert.equal(submitted.tuition,record.calculated_tuition);
+      }
+    }
     for(const time of ['00:00','07:30','07:59','08:00']){
       const course={id:'early-course',display_name:'早课',type:1,source_type:1,billing_unit:1,teacher_fee_mode:1,teacher_id:'teacher',student_pricings:[]};
       const result=await saveWith(currentCalendar,course,financial,time);

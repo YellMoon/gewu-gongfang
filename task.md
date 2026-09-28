@@ -1,3 +1,13 @@
+# Active: 40/80 minute presets and financial statistics - 2026-09-29
+
+User requests integer-minute duration accounting and duration-specific lesson counts.
+Desktop 8.9.24, cloud patch pending deployment. Targeted RED/GREEN checks passed.
+Preserve historical financial snapshots; no bulk recalculation. Cloud SQL precision
+change requires code/DB backups and cloud deployment. All 429 lifecycle checks and typecheck passed (one native process retry). Packaged UI and
+OSS release pending. Evidence: docs/desktop-duration-presets-2026-09-29.md.
+Preserve unrelated docs/desktop-device-name-2026-09-24.md exactly.
+
+---
 # Active follow-up: failed drafts and early calendar dates - 2026-09-29
 
 User request: restore discard for old failed sync entries absent from the course

@@ -2,8 +2,8 @@
 
 // Internal SQL fragment shared by the two authenticated schedule read models.
 // `s` is the already-scoped schedule; $3 is the verified student's profile ID.
-// Match desktop financialDetails: active attendance, billing unit, rounded
-// duration, then proportional allocation of an existing financial snapshot.
+// Match desktop financialDetails: active attendance, billing unit, exact-minute
+// duration; round money, then allocate an existing financial snapshot.
 // Aggregate the effective roster internally, but return only this student's amount.
 const STUDENT_SCHEDULE_TUITION_SQL = `(
   WITH effective_pricing AS (
@@ -19,7 +19,7 @@ const STUDENT_SCHEDULE_TUITION_SQL = `(
     SELECT p.student_id,p.attendance_status,
       CASE WHEN p.attendance_status<>1 THEN 0::numeric ELSE
         round(COALESCE(p.tuition,0) * CASE WHEN COALESCE(s.billing_unit,c.billing_unit)=2 THEN 1::numeric
-          ELSE greatest(0::numeric,round(trunc(extract(epoch FROM (s.end_at-s.start_at))/60)/60,2)) END,2)
+          ELSE greatest(0::numeric,trunc(extract(epoch FROM (s.end_at-s.start_at))/60)/60) END,2)
       END AS amount
     FROM effective_pricing p
     JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id AND c.legacy_deleted=false

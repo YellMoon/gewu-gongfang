@@ -109,6 +109,57 @@ assert.strictEqual(
 
 console.log('financialDetails refresh tests passed');
 
+// Exact minute billing must agree across saved amounts, details and summaries.
+{
+  const dayjs = require('dayjs');
+  const course = { id:'minute-course',type:1,source_type:1,teacher_id:'teacher',billing_unit:1,teacher_fee_mode:1,
+    student_pricings:[{student_id:'student',tuition:120,teacher_fee:60,status:1}] };
+  const make = minutes => ({id:'lesson-'+minutes,course_id:course.id,status:1,
+    start_time:'2026-09-29T01:00:00Z',end_time:dayjs('2026-09-29T01:00:00Z').add(minutes,'minute').toISOString()});
+  for (const [minutes,tuition,fee] of [[40,80,40],[80,160,80]]) {
+    for (const billingUnit of [1,2]) {
+      const row={...make(minutes),billing_unit:billingUnit};
+      const snap=financialDetails.buildScheduleFinancialSnapshot(row,course);
+      assert.strictEqual(snap.calculated_tuition,billingUnit===1?tuition:120);
+      assert.strictEqual(snap.calculated_teacher_fee,billingUnit===1?fee:60);
+      const details=financialDetails.buildFinancialDetails([{...row,...snap}],[course],[],[]);
+      assert.strictEqual(details.studentDetails[0].tuitionTotal,snap.calculated_tuition);
+      assert.strictEqual(details.teacherDetails[0].teacherFeeTotal,snap.calculated_teacher_fee);
+      assert.strictEqual(details.teacherDetails[0].durationMinutes,minutes);
+      assert.strictEqual(details.studentDetails[0].durationMinutes,minutes);
+    }
+    const cents=financialDetails.buildScheduleFinancialSnapshot(make(minutes),course,[{student_id:'student',tuition:100,teacher_fee:35,status:1}]);
+    assert.strictEqual(cents.calculated_tuition,minutes===40?66.67:133.33);
+    assert.strictEqual(cents.calculated_teacher_fee,minutes===40?23.33:46.67);
+    for(const status of [3,4]) {
+      const excluded=financialDetails.buildScheduleFinancialSnapshot(make(minutes),course,[{student_id:'student',tuition:120,teacher_fee:60,status}]);
+      assert.strictEqual(excluded.calculated_tuition,0);assert.strictEqual(excluded.calculated_teacher_fee,0);
+    }
+  }
+  const historical={...make(40),calculated_tuition:80.4,calculated_teacher_fee:40.2};
+  const before=JSON.stringify(historical);
+  const retained=financialDetails.buildFinancialDetails([historical],[course],[],[]);
+  assert.strictEqual(retained.studentDetails[0].tuitionTotal,80.4,'reading must retain saved historical amounts');
+  assert.strictEqual(retained.teacherDetails[0].teacherFeeTotal,40.2);
+  assert.strictEqual(JSON.stringify(historical),before);
+  const rows=Array.from({length:3},(_,i)=>({...make(40),id:'minute-'+i}));
+  const details=financialDetails.buildFinancialDetails(rows,[course],[],[]);
+  const source=fs.readFileSync(path.resolve(__dirname,'../pages/RevenueStatistics.tsx'),'utf8');
+  const begin=source.indexOf('const teacherMap = new Map<string, TeacherIncomeSummary>();');
+  const end=source.indexOf('setStudentStats(studentResult);',begin)+'setStudentStats(studentResult);'.length;
+  assert(begin>=0&&end>begin);
+  let teachers,students;
+  new Function('displayedTeacherDetails','displayedStudentDetails','roundMoney','courseTypeNames','setTeacherIncomeStats','setStudentStats','addDurationStats',
+    ts.transpileModule(source.slice(begin,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText)(
+    details.teacherDetails,details.studentDetails,v=>Math.round((v+Number.EPSILON)*100)/100,financialDetails.courseTypeNames,
+    value=>{teachers=value;},value=>{students=value;},require('./revenueSourceStats').addDurationStats);
+  assert.strictEqual(teachers[0].durationMinutes,120);
+  assert.strictEqual(students[0].durationMinutes,120);
+  assert.deepStrictEqual(teachers[0].durationCounts,{'40':3});
+  assert.deepStrictEqual(students[0].durationCounts,{'40':3});
+  assert.strictEqual(teachers[0].total,120);assert.strictEqual(students[0].total,240);
+}
+
 // Exercise the original financial rules through the cloud projection and draft
 // adapters. A field-name mismatch must not turn leave/cancellation into normal.
 (async () => {

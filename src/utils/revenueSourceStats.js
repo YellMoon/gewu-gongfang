@@ -41,11 +41,14 @@ function buildSourceStats(rows = [], students = [], institutions = []) {
       teacherFeeAmount: 0,
       courseCount: 0,
       durationHours: 0,
+      durationMinutes: 0,
+      durationCounts: {},
     };
     current.tuitionAmount = roundMoney(current.tuitionAmount + Number(row.tuitionTotal || 0));
     current.teacherFeeAmount = roundMoney(current.teacherFeeAmount + Number(row.teacherFeeTotal || 0));
     current.courseCount += 1;
-    current.durationHours = roundMoney(current.durationHours + Number(row.durationHours || 0));
+    addDurationStats(current, row);
+    current.durationHours = current.durationMinutes / 60;
     sourceMap.set(source.sourceKey, current);
   });
 
@@ -56,4 +59,16 @@ function buildSourceStats(rows = [], students = [], institutions = []) {
   });
 }
 
-module.exports = { buildSourceStats };
+// Older callers may still supply hours; all accumulation uses integer minutes.
+function addDurationStats(summary, row) {
+  const minutes = Math.max(0, Math.round(Number(row.durationMinutes ?? Number(row.durationHours || 0) * 60)));
+  summary.durationMinutes += minutes;
+  summary.durationCounts[minutes] = (summary.durationCounts[minutes] || 0) + 1;
+}
+
+function formatDurationBreakdown(counts = {}) {
+  return Object.entries(counts).sort(([a], [b]) => Number(a) - Number(b))
+    .map(([minutes, count]) => `${minutes}分钟 × ${count}节`).join('、');
+}
+
+module.exports = { buildSourceStats, addDurationStats, formatDurationBreakdown };
