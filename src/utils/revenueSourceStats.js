@@ -62,6 +62,12 @@ function buildSourceStats(rows = [], students = [], institutions = []) {
 // Older callers may still supply hours; all accumulation uses integer minutes.
 function addDurationStats(summary, row) {
   const minutes = Math.max(0, Math.round(Number(row.durationMinutes ?? Number(row.durationHours || 0) * 60)));
+  if (Number(row.billingUnit) === 2) {
+    summary.sessionDurationCounts ||= {};
+    summary.sessionDurationCounts[minutes] = (summary.sessionDurationCounts[minutes] || 0) + 1;
+  } else {
+    summary.hourlyMinutes = (summary.hourlyMinutes || 0) + minutes;
+  }
   summary.durationMinutes += minutes;
   summary.durationCounts[minutes] = (summary.durationCounts[minutes] || 0) + 1;
 }
@@ -71,4 +77,18 @@ function formatDurationBreakdown(counts = {}) {
     .map(([minutes, count]) => `${minutes}分钟 × ${count}节`).join('、');
 }
 
-module.exports = { buildSourceStats, addDurationStats, formatDurationBreakdown };
+function formatDetailDuration(row) {
+  return Number(row.billingUnit) === 2
+    ? `${row.durationMinutes} 分钟`
+    : `${roundMoney(row.durationMinutes / 60)} 小时`;
+}
+
+function formatDurationSummary(summary) {
+  const parts = [];
+  const sessions = formatDurationBreakdown(summary.sessionDurationCounts);
+  if (summary.hourlyMinutes || !sessions) parts.push(`${roundMoney((summary.hourlyMinutes || 0) / 60)} 小时`);
+  if (sessions) parts.push(sessions);
+  return parts.join('、');
+}
+
+module.exports = { buildSourceStats, addDurationStats, formatDurationBreakdown, formatDurationSummary, formatDetailDuration };

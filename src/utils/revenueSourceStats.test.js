@@ -59,3 +59,13 @@ for (const durationMinutes of [40,40,40,80,90,120]) addDurationStats(durations,{
 assert.strictEqual(durations.durationMinutes,410);
 assert.strictEqual(formatDurationBreakdown(durations.durationCounts),'40分钟 × 3节、80分钟 × 1节、90分钟 × 1节、120分钟 × 1节');
 assert.strictEqual(formatDurationBreakdown({}),'');
+
+const { formatDurationSummary, formatDetailDuration } = require('./revenueSourceStats');
+const hourly = {durationMinutes:0,durationCounts:{}};
+for (let i=0;i<3;i++) addDurationStats(hourly,{durationMinutes:40,billingUnit:1});
+assert.strictEqual(hourly.durationMinutes,120);
+assert.strictEqual(formatDurationSummary(hourly),'2 小时');
+assert.strictEqual(formatDetailDuration({durationMinutes:40,billingUnit:1}),'0.67 小时');
+assert.strictEqual(formatDetailDuration({durationMinutes:80,billingUnit:2}),'80 分钟');
+addDurationStats(hourly,{durationMinutes:80,billingUnit:2});
+assert.strictEqual(formatDurationSummary(hourly),'2 小时、80分钟 × 1节');
