@@ -1,6 +1,7 @@
 # 旧同步草稿恢复与早课日期修复（2026-09-29）
 
-桌面目标版本：8.9.23（从 8.9.22 自动判定 patch）。发布验证进行中。
+桌面 8.9.23 已发布至 OSS 自动更新（从 8.9.22 自动判定 patch），公网完整下载校验通过。
+源码提交：`ff574ab8`，已推送 `gewu/master`。此处只声明桌面发布完成。
 
 ## 问题与修复
 
@@ -39,4 +40,27 @@
 仅改桌面恢复逻辑和日期展示。云端 8.12.4、NAS 8.8.3、小程序 8.8.26
 源码和数据契约未改。云端公网健康、权限/退役接口检查、M29 元数据及 NAS
 运行时心跳已重新验证。沿用小程序开发版上传证据，不宣称新的正式小程序发布。
-打包、原生运行时及 OSS feed/下载核验结果在完成后追加。
+统一版本矩阵仍为部分发布：沿用小程序 8.8.26 开发版上传，并非正式小程序发布。
+
+## 发布与真实桌面证据
+
+- `npm run dist:win` 成功；Electron root/backend ABI 119 检查通过，随后自动
+  恢复 Node root/backend ABI 137；恢复后再跑同步恢复及 72 组日期测试通过。
+  构建日志：`C:/Users/83423/AppData/Local/Temp/gewu-sync-dist-8923-20260928-x1ngzky8`。
+- 真正的 8.9.23 renderer/main/preload/native vault/outbox 使用独立教师测试账号
+  与临时配置目录运行。缺版本课程草稿转为“需要处理”，批量提交禁用；点击放弃
+  后原生列表为空，冷启动后草稿仍不存在。业务请求监听确认云端业务写入为 0。
+  页面异常为 0，测试设备/安装/关联/会话撤销后剩余活跃数均为 0。
+  这不代表测试了用户密码或微信授权流程，也没有删除用户实际旧草稿。
+- 原生运行报告和截图：`output/desktop-sync-recovery-20260929/packaged-8.9.23/`。
+  完整临时证据：`C:/Users/83423/AppData/Local/Temp/gewu-sync-runtime-8923-20260929-tuh2llbv`。
+- 独立 packaged smoke 启动检查通过，窗口加载实际打包页面。
+- `npm run publish:desktop-update` 成功；线上和归档 `latest.yml` 与本地一致。
+  公网完整下载 **150,369,232 bytes**，SHA-512 与本地安装包及 feed 一致：
+  `vgunkwflKm4F2mj0kXMbbTDl/r2Xdzrv+LaH0jpIQ2f8/5Z74ExzAd2o9TJSC6LxhCvnfpi6ggUl8dTxsHC3Iw==`。
+  校验时间：2026-09-29 03:14:47（北京时间）；归档对象大小和 ETag 也一致。
+- 版本矩阵与 OSS 回执：
+  `output/release-matrix-desktop-8.9.23__cloud-business-8.12.4__storage-proxy-8.8.3__miniapp-8.8.26/`。
+
+用户桌面按 OSS 自动更新流程更新并重启到 8.9.23 后生效。在云同步里点击旧记录的
+“放弃这条更改”即可移除本机旧草稿；不会删除云端课程。没有逐台安装或独立网盘交付。

@@ -3,7 +3,11 @@
 User request: restore discard for old failed sync entries absent from the course
 list; prevent lessons before 08:00 from moving to the previous day.
 Implementation and targeted RED/GREEN checks complete. Desktop 8.9.23 patch.
-All 429 lifecycle checks passed. Packaged runtime and OSS verification pending.
+All 429 lifecycle checks passed. Packaged native failure/discard/cold-restart and
+zero-business-write checks passed. Desktop 8.9.23 OSS live/archive feeds and full
+150,369,232-byte SHA-512 download verified; Node root/backend ABI 137 restored.
+Desktop repair delivered. Overall matrix remains partial: unchanged miniapp
+8.8.26 development upload, no new formal miniapp publication.
 Plan: docs/superpowers/plans/2026-09-29-sync-recovery-calendar-date.md
 Evidence: docs/desktop-sync-recovery-2026-09-29.md
 Preserve unrelated docs/desktop-device-name-2026-09-24.md exactly.
