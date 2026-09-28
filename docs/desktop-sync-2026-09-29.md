@@ -1,8 +1,7 @@
 # Desktop synchronization and historical course addresses
 
-Release target: desktop 8.9.22 / cloud business 8.12.4. NAS 8.8.3 and miniapp
-8.8.26 retain their existing protocol contracts. Publication is pending until
-the evidence below is completed. The miniapp has a development upload receipt,
+Desktop 8.9.22 is published to OSS and cloud business 8.12.4 is deployed.
+NAS 8.8.3 and unchanged miniapp 8.8.26 retain verified compatible contracts. The miniapp has a development upload receipt,
 not formal platform publication; the overall version matrix remains partial.
 
 ## Correction
@@ -66,9 +65,15 @@ Before cloud deployment, the running 8.12.3 source archive was saved and its
 contents checked at /root/scheduling-backups/cloud-code/20260928-171432.
 SHA-256: f3029ead915a14ecbd9344870ce1a29dff2bae93075710f67ad4b7e3bf8dfca7.
 Previous image: gewu-cloud-business-api:8.12.3-a32b6e58cf01.
-The deployment script additionally creates and restore-verifies a PostgreSQL
-backup, checks ownership/privileges, performs migrations and validates health
-and permission contracts before promotion. Its final receipt is still pending.
+Cloud 8.12.4 was deployed from source commit 2d0e0c15b533. The PostgreSQL backup
+/root/scheduling-backups/postgres/20260928-172421 was restore-verified, including
+ownership and privileges. SHA-256:
+d71765ae2ee76c36cf17c12d8ccd3d2ad38974555c1eaa152ad1c983af752058.
+Existing migrations were verified without changing the M29 ledger; candidate
+and public health/permission checks passed before/after promotion. A fresh
+follow-up verified cloud 8.12.4, retirement gateway tombstones, M29 metadata and
+the NAS 8.8.3 runtime receipt. Evidence: gewu-sync-cloud-deploy-8124-20260928-riz8h3p0
+and gewu-live-closeout-20260929-eugit5pq in local Temp.
 
 C: ran out of space during implementation. All existing dist files were preserved
 under D:/Codex-task-artifacts/gewu-sync-20260929/dist, with a junction retaining
@@ -78,3 +83,37 @@ terminating only docker-desktop WSL and archiving stale socket-only directories;
 no Docker databases, volumes, images, business records or user files were deleted.
 The unrelated docs/desktop-device-name-2026-09-24.md remains untouched (SHA-256
 13C7144C09D1260FFBB12F11A6C8A191A4C57A680629FA1A5AEBEE3F49C88E72).
+
+## Final desktop and delivery evidence
+
+Source commit: 2d0e0c15b53375bdacf6c22a05912458be635ab6, pushed to gewu/master.
+Build: npm run dist:win passed. Packaged native ABI 119 passed for root/backend;
+the script restored and verified Node ABI 137 for both. Native outbox, dependency
+batch and actual-component checks passed again after restoration.
+Build log: gewu-sync-dist-8922-20260928-okqfea3j in local Temp.
+Packaged smoke: gewu-sync-packaged-smoke-8922-20260928-cve1tb9w.
+
+Packaged runtime evidence: gewu-sync-runtime-8922-20260929-hpjfk9r4 in local Temp.
+The real renderer/main/preload/native vault used a controlled verified test
+teacher account with the deployed cloud. Registration, the shared empty sync
+window without a popover, actual menu/device listing and cold restart passed.
+Screenshot 02a-unified-sync-empty.png was inspected. This verification did not
+write production teaching data. Exact test device/session/installation/link
+cleanup counts are all zero. It does not claim password/WeChat consent testing.
+
+OSS publication: gewu-sync-publish-8922-20260928-w9jlae_9 in local Temp.
+Public and archived latest.yml match the local feed. The complete public
+installer was downloaded and matched the feed SHA-512; archive size/ETag match.
+Installer: GewuGongfang-Desktop-8.9.22-x64.exe; 150368262 bytes.
+SHA-512: U42HB6mPtW+cKNswyhjo4xSYBtszoLCpGCGDgsozSyENO1P51ZPx85V9SQM1dY9udksVEjZOIHYpMkPiZpCM6g==
+Verified at 2026-09-28T17:50:28.642Z.
+
+The version matrix is stored in
+output/release-matrix-desktop-8.9.22__cloud-business-8.12.4__storage-proxy-8.8.3__miniapp-8.8.26/active.json.
+All component compatibility receipts are verified, but overall publication is
+still PARTIAL because the miniapp receipt is development-only. No new miniapp
+upload or formal platform publication is claimed for unchanged miniapp source.
+
+The installed user application was read-only checked at 8.9.16. This task does
+not install over the running user instance; OSS automatic update to 8.9.22 and
+a restart are needed to activate the new desktop interaction on that machine.

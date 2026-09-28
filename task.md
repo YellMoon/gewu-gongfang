@@ -1,6 +1,7 @@
 # Active desktop synchronization correction - 2026-09-28 (UTF-8)
 
-Status: implementation verified in targeted tests; database/full regression and release pending.
+Status: desktop synchronization correction complete; desktop/cloud delivered.
+Overall multi-end publication remains partial (unchanged miniapp development upload).
 Source baseline: d3511ae6, desktop/OSS 8.9.21.
 This section supersedes historical instructions below for current execution.
 User-approved outcome: online edits submit silently; offline edits trigger one
@@ -18,10 +19,10 @@ manual device approval, unrelated page redesign or automatic history deletion.
   retain actionable attachment failures, conflict recovery and cancellation.
 - [x] Remove the popover; route Cloud Sync entries to the unified dialog; retain
   audit history in storage without displaying it as pending work.
-- [ ] Verify actual rendered desktop at wide/narrow sizes and keyboard focus;
+- [x] Verify actual rendered desktop at wide/narrow sizes and keyboard focus;
   exercise real business save paths, offline/reconnect, one confirmation and
   conflict stop. Record what uses controlled transport vs real cloud writes.
-- [ ] Run relevant/full regression and typecheck; bump desktop patch, check
+- [x] Run relevant/full regression and typecheck; bump desktop patch, check
   component compatibility, commit/push gewu/master, build and publish OSS,
   verify public feed/download and restored Node ABI; append evidence/status.
 
@@ -33,6 +34,11 @@ pass. Visual evidence: output/desktop-sync-20260929. Transport is controlled.
 Disk-full recovery preserves all dist artifacts via junction to
 D:/Codex-task-artifacts/gewu-sync-20260929/dist; old unpacked 8.9.21 preserved
 next to it. Docker runtime sockets archived while stopped to recover local tests.
+
+Final evidence: docs/desktop-sync-2026-09-29.md. All 427 npm lifecycle commands
+passed (430 attempts), typecheck and actual packaged teacher runtime passed;
+cloud 8.12.4 and desktop 8.9.22 OSS feed/download verified, Node ABI 137 restored.
+The user-installed 8.9.16 awaits its normal automatic update/restart.
 
 Direction brief: Windows/Electron education operations, calm-operational;
 one modal with a restrained status line, scannable business-change summaries,
