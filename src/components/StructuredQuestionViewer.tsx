@@ -1,4 +1,5 @@
 import React from 'react';
+import { applyPhysicsNotationToTextRuns } from '../utils/physicsNotation';
 import { QuestionFormulaContent } from './QuestionFormulaContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { RichAssetImage } from './RichAssetImage';
@@ -11,6 +12,7 @@ function markStyle(marks: any[] = []): React.CSSProperties {
     if (mark.type === 'italic') style.fontStyle = 'italic';
     if (mark.type === 'underline') style.textDecoration = 'underline';
     if (mark.type === 'strike') style.textDecoration = 'line-through';
+    if (mark.type === 'fontSize') style.fontSize = mark.attrs?.fontSize;
     if (mark.type === 'fontFamily') style.fontFamily = mark.attrs?.fontFamily;
     if (mark.type === 'textStyle') Object.assign(style, { color: mark.attrs?.color, fontSize: mark.attrs?.fontSize, fontFamily: mark.attrs?.fontFamily });
     if (mark.type === 'highlight') style.backgroundColor = mark.attrs?.color || '#fff3a3';
@@ -18,10 +20,10 @@ function markStyle(marks: any[] = []): React.CSSProperties {
   return style;
 }
 
-function renderNode(node: any, key: React.Key): React.ReactNode {
+function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNode {
   if (!node) return null;
   if (node.type === 'text') {
-    const content = <span style={markStyle(node.marks)}>{node.text}</span>;
+    const content = <span style={markStyle(node.marks)} dangerouslySetInnerHTML={{ __html: textHtml ?? applyPhysicsNotationToTextRuns([String(node.text || '')])[0] }} />;
     const verticalMark = (node.marks || []).filter((mark: any) => mark.type === 'subscript' || mark.type === 'superscript').at(-1);
     if (verticalMark?.type === 'subscript') return <sub key={key}>{content}</sub>;
     if (verticalMark?.type === 'superscript') return <sup key={key}>{content}</sup>;
@@ -29,10 +31,20 @@ function renderNode(node: any, key: React.Key): React.ReactNode {
   }
   if (node.type === 'formula' || node.type === 'formulaBlock') {
     const latex = String(node.attrs?.canonicalLatex || '');
-    return <span key={key} className="structured-question-viewer__formula"><QuestionFormulaContent latex={latex} block={node.type === 'formulaBlock' || node.attrs?.displayMode === 'block'} /></span>;
+    return <span key={key} className={`structured-question-viewer__formula${node.type === 'formulaBlock' || node.attrs?.displayMode === 'block' ? ' is-block' : ''}`}><QuestionFormulaContent latex={latex} block={node.type === 'formulaBlock' || node.attrs?.displayMode === 'block'} /></span>;
   }
-  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} style={{ width: node.attrs?.width || undefined }} data-align={node.attrs?.align || 'center'} />;
-  const children = (node.content || []).map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`));
+  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} width={node.attrs?.width || undefined} height={node.attrs?.height || undefined} style={{ width: node.attrs?.width || undefined, maxWidth: '100%', height: 'auto' }} data-align={node.attrs?.align || 'center'} />;
+  const nodes = node.content || [];
+  const formattedText = new Map<number, string>();
+  const ordinaryText = (child: any) => child.type === 'text' && !(child.marks || []).some((mark: any) => ['subscript', 'superscript'].includes(mark.type));
+  for (let index = 0; index < nodes.length;) {
+    if (!ordinaryText(nodes[index])) { index++; continue; }
+    const start = index;
+    while (index < nodes.length && ordinaryText(nodes[index])) index++;
+    applyPhysicsNotationToTextRuns(nodes.slice(start, index).map((child: any) => String(child.text || '')))
+      .forEach((html, offset) => formattedText.set(start + offset, html));
+  }
+  const children = nodes.map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`, formattedText.get(index)));
   const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight } as React.CSSProperties;
   if (node.type === 'table') return <div key={key} style={{ overflowX: 'auto' }}><table className="question-table"><tbody>{children}</tbody></table></div>;
   if (node.type === 'tableRow') return <tr key={key}>{children}</tr>;

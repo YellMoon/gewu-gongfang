@@ -35,7 +35,9 @@ function createStorageAgentRuntime({
           result = Object.freeze({ state: 'retryable_error', code });
         }
         await onResult(result);
-        if (shouldContinue()) await sleep(pollSeconds * 1000);
+        // Drain completed work without adding 10 seconds to every queued image.
+        const progressed = ['verified', 'candidates_ready', 'delivery_uploaded', 'question_asset_delivery_uploaded'].includes(result?.state);
+        if (shouldContinue() && !progressed) await sleep(pollSeconds * 1000);
       }
     },
   });

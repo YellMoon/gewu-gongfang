@@ -67,7 +67,11 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
     onChanged?.(nextSystems, nextNodes);
   }, [database, onChanged, subject]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+    window.addEventListener('authority-projection-refreshed', reload);
+    return () => window.removeEventListener('authority-projection-refreshed', reload);
+  }, [reload]);
 
   const addSystem = async () => {
     const name = await prompt(text.systemName);

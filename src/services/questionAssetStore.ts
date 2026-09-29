@@ -56,7 +56,19 @@ export async function storeQuestionAsset(key: string, dataUrl: string): Promise<
   return assetRef(key);
 }
 
+const pendingAssets = new Map<string, Promise<string>>();
+
 export async function getQuestionAssetDataUrl(keyOrRef: string): Promise<string> {
+  const key = assetKeyFromRef(keyOrRef);
+  const pending = pendingAssets.get(key);
+  if (pending) return pending;
+  const result = readQuestionAssetDataUrl(key);
+  pendingAssets.set(key, result);
+  try { return await result; }
+  finally { if (pendingAssets.get(key) === result) pendingAssets.delete(key); }
+}
+
+async function readQuestionAssetDataUrl(keyOrRef: string): Promise<string> {
   const key = assetKeyFromRef(keyOrRef);
   if (!key) return '';
   const cached = dataUrlCache.get(key);

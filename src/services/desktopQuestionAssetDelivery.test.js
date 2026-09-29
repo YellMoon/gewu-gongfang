@@ -38,3 +38,5 @@ const assert = require('node:assert/strict');
   assert.equal(invalid.waits.length,0);
   console.log('desktop question asset polling checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
+
+require('./questionAssetStore.concurrent.test.js');

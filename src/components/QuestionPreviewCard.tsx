@@ -177,7 +177,19 @@ const QuestionPreviewCard: React.FC<{
   const hasAnswerContent = questionHasAnswerContent(resolvedQuestion);
 
   return (
-    <article id={`question-card-${question.id}`} className="qb-question-card">
+    <article id={`question-card-${question.id}`} className="qb-question-card"
+      tabIndex={hasAnswerContent ? 0 : undefined}
+      aria-expanded={hasAnswerContent ? answerExpanded : undefined}
+      onClick={event => {
+        if (!hasAnswerContent || (event.target as HTMLElement).closest('button, a, input, label, [role="button"]')) return;
+        if (window.getSelection()?.toString()) return;
+        setAnswerExpanded(expanded => !expanded);
+      }}
+      onKeyDown={event => {
+        if (event.target === event.currentTarget && hasAnswerContent && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault(); setAnswerExpanded(expanded => !expanded);
+        }
+      }}>
       <div className="qb-card-main">
         {selectable && (
           <Checkbox

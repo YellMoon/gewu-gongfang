@@ -18,8 +18,9 @@ const STUDENT_SCHEDULE_TUITION_SQL = `(
   ), student_amounts AS (
     SELECT p.student_id,p.attendance_status,
       CASE WHEN p.attendance_status<>1 THEN 0::numeric ELSE
-        round(COALESCE(p.tuition,0) * CASE WHEN COALESCE(s.billing_unit,c.billing_unit)=2 THEN 1::numeric
-          ELSE greatest(0::numeric,trunc(extract(epoch FROM (s.end_at-s.start_at))/60)/60) END,2)
+        round(COALESCE(p.tuition,0) * greatest(0::numeric,trunc(extract(epoch FROM (s.end_at-s.start_at))/60)) /
+          CASE WHEN COALESCE(s.billing_unit,c.billing_unit)=2
+            THEN COALESCE(NULLIF(greatest(c.default_duration_minutes,0),0),120)::numeric ELSE 60::numeric END,2)
       END AS amount
     FROM effective_pricing p
     JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id AND c.legacy_deleted=false

@@ -631,8 +631,8 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
       consumptions: value.consumptions,
       assetRecords: value.assetRecords,
       assetCategories: value.assetCategories,
-      taxonomy_systems: [],
-      taxonomy_nodes: [],
+      taxonomy_systems: value.taxonomy_systems || [],
+      taxonomy_nodes: value.taxonomy_nodes || [],
     };
   }
   app.post('/api/desktop/online-verification', async (request, response) => {

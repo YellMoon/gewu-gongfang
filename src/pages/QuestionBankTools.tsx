@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Space, Statistic, Table, Tabs, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Empty, Space, Statistic, Table, Tabs, Tag, Typography, message } from 'antd';
 import {
   FileSearchOutlined,
   FileWordOutlined,
@@ -11,6 +11,9 @@ import type { ImportTask, Question } from '../types';
 import type { PageKey } from '../navigation/appNavigation';
 import type { NavigationInput, QuestionBankToolsContext } from '../navigation/navigationContext';
 import './QuestionBankTools.css';
+import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
+const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
+const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 
 interface QuestionBankToolsProps {
   onNavigate: (target: NavigationInput) => void;
@@ -58,7 +61,6 @@ function buildIssues(questions: Question[]): QuestionIssue[] {
       return { question, reasons };
     })
     .filter(item => item.reasons.length > 0)
-    .slice(0, 8)
     .map(({ question, reasons }) => ({
       id: question.id,
       title: String(question.content || question.stem || '未填写题干').slice(0, 80),
@@ -110,7 +112,11 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
   useEffect(() => {
     loadStats();
     window.addEventListener('question-basket-changed', loadStats as EventListener);
-    return () => window.removeEventListener('question-basket-changed', loadStats as EventListener);
+    window.addEventListener('authority-projection-refreshed', loadStats);
+    return () => {
+      window.removeEventListener('question-basket-changed', loadStats as EventListener);
+      window.removeEventListener('authority-projection-refreshed', loadStats);
+    };
   }, []);
 
   useEffect(() => {
@@ -127,6 +133,21 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
     });
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10);
   }, [stats.questions]);
+
+  const deleteIssue = async (id: string) => {
+    try {
+      const question = stats.questions.find(item => item.id === id);
+      const session = readDesktopAuthorizationSession();
+      const permission = questionDeletePresentation(question, normalizeDesktopQuestionDeleteContext(session));
+      if (!permission.enabled) { message.warning(permission.reason); return; }
+      const db = (window as any).dbService;
+      const deleted = question?.storage_state === 'cloud_cached'
+        ? db.deleteCloudCachedQuestion(id)
+        : db.deleteQuestion(id, await verifyNativeQuestionDraft(id, session));
+      if (!deleted) throw new Error('删除失败，请刷新后重试');
+      loadStats();
+    } catch (error: any) { message.error(error?.message || '删除失败'); }
+  };
 
   const issues = useMemo(() => buildIssues(stats.questions), [stats.questions]);
   const publishedCount = stats.questions.filter(question => question.status === 'published').length;
@@ -185,7 +206,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
             children: (
               <div className="question-bank-tools-grid">
                 <Card title="问题试题" size="small">
-                  <QuestionIssueQueue issues={issues} onEdit={() => onNavigate('question-bank-preview')} />
+                  <QuestionIssueQueue issues={issues} onEdit={questionId => onNavigate({ page: 'question-bank-preview', context: { questionId } })} onDelete={deleteIssue} />
                 </Card>
                 <Card title="处理建议" size="small">
                   <Alert

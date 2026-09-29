@@ -1,6 +1,6 @@
 import React from 'react';
-import { Alert, Button, Empty, List, Space, Tag, Typography } from 'antd';
-import { EditOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, List, Popconfirm, Space, Tag, Typography } from 'antd';
+import { DeleteOutlined, EditOutlined } from '@ant-design/icons';
 
 export type QuestionIssue = {
   id: string;
@@ -13,9 +13,10 @@ export type QuestionIssue = {
 interface QuestionIssueQueueProps {
   issues: QuestionIssue[];
   onEdit: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 }
 
-const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit }) => {
+const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit, onDelete }) => {
   if (issues.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待处理问题试题" />;
   }
@@ -31,6 +32,7 @@ const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit 
       <List
         size="small"
         dataSource={issues}
+        pagination={{ pageSize: 8, hideOnSinglePage: true }}
         rowKey="id"
         renderItem={(issue) => (
           <List.Item
@@ -44,6 +46,9 @@ const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit 
               >
                 编辑
               </Button>,
+              <Popconfirm key="delete" title="确定删除这道问题试题？" okText="删除" cancelText="取消" onConfirm={() => onDelete(issue.id)}>
+                <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>,
             ]}
           >
             <List.Item.Meta

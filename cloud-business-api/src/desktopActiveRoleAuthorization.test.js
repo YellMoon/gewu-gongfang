@@ -56,6 +56,7 @@ async function request(app, path) {
         students: [], studentContacts: [], teachers: [], courses: [], schedules: [],
         institutions: [], schools: [], rooms: [], assetRecords: [], assetCategories: [],
         payments: [], consumptions: [],
+        taxonomy_systems: [{id:'physics',subject:'物理',name:'知识点'}], taxonomy_nodes: [{id:'force',system_id:'physics',name:'力'}],
       } }] };
     },
     desktopRegistration,
@@ -70,7 +71,7 @@ async function request(app, path) {
   assert.deepStrictEqual(projection.body.projection, {
     students: [], student_contacts: [], teachers: [], courses: [], schedules: [],
     institutions: [], schools: [], rooms: [], grades: [], payments: [], consumptions: [],
-    assetRecords: [], assetCategories: [], taxonomy_systems: [], taxonomy_nodes: [],
+    assetRecords: [], assetCategories: [], taxonomy_systems: [{id:'physics',subject:'物理',name:'知识点'}], taxonomy_nodes: [{id:'force',system_id:'physics',name:'力'}],
   });
 
   console.log('desktop active-role authorization tests passed');

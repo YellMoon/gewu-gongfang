@@ -31,12 +31,13 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     await createBusinessFoundationCatalogBoundary(pg).apply(handle, receipt);
     await withQuery(handle, 'fixture-provisioner', async db => {
       await db.query('CREATE ROLE gewu_cloud_schedule_reader NOLOGIN; GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader');
-      for (const file of ['20260821-business-schedule-update.sql', '20260822-business-schedule-student-override.sql', '20260907-z-teacher-student-write-scope.sql', '20260824-supplemental-business-authority.sql']) {
+      for (const file of ['20260821-business-schedule-update.sql', '20260822-business-schedule-student-override.sql', '20260907-z-teacher-student-write-scope.sql', '20260824-supplemental-business-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql']) {
         await db.query(fs.readFileSync(path.join(__dirname, file), 'utf8'));
+        if(file==='20260823-cloud-question-command-receipts.sql') await db.query('ALTER TABLE business.desktop_question_command_receipts OWNER TO vnext_pg17_business_owner');
       }
       await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
       await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
-      await db.query('GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+      await db.query('GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides,business.question_taxonomy_systems,business.question_taxonomy_nodes TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('own','Own',false,now(),now()),('foreign','Foreign',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher','own','Teacher',false,now(),now()),('other','own','Other',false,now(),now())");
       for (const [id, tenant, creator, deleted] of [
@@ -59,9 +60,11 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
         // A shared student's ledger is student-wide, including lessons not in the current teacher's course.
         await db.query("INSERT INTO business.consumptions(id,tenant_id,student_id,schedule_id,hours,amount,consumption_date,deleted) VALUES ($1,$2,$3,'historical-other-lesson',1.5,180,'2026-09-08',$4)", [id, tenant, student, deleted]);
       }
+      await db.query("INSERT INTO business.question_taxonomy_systems(tenant_id,id,subject,name,sort_order,deleted,created_at,updated_at) VALUES ('own','system-own','physics','Knowledge',0,false,now(),now()),('foreign','system-foreign','physics','Private',0,false,now(),now())");
+      await db.query("INSERT INTO business.question_taxonomy_nodes(tenant_id,id,system_id,parent_id,name,sort_order,deleted,created_at,updated_at) VALUES ('own','node-own','system-own',NULL,'Force',0,false,now(),now())");
       const read = async teacher => {
         await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');
-        try { return (await db.query(sql, ['own', 'teacher', teacher])).rows[0].projection; }
+        try { const projection=(await db.query(sql, ['own', 'teacher', teacher])).rows[0].projection; assert.deepEqual(projection.taxonomy_systems.map(x=>x.id),['system-own']); assert.deepEqual(projection.taxonomy_nodes.map(x=>x.id),['node-own']); return projection; }
         finally { await db.query('ROLLBACK'); }
       };
       const assertIds = (value, ids) => {

@@ -12,7 +12,7 @@ assert.ok(source.includes('ShoppingCartOutlined'), 'the direct basket action mus
 assert.ok(source.includes('showAnswer = false'), 'desktop question cards must keep answers and explanations collapsed by default');
 assert.ok(
   source.includes('answerExpanded ? COLLAPSE_ANSWER_LABEL : EXPAND_ANSWER_LABEL'),
-  'desktop question cards must expose an explicit answer toggle instead of relying on a hidden whole-card gesture',
+  'desktop question cards must expose an explicit answer toggle alongside the restored whole-card gesture',
 );
 assert.ok(
   source.includes('answer={answerExpanded ? resolvedQuestion.answer : undefined}'),
@@ -24,3 +24,5 @@ assert.ok(
 );
 
 console.log('question preview card answer and basket action checks passed');
+
+require('./QuestionPreviewCard.interaction.test.js');

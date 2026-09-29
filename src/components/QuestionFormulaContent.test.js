@@ -11,8 +11,9 @@ function load(file) {
   const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.React, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
   const module = { exports: {} };
   vm.runInNewContext(compiled, { module, exports: module.exports, require: name => {
+    if (name === '../utils/physicsNotation') { const m={exports:{}}; new Function('module','exports',ts.transpileModule(fs.readFileSync(path.join(__dirname,'../utils/physicsNotation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(m,m.exports);return m.exports;}
     if (name === './QuestionFormulaContent') return load('QuestionFormulaContent.tsx');
-    if (name === './RichAssetImage') return { RichAssetImage: props => React.createElement('img', props) };
+    if (name === './RichAssetImage') return { RichAssetImage: ({assetKey,...props}) => React.createElement('img', props) };
     if (name === '../utils/questionOptions') return require('../utils/questionOptions.ts');
     return require(name);
   } });
@@ -49,3 +50,24 @@ assert(marked.includes('&lt;unsafe&gt;'),'marked text remains escaped');
 assert(marked.includes('font-style:italic'),'vertical marks retain other typography');
 assert(fs.readFileSync(path.join(__dirname, 'RichQuestionEditor.tsx'), 'utf8').includes('<QuestionFormulaContent latex={latex}'));
 console.log('formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL');
+
+const vector = renderToStaticMarkup(React.createElement(QuestionFormulaContent,{latex:'\\vect{F}'}));
+assert(!vector.includes('katex-error'),'structured formulae must use the established physics macros');
+const physics=renderToStaticMarkup(React.createElement(Viewer,{value:{sections:{...markedValue.sections,stem:doc([{type:'paragraph',content:[{type:'text',text:'质量 m，速度 v，长度 2 m'}]}])}}}));
+assert(physics.includes('<i>m</i>') && physics.includes('<i>v</i>'));
+assert(physics.includes('class="physics-unit"'),'units retain upright typography');
+
+const geometry=renderToStaticMarkup(React.createElement(Viewer,{value:{sections:{...markedValue.sections,stem:doc([{type:'image',attrs:{src:'data:image/png;base64,YQ==',width:389,height:297}}])}}}));
+assert(geometry.includes('width="389"') && geometry.includes('height="297"'));
+assert(geometry.includes('width:389px;max-width:100%;height:auto'),'imported display geometry remains responsive without enlargement');
+assert(hidden.includes('structured-question-viewer__formula is-block'));
+
+const splitUnits=renderToStaticMarkup(React.createElement(Viewer,{value:{sections:{...markedValue.sections,stem:doc([{type:'paragraph',content:[{type:'text',text:'长度 2 '},{type:'text',text:'m',marks:[{type:'bold'}]},{type:'text',text:'，速度 3 '},{type:'text',text:'m/'},{type:'text',text:'s'},{type:'text',text:'，质量 '},{type:'text',text:'m'}]}])}}}));
+assert(!splitUnits.includes('<i>s</i>'),'split unit denominator stays upright');
+assert.equal((splitUnits.match(/<i>m<\/i>/g)||[]).length,1,'only mass m is italic, not meters split across marks');
+assert(splitUnits.includes('font-weight:700'),'contextual unit recognition retains marks');
+
+assert(marked.includes('<i>v</i>'),'subscript boundaries do not turn variable v into a word v0');
+const {applyPhysicsNotationToTextRuns}=load('../utils/physicsNotation.ts');
+const spaced=applyPhysicsNotationToTextRuns(['长度 2  ','m','，质量 ','m']);
+assert.deepEqual(spaced,['长度 2  ','<span class="physics-unit">m</span>','，质量 ','<i>m</i>'],'preserve spaces and source mark offsets');

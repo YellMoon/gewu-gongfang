@@ -28,7 +28,8 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
         {id:'minute-40',unit:1,minutes:40,total:0,rates:[120,180],expected:[80,120]},
         {id:'minute-80',unit:1,minutes:80,total:0,rates:[120,180],expected:[160,240]},
         {id:'minute-cents',unit:1,minutes:40,total:0,rates:[100],expected:[66.67,null]},
-        {id:'minute-session',unit:2,minutes:40,total:0,rates:[120],expected:[120,null]},
+        {id:'minute-session',unit:2,minutes:40,total:0,rates:[120],expected:[40,null]},
+        {id:'session-double',unit:2,base:40,minutes:80,total:0,rates:[100],expected:[200,null]},
         {id:'minute-historical',unit:1,minutes:40,total:80.4,rates:[120],expected:[80.4,null]},
         {id:'snapshot',unit:1,minutes:90,total:480,rates:[180,300],expected:[180,300]},
         {id:'equal-snapshot',unit:1,minutes:90,total:120,rates:[0,0],expected:[60,60]},
@@ -36,10 +37,11 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
         {id:'cancelled',unit:1,minutes:90,total:450,rates:[180,300],status:3,expected:[0,450]},
         {id:'override',unit:1,minutes:90,total:300,rates:[180,300],onlySelf:true,expected:[300,null]},
         {id:'zero',unit:1,minutes:90,total:0,rates:[0],expected:[0,null]},
-        {id:'historical-unit',unit:1,snapshotUnit:2,minutes:90,total:0,rates:[180],expected:[180,null]},
+        {id:'historical-unit',unit:1,snapshotUnit:2,minutes:90,total:0,rates:[180],expected:[135,null]},
       ];
       for(const c of cases){
         await facade.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) VALUES ($1,'tuition-tenant','Test','Test',1,1,180,120,$2,1,'teacher',true,false,now(),now())",[c.id,c.unit]);
+        if(c.base) await facade.query('UPDATE business.courses SET default_duration_minutes=$2 WHERE id=$1',[c.id,c.base]);
         for(let i=0;i<c.rates.length;i++) await facade.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tuition-tenant',$1,$2,$3,120)",[c.id,i?'other':'self',c.rates[i]]);
         await facade.query("INSERT INTO business.schedules(id,tenant_id,course_id,start_at,end_at,status,calculated_tuition,calculated_teacher_fee,legacy_deleted,created_at,updated_at) VALUES ($1,'tuition-tenant',$1,'2026-09-07T06:00:00Z'::timestamptz,'2026-09-07T06:00:00Z'::timestamptz+$2*interval '1 minute',1,$3,180,false,now(),now())",[c.id,c.minutes,c.total]);
         if(c.snapshotUnit) await facade.query("UPDATE business.schedules SET billing_unit=$2 WHERE id=$1",[c.id,c.snapshotUnit]);

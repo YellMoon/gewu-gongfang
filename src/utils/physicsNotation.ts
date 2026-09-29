@@ -377,7 +377,7 @@ export function applyPhysicsNotationToHTML(html: string): string {
   const greekSymbols = ['\u03b1', '\u03b2', '\u03b3', '\u03b4', '\u03b5', '\u03b8', '\u03bb', '\u03bc', '\u03bd', '\u03c1', '\u03c3', '\u03c4', '\u03c6', '\u03c9', '\u03a6', '\u03a9', '\u0394', '\u03a0', '\u03a3'];
   const unitCore = String.raw`(?:da|[YZEPTGMkhdcmu\u03bcnpfazy])?(?:kg|mol|rad|sr|Hz|Pa|Wb|eV|N|J|W|V|A|K|C|T|H|F|S|m|s|g|\u03a9|ohm)`;
   const unitExpr = String.raw`${unitCore}(?:\s*(?:[\u00b7*\u00d7x/]|(?:\^|\u2212|-)?\d+)\s*${unitCore}?)*`;
-  const numberUnitRe = new RegExp(String.raw`(\d+(?:\.\d+)?)(\s|&nbsp;)*(${unitExpr})`, 'g');
+  const numberUnitRe = new RegExp(String.raw`(\d+(?:\.\d+)?)((?:\s|&nbsp;)*)(${unitExpr})`, 'g');
 
   const processText = (text: string) => {
     const protectedUnits: string[] = [];
@@ -412,6 +412,30 @@ export function applyPhysicsNotationToHTML(html: string): string {
     .map(part => part.startsWith('<') ? part : processText(part))
     .join('');
 }
+/** Format contiguous plain-text runs together, then restore their mark boundaries. */
+export function applyPhysicsNotationToTextRuns(texts: string[]): string[] {
+  const escaped = texts.map(text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'));
+  const formatted = applyPhysicsNotationToHTML(escaped.join(''));
+  const tags: string[] = [];
+  const segments: Array<{ start: number; text: string; tags: string[] }> = [];
+  let offset = 0;
+  for (const part of formatted.split(/(<[^>]+>)/g)) {
+    if (part.startsWith('</')) tags.pop();
+    else if (part.startsWith('<')) tags.push(part);
+    else { segments.push({ start: offset, text: part, tags: [...tags] }); offset += part.length; }
+  }
+  let start = 0;
+  return escaped.map(text => {
+    const end = start + text.length;
+    const html = segments.filter(segment => segment.start < end && segment.start + segment.text.length > start).map(segment => {
+      const value = segment.text.slice(Math.max(0, start - segment.start), Math.min(segment.text.length, end - segment.start));
+      return segment.tags.join('') + value + [...segment.tags].reverse().map(tag => tag.startsWith('<i>') ? '</i>' : '</span>').join('');
+    }).join('');
+    start = end;
+    return html;
+  });
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

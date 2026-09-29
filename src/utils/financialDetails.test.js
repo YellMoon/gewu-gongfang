@@ -50,6 +50,23 @@ function loadTsModule(modulePath, cache = new Map()) {
 const financialDetails = loadTsModule('./financialDetails.ts');
 const types = loadTsModule('../types/index.ts');
 
+// Per-session rates use the course's default lesson duration as their unit.
+{
+  const course = { id:'session-course', default_duration_minutes:40, billing_unit:2,
+    student_pricings:[{student_id:'s',tuition:100,teacher_fee:60,status:1}] };
+  for (const [minutes,tuition,fee] of [[40,100,60],[80,200,120],[20,50,30],[0,0,0]]) {
+    const schedule={id:'session-'+minutes,course_id:course.id,start_time:'2026-09-29 10:00',
+      end_time:require('dayjs')('2026-09-29 10:00').add(minutes,'minute').format('YYYY-MM-DD HH:mm')};
+    const snapshot=financialDetails.buildScheduleFinancialSnapshot(schedule,course);
+    assert.strictEqual(snapshot.calculated_tuition,tuition);
+    assert.strictEqual(snapshot.calculated_teacher_fee,fee);
+    const details=financialDetails.buildFinancialDetails([schedule],[course],[],[]);
+    assert.strictEqual(details.studentDetails[0].tuitionTotal,tuition);
+    assert.strictEqual(details.teacherDetails[0].teacherFeeTotal,fee);
+    if(minutes) assert.strictEqual(details.teacherDetails[0].feeUnitPrice,60);
+  }
+}
+
 assert.strictEqual(
   typeof financialDetails.buildCourseRefreshFinancialSnapshot,
   'function',
@@ -120,8 +137,8 @@ console.log('financialDetails refresh tests passed');
     for (const billingUnit of [1,2]) {
       const row={...make(minutes),billing_unit:billingUnit};
       const snap=financialDetails.buildScheduleFinancialSnapshot(row,course);
-      assert.strictEqual(snap.calculated_tuition,billingUnit===1?tuition:120);
-      assert.strictEqual(snap.calculated_teacher_fee,billingUnit===1?fee:60);
+      assert.strictEqual(snap.calculated_tuition,billingUnit===1?tuition:minutes);
+      assert.strictEqual(snap.calculated_teacher_fee,billingUnit===1?fee:minutes/2);
       const details=financialDetails.buildFinancialDetails([{...row,...snap}],[course],[],[]);
       assert.strictEqual(details.studentDetails[0].tuitionTotal,snap.calculated_tuition);
       assert.strictEqual(details.teacherDetails[0].teacherFeeTotal,snap.calculated_teacher_fee);

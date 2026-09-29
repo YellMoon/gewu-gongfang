@@ -84,11 +84,7 @@ function formatDetailDuration(row) {
 }
 
 function formatDurationSummary(summary) {
-  const parts = [];
-  const sessions = formatDurationBreakdown(summary.sessionDurationCounts);
-  if (summary.hourlyMinutes || !sessions) parts.push(`${roundMoney((summary.hourlyMinutes || 0) / 60)} 小时`);
-  if (sessions) parts.push(sessions);
-  return parts.join('、');
+  return `${roundMoney(Number(summary.durationMinutes || 0) / 60)} 小时`;
 }
 
 module.exports = { buildSourceStats, addDurationStats, formatDurationBreakdown, formatDurationSummary, formatDetailDuration };

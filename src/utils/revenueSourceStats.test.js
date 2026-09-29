@@ -68,4 +68,4 @@ assert.strictEqual(formatDurationSummary(hourly),'2 小时');
 assert.strictEqual(formatDetailDuration({durationMinutes:40,billingUnit:1}),'0.67 小时');
 assert.strictEqual(formatDetailDuration({durationMinutes:80,billingUnit:2}),'80 分钟');
 addDurationStats(hourly,{durationMinutes:80,billingUnit:2});
-assert.strictEqual(formatDurationSummary(hourly),'2 小时、80分钟 × 1节');
+assert.strictEqual(formatDurationSummary(hourly),'3.33 小时');

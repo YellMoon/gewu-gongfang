@@ -141,10 +141,14 @@ const selectSnapshotPricings = (
   return [];
 };
 
-const amountByUnit = (unitPrice: number, billingUnit: BillingUnit, durationMinutes: number): number => {
-  if (billingUnit === BillingUnit.PER_HOUR) return roundMoney(unitPrice * durationMinutes / 60);
-  return roundMoney(unitPrice);
+const billingMultiplier = (billingUnit: BillingUnit, durationMinutes: number, defaultDurationMinutes?: number): number => {
+  const base = Number(defaultDurationMinutes);
+  // Match the course editor default for older courses without a saved duration.
+  return Math.max(0, durationMinutes) / (billingUnit === BillingUnit.PER_HOUR ? 60 : (base > 0 && Number.isFinite(base) ? base : 120));
 };
+
+const amountByUnit = (unitPrice: number, billingUnit: BillingUnit, durationMinutes: number, defaultDurationMinutes?: number): number =>
+  roundMoney(unitPrice * billingMultiplier(billingUnit, durationMinutes, defaultDurationMinutes));
 
 const scaleToSnapshot = <T extends Record<string, any>>(
   rows: T[],
@@ -192,12 +196,13 @@ export function calculateScheduleFinancialTotals(
   pricings: StudentCoursePricing[] = [],
   billingUnit: BillingUnit = BillingUnit.PER_HOUR,
   teacherFeeMode: TeacherFeeMode = TeacherFeeMode.PER_SESSION,
-  durationMinutes: number = 0
+  durationMinutes: number = 0,
+  defaultDurationMinutes?: number
 ): { tuition: number; teacherFee: number } {
   const activePricings = pricings.filter(activePricing);
-  const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationMinutes / 60 : 1;
+  const multiplier = billingMultiplier(billingUnit, durationMinutes, defaultDurationMinutes);
   const tuition = activePricings.reduce((sum, pricing) => (
-    sum + amountByUnit(Number(pricing.tuition || 0), billingUnit, durationMinutes)
+    sum + amountByUnit(Number(pricing.tuition || 0), billingUnit, durationMinutes, defaultDurationMinutes)
   ), 0);
   const rawTeacherFee = activePricings.reduce((sum, pricing) => (
     sum + Number(pricing.teacher_fee ?? 0) * multiplier
@@ -227,7 +232,8 @@ export function buildScheduleFinancialSnapshot(
     studentPricings,
     billingUnit,
     teacherFeeMode,
-    getDurationMinutes(schedule.start_time || '', schedule.end_time || '')
+    getDurationMinutes(schedule.start_time || '', schedule.end_time || ''),
+    course?.default_duration_minutes
   );
 
   return {
@@ -332,7 +338,7 @@ export function buildFinancialDetails(
     const teacher = teachers.find(item => item.id === teacherId);
     const { pricings, pricingSource } = getSchedulePricings(schedule, course);
     const studentCount = Math.max(1, pricings.length);
-    const multiplier = billingUnit === BillingUnit.PER_HOUR ? durationMinutes / 60 : 1;
+    const multiplier = billingMultiplier(billingUnit, durationMinutes, course?.default_duration_minutes);
 
     const rawRows = pricings.map((pricing, index) => {
       const tuitionUnitPrice = Number(pricing.tuition || 0);
@@ -366,7 +372,7 @@ export function buildFinancialDetails(
         billingUnit,
         billingUnitName: billingUnit === BillingUnit.PER_HOUR ? '小时' : '次',
         tuitionUnitPrice: roundMoney(tuitionUnitPrice),
-        tuitionTotal: amountByUnit(tuitionUnitPrice, billingUnit, durationMinutes),
+        tuitionTotal: amountByUnit(tuitionUnitPrice, billingUnit, durationMinutes, course?.default_duration_minutes),
         teacherFeeUnitPrice: roundMoney(teacherFeeUnitPrice),
         teacherFeeTotal: roundMoney(teacherFeeUnitPrice * multiplier),
         teacherFeeMode,
@@ -384,8 +390,8 @@ export function buildFinancialDetails(
       : 0;
 
     const feeUnitPrice = roundMoney(
-      billingUnit === BillingUnit.PER_HOUR && durationHours > 0
-        ? teacherFeeTotal / durationHours
+      multiplier > 0
+        ? teacherFeeTotal / multiplier
         : teacherFeeTotal
     );
 

@@ -106,7 +106,7 @@ function attendanceWith(source,course,schedule,statuses,financialRules){
     }
     let cases=0;
     for(const source_type of [1,2,3])for(const type of [1,2,3,4])for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const attendance of [[1,1],[1,3],[4,1]]){
-      const course={id:'course',display_name:'双人课程',type,source_type,billing_unit,teacher_fee_mode,teacher_id:'teacher',year:2026,semester:'秋学期',
+      const course={id:'course',display_name:'双人课程',default_duration_minutes:90,type,source_type,billing_unit,teacher_fee_mode,teacher_id:'teacher',year:2026,semester:'秋学期',
         student_pricings:[{student_id:'student-a',tuition:180,teacher_fee:120,status:attendance[0]},{student_id:'student-b',tuition:130,teacher_fee:80,status:attendance[1]}]};
       const before=JSON.stringify(course),old=await saveWith(oldCalendar,course,oldFinancial),current=await saveWith(currentCalendar,course,financial);
       const normalize=rows=>rows.map(row=>({...row,start_time:dayjs(row.start_time).toISOString(),end_time:dayjs(row.end_time).toISOString()}));
@@ -134,7 +134,7 @@ function attendanceWith(source,course,schedule,statuses,financialRules){
     let attendanceCases=0;
     // UTF-8: institution and mixed lessons use the actual pre-migration branch, not a stub.
     for(const source_type of [1,2,3])for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const first of [1,3,4])for(const second of [1,3,4]){
-      const course={id:'course',teacher_id:'teacher',source_type,institution_id:source_type===1?undefined:'institution',billing_unit,teacher_fee_mode,
+      const course={id:'course',default_duration_minutes:90,teacher_id:'teacher',source_type,institution_id:source_type===1?undefined:'institution',billing_unit,teacher_fee_mode,
         student_pricings:[{student_id:'student-a',tuition:999,teacher_fee:888,status:1},{student_id:'student-b',tuition:777,teacher_fee:666,status:1}]};
       const schedule={id:'lesson',course_id:'course',start_time:'2026-09-14T02:00:00Z',end_time:'2026-09-14T03:30:00Z',status:1,updated_at:'2026-09-13T00:00:00Z',
         student_pricings:[{student_id:'student-a',tuition:180,teacher_fee:120,status:1},{student_id:'student-b',tuition:130,teacher_fee:80,status:1}]};

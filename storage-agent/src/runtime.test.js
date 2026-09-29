@@ -17,6 +17,16 @@ async function main() {
   await runtime.runForever({ shouldContinue: () => events.filter(value => value === 'run').length < 3 });
   assert.deepStrictEqual(events, ['run', 'run', 'sleep:5000', 'run']);
 
+  const burstEvents = [];
+  let completed = 0;
+  const burst = createStorageAgentRuntime({worker:{async runOnce(){
+    completed++; burstEvents.push('run');
+    return {state:completed <= 3 ? 'question_asset_delivery_uploaded' : 'idle'};
+  }},pollSeconds:10,sleep:async ms=>burstEvents.push(ms)});
+  await burst.runForever({shouldContinue:()=>completed<5});
+  assert.deepStrictEqual(burstEvents,['run','run','run','run',10000,'run'],
+    'queued images should drain immediately; only idle/error waits use the polling interval');
+
   const retryEvents = [];
   const retryRuntime = createStorageAgentRuntime({
     worker: {

@@ -47,7 +47,14 @@ function verify(options={}){
         student_pricings:[{student_id:'student-1',tuition:180,teacher_fee:120,status}],calculated_tuition:270,calculated_teacher_fee:180};
       for(const action of (options.courseDeleted===false?['move','copy','resize','delete']:['move','copy','resize','delete','attendance'])){
         const before=JSON.stringify(schedule),original=execute(action,schedule,true,true,false,options),current=execute(action,schedule,false,true,false,options);
-        assert.deepEqual(current,original,action+' with deleted course');assert.equal(JSON.stringify(schedule),before);
+        // Session billing deliberately changes: the historical missing duration uses the editor's 120-minute default.
+        if(billing_unit===2 && ['move','copy','resize'].includes(action)) for(const row of original.rows){
+          if(row.id!==(action==='copy'?'copy':'lesson')) continue;
+          const factor=dayjs(row.end_time).diff(dayjs(row.start_time),'minute')/120;
+          row.calculated_tuition=Math.round(row.calculated_tuition*factor*100)/100;
+          row.calculated_teacher_fee=Math.round(row.calculated_teacher_fee*factor*100)/100;
+        }
+        assert.deepEqual(current,original,action+' with deleted course and duration-based session billing');assert.equal(JSON.stringify(schedule),before);
         if(action==='attendance'){assert.equal(current.editorOpened,false);assert.equal(current.writes,0);}else assert.equal(current.writes,1);
         cases.push({action,schedule,result:current.rows.find(s=>s.id===(action==='copy'?'copy':'lesson'))});
       }
@@ -66,7 +73,7 @@ function verifyAttendance(){
   for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const status of [1,3,4]){
     const schedule={id:'lesson',course_id:'course-1',start_time:'2026-09-14 09:00',end_time:'2026-09-14 10:30',status:1,billing_unit,teacher_fee_mode,teacher_id:'teacher-1',teacher_name:'Original teacher',student_pricings:[{student_id:'deleted-student',tuition:180,teacher_fee:120,status:1}]};
     const outcomes=versions.map(v=>{
-      const course={id:'course-1',course_type:1,student_pricings:schedule.student_pricings},modal={open:false,schedule:null};let fields,writes=0,rows=[schedule];
+      const course={id:'course-1',default_duration_minutes:90,course_type:1,student_pricings:schedule.student_pricings},modal={open:false,schedule:null};let fields,writes=0,rows=[schedule];
       const env={schedule,courses:[course],allStudents:[],students:[],teachers:[],studentEditModal:modal,
         studentEditForm:{setFieldsValue:value=>{fields=value;},getFieldsValue:()=>({students:fields.students.map(p=>({...p,status}))})},
         setStudentEditModal:value=>Object.assign(modal,value),setSchedulesWithHistory:fn=>{rows=fn(rows);writes++;},message:{success(){}},

@@ -19,7 +19,7 @@ async function verify(){
   }
   // UTF-8: refresh replaces the teacher name from course defaults even when it is null.
   for(const teacher_name of ['Teacher',null])for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const statuses of [[1,1],[3,1],[4,3]])for(const reversed of [false,true]){
-   const course={id:'course',name:'New name',display_name:'New display',room_name:'New address',type:2,year:2026,semester:'autumn',teacher_id:'teacher',teacher_name,billing_unit,teacher_fee_mode,
+   const course={id:'course',default_duration_minutes:30,name:'New name',display_name:'New display',room_name:'New address',type:2,year:2026,semester:'autumn',teacher_id:'teacher',teacher_name,billing_unit,teacher_fee_mode,
     student_pricings:[{student_id:'a',tuition:220,teacher_fee:160,status:statuses[0]},{student_id:'b',tuition:130,teacher_fee:90,status:statuses[1]}]};
    const times=['2026-09-06 23:55','2026-09-07 00:00','2026-09-08 09:00','2026-09-20 23:55','2026-09-21 00:00'];
    const oldRows=times.map((start,i)=>({id:'lesson-'+i,course_id:'course',course_name:'Old name',room:'Old address',start_time:start,end_time:dayjs(start).add(30,'minute').format('YYYY-MM-DD HH:mm'),status:1,notes:'Preserve note',billing_unit:1,teacher_fee_mode:1,student_pricings:[{student_id:'a',tuition:180,teacher_fee:120,status:4}],calculated_tuition:0,calculated_teacher_fee:0}));

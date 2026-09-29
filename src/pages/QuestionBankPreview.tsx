@@ -96,7 +96,7 @@ function filterTreeDataByText(treeData: any[], keyword: string): any[] {
     .filter(Boolean);
 }
 
-const QuestionBankPreview: React.FC = () => {
+const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ context }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionTotal, setQuestionTotal] = useState(0);
   const [localStoreReady, setLocalStoreReady] = useState(false);
@@ -766,6 +766,13 @@ const QuestionBankPreview: React.FC = () => {
     setModalVisible(true);
   };
 
+  const openedIssue = React.useRef<string>();
+  useEffect(() => {
+    if (!context?.questionId || openedIssue.current === context.questionId) return;
+    const question = (window as any).dbService?.getAllQuestions?.().find((item: Question) => item.id === context.questionId);
+    if (question) { openedIssue.current = context.questionId; openEditModal(question); }
+  }, [context?.questionId, questions]);
+
   // utf-8 restore confirmation
   const restoreVersion = (version: QuestionVersion) => {
     if (!editing) return;
@@ -1150,6 +1157,7 @@ const QuestionBankPreview: React.FC = () => {
                   modelNames={(q.model_ids || []).map(getModelName)}
                   inBasket={inBasket}
                   onEdit={() => openEditModal(q)}
+                    onDelete={questionDeletePresentation(q, deleteContext).enabled ? () => { void handleDelete(q.id); } : undefined}
                   onToggleBasket={() => toggleQuestionBasket(q.id)}
                 />
               );
