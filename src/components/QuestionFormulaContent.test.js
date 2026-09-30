@@ -101,3 +101,30 @@ assert(!legacyDom.body.textContent.includes('$'),'no unmatched display delimiter
 const alignedHtml = renderToStaticMarkup(React.createElement(QuestionRenderer,{content:String.raw`Before \[\begin{aligned}x&=1\\y&=2\end{aligned}\] after`}));
 assert(alignedHtml.includes('mtable'),'aligned formula rows remain inside the formula');
 assert(!alignedHtml.includes('katex-error') && !alignedHtml.includes('latex-fallback'));
+
+// Imported HTML often has formatting newlines between table rows/cells.
+// Those newlines must not become foster-parented <br> nodes above the table.
+const legacyTable = `<p>表格前</p><table>
+<thead><tr><th colspan="2">测量数据</th></tr></thead>
+<tbody>
+<tr><td rowspan="2">速度</td><td>第一行\n第二行 $x^2$</td></tr>
+<tr><td><table><tr><td>嵌套</td></tr></table></td></tr>
+</tbody>
+</table><p>表格后</p>`;
+const tableHtml = renderToStaticMarkup(React.createElement(QuestionRenderer, {
+  content: legacyTable, options: [{label:'A',content:legacyTable}],
+  answer: legacyTable, analysis: legacyTable, showAnalysis: true,
+}));
+const tableDom = new JSDOM(tableHtml).window.document;
+assert.equal(tableDom.querySelectorAll('table.question-table').length, 8,
+  'HTML tables in every question section, including nested tables, need grid styling');
+assert.equal(tableDom.querySelectorAll('.question-table-scroll > table').length, 8,
+  'wide tables must scroll inside their question section');
+assert.equal(tableDom.querySelectorAll('br').length, 4,
+  'only intentional line breaks inside cells survive; table indentation creates no blank lines');
+assert.equal(tableDom.querySelectorAll('th[colspan="2"]').length, 4);
+assert.equal(tableDom.querySelectorAll('td[rowspan="2"]').length, 4);
+assert.equal(tableDom.querySelectorAll('td .katex').length, 4);
+assert.equal(tableDom.querySelectorAll('.question-table-scroll > br').length, 0);
+console.log('legacy table display checks passed: four sections, merged cells, nested tables and cell formulas');
+module.exports = { load, tableHtml };

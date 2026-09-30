@@ -1,6 +1,6 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.10.1",
+  "version": "8.10.2",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
@@ -72,7 +72,8 @@
     "test:paper-export-desktop": "node src/pages/QuestionBankPaper.export-formulas.test.js && node src/services/paperExportTaskClient.test.js && node src/services/paperExportTaskUi.test.js && node src/services/desktopQuestionImportClient.test.js",
     "test:rich-content": "node src/services/questionRichContent.test.js && node src/constants/questionTypes.test.js && node src/components/richQuestionEditorState.test.js && node src/utils/sanitizeHtml.test.js && node src/components/richQuestionEditorRoundTrip.test.js && node src/components/question-editor/questionStructureOperations.test.js && node src/components/question-editor/questionEditorSession.test.js && node src/services/questionValidation.test.js",
     "test:ruby-runtime": "node scripts/prepare-ruby-runtime.test.js",
-    "test:institution-student": "node backend/src/institutionStudentLifecycle.test.js && node src/utils/institutionStudent.test.js && node src/utils/coursePricingRules.test.js && node src/utils/financialDetails.test.js",
+    "test:institution-student": "node backend/src/institutionStudentLifecycle.test.js && node src/utils/institutionStudent.test.js && node src/utils/coursePricingRules.test.js && node src/utils/financialDetails.test.js && npm run test:revenue-filters",
+    "test:revenue-filters": "node src/utils/revenueStatisticsFilters.test.js && node src/utils/revenueDetailFilters.test.js",
     "test:miniapp-identity": "node backend/src/services/authRateLimiter.test.js && node backend/src/services/wechatMiniappService.test.js && node backend/src/services/miniappWechatBindingService.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js",
     "test:miniapp-applications": "npm --prefix cloud-business-api run test:role-applications && node backend/src/routes/miniappCloudOnlyRoutes.test.js",
     "test:miniapp-identity-schema": "node backend/src/miniappIdentitySchema.test.js",

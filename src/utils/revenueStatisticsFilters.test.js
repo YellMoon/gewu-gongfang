@@ -53,6 +53,43 @@ const dayjs = require('dayjs');
   assert.strictEqual(isDateWithinRevenueRange('2026-05-31', openEndRange), false);
   assert.strictEqual(isDateWithinRevenueRange('2027-01-01', openEndRange), true);
 
+  const visibleInstitutions = [{id:'jianren',name:'建人高复'},{id:'other',name:'其他机构'},{id:'unused',name:'无排课机构'}];
+  const rangeRows = [
+    {date:'2026-09-21',institutionId:'jianren',courseType:4,sourceType:2,studentId:'__institution_unbound__',teacherId:'teacher-a',courseId:'c-a',courseYear:2026,semester:'秋学期'},
+    {date:'2026-10-31',institutionId:'other',courseType:1,sourceType:2,studentId:'s-b',teacherId:'teacher-b',courseId:'c-b',courseYear:2026,semester:'秋学期'},
+    {date:'2026-08-31',institutionId:'unused',courseType:1,sourceType:2,teacherId:'teacher-a'},
+    {date:'2026-11-01',institutionId:'unused',courseType:1,sourceType:2,teacherId:'teacher-a'},
+  ];
+  const periodFilters = {dateRange:[dayjs('2026-09-01'),dayjs('2026-10-31')]};
+  const facets = filters => buildRevenueFacetOptions(rangeRows,[],[],visibleInstitutions,filters);
+  assert.deepStrictEqual(facets({...periodFilters,teacherId:'teacher-a'}).institutions,[{value:'jianren',label:'建人高复'}],
+    'institution options use the current date range and teacher, excluding outside dates and unused catalog entries');
+  assert.deepStrictEqual(facets({dateRange:['2026-10-01','2026-10-31']}).institutions,[{value:'other',label:'其他机构'}],
+    'changing draft dates immediately narrows institutions without another statistics query');
+  assert.deepStrictEqual(facets({...periodFilters,courseId:'c-a',courseTypes:[4],year:2026,semester:'秋学期'}).institutions,[{value:'jianren',label:'建人高复'}]);
+  assert.deepStrictEqual(facets({...periodFilters,studentId:'s-b'}).institutions,[{value:'other',label:'其他机构'}]);
+  assert.deepStrictEqual(facets({...periodFilters,year:2025}).institutions,[]);
+  const mixedRow = {...rangeRows[0],studentId:'s-inst',sourceType:3,institutionId:undefined};
+  const mixedStudents = [{id:'s-inst',name:'机构学生',source_type:2,institution_id:'jianren'}];
+  const mixedFacets = buildRevenueFacetOptions([mixedRow],mixedStudents,[],visibleInstitutions,periodFilters);
+  assert.deepStrictEqual(mixedFacets.institutions,[{value:'jianren',label:'建人高复'}],
+    'mixed-class institution options use the student institution just like actual revenue filtering');
+  assert.equal(buildRevenueFacetOptions([mixedRow],mixedStudents,[],visibleInstitutions,{...periodFilters,institutionId:'jianren'}).students.length,1);
+  const octoberOptions = facets({dateRange:['2026-10-01','2026-10-31']});
+  for (const [facet, expected] of Object.entries({teachers:['teacher-b'],students:['s-b'],courseTypes:[1],institutions:['other'],years:[2026],semesters:['秋学期'],courseNames:['c-b']})) {
+    assert.deepStrictEqual(octoberOptions[facet].map(option=>option.value),expected,`${facet} must narrow with draft dates`);
+  }
+  const byInstitutionOptions = facets({...periodFilters,institutionId:'jianren'});
+  assert.deepStrictEqual(byInstitutionOptions.teachers.map(option=>option.value),['teacher-a']);
+  assert.deepStrictEqual(byInstitutionOptions.courseNames.map(option=>option.value),['c-a']);
+  assert.deepStrictEqual(byInstitutionOptions.courseTypes.map(option=>option.value),[4]);
+  const byClassOptions = facets({...periodFilters,courseTypes:[4]});
+  assert.deepStrictEqual(byClassOptions.teachers.map(option=>option.value),['teacher-a']);
+  assert.deepStrictEqual(byClassOptions.institutions.map(option=>option.value),['jianren']);
+  assert.deepStrictEqual(facets({...periodFilters,semester:'春学期'}).teachers,[]);
+  assert.deepStrictEqual(facets({...periodFilters,courseId:'c-b'}).students.map(option=>option.value),['s-b']);
+  assert.equal(facets(periodFilters).teachers.length,2,'clearing constraints restores valid alternatives');
+
   const rows = [
     {
       key: 'math-spring-a',
@@ -67,6 +104,7 @@ const dayjs = require('dayjs');
       courseYear: 2026,
       semester: '春学期',
       institutionId: 'inst-a',
+      sourceType: 2,
     },
     {
       key: 'math-spring-b',
@@ -81,6 +119,7 @@ const dayjs = require('dayjs');
       courseYear: 2026,
       semester: '春学期',
       institutionId: 'inst-a',
+      sourceType: 2,
     },
     {
       key: 'physics-autumn',
@@ -95,6 +134,7 @@ const dayjs = require('dayjs');
       courseYear: 2026,
       semester: '秋学期',
       institutionId: 'inst-b',
+      sourceType: 2,
     },
     {
       key: 'chemistry-summer',
@@ -113,8 +153,8 @@ const dayjs = require('dayjs');
   ];
 
   const students = [
-    { id: 'student-a', name: '学生甲' },
-    { id: 'student-b', name: '学生乙' },
+    { id: 'student-a', name: '学生甲', source_type:2, institution_id:'inst-a' },
+    { id: 'student-b', name: '学生乙', source_type:2, institution_id:'inst-a' },
     { id: 'student-c', name: '学生丙' },
     { id: 'student-unused', name: '无明细学生' },
   ];
@@ -132,7 +172,7 @@ const dayjs = require('dayjs');
     teacherId: 'teacher-a',
   });
   assert.deepStrictEqual(byTeacher.students.map(item => item.value), ['student-a', 'student-b']);
-  assert.deepStrictEqual(byTeacher.courseNames.map(item => item.value), ['数学提高']);
+  assert.deepStrictEqual(byTeacher.courseNames.map(item => item.value), ['course-math-spring']);
   assert.deepStrictEqual(byTeacher.semesters.map(item => item.value), ['春学期']);
   assert.deepStrictEqual(byTeacher.institutions.map(item => item.value), ['inst-a']);
 
@@ -141,7 +181,7 @@ const dayjs = require('dayjs');
     semester: '秋学期',
   });
   assert.deepStrictEqual(byYearSemester.teachers.map(item => item.value), ['teacher-b']);
-  assert.deepStrictEqual(byYearSemester.courseNames.map(item => item.value), ['物理竞赛']);
+  assert.deepStrictEqual(byYearSemester.courseNames.map(item => item.value), ['course-physics-autumn']);
   assert.deepStrictEqual(byYearSemester.courseTypes.map(item => item.value), [1]);
   assert.deepStrictEqual(byYearSemester.institutions.map(item => item.value), ['inst-b']);
 
@@ -190,12 +230,11 @@ const dayjs = require('dayjs');
   assert.deepStrictEqual(
     optionsWithCatalogCourses.courseNames.map(item => item.value).sort(),
     [
-      'course-closed',
-      'course-math-autumn',
+      'course-chemistry-summer',
       'course-math-spring',
-      'course-no-schedule',
+      'course-physics-autumn',
     ],
-    'course name filter should use stable course ids from the course catalog'
+    'course options use matching revenue rows and stable course ids; an unscheduled catalog course must not leak into the list'
   );
   const springMath = optionsWithCatalogCourses.courseNames.find(item => item.value === 'course-math-spring');
   assert.ok(springMath.label.includes('\u6625\u5b66\u671f'));

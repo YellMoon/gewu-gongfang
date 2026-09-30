@@ -465,8 +465,8 @@ assert(
 
 assert(
   revenueDetailFilters.includes('COURSE_TYPE_ONE_ON_ONE') &&
-  revenueDetailFilters.includes('courseIsInstitutionOwned') &&
-  revenueDetailFilters.includes('studentIsFromSelectedInstitution'),
+  revenueDetailFilters.includes('revenueInstitutionId') &&
+  revenueDetailFilters.includes('student.institution_id'),
   'institution filtering should distinguish one-on-one institution courses from multi-student course attribution'
 );
 

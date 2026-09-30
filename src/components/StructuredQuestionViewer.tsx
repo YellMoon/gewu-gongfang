@@ -47,7 +47,7 @@ function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNo
   }
   const children = nodes.map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`, formattedText.get(index)));
   const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight } as React.CSSProperties;
-  if (node.type === 'table') return <div key={key} style={{ overflowX: 'auto' }}><table className="question-table"><tbody>{children}</tbody></table></div>;
+  if (node.type === 'table') return <div key={key} className="question-table-scroll"><table className="question-table"><tbody>{children}</tbody></table></div>;
   if (node.type === 'tableRow') return <tr key={key}>{children}</tr>;
   if (node.type === 'tableCell' || node.type === 'tableHeader') {
     const Tag = node.type === 'tableHeader' ? 'th' : 'td';

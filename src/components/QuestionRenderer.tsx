@@ -472,11 +472,33 @@ function replaceDollarLatex(html: string): string {
 }
 
 function processHtmlSegment(html: string): string {
-  const normalized = normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(html).replace(/##+/g, '、')));
+  const normalized = normalizeDisplayOperators(convertHtmlScriptsToLatex(normalizePhysicsHtml(prepareQuestionTables(html)).replace(/##+/g, '、')));
   const legacyRendered = normalized.replace(/<span class="legacy-latex" data-latex="([^"]*)"><\/span>/g, (_match, latex) => {
     return renderInlineLatex(readLatexAttribute(latex));
   });
   return collapseExcessBreaks(convertBareLatexRuns(replaceDollarLatex(legacyRendered)).replace(/\\(?=<span class="katex")/g, ''));
+}
+
+function prepareQuestionTables(html: string): string {
+  if (!/<table\b/i.test(html) || typeof DOMParser === 'undefined') return html;
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html');
+  const root = doc.body.firstElementChild;
+  if (!root) return html;
+  // Only discard table markup indentation. Cell text keeps its own line breaks.
+  root.querySelectorAll('table, thead, tbody, tfoot, tr, colgroup').forEach(element => {
+    Array.from(element.childNodes).forEach(child => {
+      if (child.nodeType === Node.TEXT_NODE && !child.textContent?.trim()) child.remove();
+    });
+  });
+  root.querySelectorAll('table').forEach(table => {
+    table.classList.add('question-table');
+    if (table.parentElement?.classList.contains('question-table-scroll')) return;
+    const wrapper = doc.createElement('div');
+    wrapper.className = 'question-table-scroll';
+    table.replaceWith(wrapper);
+    wrapper.appendChild(table);
+  });
+  return root.innerHTML;
 }
 
 function legacyLatexPlaceholder(latex: string): string {

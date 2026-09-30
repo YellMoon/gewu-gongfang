@@ -322,12 +322,12 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
       setArrearsRows(financialAlerts.arrears);
       setClosedBalanceRows(financialAlerts.closedBalances);
 
-      const dateScopedSchedules = filterRevenueSchedules(schedules, courses, {
-        dateRange: activeFilters.dateRange,
-      }, { excludedStatuses: [ScheduleStatus.LEAVE, ScheduleStatus.CANCELLED] });
-      const dateScopedDetails = buildFinancialDetails(dateScopedSchedules, courses, students, teachers);
-      const nextFacetRows = dateScopedDetails.studentDetails;
+      const facetSchedules = filterRevenueSchedules(schedules, courses, {}, { excludedStatuses: [ScheduleStatus.LEAVE, ScheduleStatus.CANCELLED] });
+      const nextFacetRows = buildFinancialDetails(facetSchedules, courses, students, teachers).studentDetails;
       setFacetRows(nextFacetRows);
+      const dateScopedSchedules = filterRevenueSchedules(facetSchedules, courses, {
+        dateRange: activeFilters.dateRange,
+      });
 
       const validSchedules = filterRevenueSchedules(dateScopedSchedules, courses, activeFilters).filter(schedule => {
         const course = courseMap.get(schedule.course_id);
@@ -549,6 +549,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
   };
 
   const draftFiltersForOptions = useMemo(() => ({
+    dateRange: draftDateRange,
     studentId: draftStudentId,
     teacherId: draftTeacherId,
     courseTypes: draftCourseTypes,
@@ -557,7 +558,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     semester: draftSemester,
     courseId: draftCourseId,
     courseName: draftCourseName,
-  }), [draftStudentId, draftTeacherId, draftCourseTypes, draftInstitutionId, draftYear, draftSemester, draftCourseId, draftCourseName]);
+  }), [draftDateRange, draftStudentId, draftTeacherId, draftCourseTypes, draftInstitutionId, draftYear, draftSemester, draftCourseId, draftCourseName]);
 
   const filterOptions = useMemo(() => buildRevenueFacetOptions(
     facetRows,
@@ -565,8 +566,7 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
     allTeachers,
     allInstitutions,
     draftFiltersForOptions,
-    courseCatalogOptions,
-    { includeAllTeachers: true, includeAllTerms: true }
+    courseCatalogOptions
   ), [facetRows, allStudents, allTeachers, allInstitutions, draftFiltersForOptions, courseCatalogOptions]);
 
   const totalTeacherFee = roundMoney(teacherIncomeStats.reduce((sum, row) => sum + row.total, 0));
