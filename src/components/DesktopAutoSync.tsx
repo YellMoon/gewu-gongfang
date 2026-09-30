@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from 'antd';
 import { sessionTokenFromStore } from '../services/desktopAutoSync.mjs';
+import { desktopCloudTransportUnavailable } from '../services/desktopIdentityClient.mjs';
 import { createDesktopSyncController } from '../services/desktopSyncController.mjs';
 import { describePendingChanges } from '../services/desktopSyncReview.mjs';
 import { hasPendingQuestionAssetVerification, refreshQuestionAssetVerification, relayQuestionAssetsAfterReceipt } from '../services/desktopQuestionAssetRelay';
@@ -13,9 +14,15 @@ const DesktopAutoSync: React.FC = () => {
   useEffect(() => {
     const bridge = (window as any).desktopAuthority;
     if (!bridge?.list || !bridge?.confirmAndSubmit) return;
+    let active = true;
+    let tickPromise: Promise<void> | null = null;
+    const sessionAvailable = () => {
+      try { return Boolean(sessionTokenFromStore()); } catch { return false; }
+    };
     const refreshProjection = (options = { businessOnly: true }) => (window as any).dbService?.refreshAuthorityProjection?.({ ...options, notifyConsumers: true });
     const controller = createDesktopSyncController({
-      bridge, sessionToken: sessionTokenFromStore, isOnline: () => navigator.onLine !== false,
+      bridge, sessionToken: sessionTokenFromStore,
+      isOnline: () => navigator.onLine !== false && !desktopCloudTransportUnavailable() && sessionAvailable(),
       refreshProjection,
       describe: (items: any[]) => describePendingChanges(items, (window as any).dbService?.data || {},
         () => (window as any).desktopIdentitySessionProvider?.listCloudBusinessProjection?.()),
@@ -23,11 +30,21 @@ const DesktopAutoSync: React.FC = () => {
       afterCommit: relayQuestionAssetsAfterReceipt,
       checkAssets: refreshQuestionAssetVerification,
     });
-    controllerRef.current = controller;
     const unsubscribe = controller.subscribe(setState);
-    const tick = () => { void controller.tick(); };
+    const tick = () => {
+      if (!active) return Promise.resolve();
+      if (tickPromise) return tickPromise;
+      tickPromise = (async () => {
+        if (navigator.onLine !== false && (desktopCloudTransportUnavailable() || !sessionAvailable())) {
+          try { await (window as any).desktopIdentitySessionProvider?.ensureOnline?.(); } catch { /* Keep offline drafts unconfirmed. */ }
+        }
+        if (active) await controller.tick();
+      })().finally(() => { tickPromise = null; });
+      return tickPromise;
+    };
+    controllerRef.current = { ...controller, tick };
     const open = () => { void controller.open(); };
-    const reconnect = () => { void Promise.resolve().then(() => refreshProjection()).catch(() => {}).finally(tick); };
+    const reconnect = () => { void tick().then(() => { if (active && sessionAvailable()) return refreshProjection(); }).catch(() => {}); };
     const timer = window.setInterval(tick, 4000);
     window.addEventListener('desktop-sync-open', open);
     window.addEventListener('desktop-authority-drafts-changed', tick);
@@ -35,6 +52,7 @@ const DesktopAutoSync: React.FC = () => {
     window.addEventListener('offline', tick);
     tick();
     return () => {
+      active = false;
       controller.stop(); unsubscribe(); controllerRef.current = null;
       window.clearInterval(timer);
       window.removeEventListener('desktop-sync-open', open);

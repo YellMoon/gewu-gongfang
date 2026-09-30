@@ -42,6 +42,7 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
         if (loaded[file]) return loaded[file].exports;
         if (file.endsWith('.css')) return {};
         if (file.endsWith('desktopAuthorizationSession.mjs')) return { readDesktopAuthorizationSession: () => ({ authorization: 'Bearer fixture-session' }) };
+        if (file.endsWith('desktopIdentityClient.mjs')) return { desktopCloudTransportUnavailable: () => false };
         if (file.endsWith('desktopQuestionAssetRelay')) return { hasPendingQuestionAssetVerification: () => false, refreshQuestionAssetVerification: async () => {}, relayQuestionAssetsAfterReceipt: async () => {} };
         const module = { exports: {} }; loaded[file] = module;
         if (!codes[file]) throw Error('Unexpected module ' + file);

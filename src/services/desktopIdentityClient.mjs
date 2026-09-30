@@ -17,6 +17,10 @@ export function captureDesktopCloudDraftConnectivity(draft) {
   return cloudTransportUnavailable ? { ...draft, createdOffline: true } : draft;
 }
 
+export function desktopCloudTransportUnavailable() {
+  return cloudTransportUnavailable;
+}
+
 function identityError(code, cause) {
   const error = new Error(code);
   error.code = code;

@@ -10,6 +10,12 @@ const { act } = React;
   global.IS_REACT_ACT_ENVIRONMENT = true;
   const { createRoot } = require('react-dom/client');
   const intervals = new Set(), calls = [], relays = []; let modal, panel;
+  let onlineSessionAvailable = false, cloudUnavailable = true, networkAvailable = false, renewals = 0;
+  window.desktopIdentitySessionProvider = { ensureOnline: async () => {
+    renewals += 1;
+    if (!networkAvailable) throw new TypeError('Failed to fetch');
+    onlineSessionAvailable = true; cloudUnavailable = false;
+  } };
   window.setInterval = fn => { intervals.add(fn); return fn; }; window.clearInterval = fn => intervals.delete(fn);
   const draft = (id, createdOffline) => ({ id, type: 'student.update.v1', status: 'awaiting_confirmation', createdOffline, payload: { id, changes: { name: id } } });
   let items = [draft('offline-one', true), draft('offline-two', true), { ...draft('history', false), status: 'completed' }];
@@ -20,7 +26,11 @@ const { act } = React;
   const deps = {
     react: React,
     antd: { Modal: props => { modal = props; return props.open ? React.createElement('div', { role: 'dialog' }, props.children, props.footer) : null; }, Button: props => React.createElement('button', { onClick: props.onClick, disabled: props.disabled }, props.children) },
-    '../services/desktopAutoSync.mjs': { sessionTokenFromStore: () => 'ephemeral-token' },
+    '../services/desktopAutoSync.mjs': { sessionTokenFromStore: () => {
+      if (!onlineSessionAvailable) throw new Error('DESKTOP_CLOUD_SESSION_REQUIRED');
+      return 'ephemeral-token';
+    } },
+    '../services/desktopIdentityClient.mjs': { desktopCloudTransportUnavailable: () => cloudUnavailable },
     '../services/desktopSyncController.mjs': await import('../services/desktopSyncController.mjs'),
     '../services/desktopSyncReview.mjs': await import('../services/desktopSyncReview.mjs'),
     '../services/desktopQuestionAssetRelay': { hasPendingQuestionAssetVerification: () => false, refreshQuestionAssetVerification: async () => {}, relayQuestionAssetsAfterReceipt: async item => relays.push(item.id) },
@@ -36,6 +46,12 @@ const { act } = React;
   const root = createRoot(document.getElementById('root'));
   try {
     await act(async () => { root.render(React.createElement(loaded.exports.default)); await flush(); });
+    assert.equal(navigator.onLine, true, 'virtual adapters keep the OS online signal true');
+    assert.equal(document.querySelectorAll('[role=dialog]').length, 0, 'physical offline cold start must not demand approval before the cloud session is renewed');
+    assert(renewals > 0, 'missing online context must attempt the existing verified-session renewal');
+    assert.deepEqual(calls, []);
+    networkAvailable = true;
+    await tick();
     assert.equal(document.querySelectorAll('[role=dialog]').length, 1); assert.deepEqual(calls, []);
     assert.deepEqual(panel.state.items.map(x => x.id), ['offline-one', 'offline-two']);
     await tick(); await tick(); assert.equal(document.querySelectorAll('[role=dialog]').length, 1);
