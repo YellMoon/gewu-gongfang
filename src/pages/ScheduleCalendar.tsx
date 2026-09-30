@@ -1124,7 +1124,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             未结课程 ({filteredCourses.length})
           </h4>
           <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 4 }}>
-        {filteredCourses.map(course => (
+        {filteredCourses.map((course, index) => (
           <div
             key={course.id}
             draggable={course.active}
@@ -1151,7 +1151,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             }}
           >
             <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1890ff' }}>
-              {getCourseDisplayName(course)}
+              {index + 1}. {getCourseDisplayName(course)}
             </div>
             <div style={{ fontSize: 11, color: '#666', marginTop: 1 }}>
               {course.year || course.name?.match(/^(\d{4})/)?.[1] || '-'} 年{' '}

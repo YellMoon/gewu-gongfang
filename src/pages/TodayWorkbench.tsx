@@ -220,9 +220,9 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="今日暂无课程" />
           ) : (
             <div className="today-workbench__course-list">
-              {todayGroup.rows.map(row => (
+              {todayGroup.rows.map((row, index) => (
                 <button key={row.scheduleId} className="today-workbench__course-row" onClick={() => goSchedule(row)}>
-                  <span>{row.timeRange}</span>
+                  <span>{index + 1}. {row.timeRange}</span>
                   <span>{row.room || '未设置地点'} · {row.teacherName}</span>
                   <strong>{row.courseName}</strong>
                 </button>

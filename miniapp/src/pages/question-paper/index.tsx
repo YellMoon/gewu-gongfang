@@ -583,9 +583,9 @@ export default function QuestionPaperPage() {
     {taskState.tasks.length || taskSyncState === 'offline' ? <View className='result-card'>
       <View className='preview-header'><Text className='preview-title'>{'\u5bfc\u51fa\u8bb0\u5f55'}</Text>{taskSyncState === 'refreshing' ? <Text className='task-sync-state'>{'\u6b63\u5728\u540c\u6b65'}</Text> : null}</View>
       {taskSyncState === 'offline' ? <View className='task-offline-state'><Text>{'\u6682\u65f6\u65e0\u6cd5\u66f4\u65b0\u5bfc\u51fa\u8fdb\u5ea6\uff0c\u4e0b\u62c9\u540e\u91cd\u8bd5'}</Text></View> : null}
-      {taskState.tasks.length ? <View className='task-list'>{taskState.tasks.map(task => <View key={task.localId} className={'task-item status-' + task.status}>
+      {taskState.tasks.length ? <View className='task-list'>{taskState.tasks.map((task, index) => <View key={task.localId} className={'task-item status-' + task.status}>
         <View className='task-item-head'>
-          <View className='task-item-title-wrap'><Text className='task-item-title'>{task.request.payload.title}</Text><Text className='task-format'>{task.request.taskType === 'paper-export-pdf' ? 'PDF' : 'Word'}</Text></View>
+          <View className='task-item-title-wrap'><Text className='task-item-title'>{index + 1}. {task.request.payload.title}</Text><Text className='task-format'>{task.request.taskType === 'paper-export-pdf' ? 'PDF' : 'Word'}</Text></View>
           <Text className='task-status'>{statusText[task.status] || task.status}</Text>
         </View>
         <View className='task-meta'><Text>{String((task.request.payload.questionIds || []).length) + ' \u9898'}</Text><Text>{String(taskProgress(task)) + '%'}</Text></View>

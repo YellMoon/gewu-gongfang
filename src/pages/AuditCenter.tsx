@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Space, Table, Tabs, Tag, Typography, message } from 'antd';
+import { Button, Card, Empty, Space, Tabs, Tag, Typography, message } from 'antd';
+import Table from '../components/NumberedTable';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,

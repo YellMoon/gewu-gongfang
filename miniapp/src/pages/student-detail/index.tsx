@@ -133,10 +133,10 @@ export default function StudentDetail() {
             </View>
           ) : (
             <View className='card'>
-              {payments.map((p) => (
+              {payments.map((p, index) => (
                 <View key={p.id} className='list-item'>
                   <View className='list-item-content'>
-                    <Text className='list-item-title'>{getPaymentTypeLabel(p.payment_type)}</Text>
+                    <Text className='list-item-title'>{index + 1}. {getPaymentTypeLabel(p.payment_type)}</Text>
                     <Text className='list-item-desc'>{formatDate(p.payment_date)} · {p.payment_method || '未记录'}</Text>
                   </View>
                   <Text className='list-item-extra income'>{studentPaymentAmount(p)}</Text>
@@ -157,10 +157,10 @@ export default function StudentDetail() {
             </View>
           ) : (
             <View className='card'>
-              {grades.map((g) => (
+              {grades.map((g, index) => (
                 <View key={g.id} className='list-item'>
                   <View className='list-item-content'>
-                    <Text className='list-item-title'>{g.subject}</Text>
+                    <Text className='list-item-title'>{index + 1}. {g.subject}</Text>
                     <Text className='list-item-desc'>{g.exam_date ? formatDate(g.exam_date) : ''}</Text>
                   </View>
                   <Text className={`list-item-extra score ${getScoreClass(g.score)}`}>{g.score}</Text>

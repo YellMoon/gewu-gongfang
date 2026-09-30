@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Card, Empty, Modal, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Empty, Modal, Tag, message } from 'antd';
+import Table from '../components/NumberedTable';
 import type { ColumnsType } from 'antd/es/table';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';

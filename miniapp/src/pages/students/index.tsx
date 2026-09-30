@@ -88,14 +88,14 @@ export default function Students() {
         />
       ) : (
         <View className="student-list">
-          {filteredStudents.map((s) => (
+          {filteredStudents.map((s, index) => (
             <View key={s.id} className="student-card">
               <View className="student-avatar">
                 <Text className="student-avatar-text">{s.name.charAt(0)}</Text>
               </View>
               <View className="student-info" onClick={() => Taro.navigateTo({ url: `/pages/student-detail/index?id=${s.id}` })}>
                 <View className="student-name-row">
-                  <Text className="student-name">{s.name}</Text>
+                  <Text className="student-name">{index + 1}. {s.name}</Text>
                   {s.source_type !== undefined && (
                     <Text className={`student-source ${s.source_type === StudentSource.SELF ? 'self' : 'inst'}`}>
                       {s.source_type === StudentSource.SELF ? '自有' : '机构'}

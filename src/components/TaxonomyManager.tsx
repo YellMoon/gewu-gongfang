@@ -166,9 +166,9 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
       <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>
     </div>
     {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
-    {systems.map(system => <div key={system.id} className="taxonomy-system-block">
+    {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
-        <strong>{system.name}</strong>
+        <strong>{index + 1}. {system.name}</strong>
         <Space size={2}>
           <Tooltip title={text.rename}><Button type="text" size="small" icon={<EditOutlined />} onClick={() => renameSystem(system)} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
@@ -190,9 +190,9 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
       />
     </div>)}
     <Modal title={text.backups} open={backupModalOpen} footer={null} onCancel={() => setBackupModalOpen(false)}>
-      {backups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="\u6682\u65e0\u4f53\u7cfb\u5220\u9664\u5907\u4efd" /> : backups.map(backup => <div key={backup.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
+      {backups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="\u6682\u65e0\u4f53\u7cfb\u5220\u9664\u5907\u4efd" /> : backups.map((backup, index) => <div key={backup.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
         <div>
-          <div>{backup.entity_type === 'system' ? '\u4f53\u7cfb' : '\u8282\u70b9'}\u5220\u9664\uff1a\u5f71\u54cd {backup.affected_question_count} \u9053\u8bd5\u9898 / {backup.deleted_node_count} \u4e2a\u8282\u70b9</div>
+          <div>{index + 1}. {backup.entity_type === 'system' ? '\u4f53\u7cfb' : '\u8282\u70b9'}\u5220\u9664\uff1a\u5f71\u54cd {backup.affected_question_count} \u9053\u8bd5\u9898 / {backup.deleted_node_count} \u4e2a\u8282\u70b9</div>
           <small>{backup.created_at}</small>
         </div>
         <Button disabled={Boolean(backup.restored_at)} onClick={() => restoreBackup(backup.id)}>{backup.restored_at ? '\u5df2\u6062\u590d' : text.restore}</Button>

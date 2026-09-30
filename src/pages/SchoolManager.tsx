@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Form, Input, Space, Popconfirm, message, Tag, Statistic } from 'antd';
+import { Button, Form, Input, Space, Popconfirm, message, Tag, Statistic } from 'antd';
+import Table from '../components/NumberedTable';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import DataPageLayout from '../layout/DataPageLayout';
 

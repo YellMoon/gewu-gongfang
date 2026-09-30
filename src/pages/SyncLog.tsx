@@ -1,5 +1,6 @@
 import React from 'react';
-import { Card, Table, Tag, Empty } from 'antd';
+import { Card, Tag, Empty } from 'antd';
+import Table from '../components/NumberedTable';
 import type { ColumnsType } from 'antd/es/table';
 
 interface SyncLogEntry {

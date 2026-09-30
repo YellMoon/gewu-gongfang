@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "cloudOperationAudit": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "apply additive operation audit intent/result tables and least-privilege functions before cloud rollout; cloud records verified actor and immutable request/outcome before returning business responses; missing outcomes stay unknown; desktop reads authenticated tenant/admin or self/teacher audit pages with no local-success fallback; older clients ignore additive audit response metadata; existing miniapp and NAS contracts remain compatible"
+    },
     "desktopDisplayMetadata": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

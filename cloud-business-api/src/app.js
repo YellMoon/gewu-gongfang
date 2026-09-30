@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { createOperationAuditMiddleware, parseFilters: operationAuditFilters } = require('./operationAudit');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
 const { withMiniappStudentLedgerProjection, hasMiniappStudentLedger } = require('./miniappStudentLedgerProjection');
@@ -104,7 +105,7 @@ function miniappQuestionBrowseFilters(query) {
   return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
 }
 
-function createCloudBusinessApp({ query, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -146,6 +147,19 @@ function createCloudBusinessApp({ query, businessScheduleUpdate = null, business
   app.use('/api/storage-agent/artifact-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
   app.use('/api/storage-agent/question-asset-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
   app.use(express.json({ limit: '1mb' }));
+  app.use(createOperationAuditMiddleware({ repository: operationAudits, required: operationAuditsRequired, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext, businessContext }));
+  app.get('/api/desktop/operation-audits', async (request, response) => {
+    if (!operationAudits || !businessTenantId) return response.status(503).json({ success:false,code:'CLOUD_OPERATION_AUDIT_UNAVAILABLE' });
+    try {
+      const actor = await desktopQuestionContext(request);
+      if (!actor.roles?.some(role => ['super_admin','teacher'].includes(role))) throw businessAccessDenied();
+      const data = await operationAudits.list({ tenantId:businessTenantId, actor, filters:operationAuditFilters(request.query) });
+      response.json({ success:true,data });
+    } catch (error) {
+      const status = error.code === 'CLOUD_BUSINESS_ACCESS_DENIED' ? 403 : error.code === 'CLOUD_OPERATION_AUDIT_INPUT_INVALID' ? 400 : 503;
+      response.status(status).json({ success:false,code:status === 503 ? 'CLOUD_OPERATION_AUDIT_UNAVAILABLE' : error.code });
+    }
+  });
   app.get('/api/health', async (_request, response) => {
     try {
       await query('SELECT 1 AS ok');

@@ -139,11 +139,11 @@ export default function ScheduleDetail() {
         {students.length === 0 ? (
           <Text className="sd-empty-text">暂无</Text>
         ) : (
-          students.map(student => (
+          students.map((student, index) => (
             <View key={student.id} className="sd-student-row" onClick={() => Taro.navigateTo({ url: `/pages/student-detail/index?id=${student.id}` })}>
               <View className="sd-student-avatar"><Text>{student.name.charAt(0)}</Text></View>
               <View className="sd-student-info">
-                <Text className="sd-student-name">{student.name}</Text>
+                <Text className="sd-student-name">{index + 1}. {student.name}</Text>
                 <Text className="sd-student-detail">{studentSchoolLabel(student.school)} {studentGradeLabel(student)}</Text>
               </View>
               <Text className="sd-arrow">›</Text>

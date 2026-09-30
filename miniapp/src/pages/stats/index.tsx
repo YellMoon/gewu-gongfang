@@ -129,7 +129,7 @@ export default function Stats() {
           </View>
           {!courseTypeCollapsed && stats.byCourseType.map((ct, idx) => (
             <View key={idx} className='stat-row'>
-              <Text className='stat-name'>{ct.typeName}</Text>
+              <Text className='stat-name'>{idx + 1}. {ct.typeName}</Text>
               <View className='stat-bar-wrap'>
                 <View className='stat-bar' style={{ width: `${stats.totalRevenue > 0 ? (ct.amount / stats.totalRevenue * 100) : 0}%` }} />
               </View>
@@ -151,7 +151,7 @@ export default function Stats() {
           </View>
           {!monthCollapsed && stats.byMonth.map((m, idx) => (
             <View key={idx} className='stat-row'>
-              <Text className='stat-name'>{m.month}</Text>
+              <Text className='stat-name'>{idx + 1}. {m.month}</Text>
               <View className='stat-values' style={{ alignItems: 'flex-end' }}>
                 <Text className='stat-amount'>¥{m.amount.toFixed(0)}</Text>
                 <Text className='stat-count'>{m.count}次</Text>

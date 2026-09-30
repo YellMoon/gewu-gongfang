@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Statistic, Row, Col, DatePicker, Button, Select as AntSelect, Space } from 'antd';
+import { Card, Statistic, Row, Col, DatePicker, Button, Select as AntSelect, Space } from 'antd';
+import Table from '../components/NumberedTable';
 import { MoneyCollectOutlined, BookOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { RangePickerProps } from 'antd/es/date-picker';

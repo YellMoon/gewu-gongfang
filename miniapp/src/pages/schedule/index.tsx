@@ -170,7 +170,7 @@ export default function SchedulePage() {
     return `\u5468${WEEKDAYS[index]} ${date.month}/${date.day}`;
   };
 
-  const renderScheduleCard = (schedule: ScheduleWithCourse) => (
+  const renderScheduleCard = (schedule: ScheduleWithCourse, index: number) => (
     <View
       key={schedule.id}
       className={`schedule-card ${getStatusClass(schedule.status)}`}
@@ -180,7 +180,7 @@ export default function SchedulePage() {
         <Text className="time-text">{formatTime(schedule.start_time)}</Text>
       </View>
       <View className="schedule-body">
-        <Text className="schedule-course">{schedule.course_name}</Text>
+        <Text className="schedule-course">{index + 1}. {schedule.course_name}</Text>
         <Text className="schedule-sub">
           {getCourseTypeLabel(schedule.course_type)} · {getStatusLabel(schedule.status)}
         </Text>
@@ -280,6 +280,7 @@ export default function SchedulePage() {
           <View className="week-grid">
             {weekRange?.map((dateKey, index) => {
               const daySchedules = getSchedulesForDate(dateKey);
+              const previousCount = weekRange.slice(0, index).reduce((sum, date) => sum + getSchedulesForDate(date).length, 0);
               return (
                 <View key={dateKey} className={`day-column ${daySchedules.length === 0 ? 'is-empty' : ''}`}>
                   <View className={`day-section-title ${isToday(dateKey) ? 'today' : ''}`}>
@@ -288,7 +289,7 @@ export default function SchedulePage() {
                   </View>
                   <View className="day-column-inner">
                     {daySchedules.length > 0 ? (
-                      daySchedules.map(renderScheduleCard)
+                      daySchedules.map((schedule, cardIndex) => renderScheduleCard(schedule, previousCount + cardIndex))
                     ) : (
                       <Text className="empty-day-text">{'\u6682\u65e0\u8bfe\u7a0b'}</Text>
                     )}

@@ -98,10 +98,10 @@ export default function Courses() {
             {activeCourses.length > 0 && (
               <View className="course-section">
                 <Text className="section-label">进行中 ({activeCourses.length})</Text>
-                {activeCourses.map(c => (
+                {activeCourses.map((c, index) => (
                   <View key={c.id} className="course-card">
                     <View className="course-header">
-                      <Text className="course-name">{c.display_name || c.name}</Text>
+                      <Text className="course-name">{index + 1}. {c.display_name || c.name}</Text>
                       <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
                     </View>
                     <View className="course-meta">
@@ -122,10 +122,10 @@ export default function Courses() {
             {inactiveCourses.length > 0 && (
               <View className="course-section">
                 <Text className="section-label inactive">已结课 ({inactiveCourses.length})</Text>
-                {inactiveCourses.map(c => (
+                {inactiveCourses.map((c, index) => (
                   <View key={c.id} className="course-card inactive">
                     <View className="course-header">
-                      <Text className="course-name">{c.display_name || c.name}</Text>
+                      <Text className="course-name">{activeCourses.length + index + 1}. {c.display_name || c.name}</Text>
                       <Text className="course-type-tag">{TYPE_LABELS[c.type]}</Text>
                     </View>
                     <View className="course-meta">

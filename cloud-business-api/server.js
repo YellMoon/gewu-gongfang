@@ -2,6 +2,7 @@
 
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
+const { createOperationAuditRepository } = require('./src/operationAudit');
 const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desktopRegistrationService');
 const { createDesktopAccountDisplayNameReader } = require('./src/desktopAccountDisplayName');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
@@ -381,6 +382,7 @@ function createDesktopRegistrationFromEnvironment() {
     accountRepository,
     resolveVerifiedAccount,
     roleApplicationQuery: (text, values) => identityPool.query(text, values),
+    operationAudits: createOperationAuditRepository({ query: (text, values) => writerPool.query(text, values) }),
     bootstrapAdminAccountId,
     businessScheduleUpdate,
     businessScheduleStudentOverride,
@@ -498,6 +500,8 @@ const desktopPairing = desktopRuntime?.registration && desktopRuntime?.canonical
   })
   : null;
 const app = createCloudBusinessApp({
+  operationAudits: desktopRuntime?.operationAudits || null,
+  operationAuditsRequired: true,
   query: (text, values) => pool.query(text, values),
   releaseVersion: version,
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
-  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Table, Tooltip, Radio, Steps, Alert, Statistic, Drawer
+  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Tooltip, Radio, Steps, Alert, Statistic, Drawer
 } from 'antd';
+import Table from '../components/NumberedTable';
 import {
   PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
   FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
@@ -1215,7 +1216,7 @@ const QuestionBankImport: React.FC = () => {
                     dataSource={validationRows}
                     pagination={{ pageSize: 8 }}
                     columns={[
-                      { title: '序号', dataIndex: 'index', width: 70 },
+                      { title: '原文题号', dataIndex: 'index', width: 70 },
                       {
                         title: '状态',
                         dataIndex: 'status',
@@ -1320,7 +1321,7 @@ const QuestionBankImport: React.FC = () => {
               dataSource={importTaskDetail.items || []}
               pagination={{ pageSize: 10, showSizeChanger: false, showQuickJumper: true, showTotal: total => `共 ${total} 题` }}
               columns={[
-                { title: '序号', dataIndex: 'item_index', width: 70, render: (v: number) => Number(v || 0) + 1 },
+                { title: '原文题号', dataIndex: 'item_index', width: 70, render: (v: number) => Number(v || 0) + 1 },
                 { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
                 {
                   title: '题干',

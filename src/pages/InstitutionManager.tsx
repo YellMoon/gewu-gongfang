@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Form, Input, InputNumber,
+  Button, Form, Input, InputNumber,
   Space, message, Popconfirm, Row, Col, Statistic
 } from 'antd';
+import Table from '../components/NumberedTable';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Institution } from '../types';

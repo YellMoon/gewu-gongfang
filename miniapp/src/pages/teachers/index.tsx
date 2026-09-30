@@ -68,13 +68,13 @@ export default function Teachers() {
         <EmptyState icon="师" text="暂无教师数据" />
       ) : (
         <View className="teacher-list">
-          {teachers.map(t => (
+          {teachers.map((t, index) => (
             <View key={t.id} className="teacher-card">
               <View className="teacher-avatar">
                 <Text className="teacher-avatar-text">{t.name.charAt(0)}</Text>
               </View>
               <View className="teacher-info">
-                <Text className="teacher-name">{t.name}</Text>
+                <Text className="teacher-name">{index + 1}. {t.name}</Text>
                 <Text className="teacher-detail">{[t.subject, t.phone].filter(Boolean).join(' · ') || '暂无信息'}</Text>
               </View>
               {Boolean(t.hourly_rate) && <Text className="teacher-rate">¥{t.hourly_rate}/时</Text>}

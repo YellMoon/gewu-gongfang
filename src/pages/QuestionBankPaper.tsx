@@ -373,7 +373,7 @@ const QuestionBankPaper: React.FC = () => {
           </Button>
         }>
           <div aria-live="polite" className="paper-export-task-list">
-            {paperTasks.map(task => {
+            {paperTasks.map((task, index) => {
               const presentation = getPaperExportTaskPresentation(task);
               const cancellable = Boolean(task.serverTaskId) && !['completed', 'failed', 'cancelled', 'timed_out'].includes(task.status);
               const retryable = ['draft', 'failed', 'timed_out'].includes(task.status);
@@ -381,6 +381,7 @@ const QuestionBankPaper: React.FC = () => {
                 <div id={`paper-task-${task.localId}`} key={task.localId} tabIndex={-1} className="paper-export-task-card">
                   <div className="paper-export-task-summary">
                     <Space wrap>
+                      <Typography.Text type="secondary">{index + 1}.</Typography.Text>
                       <Tag color={presentation.color}>{presentation.label}</Tag>
                       <Typography.Text strong>{task.request.title}</Typography.Text>
                       <Tag>{task.request.format.toUpperCase()}</Tag>

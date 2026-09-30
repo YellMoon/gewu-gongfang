@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Row, Col, Statistic, Table, DatePicker, Button, Space, Modal, Form,
+  Card, Row, Col, Statistic, DatePicker, Button, Space, Modal, Form,
   Input, InputNumber, Select as AntSelect, message, Tag, Divider, Tabs, Popconfirm, Tooltip
 } from 'antd';
+import Table from '../components/NumberedTable';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, DownloadOutlined, SettingOutlined,
   FundViewOutlined, WalletOutlined, RiseOutlined, FallOutlined, UploadOutlined,
@@ -447,9 +448,9 @@ const PersonalAssets: React.FC = () => {
           {stats.incomeByCategory.length > 0 && (
             <Col span={12}>
               <Card title="收入分类" size="small">
-                {stats.incomeByCategory.map(c => (
+                {stats.incomeByCategory.map((c, index) => (
                   <div key={c.category} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span>{c.category} <Tag style={{ marginLeft: 4 }}>{c.count}笔</Tag></span>
+                    <span>{index + 1}. {c.category} <Tag style={{ marginLeft: 4 }}>{c.count}笔</Tag></span>
                     <span style={{ color: '#3f8600', fontWeight: 600 }}>¥{c.amount.toFixed(2)}</span>
                   </div>
                 ))}
@@ -459,9 +460,9 @@ const PersonalAssets: React.FC = () => {
           {stats.expenseByCategory.length > 0 && (
             <Col span={12}>
               <Card title="支出分类" size="small">
-                {stats.expenseByCategory.map(c => (
+                {stats.expenseByCategory.map((c, index) => (
                   <div key={c.category} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                    <span>{c.category} <Tag style={{ marginLeft: 4 }}>{c.count}笔</Tag></span>
+                    <span>{index + 1}. {c.category} <Tag style={{ marginLeft: 4 }}>{c.count}笔</Tag></span>
                     <span style={{ color: '#cf1322', fontWeight: 600 }}>¥{c.amount.toFixed(2)}</span>
                   </div>
                 ))}
@@ -595,7 +596,7 @@ const PersonalAssets: React.FC = () => {
                 <p>✅ 成功检查，找到 {emailResult.emails?.length || 0} 封账单邮件，共解析 {emailResult.total || 0} 条记录</p>
                 {emailResult.emails?.map((e: any, idx: number) => (
                   <div key={idx} style={{ marginTop: 4, fontSize: 13, color: '#666' }}>
-                    <b>{e.subject}</b> — {e.filename} ({e.count} 条)
+                    <b>{idx + 1}. {e.subject}</b> — {e.filename} ({e.count} 条)
                     <Button size="small" type="link" onClick={() => importBillRecords(e.records)}>导入</Button>
                   </div>
                 ))}
@@ -616,9 +617,9 @@ const PersonalAssets: React.FC = () => {
       >
         <Tabs>
           <Tabs.TabPane tab="收入分类" key="income">
-            {incomeCat.map(c => (
+            {incomeCat.map((c, index) => (
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <span><Tag color={c.color || '#1890ff'}>{c.name}</Tag></span>
+                <span>{index + 1}. <Tag color={c.color || '#1890ff'}>{c.name}</Tag></span>
                 {!c.id.startsWith('builtin-') && (
                   <Popconfirm title="确定删除此分类？" onConfirm={() => handleDeleteCategory(c.id)}>
                     <Button type="link" size="small" danger icon={<DeleteOutlined />} />
@@ -628,9 +629,9 @@ const PersonalAssets: React.FC = () => {
             ))}
           </Tabs.TabPane>
           <Tabs.TabPane tab="支出分类" key="expense">
-            {expenseCat.map(c => (
+            {expenseCat.map((c, index) => (
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <span><Tag color={c.color || '#cf1322'}>{c.name}</Tag></span>
+                <span>{index + 1}. <Tag color={c.color || '#cf1322'}>{c.name}</Tag></span>
                 {!c.id.startsWith('builtin-') && (
                   <Popconfirm title="确定删除此分类？" onConfirm={() => handleDeleteCategory(c.id)}>
                     <Button type="link" size="small" danger icon={<DeleteOutlined />} />

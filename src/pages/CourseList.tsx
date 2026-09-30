@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Table, Button, Form, Input, InputNumber, Modal, Select as AntSelect,
+  Button, Form, Input, InputNumber, Modal, Select as AntSelect,
   Space, message, Popconfirm, Tag, Row, Col, Divider
 } from 'antd';
+import Table from '../components/NumberedTable';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
@@ -700,7 +701,8 @@ const CourseList: React.FC = () => {
               <>
                 {fields.map(({ key, name, ...restField }) => (
                   <Row gutter={16} key={key} style={{ alignItems: 'center' }}>
-                    <Col span={10}>
+                    <Col span={1}><span>{name + 1}.</span></Col>
+                    <Col span={9}>
                       <Item
                         {...restField}
                         name={[name, 'student_id']}

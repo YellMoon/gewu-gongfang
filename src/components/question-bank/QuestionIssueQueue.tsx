@@ -54,6 +54,7 @@ const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit,
             <List.Item.Meta
               title={
                 <Space size={6} wrap>
+                  <Typography.Text type="secondary">{issues.findIndex(row => row.id === issue.id) + 1}.</Typography.Text>
                   <Typography.Text strong>{issue.title}</Typography.Text>
                   {issue.subject ? <Tag color="blue">{issue.subject}</Tag> : null}
                 </Space>

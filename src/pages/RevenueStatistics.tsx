@@ -12,12 +12,12 @@ import {
   Select as AntSelect,
   Space,
   Statistic,
-  Table,
   Tag,
   Typography,
   message,
   Popover,
 } from 'antd';
+import Table from '../components/NumberedTable';
 import { BarChartOutlined, LineChartOutlined, PieChartOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, LineElement, PointElement, Filler } from 'chart.js';
@@ -1065,12 +1065,12 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </div>
         {teacherGroups.length > 0 ? (
           <Row gutter={[16, 16]}>
-            {teacherGroups.map(({ summary, details }) => (
+            {teacherGroups.map(({ summary, details }, index) => (
               <Col span={24} key={summary.teacherId}>
                 <div style={subPanelStyle}>
                   <div style={sectionHeaderStyle}>
                     <Space wrap>
-                      <Text strong>{summary.teacherName}</Text>
+                      <Text strong>{index + 1}. {summary.teacherName}</Text>
                       <Tag>{summary.courseCount} 节</Tag>
                       <Tag>{formatDurationSummary(summary)}</Tag>
                       <Tag>{summary.studentCount} 人次</Tag>
@@ -1101,12 +1101,12 @@ const RevenueStatistics: React.FC<RevenueStatisticsProps> = ({ context }) => {
         </div>
         {studentGroups.length > 0 ? (
           <Row gutter={[16, 16]}>
-            {studentGroups.map(({ summary, details }) => (
+            {studentGroups.map(({ summary, details }, index) => (
               <Col span={24} key={summary.studentId}>
                 <div style={subPanelStyle}>
                   <div style={sectionHeaderStyle}>
                     <Space wrap>
-                      <Text strong>{summary.studentName}</Text>
+                      <Text strong>{index + 1}. {summary.studentName}</Text>
                       <Tag>{summary.courseCount} 次</Tag>
                       <Tag>{formatDurationSummary(summary)}</Tag>
                       {showGroupedStudentAmounts ? (

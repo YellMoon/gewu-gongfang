@@ -1,7 +1,8 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Table, Button, DatePicker, Tag, Space, message
+  Button, DatePicker, Tag, Space, message
 } from 'antd';
+import Table from '../components/NumberedTable';
 import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';

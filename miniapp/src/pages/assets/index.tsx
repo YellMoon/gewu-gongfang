@@ -134,10 +134,10 @@ export default function Assets() {
         {[{ key: 'month' as const, label: '\u672c\u6708' }, { key: 'year' as const, label: '\u672c\u5e74' }, { key: 'all' as const, label: '\u5168\u90e8' }].map(item => <View key={item.key} className={`period-tag ${period === item.key ? 'active' : ''}`} onClick={() => setPeriod(item.key)}><Text>{item.label}</Text></View>)}
       </View>
       {filteredRecords.length === 0 ? <EmptyState icon={'\u8d26'} text={'\u6682\u65e0\u8d44\u4ea7\u8bb0\u5f55'} /> : <View className='stats-content'>
-        {categoryStats.map((item, index) => <View key={`${item.name}-${index}`} className='cat-row'><View className='cat-dot' style={{ background: item.color }} /><Text className='cat-name'>{item.name}</Text><Text className={`cat-amount ${item.type}`}>{'\u00a5'}{item.amount.toFixed(2)}</Text></View>)}
-        <View className='cat-section'><Text className='cat-title'>{'\u6700\u8fd1\u8bb0\u5f55'}</Text>{filteredRecords.slice(0, 20).map(record => <View key={record.id} className='record-row'>
+        {categoryStats.map((item, index) => <View key={`${item.name}-${index}`} className='cat-row'><View className='cat-dot' style={{ background: item.color }} /><Text className='cat-name'>{index + 1}. {item.name}</Text><Text className={`cat-amount ${item.type}`}>{'\u00a5'}{item.amount.toFixed(2)}</Text></View>)}
+        <View className='cat-section'><Text className='cat-title'>{'\u6700\u8fd1\u8bb0\u5f55'}</Text>{filteredRecords.slice(0, 20).map((record, index) => <View key={record.id} className='record-row'>
           <View className='record-info'>
-            <Text className='record-name'>{categoryById.get(record.category_id)?.name || record.category_name || '未分类'}</Text>
+            <Text className='record-name'>{index + 1}. {categoryById.get(record.category_id)?.name || record.category_name || '未分类'}</Text>
             {record.note && <Text className='record-note'>{record.note}</Text>}
             <Text className='record-date'>{record.date}</Text>
           </View>

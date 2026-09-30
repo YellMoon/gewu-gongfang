@@ -1315,9 +1315,10 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本" />
               ) : (
                 <Space direction="vertical" style={{ width: '100%' }}>
-                  {versions.map(version => (
+                  {versions.map((version, index) => (
                     <Card key={version.id} size="small" bodyStyle={{ padding: 10 }}>
                       <Row align="middle" gutter={12}>
+                        <Col>{index + 1}.</Col>
                         <Col flex="80px"><Tag color="blue">版本 {version.version_no}</Tag></Col>
                         <Col flex="auto">
                           <div style={{ fontSize: 12, color: '#666' }}>{new Date(version.created_at).toLocaleString()}</div>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Card, Empty, Modal, Space, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Empty, Modal, Space, Tag, message } from 'antd';
+import Table from './NumberedTable';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 
 type RoleApplication = {

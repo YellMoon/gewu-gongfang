@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Space, Statistic, Table, Tabs, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Empty, Space, Statistic, Tabs, Tag, Typography, message } from 'antd';
+import Table from '../components/NumberedTable';
 import {
   FileSearchOutlined,
   FileWordOutlined,

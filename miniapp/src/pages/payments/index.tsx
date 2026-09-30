@@ -116,10 +116,10 @@ export default function Payments() {
           refresherBackground="#f7f4ee"
         >
           <View className="pay-list">
-            {sortPaymentsNewestFirst(filteredPayments).map(p => (
+            {sortPaymentsNewestFirst(filteredPayments).map((p, index) => (
               <View key={p.id} className="pay-card">
                 <View className="pay-left">
-                  <Text className="pay-student">{getStudentName(p.student_id)}</Text>
+                  <Text className="pay-student">{index + 1}. {getStudentName(p.student_id)}</Text>
                   <Text className="pay-date">{p.payment_date} · {p.payment_type === PaymentType.TUITION ? '学费' : '课时'}</Text>
                   {p.notes && <Text className="pay-notes">{p.notes}</Text>}
                 </View>
