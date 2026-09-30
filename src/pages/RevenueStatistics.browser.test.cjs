@@ -81,6 +81,16 @@ const data={
     await date('开始日期','2026-09-01');await date('结束日期','2026-10-31');
     assert.deepEqual((await options('机构')).sort(),['其他机构','建人高复'].sort());
     assert(!(await options('老师')).includes('无排课教师'));
+    for (const [label, value, institution] of [
+      ['老师','教师甲','建人高复'],['年份','2025','其他机构'],['学期','春学期','其他机构'],
+      ['课程名','理8班','建人高复'],['学生','机构学生甲','建人高复'],['课程类型','大班课','建人高复'],
+    ]) {
+      await select(label,value);
+      assert.deepEqual(await options('机构'),[institution],`${label} selection must immediately narrow other facets`);
+      const field=page.locator('.ant-col').filter({has:page.locator('span').filter({hasText:new RegExp('^'+label+'：$')})}).first();
+      await field.hover();await field.locator('.ant-select-clear').click();
+      assert.deepEqual((await options('机构')).sort(),['其他机构','建人高复'].sort(),`${label} clearing must restore valid alternatives`);
+    }
     await select('机构','建人高复');
     assert.deepEqual(await options('老师'),['教师甲']);
     assert.deepEqual(await options('学生'),['机构学生甲']);
@@ -95,7 +105,7 @@ const data={
     await date('开始日期','2026-10-01');
     assert.deepEqual(await options('机构'),['其他机构'],'date changes narrow immediately before clicking Filter');
     assert.deepEqual(errors,[]);
-    fs.writeFileSync(path.join(output,'receipt.json'),JSON.stringify({fixture:true,liveCloud:false,errors,checks:'current draft dates and all seven facet lists; selecting Jianren returns 100.00 fixture tuition'},null,2));
+    fs.writeFileSync(path.join(output,'receipt.json'),JSON.stringify({fixture:true,liveCloud:false,errors,checks:'current draft dates; all seven facet lists; changing and clearing each teacher/year/semester/course/student/type; selecting Jianren returns 100.00 fixture tuition'},null,2));
     console.log('RevenueStatistics actual component browser checks passed; '+output);
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

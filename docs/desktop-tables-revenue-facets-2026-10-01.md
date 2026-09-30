@@ -14,7 +14,7 @@
 - 先失败后通过：题干/选项/答案/解析的 HTML 表格样式、结构缩进、合并单元格、嵌套表格和单元格公式；费用机构候选的日期、教师和混合班学生归属。
 - `npm run typecheck`、`npm run test:rich-content`、`npm run test:institution-student`（含 `test:revenue-filters`）、38 项公式导出测试、题卡交互、小程序题目显示测试通过。版本、发布矩阵和 OSS feed 脚本测试通过。
 - `QuestionTable.browser.test.cjs`：1100/420 像素实际浏览器布局，表格边框、12 列可滚动、页面不溢出；两张截图已检查。证据 `output/playwright/question-tables-20261001/`。
-- `RevenueStatistics.browser.test.cjs`：实际费用页面组件及真实 Ant Design 控件，隔离只读夹具；修改日期后未点击筛选即显示建人高复，选中机构后逐项验证七个下拉框，应用后夹具学费 100、教师费 60；再次修改日期立即收窄。页面异常 0，截图已检查。证据 `output/playwright/revenue-facets-20261001/`。图表组件在此测试中替换为空组件，不宣称图表或真实云数据总额验证。
+- `RevenueStatistics.browser.test.cjs`：实际费用页面组件及真实 Ant Design 控件，隔离只读夹具；修改日期后未点击筛选即显示建人高复，逐个选择/清除教师、年份、学期、课程、学生、班型均立即收窄/恢复机构选项；选中机构后逐项验证七个下拉框，应用后夹具学费 100、教师费 60；再次修改日期立即收窄。页面异常 0，截图已检查。证据 `output/playwright/revenue-facets-20261001/`。图表组件在此测试中替换为空组件，不宣称图表或真实云数据总额验证。
 - 额外运行旧 `src/uiRegression.test.js` 在第 149 行访客角色申请静态断言失败；该断言及其身份页面代码本轮未改。未将本轮相关验证描述为完整 `npm test` 通过。
 
 ## 发布边界
@@ -23,3 +23,11 @@
 - 云端 8.13.0、NAS 8.8.4、小程序 8.8.27 的源代码、协议声明与上一轮矩阵提交相比相同，沿用已有验证回执及原验证时间，不伪造重新部署或上传。云端公网 `/cloud-business/api/health` 新鲜只读检查返回 200、`ok=true`、8.13.0。
 - 小程序原回执为开发版，不能宣称微信正式版发布完成。桌面 OSS 构建/发布及最终校验在后续回执记录。
 - 用户原有 `docs/desktop-device-name-2026-09-24.md` 修改及此前未跟踪产物不纳入本轮提交。
+
+## 桌面发布结果
+
+- 实现提交 `5f624259` 已推送 `gewu/master`。后续提交只补全选择/清除控件回归、锁文件版本元数据和本报告，不改变已打包运行时代码。
+- `npm run dist:win` 成功；打包应用元数据确认为 8.10.2，隔离启动 smoke 通过。`dist` 是指向 D 盘产物目录的现有 junction，启动日志使用其真实路径，并非启动旧安装。
+- Electron 原生 ABI119 验证通过，构建末尾自动恢复 Node ABI137，root/backend 复验通过。发布后费用筛选、财务快照、原生 outbox 和表格浏览器回归通过。
+- `npm run publish:desktop-update` 将在线及版本归档的安装包/feed 四个对象上传成功，均返回 200。公网重新读取两份 `latest.yml` 均为 8.10.2；完整读取在线安装包 150,380,455 字节，SHA-512 与本地及 feed 相同：`ZY979RabWNlSPAJDkms0p4/cXkqO3TpqZizJZBGIVkrtjUEoxciT+YUQZqNgP9QUwYmFss0oPIjx5uU6fMbldA==`。
+- 公网证据 `output/playwright/desktop-fixes-release-20261001/oss-verification.json`，北京时间 2026-10-01 核验。桌面更新已发布；多端矩阵仍为部分发布（小程序既有开发版回执，未获得微信正式版发布回执）。
