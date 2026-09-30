@@ -34,6 +34,26 @@ function loadDesktopQuestionOptions() {
 
 const desktopQuestionOptions = loadDesktopQuestionOptions();
 
+{
+  const { structuredDocToHtml, renderLegacyRichText } = require('./questionDisplay');
+  const value = {type:'doc',content:[{type:'paragraph',content:[
+    {type:'text',text:'Before '},{type:'formula',attrs:{canonicalLatex:'x^2',displayMode:'block'}},
+    {type:'text',text:' after'},{type:'hardBreak'},{type:'text',text:'Next line'}]},
+    {type:'formulaBlock',attrs:{canonicalLatex:String.raw`\begin{aligned}x&=1\\y&=2\end{aligned}`,displayMode:'block'}},
+    {type:'paragraph',content:[{type:'text',text:'Next paragraph'}]}]};
+  const before = JSON.stringify(value);
+  const html = structuredDocToHtml(value);
+  assert(!html.includes('question-formula-block'),'exam formulas stay inline regardless of imported display metadata');
+  assert.equal((html.match(/<p>/g)||[]).length,2);
+  assert(html.includes('<br />') && html.includes('question-formula-matrix'),'retain hard breaks and aligned math internals');
+  assert.equal((html.match(/<tr>/g)||[]).length,2,'aligned rows stay inside their inline math table');
+  assert.equal(JSON.stringify(value),before);
+  const legacy = renderLegacyRichText(String.raw`<p>Before $$x^2$$ after<br />Next line</p><p>Then \[y=2\]</p>`);
+  assert(!legacy.includes('question-formula-block'));
+  assert.equal((legacy.match(/<p>/g)||[]).length,2);
+  assert.equal((legacy.match(/<br \/>/g)||[]).length,1);
+}
+
 assert.strictEqual(renderLatex('v_1^{\\prime}'), 'v<sub>1</sub><sup>\u2032</sup>', 'a collision velocity prime must render as a prime symbol, not the command name');
 assert.strictEqual(renderLatex('O^{\\prime\\prime}'), 'O<sup>\u2032\u2032</sup>', 'repeated prime commands must remain repeated marks');
 assert.strictEqual(renderLatex('v^{\\prime}_2'), 'v<sup>\u2032</sup><sub>2</sub>', 'prime rendering must preserve the source subscript and superscript order');

@@ -250,6 +250,8 @@ function renderLatexEnvironment(environment, body, depth) {
     return `<span class="question-formula-cases"><span class="question-formula-cases-brace">&#123;</span><table><tbody>${rowHtml}</tbody></table></span>`;
   }
   const delimiters = {
+    aligned: ['', ''],
+    gathered: ['', ''],
     matrix: ['', ''],
     pmatrix: ['(', ')'],
     bmatrix: ['[', ']'],
@@ -451,9 +453,8 @@ function renderStructuredNode(node, state, depth = 0) {
     html = applyMarks(escapeHtml(node.text), node.marks);
   } else if (type === 'formula' || type === 'formulaBlock') {
     const formula = renderLatex(node.attrs?.canonicalLatex || node.canonicalLatex || node.latex);
-    html = type === 'formulaBlock' || node.attrs?.displayMode === 'block'
-      ? `<div class="question-formula question-formula-block">${formula}</div>`
-      : `<span class="question-formula">${formula}</span>`;
+    // Paragraphs and hardBreak nodes own exam line breaks; formula metadata does not.
+    html = `<span class="question-formula">${formula}</span>`;
   } else if (type === 'image') {
     const assetKey = String(node.attrs?.assetKey || '');
     if (SAFE_ASSET_KEY.test(assetKey)) {
@@ -521,11 +522,9 @@ function decodeLegacyLatexAttribute(value) {
 
 function renderLegacyRichText(value) {
   const formulaTokens = [];
-  const protectFormula = (latex, block = false) => {
+  const protectFormula = latex => {
     const rendered = renderLatex(decodeLegacyEntities(latex));
-    const html = block
-      ? `<div class="question-formula question-formula-block">${rendered}</div>`
-      : `<span class="question-formula">${rendered}</span>`;
+    const html = `<span class="question-formula">${rendered}</span>`;
     const token = `@@QUESTION_FORMULA_${formulaTokens.length}@@`;
     formulaTokens.push(html);
     return token;
@@ -536,8 +535,8 @@ function renderLegacyRichText(value) {
     .replace(/<!--?[\s\S]*?-->/g, '');
   source = source
     .replace(/<span\b[^>]*data-latex=["']([^"']+)["'][^>]*>\s*<\/span>/gi, (_match, latex) => protectFormula(decodeLegacyLatexAttribute(latex)))
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_match, latex) => protectFormula(latex, true))
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_match, latex) => protectFormula(latex, true))
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_match, latex) => protectFormula(latex))
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_match, latex) => protectFormula(latex))
     .replace(/\\\(([^\r\n]*?)\\\)/g, (_match, latex) => protectFormula(latex))
     .replace(/\$([^$\r\n]+?)\$/g, (_match, latex) => protectFormula(latex))
     .replace(/\\(?:d?frac|tfrac)\{([^{}]*)\}\{([^{}]*)\}/g, (_match, numerator, denominator) => protectFormula(`\\frac{${numerator}}{${denominator}}`))

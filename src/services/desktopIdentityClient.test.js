@@ -1022,6 +1022,36 @@ async function main() {
   assert.strictEqual(adminSwitchStored.profile.studentId, null);
   assert.strictEqual(passiveResumeCalls, 0,
     'privileged role elevation must not renew user-presence freshness through passive vault resume');
+  // The cloud revokes the old role session before the desktop accepts/persists the new one.
+  for (const stage of ['network', 'response', 'vault', 'store']) {
+    const stageFailure = stage === 'network' ? new TypeError('Failed to fetch') : new Error('ROLE_SWITCH_' + stage);
+    const failureClient = createDesktopIdentityClient({
+      desktopIdentity: {
+        status: async () => ({ state: 'unlocked' }),
+        signChallenge: async () => ({ elevationIssuedAt: '2026-09-01T10:15:00.000Z', signature: 'proof' }),
+        acceptIssuedSession: async () => { if (stage === 'vault') throw stageFailure; },
+      },
+      sessionStore: { save: async () => { if (stage === 'store') throw stageFailure; }, clear: async () => {} },
+      fetchImpl: async () => {
+        if (stage === 'network') throw stageFailure;
+        return { ok: true, json: async () => {
+          if (stage === 'response') throw stageFailure;
+          return { success: true, data: { ...adminSwitchStored, offlineLease: { id: 'lease' } } };
+        } };
+      },
+    });
+    await assert.rejects(() => failureClient.switchRole({
+      baseUrl: 'https://cloud.test', activeRole: 'super_admin', currentSession: {
+        token: 'old-token', session: { id: 'old-session', userId: 'role-user-1', deviceId: 'role-device-1',
+          activeRole: 'teacher', eligibleRoles: ['teacher', 'super_admin'], rowVersion: 1 },
+        profile: { userId: 'role-user-1', activeRole: 'teacher', eligibleRoles: ['teacher', 'super_admin'] },
+      },
+    }), error => {
+      assert.strictEqual(error.cloudRoleSessionRotated, ['vault', 'store'].includes(stage));
+      assert.strictEqual(error.cloudRoleSessionUncertain, ['network', 'response'].includes(stage));
+      return true;
+    }, `must not restore a possibly revoked session after ${stage} failure`);
+  }
   const adminAuthorization = normalizeDesktopAuthorizationSession(adminSwitchStored);
   assert.strictEqual(adminAuthorization.authContext.teacherId, null);
   assert.strictEqual(adminAuthorization.authContext.studentId, null);

@@ -114,13 +114,6 @@ function canonicalFormula(value) {
   return String(value.canonicalLatex || value.canonical_latex || value.latex || attrs.canonicalLatex || attrs.canonical_latex || attrs.latex || '').trim();
 }
 
-function formulaDisplayMode(value) {
-  const attrs = value && value.attrs && typeof value.attrs === 'object' && !Array.isArray(value.attrs) ? value.attrs : {};
-  if (attrs.displayMode === 'block' || value?.displayMode === 'block') return 'block';
-  if (attrs.displayMode === 'inline' || value?.displayMode === 'inline') return 'inline';
-  return /(?:block|display)/i.test(String(value?.type || value?.kind || '')) ? 'block' : 'inline';
-}
-
 function richTokens(value, seen = new Set(), tokens = []) {
   if (value === null || value === undefined || seen.has(value)) return tokens;
   if (typeof value === 'string') {
@@ -131,7 +124,13 @@ function richTokens(value, seen = new Set(), tokens = []) {
   if (typeof value !== 'object') return tokens;
   seen.add(value);
   if (Array.isArray(value)) {
-    for (const item of value) richTokens(item, seen, tokens);
+    for (const [index, item] of value.entries()) {
+      richTokens(item, seen, tokens);
+      // A following root formula may flow inline, but it still follows this paragraph.
+      if (item?.type === 'paragraph' && index < value.length - 1 && tokens.length && tokens.at(-1).kind !== 'break') {
+        tokens.push({ kind: 'break' });
+      }
+    }
     return tokens;
   }
   if (value.type === 'image') {
@@ -148,7 +147,8 @@ function richTokens(value, seen = new Set(), tokens = []) {
   }
   const latex = canonicalFormula(value);
   if (latex) {
-    tokens.push({ kind: 'formula', latex, displayMode: formulaDisplayMode(value) });
+    // Exam formulae flow with prose. Explicit paragraph/hardBreak tokens still break lines.
+    tokens.push({ kind: 'formula', latex, displayMode: 'inline' });
     return tokens;
   }
   if (value.type === 'text' && typeof value.text === 'string') {

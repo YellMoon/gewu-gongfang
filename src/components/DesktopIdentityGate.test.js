@@ -1,6 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 require('./DesktopIdentityGate.reload.test.js');
+require('./DesktopIdentityGate.roleRecovery.test.js');
 
 const indexSource = fs.readFileSync('src/index.tsx', 'utf8');
 const gateSource = fs.readFileSync('src/components/DesktopIdentityGate.tsx', 'utf8');

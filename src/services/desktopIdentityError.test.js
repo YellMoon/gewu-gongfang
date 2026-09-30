@@ -2,6 +2,9 @@ const assert = require('assert');
 
 (async () => {
   const { desktopIdentityErrorMessage, extractDesktopIdentityErrorCode } = await import('./desktopIdentityError.mjs');
+  const stalePresence = new Error("Error invoking remote method 'sign': Error: DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED");
+  assert.strictEqual(extractDesktopIdentityErrorCode(stalePresence), 'DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
+  assert.match(desktopIdentityErrorMessage(stalePresence), /重新验证.*密码.*微信/);
   const wrapped = new Error("Error invoking remote method 'desktop-identity:unlock': Error: DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED");
   assert.strictEqual(extractDesktopIdentityErrorCode(wrapped), 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
   assert.strictEqual(desktopIdentityErrorMessage(wrapped), '\u8d26\u53f7\u6216\u5bc6\u7801\u4e0d\u6b63\u786e\uff0c\u8bf7\u91cd\u8bd5\u3002');

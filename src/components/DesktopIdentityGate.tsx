@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import { getRuntimeConfig } from '../services/runtimeConfigClient';
 import { resolveDesktopIdentityBaseUrl } from '../services/managedSyncConfig.mjs';
-import { desktopIdentityErrorMessage } from '../services/desktopIdentityError.mjs';
+import { desktopIdentityErrorMessage, extractDesktopIdentityErrorCode } from '../services/desktopIdentityError.mjs';
 import {
   canStartBusinessRuntime,
   createDesktopIdentityClient,
@@ -98,6 +98,10 @@ const DesktopIdentityGate: React.FC = () => {
   const pollingFlowRef = useRef<number | null>(null);
   const registrationFlowRef = useRef(0);
   const automaticRegistrationRef = useRef<string | null>(null);
+  const roleSwitchBusyRef = useRef(false);
+  const runtimeEpochRef = useRef(0);
+  const roleSwitchRecoveryRef = useRef<{ userId: string; activeRole: string } | null>(null);
+  const [roleSwitchRecovery, setRoleSwitchRecovery] = useState<{ userId: string; activeRole: string } | null>(null);
 
   const clearPendingVerificationState = useCallback(() => {
     registrationFlowRef.current += 1;
@@ -118,6 +122,7 @@ const DesktopIdentityGate: React.FC = () => {
   }, []);
 
   const secureRelock = useCallback(async (nextState: GateState) => {
+    runtimeEpochRef.current += 1;
     setRuntimeSuspended(true);
     try {
       await clientRef.current?.lock();
@@ -168,6 +173,23 @@ const DesktopIdentityGate: React.FC = () => {
     setError('');
   }, [clearPendingVerificationState, installIdentityContext]);
 
+  const installSwitchedRuntime = useCallback(async (switched: any) => {
+    await commitRoleSwitchRuntime({
+      switched,
+      onlineSessionRef,
+      resolveNext: async () => resolveDesktopGateState({
+        vaultStatus: await clientRef.current.status(),
+        online: true,
+        onlineSession: switched,
+        now: new Date(),
+      }),
+      setOnlineSession,
+      installIdentityContext,
+      setGateState,
+      setRuntimeSuspended,
+    });
+  }, [installIdentityContext]);
+
   const retryInitialization = useCallback(() => {
     setError('');
     setGateState({ kind: 'loading' });
@@ -193,10 +215,15 @@ const DesktopIdentityGate: React.FC = () => {
         clientRef.current = client;
         installedProvider = {
           ensureOnline: async () => {
+            const epoch = runtimeEpochRef.current;
+            if (roleSwitchRecoveryRef.current) throw new Error('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
             const result = await client.ensureOnlineSession({
               baseUrl: identityBaseUrl,
             });
-            if (!cancelled) acceptRuntime(result);
+            if (cancelled || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) {
+              throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
+            }
+            acceptRuntime(result);
             return result;
           },
           listCloudSchedules: async () => {
@@ -415,10 +442,11 @@ const DesktopIdentityGate: React.FC = () => {
   }, [pending?.status, pollRegistration]);
 
   const renewSessionSilently = useCallback(async () => {
-    if (!browserOnline()) return false;
+    if (!browserOnline() || roleSwitchRecoveryRef.current) return false;
+    const epoch = runtimeEpochRef.current;
     try {
       const result = await clientRef.current?.resume({ baseUrl, online: true });
-      if (!result) return false;
+      if (!result || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) return false;
       acceptRuntime(result);
       return true;
     } catch (_error) {
@@ -429,20 +457,24 @@ const DesktopIdentityGate: React.FC = () => {
   useEffect(() => {
     const remaining = desktopIdentityExpiryDelay(gateState, new Date());
     if (remaining === null) return undefined;
+    const epoch = runtimeEpochRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && epoch === runtimeEpochRef.current;
     const onlineRuntime = gateState.kind === 'online-unlocked';
     const expiredState = gateState.kind === 'offline-unlocked'
       ? { kind: 'offline-blocked' }
       : { kind: 'online-authentication-required' };
     const lockOut = () => {
+      if (!isCurrent()) return;
       void secureRelock(expiredState).catch(caught => setError(messageForError(caught)));
     };
     const expire = async () => {
       // UTF-8: renew silently while online instead of forcing the login page.
-      if (await renewSessionSilently()) return;
+      if (await renewSessionSilently() || !isCurrent()) return;
       // UTF-8: if the online session lapsed while offline, keep running on the still-valid offline lease.
       try {
         const offlineResumed = await resumeOfflineAfterNetworkFailure({ client: clientRef.current, baseUrl });
-        if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+        if (isCurrent() && canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
           acceptRuntime(offlineResumed);
           return;
         }
@@ -454,7 +486,7 @@ const DesktopIdentityGate: React.FC = () => {
     const renewMarginMs = 10 * 60 * 1000;
     if (remaining <= 0) {
       void expire();
-      return undefined;
+      return () => { cancelled = true; };
     }
     const delay = onlineRuntime && remaining > renewMarginMs ? remaining - renewMarginMs : remaining;
     const timer = window.setTimeout(() => {
@@ -464,7 +496,7 @@ const DesktopIdentityGate: React.FC = () => {
         void expire();
       }
     }, Math.min(delay, 2_147_000_000));
-    return () => window.clearTimeout(timer);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [gateState.expiresAt, gateState.kind, renewSessionSilently, secureRelock]);
 
   const beginRegistration = async () => {
@@ -538,16 +570,34 @@ const DesktopIdentityGate: React.FC = () => {
       setCloudLoginName('');
       setCloudPassword('');
       setCloudPasswordAgain('');
+      const recovery = roleSwitchRecoveryRef.current;
+      if (recovery) {
+        if (result.session?.userId !== recovery.userId || result.gateState?.userId !== recovery.userId) {
+          throw new Error('DESKTOP_ROLE_SWITCH_ACCOUNT_MISMATCH');
+        }
+        // Only this explicit, newly verified login can finish the pending elevation.
+        const switched = result.session.activeRole === recovery.activeRole ? result
+          : await clientRef.current.switchRole({ baseUrl, currentSession: result, activeRole: recovery.activeRole });
+        await installSwitchedRuntime(switched);
+        roleSwitchRecoveryRef.current = null;
+        setRoleSwitchRecovery(null);
+        clearPendingVerificationState();
+        return;
+      }
       acceptRuntime(result);
     } catch (caught) {
       console.error('[desktop-identity:registration]', String((caught as any)?.code || 'DESKTOP_IDENTITY_REGISTRATION_FAILED'));
+      if (roleSwitchRecoveryRef.current) {
+        // Registration or role exchange may have replaced the previous cloud session.
+        await secureRelock({ kind: 'online-authentication-required' }).catch(() => {});
+      }
       setError(messageForError(caught));
     } finally {
       setCloudPassword('');
       setCloudPasswordAgain('');
       setBusy(false);
     }
-  }, [pending, cloudLoginName, cloudPassword, cloudPasswordAgain, acceptRuntime]);
+  }, [pending, cloudLoginName, cloudPassword, cloudPasswordAgain, acceptRuntime, baseUrl, installSwitchedRuntime, clearPendingVerificationState, secureRelock]);
 
   useEffect(() => {
     if (!claimAutomaticDesktopRegistration({ pending, attemptRef: automaticRegistrationRef })) return;
@@ -633,6 +683,8 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
   const performRoleSwitch = async (activeRole: string) => {
+    if (roleSwitchBusyRef.current || roleSwitchRecoveryRef.current) return;
+    roleSwitchBusyRef.current = true;
     const previousPartition = currentPartitionRef.current;
     const previousOnlineSession = onlineSessionRef.current;
     setBusy(true);
@@ -640,27 +692,27 @@ const DesktopIdentityGate: React.FC = () => {
     try {
       const switched = await clientRef.current.switchRole({
         baseUrl,
-        currentSession: onlineSession,
+        currentSession: previousOnlineSession,
         activeRole,
       });
-      await commitRoleSwitchRuntime({
-        switched,
-        onlineSessionRef,
-        resolveNext: async () => {
-          const vaultStatus = await clientRef.current.status();
-          return resolveDesktopGateState({
-            vaultStatus,
-            online: true,
-            onlineSession: switched,
-            now: new Date(),
-          });
-        },
-        setOnlineSession,
-        installIdentityContext,
-        setGateState,
-        setRuntimeSuspended,
-      });
-    } catch (caught) {
+      await installSwitchedRuntime(switched);
+    } catch (caught: any) {
+      if (extractDesktopIdentityErrorCode(caught) === 'DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED') {
+        const userId = previousOnlineSession?.session?.userId;
+        if (userId) {
+          const recovery = { userId, activeRole };
+          roleSwitchRecoveryRef.current = recovery;
+          setRoleSwitchRecovery(recovery);
+        }
+        await secureRelock({ kind: 'online-authentication-required' }).catch(() => {});
+        return;
+      }
+      if (caught?.cloudRoleSessionRotated || caught?.cloudRoleSessionUncertain
+        || onlineSessionRef.current !== previousOnlineSession) {
+        await secureRelock({ kind: 'online-authentication-required' }).catch(() => {});
+        setError(messageForError(caught));
+        return;
+      }
       onlineSessionRef.current = previousOnlineSession;
       if (previousPartition) {
         (window as any).dbService?.switchIdentityPartition?.(previousPartition);
@@ -668,8 +720,15 @@ const DesktopIdentityGate: React.FC = () => {
       setRuntimeSuspended(false);
       setError(messageForError(caught));
     } finally {
+      roleSwitchBusyRef.current = false;
       setBusy(false);
     }
+  };
+
+  const cancelRoleSwitch = async () => {
+    roleSwitchRecoveryRef.current = null;
+    setRoleSwitchRecovery(null);
+    await returnToPasswordLogin();
   };
 
   const renderRegistration = () => {
@@ -697,6 +756,14 @@ const DesktopIdentityGate: React.FC = () => {
     }
     if (pending?.status === 'verified' && pending?.verificationToken) {
       const desktopAccessAllowed = pending?.desktopAccess?.access === 'allowed';
+      if (roleSwitchRecovery && !desktopAccessAllowed) {
+        return (
+          <>
+            <Alert type="warning" showIcon message="当前账号无法完成身份切换，请使用切换前的同一账号登录。" />
+            <Button loading={busy} onClick={returnToPasswordLogin} block>{'\u8fd4\u56de\u5bc6\u7801\u767b\u5f55'}</Button>
+          </>
+        );
+      }
       const canEnrollCloudPassword = !desktopAccessAllowed && pending?.pairingId && pending?.recovery !== true;
       const teacherRegistrationRequired = pending?.desktopAccess?.access === 'teacher_registration_required';
       return (
@@ -797,6 +864,13 @@ const DesktopIdentityGate: React.FC = () => {
         </header>
         <Divider />
         <Space direction="vertical" size={16} className="desktop-identity-form">
+          {roleSwitchRecovery && (
+            <>
+              <Alert type="info" showIcon message={`重新验证后切换为${roleLabel(roleSwitchRecovery.activeRole)}`}
+                description="请使用切换前的同一账号，通过密码或微信登录。验证成功后将自动完成身份切换。" />
+              <Button disabled={busy} onClick={cancelRoleSwitch} block>取消身份切换</Button>
+            </>
+          )}
           {gateState.kind === 'loading' && <Spin spinning tip={'\u6b63\u5728\u51c6\u5907\u767b\u5f55\u2026'}><div className="desktop-identity-loading-placeholder" /></Spin>}
           {gateState.kind === 'initialization-failed' && (
             <>

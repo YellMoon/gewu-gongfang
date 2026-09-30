@@ -13,10 +13,12 @@ function load(file) {
   vm.runInNewContext(compiled, { module, exports: module.exports, require: name => {
     if (name === '../utils/physicsNotation') { const m={exports:{}}; new Function('module','exports',ts.transpileModule(fs.readFileSync(path.join(__dirname,'../utils/physicsNotation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(m,m.exports);return m.exports;}
     if (name === './QuestionFormulaContent') return load('QuestionFormulaContent.tsx');
-    if (name === './RichAssetImage') return { RichAssetImage: ({assetKey,...props}) => React.createElement('img', props) };
+    if (name === './RichAssetImage') return { RichAssetImage: ({assetKey,...props}) => React.createElement('img', props), ResolvedRichHtml: ({as = 'span', html}) => React.createElement(as, {dangerouslySetInnerHTML: {__html: html}}) };
+    if (name.endsWith('.css')) return {};
+    if (name === '../utils/sanitizeHtml') return load('../utils/sanitizeHtml.ts');
     if (name === '../utils/questionOptions') return require('../utils/questionOptions.ts');
     return require(name);
-  } });
+  }, DOMParser: new (require('jsdom').JSDOM)('').window.DOMParser, Node: new (require('jsdom').JSDOM)('').window.Node });
   return module.exports;
 }
 const { QuestionFormulaContent } = load('QuestionFormulaContent.tsx');
@@ -32,7 +34,7 @@ const value = { sections: { stem: doc([{ type: 'formulaBlock', attrs: { canonica
   answer: doc([{ type: 'formula', attrs: { canonicalLatex: null, conversionStatus: 'preview_only', previewRef: 'word/media/image67.wmf' } }]),
   analysis: doc([]), options: [], subQuestions: [] } };
 const hidden = renderToStaticMarkup(React.createElement(Viewer, { value }));
-assert(hidden.includes('katex-display'));
+assert(!hidden.includes('katex-display'), 'exam formulas must not force a display row');
 assert(!hidden.includes('question-formula-pending'));
 const expanded = renderToStaticMarkup(React.createElement(Viewer, { value, showAnswer: true }));
 assert(expanded.includes('question-formula-pending'));
@@ -60,7 +62,7 @@ assert(physics.includes('class="physics-unit"'),'units retain upright typography
 const geometry=renderToStaticMarkup(React.createElement(Viewer,{value:{sections:{...markedValue.sections,stem:doc([{type:'image',attrs:{src:'data:image/png;base64,YQ==',width:389,height:297}}])}}}));
 assert(geometry.includes('width="389"') && geometry.includes('height="297"'));
 assert(geometry.includes('width:389px;max-width:100%;height:auto'),'imported display geometry remains responsive without enlargement');
-assert(hidden.includes('structured-question-viewer__formula is-block'));
+assert(!hidden.includes('structured-question-viewer__formula is-block'));
 
 const splitUnits=renderToStaticMarkup(React.createElement(Viewer,{value:{sections:{...markedValue.sections,stem:doc([{type:'paragraph',content:[{type:'text',text:'长度 2 '},{type:'text',text:'m',marks:[{type:'bold'}]},{type:'text',text:'，速度 3 '},{type:'text',text:'m/'},{type:'text',text:'s'},{type:'text',text:'，质量 '},{type:'text',text:'m'}]}])}}}));
 assert(!splitUnits.includes('<i>s</i>'),'split unit denominator stays upright');
@@ -71,3 +73,31 @@ assert(marked.includes('<i>v</i>'),'subscript boundaries do not turn variable v 
 const {applyPhysicsNotationToTextRuns}=load('../utils/physicsNotation.ts');
 const spaced=applyPhysicsNotationToTextRuns(['长度 2  ','m','，质量 ','m']);
 assert.deepEqual(spaced,['长度 2  ','<span class="physics-unit">m</span>','，质量 ','<i>m</i>'],'preserve spaces and source mark offsets');
+
+const { JSDOM } = require('jsdom');
+const formulaDoc = doc([
+  {type:'paragraph',content:[{type:'text',text:'Before '},{type:'formula',attrs:{canonicalLatex:'x^2',displayMode:'block'}},{type:'text',text:' after'},{type:'hardBreak'},{type:'text',text:'Next line'}]},
+  {type:'paragraph',content:[{type:'text',text:'Next paragraph'}]},
+]);
+const exam = {sections:{stem:formulaDoc,options:[{id:'a',label:'A',content:formulaDoc}],answer:formulaDoc,analysis:formulaDoc,subQuestions:[]}};
+const originalExam = JSON.stringify(exam);
+const examHtml = renderToStaticMarkup(React.createElement(Viewer,{value:exam,showAnswer:true}));
+const examDom = new JSDOM(examHtml).window.document;
+assert.equal(examDom.querySelectorAll('.katex-display, .is-block').length,0);
+assert.equal(examDom.querySelectorAll('p').length,8,'all four sections retain their paragraph boundaries');
+assert.equal(examDom.querySelectorAll('br').length,4,'all four sections retain their hard breaks');
+assert.equal(examDom.querySelectorAll('.structured-question-viewer__option-content > p').length,2,
+  'option paragraphs share one content column beside their label');
+assert.equal(JSON.stringify(exam),originalExam,'rendering cannot rewrite the source document');
+const QuestionRenderer = load('QuestionRenderer.tsx').default;
+const legacyText = String.raw`<p>Before $$\frac{1}{2}$$ after<br />Next line</p><p>Next paragraph</p>`;
+const legacyHtml = renderToStaticMarkup(React.createElement(QuestionRenderer,{content:legacyText,options:[{label:'A',content:legacyText}],answer:legacyText,analysis:legacyText,showAnalysis:true}));
+const legacyDom = new JSDOM(legacyHtml).window.document;
+assert.equal(legacyDom.querySelectorAll('.katex-display, .math-display').length,0);
+assert.equal(legacyDom.querySelectorAll('.katex').length,4,'each legacy section renders the complete delimited formula once');
+assert.equal(legacyDom.querySelectorAll('p').length,8,'legacy formulas must not split surrounding HTML paragraphs');
+assert.equal(legacyDom.querySelectorAll('br').length,4);
+assert(!legacyDom.body.textContent.includes('$'),'no unmatched display delimiters may leak into exam text');
+const alignedHtml = renderToStaticMarkup(React.createElement(QuestionRenderer,{content:String.raw`Before \[\begin{aligned}x&=1\\y&=2\end{aligned}\] after`}));
+assert(alignedHtml.includes('mtable'),'aligned formula rows remain inside the formula');
+assert(!alignedHtml.includes('katex-error') && !alignedHtml.includes('latex-fallback'));

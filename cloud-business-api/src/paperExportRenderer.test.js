@@ -11,6 +11,31 @@ require('./pdfInlineLayout.test');
 require('./wordNativeFormula.test');
 
 (async () => {
+  const examDoc = {type:'doc',content:[{type:'paragraph',content:[
+    {type:'text',text:'Before exam '},{type:'formula',attrs:{canonicalLatex:'x=1',displayMode:'block'}},
+    {type:'text',text:' after exam'},{type:'hardBreak'},{type:'text',text:'Hard break retained'}]},
+    {type:'paragraph',content:[{type:'text',text:'Separate paragraph retained'}]}]};
+  const sourceBefore = JSON.stringify(examDoc);
+  const optionTokens = normalizeOptionTokenGroups([{label:'A',content:examDoc}])[0];
+  assert.equal(optionTokens.find(token => token.kind === 'formula').displayMode,'inline','exam export must not isolate imported display formulas');
+  assert.equal(optionTokens.filter(token => token.kind === 'break').length,2,'source paragraph and hardBreak boundaries stay intact');
+  const boundaryTokens = normalizeOptionTokenGroups([{label:'A',content:{type:'doc',content:[
+    {type:'paragraph',content:[{type:'text',text:'Separate paragraph'}]},
+    {type:'formulaBlock',attrs:{canonicalLatex:'x=1',displayMode:'block'}},
+  ]}}])[0];
+  assert.equal(boundaryTokens[boundaryTokens.findIndex(token => token.kind === 'formula')-1].kind,'break',
+    'an inline-rendered root formula cannot swallow the preceding explicit paragraph boundary');
+  for (const formulaMode of ['word-native','latex-vector']) {
+    const result = await renderPaperExport({format:'word',title:'Exam flow',answerPosition:'after',formulaMode,snapshot:[{
+      id:'exam-flow',stem:'Fallback',answer:'',explanation:'',richContent:{sections:{stem:examDoc,options:[],subQuestions:[],answer:examDoc,analysis:examDoc}},
+    }]});
+    const xml = await questionXml(await JSZip.loadAsync(result.bytes));
+    const start = xml.indexOf('Before exam');
+    const paragraph = xml.slice(xml.lastIndexOf('<w:p',start),xml.indexOf('</w:p>',start));
+    assert(paragraph.includes('after exam'),'formula and surrounding exam prose must remain in one Word paragraph');
+    assert(!paragraph.includes('Hard break retained') && !paragraph.includes('Separate paragraph retained'));
+  }
+  assert.equal(JSON.stringify(examDoc),sourceBefore,'export may not mutate rich source structure');
   // UTF-8: a real SVG text fallback must not change the following CJK body font.
   const fontProbe = new PDFDocument();
   fontProbe.resume();
@@ -142,8 +167,8 @@ require('./wordNativeFormula.test');
     format: 'pdf', title: 'Structured formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-rich', stem: 'Fallback stem', answer: 'A', explanation: 'Explanation', richContent: productionRichContent }],
   });
-  assert.ok(richPdf.bytes.includes(Buffer.from('/Subtype /Image')),
-    'PDF formulas must use their measured fallback images so a formula cannot overflow the page or create a blank trailing page');
+  assert.ok(!richPdf.bytes.includes(Buffer.from('/Subtype /Image')),
+    'imported display metadata must use the same measured inline vector layout as other exam formulas');
   const defaultInlinePdf = await renderPaperExport({
     format: 'pdf', title: 'Default inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',
     snapshot: [{ id: 'q-default-inline', stem: 'Fallback', answer: '', explanation: '', richContent: { blocks: [

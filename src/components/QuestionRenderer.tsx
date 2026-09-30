@@ -26,51 +26,12 @@ interface QuestionRendererProps {
   terms?: string[];
 }
 
-interface ContentSegment {
-  type: 'html' | 'math-display' | 'math-inline';
-  value: string;
-}
-
-function splitInlineMath(text: string): ContentSegment[] {
-  const segments: ContentSegment[] = [];
-  const re = /\$([^$]+?)\$/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) {
-      segments.push({ type: 'html', value: text.slice(last, m.index) });
-    }
-    segments.push({ type: 'math-inline', value: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) {
-    segments.push({ type: 'html', value: text.slice(last) });
-  }
-  return segments;
-}
-
-function splitMixedContent(content: string): ContentSegment[] {
-  const segments: ContentSegment[] = [];
-  const re = /\$\$([\s\S]*?)\$\$/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
-    if (m.index > last) {
-      segments.push(...splitInlineMath(content.slice(last, m.index)));
-    }
-    segments.push({ type: 'math-display', value: m[1] });
-    last = m.index + m[0].length;
-  }
-  if (last < content.length) {
-    segments.push(...splitInlineMath(content.slice(last)));
-  }
-  return segments.length > 0 ? segments : [{ type: 'html', value: content }];
-}
-
-function convertHtmlLatexFractions(content: string): string {
+function protectDelimitedLatex(content: string): string {
+  // Protect complete formulas before legacy fraction/text normalization. Keeping
+  // them inside the original HTML also preserves paragraph and hardBreak edges.
   return (content || '').replace(
-    /\$\\frac\{([^{}]*)\}\{([^{}]*)\}\$/g,
-    (_match, num, den) => legacyLatexPlaceholder(`\\frac{${num}}{${den}}`)
+    /\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]|\\\(([^\r\n]*?)\\\)|\$([^$]+?)\$/g,
+    (_match, display, bracket, parenthesis, inline) => legacyLatexPlaceholder(display ?? bracket ?? parenthesis ?? inline)
   );
 }
 
@@ -478,22 +439,6 @@ function renderInlineLatex(latex: string): string {
   }
 }
 
-function renderLatex(latex: string, displayMode: boolean): string {
-  const normalizedLatex = cleanLatexInput(latex);
-  if (!normalizedLatex) return '';
-  try {
-    return katex.renderToString(normalizedLatex, {
-      ...createKaTeXPhysicsOptions(displayMode),
-      displayMode,
-      throwOnError: true,
-      trust: false,
-      output: 'html',
-    });
-  } catch {
-    return `<span class="latex-fallback">${escapeHtmlText(normalizedLatex)}</span>`;
-  }
-}
-
 function convertBareLatexRuns(html: string): string {
   const protectedParts: string[] = [];
   const protect = (value: string) => {
@@ -533,14 +478,6 @@ function processHtmlSegment(html: string): string {
   });
   return collapseExcessBreaks(convertBareLatexRuns(replaceDollarLatex(legacyRendered)).replace(/\\(?=<span class="katex")/g, ''));
 }
-
-const KaTeXMath: React.FC<{ latex: string; displayMode: boolean }> = ({ latex, displayMode }) => {
-  const rendered = renderLatex(latex, displayMode);
-  if (displayMode) {
-    return <div className="math-display" dangerouslySetInnerHTML={{ __html: rendered }} />;
-  }
-  return <span className="math-inline" dangerouslySetInnerHTML={{ __html: rendered }} />;
-};
 
 function legacyLatexPlaceholder(latex: string): string {
   return `<span class="legacy-latex" data-latex="${encodeURIComponent(latex)}"></span>`;
@@ -942,14 +879,12 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     const normalized = normalizeSubQuestionLabels(deduped);
     const cleaned = normalizeStemImagePlacement(normalized, normalizedOptions.length > 0, questionType);
     return {
-      stemText: convertOmmlHtmlToLatexFragments(convertLegacyLatexFragments(convertHtmlLatexFractions(cleaned))),
+      stemText: convertOmmlHtmlToLatexFragments(convertLegacyLatexFragments(protectDelimitedLatex(cleaned))),
       stemImages: [] as string[],
     };
   }, [content, normalizedOptions]);
 
   const stemWithInlineOptionGrids = useMemo(() => formatInlineOptionsInPlace(stemText), [stemText]);
-
-  const segments = useMemo(() => splitMixedContent(stemWithInlineOptionGrids), [stemWithInlineOptionGrids]);
 
   if (inline) {
     const plain = stripHtmlAndMath(content || '');
@@ -968,20 +903,6 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     );
   }
 
-  const renderSegment = (seg: ContentSegment, idx: number) => {
-    if (seg.type === 'math-display') {
-      return <KaTeXMath key={idx} latex={seg.value} displayMode />;
-    }
-    if (seg.type === 'math-inline') {
-      return <KaTeXMath key={idx} latex={seg.value} displayMode={false} />;
-    }
-    if (!seg.value.trim()) return null;
-    const processed = sanitizeHtml(applySearchHighlight(processHtmlSegment(seg.value), terms));
-    const hasBlockHtml = /<(?:div|table|img)\b/i.test(processed);
-    const Tag = hasBlockHtml ? 'div' : 'span';
-    return <ResolvedRichHtml key={idx} as={Tag} html={processed} />;
-  };
-
   const optCount = normalizedOptions.length;
   const optCols = columnsForOptions(normalizedOptions);
   const toggleDrawer = useCallback(() => {
@@ -993,9 +914,11 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     event.stopPropagation();
     setExpanded(false);
   }, []);
-  const renderHtml = (value?: string) => (
-    <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(normalizeSubQuestionLabels(value || '')))), terms))} />
-  );
+  const renderHtml = (value?: string) => {
+    const html = sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(protectDelimitedLatex(normalizeSubQuestionLabels(value || '')))), terms));
+    const as = /<(?:p|div|h[1-6]|table|ul|ol|blockquote|pre)\b/i.test(html) ? 'div' : 'span';
+    return <ResolvedRichHtml as={as} html={html} />;
+  };
 
   return (
     <div className="question-content">
@@ -1011,7 +934,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
           }
         }}
       >
-        <div className="question-stem">{segments.map(renderSegment)}</div>
+        <div className="question-stem">{renderHtml(stemWithInlineOptionGrids)}</div>
 
         {isChoice && stemImages.length > 0 && (
           <div className="question-images">
@@ -1026,7 +949,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
                 <span className="question-option-label">{opt.label}.</span>
-                <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(convertHtmlLatexFractions(opt.content))), terms))} />
+                <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(protectDelimitedLatex(opt.content))), terms))} />
               </div>
             ))}
           </div>

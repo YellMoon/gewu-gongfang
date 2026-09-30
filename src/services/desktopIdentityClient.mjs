@@ -747,28 +747,43 @@ export function createDesktopIdentityClient({
       activeRole: currentRole,
     });
     await clearRoleCache(priorPartition);
-    const exchanged = await request(fetchImpl, baseUrl, '/api/desktop-identity/session/role', {
-      method: 'POST',
-      token: currentSession.token,
-      body,
-    });
-    const profile = profileFrom({
-      identity: exchanged.profile,
-      session: exchanged.session,
-      fallback: currentSession.profile,
-    });
-    const stored = onlineSessionValue({ token: exchanged.token, session: exchanged.session, profile });
-    if (!exchanged.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
-    if (typeof desktopIdentity.acceptIssuedSession !== 'function') {
-      throw identityError('DESKTOP_IDENTITY_ISSUED_SESSION_ACCEPT_UNAVAILABLE');
+    let exchanged;
+    try {
+      exchanged = await request(fetchImpl, baseUrl, '/api/desktop-identity/session/role', {
+        method: 'POST', token: currentSession.token, body,
+      });
+    } catch (cause) {
+      // A lost or invalid response cannot prove that the old cloud session survived.
+      throw Object.assign(identityError(cause?.code || 'DESKTOP_IDENTITY_REQUEST_FAILED', cause), {
+        cloudRoleSessionRotated: false,
+        cloudRoleSessionUncertain: true,
+      });
     }
-    await desktopIdentity.acceptIssuedSession({
-      session: exchanged.session,
-      profile,
-      offlineLease: exchanged.offlineLease,
-    });
-    await sessionStore.save(stored);
-    return stored;
+    try {
+      const profile = profileFrom({
+        identity: exchanged.profile,
+        session: exchanged.session,
+        fallback: currentSession.profile,
+      });
+      const stored = onlineSessionValue({ token: exchanged.token, session: exchanged.session, profile });
+      if (!exchanged.offlineLease) throw identityError('DESKTOP_OFFLINE_LEASE_REQUIRED');
+      if (typeof desktopIdentity.acceptIssuedSession !== 'function') {
+        throw identityError('DESKTOP_IDENTITY_ISSUED_SESSION_ACCEPT_UNAVAILABLE');
+      }
+      await desktopIdentity.acceptIssuedSession({
+        session: exchanged.session,
+        profile,
+        offlineLease: exchanged.offlineLease,
+      });
+      await sessionStore.save(stored);
+      return stored;
+    } catch (cause) {
+      // Cloud rotation already succeeded; restoring the prior renderer session would revive a revoked token.
+      throw Object.assign(identityError(cause?.code || 'DESKTOP_IDENTITY_REQUEST_FAILED', cause), {
+        cloudRoleSessionRotated: true,
+        cloudRoleSessionUncertain: false,
+      });
+    }
   }
 
   async function lock() {
