@@ -37,16 +37,29 @@ matrix.recordReceipt(currentStorageManifest, {
 });
 assert.deepStrictEqual(matrix.validateManifest(currentStorageManifest).issues, [],
   'the reviewed 8.8.3 runtime must not require an unrelated NAS upgrade for a desktop or miniapp fix');
-assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
-  componentVersions: { ...versions, storage_proxy: '8.8.3' },
-  commit: 'reject-unreviewed-nas-runtime',
-}), {
-  target: 'storage_proxy', version: '8.8.3', runtimeVersion: '8.8.4',
+const deployedStorageManifest = matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.8.4' },
+  commit: 'verified-nas-884-deployment',
+});
+matrix.recordReceipt(deployedStorageManifest, {
+  target: 'storage_proxy', version: '8.8.4', runtimeVersion: '8.8.4',
   runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
   parserSha256: runtimeParserSha256,
   runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.4' },
+  evidence: 'test fixture for the verified 8.8.4 NAS deployment',
+});
+assert.deepStrictEqual(matrix.validateManifest(deployedStorageManifest).issues, [],
+  'the deployed 8.8.4 runtime must retain exact contract and parser receipt checks');
+assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.8.4' },
+  commit: 'reject-unreviewed-nas-runtime',
+}), {
+  target: 'storage_proxy', version: '8.8.4', runtimeVersion: '8.8.5',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.5' },
   evidence: 'unreviewed future runtime',
-}), /runtime version is not approved/i, 'reviewing 8.8.3 must not approve future runtime versions');
+}), /runtime version is not approved/i, 'reviewing 8.8.4 must not approve future runtime versions');
 
 assert.deepStrictEqual(reviewedCompatibility.contracts.questionRichTables.participants, ['desktop', 'cloud_business', 'miniapp', 'storage_proxy']);
 assert.strictEqual(reviewedCompatibility.contracts.questionRichTables.version, '1');
