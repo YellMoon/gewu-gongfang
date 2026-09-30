@@ -1,4 +1,4 @@
-# 2026-09-30 architecture closeout: one user action remaining
+# 2026-09-30 architecture closeout: completed with preserved historical exceptions
 
 This supersedes older open-ended architecture acceptance sections below.
 A1 complete: 158 proven historical schedule snapshots restored and independently
@@ -9,10 +9,14 @@ cold restart, automatic verified-session recovery and one approval for two cloud
 writes passed. Source 67e0bd06 pushed; OSS live/archive feed and full installer
 SHA-512 verified; packaged ABI 119 and restored Node ABI 137 verified.
 
-Only remaining action: user changes the first temporary acceptance room address
-on the other computer. Then run the prepared original-UI conflict-stop check and
-delete only the two temporary rooms/drafts. Do not reopen all CRUD, page-level
-offline/login, import/export or NAS deployment gates. No new code required now.
+Final real second-computer edit observed at 13:40:24Z. Original UI one-batch
+approval rejected the stale first record with CLOUD_BUSINESS_ROOM_CONFLICT;
+the following draft was never confirmed or submitted, and both cloud versions
+remained unchanged. Conflict panel disabled bulk submission. Exact two temporary
+rooms and two pending drafts cleaned after checking zero real-course references;
+cloud readback verified no remaining test records. A1/A2 finite scope is complete.
+Do not reopen all CRUD, page-level offline/login, import/export or NAS deployment
+gates. No further product code, version bump or package is required for this receipt.
 Miniapp complete-page UI and formal WeChat publication remain separate workstreams.
 Details: docs/architecture-closeout-2026-09-30.md; private continuation state:
 output/architecture-closeout-review-20260930/execution-progress.json.
