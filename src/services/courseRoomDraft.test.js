@@ -9,7 +9,7 @@ const names = ['createCourse', 'updateCourse', 'addOrUpdateRoom', 'resolveCourse
 function visit(n) { if (ts.isMethodDeclaration(n) && names.includes(n.name.getText(ast))) methods.push(n.getText(ast)); ts.forEachChild(n, visit); }
 visit(ast);
 const bridge = { desktopAuthority: { appendDraftBatchSync() { throw new Error('TEST_PERSIST_FAILED'); } } };
-const Cache = new Function('window', 'createAuthorityDraftFromLocalMutation', ts.transpileModule(`class Cache {${methods.join('\n')}}; return Cache;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)(bridge, value => value);
+const Cache = new Function('window', 'createAuthorityDraftFromLocalMutation', 'captureDesktopCloudDraftConnectivity', ts.transpileModule(`class Cache {${methods.join('\n')}}; return Cache;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText)(bridge, value => value, value => value);
 function setup(rooms = [], courses = []) {
   const cache = new Cache(); let seq = 0; const calls = [];
   cache.data = structuredClone({ rooms, courses });

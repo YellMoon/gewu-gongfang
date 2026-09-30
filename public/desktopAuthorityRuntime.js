@@ -289,7 +289,8 @@ function createDesktopAuthorityRuntime({
     });
     const appended = inputs.map(input => {
       const createdAt = new Date(now ? now() : new Date().toISOString()).toISOString();
-      const editedOffline = (() => { try { return isOnline() !== true; } catch (_error) { return true; } })();
+      const editedOffline = input.createdOffline === true
+        || (() => { try { return isOnline() !== true; } catch (_error) { return true; } })();
       const merged = mergePendingBusinessDraft(state, input, createdAt, draftScope);
       if (merged !== undefined) {
         if (merged !== null) {

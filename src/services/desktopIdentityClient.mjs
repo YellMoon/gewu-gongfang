@@ -9,6 +9,13 @@ const { DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS: CLOCK_SKEW_MS } = offlineLeasePolic
 const DESKTOP_ROLE_SET = new Set(['super_admin', 'teacher']);
 const PRIVILEGED_ROLES = new Set(['super_admin']);
 const CLOUD_IDENTITY_OUTAGE_STATUSES = new Set([502, 503, 504]);
+let cloudTransportUnavailable = false;
+
+// Virtual adapters may remain online after the cloud becomes unreachable.
+// Carry observed transport failure into the durable draft, never grant access.
+export function captureDesktopCloudDraftConnectivity(draft) {
+  return cloudTransportUnavailable ? { ...draft, createdOffline: true } : draft;
+}
 
 function identityError(code, cause) {
   const error = new Error(code);
@@ -279,11 +286,20 @@ async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, tok
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetchImpl(`${normalizedBaseUrl(baseUrl)}${pathname}`, {
+  const url = `${normalizedBaseUrl(baseUrl)}${pathname}`;
+  const options = {
     method,
     headers,
     ...(body === undefined ? {} : { body: JSON.stringify(body, pathname.startsWith('/api/business/') ? serializeBusinessVersion : undefined) }),
-  });
+  };
+  let response;
+  try {
+    response = await fetchImpl(url, options);
+  } catch (error) {
+    cloudTransportUnavailable = true;
+    throw error;
+  }
+  cloudTransportUnavailable = false;
   return responseData(response);
 }
 

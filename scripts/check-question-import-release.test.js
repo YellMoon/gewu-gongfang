@@ -17,7 +17,7 @@ assert.deepStrictEqual(compatibility.contracts.questionImportParserProof, {
   rule: 'storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates',
 });
 assert.deepStrictEqual(compatibility.runtimeReceipts.storage_proxy, {
-  approvedRuntimeVersions: ['8.8.2', '8.8.3'],
+  approvedRuntimeVersions: ['8.8.2', '8.8.3', '8.8.4'],
   contracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
 });
 
@@ -50,13 +50,20 @@ const retainedRuntimeEvidence = {
 };
 assert.deepStrictEqual(verifyImportRelease(retainedRuntimeEvidence), retainedRuntimeEvidence,
   'the verified retained NAS runtime must work without an unnecessary container update');
+const currentRuntimeEvidence = {
+  ...evidence, expectedStorageRuntimeVersion: '8.8.4',
+  storageHealth: { ...evidence.storageHealth, version: '8.8.4' },
+  storageRuntimeReceipt: { ...evidence.storageRuntimeReceipt, agentVersion: '8.8.4' },
+};
+assert.deepStrictEqual(verifyImportRelease(currentRuntimeEvidence), currentRuntimeEvidence,
+  'the explicitly approved current NAS runtime must retain the parser proof gate');
 assert.throws(
   () => verifyImportRelease({ ...retainedRuntimeEvidence, storageRuntimeReceipt: { ...retainedRuntimeEvidence.storageRuntimeReceipt, parserSha256: 'e'.repeat(64) } }),
   /QUESTION_IMPORT_RELEASE_INVALID/,
   'retaining NAS 8.8.3 must not relax the parser proof check',
 );
 assert.throws(
-  () => verifyImportRelease({ ...evidence, expectedStorageRuntimeVersion: '8.8.4', storageHealth: { ...evidence.storageHealth, version: '8.8.4' }, storageRuntimeReceipt: { ...evidence.storageRuntimeReceipt, agentVersion: '8.8.4' } }),
+  () => verifyImportRelease({ ...evidence, expectedStorageRuntimeVersion: '8.8.5', storageHealth: { ...evidence.storageHealth, version: '8.8.5' }, storageRuntimeReceipt: { ...evidence.storageRuntimeReceipt, agentVersion: '8.8.5' } }),
   /QUESTION_IMPORT_RELEASE_INVALID/,
   'an unverified newer runtime must not be approved implicitly',
 );

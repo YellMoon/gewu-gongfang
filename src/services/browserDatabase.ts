@@ -23,6 +23,7 @@ import { applyQuestionSyncRecords, buildBrowserQuestionSearchText, mergeBrowserQ
 import { projectDesktopCacheForIdentity } from './desktopCacheProjection.mjs';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.mjs';
+import { captureDesktopCloudDraftConnectivity } from './desktopIdentityClient.mjs';
 import { sameScheduleDraftContent } from './scheduleDraftComparison.mjs';
 import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
@@ -492,7 +493,7 @@ class BrowserDatabaseService {
           code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
         });
       }
-      window.desktopAuthority.appendDraftSync(draft);
+      window.desktopAuthority.appendDraftSync(captureDesktopCloudDraftConnectivity(draft));
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
     window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
@@ -520,7 +521,7 @@ class BrowserDatabaseService {
           code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
         });
       }
-      window.desktopAuthority.appendDraftBatchSync(drafts);
+      window.desktopAuthority.appendDraftBatchSync(drafts.map(captureDesktopCloudDraftConnectivity));
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
     window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
