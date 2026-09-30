@@ -1,3 +1,23 @@
+# 2026-09-30 architecture closeout: one user action remaining
+
+This supersedes older open-ended architecture acceptance sections below.
+A1 complete: 158 proven historical schedule snapshots restored and independently
+verified, 115 explicit old-cache exceptions preserved without overwriting cloud
+authority. A2 real user login and second-computer visibility verified; actual
+Wi-Fi outage found two defects, both fixed in desktop 8.10.1. Real offline drafts,
+cold restart, automatic verified-session recovery and one approval for two cloud
+writes passed. Source 67e0bd06 pushed; OSS live/archive feed and full installer
+SHA-512 verified; packaged ABI 119 and restored Node ABI 137 verified.
+
+Only remaining action: user changes the first temporary acceptance room address
+on the other computer. Then run the prepared original-UI conflict-stop check and
+delete only the two temporary rooms/drafts. Do not reopen all CRUD, page-level
+offline/login, import/export or NAS deployment gates. No new code required now.
+Miniapp complete-page UI and formal WeChat publication remain separate workstreams.
+Details: docs/architecture-closeout-2026-09-30.md; private continuation state:
+output/architecture-closeout-review-20260930/execution-progress.json.
+
+---
 # Completed: 40/80 minute presets and financial statistics - 2026-09-29
 
 Delivered desktop/OSS 8.9.24 and cloud 8.12.5. Integer-minute accumulation;
