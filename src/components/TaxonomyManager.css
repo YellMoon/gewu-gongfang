@@ -3,6 +3,7 @@
 .taxonomy-manager .taxonomy-system-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f5; }
 .taxonomy-manager .taxonomy-system-title, .taxonomy-manager .taxonomy-node-title { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
 .taxonomy-manager .taxonomy-system-title strong { font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.taxonomy-manager .taxonomy-system-title { padding-right: 4px; }
 .taxonomy-manager .taxonomy-node-title { width: 100%; line-height: 1.65; }
 .taxonomy-manager .taxonomy-node-title > span { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .taxonomy-manager .taxonomy-node-actions { flex: none; opacity: .55; }

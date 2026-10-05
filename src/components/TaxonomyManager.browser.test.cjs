@@ -61,10 +61,11 @@ async function compile() {
     await page.locator('.ant-tree-treenode').filter({has:page.locator('[data-node-id="a"]')}).locator('.ant-tree-switcher').click();
     const toggle=await page.locator('.ant-tree-switcher_open .taxonomy-toggle').first().evaluate(el=>({radius:getComputedStyle(el).borderRadius,background:getComputedStyle(el).backgroundColor}));
     assert.equal(toggle.radius,'50%');assert.equal(toggle.background,'rgb(75, 119, 255)');
-    await page.waitForTimeout(350); // Wait for Ant Tree's expand animation before expanding its child.
+    await page.waitForFunction(()=>!document.querySelector('.ant-tree-treenode-motion'));
     await page.locator('.ant-tree-treenode').filter({has:page.locator('[data-node-id="c"]')}).locator('.ant-tree-switcher').click();
     const leaf=page.locator('.ant-tree-treenode').filter({has:page.locator('[data-node-id="f"]')});
     await leaf.waitFor();
+    await page.waitForFunction(()=>!document.querySelector('.ant-tree-treenode-motion'));
     await page.screenshot({path:path.join(output,'tree-lines-debug.png'),fullPage:true});
     fs.writeFileSync(path.join(output,'tree-lines-debug.html'),await page.locator('.taxonomy-tree').innerHTML());
     assert.equal(await leaf.locator('.taxonomy-toggle').count(),0,'leaf nodes have no circles');
@@ -74,6 +75,8 @@ async function compile() {
     assert.equal(closed,'rgb(230, 233, 238)');
     const alignment=await page.locator('.ant-tree-treenode').evaluateAll(rows=>rows.flatMap(row=>{const circle=row.querySelector('.taxonomy-toggle'),label=row.querySelector('.taxonomy-node-title > span');if(!circle||!label)return [];const a=circle.getBoundingClientRect(),b=label.getBoundingClientRect();return [Math.abs(a.y+a.height/2-b.y-b.height/2)];}));
     assert(alignment.length>0&&alignment.every(delta=>delta<1),'circles and node text must share a vertical centre');
+    const actionAlignment=await page.evaluate(()=>{const centre=el=>{const box=el.getBoundingClientRect();return box.x+box.width/2;};const heading=Array.from(document.querySelectorAll('.taxonomy-system-title .taxonomy-node-actions button')).map(centre);return Array.from(document.querySelectorAll('.taxonomy-node-title')).map(row=>Array.from(row.querySelectorAll('.taxonomy-node-actions button')).map((button,index)=>Math.abs(centre(button)-heading[index])));});
+    assert(actionAlignment.length>0&&actionAlignment.every(row=>row.length===3&&row.every(delta=>delta<1)),'system and node action buttons must align in all three columns');
     const rootAdd=page.getByLabel('添加根节点 知识点',{exact:true});
     assert.equal(await rootAdd.count(),1,'root plus button must have an accessible name');
     assert(await rootAdd.evaluate(el=>Boolean(el.closest('.taxonomy-system-title'))),'root plus belongs to the system title action group');
@@ -87,6 +90,8 @@ async function compile() {
     await page.locator('.qb-basket-button').click();assert(await page.locator('.qb-basket-button').innerText().then(text=>text.includes('移出')));
     assert.equal(await page.locator('.qb-question-card').getAttribute('aria-expanded'),'false','basket must not reveal answers');
     await page.locator('.qb-basket-button').click();assert(await page.locator('.qb-basket-button').innerText().then(text=>text.includes('加入试题篮')));
+    await page.mouse.move(360,20);
+    await page.waitForFunction(()=>!document.querySelector('.ant-tooltip:not(.ant-tooltip-hidden)'));
     await page.screenshot({path:path.join(output,'01-tree-and-formulas.png'),fullPage:true});
     const row=await page.locator('[data-node-id="c"]').boundingBox();
     await page.getByLabel('重命名节点 运动的描述',{exact:true}).click();
@@ -131,8 +136,9 @@ async function compile() {
     await page.screenshot({path:path.join(output,'04-drag-and-answer.png'),fullPage:true});
     for(const width of [1280,390]) {
       await page.setViewportSize({width,height:900});
-      const dimensions=await page.evaluate(()=>({width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,formulas:document.querySelectorAll('.katex').length,errors:document.querySelectorAll('.katex-error').length}));
+      const dimensions=await page.evaluate(()=>{const centre=el=>{const box=el.getBoundingClientRect();return box.x+box.width/2;};const heading=Array.from(document.querySelectorAll('.taxonomy-system-title .taxonomy-node-actions button')).map(centre);return {width:document.documentElement.clientWidth,scroll:document.documentElement.scrollWidth,formulas:document.querySelectorAll('.katex').length,errors:document.querySelectorAll('.katex-error').length,actionOffsets:Array.from(document.querySelectorAll('.taxonomy-node-title')).flatMap(row=>Array.from(row.querySelectorAll('.taxonomy-node-actions button')).map((button,index)=>Math.abs(centre(button)-heading[index])))};});
       assert(dimensions.scroll<=dimensions.width+1,'tree and formulas fit the viewport');assert.equal(dimensions.errors,0);assert(dimensions.formulas>=2);
+      assert(dimensions.actionOffsets.length>0&&dimensions.actionOffsets.every(delta=>delta<1),'all action columns align at '+width+' pixels');
       metrics.viewports.push(dimensions);await page.screenshot({path:path.join(output,'05-viewport-'+width+'.png'),fullPage:true});
     }
     assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','vertical circle/text alignment','system-title root plus and inline creation','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
