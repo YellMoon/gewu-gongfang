@@ -1,7 +1,7 @@
 ﻿import React from 'react';
 import { useEffect, useState } from 'react';
 import { Button, Checkbox, Popconfirm, Space } from 'antd';
-import { DeleteOutlined, EditOutlined, EyeOutlined, ShoppingCartOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
 import type { Question } from '../types';
 import QuestionRichText from './QuestionRichText';
 import QuestionRenderer from './QuestionRenderer';
@@ -10,9 +10,8 @@ import StructuredQuestionViewer from './StructuredQuestionViewer';
 import { assetRef, getQuestionAssetDataUrl, isAssetRef } from '../services/questionAssetStore';
 import './QuestionPreviewCard.css';
 
-const resolvedQuestionCache = new Map<string, Question>();
-const EXPAND_ANSWER_LABEL = String.fromCharCode(26597, 30475, 31572, 26696, 19982, 35299, 26512);
-const COLLAPSE_ANSWER_LABEL = String.fromCharCode(25910, 36215, 31572, 26696, 19982, 35299, 26512);
+// Immutable question identity prevents edited sections from reusing old content.
+const resolvedQuestionCache = new WeakMap<Question, Question>();
 
 function contentWithInlineAssets(question: Question): string {
   let content = question.content || question.stem || '未填写题干';
@@ -40,7 +39,7 @@ function contentWithInlineAssets(question: Question): string {
 function richDocHasContent(value: any): boolean {
   if (!value || typeof value !== 'object') return false;
   if (value.type === 'text') return Boolean(String(value.text || '').trim());
-  if (value.type === 'formula' || value.type === 'image') return true;
+  if (value.type === 'formula' || value.type === 'formulaBlock' || value.type === 'image') return true;
   return (Array.isArray(value.content) ? value.content : []).some(richDocHasContent);
 }
 
@@ -54,6 +53,14 @@ function questionHasAnswerContent(question: Question): boolean {
   }
   return Boolean(String(question.answer || '').trim() || String(question.analysis || question.explanation || '').trim());
 }
+
+const AnswerDrawer: React.FC<{ open: boolean; children: React.ReactNode }> = ({ open, children }) => {
+  const [visited, setVisited] = useState(open);
+  useEffect(() => { if (open) setVisited(true); }, [open]);
+  return <div className={`qb-answer-drawer${open ? ' is-open' : ''}`} aria-hidden={!open}>
+    <div className="qb-answer-drawer__content">{visited && children}</div>
+  </div>;
+};
 
 const QuestionPreviewCard: React.FC<{
   question: Question;
@@ -102,19 +109,13 @@ const QuestionPreviewCard: React.FC<{
     let cancelled = false;
     async function resolveAssets() {
       const assets = Array.isArray((question as any).assets) ? (question as any).assets : [];
-      const cacheKey = [
-        question.id,
-        question.updated_at,
-        question.content,
-        question.stem,
-        assets.map((asset: any) => asset?.content_hash || asset?.data_url || asset?.url || asset?.oss_url || asset?.file_name).join('|'),
-      ].join('::');
-      const cached = resolvedQuestionCache.get(cacheKey);
+      const cached = resolvedQuestionCache.get(question);
       if (cached) {
         if (!cancelled) setResolvedQuestion(cached);
         return;
       }
       setResolvedQuestion(question);
+      if (!assets.some((asset: any) => isAssetRef(asset?.oss_url || asset?.data_url || asset?.url))) return;
       const copy: any = { ...question };
       copy.assets = await Promise.all(assets.map(async (asset: any) => {
         const src = asset?.oss_url || asset?.data_url || asset?.url;
@@ -162,14 +163,10 @@ const QuestionPreviewCard: React.FC<{
           });
         }
       }
-      resolvedQuestionCache.set(cacheKey, copy);
-      if (resolvedQuestionCache.size > 200) {
-        const firstKey = resolvedQuestionCache.keys().next().value;
-        if (firstKey) resolvedQuestionCache.delete(firstKey);
-      }
+      resolvedQuestionCache.set(question, copy);
       if (!cancelled) setResolvedQuestion(copy);
     }
-    resolveAssets();
+    resolveAssets().catch(() => { if (!cancelled) setResolvedQuestion(question); });
     return () => { cancelled = true; };
   }, [question]);
 
@@ -201,15 +198,16 @@ const QuestionPreviewCard: React.FC<{
         )}
         <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
         <div className="qb-card-body">
-          {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} showAnswer={answerExpanded} /> : <><QuestionRenderer
+          {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} /> : <><QuestionRenderer
             content={displayContent}
             options={resolvedQuestion.options as any[]}
             questionType={resolvedQuestion.type}
-            answer={answerExpanded ? resolvedQuestion.answer : undefined}
-            analysis={answerExpanded ? resolvedQuestion.analysis || resolvedQuestion.explanation : undefined}
-            showAnalysis={answerExpanded}
             terms={terms}
           /><QuestionRichContent question={resolvedQuestion} terms={terms} /></>}
+          {hasAnswerContent && <AnswerDrawer key={question.id} open={answerExpanded}>
+            {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} showAnswer answerOnly />
+              : <QuestionRenderer content="" answer={resolvedQuestion.answer} analysis={resolvedQuestion.analysis || resolvedQuestion.explanation} showAnalysis terms={terms} />}
+          </AnswerDrawer>}
         </div>
       </div>
 
@@ -220,17 +218,6 @@ const QuestionPreviewCard: React.FC<{
           {modelText && <span>模型：<QuestionRichText terms={terms}>{modelText}</QuestionRichText></span>}
         </div>
         <Space className="qb-card-footer-actions" size={8}>
-          {hasAnswerContent && (
-            <Button
-              className="qb-answer-button"
-              type="text"
-              icon={<EyeOutlined />}
-              aria-expanded={answerExpanded}
-              onClick={() => setAnswerExpanded(expanded => !expanded)}
-            >
-              {answerExpanded ? COLLAPSE_ANSWER_LABEL : EXPAND_ANSWER_LABEL}
-            </Button>
-          )}
           {onDelete && (
             <Popconfirm
               title="确定删除这道题？"

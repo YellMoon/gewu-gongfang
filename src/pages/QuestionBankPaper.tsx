@@ -33,6 +33,9 @@ import { normalizeQuestionType } from '../constants/questionTypes';
 import { QUESTION_BASKET_SELECTED_STORAGE_KEY, QUESTION_BASKET_STORAGE_KEY, setQuestionBasket } from '../components/QuestionBasket';
 import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionRenderer from '../components/QuestionRenderer';
+import StructuredQuestionViewer from '../components/StructuredQuestionViewer';
+import { groupPaperItems, restorePaperLayout } from '../services/questionPaperLayout';
+import { partitionedStorageKey } from '../services/desktopIdentityPartition.mjs';
 import { getRuntimeConfig, RuntimeConfig } from '../services/runtimeConfigClient';
 import {
   cancelPaperExportTask, downloadPaperExportTask, loadPaperExportTasks, refreshPaperExportTask,
@@ -87,6 +90,11 @@ const DEFAULT_SECTION_BY_TYPE: Record<string, string> = {
   实验题: '四、实验题',
   解答题: '五、解答题',
 };
+
+function readPaperDraft(): any {
+  try { return JSON.parse(localStorage.getItem(partitionedStorageKey('question_paper_layout_v1')) || 'null'); }
+  catch { return null; }
+}
 
 function todayTitle(): string {
   return `${new Date().toISOString().slice(0, 10)}试卷`;
@@ -149,10 +157,14 @@ function renderSource(question: Question): string {
 
 const QuestionBankPaper: React.FC = () => {
   const { message: messageApi } = AntdApp.useApp();
-  const [title, setTitle] = useState(todayTitle());
-  const [items, setItems] = useState<PaperQuestion[]>([]);
-  const [answerPosition, setAnswerPosition] = useState<AnswerPosition>('end');
+  const [savedDraft] = useState(readPaperDraft);
+  const [title, setTitle] = useState(typeof savedDraft?.title === 'string' ? savedDraft.title : todayTitle());
+  const [allItems, setItems] = useState<PaperQuestion[]>([]);
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [draftSaveError, setDraftSaveError] = useState(false);
+  const [answerPosition, setAnswerPosition] = useState<AnswerPosition>(['end', 'after-each', 'hidden'].includes(savedDraft?.answerPosition) ? savedDraft.answerPosition : 'end');
   const [includeDraft, setIncludeDraft] = useState(true);
+  const items = useMemo(() => includeDraft ? allItems : allItems.filter(item => (item.question.status || 'draft') === 'published'), [allItems, includeDraft]);
   const formulaMode = 'word-native' as const;
   const [exportingFormat, setExportingFormat] = useState<PaperArtifactFormat | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
@@ -192,15 +204,21 @@ const QuestionBankPaper: React.FC = () => {
     const dbIds: string[] = (window as any).dbService?.getQuestionBasketIds?.() || [];
     const targetIds = selectedIds.length > 0 ? selectedIds : (dbIds.length > 0 ? dbIds : basketIds);
     loadBasketQuestions(targetIds).then(questions => {
-      const visibleQuestions = includeDraft
-        ? questions
-        : questions.filter(question => (question.status || 'draft') === 'published');
-      if (mounted) setItems(buildInitialPaperQuestions(visibleQuestions));
-    });
+      if (mounted) { setItems(restorePaperLayout(buildInitialPaperQuestions(questions), savedDraft)); setLayoutReady(true); }
+    }).catch(() => { if (mounted) messageApi.error('读取试题篮失败，请重新打开组卷页面'); });
     return () => {
       mounted = false;
     };
-  }, [includeDraft]);
+  }, [savedDraft, messageApi]);
+
+  useEffect(() => {
+    if (!layoutReady) return;
+    try {
+      localStorage.setItem(partitionedStorageKey('question_paper_layout_v1'), JSON.stringify({ title, answerPosition,
+        items: allItems.map(item => ({ id: item.question.id, sectionTitle: item.sectionTitle, score: item.score })) }));
+      setDraftSaveError(false);
+    } catch { setDraftSaveError(true); }
+  }, [layoutReady, allItems, title, answerPosition]);
 
   const sectionOptions = useMemo(() => {
     const titles = Array.from(new Set([...Object.values(DEFAULT_SECTION_BY_TYPE), ...items.map(item => item.sectionTitle)]));
@@ -240,7 +258,14 @@ const QuestionBankPaper: React.FC = () => {
   };
 
   const move = (index: number, offset: number) => {
-    setItems(prev => moveItem(prev, index, offset));
+    const row = items[index];
+    const neighbor = items[index + offset];
+    if (!row || !neighbor) return;
+    setItems(prev => {
+      const from = prev.findIndex(item => item.uid === row.uid);
+      const to = prev.findIndex(item => item.uid === neighbor.uid);
+      return moveItem(prev, from, to - from);
+    });
   };
 
   const removeItem = (uid: string) => {
@@ -256,7 +281,7 @@ const QuestionBankPaper: React.FC = () => {
   };
 
   const applyAutoGroup = () => {
-    setItems(prev => buildInitialPaperQuestions(prev.map(item => item.question)));
+    setItems(prev => groupPaperItems(prev, DEFAULT_SECTION_BY_TYPE));
     messageApi.success('已按题型重新分组');
   };
 
@@ -348,6 +373,7 @@ const QuestionBankPaper: React.FC = () => {
         }
       >
         {runtimeConfigError && <Alert type="warning" showIcon message={runtimeConfigError} style={{ marginBottom: 12 }} />}
+        {draftSaveError && <Alert type="warning" showIcon message="当前试卷布局未能保存到本地，请保持页面打开并检查本地存储。" style={{ marginBottom: 12 }} />}
         <Space size={16} wrap>
           <Statistic title="题目数" value={items.length} suffix="题" />
           <Statistic title="总分" value={totalScore} suffix="分" />
@@ -438,18 +464,15 @@ const QuestionBankPaper: React.FC = () => {
                       <Tag>难度{row.question.difficulty || 1}</Tag>
                       <Tag>{renderSource(row.question)}</Tag>
                     </Space>
-                    <QuestionRenderer
+                    {row.question.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={row.question.rich_content} showAnswer={answerPosition === 'after-each'} /> : <><QuestionRenderer
                       content={row.question.content || '未填写题干'}
                       options={row.question.options as any[]}
                       questionType={row.question.type}
+                      answer={answerPosition === 'after-each' ? row.question.answer : undefined}
+                      analysis={answerPosition === 'after-each' ? row.question.analysis : undefined}
+                      showAnalysis={answerPosition === 'after-each'}
                     />
-                    <QuestionRichContent question={row.question} />
-                    {answerPosition === 'after-each' && (
-                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #d9d9d9', color: '#455a64' }}>
-                        <div><b>答案：</b>{row.question.answer || '未填写'}</div>
-                        {row.question.analysis && <div><b>解析：</b>{row.question.analysis}</div>}
-                      </div>
-                    )}
+                    <QuestionRichContent question={row.question} /></>}
                   </div>
                   <Space direction="vertical" size={8} style={{ width: '100%' }}>
                     <Select

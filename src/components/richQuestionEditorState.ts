@@ -79,12 +79,12 @@ export function splitPersistedAssetImages(html: string): PersistedAssetHtmlPart[
   return parts.length > 0 ? parts : [{ kind: 'html', html: source }];
 }
 
-export function replacePersistedAssetImageSources(html: string, resolvedSources: ReadonlyMap<string, string>): string {
+export function replacePersistedAssetImageSources(html: string, resolvedSources: ReadonlyMap<string, string>, pending = false): string {
   return String(html || '').replace(
     /<img\b[^>]*\bsrc\s*=\s*(["'])(question-asset:\/\/[^"']+)\1[^>]*>/gi,
     (tag, quote: string, ref: string) => {
       const resolved = resolvedSources.get(ref);
-      if (!resolved) return '<span role="status">\u56fe\u7247\u52a0\u8f7d\u5931\u8d25</span>';
+      if (!resolved) return pending && !resolvedSources.has(ref) ? '<span role="status">图片加载中</span>' : '<span role="status">\u56fe\u7247\u52a0\u8f7d\u5931\u8d25</span>';
       return tag.replace(new RegExp(`(\\bsrc\\s*=\\s*)${quote}[^${quote}]*${quote}`, 'i'), `$1${quote}${resolved}${quote}`);
     },
   );

@@ -2,9 +2,13 @@ const assert = require('assert');
 const fs = require('fs');
 const Module = require('module');
 const ts = require('typescript');
+function loadInspection() { const m={exports:{}};new Function('require','module','exports',ts.transpileModule(fs.readFileSync(require.resolve('./questionInspection.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(name=>name==='../utils/questionOptions'?require('../utils/questionOptions.ts'):require(name),m,m.exports);return m.exports; }
+
 const filename = require.resolve('./questionValidation.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText;
-const loaded = new Module(filename); loaded._compile(compiled, filename);
+const loaded = new Module(filename);
+loaded.require = name => name === './questionInspection' ? loadInspection() : require(name);
+loaded._compile(compiled, filename);
 const { validateImportQuestions } = loaded.exports;
 
 let result = validateImportQuestions([{ content: '', answer: '' }], []);

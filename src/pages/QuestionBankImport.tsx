@@ -24,6 +24,7 @@ const { createDesktopQuestionImportClient } = require('../services/desktopQuesti
 import {
   downloadImportValidationReport,
   validateImportQuestions,
+  mergeImportValidation,
   type ImportValidationRow,
   type ImportValidationSummary,
 } from '../services/questionValidation';
@@ -782,10 +783,7 @@ const QuestionBankImport: React.FC = () => {
       const validation = validateImportQuestions(candidates, questions);
       const rows = validation.rows.map((row, index) => {
         const remote = task.items?.[index];
-        const codes = Array.isArray(remote?.validation?.codes) ? remote.validation.codes : [];
-        const remoteStatus = remote?.validation?.status;
-        const status = remoteStatus === 'rejected' ? 'failed' : remoteStatus === 'warning' ? 'warning' : row.status;
-        return { ...row, status, issues: codes.length ? codes.map((code: string) => ({ level: status, message: formatCloudImportValidationCode(code) })) : row.issues } as ImportValidationRow;
+        return mergeImportValidation(row, remote?.validation, formatCloudImportValidationCode);
       });
       const summary = rows.reduce<ImportValidationSummary>((acc, row) => {
         acc[row.status] += 1; acc.total += 1; return acc;

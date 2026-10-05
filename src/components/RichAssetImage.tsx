@@ -12,7 +12,7 @@ type RichAssetImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'
   assetKey?: string;
 };
 
-export const RichAssetImage: React.FC<RichAssetImageProps> = ({ src, assetKey, alt = '', ...imageProps }) => {
+export const RichAssetImage: React.FC<RichAssetImageProps> = ({ src, assetKey, alt = '', decoding = 'async', ...imageProps }) => {
   const source = assetDisplayRef(src, assetKey);
   const persisted = source.startsWith('question-asset://');
   const [resolution, setResolution] = useState<{ source: string; displaySrc: string; failed: boolean }>({
@@ -38,9 +38,9 @@ export const RichAssetImage: React.FC<RichAssetImageProps> = ({ src, assetKey, a
     return () => { alive = false; };
   }, [persisted, source, retry]);
 
-  if (!persisted) return source ? <img {...imageProps} src={source} alt={alt} /> : null;
+  if (!persisted) return source ? <img {...imageProps} decoding={decoding} src={source} alt={alt} /> : null;
   if (resolution.source === source && resolution.displaySrc) {
-    return <img {...imageProps} src={resolution.displaySrc} alt={alt} />;
+    return <img {...imageProps} decoding={decoding} src={resolution.displaySrc} alt={alt} />;
   }
   return <span role="status">{resolution.source === source && resolution.failed ? '\u56fe\u7247\u52a0\u8f7d\u5931\u8d25' : '\u56fe\u7247\u52a0\u8f7d\u4e2d'}</span>;
 };
@@ -57,26 +57,22 @@ export const ResolvedRichHtml: React.FC<ResolvedRichHtmlProps> = ({ html, as = '
       .filter((part): part is Extract<ReturnType<typeof splitPersistedAssetImages>[number], { kind: 'asset' }> => part.kind === 'asset')
       .map(part => part.src),
   )), [html]);
-  const [resolution, setResolution] = useState<{ source: string; html: string }>({ source: '', html: '' });
+  const [resolution, setResolution] = useState<{ source: string; sources: Map<string, string> }>({ source: '', sources: new Map() });
 
   useEffect(() => {
     if (refs.length === 0) return undefined;
     let alive = true;
-    Promise.all(refs.map(async ref => {
+    refs.forEach(async ref => {
+      let displaySrc = '';
       try {
-        return [ref, await resolveAssetForDisplay(ref, getQuestionAssetDataUrl)] as const;
-      } catch (_error) {
-        return [ref, ''] as const;
-      }
-    })).then(entries => {
-      if (alive) setResolution({ source: html, html: replacePersistedAssetImageSources(html, new Map(entries)) });
+        displaySrc = await resolveAssetForDisplay(ref, getQuestionAssetDataUrl);
+      } catch (_error) { /* Show an individual failed asset without hiding the text. */ }
+      if (alive) setResolution(current => ({ source: html, sources: new Map([...(current.source === html ? current.sources : []), [ref, displaySrc]]) }));
     });
     return () => { alive = false; };
   }, [html, refs]);
 
   const Tag = as;
-  if (refs.length > 0 && resolution.source !== html) {
-    return <Tag className={className}><span role="status">\u56fe\u7247\u52a0\u8f7d\u4e2d</span></Tag>;
-  }
-  return <Tag className={className} dangerouslySetInnerHTML={{ __html: refs.length > 0 ? resolution.html : html }} />;
+  const displayHtml = refs.length > 0 ? replacePersistedAssetImageSources(html, resolution.source === html ? resolution.sources : new Map(), true) : html;
+  return <Tag className={className} dangerouslySetInnerHTML={{ __html: displayHtml }} />;
 };

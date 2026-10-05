@@ -1,5 +1,6 @@
 ﻿import React, { useCallback, useMemo, useState } from 'react';
 import katex from 'katex';
+const { cachedQuestionFormula } = require('../utils/questionRenderCache');
 import './QuestionRenderer.css';
 import {
   createKaTeXPhysicsOptions,
@@ -428,12 +429,12 @@ function renderInlineLatex(latex: string): string {
   const normalizedLatex = cleanLatexInput(latex);
   if (!normalizedLatex) return '';
   try {
-    return katex.renderToString(normalizedLatex, {
+    return cachedQuestionFormula(`legacy:${normalizedLatex}`, () => katex.renderToString(normalizedLatex, {
       ...createKaTeXPhysicsOptions(false),
       throwOnError: true,
       trust: false,
       output: 'html',
-    });
+    }));
   } catch {
     return `<span class="latex-fallback">${escapeHtmlText(normalizedLatex)}</span>`;
   }
@@ -881,6 +882,13 @@ function normalizePhysicsHtml(html: string): string {
     .replace(/@@QUESTION_IMAGE_(\d+)@@/g, (_match, index) => protectedImages[Number(index)] || '');
 }
 
+const EMPTY_SEARCH_TERMS: string[] = [];
+const QuestionHtmlSegment = React.memo(({ value = '', terms = EMPTY_SEARCH_TERMS, normalizeLabels = true }: { value?: string; terms?: string[]; normalizeLabels?: boolean }) => {
+  const html = useMemo(() => sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(protectDelimitedLatex(normalizeLabels ? normalizeSubQuestionLabels(value) : value))), terms)), [value, terms, normalizeLabels]);
+  const as = /<(?:p|div|h[1-6]|table|ul|ol|blockquote|pre)\b/i.test(html) ? 'div' : 'span';
+  return <ResolvedRichHtml as={as} html={html} />;
+});
+
 const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   content,
   options,
@@ -889,7 +897,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
   answer,
   showAnalysis,
   analysis,
-  terms = [],
+  terms = EMPTY_SEARCH_TERMS,
 }) => {
   const isChoice = questionType === '单选题' || questionType === '多选题' || questionType === '鍗曢€夐' || questionType === '澶氶€夐';
   const [expanded, setExpanded] = useState(false);
@@ -904,26 +912,9 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
       stemText: convertOmmlHtmlToLatexFragments(convertLegacyLatexFragments(protectDelimitedLatex(cleaned))),
       stemImages: [] as string[],
     };
-  }, [content, normalizedOptions]);
+  }, [content, normalizedOptions, questionType]);
 
   const stemWithInlineOptionGrids = useMemo(() => formatInlineOptionsInPlace(stemText), [stemText]);
-
-  if (inline) {
-    const plain = stripHtmlAndMath(content || '');
-    return (
-      <span
-        style={{
-          maxWidth: 350,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          display: 'block',
-        }}
-      >
-        {plain}
-      </span>
-    );
-  }
 
   const optCount = normalizedOptions.length;
   const optCols = columnsForOptions(normalizedOptions);
@@ -937,10 +928,10 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
     setExpanded(false);
   }, []);
   const renderHtml = (value?: string) => {
-    const html = sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(protectDelimitedLatex(normalizeSubQuestionLabels(value || '')))), terms));
-    const as = /<(?:p|div|h[1-6]|table|ul|ol|blockquote|pre)\b/i.test(html) ? 'div' : 'span';
-    return <ResolvedRichHtml as={as} html={html} />;
+    return <QuestionHtmlSegment value={value} terms={terms} />;
   };
+
+  if (inline) return <span style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{stripHtmlAndMath(content || '')}</span>;
 
   return (
     <div className="question-content">
@@ -971,7 +962,7 @@ const QuestionRenderer: React.FC<QuestionRendererProps> = ({
             {normalizedOptions.map((opt, i) => (
               <div key={`${opt.label}-${i}`} className={`question-option${isImageOnlyOption(opt.content) ? ' image-only' : ''}`}>
                 <span className="question-option-label">{opt.label}.</span>
-                <ResolvedRichHtml html={sanitizeHtml(applySearchHighlight(processHtmlSegment(convertLegacyLatexFragments(protectDelimitedLatex(opt.content))), terms))} />
+                <QuestionHtmlSegment value={opt.content} terms={terms} normalizeLabels={false} />
               </div>
             ))}
           </div>

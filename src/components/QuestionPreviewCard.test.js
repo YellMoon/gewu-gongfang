@@ -10,17 +10,14 @@ assert.ok(source.includes('inBasket ?'), 'the card action must render a distinct
 assert.ok(source.includes('String.fromCharCode(31227, 20986, 35797, 39064, 34013)'), 'the selected-basket action must state that clicking removes the question');
 assert.ok(source.includes('ShoppingCartOutlined'), 'the direct basket action must remain visually identifiable');
 assert.ok(source.includes('showAnswer = false'), 'desktop question cards must keep answers and explanations collapsed by default');
+assert.ok(!source.includes('qb-answer-button'), 'only clicking the question area toggles answers; no separate answer button');
 assert.ok(
-  source.includes('answerExpanded ? COLLAPSE_ANSWER_LABEL : EXPAND_ANSWER_LABEL'),
-  'desktop question cards must expose an explicit answer toggle alongside the restored whole-card gesture',
+  source.includes('visited && children'),
+  'answers must render lazily when first opened',
 );
 assert.ok(
-  source.includes('answer={answerExpanded ? resolvedQuestion.answer : undefined}'),
-  'ordinary questions must not pass answer content to the renderer while collapsed',
-);
-assert.ok(
-  source.includes('showAnswer={answerExpanded}'),
-  'structured questions must use the same card-level expansion state as ordinary questions',
+  source.includes('open={answerExpanded}') && source.includes('showAnswer answerOnly'),
+  'structured questions must use the same animated card-level drawer as ordinary questions',
 );
 
 console.log('question preview card answer and basket action checks passed');

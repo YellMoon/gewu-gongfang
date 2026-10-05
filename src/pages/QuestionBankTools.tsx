@@ -9,6 +9,7 @@ import {
 import QuestionBankImport from './QuestionBankImport';
 import QuestionIssueQueue, { QuestionIssue } from '../components/question-bank/QuestionIssueQueue';
 import type { ImportTask, Question } from '../types';
+import { inspectQuestion, questionSearchText } from '../services/questionInspection';
 import type { PageKey } from '../navigation/appNavigation';
 import type { NavigationInput, QuestionBankToolsContext } from '../navigation/navigationContext';
 import './QuestionBankTools.css';
@@ -54,17 +55,14 @@ function normalizeQuestion(row: any): Question {
 function buildIssues(questions: Question[]): QuestionIssue[] {
   return questions
     .map(question => {
-      const reasons: string[] = [];
-      if (!String(question.content || '').trim()) reasons.push('题干缺失');
-      if (!String(question.answer || '').trim()) reasons.push('答案缺失');
-      if (!String(question.analysis || '').trim()) reasons.push('解析缺失');
+      const reasons = inspectQuestion(question);
       if (String(question.edit_status || '').trim() === '未编辑') reasons.push('未编辑');
       return { question, reasons };
     })
     .filter(item => item.reasons.length > 0)
     .map(({ question, reasons }) => ({
       id: question.id,
-      title: String(question.content || question.stem || '未填写题干').slice(0, 80),
+      title: questionSearchText(question).split('\n').slice(1).join(' ').slice(0, 80) || '未填写题干',
       subject: question.subject,
       reason: reasons.join(' / '),
       updatedAt: question.updated_at ? new Date(question.updated_at).toLocaleString('zh-CN') : undefined,

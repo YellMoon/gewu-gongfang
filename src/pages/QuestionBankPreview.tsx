@@ -2,7 +2,7 @@
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
-  Pagination, Alert
+  Pagination, Alert, Popover
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -139,6 +139,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
   const [searchText, setSearchText] = useState<string>('');
   const [appliedSearchText, setAppliedSearchText] = useState<string>('');
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [batchTagOpen, setBatchTagOpen] = useState(false);
+  const [batchTagText, setBatchTagText] = useState('');
   const [basketIds] = useQuestionBasketIds();
   const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -650,18 +652,34 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
   };
 
   const handleBatchTag = () => {
-    const tag = prompt('输入要添加的标签：');
-    if (!tag) return;
+    const tagsToAdd = [...new Set(batchTagText.split(/[,，、;；\n]/).map(tag => tag.trim()).filter(Boolean))];
+    if (!tagsToAdd.length) { message.warning('请输入标签'); return; }
     const db = (window as any).dbService;
-    selectedRowKeys.forEach(id => {
-      const q = questions.find(x => x.id === id);
-      if (q) {
-        const tags = [...new Set([...(q.tags || []), tag])];
-        db.updateQuestion(id, { tags });
-      }
-    });
-    loadData();
-    message.success(`已为 ${selectedRowKeys.length} 题添加标签「${tag}」`);
+    const byId = new Map<string, Question>((db?.getAllQuestions?.() || questions).map((q: Question) => [q.id, q]));
+    const failed: string[] = [];
+    for (const id of selectedRowKeys) {
+      try {
+        const q = byId.get(id);
+        if (!q || db.updateQuestion(id, { tags: [...new Set([...(q.tags || []), ...tagsToAdd])] }) !== true) failed.push(id);
+      } catch { failed.push(id); }
+    }
+    message[failed.length ? 'warning' : 'success'](`已为 ${selectedRowKeys.length - failed.length} 题添加标签${failed.length ? `，${failed.length} 题未完成，请重试` : ''}`);
+    setSelectedRowKeys(failed); setBatchTagOpen(false); loadData();
+  };
+
+  const handleBatchTaxonomy = (systemId: string, nodeId: string) => {
+    const db = (window as any).dbService;
+    const byId = new Map<string, Question>((db?.getAllQuestions?.() || questions).map((q: Question) => [q.id, q]));
+    const failed: string[] = [];
+    for (const id of selectedRowKeys) {
+      try {
+        const q = byId.get(id);
+        const previous = q?.taxonomy_ids?.[systemId] || (systemId === 'knowledge' ? q?.knowledge_ids : systemId === 'model' ? q?.model_ids : []) || [];
+        if (!q || !db.setQuestionTaxonomyNodes(id, systemId, [...new Set([...previous, nodeId])])) failed.push(id);
+      } catch { failed.push(id); }
+    }
+    message[failed.length ? 'warning' : 'success'](`已关联 ${selectedRowKeys.length - failed.length} 题${failed.length ? `，${failed.length} 题未完成，请重试` : ''}`);
+    setSelectedRowKeys(failed); loadData();
   };
 
   const handleSearch = () => {
@@ -1066,7 +1084,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
 
             <div className="qb-search-row">
               <Input
-                placeholder="题干搜索（支持关键词、题号、选项、小题内容）"
+                placeholder="搜索题干、选项、答案解析、公式、题号或标签"
                 allowClear
                 prefix={<SearchOutlined />}
                 value={searchText}
@@ -1120,13 +1138,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
               <Space wrap>
                 <CheckCircleOutlined style={{ color: '#1890ff' }} />
                 <Text strong>已选 {selectedRowKeys.length} 题</Text>
-                <Button size="small" onClick={handleBatchTag}><TagsOutlined /> 批量打标签</Button>
-                <Dropdown overlay={menu}>
-                  <Button size="small"><AimOutlined /> 批量关联知识点</Button>
-                </Dropdown>
-                <Dropdown overlay={modelMenu}>
-                  <Button size="small"><BranchesOutlined /> 批量关联模型</Button>
-                </Dropdown>
+                <Popover trigger="click" open={batchTagOpen} onOpenChange={setBatchTagOpen} content={<Space direction="vertical"><Input.TextArea aria-label="批量标签" placeholder="多个标签用逗号或换行分隔" value={batchTagText} onChange={event => setBatchTagText(event.target.value)} /><Button type="primary" onClick={handleBatchTag}>添加到已选试题</Button></Space>}>
+                  <Button size="small"><TagsOutlined /> 批量打标签</Button>
+                </Popover>
+                {taxonomySystems.map(system => <Dropdown key={system.id} menu={{ items: (taxonomyNodes[system.id] || []).map(node => ({ key: node.id, label: node.name })), onClick: ({ key }) => handleBatchTaxonomy(system.id, key) }} disabled={!(taxonomyNodes[system.id] || []).length}>
+                  <Button size="small"><BranchesOutlined /> 批量关联{system.name}</Button>
+                </Dropdown>)}
                 <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 题？`} onConfirm={handleBatchDelete}>
                   <Button size="small" danger><DeleteOutlined /> 批量删除</Button>
                 </Popconfirm>

@@ -27,7 +27,7 @@ const QuestionIssueQueue: React.FC<QuestionIssueQueueProps> = ({ issues, onEdit,
         type="warning"
         showIcon
         message={`有 ${issues.length} 道问题试题待处理`}
-        description="请优先核对题干、答案、解析或学科归类异常的试题。"
+        description="检查题干、答案、解析、选项及待补全公式的完整性；题意与解题正确性需人工核对。"
       />
       <List
         size="small"

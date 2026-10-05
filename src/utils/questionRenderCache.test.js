@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+assert(fs.existsSync('src/utils/questionRenderCache.js'),'formula rendering needs a bounded reusable cache');
+const {createBoundedRenderCache}=require('./questionRenderCache');
+const cached=createBoundedRenderCache(2,100);let count=0;
+const render=()=>{count++;return '<span>x²</span>';};
+assert.equal(cached('inline:x',render),cached('inline:x',render));assert.equal(count,1);
+cached('block:x',render);assert.equal(count,2,'display mode is an independent key');
+cached('inline:x',render);cached('y',render);cached('block:x',render);assert.equal(count,4,'least recently used entries are discarded');
+cached('large',()=>{count++;return 'x'.repeat(101)});cached('large',()=>{count++;return 'x'.repeat(101)});assert.equal(count,6,'oversized entries do not accumulate');
+console.log('bounded formula render cache checks passed');

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Empty, Input, Modal, Space, Tree, Tooltip, message } from 'antd';
 import { DeleteOutlined, EditOutlined, HistoryOutlined, PlusOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, TaxonomySystem } from '../types';
+import { filterTaxonomyNodes, planTaxonomyDrop } from './taxonomyTreeOperations';
+import './TaxonomyManager.css';
 
 type Props = {
   subject: string;
@@ -27,37 +29,21 @@ const text = {
 
 function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
   return nodes
-    .filter(node => node.parent_id === parentId)
+    .filter(node => (node.parent_id || '') === (parentId || ''))
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
-    .map(node => ({ key: node.id, title: node.name, node, children: treeData(nodes, node.id) }));
+    .map((node, index, siblings) => ({ key: node.id, title: node.name, node, className: `${index === 0 ? 'taxonomy-node-first' : ''} ${index === siblings.length - 1 ? 'taxonomy-node-last' : ''}`, children: treeData(nodes, node.id) }));
 }
 
-function prompt(title: string, initialValue = ''): Promise<string | null> {
-  let value = initialValue;
-  return new Promise(resolve => {
-    Modal.confirm({
-      title,
-      content: <Input autoFocus defaultValue={initialValue} placeholder={title} onChange={event => { value = event.target.value; }} />,
-      okText: '\u786e\u5b9a',
-      cancelText: '\u53d6\u6d88',
-      onOk: () => {
-        const normalized = value.trim();
-        if (!normalized) {
-          message.warning(title);
-          return Promise.reject();
-        }
-        resolve(normalized);
-      },
-      onCancel: () => resolve(null),
-    });
-  });
-}
+type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
 const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
   const [backupModalOpen, setBackupModalOpen] = useState(false);
   const [backups, setBackups] = useState<any[]>([]);
+  const [edit, setEdit] = useState<InlineEdit | null>(null);
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Record<string, React.Key[]>>({});
 
   const reload = useCallback(() => {
     const nextSystems: TaxonomySystem[] = database?.getTaxonomySystems?.(subject) || [];
@@ -68,22 +54,40 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
   }, [database, onChanged, subject]);
 
   useEffect(() => {
+    setEdit(null); setSearch(''); setExpanded({});
+  }, [subject]);
+
+  useEffect(() => {
     reload();
     window.addEventListener('authority-projection-refreshed', reload);
     return () => window.removeEventListener('authority-projection-refreshed', reload);
   }, [reload]);
 
-  const addSystem = async () => {
-    const name = await prompt(text.systemName);
-    if (!name) return;
-    try { database.createTaxonomySystem({ name, subject }); reload(); } catch (error: any) { message.error(error?.message || String(error)); }
+  const saveEdit = () => {
+    if (!edit) return;
+    const name = edit.value.trim();
+    if (!name) { message.warning(edit.kind.startsWith('system') ? '请输入体系名称' : '请输入节点名称'); return; }
+    try {
+      if (edit.kind === 'system-create') database.createTaxonomySystem({ name, subject });
+      else if (edit.kind === 'system-rename') database.updateTaxonomySystem(edit.system!.id, { name });
+      else if (edit.kind === 'node-rename') {
+        if (!database.updateTaxonomyNode(edit.system!.id, edit.node!.id, { name })) throw new Error('节点保存失败');
+      } else {
+        const siblings = (nodesBySystem[edit.system!.id] || []).filter(node => (node.parent_id || '') === (edit.node?.id || ''));
+        database.createTaxonomyNode(edit.system!.id, { name, parent_id: edit.node?.id, children: [], order: Math.max(-1, ...siblings.map(node => node.order)) + 1 });
+      }
+      setEdit(null); reload();
+    } catch (error: any) { message.error(error?.message || String(error)); }
   };
 
-  const renameSystem = async (system: TaxonomySystem) => {
-    const name = await prompt(text.systemName, system.name);
-    if (!name || name === system.name) return;
-    try { database.updateTaxonomySystem(system.id, { name }); reload(); } catch (error: any) { message.error(error?.message || String(error)); }
-  };
+  const inlineEditor = () => <div className="taxonomy-inline-editor" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+    <Input autoFocus aria-label={edit?.kind.startsWith('system') ? '体系名称' : '节点名称'} size="small" value={edit?.value || ''}
+      placeholder={edit?.kind.startsWith('system') ? '体系名称' : '节点名称'}
+      onChange={event => setEdit(current => current ? { ...current, value: event.target.value } : null)}
+      onPressEnter={event => { if (!(event.nativeEvent as KeyboardEvent).isComposing) saveEdit(); }}
+      onKeyDown={event => { if (event.key === 'Escape') setEdit(null); }} />
+    <div className="taxonomy-inline-editor__actions"><Button size="small" type="primary" onClick={saveEdit}>保存</Button><Button size="small" onClick={() => setEdit(null)}>取消</Button></div>
+  </div>;
 
   const removeSystem = (system: TaxonomySystem) => {
     const impact = database.getTaxonomySystemDeletionImpact(system.id);
@@ -109,18 +113,33 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
     });
   };
 
-  const addNode = async (system: TaxonomySystem, parent?: KnowledgeNode) => {
-    const name = await prompt(text.nodeName);
-    if (!name) return;
-    database.createTaxonomyNode(system.id, { name, parent_id: parent?.id, children: [], order: (nodesBySystem[system.id] || []).length + 1 });
-    reload();
+  const addNode = (system: TaxonomySystem, parent?: KnowledgeNode) => {
+    setEdit({ kind: 'node-create', system, node: parent, value: '' });
+    if (parent) setExpanded(current => ({ ...current, [system.id]: [...new Set([...(current[system.id] || []), parent.id])] }));
   };
 
-  const renameNode = async (system: TaxonomySystem, node: KnowledgeNode) => {
-    const name = await prompt(text.nodeName, node.name);
-    if (!name || name === node.name) return;
-    database.updateTaxonomyNode(system.id, node.id, { name });
-    reload();
+  const renameNode = (system: TaxonomySystem, node: KnowledgeNode) => setEdit({ kind: 'node-rename', system, node, value: node.name });
+
+  const dropNode = (system: TaxonomySystem, info: any) => {
+    try {
+      const dropPosition = info.dropPosition - Number(info.node.pos.split('-').pop());
+      const updates = planTaxonomyDrop(nodesBySystem[system.id] || [], String(info.dragNode.key), String(info.node.key), dropPosition, info.dropToGap);
+      for (const update of updates) {
+        if (!database.updateTaxonomyNode(system.id, update.id, { parent_id: update.parent_id, order: update.order })) throw new Error('调序未完成，请刷新后重试');
+      }
+      reload();
+      if (updates.length) message.success('节点位置已调整');
+    } catch (error: any) { reload(); message.error(error?.message || String(error)); }
+  };
+
+  const systemTreeData = (system: TaxonomySystem) => {
+    const nodes = filterTaxonomyNodes(nodesBySystem[system.id] || [], search);
+    const data = treeData(nodes);
+    if (edit?.kind === 'node-create' && edit.system?.id === system.id && edit.node) {
+      const insert = (rows: any[]) => { for (const row of rows) { if (row.key === edit.node!.id) row.children.push({ key: '__taxonomy-inline-new', isLeaf: true, inlineDraft: true }); else insert(row.children); } };
+      insert(data);
+    }
+    return data;
   };
 
   const removeNode = (system: TaxonomySystem, node: KnowledgeNode) => {
@@ -162,32 +181,42 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
 
   return <div className="taxonomy-manager">
     <div className="taxonomy-manager__actions">
-      <Button icon={<PlusOutlined />} onClick={addSystem}>{text.addSystem}</Button>
+      <Button icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>
       <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>
     </div>
+    {edit?.kind === 'system-create' && inlineEditor()}
+    <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索知识点或体系节点" value={search} onChange={event => setSearch(event.target.value)} />
     {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
-        <strong>{index + 1}. {system.name}</strong>
+        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <strong>{index + 1}. {system.name}</strong>}
         <Space size={2}>
-          <Tooltip title={text.rename}><Button type="text" size="small" icon={<EditOutlined />} onClick={() => renameSystem(system)} /></Tooltip>
+          <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名体系 ${system.name}`} icon={<EditOutlined />} onClick={() => setEdit({ kind: 'system-rename', system, value: system.name })} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
         </Space>
       </div>
       <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => addNode(system)}>{text.addRoot}</Button>
+      {edit?.kind === 'node-create' && edit.system?.id === system.id && !edit.node && inlineEditor()}
       <Tree
+        className="taxonomy-tree"
         blockNode
         showLine={{ showLeafIcon: false }}
-        treeData={treeData(nodesBySystem[system.id] || [])}
-        titleRender={(treeNode: any) => <div className="taxonomy-node-title">
-          <span>{treeNode.node.name}</span>
-          <Space size={0}>
-            <Tooltip title={text.addChild}><Button type="text" size="small" icon={<PlusOutlined />} onClick={event => { event.stopPropagation(); addNode(system, treeNode.node); }} /></Tooltip>
-            <Tooltip title={text.rename}><Button type="text" size="small" icon={<EditOutlined />} onClick={event => { event.stopPropagation(); renameNode(system, treeNode.node); }} /></Tooltip>
-            <Tooltip title={text.removeNode}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={event => { event.stopPropagation(); removeNode(system, treeNode.node); }} /></Tooltip>
+        switcherIcon={<span className="taxonomy-toggle" aria-hidden="true" />}
+        expandedKeys={search.trim() ? (nodesBySystem[system.id] || []).map(node => node.id) : expanded[system.id] || []}
+        onExpand={keys => setExpanded(current => ({ ...current, [system.id]: keys }))}
+        draggable={edit || search.trim() ? false : { icon: false }}
+        onDrop={info => dropNode(system, info)}
+        treeData={systemTreeData(system)}
+        titleRender={(treeNode: any) => treeNode.inlineDraft || (edit?.kind === 'node-rename' && edit.node?.id === treeNode.key) ? inlineEditor() : <div className="taxonomy-node-title" data-node-id={treeNode.key}>
+          <span title={treeNode.node.name}>{treeNode.node.name}</span>
+          <Space className="taxonomy-node-actions" size={0}>
+            <Tooltip title={text.addChild}><Button type="text" size="small" aria-label={`添加子节点 ${treeNode.node.name}`} icon={<PlusOutlined />} onClick={event => { event.stopPropagation(); addNode(system, treeNode.node); }} /></Tooltip>
+            <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名节点 ${treeNode.node.name}`} icon={<EditOutlined />} onClick={event => { event.stopPropagation(); renameNode(system, treeNode.node); }} /></Tooltip>
+            <Tooltip title={text.removeNode}><Button type="text" danger size="small" aria-label={`删除节点 ${treeNode.node.name}`} icon={<DeleteOutlined />} onClick={event => { event.stopPropagation(); removeNode(system, treeNode.node); }} /></Tooltip>
           </Space>
         </div>}
       />
+      {search.trim() && filterTaxonomyNodes(nodesBySystem[system.id] || [], search).length === 0 && <span className="taxonomy-no-match">无匹配节点</span>}
     </div>)}
     <Modal title={text.backups} open={backupModalOpen} footer={null} onCancel={() => setBackupModalOpen(false)}>
       {backups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="\u6682\u65e0\u4f53\u7cfb\u5220\u9664\u5907\u4efd" /> : backups.map((backup, index) => <div key={backup.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>

@@ -3,6 +3,7 @@ const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy'
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
 import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
 import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
+import { questionSearchText } from './questionInspection';
 const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
 
 const DB_VERSION = 2;
@@ -156,20 +157,7 @@ function isPendingEdit(question: QuestionMeta): boolean {
 
 function buildMeta(question: Question): QuestionMeta {
   const content = (question as any).content ?? (question as any).stem ?? '';
-  const searchText = [
-    content,
-    (question as any).answer,
-    (question as any).analysis,
-    (question as any).explanation,
-    (question as any).source,
-    (question as any).exam_type,
-    (question as any).region,
-    (question as any).school,
-    (question as any).year,
-    ...normalizeArray((question as any).options),
-    ...normalizeArray((question as any).knowledge_ids ?? (question as any).knowledge_point_ids),
-    ...normalizeArray((question as any).model_ids ?? (question as any).model_point_ids),
-  ].map(stripHtml).filter(Boolean).join('\n').toLowerCase();
+  const searchText = questionSearchText(question);
 
   return {
     id: question.id,

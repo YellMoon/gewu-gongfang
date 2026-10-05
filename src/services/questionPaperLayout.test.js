@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
+assert(fs.existsSync('src/services/questionPaperLayout.ts'),'paper organization must preserve its editable layout');
+const m={exports:{}};new Function('module','exports',ts.transpileModule(fs.readFileSync('src/services/questionPaperLayout.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(m,m.exports);
+const {restorePaperLayout,groupPaperItems}=m.exports;
+const rows=[{uid:'a',question:{id:'a',type:'单选题'},sectionTitle:'自定义',score:2.5},{uid:'b',question:{id:'b',type:'解答题'},sectionTitle:'自定义',score:8}];
+const restored=restorePaperLayout(rows,{items:[{id:'b',score:12.5,sectionTitle:'第二部分'},{id:'a',score:0,sectionTitle:'第一部分'}]});
+assert.deepEqual(restored.map(r=>r.question.id),['b','a']);assert.deepEqual(restored.map(r=>r.score),[12.5,0]);
+const grouped=groupPaperItems(restored,{'单选题':'选择','解答题':'计算'});
+assert.deepEqual(grouped.map(r=>r.score),[12.5,0],'regroup preserves assigned scores');
+assert.equal(grouped[0].sectionTitle,'计算');
+const missing=restorePaperLayout(rows,{items:[{id:'removed',score:4},{id:'a',score:-1,sectionTitle:''},{id:'a',score:5}]});
+assert.deepEqual(missing.map(r=>r.question.id),['a','b'],'removed ids cannot resurrect and duplicates cannot add a question');assert.equal(missing[0].score,2.5);
+console.log('paper layout restore and regroup checks passed');

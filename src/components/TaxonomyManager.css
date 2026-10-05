@@ -1,0 +1,33 @@
+.taxonomy-manager { min-width: 0; color: #344054; }
+.taxonomy-manager .taxonomy-search { margin-top: 12px; }
+.taxonomy-manager .taxonomy-system-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid #edf0f5; }
+.taxonomy-manager .taxonomy-system-title, .taxonomy-manager .taxonomy-node-title { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.taxonomy-manager .taxonomy-system-title strong { font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.taxonomy-manager .taxonomy-node-title { width: 100%; line-height: 1.65; }
+.taxonomy-manager .taxonomy-node-title > span { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.taxonomy-manager .taxonomy-node-actions { flex: none; opacity: .55; }
+.taxonomy-manager .taxonomy-node-title:hover .taxonomy-node-actions, .taxonomy-manager .taxonomy-node-title:focus-within .taxonomy-node-actions { opacity: 1; }
+.taxonomy-manager .taxonomy-node-actions button { width: 24px; height: 26px; padding: 0; }
+.taxonomy-manager .taxonomy-tree { font-size: 14px; background: transparent; }
+.taxonomy-manager .taxonomy-tree .ant-tree-treenode { padding-bottom: 3px; align-items: flex-start; }
+.taxonomy-manager .taxonomy-tree .ant-tree-node-content-wrapper { flex: 1; min-width: 0; padding: 2px 4px; border-radius: 5px; }
+.taxonomy-manager .taxonomy-tree .ant-tree-node-content-wrapper:hover { background: #f0f5ff; }
+.taxonomy-manager .taxonomy-tree .ant-tree-indent-unit { width: 16px; position: relative; }
+.taxonomy-manager .taxonomy-tree .ant-tree-indent-unit::before { content: ''; position: absolute; top: 0; bottom: -3px; left: 11px; right: auto; border: 0; border-left: 1px dashed #d8dde5; }
+.taxonomy-manager .taxonomy-tree .ant-tree-indent-unit-end::before { display: none; }
+.taxonomy-manager .taxonomy-tree .ant-tree-switcher { width: 22px; line-height: 30px; flex: none; }
+.taxonomy-manager .taxonomy-tree .ant-tree-switcher::before { content: ''; position: absolute; top: 0; bottom: -3px; left: 11px; border-left: 1px dashed #d8dde5; }
+.taxonomy-manager .taxonomy-tree .taxonomy-node-first > .ant-tree-switcher::before { top: 15px; }
+.taxonomy-manager .taxonomy-tree .taxonomy-node-last > .ant-tree-switcher::before { bottom: auto; height: 15px; }
+.taxonomy-manager .taxonomy-tree .taxonomy-node-first.taxonomy-node-last > .ant-tree-switcher::before { display: none; }
+.taxonomy-manager .taxonomy-tree .ant-tree-switcher::after { content: ''; position: absolute; top: 15px; left: 11px; right: 0; border-top: 1px dashed #d8dde5; }
+.taxonomy-manager .taxonomy-tree .ant-tree-switcher-leaf-line { display: none; }
+.taxonomy-manager .taxonomy-toggle { position: relative; z-index: 1; display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: #e6e9ee; vertical-align: middle; }
+.taxonomy-manager .taxonomy-toggle::before, .taxonomy-manager .taxonomy-toggle::after { content: ''; position: absolute; background: #667085; top: 6px; left: 3px; width: 8px; height: 2px; }
+.taxonomy-manager .taxonomy-toggle::after { transform: rotate(90deg); }
+.taxonomy-manager .ant-tree-switcher_open .taxonomy-toggle { background: #4b77ff; }
+.taxonomy-manager .ant-tree-switcher_open .taxonomy-toggle::before { background: white; }
+.taxonomy-manager .ant-tree-switcher_open .taxonomy-toggle::after { display: none; }
+.taxonomy-manager .taxonomy-inline-editor { flex: 1; min-width: 0; padding: 3px 0; }
+.taxonomy-manager .taxonomy-inline-editor__actions { display: flex; gap: 6px; margin-top: 5px; }
+.taxonomy-manager .taxonomy-no-match { color: #667085; font-size: 13px; }

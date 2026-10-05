@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
+const cache=new Map();
+function load(file) { file=path.resolve(file);if(cache.has(file))return cache.get(file);const m={exports:{}};cache.set(file,m.exports);new Function('require','module','exports',ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText)(name=>name.startsWith('.')?load(path.resolve(path.dirname(file),name+'.ts')):require(name),m,m.exports);cache.set(file,m.exports);return m.exports; }
+const {validateImportQuestions,mergeImportValidation}=load('src/services/questionValidation.ts');
+let r=validateImportQuestions([{content:'题干',answer:'A',knowledge_ids:['k']}]);
+assert(r.rows[0].issues.some(i=>i.message==='解析为空'),'batch intake must check explanations');
+const doc=text=>({type:'doc',content:[{type:'paragraph',content:[{type:'text',text}]}]});
+const rich={type:'question-document',sections:{stem:doc('完整题干'),answer:doc('A'),analysis:doc('推导过程'),options:[{label:'A',content:doc('正确项')},{label:'B',content:doc('错误项')}],subQuestions:[]}};
+r=validateImportQuestions([{content:'',answer:'',rich_content:rich,knowledge_ids:['k'],type:'单选题'}]);
+assert.equal(r.rows[0].status,'success','structured content is authoritative');
+r=validateImportQuestions([{content:'题干',type:'单选题',answer:'C',analysis:'推导',options:[{label:'A',content:'a'},{label:'B',content:'b'}],knowledge_ids:['k']}]);
+assert(r.rows[0].issues.some(i=>i.message.includes('答案选项')));
+const merged=mergeImportValidation({status:'failed',issues:[{level:'failed',message:'题干为空'}]}, {status:'warning',codes:['REMOTE_WARNING']},c=>c);
+assert.equal(merged.status,'failed','cloud warning cannot downgrade local failure');assert.equal(merged.issues.length,2);
+r=validateImportQuestions([{content:'题干',answer:'A',analysis:'',options:[],knowledge_ids:['k'],format_warnings:['解析为空']}]);
+assert.equal(r.rows[0].issues.filter(i=>i.message==='解析为空').length,1);
+r=validateImportQuestions([{content:'<p>重复题干</p>',answer:'A',analysis:'推导',rich_content:{...rich,sections:{...rich.sections,stem:doc('重复题干')}},knowledge_ids:['k']}],[{content:'<p>重复题干</p>',rich_content:{...rich,sections:{...rich.sections,stem:doc('重复题干')}}}]);
+assert(r.rows[0].issues.some(i=>i.message==='疑似重复题目'),'existing and imported structured stems use the same fingerprint');
+r=validateImportQuestions([{content:'题干',type:'单选题',answer:'A',analysis:'推导',options:[{label:'A)',content:'选项一'},{label:'B)',content:'选项二'}],knowledge_ids:['k']}]);
+assert(!r.rows[0].issues.some(i=>i.message.includes('答案选项')),'checking and rendering share option label normalization');
+const {questionSearchText}=load('src/services/questionInspection.ts');
+const text=questionSearchText({content:'题干',options:[{label:'A',content:'独特选项'}],rich_content:rich,tags:['专题标签'],formulas:[{latex:'x^2'}]});
+for(const word of ['独特选项','推导过程','专题标签','x^2'])assert(text.includes(word),word+' must be searchable');
+console.log('question checks, import merging and search checks passed');

@@ -1,4 +1,5 @@
 import type { Question } from '../types';
+import { inspectQuestion, questionSections, richNodeText } from './questionInspection';
 
 export type ImportValidationStatus = 'success' | 'warning' | 'failed';
 
@@ -37,37 +38,33 @@ function hasKnowledgeMatch(question: any): boolean {
     (Array.isArray(question.knowledge_points) && question.knowledge_points.length > 0) ||
     (Array.isArray(question.knowledge_ids) && question.knowledge_ids.length > 0) ||
     (Array.isArray(question.knowledge_point_ids) && question.knowledge_point_ids.length > 0)
+    || Object.values(question.taxonomy_ids || {}).some(ids => Array.isArray(ids) && ids.length > 0)
   );
 }
 
 function questionContent(question: any): string {
-  return textOf(question.content || question.stem);
-}
-
-function questionAnswer(question: any): string {
-  return textOf(question.answer);
+  const sections = questionSections(question);
+  return sections.structured ? richNodeText(sections.stem) : textOf(question.content || question.stem);
 }
 
 export function validateImportQuestions(
   parsedQuestions: any[],
   existingQuestions: Question[] = []
 ): { rows: ImportValidationRow[]; summary: ImportValidationSummary } {
-  const existingContent = new Set(existingQuestions.map(item => normalizeContent(item.content || item.stem)).filter(Boolean));
+  const existingContent = new Set(existingQuestions.map(item => normalizeContent(questionContent(item))).filter(Boolean));
   const seenInBatch = new Set<string>();
 
   const rows = (parsedQuestions || []).map((question, index) => {
     const issues: ImportValidationIssue[] = [];
     const content = questionContent(question);
-    const answer = questionAnswer(question);
     const fingerprint = normalizeContent(content);
 
-    if (!content) issues.push({ level: 'failed', message: '题干为空' });
-    if (!answer) issues.push({ level: 'warning', message: '答案为空' });
+    inspectQuestion(question).forEach(message => issues.push({ level: message === '题干为空' ? 'failed' : 'warning', message }));
     if (!hasKnowledgeMatch(question)) issues.push({ level: 'warning', message: '知识点未匹配' });
     if (Array.isArray(question.format_warnings)) {
       question.format_warnings.forEach((warning: unknown) => {
         const message = textOf(warning);
-        if (message) issues.push({ level: 'warning', message });
+        if (message && !issues.some(issue => issue.message === message)) issues.push({ level: 'warning', message });
       });
     }
     if (fingerprint && (existingContent.has(fingerprint) || seenInBatch.has(fingerprint))) {
@@ -86,7 +83,7 @@ export function validateImportQuestions(
       : [];
 
     return {
-      key: `${index}-${fingerprint || Date.now()}`,
+      key: `${index}-${fingerprint || 'empty'}`,
       index: index + 1,
       question,
       status,
@@ -102,6 +99,19 @@ export function validateImportQuestions(
   }, { success: 0, warning: 0, failed: 0, total: 0 });
 
   return { rows, summary };
+}
+
+export function mergeImportValidation<T extends { status: ImportValidationStatus; issues: ImportValidationIssue[] }>(row: T, remote: any, format: (code: string) => string): T {
+  const codes: string[] = Array.isArray(remote?.codes) ? remote.codes : [];
+  const remoteLevel: ImportValidationStatus = remote?.status === 'rejected' ? 'failed' : 'warning';
+  const issues = [...row.issues];
+  for (const code of codes) {
+    const message = format(code);
+    if (!issues.some(issue => issue.message === message)) issues.push({ level: remoteLevel, message });
+  }
+  const status = row.status === 'failed' || remote?.status === 'rejected' ? 'failed'
+    : row.status === 'warning' || remote?.status === 'warning' || issues.length ? 'warning' : 'success';
+  return { ...row, status, issues };
 }
 
 export function buildImportValidationReport(rows: ImportValidationRow[]): string {

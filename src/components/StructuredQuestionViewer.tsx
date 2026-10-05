@@ -78,7 +78,7 @@ function docHasContent(value: any): boolean {
   return docPlainText(value).trim().length > 0;
 }
 
-const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnswer?: boolean }> = ({ value, showAnswer = false }) => {
+const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnswer?: boolean; answerOnly?: boolean }> = ({ value, showAnswer = false, answerOnly = false }) => {
   const { sections } = value;
   const options = sections.options.map((option, index) => ({
     ...option,
@@ -89,9 +89,9 @@ const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnsw
     content: docPlainText(option.content),
   })));
   return <div className="structured-question-viewer">
-    <Doc value={sections.stem} />
-    {options.length > 0 && <div className={`structured-question-viewer__options cols-${optionColumns}`} style={{ gridTemplateColumns: `repeat(${optionColumns}, minmax(0, 1fr))` }}>{options.map(option => <div key={option.id} className="structured-question-viewer__option"><strong>{option.label}.</strong><div className="structured-question-viewer__option-content"><Doc value={option.content} /></div></div>)}</div>}
-    {sections.subQuestions.map(sub => <div key={sub.id} className="structured-question-viewer__sub"><strong>{sub.label}</strong><Doc value={sub.content} />{showAnswer && docHasContent(sub.answer) && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
+    {!answerOnly && <Doc value={sections.stem} />}
+    {!answerOnly && options.length > 0 && <div className={`structured-question-viewer__options cols-${optionColumns}`} style={{ gridTemplateColumns: `repeat(${optionColumns}, minmax(0, 1fr))` }}>{options.map(option => <div key={option.id} className="structured-question-viewer__option"><strong>{option.label}.</strong><div className="structured-question-viewer__option-content"><Doc value={option.content} /></div></div>)}</div>}
+    {sections.subQuestions.filter(sub => !answerOnly || docHasContent(sub.answer)).map(sub => <div key={sub.id} className="structured-question-viewer__sub"><strong>{sub.label}</strong>{!answerOnly && <Doc value={sub.content} />}{showAnswer && docHasContent(sub.answer) && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
     {showAnswer && <>{docHasContent(sections.answer) && <div className="structured-question-viewer__answer"><strong>{'\u7b54\u6848\uff1a'}</strong><Doc value={sections.answer} /></div>}{docHasContent(sections.analysis) && <div className="structured-question-viewer__analysis"><strong>{'\u89e3\u6790\uff1a'}</strong><Doc value={sections.analysis} /></div>}</>}
   </div>;
 };
