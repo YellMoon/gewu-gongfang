@@ -75,6 +75,15 @@ const spaced=applyPhysicsNotationToTextRuns(['长度 2  ','m','，质量 ','m'])
 assert.deepEqual(spaced,['长度 2  ','<span class="physics-unit">m</span>','，质量 ','<i>m</i>'],'preserve spaces and source mark offsets');
 
 const { JSDOM } = require('jsdom');
+const fractionSource=String.raw`a=\frac{F}{m}+v_0`;
+const fractionHtml=renderToStaticMarkup(React.createElement(QuestionFormulaContent,{latex:fractionSource}));
+const fractionDom=new JSDOM(fractionHtml).window.document;
+assert.equal(fractionDom.querySelectorAll('.mfrac .sizing').length,0,'ordinary fraction terms use the surrounding formula size');
+assert(fractionDom.querySelector('.msupsub .sizing'),'subscripts still retain semantic sizing');
+assert.equal(fractionDom.querySelectorAll('.katex-display').length,0,'large fractions remain inline');
+assert.equal(fractionSource,String.raw`a=\frac{F}{m}+v_0`,'rendering leaves formula source unchanged');
+const explicitSmall=new JSDOM(renderToStaticMarkup(React.createElement(QuestionFormulaContent,{latex:String.raw`\tfrac{F}{m}`}))).window.document;
+assert(explicitSmall.querySelector('.mfrac .sizing'),'explicit source text-style fractions retain their author-requested style');
 const formulaDoc = doc([
   {type:'paragraph',content:[{type:'text',text:'Before '},{type:'formula',attrs:{canonicalLatex:'x^2',displayMode:'block'}},{type:'text',text:' after'},{type:'hardBreak'},{type:'text',text:'Next line'}]},
   {type:'paragraph',content:[{type:'text',text:'Next paragraph'}]},

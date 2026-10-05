@@ -15,7 +15,6 @@ import Image from '@tiptap/extension-image';
 import Highlight from '@tiptap/extension-highlight';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
-import katex from 'katex';
 import { sanitizeHtml } from '../utils/sanitizeHtml';
 import { storeQuestionAsset } from '../services/questionAssetStore';
 import { appendSequentialTask, clampSelection, decideExternalSync, enqueueEmission, mapPendingBookmarks, maskPersistedImagesForEditor, requireStoredAssetRef, restorePersistedImagesFromEditor } from './richQuestionEditorState';
@@ -46,7 +45,7 @@ const FormulaView: React.FC<NodeViewProps> = ({ node, selected, updateAttributes
     <QuestionFormulaContent latex={latex} block={node.type.name === 'formulaBlock' || node.attrs.displayMode === 'block'} />
     <Modal open={editing} title={t('\u7f16\u8f91 LaTeX \u516c\u5f0f')} onCancel={() => setEditing(false)} onOk={() => { const canonicalLatex = draft.trim().replace(/^\$+|\$+$/g, ''); if (editor.isEditable && canonicalLatex) updateAttributes({ canonicalLatex }); setEditing(false); }} okButtonProps={{ disabled: !editor.isEditable }} okText={t('\u66f4\u65b0\u516c\u5f0f')} cancelText={t('\u53d6\u6d88')}>
       <Input.TextArea disabled={!editor.isEditable} aria-label={t('LaTeX \u516c\u5f0f')} rows={3} value={draft} onChange={event => setDraft(event.target.value)} />
-      <div className="rich-question-editor__formula-preview" role="status" aria-live="polite"><span dangerouslySetInnerHTML={{ __html: katex.renderToString(draft.trim() || '\\square', { throwOnError: false, displayMode: node.attrs.displayMode === 'block' }) }} /></div>
+      <div className="rich-question-editor__formula-preview" role="status" aria-live="polite"><QuestionFormulaContent latex={draft.trim() || '\\square'} block={node.attrs.displayMode === 'block'} /></div>
     </Modal>
   </NodeViewWrapper>;
 };
@@ -163,7 +162,7 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
     <Modal open={formulaOpen} title={t('\u63d2\u5165 LaTeX \u516c\u5f0f')} onOk={insertFormula} onCancel={() => setFormulaOpen(false)} okText={t('\u63d2\u5165\u5e76\u663e\u793a')} cancelText={t('\u53d6\u6d88')}>
       <Input.TextArea aria-label={t('LaTeX \u516c\u5f0f')} autoFocus rows={3} value={formulaText} onChange={event => setFormulaText(event.target.value)} placeholder={'\\frac{a}{b}  /  \\sqrt{x}'} />
       <Space style={{ marginTop: 12 }}><Button aria-pressed={!blockFormula} size="small" type={!blockFormula ? 'primary' : 'default'} onClick={() => setBlockFormula(false)}>{t('\u884c\u5185\u516c\u5f0f')}</Button><Button aria-pressed={blockFormula} size="small" type={blockFormula ? 'primary' : 'default'} onClick={() => setBlockFormula(true)}>{t('\u72ec\u7acb\u516c\u5f0f')}</Button></Space>
-      <div className="rich-question-editor__formula-preview" role="status" aria-live="polite">{formulaText.trim() ? <span dangerouslySetInnerHTML={{ __html: katex.renderToString(formulaText.trim().replace(/^\$+|\$+$/g, ''), { throwOnError: false, displayMode: blockFormula }) }} /> : t('\u516c\u5f0f\u9884\u89c8\u533a')}</div>
+      <div className="rich-question-editor__formula-preview" role="status" aria-live="polite">{formulaText.trim() ? <QuestionFormulaContent latex={formulaText.trim().replace(/^\$+|\$+$/g, '')} block={blockFormula} /> : t('\u516c\u5f0f\u9884\u89c8\u533a')}</div>
     </Modal>
   </div>;
 };

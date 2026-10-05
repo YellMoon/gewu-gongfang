@@ -7,7 +7,7 @@ const http = require('node:http');
 const webpack = require('webpack');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '../..');
-const output = path.join(root, 'output/playwright/desktop-question-workflow-20261005');
+const output = process.env.QUESTION_WORKFLOW_EVIDENCE_DIR ? path.resolve(process.env.QUESTION_WORKFLOW_EVIDENCE_DIR) : path.join(root, 'output/playwright/desktop-question-workflow-20261005');
 fs.mkdirSync(output, { recursive: true });
 const entry = path.join(output, 'fixture.tsx');
 fs.writeFileSync(entry, `
@@ -60,7 +60,13 @@ async function compile() {
     const {nodeIds}=await cdp.send('DOM.querySelectorAll',{nodeId:domRoot.nodeId,selector:'.qb-card-body .structured-question-viewer > p i'});
     typography.actualFonts=[];for(const nodeId of nodeIds)typography.actualFonts.push((await cdp.send('CSS.getPlatformFontsForNode',{nodeId})).fonts);
     typography.unitStyle=await page.locator('.qb-card-body .katex-html .mord.text').filter({hasText:'μC'}).evaluate(el=>({style:getComputedStyle(el).fontStyle,text:el.textContent}));
+    typography.fraction=await page.locator('.qb-card-body .katex').last().evaluate(el=>({
+      formulaSize:parseFloat(getComputedStyle(el).fontSize),
+      terms:Array.from(el.querySelectorAll('.mfrac .mathnormal')).map(term=>({text:term.textContent,size:parseFloat(getComputedStyle(term).fontSize)})),
+    }));
     fs.writeFileSync(path.join(output,'typography.json'),JSON.stringify(typography,null,2));
+    assert.equal(typography.fraction.terms.length,2);
+    assert(typography.fraction.terms.every(term=>Math.abs(term.size-typography.fraction.formulaSize)<.1),'fraction numerator and denominator must match the surrounding formula font size');
     assert(typography.actualFonts.every(fonts=>fonts.some(font=>font.familyName==='KaTeX_Math')),'plain-text physical quantities must use the same actual math font as formula variables');
     assert(Math.abs(typography.baselines.number-typography.baselines.body)<0.5,'question number and first stem line must share a baseline');
     assert.equal(typography.unitStyle.style,'normal','micro prefix and complete unit remain upright');
@@ -155,6 +161,16 @@ async function compile() {
       assert(dimensions.actionOffsets.length>0&&dimensions.actionOffsets.every(delta=>delta<1),'all action columns align at '+width+' pixels');
       metrics.viewports.push(dimensions);await page.screenshot({path:path.join(output,'05-viewport-'+width+'.png'),fullPage:true});
     }
+    await page.evaluate(()=>window.fixture.showQuestion({...window.fixture.baseQuestion,id:'legacy-fraction',rich_content:undefined,content:'加速度 $a=\\frac{F}{m}+v_0$，分式仍在正文内。',answer:'',analysis:''}));
+    await page.locator('.qb-card-body .question-stem .mfrac').waitFor();
+    metrics.legacyFraction=await page.locator('.qb-card-body .question-stem .katex').evaluate(el=>({
+      formulaSize:parseFloat(getComputedStyle(el).fontSize),
+      terms:Array.from(el.querySelectorAll('.mfrac .mathnormal')).map(term=>({text:term.textContent,size:parseFloat(getComputedStyle(term).fontSize)})),
+      subscriptSize:parseFloat(getComputedStyle(el.querySelector('.msupsub .sizing')).fontSize),
+    }));
+    assert.equal(metrics.legacyFraction.terms.length,2);
+    assert(metrics.legacyFraction.terms.every(term=>Math.abs(term.size-metrics.legacyFraction.formulaSize)<.1),'legacy fraction terms share the surrounding size');
+    assert(metrics.legacyFraction.subscriptSize<metrics.legacyFraction.formulaSize,'subscript sizing remains independent');
     await page.evaluate(()=>{const original=window.fixture.baseQuestion;window.fixture.showQuestion({...original,id:'image-only',rich_content:{...original.rich_content,sections:{...original.rich_content.sections,stem:{type:'doc',content:[{type:'image',attrs:{src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6srUAAAAASUVORK5CYII=',width:200,height:200}}]},answer:{type:'doc',content:[]},analysis:{type:'doc',content:[]}}}});});
     await page.locator('.qb-card-body .structured-question-viewer > img').waitFor();
     const imageIndex=await page.evaluate(()=>({number:document.querySelector('.qb-card-index').getBoundingClientRect().y,top:document.querySelector('.qb-card-main').getBoundingClientRect().y}));
@@ -166,7 +182,7 @@ async function compile() {
     fs.writeFileSync(path.join(output,'legacy-image-index.json'),JSON.stringify(legacyImageIndex));
     assert(Math.abs(legacyImageIndex.number-legacyImageIndex.top)<1,'legacy image-only questions retain a top-aligned number');
     assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','vertical circle/text alignment','system-title root plus and inline creation','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
-    metrics.typography=typography;metrics.checks.push('actual bundled math italic fonts','first-line question number baseline','upright micro prefix and unit');
+    metrics.typography=typography;metrics.checks.push('actual bundled math italic fonts','first-line question number baseline','upright micro prefix and unit','equal-size structured and legacy fraction terms; subscripts remain smaller');
     fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify(metrics,null,2));
     console.log('Desktop question browser checks passed; evidence: '+output);
   } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}

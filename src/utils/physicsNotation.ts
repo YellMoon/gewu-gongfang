@@ -481,6 +481,9 @@ export function createKaTeXPhysicsOptions(displayMode: boolean) {
     throwOnError: false,
     strict: false as const,
     output: 'html' as const,
-    macros: PHYSICS_KATEX_GLOBAL_MACROS,
+    // Keep ordinary fraction terms at the surrounding formula size. KaTeX's
+    // native display fraction recalculates the rule and vertical clearances
+    // while displayMode still controls whether the formula owns a whole row.
+    macros: { ...PHYSICS_KATEX_GLOBAL_MACROS, '\\frac': '\\dfrac' },
   };
 }
