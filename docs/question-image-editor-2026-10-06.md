@@ -15,8 +15,10 @@ Word 导入按每个图片出现位置清理：普通图片宽高均不大于 3 
 - Chrome 151 与 Electron 28.3.3 使用真实 React/Ant/TipTap 组件，六区均完成文字输入、双击公式修改 LaTeX、图片上传、草稿保存和重新打开；跨区剪切粘贴、任意尺寸调整、对齐、删除以及答案内容保护通过。两种内核编辑区和显示区实测均为 107.5 × 49 px，图片原始像素比为 1:1，证实采用文档显示比例。
 - 截图和 JSON 回执：`output/playwright/question-editor-20261006/`。这组 UI 验证使用隔离草稿与资源，不写入真实题库，不冒充生产云同步验收。
 
-默认全量测试已执行，首次运行在后端测试阶段异常退出；重试退出码为 Windows 原生进程 fast-fail（-1073740791），没有断言失败输出。中断项单独运行通过，随后按原 npm 脚本展开的顺序，从第 314/444 个命令继续执行并逐项记录退出码。证据分别保存在 `output/question-image-editor-full-tests-20261006.log`、`output/question-image-editor-full-tests-retry-20261006.log`、`output/question-image-editor-full-tests-continuation-20261006.json`；不将进程崩溃描述为完整单次 npm test 成功。
+默认全量测试已执行，首次运行在后端测试阶段异常退出；重试退出码为 Windows 原生进程 fast-fail（-1073740791），没有断言失败输出。中断项单独运行通过，随后按原 npm 脚本展开的顺序，从第 314/444 个命令继续执行并逐项记录退出码，剩余 131 个命令全部退出 0、complete=true。证据分别保存在 `output/question-image-editor-full-tests-20261006.log`、`output/question-image-editor-full-tests-retry-20261006.log`、`output/question-image-editor-full-tests-continuation-20261006.json`；不将进程崩溃描述为完整单次 npm test 成功。
 
-发布状态待更新。版本：桌面 8.11.0，NAS 候选 8.9.0；云 API 8.13.0、富文本 v1 数据契约及小程序 8.8.27 源代码未改变。NAS 导入解析器源已变更，须部署对应镜像后，云导入任务才会使用新清理行为。现有 NAS 管理页绑定超时；新连接可打开，但重新进入后要求本地账号登录，项目没有该登录凭据，已请用户恢复会话。不能把桌面本地通过当成 NAS 已部署。旧云数据未执行批量清理或修正。
+发布状态：**部分发布**。源码提交 `c5c2dcb2` 已推送 `gewu/master`，桌面 8.11.0 的 `dist:win`、安装包烟雾检查、打包后的富文本回归及云写入边界检查通过。OSS 安装包、blockmap、版本归档和 `latest.yml` 上传通过；2026-10-06 04:19（北京时间）公开下载验证版本为 8.11.0，本地与远端均为 150425210 bytes，SHA-512 均为 `AruNuLunjFOTe/A2YXZ3mkU50ZJgR3Oy5MDG3viZGlhODGOcrZsxlbcv4pnCNG/v6j3SbVQY7wu/oyO4rnOZSQ==`。证据：`output/question-editor-release-20261006/oss-verification-8.11.0.json` 和 `output/question-image-editor-oss-publish-8.11.0-20261006.log`。打包末尾已恢复 Node 原生依赖，根项目及 backend 的 ABI 137 均验证通过，安装包内 Electron ABI 119 验证通过。
+
+NAS 候选 8.9.0 尚未部署；云 API 8.13.0、富文本 v1 数据契约及小程序 8.8.27 源代码未改变，沿用原兼容回执，云公网健康再次核验为 HTTP 200、业务权威为 cloud。NAS 导入解析器源已变更，须部署对应镜像后，云导入任务才会使用新清理行为。现有 NAS 管理页绑定超时；新连接可打开，但重新进入后要求本地账号登录，项目没有该登录凭据，已请用户恢复会话。不能把桌面本地通过当成 NAS 已部署。旧云数据未执行批量清理或修正。
 
 候选镜像：`gewu-storage-agent:8.9.0-question-images`，`output/question-editor-release-20261006/gewu-storage-agent-8.9.0.tar`，SHA256 `ad6444e9fc520fc19137ce628e1ac2ba479941019f5648836801bb5466a0a177`。镜像内解析器 SHA256 `8d0f59a27e0677f35f28cba8def58b1e513d4ec9aa6da5f1f42257ed5920e5b4`。历史 NAS 8.8.4 运行回执仅作为契约兼容证据保留，不是 8.9.0 的部署回执。小程序原有开发版回执沿用，没有正式版发布声明。
