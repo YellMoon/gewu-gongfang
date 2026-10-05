@@ -31,7 +31,7 @@ window.desktopIdentitySessionProvider={readCloudQuestionAsset:async key=>{if(key
 window.fixture.completeSlow=()=>completeSlow();
 const paragraph=text=>({type:'doc',content:[{type:'paragraph',content:[{type:'text',text}]}]});
 const question={id:'fixture-question',subject:'物理',content:'质量 m，初速度 v₀，求加速度。',answer:'a = 2',analysis:'应用牛顿第二定律。',rich_content:{type:'question-document',sections:{stem:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'质量 m，速度 v，电荷 '},{type:'formula',attrs:{canonicalLatex:'q = -2.00\\\\text{~}\\\\text{μC}'}},{type:'text',text:'。由力求加速度：'},{type:'formula',attrs:{canonicalLatex:'a=\\\\frac{F}{m}'}}]}]},answer:paragraph('a = 2'),analysis:paragraph('应用牛顿第二定律。'),options:[],subQuestions:[]}}};
-function Fixture(){const [inBasket,setInBasket]=React.useState(false);return <main className="fixture-layout"><aside><h2>物理 · 体系</h2><TaxonomyManager subject="物理" database={db}/></aside><section><h2>试题预览</h2><QuestionPreviewCard question={question} index={0} inBasket={inBasket} onToggleBasket={()=>setInBasket(value=>!value)} onEdit={()=>window.fixture.edited=true}/><div id="progressive"><ResolvedRichHtml html='<p>图片加载期间仍然能阅读题干和公式。</p><img src="question-asset://fast" alt="已加载图片" /><img src="question-asset://slow" alt="待加载图片" />'/></div></section></main>};
+function Fixture(){const [shownQuestion,setShownQuestion]=React.useState(question);window.fixture.baseQuestion=question;window.fixture.showQuestion=setShownQuestion;const [inBasket,setInBasket]=React.useState(false);return <main className="fixture-layout"><aside><h2>物理 · 体系</h2><TaxonomyManager subject="物理" database={db}/></aside><section><h2>试题预览</h2><QuestionPreviewCard question={shownQuestion} index={0} inBasket={inBasket} onToggleBasket={()=>setInBasket(value=>!value)} onEdit={()=>window.fixture.edited=true}/><div id="progressive"><ResolvedRichHtml html='<p>图片加载期间仍然能阅读题干和公式。</p><img src="question-asset://fast" alt="已加载图片" /><img src="question-asset://slow" alt="待加载图片" />'/></div></section></main>};
 createRoot(document.getElementById('root')).render(<Fixture/>);
 `);
 async function compile() {
@@ -155,6 +155,16 @@ async function compile() {
       assert(dimensions.actionOffsets.length>0&&dimensions.actionOffsets.every(delta=>delta<1),'all action columns align at '+width+' pixels');
       metrics.viewports.push(dimensions);await page.screenshot({path:path.join(output,'05-viewport-'+width+'.png'),fullPage:true});
     }
+    await page.evaluate(()=>{const original=window.fixture.baseQuestion;window.fixture.showQuestion({...original,id:'image-only',rich_content:{...original.rich_content,sections:{...original.rich_content.sections,stem:{type:'doc',content:[{type:'image',attrs:{src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6srUAAAAASUVORK5CYII=',width:200,height:200}}]},answer:{type:'doc',content:[]},analysis:{type:'doc',content:[]}}}});});
+    await page.locator('.qb-card-body .structured-question-viewer > img').waitFor();
+    const imageIndex=await page.evaluate(()=>({number:document.querySelector('.qb-card-index').getBoundingClientRect().y,top:document.querySelector('.qb-card-main').getBoundingClientRect().y}));
+    fs.writeFileSync(path.join(output,'image-index.json'),JSON.stringify(imageIndex));
+    assert(Math.abs(imageIndex.number-imageIndex.top)<1,'image-only questions retain a top-aligned number');
+    await page.evaluate(()=>window.fixture.showQuestion({...window.fixture.baseQuestion,id:'legacy-image-only',rich_content:undefined,content:'<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6srUAAAAASUVORK5CYII=" width="200" height="200" />',answer:'',analysis:''}));
+    await page.locator('.qb-card-body .question-stem img').waitFor();
+    const legacyImageIndex=await page.evaluate(()=>({number:document.querySelector('.qb-card-index').getBoundingClientRect().y,top:document.querySelector('.qb-card-main').getBoundingClientRect().y}));
+    fs.writeFileSync(path.join(output,'legacy-image-index.json'),JSON.stringify(legacyImageIndex));
+    assert(Math.abs(legacyImageIndex.number-legacyImageIndex.top)<1,'legacy image-only questions retain a top-aligned number');
     assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','vertical circle/text alignment','system-title root plus and inline creation','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
     metrics.typography=typography;metrics.checks.push('actual bundled math italic fonts','first-line question number baseline','upright micro prefix and unit');
     fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify(metrics,null,2));

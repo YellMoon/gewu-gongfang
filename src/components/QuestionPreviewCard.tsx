@@ -36,11 +36,12 @@ function contentWithInlineAssets(question: Question): string {
   return content;
 }
 
-function richDocHasContent(value: any): boolean {
+function richDocHasContent(value: any, includeImages = true): boolean {
   if (!value || typeof value !== 'object') return false;
   if (value.type === 'text') return Boolean(String(value.text || '').trim());
-  if (value.type === 'formula' || value.type === 'formulaBlock' || value.type === 'image') return true;
-  return (Array.isArray(value.content) ? value.content : []).some(richDocHasContent);
+  if (value.type === 'image') return includeImages;
+  if (value.type === 'formula' || value.type === 'formulaBlock') return true;
+  return (Array.isArray(value.content) ? value.content : []).some((child: any) => richDocHasContent(child, includeImages));
 }
 
 function questionHasAnswerContent(question: Question): boolean {
@@ -172,6 +173,9 @@ const QuestionPreviewCard: React.FC<{
 
   const displayContent = contentWithInlineAssets(resolvedQuestion);
   const hasAnswerContent = questionHasAnswerContent(resolvedQuestion);
+  const richStem = resolvedQuestion.rich_content?.type === 'question-document' ? resolvedQuestion.rich_content.sections.stem : null;
+  const imageOnly = richStem ? richDocHasContent(richStem) && !richDocHasContent(richStem, false)
+    : /<img\b/i.test(displayContent) && !displayContent.replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;/g, ' ').trim();
 
   return (
     <article id={`question-card-${question.id}`} className="qb-question-card"
@@ -187,7 +191,7 @@ const QuestionPreviewCard: React.FC<{
           event.preventDefault(); setAnswerExpanded(expanded => !expanded);
         }
       }}>
-      <div className="qb-card-main">
+      <div className={`qb-card-main${imageOnly ? ' qb-card-main--image-only' : ''}`}>
         {selectable && (
           <Checkbox
             className="qb-card-checkbox"

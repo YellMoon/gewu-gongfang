@@ -25,6 +25,10 @@
   grid-template-columns: 34px minmax(0, 1fr);
 }
 
+.qb-card-main--image-only {
+  align-items: start;
+}
+
 .qb-card-checkbox {
   align-self: start;
   margin-top: 5px;
