@@ -190,12 +190,12 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
         {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <strong>{index + 1}. {system.name}</strong>}
-        <Space size={2}>
+        <Space className="taxonomy-node-actions" size={0}>
+          <Tooltip title={text.addRoot}><Button type="text" size="small" aria-label={`添加根节点 ${system.name}`} icon={<PlusOutlined />} onClick={() => addNode(system)} /></Tooltip>
           <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名体系 ${system.name}`} icon={<EditOutlined />} onClick={() => setEdit({ kind: 'system-rename', system, value: system.name })} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
         </Space>
       </div>
-      <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => addNode(system)}>{text.addRoot}</Button>
       {edit?.kind === 'node-create' && edit.system?.id === system.id && !edit.node && inlineEditor()}
       <Tree
         className="taxonomy-tree"

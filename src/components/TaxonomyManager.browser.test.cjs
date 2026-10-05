@@ -72,6 +72,17 @@ async function compile() {
     assert.equal(connector.vertical,'dashed');assert.equal(connector.horizontal,'dashed');
     const closed=await page.locator('.ant-tree-switcher_close .taxonomy-toggle').first().evaluate(el=>getComputedStyle(el).backgroundColor);
     assert.equal(closed,'rgb(230, 233, 238)');
+    const alignment=await page.locator('.ant-tree-treenode').evaluateAll(rows=>rows.flatMap(row=>{const circle=row.querySelector('.taxonomy-toggle'),label=row.querySelector('.taxonomy-node-title > span');if(!circle||!label)return [];const a=circle.getBoundingClientRect(),b=label.getBoundingClientRect();return [Math.abs(a.y+a.height/2-b.y-b.height/2)];}));
+    assert(alignment.length>0&&alignment.every(delta=>delta<1),'circles and node text must share a vertical centre');
+    const rootAdd=page.getByLabel('添加根节点 知识点',{exact:true});
+    assert.equal(await rootAdd.count(),1,'root plus button must have an accessible name');
+    assert(await rootAdd.evaluate(el=>Boolean(el.closest('.taxonomy-system-title'))),'root plus belongs to the system title action group');
+    assert.equal(await rootAdd.innerText(),'','root creation uses the same icon-only action');
+    await rootAdd.click();
+    await page.getByRole('textbox',{name:'节点名称',exact:true}).fill('测试根节点');
+    await page.screenshot({path:path.join(output,'02-inline-root-add.png'),fullPage:true});
+    await page.getByRole('textbox',{name:'节点名称',exact:true}).press('Enter');
+    assert(await page.evaluate(()=>window.fixture.getNodes().some(n=>n.name==='测试根节点'&&!n.parent_id)),'root plus creates a root inline');
     assert.equal(await page.locator('.qb-answer-button').count(),0);
     await page.locator('.qb-basket-button').click();assert(await page.locator('.qb-basket-button').innerText().then(text=>text.includes('移出')));
     assert.equal(await page.locator('.qb-question-card').getAttribute('aria-expanded'),'false','basket must not reveal answers');
@@ -124,7 +135,7 @@ async function compile() {
       assert(dimensions.scroll<=dimensions.width+1,'tree and formulas fit the viewport');assert.equal(dimensions.errors,0);assert(dimensions.formulas>=2);
       metrics.viewports.push(dimensions);await page.screenshot({path:path.join(output,'05-viewport-'+width+'.png'),fullPage:true});
     }
-    assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
+    assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','vertical circle/text alignment','system-title root plus and inline creation','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
     fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify(metrics,null,2));
     console.log('Desktop question browser checks passed; evidence: '+output);
   } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}
