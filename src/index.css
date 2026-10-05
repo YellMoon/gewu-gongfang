@@ -405,11 +405,11 @@ td,
 .rich-question-editor__surface {
   padding: 10px 12px;
   outline: none;
-  line-height: 1.65;
+  line-height: 1.62;
   text-align: left;
   overflow-y: auto;
   min-height: inherit;
-  font-family: SimSun, 'Microsoft YaHei', sans-serif;
+  font-family: 'Times New Roman', 'STIX Two Text', '宋体', SimSun, serif;
   font-size: 16px;
 }
 
@@ -429,6 +429,10 @@ td,
 
 .rich-question-editor__surface img[data-align='left'] { margin-left: 0; margin-right: auto; }
 .rich-question-editor__surface img[data-align='right'] { margin-left: auto; margin-right: 0; }
+.rich-image-node { margin: 10px 0; }
+.rich-image-node.is-selected { outline: 1px solid #6c8fc6; }
+.rich-image-node[data-align='left'] img { margin-left: 0; margin-right: auto; }
+.rich-image-node[data-align='right'] img { margin-left: auto; margin-right: 0; }
 
 .rich-formula-node {
   display: inline-block;

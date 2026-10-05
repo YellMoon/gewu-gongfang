@@ -1,10 +1,11 @@
 import React from 'react';
-import { Button, Card, Checkbox, Collapse, Input, Radio, Space, Tabs, Typography } from 'antd';
+import { Button, Card, Checkbox, Collapse, Input, Modal, Radio, Space, Tabs, Typography } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import type { JSONContent } from '@tiptap/react';
-import RichQuestionEditor from '../RichQuestionEditor';
+import RichQuestionEditor, { QuestionImageClipboardProvider } from '../RichQuestionEditor';
 import type { QuestionRichDocument } from '../../types/questionRichContent';
 import { addOption, addSubQuestion, choiceMode, moveEntity, removeEntity, setCorrectSelection, updateEntity } from './questionStructureOperations';
+import { cleanHiddenQuestionImages } from './questionImageCleanup';
 
 export type QuestionStructureEditorProps = {
   value: QuestionRichDocument;
@@ -13,6 +14,7 @@ export type QuestionStructureEditorProps = {
   confirmDelete?: (kind: 'option' | 'sub') => boolean;
   disabled?: boolean;
   questionType?: string;
+  imageAssets?: Array<Record<string, any>>;
 };
 
 const labels = {
@@ -26,9 +28,11 @@ const labels = {
 
 const defaultId = (kind: 'option' | 'sub') => `${kind}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
-const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value, onChange, createId = defaultId, confirmDelete, disabled = false, questionType }) => {
+const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value, onChange, createId = defaultId, confirmDelete, disabled = false, questionType, imageAssets = [] }) => {
   const { sections } = value;
   const mode = choiceMode(questionType);
+  const [modal, contextHolder] = Modal.useModal();
+  const imageCleanup = cleanHiddenQuestionImages(value, imageAssets);
   const confirmRemoval = (kind: 'option' | 'sub') => confirmDelete ? confirmDelete(kind) : window.confirm(`\u8be5${labels[kind]}\u5df2\u6709\u5185\u5bb9\uff0c\u786e\u5b9a\u5220\u9664\u5417\uff1f`);
   const optionItems = sections.options.map((option, index) => ({
     key: option.id,
@@ -59,15 +63,18 @@ const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value
       <RichQuestionEditor disabled={disabled} output="json" value={sub.answer} minHeight={80} onChange={answer => onChange(updateEntity(value, 'subQuestions', sub.id, { answer: answer as JSONContent }))} />
     </Space>,
   }));
-  return <div className="question-structure-editor" data-testid="question-structure-editor">
+  return <QuestionImageClipboardProvider><div className="question-structure-editor" data-testid="question-structure-editor">
+    {contextHolder}
+    <Typography.Paragraph type="secondary">所有部分均可编辑文字、LaTeX 公式和图片。双击公式可修改；选中图片可调尺寸、删除，或剪切后在任一内容区域的光标位置粘贴。</Typography.Paragraph>
+    {imageCleanup.removed.length > 0 && <Button disabled={disabled} style={{ marginBottom: 12 }} onClick={() => modal.confirm({ title: `清理 ${imageCleanup.removed.length} 张微小标识图片`, content: <div><p>将清理全部内容区域中的微缩图片和带网站标识信息的微小图片。保存试题后生效。</p>{imageCleanup.removed.map((image, index) => <div key={index}>{image.section}：{image.reason}（{image.width} × {image.height} px）</div>)}</div>, okText: '清理', cancelText: '保留', onOk: () => onChange(imageCleanup.value) })}>清理微小标识图片（{imageCleanup.removed.length}）</Button>}
     <Card size="small" title={labels.stem}><RichQuestionEditor disabled={disabled} output="json" value={sections.stem} minHeight={180} placeholder={labels.stemPlaceholder} onChange={stem => onChange({ ...value, sections: { ...sections, stem: stem as JSONContent } })} /></Card>
     <Tabs items={[
       { key: 'options', label: `${labels.option} (${optionItems.length})`, children: <Space direction="vertical" style={{ width: '100%' }}>{optionItems.length ? <Collapse items={optionItems} defaultActiveKey={optionItems.map(item => item.key)} /> : <Typography.Text type="secondary">{labels.emptyOptions}</Typography.Text>}<Button disabled={disabled} icon={<PlusOutlined />} onClick={() => onChange(addOption(value, () => createId('option')))}>{labels.addOption}</Button></Space> },
       { key: 'subs', label: `${labels.sub} (${subItems.length})`, children: <Space direction="vertical" style={{ width: '100%' }}>{subItems.length ? <Collapse items={subItems} defaultActiveKey={subItems.map(item => item.key)} /> : <Typography.Text type="secondary">{labels.emptySubs}</Typography.Text>}<Button disabled={disabled} icon={<PlusOutlined />} onClick={() => onChange(addSubQuestion(value, () => createId('sub')))}>{labels.addSub}</Button></Space> },
-      { key: 'answer', label: labels.mainAnswer, children: <RichQuestionEditor disabled={disabled || mode !== 'other'} output="json" value={sections.answer} minHeight={130} placeholder={labels.mainAnswer} onChange={answer => onChange({ ...value, sections: { ...sections, answer: answer as JSONContent } })} /> },
+      { key: 'answer', label: labels.mainAnswer, children: <RichQuestionEditor disabled={disabled} output="json" value={sections.answer} minHeight={130} placeholder={labels.mainAnswer} onChange={answer => onChange({ ...value, sections: { ...sections, answer: answer as JSONContent } })} /> },
       { key: 'analysis', label: labels.analysis, children: <RichQuestionEditor disabled={disabled} output="json" value={sections.analysis} minHeight={150} placeholder={labels.analysis} onChange={analysis => onChange({ ...value, sections: { ...sections, analysis: analysis as JSONContent } })} /> },
     ]} />
-  </div>;
+  </div></QuestionImageClipboardProvider>;
 };
 
 export default QuestionStructureEditor;

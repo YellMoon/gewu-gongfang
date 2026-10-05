@@ -74,7 +74,9 @@ const QuestionRichContent: React.FC<{ question: any; terms?: string[] }> = ({ qu
                 src={src}
                 assetKey={asset.content_hash || asset.id || asset.file_name}
                 alt={asset.file_name || `question-image-${index + 1}`}
-                style={{ maxWidth: 360, maxHeight: 220, objectFit: 'contain', border: '1px solid #edf0f5', borderRadius: 4 }}
+                width={asset.display_width || undefined}
+                height={asset.display_height || undefined}
+                style={{ width: asset.display_width || undefined, maxWidth: '100%', height: 'auto', aspectRatio: asset.display_width && asset.display_height ? `${asset.display_width} / ${asset.display_height}` : undefined, border: '1px solid #edf0f5', borderRadius: 4 }}
               />
             ) : (
               <Tag key={asset.content_hash || index} color="cyan">{asset.file_name || '图片'}</Tag>

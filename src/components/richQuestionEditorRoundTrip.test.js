@@ -33,6 +33,11 @@ collect(rich.sections.stem);
 assert.strictEqual(nodes.find(node => node.type === 'formula').attrs.canonicalLatex, 'x^2');
 assert.strictEqual(nodes.find(node => node.type === 'image').attrs.src, 'question-asset://asset-1');
 assert.strictEqual(nodes.find(node => node.type === 'formulaBlock').attrs.displayMode, 'block');
+const geometryEditor = new Editor({ extensions: [StarterKit, RichImage], content: '<img src="question-asset://asset-geometry" data-asset-key="asset-geometry" width="107.5" height="49" alt="diagram">' });
+assert.strictEqual(geometryEditor.getJSON().content[0].attrs.height, 49, 'editing must preserve imported document height');
+assert.strictEqual(geometryEditor.getJSON().content[0].attrs.width, 107.5);
+assert(geometryEditor.getHTML().includes('height="49"'), 'HTML output preserves both dimensions');
+geometryEditor.destroy();
 
 const hydrationBaseline = createQuestionRichDocument({ sections: {
   stem: { type: 'doc', content: [

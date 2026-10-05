@@ -548,8 +548,26 @@ def _image_tag(asset):
     height = asset.get("display_height")
     size_attrs = ""
     if width and height:
-        size_attrs = ' width="%s" height="%s" style="width:%spx;height:%spx;"' % (width, height, width, height)
+        size_attrs = ' width="%s" height="%s" style="width:%spx;height:auto;aspect-ratio:%s/%s;"' % (width, height, width, width, height)
     return '<img src="%s" alt="%s"%s />' % (html.escape(str(src or ""), quote=True), html.escape(str(alt or ""), quote=True), size_attrs)
+
+
+def _hidden_brand_image_reason(asset, container=None, *, formula_preview=False):
+    """Occurrence-level detection; never blacklist a shared image hash."""
+    if formula_preview or asset.get("asset_type") != "image":
+        return None
+    width, height = asset.get("display_width"), asset.get("display_height")
+    if not width or not height or width <= 0 or height <= 0:
+        return None
+    # Only collapsed ordinary pictures or micro-sized explicit branding.
+    if max(width, height) <= 3:
+        return "collapsed_image"
+    metadata = [str(asset.get("file_name", ""))]
+    for node in container.iter() if container is not None else []:
+        if _local_name(node) in ("docPr", "cNvPr", "shape", "imagedata"):
+            metadata.extend(str(node.attrib.get(key, "")) for key in ("name", "descr", "title", "alt"))
+    branding = re.search(r"logo|watermark|网站(?:标识|标志)|水印|组卷网|学科网|zxxk|zujuan|www\.[a-z0-9.-]+|[a-z0-9-]+\.(?:com|cn|net)\b", " ".join(metadata), re.I)
+    return "tiny_branding_image" if branding and max(width, height) <= 24 and min(width, height) <= 12 else None
 
 
 def _word_toggle_enabled(run, property_name, ns):
@@ -908,7 +926,7 @@ def _table_from_token_rows(table, token_rows, cursor):
     """Reassemble table structure without reparsing or rasterizing cell tokens."""
     ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
     value_key = "{%s}val" % ns["w"]
-    rendered_rows, assets, formulas = [], [], []
+    rendered_rows, assets, formulas, removed_images = [], [], [], []
     active_merges = {}
     start = cursor
     for tr in table.findall("./w:tr", ns):
@@ -925,11 +943,13 @@ def _table_from_token_rows(table, token_rows, cursor):
                     parts.append("<p>%s</p>" % rich.get("text", ""))
                     assets.extend(rich.get("assets", []))
                     formulas.extend(rich.get("formulas", []))
+                    removed_images.extend(rich.get("removed_images", []))
                 elif _local_name(child) == "tbl":
                     nested, cursor = _table_from_token_rows(child, token_rows, cursor)
                     parts.append(nested["text"])
                     assets.extend(nested["assets"])
                     formulas.extend(nested["formulas"])
+                    removed_images.extend(nested.get("removed_images", []))
             cell = {"parts": parts, "colspan": span, "rowspan": 1}
             merge = tc.find("./w:tcPr/w:vMerge", ns)
             prior = active_merges.get(column)
@@ -947,7 +967,7 @@ def _table_from_token_rows(table, token_rows, cursor):
     markup = '<table class="question-table">' + ''.join('<tr>' + ''.join(
         '<td colspan="%d" rowspan="%d">%s</td>' % (cell["colspan"], cell["rowspan"], ''.join(cell["parts"]))
         for cell in row) + '</tr>' for row in rendered_rows) + '</table>'
-    return {"text": markup, "assets": assets, "formulas": formulas, "block_type": "table",
+    return {"text": markup, "assets": assets, "formulas": formulas, "removed_images": removed_images, "block_type": "table",
             "source": {"part_name": "word/document.xml", "paragraph_index": start}}, cursor
 
 
@@ -982,8 +1002,10 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml", *, col
                 and (item.get("source") or {}).get("preview_ref")
             }
             formula_by_index = {(item.get("source") or {}).get("content_index"): item for item in formulas}
+            protected_previews = {(item.get("source") or {}).get("preview_ref") for item in formulas}
             parts = []
             assets = []
+            removed_images = []
             field_depth = 0
             for token in paragraph.tokens:
                 formula = formula_by_index.get(token.source.content_index)
@@ -1012,11 +1034,16 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml", *, col
                 elif token.kind == "image" and token.target:
                     asset = _asset_from_part(archive, token.target, "image", token.rel_id, token.rel_type)
                     if asset:
+                        container = ET.fromstring(token.xml) if token.xml else None
                         if token.xml:
-                            asset.update(_display_size_from_container(ET.fromstring(token.xml), {
+                            asset.update(_display_size_from_container(container, {
                                 "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
                                 "v": "urn:schemas-microsoft-com:vml",
                             }))
+                        reason = _hidden_brand_image_reason(asset, container, formula_preview=token.target in protected_previews)
+                        if reason:
+                            removed_images.append({"reason": reason, "source_part": token.target, "content_hash": asset["content_hash"], "display_width": asset["display_width"], "display_height": asset["display_height"], "paragraph_index": paragraph.paragraph_index, "content_index": token.source.content_index})
+                            continue
                         assets.append(asset)
                         if token.target not in converted_previews:
                             parts.append(_image_tag(asset))
@@ -1030,6 +1057,7 @@ def read_docx_token_rich_blocks(file_path, part_name="word/document.xml", *, col
                 "text": clean_word_text(normalize_physics_markup("".join(parts))),
                 "assets": assets,
                 "formulas": formulas,
+                "removed_images": removed_images,
                 "block_type": "table_cell_paragraph" if source and source.table_row is not None else "paragraph",
                 "source": {
                     "part_name": part_name,
@@ -2239,6 +2267,10 @@ def main():
         "topics": extract_topics(paragraphs) or ([default_topic] if default_topic else []),
         "knowledge_points": sorted({kp for question in questions for kp in question.get("knowledge_points", []) if kp}),
         "quality_report": quality_report(questions),
+    }
+    result["quality_report"]["image_cleanup"] = {
+        "removed_count": sum(len(row.get("removed_images", [])) for row in rich_rows or []),
+        "removed_images": [image for row in rich_rows or [] for image in row.get("removed_images", [])],
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

@@ -200,12 +200,42 @@ function legacyText(value: unknown): string {
     .replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function textDoc(value: unknown): JSONContent {
+function plainTextDoc(value: unknown): JSONContent {
   const text = legacyText(value);
   return { type: 'doc', content: text ? text.split('\n').map(line => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : [] })) : [] };
 }
 
+function textDoc(value: unknown, assets: Array<Record<string, any>> = [], section = 'legacy'): JSONContent {
+  const source = String(value || '').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
+  const content: JSONContent[] = [];
+  const attribute = (tag: string, name: string) => {
+    const match = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(tag);
+    return decodeEntities(match?.[1] ?? match?.[2] ?? match?.[3] ?? '');
+  };
+  const dimension = (value: unknown) => { const n = Number(value); return Number.isFinite(n) && n > 0 && n <= 10000 ? n : undefined; };
+  let cursor = 0;
+  for (const match of source.matchAll(/<img\b[^>]*>|<span\b[^>]*\bdata-latex\s*=[^>]*>[\s\S]*?<\/span\s*>/gi)) {
+    content.push(...(plainTextDoc(source.slice(cursor, match.index)).content || []));
+    const tag = match[0];
+    if (/^<img/i.test(tag)) {
+      const src = attribute(tag, 'src');
+      const asset = assets.find(item => [item.oss_url, item.data_url, item.url, item.resolved_url].includes(src));
+      const assetKey = src.startsWith('question-asset://') ? src.slice('question-asset://'.length) : asset?.content_hash || asset?.assetKey || asset?.id || asset?.file_name;
+      if (assetKey && SAFE_REF.test(String(assetKey)) && !String(assetKey).includes('..')) {
+        content.push({ type: 'image', attrs: { src: `question-asset://${assetKey}`, assetKey: String(assetKey), alt: attribute(tag, 'alt') || asset?.file_name || '', width: dimension(attribute(tag, 'width') || asset?.display_width), height: dimension(attribute(tag, 'height') || asset?.display_height), align: 'center' } });
+      }
+    } else {
+      const latex = attribute(tag, 'data-latex').trim();
+      if (latex) content.push({ type: 'formulaBlock', attrs: { id: `legacy-${section}-${content.length}`, canonicalLatex: latex, displayMode: 'block', sourceFormat: 'latex' } });
+    }
+    cursor = match.index! + tag.length;
+  }
+  content.push(...(plainTextDoc(source.slice(cursor)).content || []));
+  return { type: 'doc', content };
+}
+
 export function migrateLegacyQuestion(question: Record<string, any>): QuestionRichDocument {
+  const assets: Array<Record<string, any>> = Array.isArray(question.assets) ? question.assets : [];
   const legacyAnswer = legacyText(question.answer ?? '').toUpperCase();
   const answerLabels = new Set((legacyAnswer.match(/[A-Z]/g) || []));
   const optionValues = Array.isArray(question.options) ? question.options : [];
@@ -213,22 +243,36 @@ export function migrateLegacyQuestion(question: Record<string, any>): QuestionRi
     id: String(option?.id || `option-${index + 1}`),
     label: String(option?.label || String.fromCharCode(65 + index)),
     isCorrect: Boolean(option?.isCorrect ?? option?.is_correct ?? answerLabels.has(String(option?.label || String.fromCharCode(65 + index)).toUpperCase())),
-    content: textDoc(isRecord(option) ? (option.content ?? option.text ?? '') : option),
+    content: textDoc(isRecord(option) ? (option.content ?? option.text ?? '') : option, assets, `option-${index}`),
   }));
   const legacySubs = Array.isArray(question.sub_questions) ? question.sub_questions : (Array.isArray(question.subQuestions) ? question.subQuestions : []);
   const subQuestions: RichSubQuestion[] = legacySubs.map((sub: any, index: number) => ({
     id: String(sub?.id || `sub-${index + 1}`), label: String(sub?.label || `(${index + 1})`),
-    content: textDoc(sub?.content ?? sub?.stem ?? ''), answer: textDoc(sub?.answer ?? ''),
+    content: textDoc(sub?.content ?? sub?.stem ?? '', assets, `sub-${index}`), answer: textDoc(sub?.answer ?? '', assets, `sub-answer-${index}`),
   }));
-  const stem = textDoc(question.stem ?? question.content ?? '');
+  const stem = textDoc(question.stem ?? question.content ?? '', assets, 'stem');
+  const answer = textDoc(question.answer ?? '', assets, 'answer');
+  const analysis = textDoc(question.explanation ?? question.analysis ?? '', assets, 'analysis');
+  const usedImages = new Set<string>();
+  const usedLatex = new Set<string>();
+  const collectMedia = (node: JSONContent) => { if (node.type === 'image') usedImages.add(String(node.attrs?.assetKey)); if (['formula', 'formulaBlock'].includes(node.type || '')) usedLatex.add(String(node.attrs?.canonicalLatex)); node.content?.forEach(collectMedia); };
+  [stem, answer, analysis, ...options.map(option => option.content), ...subQuestions.flatMap(sub => [sub.content, sub.answer])].forEach(collectMedia);
+  for (const asset of assets) {
+    const key = String(asset.content_hash || asset.assetKey || asset.id || asset.file_name || '');
+    if (asset.asset_type === 'image' && key && SAFE_REF.test(key) && !key.includes('..') && !usedImages.has(key)) {
+      const dimension = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n > 0 && n <= 10000 ? n : undefined;
+      stem.content!.push({ type: 'image', attrs: { src: `question-asset://${key}`, assetKey: key, alt: String(asset.file_name || ''), width: dimension(asset.display_width), height: dimension(asset.display_height), align: 'center' } });
+      usedImages.add(key);
+    }
+  }
   const legacyFormulas = Array.isArray(question.formulas) ? question.formulas : [];
   for (const [index, formula] of legacyFormulas.entries()) {
     const canonicalLatex = String(isRecord(formula) ? (formula.canonicalLatex ?? formula.latex ?? formula.content ?? '') : formula).trim().replace(/^\$+|\$+$/g, '');
-    if (canonicalLatex) stem.content!.push({ type: 'formulaBlock', attrs: { id: `legacy-formula-${index + 1}`, canonicalLatex, displayMode: 'block', sourceFormat: 'latex' } });
+    if (canonicalLatex && !usedLatex.has(canonicalLatex)) { stem.content!.push({ type: 'formulaBlock', attrs: { id: `legacy-formula-${index + 1}`, canonicalLatex, displayMode: 'block', sourceFormat: 'latex' } }); usedLatex.add(canonicalLatex); }
   }
   return normalizeQuestionRichContent({ version: 1, type: 'question-document', sections: {
     stem, options, subQuestions,
-    answer: textDoc(question.answer ?? ''), analysis: textDoc(question.explanation ?? question.analysis ?? ''),
+    answer, analysis,
   } });
 }
 

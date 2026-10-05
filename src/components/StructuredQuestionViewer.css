@@ -3,6 +3,8 @@
 .structured-question-viewer .katex { font-size: 1em; white-space: normal; }
 .structured-question-viewer p { margin: 0 0 8px; white-space: pre-wrap; }
 .structured-question-viewer img { display: block; max-width: 100%; height: auto; margin: 10px auto; }
+.structured-question-viewer img[data-align='left'] { margin-left: 0; margin-right: auto; }
+.structured-question-viewer img[data-align='right'] { margin-left: auto; margin-right: 0; }
 .structured-question-viewer img[data-align='left'] { margin-left: 0; }
 .structured-question-viewer img[data-align='right'] { margin-right: 0; }
 .structured-question-viewer__formula { display: inline; margin: 0 2px; vertical-align: baseline; }

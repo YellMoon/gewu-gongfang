@@ -1,6 +1,6 @@
 // encoding: utf-8
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, ColorPicker, Input, Modal, Select, Space, Tooltip, Upload, message } from 'antd';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Button, Checkbox, ColorPicker, Input, InputNumber, Modal, Select, Space, Tooltip, Upload, message } from 'antd';
 import { AlignCenterOutlined, AlignLeftOutlined, AlignRightOutlined, BoldOutlined, DeleteOutlined, FileImageOutlined, FontColorsOutlined, FunctionOutlined, ItalicOutlined, OrderedListOutlined, RedoOutlined, StrikethroughOutlined, UnderlineOutlined, UndoOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { EditorContent, NodeViewWrapper, ReactNodeViewRenderer, useEditor } from '@tiptap/react';
 import type { JSONContent, NodeViewProps } from '@tiptap/react';
@@ -27,11 +27,21 @@ const t = (value: string) => value;
 const FONTS = [{ value: '', label: t('\u9ed8\u8ba4\u5b57\u4f53') }, { value: 'SimSun', label: t('\u5b8b\u4f53') }, { value: 'Microsoft YaHei', label: t('\u5fae\u8f6f\u96c5\u9ed1') }, { value: 'KaiTi', label: t('\u6977\u4f53') }, { value: 'FangSong', label: t('\u4eff\u5b8b') }, { value: 'Arial', label: 'Arial' }, { value: 'Times New Roman', label: 'Times New Roman' }];
 const SIZES = ['12', '14', '16', '18', '20', '24', '28', '32'].map(value => ({ value, label: `${value}px` }));
 const LINE_HEIGHTS = ['1', '1.25', '1.5', '1.75', '2'].map(value => ({ value, label: value }));
+// Add support for moving persisted images between every question section.
+const ImageClipboard = createContext<{ image: JSONContent | null; setImage: (image: JSONContent | null) => void } | null>(null);
+export const QuestionImageClipboardProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
+  const [image, setImage] = useState<JSONContent | null>(null);
+  return <ImageClipboard.Provider value={{ image, setImage }}>{children}</ImageClipboard.Provider>;
+};
 const RichImageView: React.FC<NodeViewProps> = ({ node, selected }) => {
-  return <NodeViewWrapper as="figure" className={`rich-image-node${selected ? ' is-selected' : ''}`} data-align={node.attrs.align} contentEditable={false}><RichAssetImage src={node.attrs.persistedSrc || node.attrs.src} assetKey={node.attrs.assetKey} alt={node.attrs.alt || ''} width={node.attrs.width || undefined} /></NodeViewWrapper>;
+  return <NodeViewWrapper as="figure" className={`rich-image-node${selected ? ' is-selected' : ''}`} data-align={node.attrs.align} data-drag-handle contentEditable={false}><RichAssetImage src={node.attrs.persistedSrc || node.attrs.src} assetKey={node.attrs.assetKey} alt={node.attrs.alt || ''} width={node.attrs.width || undefined} height={node.attrs.height || undefined} style={{ width: node.attrs.width || undefined, height: 'auto', aspectRatio: node.attrs.width && node.attrs.height ? `${node.attrs.width} / ${node.attrs.height}` : undefined }} /></NodeViewWrapper>;
 };
 const RichTextStyle = TextStyle.extend({ addAttributes() { return { ...this.parent?.(), fontSize: { default: null, parseHTML: element => element.style.fontSize || null, renderHTML: attrs => attrs.fontSize ? { style: `font-size:${attrs.fontSize}` } : {} } }; } });
-const RichImage = Image.extend({ addAttributes() { return { ...this.parent?.(), assetKey: { default: undefined, parseHTML: element => element.getAttribute('data-asset-key') || undefined, renderHTML: attrs => attrs.assetKey ? { 'data-asset-key': attrs.assetKey } : {} }, persistedSrc: { default: undefined, parseHTML: element => element.getAttribute('data-persisted-src') || undefined, renderHTML: attrs => attrs.persistedSrc ? { 'data-persisted-src': attrs.persistedSrc } : {} }, width: { default: undefined, parseHTML: element => { const value = element.getAttribute('width'); return value ? Number(value) : undefined; }, renderHTML: attrs => attrs.width ? { width: attrs.width } : {} }, align: { default: 'center', parseHTML: element => element.getAttribute('data-align') || 'center', renderHTML: attrs => ({ 'data-align': attrs.align }) } }; }, addNodeView() { return ReactNodeViewRenderer(RichImageView); } });
+const imageDimension = (element: HTMLElement, name: 'width' | 'height') => {
+  const value = Number(element.getAttribute(name) || element.style[name].replace(/px$/, ''));
+  return Number.isFinite(value) && value > 0 && value <= 10000 ? value : undefined;
+};
+const RichImage = Image.extend({ addAttributes() { return { ...this.parent?.(), assetKey: { default: undefined, parseHTML: element => element.getAttribute('data-asset-key') || undefined, renderHTML: attrs => attrs.assetKey ? { 'data-asset-key': attrs.assetKey } : {} }, persistedSrc: { default: undefined, parseHTML: element => element.getAttribute('data-persisted-src') || undefined, renderHTML: attrs => attrs.persistedSrc ? { 'data-persisted-src': attrs.persistedSrc } : {} }, width: { default: undefined, parseHTML: element => imageDimension(element, 'width'), renderHTML: attrs => attrs.width ? { width: attrs.width } : {} }, height: { default: undefined, parseHTML: element => imageDimension(element, 'height'), renderHTML: attrs => attrs.height ? { height: attrs.height, ...(attrs.width ? { style: `aspect-ratio:${attrs.width}/${attrs.height}` } : {}) } : {} }, align: { default: 'center', parseHTML: element => element.getAttribute('data-align') || 'center', renderHTML: attrs => ({ 'data-align': attrs.align }) } }; }, addNodeView() { return ReactNodeViewRenderer(RichImageView); } });
 const ParagraphTypography = Extension.create({
   name: 'paragraphTypography',
   addGlobalAttributes() { return [{ types: ['paragraph', 'heading'], attributes: { lineHeight: { default: null, parseHTML: element => element.style.lineHeight || null, renderHTML: attrs => attrs.lineHeight ? { style: `line-height:${attrs.lineHeight}` } : {} }, indent: { default: 0, parseHTML: element => Number(element.getAttribute('data-indent') || 0), renderHTML: attrs => attrs.indent ? { 'data-indent': attrs.indent, style: `margin-left:${attrs.indent * 2}em` } : {} } } }]; },
@@ -63,6 +73,11 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
   const [formulaText, setFormulaText] = useState('');
   const [blockFormula, setBlockFormula] = useState(false);
   const [imageAlt, setImageAlt] = useState('');
+  const [lockRatio, setLockRatio] = useState(true);
+  const [localImage, setLocalImage] = useState<JSONContent | null>(null);
+  const sharedClipboard = useContext(ImageClipboard);
+  const clipboardImage = sharedClipboard?.image || localImage;
+  const setClipboardImage = sharedClipboard?.setImage || setLocalImage;
   const [, forceSelectionRender] = useState(0);
   const pendingEmissions = useRef<string[]>([]);
   const mounted = useRef(true);
@@ -101,15 +116,21 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
     const sequence = ++imageSequence.current;
     if (bookmark) pendingImagePositions.current.set(sequence, bookmark);
     const reader = new FileReader();
-    const persisted = new Promise<{ src: string; assetKey: string }>((resolve, reject) => {
+    const persisted = new Promise<{ src: string; assetKey: string; width: number; height: number }>((resolve, reject) => {
       reader.onerror = () => reject(reader.error || new Error(t('\u56fe\u7247\u8bfb\u53d6\u5931\u8d25')));
       reader.onload = async () => { try {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(byte => byte.toString(16).padStart(2, '0')).join('');
         const assetKey = `image-${digest}`;
+        const dimensions = await new Promise<{ width: number; height: number }>((resolveSize, rejectSize) => {
+          const picture = new window.Image();
+          picture.onload = () => { const scale = Math.min(1, 10000 / Math.max(picture.naturalWidth, picture.naturalHeight)); resolveSize({ width: picture.naturalWidth * scale, height: picture.naturalHeight * scale }); };
+          picture.onerror = () => rejectSize(new Error('无法读取图片尺寸，请选择有效图片'));
+          picture.src = String(reader.result || '');
+        });
         const src = await onStoreImage(assetKey, String(reader.result || ''), file);
         requireStoredAssetRef(assetKey, src);
-        resolve({ src, assetKey });
+        resolve({ src, assetKey, ...dimensions });
       } catch (error) { reject(error); } };
     });
     reader.readAsDataURL(file);
@@ -126,6 +147,18 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
     return false;
   }, [editor, onStoreImage]);
   if (!editor) return null;
+  const resizeImage = (dimension: 'width' | 'height', value: number | null) => {
+    if (!value || !Number.isFinite(value) || value <= 0 || value > 10000 || !editor.isActive('image')) return;
+    const attrs = editor.getAttributes('image');
+    const other = dimension === 'width' ? 'height' : 'width';
+    const next = { [dimension]: value };
+    if (lockRatio && attrs.width > 0 && attrs.height > 0) {
+      const scaled = value * attrs[other] / attrs[dimension];
+      if (scaled > 10000) return;
+      next[other] = scaled;
+    }
+    editor.chain().focus().updateAttributes('image', next).run();
+  };
   const insertFormula = () => { const latex = formulaText.trim().replace(/^\$+|\$+$/g, ''); if (!latex) return; editor.chain().focus().insertContent({ type: blockFormula ? 'formulaBlock' : 'formula', attrs: { id: `formula-${Date.now()}`, canonicalLatex: latex, displayMode: blockFormula ? 'block' : 'inline', sourceFormat: 'latex' } }).run(); setFormulaText(''); setFormulaOpen(false); };
   const tool = (title: string, icon: React.ReactNode, pressed: boolean | undefined, run: () => void, disabled = false) => <Tooltip title={title}><Button aria-label={title} aria-pressed={pressed} size="small" type={pressed ? 'primary' : 'default'} icon={icon} disabled={disabled} onClick={run} /></Tooltip>;
   return <div className="rich-question-editor" aria-disabled={disabled}>
@@ -143,15 +176,18 @@ const RichQuestionEditor: React.FC<RichQuestionEditorProps> = ({ value = '', onC
       <Button aria-label={t('\u6587\u672c\u9ad8\u4eae')} aria-pressed={editor.isActive('highlight')} size="small" type={editor.isActive('highlight') ? 'primary' : 'default'} onClick={() => editor.chain().focus().toggleHighlight({ color: '#fff3a3' }).run()}>{t('\u9ad8\u4eae')}</Button>
       {tool(t('\u5de6\u5bf9\u9f50'), <AlignLeftOutlined />, editor.isActive({ textAlign: 'left' }), () => editor.chain().focus().setTextAlign('left').run())}{tool(t('\u5c45\u4e2d'), <AlignCenterOutlined />, editor.isActive({ textAlign: 'center' }), () => editor.chain().focus().setTextAlign('center').run())}{tool(t('\u53f3\u5bf9\u9f50'), <AlignRightOutlined />, editor.isActive({ textAlign: 'right' }), () => editor.chain().focus().setTextAlign('right').run())}
       {tool(t('\u9879\u76ee\u7b26\u53f7'), <UnorderedListOutlined />, editor.isActive('bulletList'), () => editor.chain().focus().toggleBulletList().run())}{tool(t('\u7f16\u53f7\u5217\u8868'), <OrderedListOutlined />, editor.isActive('orderedList'), () => editor.chain().focus().toggleOrderedList().run())}
-      <Button aria-label={t('\u589e\u52a0\u7f29\u8fdb')} size="small" onClick={() => editor.chain().focus().sinkListItem('listItem').run()} disabled={!editor.can().sinkListItem('listItem')}>+\u7f29\u8fdb</Button>
-      <Button aria-label={t('\u51cf\u5c11\u7f29\u8fdb')} size="small" onClick={() => editor.chain().focus().liftListItem('listItem').run()} disabled={!editor.can().liftListItem('listItem')}>-\u7f29\u8fdb</Button>
-      <Button aria-label={t('\u589e\u52a0\u6bb5\u843d\u7f29\u8fdb')} size="small" onClick={() => { const type = editor.isActive('heading') ? 'heading' : 'paragraph'; const indent = Math.min(8, Number(editor.getAttributes(type).indent || 0) + 1); editor.chain().focus().updateAttributes(type, { indent }).run(); }}>\u6bb5+</Button>
-      <Button aria-label={t('\u51cf\u5c11\u6bb5\u843d\u7f29\u8fdb')} size="small" onClick={() => { const type = editor.isActive('heading') ? 'heading' : 'paragraph'; const indent = Math.max(0, Number(editor.getAttributes(type).indent || 0) - 1); editor.chain().focus().updateAttributes(type, { indent }).run(); }}>\u6bb5-</Button>
+      <Button aria-label={t('\u589e\u52a0\u7f29\u8fdb')} size="small" onClick={() => editor.chain().focus().sinkListItem('listItem').run()} disabled={!editor.can().sinkListItem('listItem')}>列表+</Button>
+      <Button aria-label={t('\u51cf\u5c11\u7f29\u8fdb')} size="small" onClick={() => editor.chain().focus().liftListItem('listItem').run()} disabled={!editor.can().liftListItem('listItem')}>列表−</Button>
+      <Button aria-label={t('\u589e\u52a0\u6bb5\u843d\u7f29\u8fdb')} size="small" onClick={() => { const type = editor.isActive('heading') ? 'heading' : 'paragraph'; const indent = Math.min(8, Number(editor.getAttributes(type).indent || 0) + 1); editor.chain().focus().updateAttributes(type, { indent }).run(); }}>段落+</Button>
+      <Button aria-label={t('\u51cf\u5c11\u6bb5\u843d\u7f29\u8fdb')} size="small" onClick={() => { const type = editor.isActive('heading') ? 'heading' : 'paragraph'; const indent = Math.max(0, Number(editor.getAttributes(type).indent || 0) - 1); editor.chain().focus().updateAttributes(type, { indent }).run(); }}>段落−</Button>
       <Button aria-pressed={editor.isActive('blockquote')} size="small" type={editor.isActive('blockquote') ? 'primary' : 'default'} onClick={() => editor.chain().focus().toggleBlockquote().run()}>{t('\u5f15\u7528')}</Button>
       <Button size="small" onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}>{t('\u6e05\u9664\u683c\u5f0f')}</Button>
       <Button size="small" icon={<FunctionOutlined />} onClick={() => setFormulaOpen(true)}>{t('\u516c\u5f0f')}</Button><Upload accept="image/*" showUploadList={false} beforeUpload={insertImage}><Button size="small" icon={<FileImageOutlined />}>{t('\u56fe\u7247')}</Button></Upload>
-      <Button aria-label={t('\u56fe\u7247\u5bbd\u5ea6 320 \u50cf\u7d20')} size="small" disabled={!editor.isActive('image')} onClick={() => editor.chain().focus().updateAttributes('image', { width: 320 }).run()}>320px</Button>
-      <Button aria-label={t('\u56fe\u7247\u5bbd\u5ea6 640 \u50cf\u7d20')} size="small" disabled={!editor.isActive('image')} onClick={() => editor.chain().focus().updateAttributes('image', { width: 640 }).run()}>640px</Button>
+      <InputNumber aria-label="图片宽度" size="small" min={0.01} max={10000} step={1} disabled={!editor.isActive('image')} value={editor.getAttributes('image').width || null} placeholder="宽度 px" style={{ width: 108 }} onChange={value => resizeImage('width', value)} />
+      <InputNumber aria-label="图片高度" size="small" min={0.01} max={10000} step={1} disabled={!editor.isActive('image')} value={editor.getAttributes('image').height || null} placeholder="高度 px" style={{ width: 108 }} onChange={value => resizeImage('height', value)} />
+      <Checkbox disabled={!editor.isActive('image')} checked={lockRatio} onChange={event => setLockRatio(event.target.checked)}>锁定比例</Checkbox>
+      <Button size="small" disabled={!editor.isActive('image')} onClick={() => { setClipboardImage(restorePersistedImagesFromEditor(editor.state.selection.content().content.firstChild?.toJSON()) as JSONContent); editor.chain().focus().deleteSelection().run(); }}>剪切图片</Button>
+      <Button size="small" disabled={!clipboardImage} onClick={() => { if (clipboardImage && editor.chain().focus().insertContent(maskPersistedImagesForEditor(clipboardImage)).run()) setClipboardImage(null); }}>粘贴图片到光标</Button>
       <Button aria-label={t('\u56fe\u7247\u5de6\u5bf9\u9f50')} aria-pressed={editor.isActive('image', { align: 'left' })} size="small" disabled={!editor.isActive('image')} icon={<AlignLeftOutlined />} onClick={() => editor.chain().focus().updateAttributes('image', { align: 'left' }).run()} />
       <Button aria-label={t('\u56fe\u7247\u5c45\u4e2d')} aria-pressed={editor.isActive('image', { align: 'center' })} size="small" disabled={!editor.isActive('image')} icon={<AlignCenterOutlined />} onClick={() => editor.chain().focus().updateAttributes('image', { align: 'center' }).run()} />
       <Button aria-label={t('\u56fe\u7247\u53f3\u5bf9\u9f50')} aria-pressed={editor.isActive('image', { align: 'right' })} size="small" disabled={!editor.isActive('image')} icon={<AlignRightOutlined />} onClick={() => editor.chain().focus().updateAttributes('image', { align: 'right' }).run()} />

@@ -16,10 +16,22 @@ function patchCollection<T extends RichOption | RichSubQuestion>(value: Question
   const next = { ...value, sections: { ...value.sections, [collection]: normalized } };
   if (collection !== 'options') return next;
   const selected = (normalized as RichOption[]).filter(item => item.isCorrect).map(item => item.label).join('');
-  return selected ? { ...next, sections: { ...next.sections, answer: textAnswer(selected) } } : next;
+  return { ...next, sections: { ...next.sections, answer: syncGeneratedAnswer(value, selected) } };
 }
 
 const textAnswer = (text: string): JSONContent => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+
+// Only the unformatted, automatically generated selection may be regenerated.
+// Authored answer text, images and formulas remain independent of choice flags.
+function syncGeneratedAnswer(value: QuestionRichDocument, selected: string): JSONContent {
+  const answer = value.sections.answer;
+  const previous = value.sections.options.filter(item => item.isCorrect).map(item => item.label).join('');
+  const paragraph = answer.content?.length === 1 && answer.content[0];
+  const text = paragraph && paragraph.type === 'paragraph' && !Object.values(paragraph.attrs || {}).some(Boolean)
+    && paragraph.content?.length === 1 && paragraph.content[0];
+  const generated = text && text.type === 'text' && !text.marks?.length && text.text === previous;
+  return !hasRichContent(answer) || generated ? (selected ? textAnswer(selected) : emptyRichDoc()) : answer;
+}
 
 export type ChoiceMode = 'single' | 'multiple' | 'other';
 export function choiceMode(questionType?: string): ChoiceMode {
@@ -34,7 +46,7 @@ export function setCorrectSelection(value: QuestionRichDocument, id: string, che
   if (mode === 'multiple' && !checked && current.filter(item => item.isCorrect).length <= 1 && current.find(item => item.id === id)?.isCorrect) return value;
   const options = current.map(item => ({ ...item, isCorrect: mode === 'single' ? item.id === id && checked : item.id === id ? checked : item.isCorrect }));
   const selected = options.filter(item => item.isCorrect).map(item => item.label).join('');
-  return { ...value, sections: { ...value.sections, options, answer: selected ? textAnswer(selected) : emptyRichDoc() } };
+  return { ...value, sections: { ...value.sections, options, answer: syncGeneratedAnswer(value, selected) } };
 }
 
 export function normalizeStructureOrder(value: QuestionRichDocument): QuestionRichDocument {

@@ -37,7 +37,7 @@ function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNo
     // Exam layout follows paragraph/hardBreak nodes, not imported math display metadata.
     return <span key={key} className="structured-question-viewer__formula"><QuestionFormulaContent latex={latex} /></span>;
   }
-  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} width={node.attrs?.width || undefined} height={node.attrs?.height || undefined} style={{ width: node.attrs?.width || undefined, maxWidth: '100%', height: 'auto' }} data-align={node.attrs?.align || 'center'} />;
+  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} width={node.attrs?.width || undefined} height={node.attrs?.height || undefined} style={{ width: node.attrs?.width || undefined, maxWidth: '100%', height: 'auto', aspectRatio: node.attrs?.width && node.attrs?.height ? `${node.attrs.width} / ${node.attrs.height}` : undefined }} data-align={node.attrs?.align || 'center'} />;
   const nodes = node.content || [];
   const formattedText = new Map<number, string>();
   const ordinaryText = (child: any) => child.type === 'text' && !(child.marks || []).some((mark: any) => ['subscript', 'superscript'].includes(mark.type));
@@ -49,7 +49,7 @@ function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNo
       .forEach((html, offset) => formattedText.set(start + offset, html));
   }
   const children = nodes.map((child: any, index: number) => renderNode(child, `${String(key)}-${index}`, formattedText.get(index)));
-  const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight } as React.CSSProperties;
+  const style = { textAlign: node.attrs?.textAlign, lineHeight: node.attrs?.lineHeight, marginLeft: node.attrs?.indent ? `${node.attrs.indent * 2}em` : undefined } as React.CSSProperties;
   if (node.type === 'table') return <div key={key} className="question-table-scroll"><table className="question-table"><tbody>{children}</tbody></table></div>;
   if (node.type === 'tableRow') return <tr key={key}>{children}</tr>;
   if (node.type === 'tableCell' || node.type === 'tableHeader') {

@@ -45,18 +45,23 @@ assert.strictEqual(removeEntity(marked, 'options', 'option-stable', () => { thro
 
 const withSub = addSubQuestion(base, () => 'sub-stable');
 assert.strictEqual(withSub.sections.subQuestions[0].id, 'sub-stable');
-let selected = setCorrectSelection(twoOptions, 'option-stable', true, 'single');
+const choices = { ...twoOptions, sections: { ...twoOptions.sections, answer: empty() } };
+let selected = setCorrectSelection(choices, 'option-stable', true, 'single');
 assert.deepStrictEqual(selected.sections.options.map(item => item.isCorrect), [true, false]);
 assert.strictEqual(selected.sections.answer.content[0].content[0].text, 'A');
 selected = setCorrectSelection(selected, 'option-2', true, 'single');
 assert.deepStrictEqual(selected.sections.options.map(item => item.isCorrect), [false, true]);
 assert.strictEqual(selected.sections.answer.content[0].content[0].text, 'B');
-let multiple = setCorrectSelection(twoOptions, 'option-stable', true, 'multiple');
+let multiple = setCorrectSelection(choices, 'option-stable', true, 'multiple');
 multiple = setCorrectSelection(multiple, 'option-2', true, 'multiple');
 assert.strictEqual(multiple.sections.answer.content[0].content[0].text, 'AB');
 assert.strictEqual(setCorrectSelection(multiple, 'option-stable', false, 'multiple').sections.answer.content[0].content[0].text, 'B');
-const onlyOne = setCorrectSelection(twoOptions, 'option-stable', true, 'multiple');
+const onlyOne = setCorrectSelection(choices, 'option-stable', true, 'multiple');
 assert.strictEqual(setCorrectSelection(onlyOne, 'option-stable', false, 'multiple'), onlyOne, 'multiple choice keeps at least one correct option');
+const authoredAnswer = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'A。说明：' }, { type: 'formula', attrs: { id: 'answer-formula', canonicalLatex: 'x^2', displayMode: 'inline' } }] }, { type: 'image', attrs: { assetKey: 'answer-image', width: 107.5, height: 49 } }] };
+const authored = { ...onlyOne, sections: { ...onlyOne.sections, answer: authoredAnswer } };
+assert.deepStrictEqual(updateEntity(authored, 'options', 'option-stable', { content: rich('修改选项文字') }).sections.answer, authoredAnswer, 'editing options must not erase authored answer text, formulas or images');
+assert.deepStrictEqual(setCorrectSelection(authored, 'option-2', true, 'single').sections.answer, authoredAnswer, 'correct selection must preserve authored answer content');
 assert.strictEqual(hasRichContent(rich('x')), true);
 assert.strictEqual(hasRichContent(empty()), false);
 assert.deepStrictEqual(validateQuestionStructure(base), []);

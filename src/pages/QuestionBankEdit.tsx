@@ -2,16 +2,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
-  Space, Tag, Upload, message, Pagination, Typography
+  Space, Tag, message, Pagination, Typography
 } from 'antd';
-import type { UploadFile } from 'antd/es/upload/interface';
-import { DeleteOutlined, FileImageOutlined, TagsOutlined } from '@ant-design/icons';
+import { DeleteOutlined, TagsOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, Question, QuestionVersion } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import QuestionPreviewCard from '../components/QuestionPreviewCard';
-import QuestionRichContent from '../components/QuestionRichContent';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
-import { mergeQuestionAssets, normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
+import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
 import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 import { createQuestionRichDocument } from '../types/questionRichContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
@@ -109,7 +107,6 @@ const QuestionBankEdit: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [trashPage, setTrashPage] = useState(1);
-  const [imageFiles, setImageFiles] = useState<UploadFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
@@ -226,7 +223,6 @@ const QuestionBankEdit: React.FC = () => {
     setEditing(question);
     openRichDocument(initialRichDocument(question));
     setVersions(db?.getLatestQuestionVersions?.(question.id, 5) || []);
-    setImageFiles([]);
     form.setFieldsValue({
       type: normalizeQuestionType(question.type),
       difficulty: question.difficulty || 3,
@@ -278,18 +274,12 @@ const QuestionBankEdit: React.FC = () => {
       model_ids: values.model_ids || [],
       edit_status: '已编辑',
       status: editing.status || 'draft',
-      has_image: imageFiles.length > 0 || !!editing.has_image,
+      has_image: projection.hasImage,
       has_formula: projection.hasFormula,
       created_by: editing.created_by || '',
       formulas: projection.formulas,
       tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-      assets: mergeQuestionAssets(editing.assets || [], imageFiles.map(file => ({
-        asset_type: 'image',
-        file_name: file.name,
-        mime_type: file.type || 'image/*',
-        oss_key: `local-question-images/${editing.id}/${file.name}`,
-        oss_url: file.url || file.thumbUrl || '',
-      }))),
+      assets: editing.assets || [],
     };
     const db = (window as any).dbService;
     if (!db?.updateQuestion) throw new Error('LOCAL_QUESTION_STORE_UNAVAILABLE');
@@ -603,6 +593,7 @@ const QuestionBankEdit: React.FC = () => {
             value={richDocument}
             disabled={saving}
             questionType={editorQuestionType}
+            imageAssets={editing?.assets || []}
             onChange={updateRichDocument}
           />}
           <Space wrap>
@@ -638,17 +629,6 @@ const QuestionBankEdit: React.FC = () => {
           </Form.Item>
           <Form.Item name="model_ids" label="模型">
             <Select mode="multiple" options={modelOptions} />
-          </Form.Item>
-          {editing && <QuestionRichContent question={editing} />}
-          <Form.Item label={<span><FileImageOutlined /> 图片</span>}>
-            <Upload
-              listType="picture"
-              fileList={imageFiles}
-              beforeUpload={() => false}
-              onChange={({ fileList }) => setImageFiles(fileList)}
-            >
-              <Button>上传图片</Button>
-            </Upload>
           </Form.Item>
           {versions.length > 0 && (
             <Card size="small" title="最近版本">

@@ -1265,7 +1265,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
           </Row>
 
           {/* utf-8 rich structure */}
-          {richDocument && <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} onChange={updateRichDocument} />}
+          {richDocument && <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} imageAssets={editing?.assets || []} onChange={updateRichDocument} />}
 
           <Divider orientation="left" style={{ fontSize: 12 }}>扩展信息</Divider>
 
