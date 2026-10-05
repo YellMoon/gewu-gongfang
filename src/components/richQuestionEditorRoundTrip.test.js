@@ -2,6 +2,7 @@ require('./QuestionFormulaContent.test');
 const assert = require('assert');
 const Module = require('module');
 const babel = require('@babel/core');
+require.extensions['.css'] = () => {};
 const { JSDOM } = require('jsdom');
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 Object.assign(global, { window: dom.window, document: dom.window.document, DOMParser: dom.window.DOMParser, Node: dom.window.Node });

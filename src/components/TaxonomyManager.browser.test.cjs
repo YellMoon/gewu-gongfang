@@ -17,6 +17,7 @@ import TaxonomyManager from '${path.join(root,'src/components/TaxonomyManager').
 import QuestionPreviewCard from '${path.join(root,'src/components/QuestionPreviewCard').replace(/\\/g,'/')}';
 import {ResolvedRichHtml} from '${path.join(root,'src/components/RichAssetImage').replace(/\\/g,'/')}';
 import '${path.join(root,'node_modules/katex/dist/katex.min.css').replace(/\\/g,'/')}';
+import '${path.join(root,'src/index.css').replace(/\\/g,'/')}';
 let nodes=[{id:'a',name:'力学',order:0},{id:'b',name:'电磁学',order:1},{id:'c',name:'运动的描述',parent_id:'a',order:0},{id:'d',name:'匀变速直线运动',parent_id:'a',order:1},{id:'e',name:'牛顿运动定律',parent_id:'a',order:2},{id:'f',name:'机械运动',parent_id:'c',order:0},{id:'g',name:'质点',parent_id:'c',order:1},{id:'h',name:'参考系',parent_id:'c',order:2},{id:'i',name:'速度',parent_id:'h',order:0}];
 let calls=[];
 window.fixture={getNodes:()=>nodes,getCalls:()=>calls};
@@ -52,6 +53,19 @@ async function compile() {
     await page.goto('http://127.0.0.1:'+server.address().port);
     await page.getByLabel('重命名节点 力学',{exact:true}).waitFor();
     assert.equal(await page.title(),'桌面题库交互验证');
+    await page.evaluate(()=>document.fonts.ready);
+    const typography=await page.evaluate(()=>{const range=document.createRange(),index=document.querySelector('.qb-card-index'),paragraph=document.querySelector('.qb-card-body .structured-question-viewer > p');range.selectNodeContents(index);const a=range.getBoundingClientRect();range.setStart(paragraph.firstChild.firstChild,0);range.setEnd(paragraph.firstChild.firstChild,2);const b=range.getBoundingClientRect();return {indexCentre:a.y+a.height/2,textCentre:b.y+b.height/2,paragraphMargin:getComputedStyle(paragraph).marginTop,quantities:Array.from(paragraph.querySelectorAll('i')).map(el=>({text:el.textContent,font:getComputedStyle(el).fontFamily,style:getComputedStyle(el).fontStyle}))};});
+    typography.baselines=await page.evaluate(()=>{const index=document.querySelector('.qb-card-index'),paragraph=document.querySelector('.qb-card-body .structured-question-viewer > p'),original=Array.from(index.childNodes),label=document.createElement('span');label.append(...original);index.append(label);const probe=()=>{const el=document.createElement('span');el.style.cssText='display:inline-block;width:0;height:0;padding:0;margin:0;border:0;vertical-align:baseline';return el;};const a=probe(),b=probe();label.append(a);paragraph.prepend(b);const positions={number:a.getBoundingClientRect().y,body:b.getBoundingClientRect().y};a.remove();b.remove();index.replaceChildren(...original);return positions;});
+    const cdp=await page.context().newCDPSession(page);await cdp.send('DOM.enable');await cdp.send('CSS.enable');const {root:domRoot}=await cdp.send('DOM.getDocument');
+    const {nodeIds}=await cdp.send('DOM.querySelectorAll',{nodeId:domRoot.nodeId,selector:'.qb-card-body .structured-question-viewer > p i'});
+    typography.actualFonts=[];for(const nodeId of nodeIds)typography.actualFonts.push((await cdp.send('CSS.getPlatformFontsForNode',{nodeId})).fonts);
+    typography.unitStyle=await page.locator('.qb-card-body .katex-html .mord.text').filter({hasText:'μC'}).evaluate(el=>({style:getComputedStyle(el).fontStyle,text:el.textContent}));
+    fs.writeFileSync(path.join(output,'typography.json'),JSON.stringify(typography,null,2));
+    assert(typography.actualFonts.every(fonts=>fonts.some(font=>font.familyName==='KaTeX_Math')),'plain-text physical quantities must use the same actual math font as formula variables');
+    assert(Math.abs(typography.baselines.number-typography.baselines.body)<0.5,'question number and first stem line must share a baseline');
+    assert.equal(typography.unitStyle.style,'normal','micro prefix and complete unit remain upright');
+    assert(await page.locator('.qb-card-body').innerText().then(text=>/2.00\s+μC/.test(text)),'value and complete unit retain a visible space');
+    assert(Math.abs(typography.indexCentre-typography.textCentre)<3,'question number must align with the first text line');
     assert(await page.locator('#progressive').innerText().then(text=>text.includes('仍然能阅读')),'text renders before the slow image resolves');
     await page.locator('#progressive img').first().waitFor();
     assert.equal(await page.locator('#progressive img').count(),1,'fast asset is shown independently');
@@ -142,6 +156,7 @@ async function compile() {
       metrics.viewports.push(dimensions);await page.screenshot({path:path.join(output,'05-viewport-'+width+'.png'),fullPage:true});
     }
     assert.deepEqual(errors,[]);metrics.checks=['identity','nonblank','no runtime errors','blue minus / grey plus','vertical circle/text alignment','system-title root plus and inline creation','leaf without circle','dashed sibling connectors','inline rename','inline child creation','Escape cancel','search ancestors','same-level reorder and cross-level drag','whole-card animated answer drawer','no answer button','basket add/remove without answer toggle','edit button independence','progressive images','formula render','narrow sidebar'];
+    metrics.typography=typography;metrics.checks.push('actual bundled math italic fonts','first-line question number baseline','upright micro prefix and unit');
     fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify(metrics,null,2));
     console.log('Desktop question browser checks passed; evidence: '+output);
   } finally {await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -18,7 +18,7 @@
   display: grid;
   grid-template-columns: auto 34px minmax(0, 1fr);
   gap: 12px;
-  align-items: start;
+  align-items: baseline;
 }
 
 .qb-card-main:not(:has(.qb-card-checkbox)) {
@@ -26,6 +26,7 @@
 }
 
 .qb-card-checkbox {
+  align-self: start;
   margin-top: 5px;
 }
 

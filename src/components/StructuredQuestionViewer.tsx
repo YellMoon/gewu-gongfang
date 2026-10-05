@@ -4,6 +4,7 @@ import { QuestionFormulaContent } from './QuestionFormulaContent';
 import type { QuestionRichDocument } from '../types/questionRichContent';
 import { RichAssetImage } from './RichAssetImage';
 import { columnsForOptions, normalizeOptionLabel } from '../utils/questionOptions';
+import './StructuredQuestionViewer.css';
 
 function markStyle(marks: any[] = []): React.CSSProperties {
   const style: React.CSSProperties = {};
@@ -23,7 +24,9 @@ function markStyle(marks: any[] = []): React.CSSProperties {
 function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNode {
   if (!node) return null;
   if (node.type === 'text') {
-    const content = <span style={markStyle(node.marks)} dangerouslySetInnerHTML={{ __html: textHtml ?? applyPhysicsNotationToTextRuns([String(node.text || '')])[0] }} />;
+    const style = markStyle(node.marks);
+    const textStyle = style.fontFamily ? { ...style, '--question-quantity-font-family': style.fontFamily } as React.CSSProperties : style;
+    const content = <span style={textStyle} dangerouslySetInnerHTML={{ __html: textHtml ?? applyPhysicsNotationToTextRuns([String(node.text || '')])[0] }} />;
     const verticalMark = (node.marks || []).filter((mark: any) => mark.type === 'subscript' || mark.type === 'superscript').at(-1);
     if (verticalMark?.type === 'subscript') return <sub key={key}>{content}</sub>;
     if (verticalMark?.type === 'superscript') return <sup key={key}>{content}</sup>;

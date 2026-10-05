@@ -26,7 +26,7 @@ const legacy = renderToStaticMarkup(React.createElement(Renderer, {content:wideH
     const output = path.join(root,'output','playwright','question-tables-20261001');
     fs.mkdirSync(output,{recursive:true});
     await page.setContent(`<main style="max-width:900px;margin:20px auto"><h2>题库表格显示验证</h2><div id="sections">${tableHtml}</div><h3>HTML 宽表格</h3><div id="legacy">${legacy}</div><h3>结构化宽表格</h3><div id="structured">${structured}</div></main>`);
-    for (const file of ['node_modules/katex/dist/katex.min.css','src/index.css','src/components/QuestionRenderer.css'])
+    for (const file of ['node_modules/katex/dist/katex.min.css','src/index.css','src/components/QuestionRenderer.css','src/components/StructuredQuestionViewer.css'])
       await page.addStyleTag({path:path.join(root,file)});
     for (const width of [1100,420]) {
       await page.setViewportSize({width,height:900});
