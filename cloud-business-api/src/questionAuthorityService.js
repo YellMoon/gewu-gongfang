@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { types } = require('util');
 const { validateChoiceQuestionStructure } = require('./questionChoiceStructure');
+const { normalizeQuestionRichContent, projectQuestionRichContent } = require('../../shared/questionRichContentContract');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -431,16 +432,31 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const subject = text(question.subject, { max: 128 });
       const questionType = text(question.questionType, { max: 128 });
       if (!Number.isSafeInteger(question.difficulty) || question.difficulty < 1 || question.difficulty > 5 || typeof question.hasFormula !== 'boolean') throw failure('CLOUD_QUESTION_INPUT_INVALID');
-      const stem = text(question.stem);
-      const answer = question.answer === null ? null : text(question.answer, { max: 1048576 });
-      const explanation = question.explanation === null ? null : text(question.explanation, { max: 1048576 });
-      const options = json(question.options, { array: true });
-      const richContent = json(question.richContent, { nullable: true });
+      let stem = text(question.stem);
+      let answer = question.answer === null ? null : text(question.answer, { max: 1048576 });
+      let explanation = question.explanation === null ? null : text(question.explanation, { max: 1048576 });
+      let options = json(question.options, { array: true });
+      let richContent = json(question.richContent, { nullable: true });
       const taxonomy = json(question.taxonomy);
-      const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
       const binding = question.importBinding === undefined || question.importBinding === null ? null : importBinding(question.importBinding);
-      const metadata = json(questionMetadata(question.metadata === undefined ? {} : question.metadata, true));
-      if (binding !== null) assertChoiceQuestionStructure(questionType, question.options, answer);
+      let hasFormula = question.hasFormula;
+      let metadataValue = questionMetadata(question.metadata === undefined ? {} : question.metadata, true);
+      if (binding !== null && richContent !== null) {
+        try {
+          const normalized = normalizeQuestionRichContent(question.richContent);
+          const projection = projectQuestionRichContent(normalized);
+          richContent = json(normalized);
+          stem = text(projection.stem);
+          answer = projection.answer ? text(projection.answer) : null;
+          explanation = projection.explanation ? text(projection.explanation) : null;
+          options = json(projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })), { array: true });
+          hasFormula = projection.hasFormula;
+          metadataValue = { ...metadataValue, has_image: projection.hasImage };
+        } catch (_) { throw failure('CLOUD_QUESTION_INPUT_INVALID'); }
+      }
+      const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
+      const metadata = json(metadataValue);
+      if (binding !== null) assertChoiceQuestionStructure(questionType, JSON.parse(options), answer);
       const result = await currentQuery(binding ?
         `WITH import_item AS (
            SELECT item.import_task_id,item.item_index,item.candidate_json
@@ -513,7 +529,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
            SELECT $1,$2,$9,$10,$11,$12::jsonb,$13::jsonb,$14 FROM inserted_question
            RETURNING version,content_hash AS "contentHash"
          ) SELECT q.id,q.status,c.version,c."contentHash" FROM inserted_question q CROSS JOIN inserted_content c`,
-        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, question.hasFormula, stem, answer, explanation, options, richContent, contentHash, metadata,
+        [id, tenantId, subject, questionType, question.difficulty, currentActor.accountId, taxonomy, hasFormula, stem, answer, explanation, options, richContent, contentHash, metadata,
           ...(binding ? [binding.taskId, binding.itemId, binding.itemIndex, binding.contentHash] : [])],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) throw failure('CLOUD_QUESTION_UNAVAILABLE');

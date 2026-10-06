@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopQuestionIntake": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "deploy the additive desktop-intake migration and authenticated parsed/media-relay routes before desktop rollout; desktop parses and cleans Word locally before network submission and never falls back to NAS parsing; cloud treats parser hash and candidates as untrusted input, recomputes digests and validation, allocates owner-scoped storage, and requires original plus retained media receipts before preparing drafts; NAS 8.8.4 uses unchanged relay transport and stores bytes only for these tasks; legacy parser-bound imports and existing miniapp contracts remain compatible"
+    },
     "cloudOperationAudit": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

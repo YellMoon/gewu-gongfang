@@ -6,6 +6,7 @@ const { acquireDesktopSingleInstance } = require('./electronSingleInstance');
 const { createCrossInstallInstanceLock } = require('./electronCrossInstallLock');
 const { QuestionDraftProvenanceRegistry, verifyCloudDesktopSession } = require('./questionDraftProvenanceRegistry');
 const { sealQuestionImportSource, sealQuestionAsset } = require('./questionImportRelay');
+const { createDesktopQuestionIntake } = require('./desktopQuestionIntake');
 const {
   ensureRuntimeConfig,
   applyRuntimeConfigToEnv,
@@ -296,6 +297,13 @@ ipcMain.handle('desktop-authority:confirm-and-submit', (_event, id, input, confi
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));
 ipcMain.handle('seal-question-import-source', (_event, input) => sealQuestionImportSource(input));
+let desktopQuestionIntake = null;
+ipcMain.handle('parse-question-intake', async (_event, input) => {
+  if (!desktopQuestionIntake) desktopQuestionIntake = createDesktopQuestionIntake({
+    appRoot: app.getAppPath(), workRoot: path.join(app.getPath('userData'), 'question-intake-work'),
+  });
+  return desktopQuestionIntake.parse(input);
+});
 ipcMain.handle('seal-question-asset', (_event, input) => sealQuestionAsset(input));
 ipcMain.handle('open-external', (_event, url) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) throw new Error('INVALID_EXTERNAL_URL');

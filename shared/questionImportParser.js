@@ -1,0 +1,267 @@
+'use strict';
+
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const { types } = require('util');
+
+function failure(code) {
+  return Object.assign(new Error(code), { code });
+}
+
+function assertInsideRoot(candidate, nasRoot) {
+  const relative = path.relative(nasRoot, candidate);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  return candidate;
+}
+
+function assertNoReparsePoint(candidate, nasRoot) {
+  const safeCandidate = assertInsideRoot(candidate, nasRoot);
+  try {
+    if (fs.lstatSync(nasRoot).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  } catch (error) {
+    if (error?.code === 'QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT') throw error;
+    throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+  }
+  let current = nasRoot;
+  for (const segment of path.relative(nasRoot, safeCandidate).split(path.sep)) {
+    current = path.join(current, segment);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_STORAGE_REPARSE_POINT');
+    } catch (error) {
+      if (error?.code === 'ENOENT') break;
+      throw error;
+    }
+  }
+  return safeCandidate;
+}
+
+function plainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+    && !types.isProxy(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function exact(value, keys) {
+  if (!plainObject(value) || Reflect.ownKeys(value).length !== keys.length || keys.some(key => !Object.hasOwn(value, key))) {
+    throw failure('QUESTION_IMPORT_PARSE_INPUT_INVALID');
+  }
+  return value;
+}
+
+function stableJson(value) {
+  if (value === null || ['boolean', 'number', 'string'].includes(typeof value)) {
+    if (typeof value === 'number' && !Number.isFinite(value)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
+  if (!plainObject(value)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + stableJson(value[key])).join(',') + '}';
+}
+
+function dataUrlBytes(value, expectedMime, expectedHash, expectedBytes) {
+  if (typeof value !== 'string' || value.length > (90 * 1024 * 1024)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match || match[1] !== expectedMime) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  const bytes = Buffer.from(match[2], 'base64');
+  if (!bytes.length || bytes.toString('base64').replace(/=+$/, '') !== match[2].replace(/=+$/, '')
+    || bytes.length !== expectedBytes || crypto.createHash('sha256').update(bytes).digest('hex') !== expectedHash) {
+    throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  }
+  return bytes;
+}
+
+function containsDataUrl(value) {
+  if (typeof value === 'string') return /data:[^,]*;base64,/iu.test(value);
+  if (Array.isArray(value)) return value.some(containsDataUrl);
+  if (plainObject(value)) return Object.values(value).some(containsDataUrl);
+  return false;
+}
+
+function sanitizeQuestion(question) {
+  if (!plainObject(question) || !Array.isArray(question.assets)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  const candidate = JSON.parse(JSON.stringify(question));
+  const mediaManifest = [];
+  const mediaBytes = [];
+  candidate.assets = question.assets.map((asset, assetIndex) => {
+    if (!plainObject(asset) || typeof asset.asset_type !== 'string' || !asset.asset_type || asset.asset_type.length > 64
+      || typeof asset.file_name !== 'string' || !asset.file_name || asset.file_name.length > 512
+      || typeof asset.mime_type !== 'string' || !asset.mime_type || asset.mime_type.length > 255
+      || !Number.isSafeInteger(asset.size_bytes) || asset.size_bytes < 1 || asset.size_bytes > (64 * 1024 * 1024)
+      || typeof asset.content_hash !== 'string' || !/^[0-9a-f]{64}$/.test(asset.content_hash)) {
+      throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+    }
+    const bytes = dataUrlBytes(asset.data_url, asset.mime_type, asset.content_hash, asset.size_bytes);
+    mediaBytes.push(bytes);
+    mediaManifest.push({ sha256: asset.content_hash, bytes: asset.size_bytes, mimeType: asset.mime_type });
+    return {
+      assetIndex,
+      assetType: asset.asset_type,
+      fileName: asset.file_name,
+      mimeType: asset.mime_type,
+      sizeBytes: asset.size_bytes,
+      contentHash: asset.content_hash,
+    };
+  });
+  if (containsDataUrl(candidate)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+  return { candidate, mediaManifest, mediaBytes };
+}
+
+function validationFor(candidate) {
+  const stem = typeof candidate.stem === 'string' ? candidate.stem.trim() : '';
+  if (!stem) return { status: 'rejected', codes: ['missing_stem'] };
+  const answer = typeof candidate.answer === 'string' ? candidate.answer.trim() : '';
+  const codes = answer ? [] : ['missing_answer'];
+  if (Array.isArray(candidate.formulas) && candidate.formulas.some(formula => formula && typeof formula === 'object'
+    && ['approximate', 'preview_only', 'failed'].includes(formula.conversion_status))) {
+    codes.push('formula_needs_review');
+  }
+  return codes.length ? { status: 'warning', codes } : { status: 'accepted', codes };
+}
+
+function executePython({ pythonBin, parserPath, filePath, sourceType, timeoutMs = 60000 }) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000) throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  return new Promise((resolve, reject) => {
+    const child = spawn(pythonBin, [parserPath, filePath, sourceType], { windowsHide: true });
+    const chunks = [];
+    let length = 0;
+    let settled = false;
+    const timeout = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } finally {
+        rejectOnce('QUESTION_IMPORT_PARSE_TIMEOUT');
+      }
+    }, timeoutMs);
+    function rejectOnce(code = 'QUESTION_IMPORT_PARSE_FAILED') {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        reject(failure(code));
+      }
+    }
+    child.stdout.on('data', chunk => {
+      length += chunk.length;
+      if (length > (96 * 1024 * 1024)) {
+        child.kill();
+        rejectOnce();
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    child.on('error', rejectOnce);
+    child.on('close', code => {
+      if (settled) return;
+      clearTimeout(timeout);
+      if (code !== 0) return rejectOnce();
+      settled = true;
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+  });
+}
+
+function parserBundleRevision(parserPath, errorCode) {
+  try {
+    const parserDirectory = path.dirname(parserPath);
+    function collect(relativeDirectory = '') {
+      const absoluteDirectory = path.join(parserDirectory, relativeDirectory);
+      return fs.readdirSync(absoluteDirectory, { withFileTypes: true }).flatMap(entry => {
+        if (entry.isSymbolicLink()) throw failure(errorCode);
+        const relativePath = path.posix.join(relativeDirectory.split(path.sep).join('/'), entry.name);
+        if (entry.isDirectory()) return collect(relativePath);
+        return entry.isFile() && entry.name.endsWith('.py') ? [relativePath] : [];
+      });
+    }
+    const names = collect()
+      .sort((left, right) => Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8')));
+    const parserRelativePath = path.relative(parserDirectory, parserPath).split(path.sep).join('/');
+    if (!names.includes(parserRelativePath) || names.length < 1) throw failure(errorCode);
+    const hash = crypto.createHash('sha256');
+    for (const name of names) {
+      const bytes = fs.readFileSync(path.join(parserDirectory, ...name.split('/')));
+      hash.update(Buffer.from(`${Buffer.byteLength(name, 'utf8')}:`, 'ascii'));
+      hash.update(name, 'utf8');
+      hash.update(Buffer.from(`:${bytes.length}:`, 'ascii'));
+      hash.update(bytes);
+    }
+    return hash.digest('hex');
+  } catch (error) {
+    if (error?.code === errorCode) throw error;
+    throw failure(errorCode);
+  }
+}
+
+function createQuestionImportParser({ workRoot, nasRoot = workRoot, parserPath, pythonBin, execute = executePython } = {}) {
+  if (typeof nasRoot !== 'string' || !path.isAbsolute(nasRoot) || typeof parserPath !== 'string' || !path.isAbsolute(parserPath)
+    || typeof pythonBin !== 'string' || !pythonBin.trim() || typeof execute !== 'function') throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  const root = path.resolve(nasRoot);
+  const script = path.resolve(parserPath);
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory() || !fs.existsSync(script) || !fs.statSync(script).isFile()) {
+    throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  }
+  try {
+    if (fs.lstatSync(root).isSymbolicLink()) throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  } catch (error) {
+    if (error?.code === 'QUESTION_IMPORT_PARSE_CONFIG_INVALID') throw error;
+    throw failure('QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  }
+  const revision = parserBundleRevision(script, 'QUESTION_IMPORT_PARSE_CONFIG_INVALID');
+  function assertRevision() {
+    if (parserBundleRevision(script, 'QUESTION_IMPORT_PARSE_REVISION_MISMATCH') !== revision) {
+      throw failure('QUESTION_IMPORT_PARSE_REVISION_MISMATCH');
+    }
+    return revision;
+  }
+  return Object.freeze({
+    revision,
+    assertRevision,
+    async parse(input) {
+      const request = exact(input, ['sourceType', 'sourceFileName', 'bytes']);
+      if (!['lecture', 'exam'].includes(request.sourceType) || typeof request.sourceFileName !== 'string'
+        || !/\.(?:doc|docx)$/iu.test(request.sourceFileName) || !Buffer.isBuffer(request.bytes) || request.bytes.length < 1 || request.bytes.length > (64 * 1024 * 1024)) {
+        throw failure('QUESTION_IMPORT_PARSE_INPUT_INVALID');
+      }
+      const temporaryRoot = assertNoReparsePoint(path.join(root, workRoot ? '.gewu-question-intake' : '.gewu-storage-agent'), root);
+      await fs.promises.mkdir(temporaryRoot, { recursive: true, mode: 0o700 });
+      assertNoReparsePoint(temporaryRoot, root);
+      const temporaryDirectory = await fs.promises.mkdtemp(path.join(temporaryRoot, 'parser-'));
+      assertNoReparsePoint(temporaryDirectory, root);
+      const temporaryPath = assertNoReparsePoint(path.join(temporaryDirectory, `source${path.extname(request.sourceFileName).toLowerCase()}`), root);
+      try {
+        assertNoReparsePoint(temporaryPath, root);
+        await fs.promises.writeFile(temporaryPath, request.bytes, { flag: 'wx', mode: 0o600 });
+        assertRevision();
+        const raw = await execute({ pythonBin: pythonBin.trim(), parserPath: script, filePath: temporaryPath, sourceType: request.sourceType });
+        assertRevision();
+        if (typeof raw !== 'string' && !Buffer.isBuffer(raw)) throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+        let output;
+        try {
+          output = JSON.parse(Buffer.isBuffer(raw) ? raw.toString('utf8') : raw);
+        } catch (_) {
+          throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+        }
+        if (!plainObject(output) || output.success !== true || !Array.isArray(output.questions) || output.questions.length < 1 || output.questions.length > 500) {
+          throw failure('QUESTION_IMPORT_PARSE_OUTPUT_INVALID');
+        }
+        const parsed = output.questions.map(sanitizeQuestion);
+        return {
+          sourceSha256: crypto.createHash('sha256').update(request.bytes).digest('hex'),
+          parserSha256: revision,
+          qualityReport: plainObject(output.quality_report) ? output.quality_report : {},
+          candidates: parsed.map(item => ({
+            contentHash: crypto.createHash('sha256').update(stableJson(item.candidate), 'utf8').digest('hex'),
+            candidate: item.candidate,
+            validation: validationFor(item.candidate),
+            mediaManifest: item.mediaManifest,
+          })),
+          mediaBytes: parsed.map(item => item.mediaBytes),
+        };
+      } finally {
+        assertNoReparsePoint(temporaryDirectory, root);
+        await fs.promises.rm(temporaryDirectory, { recursive: true, force: true });
+      }
+    },
+  });
+}
+
+module.exports = Object.freeze({ createQuestionImportParser, executePython });

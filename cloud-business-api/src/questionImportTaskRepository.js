@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const { types } = require('util');
 const { INVALID_CHOICE_STRUCTURE, validateChoiceQuestionStructure } = require('./questionChoiceStructure');
+const { normalizeQuestionRichContent, projectQuestionRichContent } = require('../../shared/questionRichContentContract');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -53,10 +54,15 @@ function actor(value) {
   return { accountId, roles: value.roles.slice() };
 }
 
+function safeWordFileName(value) {
+  return typeof value === 'string' && value === value.trim() && value.length > 5 && value.length <= 512
+    && !/[\\/\u0000\r\n]/.test(value) && /^[\p{L}\p{N}]/u.test(value) && /\.(?:doc|docx)$/iu.test(value);
+}
+
 function sourceRequest(value, now) {
   const request = exact(value, ['sourceType', 'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourceBytes', 'metadata', 'storage', 'relay']);
   if (!['lecture', 'exam'].includes(request.sourceType)
-    || !/^[A-Za-z0-9][A-Za-z0-9._ -]{0,507}\.(doc|docx)$/iu.test(request.sourceFileName)
+    || !safeWordFileName(request.sourceFileName)
     || !['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(request.sourceMimeType)
     || !/^[0-9a-f]{64}$/.test(request.sourceSha256)
     || !Number.isSafeInteger(request.sourceBytes) || request.sourceBytes < 1 || request.sourceBytes > (64 * 1024 * 1024)
@@ -74,7 +80,7 @@ function sourceRequest(value, now) {
     'version', 'ephemeralPublicKey', 'keyDerivationSalt', 'wrappedKeyNonce', 'wrappedKeyCiphertext', 'wrappedKeyTag',
     'contentNonce', 'contentTag', 'ciphertextSha256', 'ciphertextBytes', 'plaintextSha256', 'plaintextBytes',
   ]);
-  if (relay.agentKeyFingerprint.length !== 64 || !/^[0-9a-f]{64}$/.test(relay.agentKeyFingerprint)
+  if (typeof relay.agentKeyFingerprint !== 'string' || relay.agentKeyFingerprint.length !== 64 || !/^[0-9a-f]{64}$/.test(relay.agentKeyFingerprint)
     || envelope.version !== 'x25519-aes-256-gcm-v1' || !/^[0-9a-f]{64}$/.test(envelope.ciphertextSha256)
     || envelope.plaintextSha256 !== request.sourceSha256 || envelope.plaintextBytes !== request.sourceBytes
     || !Number.isSafeInteger(envelope.ciphertextBytes) || envelope.ciphertextBytes < 1 || envelope.ciphertextBytes > (64 * 1024 * 1024)) {
@@ -174,7 +180,7 @@ const completeSourceAndStoreCandidatesSql = [
   "WHERE source.import_task_id=$1 AND storage.task_id=source.storage_task_id AND storage.state='leased' AND storage.lease_agent_id=$2 AND storage.lease_token_sha256=$3",
   'AND storage.lease_expires_at > transaction_timestamp() AND storage.expected_sha256=$4 AND storage.expected_bytes=$5',
   'AND EXISTS (SELECT 1 FROM business.question_import_tasks expected WHERE expected.task_id=source.import_task_id AND (',
-  '(expected.parser_contract_version=0 AND $8::text IS NULL)',
+  "(expected.processing_location='storage_agent' AND expected.parser_contract_version=0 AND $8::text IS NULL)",
   'OR (expected.parser_contract_version=1 AND expected.parser_sha256=$8::text)))',
   'RETURNING storage.task_id',
   '), receipt AS (',
@@ -220,7 +226,9 @@ const prepareDraftsSql = [
   "SELECT item_id FROM business.question_import_items WHERE import_task_id=$1 AND status IN ('accepted','warning')",
   '), owned_task AS (',
   "UPDATE business.question_import_tasks SET status='drafts_prepared',phase='drafts_prepared',updated_at=transaction_timestamp()",
-  "WHERE task_id=$1 AND tenant_id=$2 AND account_id=$3 AND status='candidates_ready' AND EXISTS (SELECT 1 FROM eligible_items)",
+  "WHERE task_id=$1 AND tenant_id=$2 AND account_id=$3 AND (status='candidates_ready' OR (processing_location='desktop' AND status='awaiting_source_storage')) AND EXISTS (SELECT 1 FROM eligible_items)",
+  "AND EXISTS (SELECT 1 FROM business.import_source_objects source WHERE source.import_task_id=$1 AND source.storage_state='verified')",
+  "AND NOT EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=$1 AND media.storage_state<>'verified')",
   'RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"',
   '), marked_items AS (',
   "UPDATE business.question_import_items item SET status='draft_prepared',updated_at=transaction_timestamp()",
@@ -232,10 +240,22 @@ const prepareDraftsSql = [
 ].join(' ');
 
 const readSql = [
-  'SELECT task.task_id AS "taskId",task.status,task.phase,task.request_hash AS "requestHash",task.created_at AS "createdAt",task.updated_at AS "updatedAt",',
+  // Recover readiness after a receipt commit followed by a worker crash. Ownership is checked
+  // on both the derived-state update and the read; quarantined imports are never resurrected.
+  'WITH reconciled AS (',
+  "UPDATE business.question_import_tasks task SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()",
+  "WHERE task.tenant_id=$1 AND task.account_id=$2 AND task.task_id=$3 AND task.processing_location='desktop' AND task.status='awaiting_source_storage'",
+  "AND EXISTS (SELECT 1 FROM business.import_source_objects source WHERE source.import_task_id=task.task_id AND source.storage_state='verified')",
+  "AND NOT EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=task.task_id AND media.storage_state<>'verified')",
+  'RETURNING task_id,status,phase,updated_at',
+  ') SELECT task.task_id AS "taskId",COALESCE(reconciled.status,task.status) AS status,COALESCE(reconciled.phase,task.phase) AS phase,task.request_hash AS "requestHash",task.created_at AS "createdAt",COALESCE(reconciled.updated_at,task.updated_at) AS "updatedAt",',
   'source.storage_state AS "sourceStorageState",',
+  'task.processing_location AS "processingLocation",',
+  "CASE WHEN EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=task.task_id AND media.storage_state<>'verified') THEN 'queued' ELSE 'verified' END AS \"mediaStorageState\",",
+  "COALESCE((SELECT jsonb_agg(jsonb_build_object('mediaId',media.media_id,'itemIndex',media.item_index,'assetIndex',media.asset_index,'objectId',media.object_id,'objectVersion',media.object_version,'storageTaskId',media.storage_task_id,'sha256',media.expected_sha256,'bytes',media.expected_bytes,'mimeType',media.mime_type,'storageState',media.storage_state) ORDER BY media.item_index,media.asset_index) FROM business.question_import_media_objects media WHERE media.import_task_id=task.task_id),'[]'::jsonb) AS \"mediaTargets\",",
   "COALESCE((SELECT jsonb_agg(jsonb_build_object('itemId',item.item_id,'itemIndex',item.item_index,'contentHash',item.content_hash,'candidate',item.candidate_json,'validation',item.validation_json,'mediaManifest',item.media_manifest_json,'status',item.status) ORDER BY item.item_index) FROM business.question_import_items item WHERE item.import_task_id=task.task_id),'[]'::jsonb) AS items",
   'FROM business.question_import_tasks task',
+  'LEFT JOIN reconciled ON reconciled.task_id=task.task_id',
   'LEFT JOIN business.import_source_objects source ON source.import_task_id=task.task_id',
   'WHERE task.tenant_id=$1 AND task.account_id=$2 AND task.task_id=$3',
 ].join(' ');
@@ -262,7 +282,8 @@ function preparedTaskRow(row) {
 function readTaskRow(row) {
   const task = taskRow(row, false);
   if (!['queued', 'verified', 'quarantined'].includes(row.sourceStorageState)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
-  return { ...task, sourceStorageState: row.sourceStorageState, items: itemRows(row.items, { allowEmpty: true }) };
+  return { ...task, sourceStorageState: row.sourceStorageState, items: itemRows(row.items, { allowEmpty: true }),
+    ...(row.processingLocation ? { processingLocation: row.processingLocation, mediaStorageState: row.mediaStorageState, mediaTargets: row.mediaTargets } : {}) };
 }
 
 function candidateRows(value, randomId) {
@@ -316,6 +337,138 @@ function candidateRows(value, randomId) {
   });
 }
 
+// Client parser revisions are audit data. All candidate identity and validation are decided here.
+function bindDesktopRichMedia(richContent, assets) {
+  const aliases = new Map();
+  const addAlias = (alias, hash) => {
+    if (!aliases.has(alias)) aliases.set(alias, new Set());
+    aliases.get(alias).add(hash);
+  };
+  for (const asset of assets) {
+    addAlias(asset.contentHash, asset.contentHash);
+    // Only an exact retained basename is an alias. Arbitrary source paths never allocate media.
+    if (/^[A-Za-z0-9][A-Za-z0-9._-]{0,507}$/.test(asset.fileName) && !asset.fileName.includes('..')) {
+      addAlias(asset.fileName, asset.contentHash);
+      addAlias('word/media/' + asset.fileName, asset.contentHash);
+      if (asset.assetType === 'formula_preview' && asset.mimeType === 'image/png' && /\.png$/i.test(asset.fileName)) {
+        for (const extension of ['wmf', 'emf']) {
+          const originalName = asset.fileName.replace(/\.png$/i, '.' + extension);
+          addAlias(originalName, asset.contentHash);
+          addAlias('word/media/' + originalName, asset.contentHash);
+        }
+      }
+    }
+  }
+  const resolve = reference => {
+    if (typeof reference !== 'string') throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    const key = reference.startsWith('question-asset://') ? reference.slice('question-asset://'.length) : reference;
+    const matches = aliases.get(key);
+    if (!matches || matches.size !== 1) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    return [...matches][0];
+  };
+  const visit = node => {
+    if (!plainObject(node)) return;
+    if (node.type === 'image') {
+      const hash = resolve(node.attrs.assetKey);
+      node.attrs.assetKey = hash;
+      node.attrs.src = 'question-asset://' + hash;
+    }
+    if (['formula', 'formulaBlock'].includes(node.type) && node.attrs.previewRef !== undefined) {
+      node.attrs.previewRef = 'question-asset://' + resolve(node.attrs.previewRef);
+    }
+    Object.values(node).forEach(child => Array.isArray(child) ? child.forEach(visit) : visit(child));
+  };
+  visit(richContent);
+}
+
+function desktopCandidateRows(value, randomId) {
+  if (!Array.isArray(value)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+  const normalized = value.map(entry => {
+    const item = exact(entry, ['contentHash', 'candidate', 'validation', 'mediaManifest']);
+    if (!plainObject(item.candidate) || !Array.isArray(item.mediaManifest) || !plainObject(item.validation)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    let candidate = item.candidate;
+    if (candidate.rich_content !== undefined && candidate.rich_content !== null) {
+      try {
+        const richContent = normalizeQuestionRichContent(candidate.rich_content);
+        const projection = projectQuestionRichContent(richContent);
+        candidate = { ...candidate, rich_content: richContent, stem: projection.stem, content: projection.stem,
+          answer: projection.answer, analysis: projection.explanation, explanation: projection.explanation,
+          options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
+          sub_questions: projection.subQuestions, has_formula: projection.hasFormula, has_image: projection.hasImage };
+      } catch (_) { throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID'); }
+    }
+    if ((candidate.stem !== undefined && typeof candidate.stem !== 'string')
+      || (candidate.answer != null && typeof candidate.answer !== 'string')
+      || (candidate.analysis != null && typeof candidate.analysis !== 'string')
+      || (candidate.options !== undefined && (!Array.isArray(candidate.options) || candidate.options.some(option =>
+        typeof option !== 'string' && (!plainObject(option) || typeof option.label !== 'string' || typeof option.content !== 'string'))))) {
+      throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    }
+    const assets = candidate.assets ?? [];
+    if (!Array.isArray(assets) || assets.length !== item.mediaManifest.length || assets.some((asset, index) => {
+      const manifest = item.mediaManifest[index];
+      return !plainObject(asset) || !plainObject(manifest) || asset.assetIndex !== index
+        || typeof asset.assetType !== 'string' || !asset.assetType || asset.assetType.length > 64
+        || typeof asset.fileName !== 'string' || !asset.fileName || asset.fileName.length > 512
+        || asset.contentHash !== manifest.sha256 || asset.sizeBytes !== manifest.bytes || asset.mimeType !== manifest.mimeType;
+    })) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+    if (candidate.rich_content) bindDesktopRichMedia(candidate.rich_content, assets);
+    const codes = [];
+    if (typeof candidate.stem !== 'string' || !candidate.stem.trim()) codes.push('missing_stem');
+    if (typeof candidate.answer !== 'string' || !candidate.answer.trim()) codes.push('missing_answer');
+    if (Array.isArray(candidate.formulas) && candidate.formulas.some(formula => plainObject(formula)
+      && ['approximate', 'preview_only', 'failed'].includes(formula.conversion_status))) codes.push('formula_needs_review');
+    const needsRichFormulaReview = value => plainObject(value) && (
+      (['formula', 'formulaBlock'].includes(value.type) && ['approximate', 'preview_only', 'failed'].includes(value.attrs?.conversionStatus))
+      || Object.values(value).some(child => Array.isArray(child) ? child.some(needsRichFormulaReview) : needsRichFormulaReview(child))
+    );
+    if (candidate.rich_content && needsRichFormulaReview(candidate.rich_content) && !codes.includes('formula_needs_review')) codes.push('formula_needs_review');
+    return { contentHash: requestHash(candidate), candidate, mediaManifest: item.mediaManifest,
+      validation: { status: codes.includes('missing_stem') ? 'rejected' : codes.length ? 'warning' : 'accepted', codes } };
+  });
+  return candidateRows(normalized, randomId);
+}
+
+const mediaTargetsSql = `SELECT media_id AS "mediaId",item_index AS "itemIndex",asset_index AS "assetIndex",
+  object_id AS "objectId",object_version AS "objectVersion",storage_task_id AS "storageTaskId",
+  expected_sha256 AS sha256,expected_bytes::float8 AS bytes,mime_type AS "mimeType"
+  FROM business.question_import_media_objects WHERE import_task_id=$1 ORDER BY item_index,asset_index`;
+
+const insertParsedSql = `WITH inserted_task AS (
+  INSERT INTO business.question_import_tasks
+    (task_id,tenant_id,account_id,idempotency_key,source_type,source_file_name,source_mime_type,source_sha256,source_size_bytes,metadata_json,request_hash,
+      processing_location,local_parser_sha256,parser_contract_version,status,phase)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'desktop',$20,0,'awaiting_source_storage','awaiting_source_storage')
+  ON CONFLICT (tenant_id,account_id,idempotency_key) DO NOTHING
+  RETURNING task_id,status,phase,request_hash AS "requestHash",created_at AS "createdAt",updated_at AS "updatedAt"
+), inserted_storage_task AS (
+  INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)
+  SELECT $12,$13,$14,$8,$9,$7,'queued' FROM inserted_task RETURNING task_id
+), inserted_source AS (
+  INSERT INTO business.import_source_objects
+    (import_task_id,tenant_id,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)
+  SELECT task.task_id,$2,$13,$14,storage.task_id,$8,$9,$7,'queued' FROM inserted_task task CROSS JOIN inserted_storage_task storage RETURNING import_task_id,storage_task_id
+), inserted_relay AS (
+  INSERT INTO business.encrypted_import_source_relays (storage_task_id,import_task_id,tenant_id,actor_account_id,agent_key_fingerprint,envelope_json,ciphertext,ciphertext_sha256,expires_at)
+  SELECT source.storage_task_id,source.import_task_id,$2,$3,$15,$16::jsonb,$17,$18,$19::timestamptz FROM inserted_source source RETURNING storage_task_id
+), input_items AS (
+  SELECT value AS item FROM jsonb_array_elements($21::jsonb)
+), inserted_items AS (
+  INSERT INTO business.question_import_items (item_id,import_task_id,item_index,content_hash,candidate_json,validation_json,media_manifest_json,status)
+  SELECT item->>'itemId',task.task_id,(item->>'itemIndex')::integer,item->>'contentHash',item->'candidate',item->'validation',item->'mediaManifest',item->'validation'->>'status'
+  FROM inserted_task task CROSS JOIN input_items RETURNING import_task_id,item_index
+), input_media AS (
+  SELECT (item->>'itemIndex')::integer AS item_index,media FROM input_items CROSS JOIN LATERAL jsonb_array_elements(item->'mediaManifest') media
+), inserted_media_storage AS (
+  INSERT INTO business.storage_object_tasks (task_id,object_id,object_version,expected_sha256,expected_bytes,media_type,state)
+  SELECT media->>'storageTaskId',media->>'objectId',(media->>'objectVersion')::integer,media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued'
+  FROM inserted_items item JOIN input_media input ON item.item_index=input.item_index RETURNING task_id
+), inserted_media AS (
+  INSERT INTO business.question_import_media_objects (media_id,import_task_id,item_index,asset_index,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state)
+  SELECT media->>'mediaId',$1,item_index,(media->>'assetIndex')::integer,media->>'objectId',(media->>'objectVersion')::integer,media->>'storageTaskId',media->>'sha256',(media->>'bytes')::bigint,media->>'mimeType','queued'
+  FROM input_media JOIN inserted_media_storage storage ON storage.task_id=media->>'storageTaskId' RETURNING media_id
+) SELECT task_id AS "taskId",status,phase,"requestHash","createdAt","updatedAt" FROM inserted_task CROSS JOIN inserted_relay`;
+
 function createQuestionImportTaskRepository({
   query, storageAgentId = null, runtimeReceiptMaxAgeSeconds = 900,
   randomId = () => crypto.randomUUID(), now = () => new Date(),
@@ -326,6 +479,85 @@ function createQuestionImportTaskRepository({
     throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
   }
   return Object.freeze({
+    async createParsed(input) {
+      const request = exact(input, ['tenantId', 'actor', 'idempotencyKey', 'request']);
+      const tenantId = text(request.tenantId, 128);
+      const currentActor = actor(request.actor);
+      const idempotencyKey = text(request.idempotencyKey, 256);
+      const body = exact(request.request, ['sourceType', 'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourceBytes', 'metadata', 'storage', 'relay', 'parsed']);
+      const { parsed, ...sourceBody } = body;
+      exact(parsed, ['parserSha256', 'candidates']);
+      if (typeof parsed.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(parsed.parserSha256)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const source = sourceRequest(sourceBody, now());
+      const candidates = desktopCandidateRows(parsed.candidates, randomId);
+      const hash = requestHash({ ...sourceBody, relay: { agentKeyFingerprint: source.relay.agentKeyFingerprint,
+        envelope: source.relay.envelope, expiresAt: source.relay.expiresAt }, parsed: { parserSha256: parsed.parserSha256,
+        candidates: candidates.map(item => ({ candidate: item.candidate, validation: item.validation,
+          mediaManifest: item.mediaManifest.map(asset => ({ sha256: asset.sha256, bytes: asset.bytes, mimeType: asset.mimeType })) })) } });
+      async function replay() {
+        const existing = await query(existingSql, [tenantId, currentActor.accountId, idempotencyKey]);
+        if (!existing || !Array.isArray(existing.rows) || existing.rows.length > 1) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+        if (!existing.rows.length) return null;
+        if (existing.rows[0].requestHash !== hash) throw failure('CLOUD_QUESTION_IMPORT_CONFLICT');
+        const targets = await query(mediaTargetsSql, [existing.rows[0].taskId]);
+        return { ...taskRow(existing.rows[0], true), mediaTargets: targets.rows };
+      }
+      const prior = await replay();
+      if (prior) return prior;
+      const taskId = 'question_import_task_' + String(randomId()).replace(/[^A-Za-z0-9_-]/g, '');
+      const result = await query(insertParsedSql, [taskId, tenantId, currentActor.accountId, idempotencyKey, source.sourceType, source.sourceFileName,
+        source.sourceMimeType, source.sourceSha256, source.sourceBytes, stableJson(source.metadata), hash,
+        source.storage.taskId, source.storage.objectId, source.storage.objectVersion, source.relay.agentKeyFingerprint,
+        stableJson(source.relay.envelope), source.relay.ciphertext, source.relay.envelope.ciphertextSha256, source.relay.expiresAt,
+        parsed.parserSha256, stableJson(candidates)]);
+      if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      if (!result.rows.length) {
+        const concurrent = await replay();
+        if (concurrent) return concurrent;
+        throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      }
+      const targets = await query(mediaTargetsSql, [taskId]);
+      return { ...taskRow(result.rows[0]), mediaTargets: targets.rows };
+    },
+    async stageMediaRelay(input) {
+      const request = exact(input, ['tenantId', 'actor', 'taskId', 'mediaId', 'relay']);
+      const tenantId = text(request.tenantId, 128);
+      const currentActor = actor(request.actor);
+      const taskId = text(request.taskId, 160);
+      const mediaId = text(request.mediaId, 160);
+      if (!/^question_import_task_[A-Za-z0-9_-]{1,128}$/.test(taskId) || !/^question_import_media_[A-Za-z0-9_-]{1,128}$/.test(mediaId)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const target = await query(`SELECT media.storage_task_id AS "storageTaskId",media.expected_sha256 AS sha256,media.expected_bytes::float8 AS bytes,media.storage_state AS state
+        FROM business.question_import_media_objects media JOIN business.question_import_tasks task ON task.task_id=media.import_task_id
+        WHERE task.task_id=$1 AND task.tenant_id=$2 AND task.account_id=$3 AND task.processing_location='desktop' AND media.media_id=$4`,
+      [taskId, tenantId, currentActor.accountId, mediaId]);
+      if (!target || !Array.isArray(target.rows) || target.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_NOT_FOUND');
+      const allocated = target.rows[0];
+      // Reuse the complete encrypted-envelope validation with the allocated plaintext identity.
+      const validated = sourceRequest({ sourceType: 'exam', sourceFileName: 'media.docx', sourceMimeType: 'application/msword',
+        sourceSha256: allocated.sha256, sourceBytes: allocated.bytes, metadata: {},
+        storage: { taskId: allocated.storageTaskId, objectId: 'obj_media_validation', objectVersion: 1 }, relay: request.relay }, now()).relay;
+      if (allocated.state === 'verified') return { mediaId, storageTaskId: allocated.storageTaskId, state: 'verified', replayed: true };
+      if (allocated.state !== 'queued') throw failure('CLOUD_QUESTION_IMPORT_CONFLICT');
+      const result = await query(`WITH locked_storage AS (
+        SELECT task_id,state FROM business.storage_object_tasks WHERE task_id=$1 FOR UPDATE
+      ) INSERT INTO business.encrypted_import_media_relays
+        (storage_task_id,media_id,import_task_id,tenant_id,actor_account_id,agent_key_fingerprint,envelope_json,ciphertext,ciphertext_sha256,expires_at)
+        SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10::timestamptz FROM locked_storage WHERE state='queued'
+        ON CONFLICT (storage_task_id) DO UPDATE SET envelope_json=EXCLUDED.envelope_json,ciphertext=EXCLUDED.ciphertext,
+          ciphertext_sha256=EXCLUDED.ciphertext_sha256,expires_at=EXCLUDED.expires_at
+        WHERE encrypted_import_media_relays.agent_key_fingerprint=EXCLUDED.agent_key_fingerprint
+          AND encrypted_import_media_relays.tenant_id=EXCLUDED.tenant_id AND encrypted_import_media_relays.actor_account_id=EXCLUDED.actor_account_id
+        RETURNING storage_task_id,(xmax<>0) AS replayed`,
+      [allocated.storageTaskId, mediaId, taskId, tenantId, currentActor.accountId, validated.agentKeyFingerprint,
+        stableJson(validated.envelope), validated.ciphertext, validated.envelope.ciphertextSha256, validated.expiresAt]);
+      if (result.rows.length) return { mediaId, storageTaskId: allocated.storageTaskId, state: 'queued', replayed: result.rows[0].replayed === true };
+      const existing = await query(`SELECT agent_key_fingerprint AS fingerprint,envelope_json AS envelope,ciphertext_sha256 AS sha256,expires_at AS "expiresAt"
+        FROM business.encrypted_import_media_relays WHERE storage_task_id=$1 AND tenant_id=$2 AND actor_account_id=$3`, [allocated.storageTaskId, tenantId, currentActor.accountId]);
+      const row = existing.rows[0];
+      if (!row || row.fingerprint !== validated.agentKeyFingerprint || stableJson(row.envelope) !== stableJson(validated.envelope)
+        || row.sha256 !== validated.envelope.ciphertextSha256 || row.expiresAt.toISOString() !== validated.expiresAt) throw failure('CLOUD_QUESTION_IMPORT_CONFLICT');
+      return { mediaId, storageTaskId: allocated.storageTaskId, state: 'queued', replayed: true };
+    },
     async create(input) {
       const request = exact(input, ['tenantId', 'actor', 'idempotencyKey', 'request']);
       const tenantId = text(request.tenantId, 128);

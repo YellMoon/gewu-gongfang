@@ -86,16 +86,39 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
          DELETE FROM business.encrypted_import_source_relays
           WHERE expires_at <= transaction_timestamp()
           RETURNING storage_task_id AS task_id
+       ), deleted_import_media_relays AS (
+         DELETE FROM business.encrypted_import_media_relays
+          WHERE expires_at <= transaction_timestamp()
+          RETURNING storage_task_id AS task_id
        ), deleted_expired AS (
          SELECT task_id FROM deleted_question_relays
          UNION ALL SELECT task_id FROM deleted_artifact_relays
          UNION ALL SELECT task_id FROM deleted_import_source_relays
+         UNION ALL SELECT task_id FROM deleted_import_media_relays
        ), quarantined AS (
          UPDATE business.storage_object_tasks task
             SET state='quarantined',last_error_code='ENCRYPTED_RELAY_EXPIRED',updated_at=transaction_timestamp()
            FROM deleted_expired expired
           WHERE task.task_id=expired.task_id AND task.state<>'verified'
           RETURNING task.task_id
+       ), quarantined_source AS (
+         UPDATE business.import_source_objects source
+            SET storage_state='quarantined',updated_at=transaction_timestamp()
+           FROM quarantined storage,business.question_import_tasks import_task
+          WHERE source.storage_task_id=storage.task_id AND import_task.task_id=source.import_task_id
+            AND import_task.processing_location='desktop' AND source.storage_state<>'verified'
+          RETURNING source.import_task_id
+       ), quarantined_media AS (
+         UPDATE business.question_import_media_objects media
+            SET storage_state='quarantined',updated_at=transaction_timestamp()
+           FROM quarantined storage,business.question_import_tasks import_task
+          WHERE media.storage_task_id=storage.task_id AND import_task.task_id=media.import_task_id
+            AND import_task.processing_location='desktop' AND media.storage_state<>'verified'
+          RETURNING media.import_task_id
+       ), quarantined_import AS (
+         UPDATE business.question_import_tasks import_task
+            SET status='quarantined',phase='encrypted_relay_expired',error_code='ENCRYPTED_RELAY_EXPIRED',updated_at=transaction_timestamp()
+          WHERE import_task.task_id IN (SELECT import_task_id FROM quarantined_source UNION ALL SELECT import_task_id FROM quarantined_media)
        ) SELECT count(*)::integer AS count FROM deleted_expired`,
       [],
     );
@@ -122,6 +145,7 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              LEFT JOIN business.encrypted_storage_relays question_relay ON question_relay.task_id=task.task_id
              LEFT JOIN business.encrypted_paper_export_artifact_relays artifact_relay ON artifact_relay.storage_task_id=task.task_id
              LEFT JOIN business.encrypted_import_source_relays import_relay ON import_relay.storage_task_id=task.task_id
+             LEFT JOIN business.encrypted_import_media_relays import_media_relay ON import_media_relay.storage_task_id=task.task_id
              LEFT JOIN business.import_source_objects import_source ON import_source.storage_task_id=task.task_id
              LEFT JOIN business.question_import_tasks source_import_task ON source_import_task.task_id=import_source.import_task_id
              LEFT JOIN business.question_import_media_objects import_media ON import_media.storage_task_id=task.task_id AND import_media.storage_state='queued'
@@ -129,7 +153,8 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
              LEFT JOIN business.question_import_tasks media_import_task ON media_import_task.task_id=import_media.import_task_id
             WHERE (task.state='queued' OR (task.state='leased' AND task.lease_expires_at <= transaction_timestamp()))
               AND ((question_relay.expires_at > transaction_timestamp()) OR (artifact_relay.expires_at > transaction_timestamp()) OR (import_relay.expires_at > transaction_timestamp())
-                OR (import_media.media_id IS NOT NULL AND media_source.import_task_id IS NOT NULL))
+                OR (import_media_relay.expires_at > transaction_timestamp())
+                OR (import_media.media_id IS NOT NULL AND media_source.import_task_id IS NOT NULL AND media_import_task.processing_location='storage_agent'))
             ORDER BY CASE WHEN import_source.import_task_id IS NOT NULL THEN 0 WHEN import_media.media_id IS NOT NULL THEN 1 ELSE 2 END,
               CASE WHEN import_media.media_id IS NOT NULL THEN media_import_task.updated_at ELSE NULL END DESC NULLS LAST,
               task.created_at ASC,task.task_id ASC
@@ -142,7 +167,8 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
             WHERE task.task_id=candidate.task_id
            RETURNING task.task_id AS "taskId",task.object_id AS "objectId",task.object_version AS "objectVersion",task.expected_sha256 AS "expectedSha256",task.expected_bytes AS "expectedBytes",task.media_type AS "mediaType",task.lease_expires_at AS "leaseExpiresAt"
          ) SELECT leased.*,
-             CASE WHEN import_media.media_id IS NOT NULL THEN 'question_import_media'
+             CASE WHEN source_import_task.processing_location='desktop' OR media_import_task.processing_location='desktop' THEN 'relay'
+                  WHEN import_media.media_id IS NOT NULL THEN 'question_import_media'
                   WHEN import_source.import_task_id IS NOT NULL THEN 'question_import_source'
                   ELSE 'relay' END AS kind,
              source_import_task.task_id AS "importTaskId",source_import_task.source_type AS "sourceType",source_import_task.source_file_name AS "sourceFileName",
@@ -175,6 +201,8 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_paper_export_artifact_relays WHERE storage_task_id=$1
            UNION ALL
            SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_import_source_relays WHERE storage_task_id=$1
+           UNION ALL
+           SELECT envelope_json,ciphertext,expires_at FROM business.encrypted_import_media_relays WHERE storage_task_id=$1
          ) SELECT relay.envelope_json AS envelope,relay.ciphertext AS ciphertext
            FROM business.storage_object_tasks task JOIN relay ON true
           WHERE task.task_id=$1 AND task.state='leased' AND task.lease_agent_id=$2 AND task.lease_token_sha256=$3
@@ -229,7 +257,7 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
               SET storage_state='verified',verified_at=transaction_timestamp(),updated_at=transaction_timestamp()
              FROM completed
             WHERE media.storage_task_id=completed.task_id AND media.storage_state='queued'
-           RETURNING media.media_id
+           RETURNING media.media_id,media.import_task_id
          ), verified_question_asset AS (
            UPDATE business.question_assets asset
               SET state='verified',updated_at=transaction_timestamp()
@@ -241,8 +269,18 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            UPDATE business.question_import_tasks import_task
               SET status='queued_for_parse',phase='queued_for_parse',updated_at=transaction_timestamp()
              FROM verified_import_source source
-            WHERE import_task.task_id=source.import_task_id AND import_task.status='awaiting_source_storage'
+            WHERE import_task.task_id=source.import_task_id AND import_task.status='awaiting_source_storage' AND import_task.processing_location='storage_agent'
            RETURNING import_task.task_id
+         ), ready_desktop_import AS (
+           UPDATE business.question_import_tasks import_task
+              SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()
+            WHERE import_task.processing_location='desktop' AND import_task.status='awaiting_source_storage'
+              AND (EXISTS (SELECT 1 FROM verified_import_source source WHERE source.import_task_id=import_task.task_id)
+                OR EXISTS (SELECT 1 FROM verified_import_media media WHERE media.import_task_id=import_task.task_id))
+              AND EXISTS (SELECT 1 FROM business.import_source_objects source WHERE source.import_task_id=import_task.task_id
+                AND (source.storage_state='verified' OR EXISTS (SELECT 1 FROM verified_import_source verified WHERE verified.import_task_id=source.import_task_id)))
+              AND NOT EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=import_task.task_id
+                AND media.storage_state<>'verified' AND NOT EXISTS (SELECT 1 FROM verified_import_media verified WHERE verified.media_id=media.media_id))
          ), deleted_question_relay AS (
            DELETE FROM business.encrypted_storage_relays relay
             USING completed
@@ -255,11 +293,32 @@ function createStorageTaskRepository({ query, randomToken = () => crypto.randomB
            DELETE FROM business.encrypted_import_source_relays relay
             USING completed
             WHERE relay.storage_task_id=completed.task_id
-         ) SELECT "taskId",'verified'::text AS state,"verifiedAt" FROM receipt`,
+         ), deleted_import_media_relay AS (
+           DELETE FROM business.encrypted_import_media_relays relay
+            USING completed WHERE relay.storage_task_id=completed.task_id
+         ) SELECT "taskId",'verified'::text AS state,"verifiedAt",
+             EXISTS (SELECT 1 FROM business.question_import_tasks import_task
+               WHERE import_task.processing_location='desktop' AND import_task.task_id IN (
+                 SELECT import_task_id FROM verified_import_source UNION ALL SELECT import_task_id FROM verified_import_media
+               )) AS "desktopImport"
+           FROM receipt`,
         [currentTaskId, currentAgentId, hash(request.leaseToken), request.observedSha256, request.observedBytes, receiptId],
       );
       if (!result || !Array.isArray(result.rows) || result.rows.length !== 1 || typeof result.rows[0].taskId !== 'string' || !(result.rows[0].verifiedAt instanceof Date)) {
         throw failure('STORAGE_TASK_RECEIPT_MISMATCH');
+      }
+      if (result.rows[0].desktopImport === true) {
+        // A fresh statement snapshot sees sibling completions that overlapped the receipt CTE.
+        // The final concurrent receipt always runs this check after all earlier receipt commits.
+        await query(`UPDATE business.question_import_tasks import_task
+          SET status='candidates_ready',phase='candidates_ready',updated_at=transaction_timestamp()
+          WHERE import_task.processing_location='desktop' AND import_task.status='awaiting_source_storage'
+            AND import_task.task_id IN (
+              SELECT import_task_id FROM business.import_source_objects WHERE storage_task_id=$1
+              UNION ALL SELECT import_task_id FROM business.question_import_media_objects WHERE storage_task_id=$1
+            )
+            AND EXISTS (SELECT 1 FROM business.import_source_objects source WHERE source.import_task_id=import_task.task_id AND source.storage_state='verified')
+            AND NOT EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=import_task.task_id AND media.storage_state<>'verified')`, [currentTaskId]);
       }
       return { taskId: result.rows[0].taskId, state: 'verified', verifiedAt: result.rows[0].verifiedAt.toISOString() };
     },

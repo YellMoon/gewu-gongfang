@@ -91,11 +91,32 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} 
           catch (error) { await facade.query('ROLLBACK'); throw error; }
         },
       });
+      const richDoc = value => ({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: value }] }] });
+      const rich = { version: 1, type: 'question-document', sections: {
+        stem: { type: 'doc', content: [richDoc('Canonical imported question').content[0],
+          { type: 'table', content: [{ type: 'tableRow', content: [{ type: 'tableCell', attrs: { colspan: 1, rowspan: 1 }, content: richDoc('Table cell').content }] }] },
+          { type: 'image', attrs: { assetKey: HASH, src: 'question-asset://' + HASH, width: 317.5, height: 126.25 } },
+          { type: 'formulaBlock', attrs: { id: 'original-formula', canonicalLatex: '', displayMode: 'block', conversionStatus: 'preview_only', sourceFormat: 'eq_field', previewRef: 'question-asset://' + HASH } } ] },
+        options: [{ id: 'o1', label: 'A', isCorrect: true, content: richDoc('Canonical A') }, { id: 'o2', label: 'B', isCorrect: false, content: richDoc('Canonical B') }],
+        answer: richDoc('A'), analysis: richDoc('Canonical explanation'), subQuestions: [],
+      } };
+      for (const invalidRich of [{ ...rich, version: 2 }, { ...rich, sections: { ...rich.sections, stem: { type: 'doc', content: [{ type: 'script', text: 'unsafe' }] } } },
+        { ...rich, sections: { ...rich.sections, stem: { type: 'doc', content: [{ type: 'image', attrs: { assetKey: HASH, src: 'https://example.invalid/image.png' } }] } } }]) {
+        await assert.rejects(() => service.submitDesktopDraft({ tenantId: 'tenant-1', actor: { accountId: 'teacher-1', roles: ['teacher'] },
+          command: commandFor({ id: 'question-unsafe-rich', taskId: 'question_import_task_demo', itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: HASH,
+            metadata: { rich_content: invalidRich } }) }), /CLOUD_QUESTION_INPUT_INVALID/);
+      }
+      assert.deepStrictEqual((await facade.query("SELECT id FROM business.questions WHERE id='question-unsafe-rich'")).rows, []);
       const accepted = await service.submitDesktopDraft({
         tenantId: 'tenant-1', actor: { accountId: 'teacher-1', roles: ['teacher'] },
-        command: commandFor({ id: 'question-bound-1', taskId: 'question_import_task_demo', itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: HASH, metadata: {year: '2026', grade: 'Grade 12', has_image: true} }),
+        command: commandFor({ id: 'question-bound-1', taskId: 'question_import_task_demo', itemId: 'question_import_item_demo_0', itemIndex: 0, contentHash: HASH, metadata: {year: '2026', grade: 'Grade 12', has_image: true, rich_content: rich} }),
       });
       assert.strictEqual(accepted.status, 'committed');
+      const normalizedContent = (await facade.query("SELECT stem,answer,rich_content_json FROM business.question_contents WHERE question_id='question-bound-1'")).rows[0];
+      assert.ok(normalizedContent.stem.startsWith('Canonical imported question'), 'formal content uses the validated rich projection');
+      assert.strictEqual(normalizedContent.answer, 'A');
+      assert.strictEqual(normalizedContent.rich_content_json.sections.stem.content[2].attrs.width, 317.5);
+      assert.strictEqual(normalizedContent.rich_content_json.sections.stem.content[3].attrs.conversionStatus, 'preview_only');
       assert.deepStrictEqual((await facade.query("SELECT exam_year,grade,has_image FROM business.questions WHERE id='question-bound-1'")).rows,
         [{exam_year: '2026', grade: 'Grade 12', has_image: true}], 'bound imports retain original editable metadata as well as media');
       const asset = await facade.query('SELECT question_id,storage_object_id,storage_object_version,content_hash,state FROM business.question_assets WHERE question_id=$1', ['question-bound-1']);

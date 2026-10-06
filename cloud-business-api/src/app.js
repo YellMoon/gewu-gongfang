@@ -795,7 +795,7 @@ function createCloudBusinessApp({ query, operationAudits = null, operationAudits
     try {
       const actor = await desktopQuestionContext(request);
       if (!Array.isArray(actor.roles) || !actor.roles.some(role => ['super_admin', 'teacher'].includes(role))) throw businessAccessDenied();
-      response.json({ ok: true, agentPublicKey: storageAgentPublicKey, agentKeyFingerprint: storageAgentKeyFingerprint });
+      response.json({ ok: true, intakeProcessing: 'desktop-v1', agentPublicKey: storageAgentPublicKey, agentKeyFingerprint: storageAgentKeyFingerprint });
     } catch (error) {
       questionImportFailure(response, error);
     }
@@ -825,6 +825,31 @@ function createCloudBusinessApp({ query, operationAudits = null, operationAudits
     } catch (error) {
       questionImportFailure(response, error);
     }
+  });
+  app.post('/api/desktop/question-imports/parsed', async (request, response) => {
+    if (!questionImportTasks || typeof questionImportTasks.createParsed !== 'function' || !storageAgentKeyFingerprint || businessTenantId === null) return businessUnavailable(response);
+    const body = exactBody(request.body, ['sourceType', 'sourceFileName', 'sourceMimeType', 'sourceSha256', 'sourceBytes', 'metadata', 'storage', 'relay', 'parsed']);
+    const relay = body ? exactBody(body.relay, ['agentKeyFingerprint', 'envelope', 'ciphertextBase64', 'expiresAt']) : null;
+    const ciphertext = relay ? encryptedCiphertext(relay.ciphertextBase64) : null;
+    const idempotencyKey = String(request.get('x-idempotency-key') || '');
+    if (!body || !relay || !ciphertext || relay.agentKeyFingerprint !== storageAgentKeyFingerprint || !idempotencyKey || idempotencyKey.length > 256) return businessInputInvalid(response);
+    try {
+      const task = await questionImportTasks.createParsed({ tenantId: businessTenantId, actor: await desktopQuestionContext(request), idempotencyKey,
+        request: { ...body, relay: { agentKeyFingerprint: relay.agentKeyFingerprint, envelope: relay.envelope, ciphertext, expiresAt: relay.expiresAt } } });
+      response.status(task.replayed ? 200 : 202).json({ ok: true, task });
+    } catch (error) { questionImportFailure(response, error); }
+  });
+  app.post('/api/desktop/question-imports/:taskId/media/:mediaId/relay', async (request, response) => {
+    if (!questionImportTasks || typeof questionImportTasks.stageMediaRelay !== 'function' || !storageAgentKeyFingerprint || businessTenantId === null) return businessUnavailable(response);
+    const body = exactBody(request.body, ['agentKeyFingerprint', 'envelope', 'ciphertextBase64', 'expiresAt']);
+    const ciphertext = body ? encryptedCiphertext(body.ciphertextBase64) : null;
+    if (!body || !ciphertext || body.agentKeyFingerprint !== storageAgentKeyFingerprint) return businessInputInvalid(response);
+    try {
+      const relay = await questionImportTasks.stageMediaRelay({ tenantId: businessTenantId, actor: await desktopQuestionContext(request),
+        taskId: String(request.params.taskId || ''), mediaId: String(request.params.mediaId || ''),
+        relay: { agentKeyFingerprint: body.agentKeyFingerprint, envelope: body.envelope, ciphertext, expiresAt: body.expiresAt } });
+      response.status(relay.replayed ? 200 : 202).json({ ok: true, relay });
+    } catch (error) { questionImportFailure(response, error); }
   });
   app.get('/api/desktop/question-imports/:taskId', async (request, response) => {
     if (!questionImportTasks || businessTenantId === null) return businessUnavailable(response);

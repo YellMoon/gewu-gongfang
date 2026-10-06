@@ -1,0 +1,17 @@
+# Desktop question intake implementation plan
+
+> For agentic workers: use superpowers:subagent-driven-development for independent cloud and desktop implementation, followed by spec and code-quality review.
+
+**Goal:** Complete the user's approved separation of Word intake parsing/branding cleanup from NAS storage; preserve source display geometry and the original file.
+
+**Architecture:** Desktop runs the bundled Python parser in an isolated temporary directory and produces untrusted editable candidates and media bytes. Cloud authorizes the desktop owner, validates candidate hashes and structure, stores candidates, allocates storage objects and verifies NAS receipts before creating confirmable drafts. NAS 8.8.4 receives existing `relay` file-write tasks for original/media only; legacy imports retain their existing NAS parser proof. Local parser hashes are audit metadata, never authority evidence. No silent fallback to NAS parsing for new imports.
+
+**Tech stack:** Electron IPC, Node, bundled Python, React, cloud REST/PostgreSQL, existing encrypted storage relay transport.
+
+- [ ] Extract storage-independent parser core into shared/questionImportParser.js, keep legacy NAS adapter. Desktop IPC validates source bytes/types, uses packaged Python/parser paths, removes temporary files, reports input digest, parser digest, cleanup audit, candidate/media bytes.
+- [ ] Add cloud migration for processing_location/local parser audit metadata and encrypted import media relays. New desktop candidate route is permission-scoped, validates/recomputes hashes, treats caller validation as untrusted, allocates targets atomically/idempotently; ownership-bound media relay route verifies expected hashes/envelope/expiry. NAS source/media leases use existing relay kind for desktop intake. No update to NAS runtime is necessary.
+- [ ] Desktop client parses before network activity, requires explicit cloud capability, uploads original unchanged and only retained extracted media encrypted. Separate local preview from cloud staging. Intake page shows local cleanup results and uses cloud receipt readiness to prepare drafts; existing editor changes and submit authority remain intact.
+- [ ] Red/green unit and actual disposable PostgreSQL tests cover owner/role/tenant/replay/tampering/expiry, unchanged source, hidden branding and formula protection, dimensions, no NAS parser invocation for desktop tasks, and original source/media receipt gates. Actual browser/Electron UI verifies local preview and edits.
+- [ ] Run relevant/default tests and typecheck; independent spec/code review; version bump desktop/cloud, leave NAS/miniapp versions unchanged where contracts remain compatible. Commit/push gewu/master. Create verified cloud backup, deploy/migrate/verify cloud, publish and verify desktop OSS update; record applicable compatibility receipts and any external blockers honestly.
+
+Contract: POST /api/desktop/question-imports/parsed uses existing source request plus parsed={parserSha256,candidates}. Returns task plus mediaTargets (itemIndex/assetIndex/mediaId/storageTaskId/objectId/objectVersion/sha256/bytes/mimeType). POST /api/desktop/question-imports/:taskId/media/:mediaId/relay accepts existing encrypted relay fields. GET relay-key advertises intakeProcessing='desktop-v1'. Existing read/prepare-drafts endpoints remain; desktop processing_location='desktop' uses parser_contract_version=0 and separately immutable local_parser_sha256 (not trusted NAS proof).

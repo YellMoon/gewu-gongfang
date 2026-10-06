@@ -1,7 +1,10 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const { createCloudBusinessApp } = require('./app');
+const { createQuestionAuthorityService } = require('./questionAuthorityService');
+const { createQuestionImportTaskRepository } = require('./questionImportTaskRepository');
 // UTF-8: keep precision and malformed-contact regression in the standard API suite.
 require('./businessVersionPrecision.test');
 require('./teacherSelfUpdateRoutes.test');
@@ -772,6 +775,8 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     query: async () => ({ rows: [] }), desktopRegistration: identity, businessTenantId: 'default',
     storageAgentKeyFingerprint: 'a'.repeat(64), storageAgentPublicKey: Buffer.alloc(44, 1).toString('base64url'),
     questionImportTasks: {
+      createParsed: async input => { questionImportCalls.push(['createParsed', input]); return { taskId: 'question_import_task_1', mediaTargets: [{ mediaId: 'question_import_media_1' }] }; },
+      stageMediaRelay: async input => { questionImportCalls.push(['stageMediaRelay', input]); return { mediaId: input.mediaId, state: 'queued' }; },
       create: async input => {
         questionImportCalls.push(['create', input]);
         if (input.idempotencyKey === 'import-request-no-parser-proof') {
@@ -786,7 +791,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   const importRelayKey = await request(questionImportApp, '/api/desktop/question-imports/relay-key', { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
   assert.strictEqual(importRelayKey.status, 200);
-  assert.deepStrictEqual(importRelayKey.body, { ok: true, agentPublicKey: Buffer.alloc(44, 1).toString('base64url'), agentKeyFingerprint: 'a'.repeat(64) });
+  assert.deepStrictEqual(importRelayKey.body, { ok: true, intakeProcessing: 'desktop-v1', agentPublicKey: Buffer.alloc(44, 1).toString('base64url'), agentKeyFingerprint: 'a'.repeat(64) });
   const importCreated = await request(questionImportApp, '/api/desktop/question-imports', {
     method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'import-request-1' }, body: {
       sourceType: 'lecture', sourceFileName: 'mechanics.docx', sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -818,6 +823,57 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   });
   assert.strictEqual(importPrepared.status, 200);
   assert.strictEqual(importPrepared.body.task.status, 'drafts_prepared');
+  const parsedBody = { sourceType: 'lecture', sourceFileName: 'mechanics.docx', sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    sourceSha256: 'b'.repeat(64), sourceBytes: 3, metadata: {}, storage: { taskId: 'task_12345678', objectId: 'obj_source_1', objectVersion: 1 },
+    relay: { agentKeyFingerprint: 'a'.repeat(64), envelope: {}, ciphertextBase64: Buffer.from('abc').toString('base64url'), expiresAt: '2026-08-23T00:05:00.000Z' },
+    parsed: { parserSha256: '9'.repeat(64), candidates: [] } };
+  const parsedCreated = await request(questionImportApp, '/api/desktop/question-imports/parsed', { method: 'POST',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'parsed-key' }, body: parsedBody });
+  assert.strictEqual(parsedCreated.status, 202);
+  assert.strictEqual(parsedCreated.body.task.mediaTargets[0].mediaId, 'question_import_media_1');
+  assert.strictEqual(questionImportCalls.at(-1)[0], 'createParsed');
+  assert.ok(Buffer.isBuffer(questionImportCalls.at(-1)[1].request.relay.ciphertext));
+  const mediaStaged = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1/media/question_import_media_1/relay', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: parsedBody.relay });
+  assert.strictEqual(mediaStaged.status, 202);
+  assert.strictEqual(mediaStaged.body.relay.state, 'queued');
+  assert.strictEqual(questionImportCalls.at(-1)[1].actor.accountId, 'account-1');
+  const anonymousParsed = await request(questionImportApp, '/api/desktop/question-imports/parsed', { method: 'POST',
+    headers: { 'x-idempotency-key': 'parsed-key' }, body: parsedBody });
+  assert.strictEqual(anonymousParsed.status, 403);
+  const wrongMediaFingerprint = await request(questionImportApp, '/api/desktop/question-imports/question_import_task_1/media/question_import_media_1/relay', {
+    method: 'POST', headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: { ...parsedBody.relay, agentKeyFingerprint: 'b'.repeat(64) } });
+  assert.strictEqual(wrongMediaFingerprint.status, 400);
+  const richBoundaryQueries = [];
+  const richBoundaryQuery = async (sql, values) => { richBoundaryQueries.push([sql, values]); return { rows: [] }; };
+  const richBoundaryApp = createCloudBusinessApp({ query: richBoundaryQuery, desktopRegistration: identity, businessTenantId: 'default',
+    storageAgentKeyFingerprint: 'a'.repeat(64), storageAgentPublicKey: Buffer.alloc(44, 1).toString('base64url'),
+    questionImportTasks: createQuestionImportTaskRepository({ query: richBoundaryQuery }),
+    questionAuthority: createQuestionAuthorityService({ query: richBoundaryQuery, transaction: work => work(richBoundaryQuery) }),
+  });
+  const invalidRichCandidate = { contentHash: '0'.repeat(64), candidate: { stem: 'Otherwise valid', answer: 'Answer',
+    rich_content: { version: 2, type: 'question-document', sections: {} } }, validation: { status: 'accepted' }, mediaManifest: [] };
+  const richBoundarySource = { ...parsedBody, sourceFileName: '本地录入.docx', parsed: { parserSha256: '9'.repeat(64), candidates: [invalidRichCandidate] },
+    relay: { ...parsedBody.relay, expiresAt: new Date(Date.now() + 600000).toISOString(), envelope: {
+      version: 'x25519-aes-256-gcm-v1', ephemeralPublicKey: Buffer.alloc(44, 1).toString('base64url'),
+      keyDerivationSalt: Buffer.alloc(16, 2).toString('base64url'), wrappedKeyNonce: Buffer.alloc(12, 3).toString('base64url'),
+      wrappedKeyCiphertext: Buffer.alloc(32, 4).toString('base64url'), wrappedKeyTag: Buffer.alloc(16, 5).toString('base64url'),
+      contentNonce: Buffer.alloc(12, 6).toString('base64url'), contentTag: Buffer.alloc(16, 7).toString('base64url'),
+      ciphertextSha256: crypto.createHash('sha256').update('abc').digest('hex'), ciphertextBytes: 3,
+      plaintextSha256: parsedBody.sourceSha256, plaintextBytes: parsedBody.sourceBytes,
+    } } };
+  const invalidRichIntake = await request(richBoundaryApp, '/api/desktop/question-imports/parsed', { method: 'POST',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature', 'x-idempotency-key': 'invalid-rich-intake' }, body: richBoundarySource });
+  assert.strictEqual(invalidRichIntake.status, 400);
+  assert.strictEqual(richBoundaryQueries.length, 0, 'invalid rich candidate rejects before reserving cloud source or media');
+  const richCommandPayload = { record: { id: 'unsafe-import-rich-command', subject: 'physics', type: 'problem', difficulty: 3, content: 'Valid flat stem', answer: 'Answer', options: [],
+    rich_content: invalidRichCandidate.candidate.rich_content, import_task_id: 'question_import_task_demo', import_item_id: 'question_import_item_demo', import_item_index: 0, import_content_hash: '0'.repeat(64) } };
+  const richCommand = { commandId: 'unsafe-import-rich-command', type: 'question.create.v1', payload: richCommandPayload,
+    payloadHash: crypto.createHash('sha256').update(require('../../shared/authorityProtocol').stableJson({ type: 'question.create.v1', payload: richCommandPayload })).digest('hex') };
+  const invalidRichCommand = await request(richBoundaryApp, '/api/desktop/question-bank/commands', { method: 'POST',
+    headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' }, body: richCommand });
+  assert.strictEqual(invalidRichCommand.status, 400);
+  assert.ok(!richBoundaryQueries.some(([sql]) => sql.includes('INSERT INTO')), 'invalid imported rich content never reaches formal writes or receipts');
   const importAgentCalls = [];
   const importAgentApp = createCloudBusinessApp({
     query: async () => ({ rows: [] }), businessTenantId: 'default',

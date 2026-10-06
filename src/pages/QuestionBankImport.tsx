@@ -21,6 +21,7 @@ import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/q
 import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, mergeImportedQuestionMetadata, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
+import { collectEditedIntakeMedia, prepareLocalIntakePreview } from '../services/localQuestionIntakePreview';
 import {
   downloadImportValidationReport,
   validateImportQuestions,
@@ -66,6 +67,7 @@ type CloudImportTask = {
   status: string;
   phase: string;
   sourceStorageState?: string;
+  mediaStorageState?: string;
   items?: any[];
 };
 
@@ -294,6 +296,15 @@ const QuestionBankImport: React.FC = () => {
   }, [modalVisible, editorDirty]);
   useEffect(() => registerEditorSpaExitGuard(() => shouldProtectEditorExit(modalVisible, editorDirty)), [modalVisible, editorDirty]);
   const examMetaRef = useRef<any>(null);
+  const localIntakeRef = useRef<any>(null);
+  const stagedIntakeRef = useRef<any>(null);
+  const intakeClientRef = useRef<any>(null);
+  const intakeClient = () => {
+    if (!intakeClientRef.current) intakeClientRef.current = createDesktopQuestionImportClient();
+    return intakeClientRef.current;
+  };
+  const preparedDraftItemsRef = useRef(new Set<string>());
+  const intakeEpochRef = useRef(0);
 
   const loadData = useCallback(async () => {
     try {
@@ -700,7 +711,8 @@ const QuestionBankImport: React.FC = () => {
       const row = validationRows.find(item => item.key === editingImportKey);
       const mergedQuestion = row ? mergeImportedQuestionMetadata(row.question, data) : data;
       if (row) {
-        const nextQuestions = (wordResult?.questions || []).map((item: any, index: number) => index === row.index - 1 ? mergeImportedQuestionMetadata(item, data) : item);
+        const nextQuestions = (wordResult?.questions || []).map((item: any, index: number) => index === row.index - 1
+          ? { ...mergeImportedQuestionMetadata(item, data), stem: data.content, question_types: [data.type] } : item);
         const validation = validateImportQuestions(nextQuestions, questions);
         setWordResult((current: any) => ({ ...current, questions: nextQuestions }));
         setValidationRows(validation.rows);
@@ -743,38 +755,51 @@ const QuestionBankImport: React.FC = () => {
     setTaxonomySubject(questionSubject);
     handleTaxonomiesChanged(questionSystems, questionNodes);
     setEditing(null); setEditingImportKey(row.key); openRichDocument(normalizeStructureOrder(question.rich_content?.type === 'question-document' ? createQuestionRichDocument(question.rich_content) : migrateLegacyQuestion(question)));
-    form.setFieldsValue({ subject: questionSubject, type: normalizeQuestionType(question.type), difficulty: question.difficulty || 3, knowledge_ids: knowledgeIds, model_ids: modelIds, taxonomy_ids: taxonomyIds, tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
+    form.setFieldsValue({ subject: questionSubject, type: question.type ? normalizeQuestionType(question.type) : questionTypeFromParser(question.question_types), difficulty: question.difficulty || 3, knowledge_ids: knowledgeIds, model_ids: modelIds, taxonomy_ids: taxonomyIds, tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
     setModalVisible(true);
   };
 
-  const startCloudImport = async (file: File, examMeta?: ExamMeta) => {
+  const startLocalIntake = async (file: File, examMeta?: ExamMeta) => {
+    if (wordImporting || committingBatch) return;
+    intakeEpochRef.current++;
     examMetaRef.current = examMeta || null;
+    localIntakeRef.current = null;
+    stagedIntakeRef.current = null;
+    preparedDraftItemsRef.current.clear();
+    setCloudImportTask(null);
     setWordImporting(true);
     setWordResult(null);
     setValidationRows([]);
     setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
     setCommitResult(null);
     try {
-      const task = await createDesktopQuestionImportClient().createFromWord({
-        sourceType: wordSourceType,
-        sourceFileName: file.name,
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const parsed = await intakeClient().parseFromWord({ sourceType: wordSourceType, sourceFileName: file.name, bytes });
+      const candidates = (await prepareLocalIntakePreview(parsed)).map(question => applyExamMetaToQuestion(question, examMeta || {}, wordSourceType));
+      const validation = validateImportQuestions(candidates, questions);
+      localIntakeRef.current = { bytes, parsed, sourceType: wordSourceType, sourceFileName: file.name,
         sourceMimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        metadata: { ...(examMeta || {}), sourceFileName: file.name },
-      });
-      setCloudImportTask(task);
+        metadata: { ...(examMeta || {}), sourceFileName: file.name } };
+      setWordResult({ questions: candidates, count: candidates.length, quality_report: parsed.qualityReport });
+      setValidationRows(validation.rows);
+      setValidationSummary(validation.summary);
       setImportStep(2);
-      message.info('\u539f\u4ef6\u5df2\u52a0\u5bc6\u4ea4\u7ed9 NAS \u4ee3\u7406\uff0c\u6b63\u5728\u4e91\u7aef\u89e3\u6790\u3002');
+      message.success('本机解析与图片清理完成，请校对试题后生成待提交草稿。');
     } catch (error: any) {
-      message.error('\u521b\u5efa\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1\u5931\u8d25: ' + (error.message || 'unknown error'));
+      message.error((error.code || error.message) === 'QUESTION_INTAKE_DOC_CONVERSION_REQUIRED'
+        ? '旧版 .doc 文件请先另存为 .docx 后再导入。'
+        : '本机解析失败: ' + (error.message || 'unknown error'));
     } finally { setWordImporting(false); }
   };
 
   const refreshCloudImportTask = async () => {
-    if (!cloudImportTask) return;
+    if (!cloudImportTask || committingBatch) return;
+    const epoch = intakeEpochRef.current;
     try {
-      const task = await createDesktopQuestionImportClient().read(cloudImportTask.taskId) as CloudImportTask;
+      const task = await intakeClient().read(cloudImportTask.taskId) as CloudImportTask;
+      if (epoch !== intakeEpochRef.current) return;
       setCloudImportTask(task);
+      if (localIntakeRef.current) return;
       if (!Array.isArray(task.items) || task.items.length === 0) {
         message.info('\u4e91\u7aef\u4efb\u52a1\u5f53\u524d\u9636\u6bb5: ' + task.phase);
         return;
@@ -798,42 +823,79 @@ const QuestionBankImport: React.FC = () => {
   };
 
   const prepareCloudImportDrafts = async () => {
-    if (validationSummary.failed > 0 || !cloudImportTask || cloudImportTask.status !== 'candidates_ready') {
-      message.warning('\u8bf7\u5148\u7b49\u5f85\u5e76\u5237\u65b0\u4e91\u7aef\u89e3\u6790\u7ed3\u679c\u3002');
-      return;
-    }
+    if (validationSummary.failed > 0 || !wordResult || commitResult || committingBatch) return;
     const db = (window as any).dbService;
-    if (!db) { message.error('\u672c\u5730\u8349\u7a3f\u5e93\u672a\u5c31\u7eea'); return; }
+    if (!db) { message.error('本地草稿库未就绪'); return; }
+    intakeEpochRef.current++;
     setCommittingBatch(true);
     try {
-      const prepared = await createDesktopQuestionImportClient().prepareDrafts(cloudImportTask.taskId) as CloudImportTask;
-      let created = 0;
-      for (const [index, item] of (prepared.items || []).entries()) {
-        const localCandidate = wordResult?.questions?.[index] || item.candidate || {};
+      const client = intakeClient();
+      let task = cloudImportTask;
+      if (localIntakeRef.current) {
+        if (!stagedIntakeRef.current) {
+          const collected = await collectEditedIntakeMedia(localIntakeRef.current.parsed, wordResult.questions);
+          stagedIntakeRef.current = await client.withEditedCandidates(collected, collected.candidates.map((item: any) => item.candidate));
+        }
+        if (!task) {
+          task = await client.createFromParsed({ ...localIntakeRef.current, parsed: stagedIntakeRef.current });
+          setCloudImportTask(task);
+        } else {
+          await client.resumeMedia(await client.read(task.taskId), stagedIntakeRef.current);
+        }
+        if (!task) throw new Error('QUESTION_INTAKE_TASK_UNAVAILABLE');
+        task = await client.read(task.taskId);
+        setCloudImportTask(task);
+      }
+      if (!task || !['candidates_ready', 'drafts_prepared'].includes(task.status) || task.sourceStorageState !== 'verified'
+        || (localIntakeRef.current && task.mediaStorageState !== 'verified')) {
+        message.info('原件与图片正在归档；存储校验完成后可生成待提交草稿。');
+        return;
+      }
+      const prepared = (task.status === 'drafts_prepared'
+        ? { ...task, items: (task.items || []).filter((item: any) => item.status === 'draft_prepared') }
+        : await client.prepareDrafts(task.taskId)) as CloudImportTask;
+      const existingDrafts = db.getAllQuestions?.() || [];
+      for (const item of prepared.items || []) {
+        if (existingDrafts.some((draft: any) => draft.storage_state === 'local_draft' && draft.import_task_id === prepared.taskId && draft.import_item_id === item.itemId)) {
+          preparedDraftItemsRef.current.add(item.itemId);
+        }
+        if (preparedDraftItemsRef.current.has(item.itemId)) continue;
+        const localCandidate = localIntakeRef.current ? item.candidate : (wordResult?.questions?.[item.itemIndex] || item.candidate || {});
         const mediaByIndex = new Map((item.mediaManifest || []).map((media: any) => [media.assetIndex, media]));
-        const assets = (localCandidate.assets || []).map((asset: any) => ({ ...asset, ...(mediaByIndex.get(asset.assetIndex) || {}) }));
+        const assets = (item.candidate.assets || []).map((asset: any) => ({ ...asset, content_hash: asset.contentHash,
+          file_name: asset.fileName, asset_type: asset.assetType, mime_type: asset.mimeType, size_bytes: asset.sizeBytes,
+          ...(mediaByIndex.get(asset.assetIndex) || {}) }));
         await createNativeQuestionDraft(db, {
-          ...localCandidate, subject: localCandidate.subject || '\u7269\u7406', type: questionTypeFromParser(localCandidate.question_types),
-          content: localCandidate.stem || localCandidate.content || '', analysis: localCandidate.analysis || localCandidate.explanation || '',
+          ...localCandidate, subject: localCandidate.subject || '物理', type: localCandidate.type || questionTypeFromParser(localCandidate.question_types),
+          rich_content: item.candidate.rich_content,
+          content: localCandidate.content ?? localCandidate.stem ?? '', analysis: localCandidate.analysis || localCandidate.explanation || '',
           assets,
           import_task_id: prepared.taskId,
           import_item_id: item.itemId,
           import_item_index: item.itemIndex,
           import_content_hash: item.contentHash,
         });
-        created++;
+        preparedDraftItemsRef.current.add(item.itemId);
       }
+      const created = preparedDraftItemsRef.current.size;
       setCloudImportTask(prepared);
       setImportStep(3);
       setCommitResult({ id: prepared.taskId, imported: created, failed: validationSummary.failed, warning: validationSummary.warning, created_at: new Date().toISOString(), source_type: wordSourceType, file_name: selectedWordFile?.name });
       loadData();
-      message.success('\u5df2\u751f\u6210 ' + created + ' \u6761\u672c\u5730\u5f85\u63d0\u4ea4\u8349\u7a3f\uff1b\u8054\u7f51\u540e\u4ecd\u9700\u4f60\u786e\u8ba4\u63d0\u4ea4\u3002');
+      message.success('已生成 ' + created + ' 条本地待提交草稿；仍需在同步面板整体确认提交。');
     } catch (error: any) {
-      message.error('\u751f\u6210\u5f85\u63d0\u4ea4\u8349\u7a3f\u5931\u8d25: ' + (error.message || 'unknown error'));
-    } finally { setCommittingBatch(false); }
+      if (error.task) setCloudImportTask(error.task);
+      message.error('生成待提交草稿失败: ' + (error.message || 'unknown error'));
+    } finally { intakeEpochRef.current++; setCommittingBatch(false); }
   };
 
   const handleSelectWordFile = (file: File) => {
+    if (wordImporting || committingBatch || shouldProtectEditorExit(modalVisible, editorDirty)) return;
+    intakeEpochRef.current++;
+    localIntakeRef.current = null;
+    stagedIntakeRef.current = null;
+    preparedDraftItemsRef.current.clear();
+    setCloudImportTask(null);
     setSelectedWordFile(file);
     setWordResult(null);
     setValidationRows([]);
@@ -854,10 +916,14 @@ const QuestionBankImport: React.FC = () => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.doc,.docx';
+    input.style.display = 'none';
     input.onchange = (e: any) => {
       const file = e.target.files?.[0];
       if (file) handleSelectWordFile(file);
+      input.remove();
     };
+    input.addEventListener('cancel', () => input.remove(), { once: true });
+    document.body.appendChild(input);
     input.click();
   };
 
@@ -867,7 +933,7 @@ const QuestionBankImport: React.FC = () => {
       return;
     }
     const meta = wordSourceType === 'exam' ? examForm.getFieldsValue() : undefined;
-    startCloudImport(selectedWordFile, meta);
+    startLocalIntake(selectedWordFile, meta);
   };
 
   const openImportTaskDetail = (task: ImportTask) => {
@@ -1041,10 +1107,10 @@ const QuestionBankImport: React.FC = () => {
             current={importStep}
             style={{ marginBottom: 20 }}
             items={[
-              { title: '上传文件' },
+              { title: '选择文件' },
               { title: '选择类型' },
-              { title: '预校验' },
-              { title: '确认导入' },
+              { title: '解析与校对' },
+              { title: '准备草稿' },
             ]}
           />
 
@@ -1058,8 +1124,14 @@ const QuestionBankImport: React.FC = () => {
                   </div>
                   <Radio.Group
                     value={wordSourceType}
+                    disabled={wordImporting || committingBatch || modalVisible}
                     onChange={e => {
                       setWordSourceType(e.target.value);
+                      intakeEpochRef.current++;
+                      localIntakeRef.current = null;
+                      stagedIntakeRef.current = null;
+                      preparedDraftItemsRef.current.clear();
+                      setCloudImportTask(null);
                       setImportStep(selectedWordFile ? 1 : 0);
                       setWordResult(null);
                       setValidationRows([]);
@@ -1074,7 +1146,7 @@ const QuestionBankImport: React.FC = () => {
                   <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
                     <li><b>讲义格式</b>：适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。</li>
                     <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全年份、考试类型、年级、学期、地区、学校和试卷名。</li>
-                    <li>选择文件只会读取文件名信息，点击开始解析后才会上传并解析内容。</li>
+                    <li>开始解析在本机读取文档、清理微小标识并保留图片显示尺寸；校对后生成草稿时才归档原件和图片。</li>
                   </ul>
                   {selectedWordFile && (
                     <Tag color="blue" style={{ whiteSpace: 'normal', lineHeight: 1.6 }}>
@@ -1084,7 +1156,7 @@ const QuestionBankImport: React.FC = () => {
                 </Space>
               </Col>
               <Col xs={24} lg={15}>
-                <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam'} initialValues={{ year: toSchoolYear(new Date().getFullYear().toString()) }}>
+                <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam' || wordImporting || committingBatch || !!wordResult} initialValues={{ year: toSchoolYear(new Date().getFullYear().toString()) }}>
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="year" label="学年"><Select options={getSchoolYearOptions()} /></Form.Item></Col>
                     <Col span={8}><Form.Item name="exam_type" label="考试类型"><Select options={EXAM_TYPES.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
@@ -1164,9 +1236,9 @@ const QuestionBankImport: React.FC = () => {
           >
             <FileWordOutlined style={{ fontSize: 64, color: '#1890ff' }} />
             <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文件</h3>
-            <p style={{ color: '#999' }}>支持 .doc / .docx，当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
+            <p style={{ color: '#999' }}>支持 .docx；旧版 .doc 请先另存为 .docx。当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
             <Space>
-              <Button size="large" icon={<FileWordOutlined />} onClick={openWordFilePicker}>
+              <Button size="large" icon={<FileWordOutlined />} disabled={wordImporting || committingBatch || modalVisible} onClick={openWordFilePicker}>
                 选择文件
               </Button>
               <Button
@@ -1174,7 +1246,7 @@ const QuestionBankImport: React.FC = () => {
                 size="large"
                 icon={<CheckCircleOutlined />}
                 loading={wordImporting}
-                disabled={!selectedWordFile || !wordSourceType}
+                disabled={!selectedWordFile || !wordSourceType || committingBatch || modalVisible}
                 onClick={handleStartParse}
               >
                 开始解析
@@ -1182,19 +1254,24 @@ const QuestionBankImport: React.FC = () => {
             </Space>
           </div>
 
+          {wordResult?.quality_report?.image_cleanup && (
+            <Alert showIcon type="info" style={{ marginTop: 16 }} message={`本机图片清理：已移除 ${wordResult.quality_report.image_cleanup.removed_count || 0} 处微小标识图片`}
+              description="正常题图保留录入文档中的显示尺寸；原件内容保持不变。" />
+          )}
+
           {cloudImportTask && (
             <Alert
               showIcon
               type={cloudImportTask.status === 'candidates_ready' ? 'success' : 'info'}
-              message={'\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1: ' + cloudImportTask.phase}
-              description={<Button size="small" onClick={refreshCloudImportTask}>{'\u5237\u65b0\u89e3\u6790\u7ed3\u679c'}</Button>}
+              message={'原件归档：' + cloudImportTask.sourceStorageState + '；图片归档：' + (cloudImportTask.mediaStorageState || cloudImportTask.phase)}
+              description={<Button size="small" disabled={committingBatch} onClick={refreshCloudImportTask}>{'刷新存储状态'}</Button>}
               style={{ marginTop: 16 }}
             />
           )}
 
           {(validationRows.length > 0 || commitResult) && (
             <div style={{ marginTop: 16 }}>
-              <Divider orientation="left">预校验与确认导入</Divider>
+              <Divider orientation="left">预校验与准备草稿</Divider>
               <Row gutter={12} style={{ marginBottom: 12 }}>
                 <Col span={6}><Card size="small"><Statistic title="总题数" value={validationSummary.total} /></Card></Col>
                 <Col span={6}><Card size="small"><Statistic title="可导入" value={validationSummary.success} valueStyle={{ color: '#3f8600' }} /></Card></Col>
@@ -1238,14 +1315,14 @@ const QuestionBankImport: React.FC = () => {
                       {
                         title: '编辑', // utf-8
                         width: 72,
-                        render: (_: any, row: ImportValidationRow) => <Button size="small" type="link" onClick={() => openImportedQuestionEditor(row)}>编辑</Button>,
+                        render: (_: any, row: ImportValidationRow) => <Button size="small" type="link" disabled={committingBatch || !!stagedIntakeRef.current || !!cloudImportTask || !!commitResult} onClick={() => openImportedQuestionEditor(row)}>编辑</Button>,
                       },
                     ]}
                   />
                   <Space style={{ marginTop: 12 }}>
                     <Button icon={<DownloadOutlined />} onClick={() => downloadImportValidationReport(validationRows)}>导出错误报告</Button>
-                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || cloudImportTask?.status !== 'candidates_ready'} onClick={prepareCloudImportDrafts}>
-                      确认导入
+                    <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || !!commitResult || modalVisible} onClick={prepareCloudImportDrafts}>
+                      生成待提交草稿
                     </Button>
                   </Space>
                 </>
@@ -1346,7 +1423,7 @@ const QuestionBankImport: React.FC = () => {
 
       {/* Add/Edit Modal */}
       <Modal
-        title={editing ? '编辑题目' : '添加题目'}
+        title={editingImportKey ? '校对录入试题' : editing ? '编辑题目' : '添加题目'}
         open={modalVisible}
         wrapClassName="taxonomy-edit-modal"
         onOk={async () => { setSaving(true); const result = await saveGate(handleSave); if (!result.ok && result.owned) message.error(`\u4fdd\u5b58\u5931\u8d25\uff1a${(result.error as any)?.message || '\u8bf7\u91cd\u8bd5'}`); if (result.owned) setSaving(false); }}

@@ -9,6 +9,7 @@ async function main() {
   const client = createDesktopQuestionImportClient({ cloudBusinessIdentityBaseUrl: 'https://cloud.example/cloud-business' }, {
     idFactory: () => '12345678', now: () => new Date('2026-08-23T00:00:00.000Z'),
     readSession: () => ({ authorization: 'Bearer desktop-token', authContext: { deviceId: 'desktop-device-1' } }),
+    parse: async () => ({ sourceSha256: 'a'.repeat(64), parserSha256: 'c'.repeat(64), candidates: [{ candidate: { stem: 'question', assets: [] }, contentHash: 'd'.repeat(64), validation: { status: 'accepted', codes: [] }, mediaManifest: [] }], mediaBytes: [[]] }),
     seal: async input => {
       assert.strictEqual(input.storageTaskId, 'task_12345678');
       assert.deepStrictEqual(Buffer.from(input.bytes), Buffer.from('raw-document-payload'));
@@ -16,7 +17,7 @@ async function main() {
     },
     fetchImpl: async (url, options = {}) => {
       calls.push({ url, options });
-      if (url.endsWith('/relay-key')) return { ok: true, status: 200, json: async () => ({ ok: true, agentPublicKey: 'A'.repeat(44), agentKeyFingerprint: 'b'.repeat(64) }) };
+      if (url.endsWith('/relay-key')) return { ok: true, status: 200, json: async () => ({ ok: true, intakeProcessing: 'desktop-v1', agentPublicKey: 'A'.repeat(44), agentKeyFingerprint: 'b'.repeat(64) }) };
       return { ok: true, status: 202, json: async () => ({ ok: true, task: { taskId: 'question_import_task_12345678', status: 'awaiting_source_storage', phase: 'awaiting_source_storage' } }) };
     },
   });

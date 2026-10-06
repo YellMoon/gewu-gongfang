@@ -194,6 +194,12 @@ async function main() {
     },
   });
   assert.strictEqual(nonChoiceImport.id, 'question-1', 'non-choice imports must remain outside the choice-only structure gate');
+  await assert.rejects(() => service.create({ tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+    question: { id: 'question-imported-unsafe-rich', subject: 'physics', questionType: 'problem', difficulty: 3,
+      stem: 'Otherwise valid', answer: 'Answer', explanation: null, options: [], taxonomy: {}, hasFormula: false,
+      richContent: { version: 2, type: 'question-document', sections: {} },
+      importBinding: { taskId: 'question_import_task_problem', itemId: 'question_import_item_problem_0', itemIndex: 0, contentHash: 'e'.repeat(64) } } }),
+  /CLOUD_QUESTION_INPUT_INVALID/, 'an edited imported command must not bypass the canonical rich document validator');
 
   let taxonomySequence = 0;
   async function submitTaxonomy(type, payload) {

@@ -60,6 +60,7 @@ async function importTableCounts(facade) {
           task_id text COLLATE "C" PRIMARY KEY, tenant_id text NOT NULL, account_id text NOT NULL, idempotency_key text NOT NULL,
           source_type text NOT NULL, source_file_name text NOT NULL, source_mime_type text NOT NULL, source_sha256 text NOT NULL,
           source_size_bytes bigint NOT NULL, metadata_json jsonb NOT NULL, request_hash text NOT NULL, status text NOT NULL, phase text NOT NULL,
+          processing_location text NOT NULL DEFAULT 'storage_agent',
           created_at timestamptz NOT NULL DEFAULT transaction_timestamp(), updated_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
           UNIQUE(tenant_id,account_id,idempotency_key)
         );
@@ -105,10 +106,13 @@ async function importTableCounts(facade) {
         randomId: () => `postgres-binding-${++randomSequence}`, now: () => new Date('2026-09-05T00:00:00.000Z'),
       });
       const freshRequest = importRequest('fresh');
+      freshRequest.sourceFileName = '本地录入旧接口.docx';
       const created = await repository.create({
         tenantId: 'default', actor: { accountId: 'teacher-1', roles: ['teacher'] }, idempotencyKey: 'binding-1', request: freshRequest,
       });
       assert.strictEqual(created.status, 'awaiting_source_storage');
+      assert.strictEqual((await facade.query('SELECT source_file_name FROM business.question_import_tasks WHERE task_id=$1', [created.taskId])).rows[0].source_file_name,
+        freshRequest.sourceFileName, 'legacy intake must also preserve a safe Unicode source filename');
       assert.deepStrictEqual((await facade.query(`SELECT parser_contract_version AS "version",parser_sha256 AS "parserSha256",
         parser_runtime_receipt_id AS "receiptId",metadata_json->>'parserSha256' AS "untrustedMetadata"
         FROM business.question_import_tasks WHERE task_id=$1`, [created.taskId])).rows, [{
