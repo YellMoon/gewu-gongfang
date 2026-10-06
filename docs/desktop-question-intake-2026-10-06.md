@@ -10,6 +10,8 @@
 
 候选校对在当前窗口保留，尚未生成的预览不会跨退出恢复。旧版二进制 `.doc` 需要先另存为 `.docx`；原有解析器没有二进制 Word 转换能力。本次未引入外部 Word/LibreOffice 依赖。
 
+编辑与显示要求沿用已验证的六个内容区域：题干、选项、小题、答案、解析及附加内容均可编辑文字、LaTeX 公式和图片。图片支持上传、删除、调整位置、大小与对齐；默认显示尺寸来自 Word 中每次出现的宽高，默认编辑字体与题目显示字体一致。微小标识清理规则覆盖这些内容区域，公式预览受到保护；按尺寸与明确标识信息识别，未实现图像像素 OCR，不声称识别所有未知图标。既有编辑器的六区操作与渲染证据见 `docs/question-image-editor-2026-10-06.md`。
+
 ## 验证与发布记录
 
 - 实际内置 Python：原件摘要不变、两处微小标识清除、正常图片约 107.5 × 49 px、LaTeX 可编辑、临时目录清空。
@@ -20,4 +22,9 @@
 - 实际页面归档/草稿恢复 fixture 通过：准备响应丢失、第二条本地创建中断后恢复，仅生成两条有效草稿、任务创建一次、准备一次，无重复。
 - TypeScript 检查及最终 `test:question-intake` 通过。云端完整 `npm test` 退出 0；根 `npm test` 汇总进程发生既有 Windows 原生 fast-fail（-1073740791，无断言错误），使用该完整云端结果和相同命令续跑覆盖默认套件，续跑 334–451 全部退出 0。证据：`output/question-intake-cloud-full-20261006.log`、`output/question-intake-full-tests-20261006.log`、`output/question-intake-full-tests-continuation-20261006.json`。
 - 独立规格与代码质量审查已关闭回执恢复、草稿恢复去重、图片键、题型别名、陈旧响应等问题；发布前还复核富文本与媒体清单的一致性。
-- 云端部署与 OSS 发布结果待实际验证后记录，目前不声明发布完成。
+- 功能源码提交 `3b5eb377`、修整提交 `47eb7a8c` 已推送 `gewu/master`；本次构建与部署使用 `47eb7a8ca671fb377954c84640350c5c815ae9ee`。
+- 云端 8.14.0 已部署并运行：部署前 PostgreSQL 备份 `/root/scheduling-backups/postgres/20261006-035659` 完成隔离恢复及权限校验，SHA-256 为 `247f8c531bc869579195e37d315192221614e0e28bc8ed98045f7c926cfb6d82`；旧 8.13.0 镜像及回滚容器保留。新增迁移已实际落库，文件摘要、处理位置字段、媒体中继表及不可变审计触发器核验通过。内网/公网健康、业务权威、角色权限与旧接口退役检查通过；未授权候选提交返回 403。证据：`output/question-intake-cloud-deploy-8.14.0-20261006.log`、`output/question-intake-release-20261006/cloud-verification-8.14.0.log`、`cloud-intake-schema-8.14.0.json`、`cloud-public-8.14.0.json`。
+- 桌面 8.12.0 的 `dist:win`、实际安装包启动、包内 Python 导入及打包后的导入回归全部通过。包内清除两处标识、保留约 107.5 × 49 px 图片和 LaTeX；临时文件清空。打包后根项目及 backend 已恢复 Node ABI 137，包内 Electron ABI 119 验证通过。证据：`output/question-intake-dist-win-8.12.0-20261006.log`、`output/question-intake-release-20261006/packaged-smoke-8.12.0.log`、`packaged-intake-8.12.0.json`、`post-package-tests-8.12.0.log`。
+- OSS 自动更新已发布：安装包、blockmap、版本归档及 `latest.yml` 上传通过。2026-10-06 12:02:53（北京时间）公开下载校验版本 8.12.0，本地与公网完整安装包均为 150450476 bytes，SHA-512 均为 `42EasFDVqRas/Pz/KlUkYEHbn2kwLZ3Mxi/BIlZ7jcStAkbUU9ICjWMzCBR7prfY6j534+4dk1I9r5LzUn3ISw==`。证据：`output/question-intake-release-20261006/oss-publish-8.12.0.log`、`oss-verification-8.12.0.json`。
+- NAS 未部署更新，实际运行 8.8.4。云端新收到的运行回执 `storage_runtime_receipt_ddb76506-0649-4409-9155-55a5cd0fc03f` 于当天 11:53:55（北京时间）报告既有中继契约 3 和原解析器摘要；该版本足以存储本次桌面解析后的原件及媒体。仓库 storage-agent 8.9.0 为源码候选版本，不能冒充运行版。证据：`output/question-intake-release-20261006/nas-cloud-receipt.json`。
+- 本次适用的桌面与云端更新已发布，NAS 运行兼容已核验。小程序没有代码或协议变化，沿用 8.8.27 开发版上传及兼容回执，未重新上传或声称正式版发布；统一矩阵仍保留“部分发布”，不声明所有端正式发布完成。矩阵：`output/release-matrix-desktop-8.12.0__cloud-business-8.14.0__storage-proxy-8.9.0__miniapp-8.8.27/active.json`。
