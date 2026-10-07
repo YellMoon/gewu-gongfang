@@ -214,6 +214,7 @@ const DesktopIdentityGate: React.FC = () => {
         if (cancelled) return;
         clientRef.current = client;
         installedProvider = {
+          businessAuthority: identityBaseUrl.replace(/\/+$/, ''),
           ensureOnline: async () => {
             const epoch = runtimeEpochRef.current;
             if (roleSwitchRecoveryRef.current) throw new Error('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');

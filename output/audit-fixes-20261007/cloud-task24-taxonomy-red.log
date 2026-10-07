@@ -1,0 +1,18 @@
+AssertionError [ERR_ASSERTION]: same baseline must not overwrite the first writer
++ actual - expected
+
++ 'committed'
+- 'conflict'
+     ^
+
+    at C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\sql\question-taxonomy-atomic.postgres.test.js:42:60
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\sql\question-taxonomy-atomic.postgres.test.js:29:7
+    at async C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\sql\question-taxonomy-atomic.postgres.test.js:25:5 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 'committed',
+  expected: 'conflict',
+  operator: 'strictEqual',
+  diff: 'simple'
+}

@@ -1,0 +1,44 @@
+
+> gewu-gongfang@8.12.0 test:audit-fixes
+> node public/desktopAuthorityScope.test.js && node src/services/desktopCloudTransportDraft.test.js && node src/services/desktopSyncController.test.mjs && node src/services/desktopSyncRecovery.test.mjs && node src/services/desktopScheduleSnapshotContract.test.js && node cloud-business-api/src/businessCommandTransaction.test.js && node cloud-business-api/sql/business-command-receipts.postgres.test.js && node cloud-business-api/src/miniappCanonicalFence.test.js && node cloud-business-api/sql/miniapp-canonical-fence.postgres.test.js && node cloud-business-api/sql/question-taxonomy-atomic.postgres.test.js && node shared/vnext-pg17/miniappAccountFenceMigration.test.js && node shared/vnext-pg17/miniappAccountFenceDeployment.postgres.test.js && node scripts/vnext-migration/cloudControlPlaneM30Upgrade.test.js && python scripts/apply_cloud_control_plane_m30.test.py && node scripts/release-workflow.test.js && node scripts/verify-miniapp-ui-evidence.test.js && node scripts/build-miniapp-with-proof.test.js && node miniapp/src/utils/questionPaperWorkflow.test.js && node miniapp/src/utils/miniappUiCoverage.test.js && npm --prefix storage-agent test
+
+desktop draft account/authority isolation and identity races passed
+desktop cloud transport draft capture passed
+unified desktop sync batch, reconnect, conflict, race and history checks passed
+legacy/missing-target sync failure, pause, network retry and durable discard passed
+desktop schedule financial snapshot real REST round-trip checks passed
+business command transaction lifecycle passed
+PostgreSQL atomic business effects/receipts, response-loss replay, duplicate serialization, payload fencing and current authorization passed
+miniapp canonical fence: v2, bigint precision, fresh grants, old fence and v1 rejection passed
+canonical fence PG17: real verifier/reader roles, bigint, version revocation, disabled/revoked/re-enabled accounts and authorities, HTTP rejection and least privilege passed
+taxonomy PG17: atomic baseline fence, strict millisecond progress, two-connection opposing moves, bounded existing-cycle deletion, content-version bumps and writer boundary passed
+M30 miniapp canonical fence migration checks passed
+M30 PG17 deployment: exact M29 prefix, atomic upgrade, M29 forward compatibility, retry refusal, owner revocation and public ACL drift passed
+M30 guarded upgrade and state SQL checks passed
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.150s
+
+OK
+controlled release workflow, tracked caches, native cleanup and pinned runtime checks passed
+UI evidence source/version, complete scenarios, role binding, screenshot checksum and path boundary passed (synthetic proof tests only)
+miniapp build source/output provenance and mid-build edits passed (synthetic compiler fixture)
+question paper workflow checks passed
+miniapp registered-page source and role-policy coverage checks passed (runtime screenshots require verify:miniapp-ui)
+
+> gewu-controlled-storage-agent@8.9.0 test
+> node Dockerfile.test.js && node src/config.test.js && node src/launchConfig.test.js && node src/objectStore.test.js && node src/health.test.js && node src/healthCli.test.js && node src/runtimeManifest.test.js && node src/cloudClient.test.js && node src/cloudClientDeadline.test.js && node src/questionImportParser.test.js && node src/worker.test.js && node src/artifactDeliveryWorker.test.js && node src/runtime.test.js
+
+storage agent Docker build context checks passed
+storage agent config checks passed
+storage agent launch config checks passed
+storage object store checks passed
+storage agent health checks passed
+storage agent health CLI checks passed
+storage agent runtime manifest checks passed
+storage cloud client checks passed
+storage cloud overall deadline tests passed
+question import parser checks passed
+storage agent worker checks passed
+storage artifact delivery worker checks passed
+storage agent runtime checks passed

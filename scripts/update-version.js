@@ -135,7 +135,9 @@ function analyzeVersionBump(context = readChangeContext()) {
   ];
   if (deletedFiles.some(file => executablePublicApiPaths.some(pattern => pattern.test(file)))) return 'major';
   if (hasAny(corpus, majorSignals)) return 'major';
-  if (addsSchemaColumn) return 'minor';
+  const addsSchemaTable = /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[A-Za-z_]/i.test(addedChangeText);
+  const addsIpcCapability = /\bipcMain\.(?:handle|on)\s*\(\s*['"]/u.test(addedChangeText);
+  if (addsSchemaColumn || addsSchemaTable || addsIpcCapability) return 'minor';
 
   const patchSignals = [
     /fix|fixed|bug|bugfix|hotfix|repair/i,
@@ -151,9 +153,9 @@ function analyzeVersionBump(context = readChangeContext()) {
   ];
   const minorContentSignals = [
     /新增|增加|支持|新功能|\bfeature\b|\b(?:add(?:ed)?|create(?:d)?)\s+(?:support|route|endpoint|page|module|service|feature|capability)\b|router\.(get|post|put|delete|patch)/i,
-    /^\+\s*CREATE TABLE/im,
-    /^\+\s*ALTER TABLE/im,
-    /^\+\s*app\.use\('/m,
+    /^\s*CREATE TABLE/im,
+    /^\s*ALTER TABLE/im,
+    /^\s*app\.use\('/m,
   ];
   if (hasAny(corpus, patchSignals) && !hasAny(corpus, minorContentSignals)) return 'patch';
   if (files.some(file => minorPathSignals.some(pattern => pattern.test(file))) && hasAny(addedChangeText, minorContentSignals)) return 'minor';

@@ -17,7 +17,8 @@ assert.deepStrictEqual(compatibility.contracts.questionImportParserProof, {
   rule: 'storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates',
 });
 assert.deepStrictEqual(compatibility.runtimeReceipts.storage_proxy, {
-  approvedRuntimeVersions: ['8.8.2', '8.8.3', '8.8.4'],
+  approvedRuntimeVersions: ['8.8.2', '8.8.3', '8.8.4', '8.9.1'],
+  runtimeFloor: { sourceVersion: '8.9.1', runtimeVersion: '8.9.1' },
   contracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
 });
 

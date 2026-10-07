@@ -1,0 +1,72 @@
+COMMAND node cloud-business-api/src/miniappCanonicalFence.test.js
+EXIT 0
+miniapp canonical fence: v2, bigint precision, fresh grants, old fence and v1 rejection passed
+
+COMMAND node cloud-business-api/src/miniappCloudAccountService.test.js
+EXIT 0
+miniapp cloud account service checks passed
+
+COMMAND node cloud-business-api/src/miniappCloudAccountRepository.test.js
+EXIT 0
+miniapp cloud account repository checks passed
+
+COMMAND node cloud-business-api/src/familyMemberCanonicalRole.test.js
+EXIT 0
+cloud family-member canonical role checks passed
+
+COMMAND node cloud-business-api/src/miniappRoleApplicationContinuity.test.js
+EXIT 0
+role approval continuity: signed sessions, three roles, own history, disabled sessions and visitor-only writes passed
+
+COMMAND node shared/vnext-pg17/migrationManifest.test.js
+EXIT 0
+vNext PG17 migration manifest checks passed
+
+COMMAND node shared/vnext-pg17/miniappAccountFenceMigration.test.js
+EXIT 0
+M30 miniapp canonical fence migration checks passed
+
+COMMAND node scripts/vnext-migration/cloudControlPlaneM30Upgrade.test.js
+EXIT 0
+M30 guarded upgrade and state SQL checks passed
+
+COMMAND python scripts/apply_cloud_control_plane_m30.test.py
+EXIT 0
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.123s
+
+OK
+
+COMMAND python scripts/apply_cloud_control_plane_m29.test.py
+EXIT 0
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.156s
+
+OK
+
+COMMAND node cloud-business-api/sql/miniapp-canonical-fence.postgres.test.js
+EXIT 0
+canonical fence PG17: real verifier/reader roles, bigint, version revocation, disabled/revoked/re-enabled accounts and authorities, HTTP rejection and least privilege passed
+
+COMMAND node shared/vnext-pg17/miniappAccountFenceDeployment.postgres.test.js
+EXIT 0
+M30 PG17 deployment: exact M29 prefix, atomic upgrade, M29 forward compatibility, retry refusal, owner revocation and public ACL drift passed
+
+COMMAND node shared/vnext-pg17/desktopDeviceNames.postgres.test.js
+EXIT 0
+Desktop device names PostgreSQL registration, replay, isolation, rollback and privilege checks passed
+
+COMMAND node cloud-business-api/sql/question-taxonomy-atomic.postgres.test.js
+EXIT 0
+taxonomy PG17: atomic baseline fence, strict millisecond progress, two-connection opposing moves, bounded existing-cycle deletion, content-version bumps and writer boundary passed
+
+COMMAND node cloud-business-api/sql/question-taxonomy-authority.postgres.test.js
+EXIT 0
+question pagination PostgreSQL checks passed: 426 rows, tenant/deletion scope, stable cursor, existing index
+question taxonomy authority PostgreSQL checks passed
+
+COMMAND node shared/vnext-pg17/catalogAssertion.test.js
+EXIT 0
+vNext PG17 catalog assertion checks passed

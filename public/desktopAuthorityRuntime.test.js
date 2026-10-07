@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./desktopAuthorityScope.test');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -162,6 +163,7 @@ function staticRelativeModuleClosure(entryFile) {
 
   let offlineNetworkCalls = 0;
   const offlineRuntime = createDesktopAuthorityRuntime({
+    cloudBusinessBaseUrl: 'https://business.example',
     filePath: path.join(workspace, 'offline-authority-outbox.bin'),
     safeStorage: {
       isEncryptionAvailable: () => true,

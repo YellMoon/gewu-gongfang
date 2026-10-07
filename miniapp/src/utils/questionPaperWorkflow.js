@@ -90,7 +90,17 @@ function createTaskDraft(input, options = {}) {
   }
   return { localId: `draft-${idempotencyKey}`, confirmed: false, createdAt: options.now || Date.now(), status: 'draft', phase: 'draft', progress: 0,
     request: { protocolVersion: 3, taskType: input.taskType, idempotencyKey,
-      payload: { questionIds: [...input.questionIds], title: input.title, answerPosition: input.answerPosition, formulaMode: input.formulaMode, ...(layout ? { layout } : {}) } } };
+      payload: { questionIds: [...input.questionIds], title: input.title, ...(input.subject ? { subject: input.subject } : {}), answerPosition: input.answerPosition, formulaMode: input.formulaMode, ...(layout ? { layout } : {}) } } };
+}
+function prepareTaskSubmission(input, retry, options = {}) {
+  if (!retry) return createTaskDraft(input, options);
+  const request = retry.request;
+  // Old uncertain drafts without the original subject cannot be replayed safely.
+  if (!request || request.taskType !== input.taskType || !request.idempotencyKey
+    || !request.payload?.subject || !Array.isArray(request.payload.questionIds)
+    || (retry.confirmed && !canRetry(retry))) throw new Error('PAPER_RETRY_REQUEST_INVALID');
+  if (!retry.confirmed) return { ...retry, request: JSON.parse(JSON.stringify(request)), error: '' };
+  return createTaskDraft({ ...request.payload, taskType: request.taskType, formulaMode: input.formulaMode || request.payload.formulaMode }, options);
 }
 function confirmTaskDraft(draft, task) { return { ...draft, confirmed: true, taskId: task.id, status: task.status, phase: task.phase || 'queued', progress: Number(task.progress || 0), resultExpiresAt: task.result_expires_at || null }; }
 function canCancel(task) { return task.confirmed && ['queued', 'processing'].includes(task.status); }
@@ -112,6 +122,7 @@ module.exports = {
   createTaskDraft,
   isExpired,
   normalizePaperLayoutField,
+  prepareTaskSubmission,
   reconcilePaperItemsWithBasket,
   toggleOrderedSelection,
   unavailableSelectionIds,

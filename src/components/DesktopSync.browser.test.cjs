@@ -26,7 +26,7 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
       window.calls = []; window.rows = [];
       window.desktopAuthority = {
         list: async () => structuredClone(window.rows),
-        confirmAndSubmit: async id => { window.calls.push(id); window.rows.find(x => x.id === id).status = 'completed'; return { receipt: { status: 'committed' } }; },
+        confirmBatch: async snapshots => { for (const snapshot of snapshots) { const item = window.rows.find(row => row.id === snapshot.id); if (item) item.status = 'confirmed'; } }, confirmAndSubmit: async id => { window.calls.push(id); window.rows.find(x => x.id === id).status = 'completed'; return { receipt: { status: 'committed' } }; },
         removeDraft: async id => { window.rows = window.rows.filter(x => x.id !== id); },
       };
       window.dbService = { data: {}, refreshAuthorityProjection: async () => window.dispatchEvent(new Event('authority-projection-refreshed')) };

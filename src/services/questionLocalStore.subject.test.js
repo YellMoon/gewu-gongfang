@@ -36,5 +36,12 @@ vm.runInNewContext(compiled, { module: moduleValue, exports: moduleValue.exports
   assert.equal((await query('physics')).total, 0, 'removed authoritative rows must not survive in the index');
   await store.ensureQuestionLocalStoreSeeded(() => []);
   assert.equal((await query('chemistry')).total, 0, 'an empty authoritative snapshot must clear old index rows');
+  const { saveDesktopAuthorizationSession, clearDesktopAuthorizationSession } = await import('./desktopAuthorizationSession.mjs');
+  await saveDesktopAuthorizationSession({ token: 'memory-token', userId: 'memory-user', deviceId: 'memory-device', activeRole: 'teacher' });
+  await store.upsertQuestionLocalRecord({ id: 'memory-provenance', subject: 'physics', content: 'Local question' });
+  const local = (await query('physics')).rows[0];
+  assert.equal(local.ownerUserId, 'memory-user', 'local provenance must use the canonical memory session');
+  assert.equal(local.sourceDeviceId, 'memory-device');
+  await clearDesktopAuthorizationSession();
   console.log('question local subject filtering checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

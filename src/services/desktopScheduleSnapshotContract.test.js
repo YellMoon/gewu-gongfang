@@ -9,6 +9,7 @@ async function run() {
   const query = async (sql, args) => { writes.push({ sql, args }); return { rows: [{ id: 'schedule-1', updatedAt: '2026-09-07T09:00:00.000Z' }] }; };
   const app = createCloudBusinessApp({ businessTenantId: 'default',
     query,
+    businessCommandWriter: { transaction: async work => work(), query: async () => ({ rows: [{}] }) },
     businessScheduleUpdate: require('../../cloud-business-api/src/businessScheduleMutationService').createBusinessScheduleUpdate({ query }),
     businessScheduleLifecycleMutations: require('../../cloud-business-api/src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({ query }),
     desktopRegistration: { begin: async () => { throw new Error('unused'); }, register: async () => { throw new Error('unused'); }, sessionContext: async () => ({ authorityId: 'authority-1', accountId: 'account-1', roles: ['teacher'], teacherId: 'teacher-1' }) },
@@ -17,7 +18,7 @@ async function run() {
   await new Promise(resolve => server.once('listening', resolve));
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
   const cloudClient = createDesktopIdentityClient({ desktopIdentity: { status: () => ({}) } });
-  const adapter = createDesktopCloudBusinessDraftAdapter({ baseUrl, cloudClient, sha256: value => `hash:${value}` });
+  const adapter = createDesktopCloudBusinessDraftAdapter({ baseUrl, cloudClient, sha256: value => require('node:crypto').createHash('sha256').update(value).digest('hex') });
   try {
     for (const action of ['create', 'update']) {
       const record = { course_id: 'course-1', start_time: '2026-09-08T01:00:00Z', end_time: '2026-09-08T02:30:00Z',

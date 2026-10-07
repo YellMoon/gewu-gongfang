@@ -22,8 +22,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typ
  const baseline=created.updated_at;cache.updateInstitution(created.id,{name:'已改名'});
  assert.deepEqual(drafts.map(d=>d[0]),['institutions','institutions']);assert.equal(drafts[1][4],baseline);
  assert.equal(cache.data.students.find(s=>s.id===managed.id).name,'已改名学生');
- const projection={protocol:'gewu.authority-projection.v1',sourceVersion:1,payload:{institutions:[],students:[ordinary]}};
+ const projection={protocol:'gewu.authority-projection.v1',sourceVersion:1,userId:'fixture-user',businessAuthority:'https://business.fixture',payload:{institutions:[],students:[ordinary]}};
  const outbox=drafts.map((d,i)=>({type:`institution.${d[1]}.v1`,status:'awaiting_confirmation',createdAt:String(i),payload:d[1]==='create'?{record:d[3]}:{id:d[2],changes:d[3],expectedVersion:d[4]}}));
+ outbox.forEach(item=>item.draftScope={userId:projection.userId,businessAuthority:projection.businessAuthority,activeRole:String(projection.role || '')});
  const before=JSON.stringify({projection,outbox});
  const clean=buildAuthorityBackedBrowserCache({projection});
  const reloaded=buildAuthorityBackedBrowserCache({projection,outbox});

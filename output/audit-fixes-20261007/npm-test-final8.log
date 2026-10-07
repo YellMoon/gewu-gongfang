@@ -1,0 +1,1149 @@
+
+> gewu-gongfang@8.13.0 pretest
+> node src/services/operationAuditClient.test.js && node miniapp/src/utils/miniappOfflineQueue.test.js && node miniapp/src/pages/settings/settingsExperience.test.js && npm run test:business-parity && npm run test:course-active
+
+operationAuditClient tests passed
+miniapp authority projection and core-mutation retirement checks passed
+settings and application hierarchy checks passed
+
+> gewu-gongfang@8.13.0 test:business-parity
+> node src/services/desktopCloudTransportDraft.test.js && node src/App.projection-refresh.test.js && node src/pages/ScheduleCalendar.batch-parity.test.js && node src/pages/ScheduleCalendar.refresh-parity.test.js && node src/pages/ScheduleCalendar.refresh-context.test.js && node src/services/desktopAutoSync.test.js && node src/services/desktopAutoSync.integration.test.js && node src/components/DesktopAutoSync.runtime.test.js && node src/services/desktopLoginMemory.test.js && node src/utils/batchSelectionGeometry.test.js && node src/pages/useBatchSelection.time.test.js && node src/services/studentCloudReadbackParity.test.js && node src/components/sync/SyncQuickPanel.placement.test.js && node scripts/business-parity-window-size.test.cjs && node scripts/cloud_postgres_security_fingerprint.test.cjs && python scripts/backup_cloud_postgres.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/run_business_parity_shadow.test.py && python scripts/business_parity_course_refresh.test.py && python scripts/verify_cloud_schedule_snapshot_recovery.test.py && node src/pages/CourseList.room-resolution.test.js && node src/components/DesktopSync.browser.test.cjs && node src/services/desktopSyncRecovery.test.mjs && node src/pages/ScheduleCalendar.local-date.test.js
+
+desktop cloud transport draft capture passed
+actual App preserves calendar/course instances on projection refresh; manual refresh and account partition resets remain
+actual calendar load effect refreshes cache in place and removes its listener on unmount
+actual course load effect refreshes cache in place and removes its listener on unmount
+six actual resource read effects refresh displayed data without writes and remove listeners
+original/current batch save and two-student draft parity checks passed: 144 batch + 108 attendance combinations
+original/current refresh parity passed: 48 fee/status/range combinations, boundary preservation, cancellation and mutation detection
+targeted refresh context-menu checks passed
+desktop auto sync tests passed
+desktop auto sync real outbox dependency batch checks passed
+unified desktop sync batch, reconnect, conflict, race and history checks passed
+actual desktop sync dialog, event, aggregate confirmation and identity cleanup checks passed
+desktop login memory tests passed
+batchSelectionGeometry tests passed
+original batch rectangle cloud-time checks passed
+student canonical contact and original source readback parity checks passed
+single sync window entry checks passed
+parity window sizing waits for native unmaximize and preserves requested dimensions
+backup security fingerprint PostgreSQL fault checks passed
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.007s
+
+OK
+....................................................warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+----------------------------------------------------------------------
+Ran 57 tests in 8.584s
+
+OK
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.376s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+actual course save resolves missing cached cloud addresses without duplicate drafts
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+actual Ant Design sync window wide/narrow, keyboard, silent online and aggregate offline checks passed
+legacy/missing-target sync failure, pause, network retry and durable discard passed
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+
+> gewu-gongfang@8.13.0 test:course-active
+> node src/pages/CourseList.active-parity.test.js && node public/desktopAuthorityRuntime.course-active.test.js && python scripts/business_parity_course_active.test.py
+
+original course active parity passed: 12
+course state-only outbox confirmation, presentation and merge checks passed (synthetic safeStorage, not encryption acceptance)
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+OK
+
+> gewu-gongfang@8.13.0 test
+> npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:question-intake && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node miniapp/src/utils/miniappReleaseConfig.test.js && node backend/src/runtimePort.test.js && node scripts/deployEnv.test.js && npm run test:audit-fixes
+
+
+> gewu-gongfang@8.13.0 test:desktop-build-flavor
+> node public/desktopBuildFlavor.test.js && node scripts/unified-desktop-package-boundary.test.js && node scripts/check_deploy_readiness.unifiedDesktopBoundary.test.js && node public/electronDevelopmentFixture.test.js && node public/electronRuntimeContracts.test.js && node public/electronSingleInstance.test.js && node public/electronCrossInstallLock.test.js && node scripts/verify-packaged-electron-native-abi.test.js && node scripts/cleanup-disposable-desktop-profiles.test.js && node scripts/desktop-architecture-cutover.test.js && node public/contentSecurityPolicy.test.js && node public/electronLocalIdentityDiagnostics.test.js && node public/localSessionSigningSecret.test.js && node src/pages/SystemSettings.test.js && node scripts/packaged-smoke-check.test.js
+
+unified desktop build flavor checks passed
+unified desktop package boundary checks passed
+deploy readiness unified desktop boundary checks passed
+Electron development login fixture boundary checks passed
+unified electron runtime contract checks passed
+Electron single-instance checks passed
+Electron cross-install instance lock checks passed
+packaged Electron native ABI verifier checks passed
+disposable desktop profile cleanup checks passed
+desktop architecture cutover checks passed
+desktop content security policy checks passed
+electron local identity diagnostics checks passed
+local session signing secret checks passed
+unified system settings UI checks passed
+packaged smoke isolation checks passed
+
+> gewu-gongfang@8.13.0 test:taxonomy
+> node src/services/taxonomyFilter.test.js && node src/components/TaxonomyManager.test.js && node backend/src/services/questionBankService.test.js
+
+taxonomy filter checks passed
+taxonomy manager integration checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-4E3euK\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-g8wfcX\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-BX6mnb\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-EAsnUk\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-GDfjWI\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-1O1QtI\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-c87W1W\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-uQ3iiw\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-fTtsYV\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-L9QlTb\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-S6iZf2\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-oAOB1y\test.db
+questionBankService tests passed
+
+> gewu-gongfang@8.13.0 test:institution-student
+> node backend/src/institutionStudentLifecycle.test.js && node src/utils/institutionStudent.test.js && node src/utils/coursePricingRules.test.js && node src/utils/financialDetails.test.js && npm run test:revenue-filters
+
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-institution-student-iZz3Hk\test.db
+institution student lifecycle tests passed
+institutionStudent tests passed
+coursePricingRules institution student tests passed
+financialDetails refresh tests passed
+cloud attendance original financial round-trip checks passed
+
+> gewu-gongfang@8.13.0 test:revenue-filters
+> node src/utils/revenueStatisticsFilters.test.js && node src/utils/revenueDetailFilters.test.js
+
+revenueStatisticsFilters tests passed
+revenueDetailFilters tests passed
+
+> gewu-gongfang@8.13.0 test:miniapp-identity-schema
+> node backend/src/miniappIdentitySchema.test.js
+
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-z34DOA\legacy.db
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-z34DOA\legacy.db
+miniapp identity schema migration checks passed
+
+> gewu-gongfang@8.13.0 test:miniapp-identity
+> node backend/src/services/authRateLimiter.test.js && node backend/src/services/wechatMiniappService.test.js && node backend/src/services/miniappWechatBindingService.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+auth rate limiter checks passed
+wechat miniapp identity checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-wechat-binding-HfdMiU\binding.db
+miniapp wechat binding service checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-service-KlEYNR\identity.db
+miniapp identity service checks passed
+miniapp cloud-only route boundary checks passed
+
+> gewu-gongfang@8.13.0 test:miniapp-applications
+> npm --prefix cloud-business-api run test:role-applications && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+
+> gewu-cloud-business-api@8.15.0 test:role-applications
+> node src/miniappRoleApplicationService.test.js && node src/miniappRoleApplicationRepository.test.js && node sql/cloud-role-applications.test.js && node sql/role-application-least-privilege.test.js && node sql/role-application-new-profile-mode.test.js && node sql/role-application-atomic-profile.test.js && node sql/role-application-least-privilege.postgres.test.js && node sql/role-application-atomic-profile.postgres.test.js
+
+role approval continuity: signed sessions, three roles, own history, disabled sessions and visitor-only writes passed
+miniapp role application service checks passed
+miniapp role application repository checks passed
+cloud role application schema checks passed
+role application least-privilege schema checks passed
+role application new-profile mode migration checks passed
+role application atomic profile migration checks passed
+role application least-privilege PostgreSQL checks passed
+role application atomic profile PostgreSQL checks passed
+miniapp cloud-only route boundary checks passed
+
+> gewu-gongfang@8.13.0 test:ruby-runtime
+> node scripts/prepare-ruby-runtime.test.js
+
+prepare Ruby runtime checks passed
+
+> gewu-gongfang@8.13.0 test:question-deletion
+> python -m unittest discover modules/question-bank/parsers/tests -v && node scripts/question-bank-cli.test.js && node public/questionDraftProvenanceRegistry.test.js && node public/questionImportRelay.test.js && node src/services/nativeQuestionDraftCreate.test.js && node src/services/questionBankBindingUi.test.js && node src/services/questionProvenance.test.js && node src/services/desktopQuestionDeleteContext.test.js && node backend/src/services/questionDeletionPolicy.test.js && node backend/src/questionStorageMigration.test.js && node src/services/questionDeletionPresentation.test.js && node src/services/questionLocalDeletionPolicy.test.js && node src/services/questionDeleteApi.test.js && node backend/src/services/questionBankStorageService.test.js
+
+test_actual_exam_comprehensive_section_is_solution (test_exam_section_types.ExamSectionTypes.test_actual_exam_comprehensive_section_is_solution) ... ok
+test_explicit_section_survives_answer_classification (test_exam_section_types.ExamSectionTypes.test_explicit_section_survives_answer_classification) ... ok
+test_generic_non_choice_heading_does_not_force_a_type (test_exam_section_types.ExamSectionTypes.test_generic_non_choice_heading_does_not_force_a_type) ... ok
+test_collects_simple_and_nested_fields_without_mixing_results (test_formula_eq.EqFormulaTests.test_collects_simple_and_nested_fields_without_mixing_results) ... ok
+test_collects_split_instruction_and_visible_result (test_formula_eq.EqFormulaTests.test_collects_split_instruction_and_visible_result) ... ok
+test_converts_common_eq_constructs_to_canonical_latex (test_formula_eq.EqFormulaTests.test_converts_common_eq_constructs_to_canonical_latex) ... ok
+test_converts_left_brace_array_into_piecewise_cases (test_formula_eq.EqFormulaTests.test_converts_left_brace_array_into_piecewise_cases) ... ok
+test_preserves_word_run_scripts_and_skips_nested_layout_overlay (test_formula_eq.EqFormulaTests.test_preserves_word_run_scripts_and_skips_nested_layout_overlay) ... ok
+test_safe_overline_overlay_and_unsupported_overlays (test_formula_eq.EqFormulaTests.test_safe_overline_overlay_and_unsupported_overlays) ... ok
+test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction (test_formula_eq.EqFormulaTests.test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction) ... ok
+test_batch_deduplicates_ole_payloads_and_parses_sentinel_json (test_formula_mathtype.MathTypeFormulaTests.test_batch_deduplicates_ole_payloads_and_parses_sentinel_json) ... ok
+test_batch_ruby_exception_handler_has_valid_syntax (test_formula_mathtype.MathTypeFormulaTests.test_batch_ruby_exception_handler_has_valid_syntax) ... ok
+test_cached_conversion_does_not_start_ruby_again (test_formula_mathtype.MathTypeFormulaTests.test_cached_conversion_does_not_start_ruby_again) ... ok
+test_converter_failure_isolated_as_preview_only_not_fake_latex (test_formula_mathtype.MathTypeFormulaTests.test_converter_failure_isolated_as_preview_only_not_fake_latex) ... ok
+test_mathml_normalizes_fraction_scripts_and_matrix (test_formula_mathtype.MathTypeFormulaTests.test_mathml_normalizes_fraction_scripts_and_matrix) ... ok
+test_successful_ole_conversion_returns_canonical_latex (test_formula_mathtype.MathTypeFormulaTests.test_successful_ole_conversion_returns_canonical_latex) ... ok
+test_wmf_conversion_uses_wmf_suffix_and_separate_cache (test_formula_mathtype.MathTypeFormulaTests.test_wmf_conversion_uses_wmf_suffix_and_separate_cache) ... ok
+test_invalid_display_mode_and_status_are_rejected (test_formula_model.FormulaModelTests.test_invalid_display_mode_and_status_are_rejected) ... ok
+test_public_projection_keeps_latex_and_traceability_without_binary_payload (test_formula_model.FormulaModelTests.test_public_projection_keeps_latex_and_traceability_without_binary_payload) ... ok
+test_visible_fallback_never_returns_source_code_or_xml (test_formula_model.FormulaModelTests.test_visible_fallback_never_returns_source_code_or_xml) ... ok
+test_delimiter_properties_are_local_and_braces_are_escaped (test_formula_omml.OmmlFormulaTests.test_delimiter_properties_are_local_and_braces_are_escaped) ... ok
+test_explicit_blank_delimiter_is_invisible_not_missing (test_formula_omml.OmmlFormulaTests.test_explicit_blank_delimiter_is_invisible_not_missing) ... ok
+test_fraction_radical_and_scripts (test_formula_omml.OmmlFormulaTests.test_fraction_radical_and_scripts) ... ok
+test_matrix_equation_array_accents_bars_and_grouping (test_formula_omml.OmmlFormulaTests.test_matrix_equation_array_accents_bars_and_grouping) ... ok
+test_nary_limits_functions_and_delimiters (test_formula_omml.OmmlFormulaTests.test_nary_limits_functions_and_delimiters) ... ok
+test_nested_script_base_keeps_its_grouping (test_formula_omml.OmmlFormulaTests.test_nested_script_base_keeps_its_grouping) ... ok
+test_plain_text_and_unknown_nodes_report_approximation_without_xml_leak (test_formula_omml.OmmlFormulaTests.test_plain_text_and_unknown_nodes_report_approximation_without_xml_leak) ... ok
+test_superscript_prime_is_a_symbol_not_tex_empty_base_shorthand (test_formula_omml.OmmlFormulaTests.test_superscript_prime_is_a_symbol_not_tex_empty_base_shorthand) ... ok
+test_hidden_occurrences_removed_without_removing_normal_reuse (test_hidden_brand_images.HiddenBrandImageTests.test_hidden_occurrences_removed_without_removing_normal_reuse) ... ok
+test_drawingml_size_survives_as_physical_display_size (test_image_display_geometry.ImageDisplayGeometryTests.test_drawingml_size_survives_as_physical_display_size) ... ok
+test_invalid_dimensions_do_not_enter_rich_content (test_image_display_geometry.ImageDisplayGeometryTests.test_invalid_dimensions_do_not_enter_rich_content) ... ok
+test_real_ordered_token_import_preserves_each_image_occurrence (test_image_display_geometry.ImageDisplayGeometryTests.test_real_ordered_token_import_preserves_each_image_occurrence) ... ok
+test_vml_fractional_points_and_repeated_image_sizes_survive (test_image_display_geometry.ImageDisplayGeometryTests.test_vml_fractional_points_and_repeated_image_sizes_survive) ... ok
+test_answer_explanation_comment_is_preserved (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_answer_explanation_comment_is_preserved) ... ok
+test_choice_stems_mentioning_experiments_or_comprehensive_control_keep_options (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_choice_stems_mentioning_experiments_or_comprehensive_control_keep_options) ... ok
+test_nested_experiment_options_stay_with_subquestion (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_nested_experiment_options_stay_with_subquestion) ... ok
+test_quality_report_does_not_call_missing_choice_options_clean (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_quality_report_does_not_call_missing_choice_options_clean) ... ok
+test_source_comment_is_not_part_of_choice_answer (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_source_comment_is_not_part_of_choice_answer) ... ok
+test_converted_formula_does_not_also_render_its_preview_as_a_picture (test_mathtype_preview_dedup.MathTypePreviewDedupTests.test_converted_formula_does_not_also_render_its_preview_as_a_picture) ... ok
+test_standalone_mathtype_wmf_becomes_native_formula_not_image (test_mathtype_preview_dedup.MathTypePreviewDedupTests.test_standalone_mathtype_wmf_becomes_native_formula_not_image) ... ok
+test_asset_keeps_source_part_and_original_format_after_png_conversion (test_metafile_image.MetafileImageTests.test_asset_keeps_source_part_and_original_format_after_png_conversion) ... ok
+test_failed_invalid_or_oversized_conversion_keeps_original_asset (test_metafile_image.MetafileImageTests.test_failed_invalid_or_oversized_conversion_keeps_original_asset) ... ok
+test_linux_wmf_outputs_bounded_png_and_removes_its_temporary_files (test_metafile_image.MetafileImageTests.test_linux_wmf_outputs_bounded_png_and_removes_its_temporary_files) ... ok
+test_non_wmf_or_missing_converter_is_not_mislabelled_as_png (test_metafile_image.MetafileImageTests.test_non_wmf_or_missing_converter_is_not_mislabelled_as_png) ... ok
+test_comment_formula_is_canonical_answer_node_not_body_source (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_comment_formula_is_canonical_answer_node_not_body_source) ... ok
+test_exam_fixture_attaches_answer_and_analysis_formula_metadata (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_exam_fixture_attaches_answer_and_analysis_formula_metadata) ... ok
+test_exam_question_number_after_leading_image_is_not_merged_into_previous_question (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_exam_question_number_after_leading_image_is_not_merged_into_previous_question) ... ok
+test_forced_xml_fallback_returns_canonical_formulas_and_quality_counts (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_forced_xml_fallback_returns_canonical_formulas_and_quality_counts) ... ok
+test_formula_markup_preserves_duplicate_latex_occurrences_by_formula_id (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_formula_markup_preserves_duplicate_latex_occurrences_by_formula_id) ... ok
+test_image_tag_escapes_malicious_file_name_attribute (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_image_tag_escapes_malicious_file_name_attribute) ... ok
+test_inline_first_option_is_recovered_when_following_options_start_at_b (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_inline_first_option_is_recovered_when_following_options_start_at_b) ... ok
+test_lecture_fixture_preserves_comment_and_table_formula_coordinates (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_lecture_fixture_preserves_comment_and_table_formula_coordinates) ... ok
+test_packed_word_options_expand_only_as_a_complete_choice_sequence (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_packed_word_options_expand_only_as_a_complete_choice_sequence) ... ok
+test_parser_optional_null_attrs_match_rich_content_normalizer_contract (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_parser_optional_null_attrs_match_rich_content_normalizer_contract) ... ok
+test_physics_unit_normalization_does_not_mutate_markup_attributes (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_physics_unit_normalization_does_not_mutate_markup_attributes) ... ok
+test_python_docx_path_returns_token_derived_rich_formula (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_python_docx_path_returns_token_derived_rich_formula) ... ok
+test_quality_report_lists_actionable_formula_locations_by_source_and_status (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_quality_report_lists_actionable_formula_locations_by_source_and_status) ... ok
+test_referenced_assets_follow_document_reference_order (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_referenced_assets_follow_document_reference_order) ... ok
+test_rich_content_preserves_formula_field_ownership_and_source_order (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_rich_content_preserves_formula_field_ownership_and_source_order) ... ok
+test_continuation_without_subquestions_stays_in_stem (test_subquestion_sections.SubquestionSectionsTests.test_continuation_without_subquestions_stays_in_stem) ... ok
+test_diagrams_remain_once_in_their_source_subquestion (test_subquestion_sections.SubquestionSectionsTests.test_diagrams_remain_once_in_their_source_subquestion) ... ok
+test_each_import_path_assigns_body_to_one_section_only (test_subquestion_sections.SubquestionSectionsTests.test_each_import_path_assigns_body_to_one_section_only) ... ok
+test_inline_analysis_marker_keeps_following_numbered_steps_in_analysis (test_subquestion_sections.SubquestionSectionsTests.test_inline_analysis_marker_keeps_following_numbered_steps_in_analysis) ... ok
+test_numbered_analysis_does_not_overwrite_subquestion_answers (test_subquestion_sections.SubquestionSectionsTests.test_numbered_analysis_does_not_overwrite_subquestion_answers) ... ok
+test_subquestion_formula_is_not_relocated_to_stem (test_subquestion_sections.SubquestionSectionsTests.test_subquestion_formula_is_not_relocated_to_stem) ... ok
+test_actual_lecture_parser_keeps_a_table_between_stem_and_options (test_table_structure.TableStructureTests.test_actual_lecture_parser_keeps_a_table_between_stem_and_options) ... ok
+test_empty_and_merged_cells_do_not_shift_columns (test_table_structure.TableStructureTests.test_empty_and_merged_cells_do_not_shift_columns) ... ok
+test_nested_tables_and_word_vertical_merges_preserve_order (test_table_structure.TableStructureTests.test_nested_tables_and_word_vertical_merges_preserve_order) ... ok
+test_rich_document_preserves_cells_and_inline_native_formula (test_table_structure.TableStructureTests.test_rich_document_preserves_cells_and_inline_native_formula) ... ok
+test_common_containers_are_walked_and_non_eq_simple_field_keeps_visible_result (test_word_content.WordContentWalkerTests.test_common_containers_are_walked_and_non_eq_simple_field_keeps_visible_result) ... ok
+test_document_and_comments_share_ordered_token_capabilities (test_word_content.WordContentWalkerTests.test_document_and_comments_share_ordered_token_capabilities) ... ok
+test_source_coordinates_and_relationship_targets_are_preserved (test_word_content.WordContentWalkerTests.test_source_coordinates_and_relationship_targets_are_preserved) ... ok
+test_table_tokens_preserve_row_cell_and_cell_paragraph_coordinates (test_word_content.WordContentWalkerTests.test_table_tokens_preserve_row_cell_and_cell_paragraph_coordinates) ... ok
+test_document_and_comment_import_all_three_formula_sources (test_word_formula_import.WordFormulaImportTests.test_document_and_comment_import_all_three_formula_sources) ... ok
+test_formula_ids_are_stable_and_raw_ole_never_enters_public_projection (test_word_formula_import.WordFormulaImportTests.test_formula_ids_are_stable_and_raw_ole_never_enters_public_projection) ... ok
+
+----------------------------------------------------------------------
+Ran 75 tests in 2.924s
+
+OK
+bundled Word parser bootstrap checks passed
+question draft provenance registry tests passed
+question import relay checks passed
+native question draft create tests passed
+question bank binding UI tests passed
+question provenance tests passed
+desktop question delete context tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-delete-policy-scTGeR\test.db
+questionDeletionPolicy tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-HFz3RX\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-HFz3RX\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-HFz3RX\test.db
+question storage migration tests passed
+question deletion presentation tests passed
+question local deletion policy tests passed
+question delete API tests passed
+questionBankStorageService tests passed
+
+> gewu-gongfang@8.13.0 test:question-intake
+> node scripts/generate-question-rich-content-contract.js --check && node public/desktopQuestionIntake.test.js && node src/services/desktopQuestionIntake.test.js && node src/services/localQuestionIntakePreview.test.cjs && node src/pages/QuestionBankImport.cloud-authority.test.js && node cloud-business-api/src/desktopQuestionIntake.test.js && node cloud-business-api/src/desktopQuestionIntake.postgres.test.js
+
+canonical question rich-content contract verified
+actual bundled Python desktop intake: original digest, two removed branding occurrences, source geometry, editable LaTeX and temporary cleanup passed
+desktop intake local parse-before-network, unchanged original and cloud candidate submission passed
+edited intake media: upload, deletion, deduplication, digest integrity and immutable source passed
+question bank import cloud authority checks passed
+desktop question intake unit checks passed
+desktop question intake PostgreSQL checks passed
+
+> gewu-gongfang@8.13.0 test:rich-content
+> node src/services/questionRichContent.test.js && node src/constants/questionTypes.test.js && node src/components/richQuestionEditorState.test.js && node src/utils/sanitizeHtml.test.js && node src/components/richQuestionEditorRoundTrip.test.js && node src/components/question-editor/questionStructureOperations.test.js && node src/components/question-editor/questionImageCleanup.test.js && node src/components/question-editor/questionEditorSession.test.js && node src/services/questionValidation.test.js && node src/services/questionWorkflow.test.js && node src/services/questionPaperLayout.test.js && node src/utils/questionRenderCache.test.js && node src/components/taxonomyTreeOperations.test.js && node src/components/QuestionFormulaContent.test.js && node src/components/QuestionPreviewCard.test.js && node src/services/questionLocalStore.subject.test.js && node src/pages/QuestionBankPreview.batch.test.js
+
+questionRichContent tests passed
+question type normalization tests passed
+rich editor controlled-state tests passed
+sanitizeHtml behavior tests passed
+formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL
+legacy table display checks passed: four sections, merged cells, nested tables and cell formulas
+rich editor TipTap HTML/JSON roundtrip tests passed
+question structure operations tests passed
+hidden image cleanup across all question sections passed
+question editor session behavior tests passed
+question import revalidation behavior tests passed
+question checks, import merging and search checks passed
+paper layout restore and regroup checks passed
+bounded formula render cache checks passed
+taxonomy drag and search checks passed
+formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL
+legacy table display checks passed: four sections, merged cells, nested tables and cell formulas
+question preview card answer and basket action checks passed
+whole-card answer, edit cache and nested control interactions passed
+question local subject filtering checks passed
+actual batch tag, custom taxonomy, partial failures and paper navigation checks passed
+
+> gewu-gongfang@8.13.0 test:formula-export
+> python -m unittest discover modules/question-bank/export/tests -v
+
+test_empty_canonical_latex_blocks_the_artifact_with_location (test_formula_renderers.FormulaRendererContractTests.test_empty_canonical_latex_blocks_the_artifact_with_location) ... ok
+test_manifest_preserves_location_and_native_mode (test_formula_renderers.FormulaRendererContractTests.test_manifest_preserves_location_and_native_mode) ... ok
+test_mathtype_cannot_be_claimed_from_a_boolean_without_ole_evidence (test_formula_renderers.FormulaRendererContractTests.test_mathtype_cannot_be_claimed_from_a_boolean_without_ole_evidence) ... ok
+test_mathtype_without_audited_writer_falls_back_truthfully (test_formula_renderers.FormulaRendererContractTests.test_mathtype_without_audited_writer_falls_back_truthfully) ... ok
+test_blank_pdf_with_formula_manifest_fails_closed (test_visible_gate.VisibleGatePackageContractTests.test_blank_pdf_with_formula_manifest_fails_closed) ... ok
+test_broken_relationship_blocks_with_location (test_visible_gate.VisibleGatePackageContractTests.test_broken_relationship_blocks_with_location) ... ok
+test_docx_formula_index_set_must_match_manifest_exactly (test_visible_gate.VisibleGatePackageContractTests.test_docx_formula_index_set_must_match_manifest_exactly) ... ok
+test_empty_canonical_formula_blocks (test_visible_gate.VisibleGatePackageContractTests.test_empty_canonical_formula_blocks) ... ok
+test_empty_native_and_eq_omml_are_not_visible_results (test_visible_gate.VisibleGatePackageContractTests.test_empty_native_and_eq_omml_are_not_visible_results) ... ok
+test_eq_field_requires_instruction_and_visible_omml_result (test_visible_gate.VisibleGatePackageContractTests.test_eq_field_requires_instruction_and_visible_omml_result) ... ok
+test_latex_vector_requires_svg_png_relationships_and_positive_extent (test_visible_gate.VisibleGatePackageContractTests.test_latex_vector_requires_svg_png_relationships_and_positive_extent) ... ok
+test_latex_vector_without_formula_extent_fails_for_that_formula (test_visible_gate.VisibleGatePackageContractTests.test_latex_vector_without_formula_extent_fails_for_that_formula) ... ok
+test_mathtype_claim_fails_closed_without_audited_fixture (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_claim_fails_closed_without_audited_fixture) ... ok
+test_mathtype_evidence_must_be_bound_inside_each_indexed_container (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_evidence_must_be_bound_inside_each_indexed_container) ... ok
+test_mathtype_rejects_fake_ole_and_preview_bytes (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_rejects_fake_ole_and_preview_bytes) ... ok
+test_native_and_eq_missing_first_formula_map_to_first_manifest_row (test_visible_gate.VisibleGatePackageContractTests.test_native_and_eq_missing_first_formula_map_to_first_manifest_row) ... ok
+test_omml_chr_attribute_without_run_text_semantics_is_not_renderable (test_visible_gate.VisibleGatePackageContractTests.test_omml_chr_attribute_without_run_text_semantics_is_not_renderable) ... ok
+test_pdf_comment_or_string_operator_tokens_are_not_paint (test_visible_gate.VisibleGatePackageContractTests.test_pdf_comment_or_string_operator_tokens_are_not_paint) ... ok
+test_pdf_fill_requires_nonzero_subpath_area_and_B_keeps_valid_stroke (test_visible_gate.VisibleGatePackageContractTests.test_pdf_fill_requires_nonzero_subpath_area_and_B_keeps_valid_stroke) ... ok
+test_pdf_flate_page_content_stream_is_decoded (test_visible_gate.VisibleGatePackageContractTests.test_pdf_flate_page_content_stream_is_decoded) ... ok
+test_pdf_formula_evidence_cannot_be_split_across_pages (test_visible_gate.VisibleGatePackageContractTests.test_pdf_formula_evidence_cannot_be_split_across_pages) ... ok
+test_pdf_formula_index_set_must_match_manifest_exactly (test_visible_gate.VisibleGatePackageContractTests.test_pdf_formula_index_set_must_match_manifest_exactly) ... ok
+test_pdf_marker_and_annotation_without_actual_draw_is_not_visible_evidence (test_visible_gate.VisibleGatePackageContractTests.test_pdf_marker_and_annotation_without_actual_draw_is_not_visible_evidence) ... ok
+test_pdf_paint_must_intersect_formula_box_and_text_needs_page_font (test_visible_gate.VisibleGatePackageContractTests.test_pdf_paint_must_intersect_formula_box_and_text_needs_page_font) ... ok
+test_pdf_pending_clip_applies_at_every_path_end (test_visible_gate.VisibleGatePackageContractTests.test_pdf_pending_clip_applies_at_every_path_end) ... ok
+test_pdf_report_uses_final_file_and_truthful_fallback (test_visible_gate.VisibleGatePackageContractTests.test_pdf_report_uses_final_file_and_truthful_fallback) ... ok
+test_pdf_source_residue_is_checked_only_in_referenced_page_text (test_visible_gate.VisibleGatePackageContractTests.test_pdf_source_residue_is_checked_only_in_referenced_page_text) ... ok
+test_pdf_unreferenced_stream_cannot_supply_formula_evidence (test_visible_gate.VisibleGatePackageContractTests.test_pdf_unreferenced_stream_cannot_supply_formula_evidence) ... ok
+test_png_trns_requires_at_least_one_visible_pixel (test_visible_gate.VisibleGatePackageContractTests.test_png_trns_requires_at_least_one_visible_pixel) ... ok
+test_second_formula_broken_relationship_maps_to_second_manifest_location (test_visible_gate.VisibleGatePackageContractTests.test_second_formula_broken_relationship_maps_to_second_manifest_location) ... ok
+test_source_gate_allows_comparisons_and_currency (test_visible_gate.VisibleGatePackageContractTests.test_source_gate_allows_comparisons_and_currency) ... ok
+test_source_gate_allows_ordinary_windows_paths (test_visible_gate.VisibleGatePackageContractTests.test_source_gate_allows_ordinary_windows_paths) ... ok
+test_svg_fill_requires_nonzero_area_but_keeps_polygon_curve_and_stroke (test_visible_gate.VisibleGatePackageContractTests.test_svg_fill_requires_nonzero_area_but_keeps_polygon_curve_and_stroke) ... ok
+test_unreferenced_png_cannot_satisfy_vector_fallback_or_mathtype_preview (test_visible_gate.VisibleGatePackageContractTests.test_unreferenced_png_cannot_satisfy_vector_fallback_or_mathtype_preview) ... ok
+test_vector_media_must_be_structurally_renderable (test_visible_gate.VisibleGatePackageContractTests.test_vector_media_must_be_structurally_renderable) ... ok
+test_visible_source_gate_covers_inline_commands_and_serialized_markup_but_not_field_instruction (test_visible_gate.VisibleGatePackageContractTests.test_visible_source_gate_covers_inline_commands_and_serialized_markup_but_not_field_instruction) ... ok
+test_word_native_requires_omml_and_reports_final_hash (test_visible_gate.VisibleGatePackageContractTests.test_word_native_requires_omml_and_reports_final_hash) ... ok
+test_zero_extent_crop_source_residue_and_placeholder_each_block (test_visible_gate.VisibleGatePackageContractTests.test_zero_extent_crop_source_residue_and_placeholder_each_block) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 0.912s
+
+OK
+
+> gewu-gongfang@8.13.0 test:paper-export-desktop
+> node src/pages/QuestionBankPaper.export-formulas.test.js && node src/services/paperExportTaskClient.test.js && node src/services/paperExportTaskUi.test.js && node src/services/desktopQuestionImportClient.test.js
+
+PASS desktop actual export handler -> word renderer
+PASS desktop actual export handler -> pdf renderer
+PASS miniapp actual export handler -> word renderer
+PASS miniapp actual export handler -> pdf renderer
+PASS miniapp retry preserves layout and requests editable formulas
+paper export task client checks passed
+paper export task UI regression checks passed
+desktop question import client checks passed
+
+> gewu-gongfang@8.13.0 pretest:backend
+> npm run test:authority-architecture && node backend/src/middleware/questionBankReadAccess.test.js && node backend/src/services/electronDependencyCompatibility.test.js && npm run test:desktop-authorization && npm run test:identity-device-center && npm run test:sync-identity
+
+
+> gewu-gongfang@8.13.0 pretest:authority-architecture
+> node scripts/check_cloud_business_authority_contract.test.js && node backend/src/routes/authorityProtocolApp.http.test.js && node backend/serverRuntimeWorker.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js && node cloud-business-api/src/app.test.js && node cloud-business-api/src/desktopActiveRoleAuthorization.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node miniapp/src/utils/miniappRouteAccess.test.js
+
+cloud business authority architecture contract checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-authority-app-http-DOFELX\authority-app.db
+authorityProtocol retired app HTTP tests passed
+cloud runtime worker integration checks passed
+miniapp cloud-only route boundary checks passed
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+business microsecond version REST roundtrip and invalid-version checks passed
+cloud business API health checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed
+desktop active-role authorization tests passed
+miniapp authorization runtime checks passed
+miniapp route access checks passed
+miniapp financial page entry and pre-read access checks passed
+
+> gewu-gongfang@8.13.0 test:authority-architecture
+> node shared/authorityProtocol.test.js && node src/services/authorityDraftAdapter.test.js && node src/services/authorityProjectionCacheAdapter.test.js && node src/services/authorityCacheCheckpoint.test.js && node src/services/studentContactDraftProjection.test.js && node src/services/browserDatabaseSyncCapture.test.js && node src/services/browserAuthorityProjectionCutover.test.js && node src/services/desktopCommandOutbox.test.js && node src/services/desktopAuthorityClient.test.js && node src/services/desktopCloudBusinessDraft.test.js && node public/desktopIdentityVault.test.js && node src/services/desktopIdentityClient.test.js && node miniapp/src/utils/cloudBusinessProjection.test.js && node miniapp/src/pages/schedule/cloudBusinessSchedule.test.js && node src/pages/QuestionBank.cloud-read.test.js && node src/pages/QuestionBankEdit.cloud-authority.test.js && node src/pages/QuestionBankPaper.cloud-read.test.js && node src/components/QuestionBasket.cloud-read.test.js && node src/pages/QuestionBankPreview.cloud-authority.test.js && node src/pages/QuestionBankImport.cloud-authority.test.js && node public/desktopAuthorityRuntime.test.js && npm --prefix cloud-business-api test
+
+authorityProtocol tests passed
+business delete review metadata and unchanged command checks passed (12 original methods)
+authority draft adapter tests passed
+authorityProjectionCacheAdapter tests passed
+authority cache checkpoint tests passed
+student contact draft projection checks passed
+course inline-room draft identity and atomic capture checks passed
+student school derived-cache and single confirmation checks passed
+browser database safety checks passed
+browserDatabase sync capture checks passed
+schedule draft comparison checks passed
+institution single confirmation and derived billing student draft checks passed
+browser authority projection cutover checks passed
+browser question pagination cache checks passed: failed refresh preserves cache; complete refresh commits once
+desktop command outbox tests passed
+desktop course/address explicit confirmation dependency checks passed
+desktop cloud-only authority client tests passed
+desktop cloud business draft checks passed
+desktop identity vault checks passed
+desktop complete question pagination checks passed
+desktop question asset polling checks passed
+asset in-flight coalescing passed
+desktop business version REST round-trip checks passed
+desktop schedule financial snapshot real REST round-trip checks passed
+desktop identity client checks passed
+miniapp cloud business projection cache checks passed
+miniapp cloud schedule source checks passed
+question bank cloud read checks passed
+question bank edit cloud authority checks passed
+question bank paper cloud read checks passed
+question basket cloud read checks passed
+question bank preview cloud authority checks passed
+question pagination scroll checks passed
+question local subject filtering checks passed
+question bank import cloud authority checks passed
+desktop draft account/authority isolation and identity races passed
+desktop authority runtime tests passed
+
+> gewu-cloud-business-api@8.15.0 pretest
+> npm run test:account-invariants && npm run test:miniapp-cloud-read && npm run test:desktop-access && node src/businessCourseLifecycleMutationService.test.js && node sql/course-lifecycle.test.js && node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node src/businessSupplementalLifecycleMutationService.test.js && node src/supplementalLifecycleRoutes.test.js && node sql/supplemental-business-authority.test.js && node sql/foundation-lifecycle.test.js && node sql/foundation-lifecycle.postgres.test.js && node sql/schedule-lifecycle.postgres.test.js && node sql/question-taxonomy-authority.test.js && node sql/question-taxonomy-authority.postgres.test.js && node sql/runtime-reader-membership.test.js && node src/storageAgentRuntimeReceiptRepository.test.js && node sql/storage-agent-runtime-receipts.test.js && node sql/storage-agent-runtime-receipts.postgres.test.js && node sql/question-import-parser-proof-binding.test.js && node sql/question-import-parser-proof-binding.postgres.test.js && node src/questionImportTaskParserBinding.postgres.test.js
+
+
+> gewu-cloud-business-api@8.15.0 test:account-invariants
+> node scripts/verifyFixedSuperAdmin.test.js && node scripts/startVerified.test.js && node scripts/repairFixedSuperAdminBusiness.test.js && node scripts/repairFixedSuperAdminBusiness.postgres.test.js && node src/desktopPasswordAuthenticationService.test.js && node src/desktopPasswordServerWiring.test.js && node sql/fixed-super-admin-business-invariant.test.js && node sql/fixed-super-admin-business-invariant.postgres.test.js && node sql/student-contact-phone-required.test.js && node sql/student-contact-phone-required.postgres.test.js
+
+fixed super administrator verification tests passed
+verified cloud startup gate checks passed
+fixed super administrator business repair checks passed
+fixed super administrator business repair PostgreSQL checks passed
+desktop password authentication service checks passed
+desktop password active-phone server wiring checks passed
+business fixed super administrator invariant migration checks passed
+fixed super administrator PostgreSQL invariant checks passed
+student contact phone requirement migration checks passed
+student contact phone requirement PostgreSQL checks passed
+
+> gewu-cloud-business-api@8.15.0 test:miniapp-cloud-read
+> node src/miniappBusinessProjection.test.js && node sql/student-schedule-tuition.postgres.test.js && node src/miniappLimitedTasks.test.js && node src/paperExportTaskRepository.test.js && node src/paperExportMediaResolver.test.js && node src/paperExportTaskProcessor.test.js && node src/paperExportRenderer.test.js && node src/miniappArtifactDeliveryRepository.test.js && node src/miniappArtifactDeliveryRoutes.test.js && node src/questionAssetDeliveryRepository.test.js && node src/questionAssetDeliveryRoutes.test.js && node src/questionAssetDeliveryAuthorization.test.js && node src/personalAssetImportRepository.test.js && node src/miniappPersonalAssetImportRoutes.test.js && node sql/miniapp-artifact-deliveries.test.js && node sql/question-asset-deliveries.test.js && node sql/personal-asset-import.test.js
+
+cloud miniapp business projection checks passed
+student-scoped schedule tuition PostgreSQL checks passed
+cloud miniapp limited-task checks passed
+paper export task repository checks passed
+paper export real PostgreSQL lease, stale owner, and atomic archive checks passed
+paper export media resolver checks passed
+paper export task processor checks passed
+paper export execution heartbeat and lost-owner checks passed
+PDF inline layout checks passed
+native Word formula structure checks passed
+paper export bounded hydration and failure drain tests passed
+Supplied template preservation, title, answer sections and solution page-space checks passed
+PDF supplied-template geometry, metadata, solution pages, answers and footers passed
+paper export image geometry checks passed
+Word/PDF table structure, merged cells, media and native formula checks passed
+Word stem/option pagination, long-flow and native formula checks passed
+Word/PDF structured attachment placement and legacy preservation checks passed
+paper export text styles and paragraph checks passed
+paper export PDF Unicode formula and script glyph checks passed
+Word and PDF answer source order checks passed
+paper option layout matches desktop option rules
+Word and PDF option column checks passed
+Export paragraph indentation and size-aware image options passed
+{"heapMiB":[26,25,25,25,25,26],"formulaCount":600}
+formula parser lifetime, handler bounds and macro isolation checks passed
+paper export renderer checks passed
+miniapp artifact delivery repository checks passed
+miniapp artifact delivery route checks passed
+export media renewal, one-hour cap, lease preservation and cached-asset authorization PostgreSQL checks passed
+question image deadline priority, FIFO ties, lease safety and expiry PostgreSQL checks passed
+question asset delivery repository checks passed
+question asset delivery route checks passed
+question asset delivery authorization checks passed
+cloud personal asset import repository and cent precision checks passed
+miniapp personal asset route/repository roles, cents and owner boundary checks passed
+miniapp artifact delivery schema checks passed
+question asset delivery schema checks passed
+cloud personal asset import schema checks passed
+
+> gewu-cloud-business-api@8.15.0 posttest:miniapp-cloud-read
+> node sql/personal-asset-import.postgres.test.js
+
+personal asset import PostgreSQL rollback, replay and owner-boundary checks passed
+
+> gewu-cloud-business-api@8.15.0 test:desktop-access
+> node src/mainlandPhone.test.js && node src/desktopBusinessAccountResolver.test.js && node src/desktopVerifiedAccessService.test.js && node src/desktopRegistrationService.test.js && node src/cloudDesktopIdentityService.test.js && node src/cloudDesktopIdentityPgRepository.test.js && node src/cloudDesktopIdentityRoutes.test.js && node src/cloudDesktopIdentityServerWiring.test.js && node src/desktopActiveRoleAuthorization.test.js && node src/wechatMiniappCodeService.test.js && node src/desktopPairingCanonicalPhoneReader.test.js && node src/desktopPairingIdentityResolver.test.js && node src/desktopPairingService.test.js && node src/app.test.js
+
+mainland phone normalization checks passed
+desktop business account resolver checks passed
+desktop verified access service checks passed
+cloud desktop registration service checks passed
+cloud desktop identity service checks passed
+cloud desktop identity PostgreSQL repository checks passed
+cloud desktop identity route checks passed
+cloud desktop identity server wiring checks passed
+desktop active-role authorization tests passed
+WeChat miniapp desktop login code checks passed
+desktop pairing canonical phone reader checks passed
+desktop pairing identity resolver checks passed
+cloud desktop pairing service checks passed
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+business microsecond version REST roundtrip and invalid-version checks passed
+cloud business API health checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+business course lifecycle mutation service checks passed
+course/schedule separate confirmation PostgreSQL checks passed for teacher and super admin
+historical room scope PostgreSQL checks passed
+course lifecycle SQL checks passed
+business foundation lifecycle mutation service checks passed
+foundation lifecycle route checks passed
+business supplemental lifecycle mutation service checks passed
+supplemental lifecycle route checks passed
+supplemental business authority schema checks passed
+supplemental runtime PostgreSQL permission and version checks passed
+foundation lifecycle SQL checks passed
+foundation lifecycle PostgreSQL checks passed
+schedule lifecycle PostgreSQL checks passed
+question taxonomy authority SQL checks passed
+question pagination PostgreSQL checks passed: 426 rows, tenant/deletion scope, stable cursor, existing index
+question taxonomy authority PostgreSQL checks passed
+runtime reader membership migration checks passed
+storage agent runtime receipt repository checks passed
+storage agent runtime receipt SQL checks passed
+storage agent runtime receipt PostgreSQL checks passed
+question import parser-proof binding SQL checks passed
+question import parser-proof binding PostgreSQL checks passed
+question import task parser binding PostgreSQL checks passed
+
+> gewu-cloud-business-api@8.15.0 test
+> node src/operationAudit.test.js && node sql/operation-audits.postgres.test.js && node Dockerfile.test.js && node scripts/applyMigrations.test.js && node src/app.test.js && node src/miniappCoreMutationBoundary.test.js && node src/businessScheduleMutationService.test.js && node src/businessScheduleStudentOverrideService.test.js && node src/businessScheduleLifecycleMutationService.test.js && node src/businessStudentMutationService.test.js && node src/businessStudentRecordMutationService.test.js && node src/businessStudentLifecycleMutationService.test.js && node src/businessTeacherLifecycleMutationService.test.js && node src/businessRoomLifecycleMutationService.test.js && node src/teacherLifecycleRoutes.test.js && node src/teacherManagedProfileRoutes.test.js && node src/bootstrapAdminIdentity.test.js && node src/canonicalAccountRepository.test.js && node src/canonicalAccountService.test.js && node src/canonicalAccountProvisioningService.test.js && node src/canonicalWechatIdentityService.test.js && node src/desktopPasswordIdentityService.test.js && node src/desktopPasswordAuthenticationService.test.js && node src/mainlandPhone.test.js && node src/desktopBusinessAccountResolver.test.js && node src/desktopVerifiedAccessService.test.js && node src/desktopRegistrationService.test.js && node src/desktopTeacherSelfRegistrationService.test.js && node src/desktopTeacherSelfRegistrationRepository.test.js && node src/desktopRegistrationPgAdapter.test.js && node src/runtimeDatabaseRole.test.js && node src/desktopPairingCanonicalPhoneReader.test.js && node src/desktopPairingIdentityResolver.test.js && node src/desktopPairingService.test.js && node src/miniappCloudAccountService.test.js && node src/miniappCloudAccountRepository.test.js && node src/miniappRoleApplicationService.test.js && node src/miniappRoleApplicationRepository.test.js && node src/questionAuthorityService.test.js && node src/questionAuthorityRuntime.test.js && node src/questionImportTaskRepository.test.js && node src/questionImportRuntime.test.js && node src/encryptedStorageRelayRepository.test.js && node src/storageAgentRuntime.test.js && node src/storageAgentService.test.js && node src/storageTaskRepository.test.js && node src/wechatPhoneVerifier.test.js && node src/wechatIdentityVerifier.test.js && node src/paperExportRenderer.test.js && node src/pdfArtifactValidation.test.js && node src/paperExportArtifactRepository.test.js && node src/paperExportTaskProcessor.test.js && node sql/business-schedule-update.test.js && node sql/business-schedule-student-override.test.js && node sql/schedule-lifecycle.test.js && node sql/business-student-update.test.js && node sql/business-student-update-source-fields.test.js && node sql/student-lifecycle.test.js && node sql/teacher-lifecycle.test.js && node sql/room-lifecycle.test.js && node sql/cloud-question-authority.test.js && node sql/cloud-question-command-receipts.test.js && node sql/cloud-question-import-tasks.test.js && node sql/encrypted-storage-relay.test.js && node sql/encrypted-import-source-relay.test.js && node sql/question-import-media-objects.test.js && node sql/question-import-media-binding.postgres.test.js && node sql/question-import-source-backfill.test.js && node sql/question-asset-deliveries.postgres.test.js && node sql/storage-agent-least-privilege.test.js && node sql/miniapp-cloud-accounts.test.js && node sql/miniapp-cloud-role-profiles.test.js && node sql/miniapp-student-access.test.js && node sql/student-contact-directory.test.js && node sql/desktop-teacher-self-registration.test.js && node sql/cloud-role-applications.test.js && node sql/role-application-least-privilege.test.js && node sql/role-application-new-profile-mode.test.js && node sql/role-application-atomic-profile.test.js && node sql/role-application-least-privilege.postgres.test.js && node sql/role-application-atomic-profile.postgres.test.js && node sql/student-contact-directory.postgres.test.js && node sql/miniapp-student-access.postgres.test.js && node sql/business-schedule-update.postgres.test.js && node sql/business-student-update.postgres.test.js && node sql/business-student-record-contacts.postgres.test.js && node sql/paper-export-artifact-owner-repair.test.js && node sql/business-table-owner-repair.test.js
+
+operation audit route permissions, filters, durable intent ordering, errors, conflicts and redaction passed
+PostgreSQL operation audit persistence, tenant/actor filters, pending outcomes and append-only writer boundary passed
+cloud business Docker build context checks passed
+cloud migration runner checks passed
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+business microsecond version REST roundtrip and invalid-version checks passed
+cloud business API health checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed
+miniapp core mutation boundary checks passed
+business schedule mutation service checks passed
+business schedule student override service checks passed
+business schedule lifecycle mutation service checks passed
+business student mutation service checks passed
+business student record mutation service checks passed
+business student lifecycle mutation service checks passed
+business teacher lifecycle mutation service checks passed
+business room lifecycle mutation service checks passed
+room actual service and desktop REST PostgreSQL lifecycle, duplicate, conflict and original deletion checks passed
+teacher lifecycle route source checks passed
+teacher managed profile REST creator scope and no-account-provisioning checks passed
+bootstrap administrator identity checks passed
+canonical account repository checks passed
+canonical account service checks passed
+canonical account provisioning service checks passed
+canonical WeChat identity service checks passed
+desktop password identity service checks passed
+desktop password authentication service checks passed
+mainland phone normalization checks passed
+desktop business account resolver checks passed
+desktop verified access service checks passed
+cloud desktop registration service checks passed
+desktop teacher self-registration service checks passed
+desktop teacher self-registration repository checks passed
+desktop registration PostgreSQL adapter checks passed
+cloud runtime database role checks passed
+desktop pairing canonical phone reader checks passed
+desktop pairing identity resolver checks passed
+cloud desktop pairing service checks passed
+miniapp cloud account service checks passed
+miniapp cloud account repository checks passed
+role approval continuity: signed sessions, three roles, own history, disabled sessions and visitor-only writes passed
+miniapp role application service checks passed
+miniapp role application repository checks passed
+cloud question keyset pagination checks passed
+cloud question authority service checks passed
+cloud question authority runtime checks passed
+cloud question import task repository checks passed
+question import runtime wiring passed
+encrypted storage relay repository checks passed
+storage agent runtime checks passed
+storage agent service checks passed
+storage task repository checks passed
+wechat phone verifier checks passed
+wechat identity verifier checks passed
+PDF inline layout checks passed
+native Word formula structure checks passed
+paper export bounded hydration and failure drain tests passed
+Supplied template preservation, title, answer sections and solution page-space checks passed
+PDF supplied-template geometry, metadata, solution pages, answers and footers passed
+paper export image geometry checks passed
+Word/PDF table structure, merged cells, media and native formula checks passed
+Word stem/option pagination, long-flow and native formula checks passed
+Word/PDF structured attachment placement and legacy preservation checks passed
+paper export text styles and paragraph checks passed
+paper export PDF Unicode formula and script glyph checks passed
+Word and PDF answer source order checks passed
+paper option layout matches desktop option rules
+Word and PDF option column checks passed
+Export paragraph indentation and size-aware image options passed
+{"heapMiB":[26,25,25,25,25,26],"formulaCount":600}
+formula parser lifetime, handler bounds and macro isolation checks passed
+paper export renderer checks passed
+PDF artifact validation checks passed
+paper export artifact repository checks passed
+paper export task processor checks passed
+paper export execution heartbeat and lost-owner checks passed
+business schedule update SQL checks passed
+business schedule student override SQL checks passed
+schedule lifecycle sql checks passed
+business student update SQL checks passed
+business student update source fields SQL checks passed
+student lifecycle SQL checks passed
+teacher lifecycle SQL checks passed
+room lifecycle SQL checks passed
+cloud question authority SQL checks passed
+cloud question command receipt SQL checks passed
+cloud question import task SQL checks passed
+encrypted storage relay SQL checks passed
+encrypted import source relay SQL checks passed
+question import media object SQL checks passed
+question import media binding PostgreSQL checks passed
+question import source backfill SQL checks passed
+question asset delivery PostgreSQL checks passed
+storage agent least privilege SQL checks passed
+miniapp cloud account SQL checks passed
+miniapp cloud role profile SQL checks passed
+miniapp student access SQL checks passed
+student contact directory SQL checks passed
+desktop teacher self-registration schema checks passed
+cloud role application schema checks passed
+role application least-privilege schema checks passed
+role application new-profile mode migration checks passed
+role application atomic profile migration checks passed
+role application least-privilege PostgreSQL checks passed
+role application atomic profile PostgreSQL checks passed
+student contact directory PostgreSQL checks passed
+miniapp student access PostgreSQL checks passed
+business schedule update PostgreSQL checks passed
+business student update PostgreSQL checks passed
+business student record contacts PostgreSQL checks passed
+paper export artifact owner repair SQL checks passed
+business table owner repair SQL checks passed
+
+> gewu-cloud-business-api@8.15.0 posttest
+> npm run test:desktop-device-names && npm run test:question-metadata && npm run test:teacher-schedule && npm run test:teacher-course && npm run test:managed-teacher && node src/desktopTeacherStudentAccess.test.js && node sql/teacher-student-scope.postgres.test.js && node sql/student-school-registration.postgres.test.js && node sql/student-source-classification.postgres.test.js && npm run test:teacher-institution && npm run test:desktop-student-ledger && node sql/miniapp-student-ledger.postgres.test.js && node src/courseActiveUpdate.test.js && node sql/course-active-parity.postgres.test.js && node src/desktopAccountDisplayName.test.js
+
+
+> gewu-cloud-business-api@8.15.0 test:desktop-device-names
+> node ../shared/vnext-pg17/desktopDeviceNames.postgres.test.js && node ../scripts/vnext-migration/cloudControlPlaneM29Upgrade.test.js && node ../scripts/vnext-migration/cloudControlPlaneM29Upgrade.postgres.test.js
+
+Desktop device names PostgreSQL registration, replay, isolation, rollback and privilege checks passed
+Cloud control-plane M29 guarded upgrade checks passed
+M28 to M29 actual PostgreSQL upgrade and drift rejection checks passed
+
+> gewu-cloud-business-api@8.15.0 test:question-metadata
+> node sql/question-metadata-parity.postgres.test.js && node sql/question-import-media-binding.postgres.test.js && node sql/question-pagination.postgres.test.js && node src/questionAuthorityService.test.js
+
+actual cloud question metadata create/update/readback, omitted-field preservation, clear, conflict and invalid input passed
+question import media binding PostgreSQL checks passed
+question pagination PostgreSQL checks passed: 426 rows, tenant/deletion scope, stable cursor, existing index
+cloud question keyset pagination checks passed
+cloud question authority service checks passed
+
+> gewu-cloud-business-api@8.15.0 test:teacher-schedule
+> node src/desktopTeacherScheduleAccess.test.js && node src/businessScheduleMutationService.test.js && node src/businessScheduleStudentOverrideService.test.js && node src/businessScheduleLifecycleMutationService.test.js && node sql/teacher-schedule-scope.postgres.test.js && node sql/schedule-financial-snapshot.postgres.test.js && node sql/schedule-confirmed-undo.postgres.test.js && node sql/retained-course-schedule.postgres.test.js && node sql/retained-student-schedule.postgres.test.js
+
+desktop teacher schedule access checks passed
+business schedule mutation service checks passed
+business schedule student override service checks passed
+business schedule lifecycle mutation service checks passed
+teacher schedule scope PostgreSQL checks passed
+schedule financial snapshot PostgreSQL persistence, scope and rollback checks passed
+confirmed deletion undo: actual outbox/REST/PostgreSQL restoration, explicit confirmation, original metadata and denial rollback passed
+retained-course original handlers/outbox/REST/scoped PostgreSQL passed: 192 teacher/admin mutations, 48 confirmed restorations, both roster paths and concurrent locks
+retained-student original handlers/outbox/REST/scoped PostgreSQL passed: 384 teacher/admin mutations, 96 confirmed restorations, both roster paths and concurrent locks
+
+> gewu-cloud-business-api@8.15.0 test:teacher-course
+> node src/desktopTeacherCourseAccess.test.js && node src/businessCourseLifecycleMutationService.test.js && node src/businessRoomLifecycleMutationService.test.js && node sql/teacher-room-maintenance.postgres.test.js && node sql/teacher-course-scope.postgres.test.js && node src/scheduleCoursePresentation.test.js && node sql/course-delete-parity.postgres.test.js
+
+desktop teacher course and inline-address access checks passed
+business course lifecycle mutation service checks passed
+historical room scope PostgreSQL checks passed
+course/schedule separate confirmation PostgreSQL checks passed for teacher and super admin
+business room lifecycle mutation service checks passed
+room actual service and desktop REST PostgreSQL lifecycle, duplicate, conflict and original deletion checks passed
+original address online/confirmed edits and deletion retain courses/lessons, prices and attendance; teacher scope and versions passed
+teacher course scope PostgreSQL checks passed
+miniapp original schedule name fallback, retained fees and visitor boundary passed
+original course display rules, immutable lesson fields and internal-context removal passed: 18 cases
+original course deletion, retained history and authorized timetable PostgreSQL parity passed
+
+> gewu-cloud-business-api@8.15.0 test:managed-teacher
+> node src/businessTeacherLifecycleMutationService.test.js && node src/teacherSelfUpdateRoutes.test.js && node sql/managed-teacher-profile.postgres.test.js && node sql/retained-teacher-profile.postgres.test.js
+
+business teacher lifecycle mutation service checks passed
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed
+managed profile real REST/writer, course/lesson, actual restricted-reader queries, account-claim revocation, versions and concurrent rollback checks passed
+original teacher deletion confirmed over HTTP; retained reader/course/lesson operations and account/tenant/role boundaries passed
+desktop teacher student lifecycle session-scope checks passed
+teacher student creation, visibility, course selection, mutation and privilege PostgreSQL checks passed
+student school registration PostgreSQL atomicity, concurrency and privilege checks passed
+ordinary institution student classification, contacts and rollback checks passed
+
+> gewu-cloud-business-api@8.15.0 test:teacher-institution
+> node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node sql/institution-billing-student.postgres.test.js && node sql/teacher-institution-scope.postgres.test.js && node sql/teacher-institution-student-access.postgres.test.js
+
+business foundation lifecycle mutation service checks passed
+foundation lifecycle route checks passed
+institution billing student atomic create, rename, conflict, rollback and privilege checks passed
+teacher institution confirmed offline CRUD -> billing student -> course -> lesson; restricted read, scope, versions and unchanged retained history passed
+PASS projection uses only canonical billing identities and includes owned institutions before their first course
+PASS unrelated teachers, tenants and students cannot inherit institution-wide student access
+PASS course selection permission does not grant standalone student CRUD
+PASS ordinary flagged, unrelated and cross-tenant students fail real course writes
+PASS schedule first attachment uses the same canonical scope
+PASS new access locks the managed profile, course and canonical link against concurrent changes
+PASS canonical billing student can be attached for the first time through real HTTP and stale versions fail
+PASS first attachment and concurrent institution rename serialize without deadlock
+PASS migration is repeatable, preserves business rows and keeps private helpers inaccessible to the writer
+
+> gewu-cloud-business-api@8.15.0 test:desktop-student-ledger
+> node src/desktopStudentBalance.test.js && node sql/desktop-student-ledger.postgres.test.js
+
+original student balance HTTP/client/cache calculation and access checks passed
+actual desktop student scope/ledger SQL: creator, course, override, shared student, tenant, deletion and reader boundaries passed
+miniapp student ledger SQL: exact balances, scoped records, tenant/deletion isolation, no private ledger fields and read-only role passed
+course active-only REST scope, validation and conflict checks passed
+course finish/reopen real HTTP/client/PostgreSQL parity, conflicts, scope, locks and unchanged history passed
+desktop account display name checks passed
+question bank read access checks passed
+electron backend dependency compatibility tests passed
+
+> gewu-gongfang@8.13.0 test:desktop-authorization
+> node miniapp/src/utils/manualPhone.test.js && node miniapp/src/pages/login/manualPhoneLoginRuntime.test.js && node miniapp/src/utils/miniappPhoneLogin.test.js && node miniapp/src/utils/miniappCloudAuth.test.js && node miniapp/src/utils/miniappWechatBindingReview.test.js && node miniapp/src/utils/miniappPageRegistrationBoundary.test.js && node miniapp/src/utils/miniappAuthorizationSession.test.js && npm run test:miniapp-ui
+
+miniapp manual phone utility checks passed
+miniapp manual phone login runtime tests passed
+miniapp manual phone login source checks passed
+miniapp cloud auth API source checks passed
+miniapp retired WeChat binding review UI checks passed
+miniapp page registration boundary checks passed
+miniapp authorization session checks passed
+
+> gewu-gongfang@8.13.0 pretest:miniapp-ui
+> node miniapp/src/pages/assets/assetsRuntime.test.js && node miniapp/src/pages/student-detail/detailRuntime.test.js && node miniapp/src/pages/schedule/edit/recoveryRuntime.test.js && node miniapp/src/pages/question-bank/emptyStateRuntime.test.js && node miniapp/src/pages/question-paper/draftRestore.test.js && node miniapp/src/pages/question-paper/pageRecoveryRuntime.test.js
+
+assets actual page confirmation, retries, session races, permissions and read-state checks passed
+student detail real component roles, tabs, cache/retry, return, native pull and stale-session checks passed
+schedule edit read-only route normal/direct-launch return checks passed
+question bank actual component empty-library/filter-miss/reset/role/error states passed
+paper draft ID-based restore, reordered/changed membership and actual desktop default parity passed
+paper actual component root/normal empty recovery and denied-role pre-read boundary passed
+
+> gewu-gongfang@8.13.0 test:miniapp-ui
+> node miniapp/src/utils/miniappUiCopyContract.test.js && node miniapp/src/utils/miniappRouteAccess.test.js && node miniapp/src/utils/familyMemberCanonicalRole.test.js && node miniapp/src/custom-tab-bar/roleTabBar.test.js && node miniapp/src/pages/account-application/applicationRuntime.test.js && node miniapp/src/pages/account-application/applicationPageRuntime.test.js && node miniapp/src/pages/payments/paymentsRuntime.test.js && node miniapp/src/utils/peoplePagesRuntime.test.js && node miniapp/src/utils/teachingPagesRuntime.test.js && node miniapp/src/pages/stats/statsRefresh.test.js && node miniapp/src/pages/settings/settingsRuntime.test.js && node miniapp/src/utils/miniappHomeVisual.test.js && node miniapp/src/pages/question-bank/layoutContract.test.js && node miniapp/src/utils/miniappUiCoverage.test.js && node scripts/capture-miniapp-ui-matrix.fixture.test.js
+
+miniapp privacy layout contract checks passed
+miniapp UI copy contract checks passed
+miniapp route access checks passed
+miniapp financial page entry and pre-read access checks passed
+miniapp family-member canonical role checks passed
+navigation overlay lifecycle checks passed
+role tabBar checks passed
+account application runtime checks passed
+application page localized validation, no invalid writes, all role payloads and safe error tests passed
+application rejected/corrected/ambiguous/reopened and stale-session retry tests passed
+miniapp payments immutable sorting tests passed
+payments actual page units/cents/all filters/native pull/cache/retry/role/session races passed
+people pages access, search, detail navigation, refresh and stale-session tests passed
+teaching pages load/failure/cache/return/role/session/history and action tests passed
+statistics loading, native refresh, cache failure and stale-session tests passed
+PASS logout cancellation and exact cleanup
+PASS stale logout modal cannot clear a replacement account
+PASS already-invalidated unchanged session can still sign out locally
+PASS actual persistent session runtime validates both logout boundaries
+PASS offline initial state and handler check
+PASS return refreshes status without fetching business data
+PASS refresh results and concurrent click suppression
+PASS late refresh cannot notify another page or account
+PASS visitor application and logout preserve existing branch
+PASS late network query cannot override a new event or hidden page
+miniapp home visual checks passed
+home five-role navigation, stale-session/logout/lifecycle/retry and touch checks passed
+miniapp question bank layout contract checks passed
+miniapp registered-page source and role-policy coverage checks passed (runtime screenshots require verify:miniapp-ui)
+capture miniapp UI fixture test passed
+
+> gewu-gongfang@8.13.0 test:identity-device-center
+> node src/services/identityDeviceCenterPolicy.test.js && node src/services/managedSyncConfig.test.js && node src/pages/IdentityDeviceCenter.test.js && node src/pages/SyncSettingsAuthorization.test.js
+
+unified identity device center policy checks passed
+managed sync config tests passed
+unified identity device center source checks passed
+SyncSettings authority facade wiring tests passed
+
+> gewu-gongfang@8.13.0 test:sync-identity
+> node src/services/desktopAuthorizationSession.test.js && node src/services/desktopIdentityClient.test.js && node src/services/desktopIdentityPartition.test.js && node src/services/desktopCacheProjection.test.js && node src/services/browserAuthorityProjectionCutover.test.js && node public/desktopAuthorityRuntime.test.js && node public/desktopAuthorityRuntimeRetirement.test.js && node backend/src/routes/authorityProtocolApp.http.test.js && npm --prefix gateway test
+
+desktop authorization session tests passed
+desktop complete question pagination checks passed
+desktop question asset polling checks passed
+asset in-flight coalescing passed
+desktop business version REST round-trip checks passed
+desktop schedule financial snapshot real REST round-trip checks passed
+desktop identity client checks passed
+desktop identity partition checks passed
+desktop cache projection checks passed
+browser authority projection cutover checks passed
+browser question pagination cache checks passed: failed refresh preserves cache; complete refresh commits once
+desktop draft account/authority isolation and identity races passed
+desktop authority runtime tests passed
+desktop authority retired relay and projection checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-authority-app-http-p5emvI\authority-app.db
+authorityProtocol retired app HTTP tests passed
+
+> edu-platform-gateway@8.15.0 test
+> node src/appHealth.test.js && node src/cloudRelayRetirement.test.js && node src/routes/miniappPhoneLogin.http.test.js && node src/routes/reviewDemo.http.test.js
+
+[2026-10-07T05:28:56.120Z] GET /api/health
+[2026-10-07T05:28:56.136Z] GET /api/health
+[2026-10-07T05:28:56.141Z] GET /api/health
+gateway app health checks passed
+[2026-10-07T05:28:56.452Z] GET /api/health
+[2026-10-07T05:28:56.459Z] GET /api/cloudish
+[2026-10-07T05:28:56.466Z] GET /ws/authority
+[2026-10-07T05:28:56.470Z] GET /ws/cloud-relay
+gateway cloud relay retirement checks passed
+gateway local account and permission authority retirement checks passed
+legacy review-demo HTTP tombstone checks passed
+
+> gewu-gongfang@8.13.0 test:backend
+> node scripts/default-test-entrypoints.test.js && node src/utils/scheduleStorage.test.js && node public/runtimeConfig.test.js && node public/electronEntryResolution.test.js && node public/electronShellPolicy.test.js && node public/updateCheckTimeout.test.js && node src/services/desktopUpdateClient.test.js && node src/services/runtimeConfigClient.test.js && node backend/src/appHealth.test.js && node backend/src/middleware/questionBankReadAccess.test.js && node backend/src/services/electronDependencyCompatibility.test.js && node backend/src/routes/authorityProtocolApp.http.test.js && node scripts/update-version.test.js && node scripts/publish-oss-feed.test.js && node scripts/upload-miniapp.test.js && node scripts/miniapp-review.test.js && node scripts/check_miniapp_release.test.js && node scripts/check_miniapp_review_readiness.test.js && node scripts/check_review_demo.test.js && node scripts/check_deploy_readiness.test.js && node scripts/safetyPolicy.test.js && node scripts/check_local_storage_readiness.test.js && node --check backend/src/app.js && node --check scripts/check_miniapp_release.js && node --check scripts/check_miniapp_review_readiness.js && node --check scripts/check_review_demo.js && node --check scripts/upload-miniapp.js && node --check scripts/miniapp-review.js && node --check scripts/check_deploy_readiness.js && node --check scripts/check_local_storage_readiness.js
+
+default test entrypoint retirement checks passed
+scheduleStorage checks passed
+unified desktop runtime config checks passed
+electron renderer entry resolution tests passed
+electron shell policy checks passed
+desktop updater timeout tests passed
+desktop update client tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\backend\data\scheduling.dev.db
+{"time":"2026-10-07T05:28:58.082Z","level":"info","traceId":"health-test-trace","method":"GET","path":"/api/health","status":200,"durationMs":3,"ip":"::ffff:127.0.0.1","userAgent":"node","monitorProvider":null}
+{"time":"2026-10-07T05:28:58.097Z","level":"warn","traceId":"muxo3i0g-8pam77km","method":"GET","path":"/api/question-bank/questions","status":404,"durationMs":1,"ip":"::ffff:127.0.0.1","userAgent":"node","monitorProvider":null}
+{"time":"2026-10-07T05:28:58.103Z","level":"info","traceId":"health-test-trace","method":"GET","path":"/api/health","status":200,"durationMs":1,"ip":"::ffff:127.0.0.1","userAgent":"node","monitorProvider":null}
+app health checks passed
+question bank read access checks passed
+electron backend dependency compatibility tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-authority-app-http-aIznkm\authority-app.db
+authorityProtocol retired app HTTP tests passed
+update-version checks passed
+publish oss feed checks passed
+upload-miniapp checks passed
+miniapp review helper checks passed
+miniapp release smoke script checks passed
+miniapp review readiness checks passed
+review-demo removal check script tests passed
+deploy readiness checks passed
+safety policy checks passed
+local storage readiness script checks passed
+
+> gewu-gongfang@8.13.0 test:release-matrix
+> node scripts/no-hardcoded-deploy-credentials.test.js && node scripts/release-matrix.test.js && node scripts/independent-release-version.test.js && node scripts/release-matrix-python.test.js && node scripts/release-boundary.test.js && node scripts/check-question-import-release.test.js && node scripts/nginx-scheduling.test.js && node scripts/real-cloud-business-acceptance.test.js && node scripts/real-miniapp-role-session.test.js && node scripts/repair-production-question-duplicates.test.js && node scripts/repair-production-question-duplicates.postgres.test.js && node scripts/verify_ecs_ws.test.js && node scripts/vnext-migration/cloudControlPlaneM21Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM22Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM23Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM24Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM25Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM26Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM27Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM28Upgrade.test.js && python scripts/run_real_cloud_business_acceptance.test.py && python scripts/run_real_miniapp_role_ui.test.py && python scripts/run_question_duplicate_repair.test.py && python scripts/apply_cloud_postgres_migrations.test.py && python scripts/apply_cloud_control_plane_m20.test.py && python scripts/apply_cloud_control_plane_m21.test.py && python scripts/apply_cloud_control_plane_m22.test.py && python scripts/apply_cloud_control_plane_m23.test.py && python scripts/apply_cloud_control_plane_m24.test.py && python scripts/apply_cloud_control_plane_m25.test.py && python scripts/apply_cloud_control_plane_m26.test.py && python scripts/apply_cloud_control_plane_m27.test.py && python scripts/apply_cloud_control_plane_m28.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/deploy_nginx_question_import_limit.test.py && python scripts/verify_public_question_import_limit.test.py && python scripts/verify_cloud_business_release.test.py && python scripts/miniapp_fixed_egress.test.py && python scripts/repair_production_tls.test.py
+
+hardcoded deployment credential retirement checks passed
+release matrix checks passed
+independent release version checks passed
+release matrix python checks passed
+release boundary checks passed
+question import release gate checks passed
+nginx scheduling WebSocket proxy checks passed
+real cloud business acceptance checks passed
+real miniapp role session checks passed
+question formula identity repair checks passed
+repair-production-question-duplicates tests passed
+formula identity repair PostgreSQL checks passed: limited role, CAS rollback, exact metadata-only changes and receipts
+production question repair PostgreSQL rollback and retry checks passed
+verify_ecs_ws security boundary tests passed
+cloud control-plane M21 upgrade tests passed
+cloud control-plane M22 upgrade tests passed
+cloud control-plane M23 upgrade tests passed
+cloud control-plane M24 upgrade tests passed
+cloud control-plane M25 upgrade tests passed
+cloud control-plane M26 upgrade tests passed
+cloud control-plane M27 upgrade tests passed
+cloud control-plane M28 upgrade tests passed
+real cloud business acceptance runner checks passed
+.............{"role": "visitor", "stage": "checking_identity"}
+{"role": "visitor", "stage": "checked", "pageCount": 0}
+..........................
+----------------------------------------------------------------------
+Ran 39 tests in 2.637s
+
+OK
+{"checks": {"visitor": {"identity": {"role": "visitor"}, "pages": []}}, "downloadCheck": null, "marker": "e2e-role-test-0123456789abcdef", "ok": true}
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.072s
+
+OK
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.029s
+
+OK
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.082s
+
+OK
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
+....................................................warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+----------------------------------------------------------------------
+Ran 57 tests in 8.257s
+
+OK
+nginx question import limit deployment checks passed
+public question import body-limit smoke checks passed
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+test_cross_process_post_health_failure_preserves_pending_manifest_and_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_failure_preserves_pending_manifest_and_marker) ... {
+  "success": true,
+  "uploadMode": "miniprogram-ci",
+  "deferredReceipt": true,
+  "result": {
+    "success": true
+  }
+}
+{
+  "success": true,
+  "action": "validated-deferred-receipt",
+  "uploadMode": "miniprogram-ci",
+  "version": "7.2.10"
+}
+{
+  "success": true,
+  "action": "finalized-deferred-receipt",
+  "uploadMode": "miniprogram-ci",
+  "version": "7.2.10"
+}
+ok
+test_cross_process_post_health_success_finalizes_once_and_deletes_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_success_finalizes_once_and_deletes_marker) ... {
+  "success": true,
+  "uploadMode": "miniprogram-ci",
+  "deferredReceipt": true,
+  "result": {
+    "success": true
+  }
+}
+{
+  "success": true,
+  "action": "finalized-deferred-receipt",
+  "uploadMode": "miniprogram-ci",
+  "version": "7.2.10"
+}
+MINIAPP_DEFERRED_UPLOAD_MARKER_MISSING
+ok
+test_probe_only_owns_real_lock_proxy_ssh_and_handler_cleanup (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_probe_only_owns_real_lock_proxy_ssh_and_handler_cleanup) ... ok
+test_reconciliation_missing_or_bad_marker_fails_before_health_without_upload (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_reconciliation_missing_or_bad_marker_fails_before_health_without_upload) ... MINIAPP_DEFERRED_UPLOAD_MARKER_MISSING
+MINIAPP_DEFERRED_UPLOAD_MARKER_INVALID
+ok
+test_connect_authority_parser_is_strict (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_connect_authority_parser_is_strict) ... ok
+test_incomplete_header_times_out_with_bounded_400 (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_incomplete_header_times_out_with_bounded_400) ... ok
+test_method_allowlist_and_header_limit_fail_closed (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_method_allowlist_and_header_limit_fail_closed) ... ok
+test_real_loopback_proxy_opens_direct_tcpip_and_forwards_header_tail (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_real_loopback_proxy_opens_direct_tcpip_and_forwards_header_tail) ... ok
+test_saturated_proxy_keeps_header_errors_before_bounded_503 (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_saturated_proxy_keeps_header_errors_before_bounded_503) ... ok
+test_slow_header_flood_has_a_hard_handler_and_client_limit (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_slow_header_flood_has_a_hard_handler_and_client_limit) ... ok
+test_cleanup_reports_live_handler_without_forgetting_tracked_resources (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_cleanup_reports_live_handler_without_forgetting_tracked_resources) ... ok
+test_concurrent_close_cannot_miss_a_thread_whose_start_is_returning (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_concurrent_close_cannot_miss_a_thread_whose_start_is_returning) ... ok
+test_thread_start_failure_leaves_proxy_safe_to_close (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_thread_start_failure_leaves_proxy_safe_to_close) ... ok
+test_channel_timeout_is_set_before_a_blocking_tail_send (miniapp_fixed_egress_suite_1.ProxyTimeoutTests.test_channel_timeout_is_set_before_a_blocking_tail_send) ... ok
+test_open_channel_receives_a_finite_timeout (miniapp_fixed_egress_suite_1.ProxyTimeoutTests.test_open_channel_receives_a_finite_timeout) ... ok
+test_config_rejects_cloud_business_target_without_reviewed_miniapp_contract (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_rejects_cloud_business_target_without_reviewed_miniapp_contract) ... ok
+test_config_requires_canonical_ipv4_and_https_port_443 (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_requires_canonical_ipv4_and_https_port_443) ... ok
+test_config_separates_miniapp_upload_and_cloud_health_versions (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_separates_miniapp_upload_and_cloud_health_versions) ... ok
+test_default_echo_url_uses_reachable_aws_checkip_endpoint (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_default_echo_url_uses_reachable_aws_checkip_endpoint) ... ok
+test_default_health_target_is_the_cloud_business_authority (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_default_health_target_is_the_cloud_business_authority) ... ok
+test_direct_health_opener_disables_proxies_and_verifies_tls (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_direct_health_opener_disables_proxies_and_verifies_tls) ... ok
+test_egress_request_is_explicitly_tunneled_through_loopback (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_egress_request_is_explicitly_tunneled_through_loopback) ... ok
+test_health_requires_ok_true_and_exact_version (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_health_requires_ok_true_and_exact_version) ... ok
+test_local_preflight_uses_the_miniapp_version_not_the_desktop_version (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_local_preflight_uses_the_miniapp_version_not_the_desktop_version) ... ok
+test_probe_requires_exact_egress_then_servicewechat_tls (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_probe_requires_exact_egress_then_servicewechat_tls) ... ok
+test_loopback_proxy_port_must_be_between_one_and_65535 (miniapp_fixed_egress_suite_2.ProxyUrlValidationTests.test_loopback_proxy_port_must_be_between_one_and_65535) ... ok
+test_build_upload_post_health_receipt_and_cleanup_order (miniapp_fixed_egress_suite_3.FullLifecycleUnitTests.test_build_upload_post_health_receipt_and_cleanup_order) ... ok
+test_cleanup_closes_proxy_resources_then_ssh_before_waiting_for_handlers (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_closes_proxy_resources_then_ssh_before_waiting_for_handlers) ... ok
+test_cleanup_failure_on_success_returns_stable_error (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_failure_on_success_returns_stable_error) ... ok
+test_cleanup_failure_preserves_unknown_primary_as_cause_and_stable_code (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_failure_preserves_unknown_primary_as_cause_and_stable_code) ... ok
+test_primary_and_all_cleanup_failures_are_stably_observable (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_primary_and_all_cleanup_failures_are_stably_observable) ... ok
+test_probe_only_never_finalizes_a_receipt (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_probe_only_never_finalizes_a_receipt) ... ok
+test_child_env_forces_loopback_proxy_and_removes_bypass (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_child_env_forces_loopback_proxy_and_removes_bypass) ... ok
+test_interrupt_cleanup_failure_keeps_interrupt_and_cleanup_codes (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_interrupt_cleanup_failure_keeps_interrupt_and_cleanup_codes) ... ok
+test_keyboard_interrupt_cleans_exact_child_without_hiding_interrupt (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_keyboard_interrupt_cleans_exact_child_without_hiding_interrupt) ... ok
+test_lock_holds_descriptor_and_conflicts_with_another_process (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_lock_holds_descriptor_and_conflicts_with_another_process) ... ok
+test_nonzero_child_exit_is_reported_without_broad_cleanup (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_nonzero_child_exit_is_reported_without_broad_cleanup) ... ok
+test_three_failed_cleanup_waits_and_signal_errors_are_not_swallowed (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_three_failed_cleanup_waits_and_signal_errors_are_not_swallowed) ... ok
+test_timeout_terminates_then_kills_only_the_exact_child (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_timeout_terminates_then_kills_only_the_exact_child) ... ok
+test_post_health_failure_skips_receipt_and_still_cleans_up (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_post_health_failure_skips_receipt_and_still_cleans_up) ... ok
+test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes) ... ok
+test_reconciliation_rejects_concurrent_use_of_the_upload_lock (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_rejects_concurrent_use_of_the_upload_lock) ... ok
+test_reconciliation_validation_or_health_failure_never_finalizes (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_validation_or_health_failure_never_finalizes) ... ok
+test_post_acquisition_owner_write_failure_releases_the_os_lock (miniapp_fixed_egress_suite_3.UploadLockFailureTests.test_post_acquisition_owner_write_failure_releases_the_os_lock) ... ok
+test_composite_failure_prints_primary_and_cleanup_codes_only (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_composite_failure_prints_primary_and_cleanup_codes_only) ... ok
+test_expected_error_prints_only_its_stable_code (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_expected_error_prints_only_its_stable_code) ... ok
+test_interrupted_cleanup_failure_keeps_exit_130_and_both_codes (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_interrupted_cleanup_failure_keeps_exit_130_and_both_codes) ... ok
+test_invalid_arguments_are_redacted_before_argparse_can_echo_them (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_invalid_arguments_are_redacted_before_argparse_can_echo_them) ... ok
+test_main_supplies_exact_local_node_receipt_finalizer (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_main_supplies_exact_local_node_receipt_finalizer) ... ok
+test_normal_mode_loads_dotenv_before_environment_snapshot (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_normal_mode_loads_dotenv_before_environment_snapshot) ... ok
+test_operational_system_exit_is_redacted (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_operational_system_exit_is_redacted) ... ok
+test_probe_and_reconcile_modes_are_mutually_exclusive (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_probe_and_reconcile_modes_are_mutually_exclusive) ... ok
+test_receipt_finalizer_removes_private_key_environment (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_receipt_finalizer_removes_private_key_environment) ... ok
+test_reconcile_mode_loads_dotenv_without_importing_ssh_module (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_reconcile_mode_loads_dotenv_without_importing_ssh_module) ... ok
+test_reconcile_mode_uses_only_validator_health_and_finalizer_composition (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_reconcile_mode_uses_only_validator_health_and_finalizer_composition) ... ok
+test_unknown_exception_is_redacted_without_traceback (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_unknown_exception_is_redacted_without_traceback) ... ok
+
+----------------------------------------------------------------------
+Ran 56 tests in 3.883s
+
+OK
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+miniapp release config checks passed
+backend runtime port checks passed
+deploy env checks passed
+
+> gewu-gongfang@8.13.0 test:audit-fixes
+> node public/desktopAuthorityScope.test.js && node src/services/desktopCloudTransportDraft.test.js && node src/services/desktopSyncController.test.mjs && node src/services/desktopSyncRecovery.test.mjs && node src/services/desktopScheduleSnapshotContract.test.js && node cloud-business-api/src/businessCommandTransaction.test.js && node cloud-business-api/sql/business-command-receipts.postgres.test.js && node cloud-business-api/src/miniappCanonicalFence.test.js && node cloud-business-api/sql/miniapp-canonical-fence.postgres.test.js && node cloud-business-api/sql/question-taxonomy-atomic.postgres.test.js && node shared/vnext-pg17/miniappAccountFenceMigration.test.js && node shared/vnext-pg17/miniappAccountFenceDeployment.postgres.test.js && node scripts/vnext-migration/cloudControlPlaneM30Upgrade.test.js && python scripts/apply_cloud_control_plane_m30.test.py && node scripts/release-workflow.test.js && node scripts/verify-miniapp-ui-evidence.test.js && node scripts/build-miniapp-with-proof.test.js && node miniapp/src/utils/questionPaperWorkflow.test.js && node miniapp/src/utils/miniappUiCoverage.test.js && npm --prefix storage-agent test
+
+desktop draft account/authority isolation and identity races passed
+desktop cloud transport draft capture passed
+unified desktop sync batch, reconnect, conflict, race and history checks passed
+legacy/missing-target sync failure, pause, network retry and durable discard passed
+desktop schedule financial snapshot real REST round-trip checks passed
+business command transaction lifecycle passed
+PostgreSQL atomic business effects/receipts, response-loss replay, duplicate serialization, payload fencing and current authorization passed
+miniapp canonical fence: v2, bigint precision, fresh grants, old fence and v1 rejection passed
+canonical fence PG17: real verifier/reader roles, bigint, version revocation, disabled/revoked/re-enabled accounts and authorities, HTTP rejection and least privilege passed
+taxonomy PG17: atomic baseline fence, strict millisecond progress, two-connection opposing moves, bounded existing-cycle deletion, content-version bumps and writer boundary passed
+M30 miniapp canonical fence migration checks passed
+M30 PG17 deployment: exact M29 prefix, atomic upgrade, M29 forward compatibility, retry refusal, owner revocation and public ACL drift passed
+M30 guarded upgrade and state SQL checks passed
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.106s
+
+OK
+controlled release workflow, tracked caches, native cleanup and pinned runtime checks passed
+UI evidence source/version, complete scenarios, role binding, screenshot checksum and path boundary passed (synthetic proof tests only)
+miniapp build source/output provenance and mid-build edits passed (synthetic compiler fixture)
+question paper workflow checks passed
+miniapp registered-page source and role-policy coverage checks passed (runtime screenshots require verify:miniapp-ui)
+
+> gewu-controlled-storage-agent@8.9.1 test
+> node Dockerfile.test.js && node src/config.test.js && node src/launchConfig.test.js && node src/objectStore.test.js && node src/health.test.js && node src/healthCli.test.js && node src/runtimeManifest.test.js && node src/cloudClient.test.js && node src/cloudClientDeadline.test.js && node src/questionImportParser.test.js && node src/worker.test.js && node src/artifactDeliveryWorker.test.js && node src/runtime.test.js
+
+storage agent Docker build context checks passed
+storage agent config checks passed
+storage agent launch config checks passed
+storage object store checks passed
+storage agent health checks passed
+storage agent health CLI checks passed
+storage agent runtime manifest checks passed
+storage cloud client checks passed
+storage cloud overall deadline tests passed
+question import parser checks passed
+storage agent worker checks passed
+storage artifact delivery worker checks passed
+storage agent runtime checks passed

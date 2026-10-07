@@ -4,7 +4,7 @@ require('./DesktopIdentityGate.reload.test.js');
 require('./DesktopIdentityGate.roleRecovery.test.js');
 
 const indexSource = fs.readFileSync('src/index.tsx', 'utf8');
-const gateSource = fs.readFileSync('src/components/DesktopIdentityGate.tsx', 'utf8');
+const gateSource = fs.readFileSync('src/components/DesktopIdentityGate.tsx', 'utf8').replace(/\r\n/g, '\n');
 const identityClientSource = fs.readFileSync('src/services/desktopIdentityClient.mjs', 'utf8');
 const identityErrorSource = fs.readFileSync('src/services/desktopIdentityError.mjs', 'utf8');
 const decodedGateSource = gateSource.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) => (

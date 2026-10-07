@@ -1,0 +1,55 @@
+COMMAND node cloud-business-api/sql/schedule-confirmed-undo.postgres.test.js
+EXIT 0
+confirmed deletion undo: actual outbox/REST/PostgreSQL restoration, explicit confirmation, original metadata and denial rollback passed
+
+COMMAND node cloud-business-api/sql/retained-course-schedule.postgres.test.js
+EXIT 0
+retained-course original handlers/outbox/REST/scoped PostgreSQL passed: 192 teacher/admin mutations, 48 confirmed restorations, both roster paths and concurrent locks
+
+COMMAND node cloud-business-api/sql/retained-student-schedule.postgres.test.js
+EXIT 0
+retained-student original handlers/outbox/REST/scoped PostgreSQL passed: 384 teacher/admin mutations, 96 confirmed restorations, both roster paths and concurrent locks
+
+COMMAND node cloud-business-api/sql/retained-teacher-profile.postgres.test.js
+EXIT 0
+original teacher deletion confirmed over HTTP; retained reader/course/lesson operations and account/tenant/role boundaries passed
+
+COMMAND node cloud-business-api/sql/teacher-institution-scope.postgres.test.js
+EXIT 0
+teacher institution confirmed offline CRUD -> billing student -> course -> lesson; restricted read, scope, versions and unchanged retained history passed
+
+COMMAND node cloud-business-api/sql/teacher-room-maintenance.postgres.test.js
+EXIT 0
+original address online/confirmed edits and deletion retain courses/lessons, prices and attendance; teacher scope and versions passed
+
+COMMAND node cloud-business-api/sql/teacher-institution-student-access.postgres.test.js
+EXIT 0
+PASS projection uses only canonical billing identities and includes owned institutions before their first course
+PASS unrelated teachers, tenants and students cannot inherit institution-wide student access
+PASS course selection permission does not grant standalone student CRUD
+PASS ordinary flagged, unrelated and cross-tenant students fail real course writes
+PASS schedule first attachment uses the same canonical scope
+PASS new access locks the managed profile, course and canonical link against concurrent changes
+PASS canonical billing student can be attached for the first time through real HTTP and stale versions fail
+PASS first attachment and concurrent institution rename serialize without deadlock
+PASS migration is repeatable, preserves business rows and keeps private helpers inaccessible to the writer
+
+COMMAND node cloud-business-api/sql/student-school-registration.postgres.test.js
+EXIT 0
+student school registration PostgreSQL atomicity, concurrency and privilege checks passed
+
+COMMAND node cloud-business-api/sql/institution-billing-student.postgres.test.js
+EXIT 0
+institution billing student atomic create, rename, conflict, rollback and privilege checks passed
+
+COMMAND node cloud-business-api/sql/course-active-parity.postgres.test.js
+EXIT 0
+course finish/reopen real HTTP/client/PostgreSQL parity, conflicts, scope, locks and unchanged history passed
+
+COMMAND node cloud-business-api/sql/room-lifecycle.postgres.test.js
+EXIT 0
+room actual service and desktop REST PostgreSQL lifecycle, duplicate, conflict and original deletion checks passed
+
+COMMAND node cloud-business-api/sql/managed-teacher-profile.postgres.test.js
+EXIT 0
+managed profile real REST/writer, course/lesson, actual restricted-reader queries, account-claim revocation, versions and concurrent rollback checks passed

@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext } = require('./businessCommandFixture');
 // UTF-8: missing historical fields and deleted enrolments must not prevent finish/reopen.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createCloudBusinessApp}=require('../src/app');
@@ -27,8 +28,9 @@ const denied=e=>e.code==='42501';
   });
   const read=()=>withQuery(handle,'fixture-provisioner',async db=>{const result={};for(const table of tables)result[table]=(await db.query(`SELECT to_jsonb(t) AS row FROM business.${table} t ORDER BY to_jsonb(t)::text`)).rows.map(r=>r.row);return result;});
   let context={roles:['teacher'],teacherId:'teacher-1'};
-  const query=(text,values)=>withQuery(handle,'writer',db=>db.query(text,values));
-  const app=createCloudBusinessApp({query:async()=>({rows:[]}),businessTenantId:'tenant-1',desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},businessCourseLifecycleMutations:createBusinessCourseLifecycleMutations({query})});
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const query=businessCommandWriter.query;
+  const app=createCloudBusinessApp({businessCommandWriter,query:async()=>({rows:[]}),businessTenantId:'tenant-1',desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext(context)},businessCourseLifecycleMutations:createBusinessCourseLifecycleMutations({query})});
   server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');
   const client=createDesktopIdentityClient({desktopIdentity:{status:async()=>({})},fetchImpl:fetch});

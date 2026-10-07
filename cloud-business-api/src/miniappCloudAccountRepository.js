@@ -37,9 +37,21 @@ function accountRow(row) {
   return { accountId: row.accountId, status: row.status, roles: row.roles.slice(), profile: null };
 }
 
-function createMiniappCloudAccountRepository({ query, tenantId }) {
-  if (typeof query !== 'function' || typeof tenantId !== 'string' || !tenantId || tenantId !== tenantId.trim()) throw invalid();
+function createMiniappCloudAccountRepository({ query, canonicalQuery, tenantId }) {
+  if (typeof query !== 'function' || typeof canonicalQuery !== 'function' || typeof tenantId !== 'string' || !tenantId || tenantId !== tenantId.trim()) throw invalid();
   return Object.freeze({
+    async readCanonicalFence(input) {
+      const request = exact(input, ['authorityId', 'accountId']);
+      if ([request.authorityId, request.accountId].some(value => typeof value !== 'string' || !value || value !== value.trim())) throw invalid();
+      const result = await canonicalQuery(
+        `SELECT authority_id AS "authorityId",account_id AS "accountId",authority_updated_at AS "authorityUpdatedAt",
+                auth_version::text AS "authVersion",access_version::text AS "accessVersion",revocation_version::text AS "revocationVersion"
+           FROM vnext_control_plane.vnext_read_miniapp_account_fence($1,$2)`,
+        [request.authorityId, request.accountId],
+      );
+      if (!result || !Array.isArray(result.rows) || result.rows.length > 1) throw invalid();
+      return result.rows[0] ? exact(result.rows[0], ['authorityId', 'accountId', 'authorityUpdatedAt', 'authVersion', 'accessVersion', 'revocationVersion']) : null;
+    },
     async resolveOrCreate(input) {
       const request = exact(input, ['accountId', 'phoneHmac', 'bootstrapAdmin']);
       if (typeof request.accountId !== 'string' || !request.accountId || !/^[0-9a-f]{64}$/u.test(request.phoneHmac) || typeof request.bootstrapAdmin !== 'boolean') throw invalid();

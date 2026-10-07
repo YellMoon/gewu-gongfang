@@ -1,0 +1,13 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { MIGRATIONS, sha256 } = require('./migrationManifest');
+const migration = MIGRATIONS.at(-1);
+assert.equal(migration.semanticVersion, 30, 'M30 must add the controlled miniapp fence reader');
+assert.equal(migration.migrationId, 'vnext-pg17-miniapp-account-fence-30');
+assert.equal(migration.manifestSha256, sha256(migration.sql));
+assert.match(migration.sql, /session_user<>'vnext_pg17_identity_verifier'/);
+assert.match(migration.sql, /a.status='active' AND au.status='active'/);
+assert.match(migration.sql, /REVOKE EXECUTE[\s\S]*FROM PUBLIC/);
+assert.match(migration.sql, /GRANT EXECUTE[\s\S]*TO vnext_pg17_identity_verifier/);
+assert.doesNotMatch(migration.sql, /GRANT (?:SELECT|INSERT|UPDATE|DELETE) ON (?:TABLE )?vnext_control_plane/);
+console.log('M30 miniapp canonical fence migration checks passed');

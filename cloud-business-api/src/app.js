@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { createBusinessCommandMiddleware } = require('./businessCommandTransaction');
 const { createOperationAuditMiddleware, parseFilters: operationAuditFilters } = require('./operationAudit');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
@@ -21,6 +22,8 @@ const DESKTOP_RENDERER_CORS_HEADERS = [
   'Content-Type',
   'X-Device-Id',
   'X-Idempotency-Key',
+  'X-Gewu-Command-Id',
+  'X-Gewu-Command-Hash',
   'X-Gewu-Artifact-Token',
 ].join(', ');
 
@@ -105,7 +108,7 @@ function miniappQuestionBrowseFilters(query) {
   return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
 }
 
-function createCloudBusinessApp({ query, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -148,6 +151,7 @@ function createCloudBusinessApp({ query, operationAudits = null, operationAudits
   app.use('/api/storage-agent/question-asset-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(createOperationAuditMiddleware({ repository: operationAudits, required: operationAuditsRequired, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext, businessContext }));
+  app.use(createBusinessCommandMiddleware({ writer: businessCommandWriter, tenantId: businessTenantId, desktopContext: desktopQuestionContext }));
   app.get('/api/desktop/operation-audits', async (request, response) => {
     if (!operationAudits || !businessTenantId) return response.status(503).json({ success:false,code:'CLOUD_OPERATION_AUDIT_UNAVAILABLE' });
     try {

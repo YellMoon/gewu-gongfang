@@ -1,0 +1,182 @@
+
+> gewu-gongfang@8.13.0 pretest
+> node src/services/operationAuditClient.test.js && node miniapp/src/utils/miniappOfflineQueue.test.js && node miniapp/src/pages/settings/settingsExperience.test.js && npm run test:business-parity && npm run test:course-active
+
+operationAuditClient tests passed
+miniapp authority projection and core-mutation retirement checks passed
+settings and application hierarchy checks passed
+
+> gewu-gongfang@8.13.0 test:business-parity
+> node src/services/desktopCloudTransportDraft.test.js && node src/App.projection-refresh.test.js && node src/pages/ScheduleCalendar.batch-parity.test.js && node src/pages/ScheduleCalendar.refresh-parity.test.js && node src/pages/ScheduleCalendar.refresh-context.test.js && node src/services/desktopAutoSync.test.js && node src/services/desktopAutoSync.integration.test.js && node src/components/DesktopAutoSync.runtime.test.js && node src/services/desktopLoginMemory.test.js && node src/utils/batchSelectionGeometry.test.js && node src/pages/useBatchSelection.time.test.js && node src/services/studentCloudReadbackParity.test.js && node src/components/sync/SyncQuickPanel.placement.test.js && node scripts/business-parity-window-size.test.cjs && node scripts/cloud_postgres_security_fingerprint.test.cjs && python scripts/backup_cloud_postgres.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/run_business_parity_shadow.test.py && python scripts/business_parity_course_refresh.test.py && python scripts/verify_cloud_schedule_snapshot_recovery.test.py && node src/pages/CourseList.room-resolution.test.js && node src/components/DesktopSync.browser.test.cjs && node src/services/desktopSyncRecovery.test.mjs && node src/pages/ScheduleCalendar.local-date.test.js
+
+desktop cloud transport draft capture passed
+actual App preserves calendar/course instances on projection refresh; manual refresh and account partition resets remain
+actual calendar load effect refreshes cache in place and removes its listener on unmount
+actual course load effect refreshes cache in place and removes its listener on unmount
+six actual resource read effects refresh displayed data without writes and remove listeners
+original/current batch save and two-student draft parity checks passed: 144 batch + 108 attendance combinations
+original/current refresh parity passed: 48 fee/status/range combinations, boundary preservation, cancellation and mutation detection
+targeted refresh context-menu checks passed
+desktop auto sync tests passed
+desktop auto sync real outbox dependency batch checks passed
+unified desktop sync batch, reconnect, conflict, race and history checks passed
+actual desktop sync dialog, event, aggregate confirmation and identity cleanup checks passed
+desktop login memory tests passed
+batchSelectionGeometry tests passed
+original batch rectangle cloud-time checks passed
+student canonical contact and original source readback parity checks passed
+single sync window entry checks passed
+parity window sizing waits for native unmaximize and preserves requested dimensions
+backup security fingerprint PostgreSQL fault checks passed
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.009s
+
+OK
+....................................................warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+----------------------------------------------------------------------
+Ran 57 tests in 11.294s
+
+OK
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.630s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+actual course save resolves missing cached cloud addresses without duplicate drafts
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+actual Ant Design sync window wide/narrow, keyboard, silent online and aggregate offline checks passed
+legacy/missing-target sync failure, pause, network retry and durable discard passed
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+
+> gewu-gongfang@8.13.0 test:course-active
+> node src/pages/CourseList.active-parity.test.js && node public/desktopAuthorityRuntime.course-active.test.js && python scripts/business_parity_course_active.test.py
+
+original course active parity passed: 12
+course state-only outbox confirmation, presentation and merge checks passed (synthetic safeStorage, not encryption acceptance)
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.002s
+
+OK
+
+> gewu-gongfang@8.13.0 test
+> npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:question-intake && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node miniapp/src/utils/miniappReleaseConfig.test.js && node backend/src/runtimePort.test.js && node scripts/deployEnv.test.js && npm run test:audit-fixes
+
+
+> gewu-gongfang@8.13.0 test:desktop-build-flavor
+> node public/desktopBuildFlavor.test.js && node scripts/unified-desktop-package-boundary.test.js && node scripts/check_deploy_readiness.unifiedDesktopBoundary.test.js && node public/electronDevelopmentFixture.test.js && node public/electronRuntimeContracts.test.js && node public/electronSingleInstance.test.js && node public/electronCrossInstallLock.test.js && node scripts/verify-packaged-electron-native-abi.test.js && node scripts/cleanup-disposable-desktop-profiles.test.js && node scripts/desktop-architecture-cutover.test.js && node public/contentSecurityPolicy.test.js && node public/electronLocalIdentityDiagnostics.test.js && node public/localSessionSigningSecret.test.js && node src/pages/SystemSettings.test.js && node scripts/packaged-smoke-check.test.js
+
+unified desktop build flavor checks passed
+unified desktop package boundary checks passed
+deploy readiness unified desktop boundary checks passed
+Electron development login fixture boundary checks passed
+unified electron runtime contract checks passed
+Electron single-instance checks passed
+Electron cross-install instance lock checks passed
+packaged Electron native ABI verifier checks passed
+disposable desktop profile cleanup checks passed
+desktop architecture cutover checks passed
+desktop content security policy checks passed
+electron local identity diagnostics checks passed
+local session signing secret checks passed
+unified system settings UI checks passed
+packaged smoke isolation checks passed
+
+> gewu-gongfang@8.13.0 test:taxonomy
+> node src/services/taxonomyFilter.test.js && node src/components/TaxonomyManager.test.js && node backend/src/services/questionBankService.test.js
+
+taxonomy filter checks passed
+taxonomy manager integration checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-FNOULy\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-jl1f7v\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-wuDW33\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-ATGx2b\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-KaFGSg\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-kWDw9F\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-7Jzw8m\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-b7Ybjn\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-2VdsId\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-i5HPPa\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-VZyYyi\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-pgJbIv\test.db
+questionBankService tests passed
+
+> gewu-gongfang@8.13.0 test:institution-student
+> node backend/src/institutionStudentLifecycle.test.js && node src/utils/institutionStudent.test.js && node src/utils/coursePricingRules.test.js && node src/utils/financialDetails.test.js && npm run test:revenue-filters
+
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-institution-student-CE8KTq\test.db
+institution student lifecycle tests passed
+institutionStudent tests passed
+coursePricingRules institution student tests passed
+financialDetails refresh tests passed
+cloud attendance original financial round-trip checks passed
+
+> gewu-gongfang@8.13.0 test:revenue-filters
+> node src/utils/revenueStatisticsFilters.test.js && node src/utils/revenueDetailFilters.test.js
+
+revenueStatisticsFilters tests passed
+revenueDetailFilters tests passed
+
+> gewu-gongfang@8.13.0 test:miniapp-identity-schema
+> node backend/src/miniappIdentitySchema.test.js
+
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-kbiph9\legacy.db
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-kbiph9\legacy.db
+miniapp identity schema migration checks passed
+
+> gewu-gongfang@8.13.0 test:miniapp-identity
+> node backend/src/services/authRateLimiter.test.js && node backend/src/services/wechatMiniappService.test.js && node backend/src/services/miniappWechatBindingService.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+auth rate limiter checks passed
+wechat miniapp identity checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-wechat-binding-886s3V\binding.db
+miniapp wechat binding service checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-service-WD7Led\identity.db
+miniapp identity service checks passed
+miniapp cloud-only route boundary checks passed
+
+> gewu-gongfang@8.13.0 test:miniapp-applications
+> npm --prefix cloud-business-api run test:role-applications && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+
+> gewu-cloud-business-api@8.15.0 test:role-applications
+> node src/miniappRoleApplicationService.test.js && node src/miniappRoleApplicationRepository.test.js && node sql/cloud-role-applications.test.js && node sql/role-application-least-privilege.test.js && node sql/role-application-new-profile-mode.test.js && node sql/role-application-atomic-profile.test.js && node sql/role-application-least-privilege.postgres.test.js && node sql/role-application-atomic-profile.postgres.test.js
+
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+[TypeError: fetch failed] {
+  [cause]: ReferenceError: WebAssembly is not defined
+      at lazyllhttp (node:internal/deps/undici/undici:7080:9)
+      at connectH1 (node:internal/deps/undici/undici:7609:26)
+      at node:internal/deps/undici/undici:9319:93
+      at Socket.<anonymous> (node:internal/deps/undici/undici:3267:13)
+      at Object.onceWrapper (node:events:630:28)
+      at Socket.emit (node:events:509:28)
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1690:10)
+}
+
+Node.js v24.15.0

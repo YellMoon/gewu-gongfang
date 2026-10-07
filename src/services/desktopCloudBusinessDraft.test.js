@@ -10,6 +10,8 @@ const assert = require('assert');
   const cloudClient = new Proxy({}, {
     get(_target, method) {
       return async input => {
+        assert.ok(input.currentSession.commandId, 'every typed mutation carries its stable command identity');
+        assert.match(input.currentSession.payloadHash, /^hash:/);
         calls.push({ method: String(method), input });
         return { id: input.studentId || input.teacherId || input.roomId || input.courseId || input.scheduleId, updatedAt: '2026-08-24T01:00:00.000Z' };
       };
@@ -40,7 +42,7 @@ const assert = require('assert');
   const studentReceipt = await adapter.submit(studentCommand, { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls[0].method, 'createCloudStudentRecord');
   assert.deepStrictEqual(calls[0].input, {
-    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false, commandId: studentCommand.commandId, payloadHash: studentCommand.payloadHash },
     studentId: 'student-1', name: 'Student One', school: 'School', gradeYear: 2024, gradeCurrent: 'G2',
     institutionId: null, parentName: 'Guardian', notes: 'note', sourceType: 1, studentSource: 'direct',
     contacts: [
@@ -95,7 +97,7 @@ const assert = require('assert');
   }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'createCloudTeacher');
   assert.deepStrictEqual(calls.at(-1).input, {
-    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+    baseUrl: 'https://business.example', currentSession: calls.at(-1).input.currentSession,
     teacherId: 'teacher-1', name: 'Teacher One', phone: '13700000003', subject: 'Physics', hourlyRate: 60, notes: null,
   });
   await adapter.submit(adapter.createCommand({
@@ -168,12 +170,12 @@ const assert = require('assert');
     assert.strictEqual(calls.at(-1).method, method, type);
     if (payload.expectedVersion) assert.strictEqual(calls.at(-1).input.expectedUpdatedAt, payload.expectedVersion, type);
     if (type === 'payment.create.v1') assert.deepStrictEqual(calls.at(-1).input, {
-      baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+      baseUrl: 'https://business.example', currentSession: calls.at(-1).input.currentSession,
       paymentId: 'payment-1', studentId: 'student-1', amount: 800, paymentType: 1,
       paymentDate: '2026-08-24', paymentMethod: 'wechat', notes: null,
     });
     if (type === 'personal-asset-record.create.v1') assert.deepStrictEqual(calls.at(-1).input, {
-      baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+      baseUrl: 'https://business.example', currentSession: calls.at(-1).input.currentSession,
       recordId: 'asset-1', date: '2026-08-24', type: 'expense', categoryId: 'cat-1', categoryName: 'books',
       amount: 60, studentId: null, studentName: null, note: 'notebook',
     });
@@ -232,7 +234,7 @@ const assert = require('assert');
   await adapter.submit(scheduleUpdate, { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'updateCloudSchedule');
   assert.deepStrictEqual(calls.at(-1).input, {
-    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+    baseUrl: 'https://business.example', currentSession: calls.at(-1).input.currentSession,
     scheduleId: 'schedule-1', expectedUpdatedAt: '2026-08-24T00:00:00.000Z',
     courseId: 'course-2', startAt: new Date(2026, 7, 25, 9, 0).toISOString(),
     endAt: new Date(2026, 7, 25, 10, 0).toISOString(), recurringRule: '{"frequency":"weekly"}',
@@ -252,7 +254,7 @@ const assert = require('assert');
   }), { sessionToken: 'desktop-session-token' });
   assert.strictEqual(calls.at(-1).method, 'createCloudSchedule');
   assert.deepStrictEqual(calls.at(-1).input, {
-    baseUrl: 'https://business.example', currentSession: { token: 'desktop-session-token', offline: false },
+    baseUrl: 'https://business.example', currentSession: calls.at(-1).input.currentSession,
     scheduleId: 'schedule-2', courseId: 'course-1', startAt: '2026-08-26T01:00:00.000Z',
     endAt: '2026-08-26T02:00:00.000Z', recurringRule: null, status: 1, roomDisplay: 'Room One',
     serviceType: 1, tuition: 100, teacherFee: 60, notes: null,

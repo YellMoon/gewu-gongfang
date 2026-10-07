@@ -1,0 +1,17 @@
+{
+  "executedOn": "2026-10-07",
+  "mode": "Synthetic identities and isolated temporary local outboxes only; no production business writes",
+  "beforeFix": [
+    { "command": "node public/desktopAuthorityScope.test.js", "exitCode": 1, "assertion": "account B must not see account A drafts", "actual": "A-scoped room draft returned to B", "expected": [] },
+    { "command": "node src/services/nativeQuestionDraftCreate.test.js", "exitCode": 1, "assertion": "canonical memory-only session can issue a draft", "actual": "DRAFT_PROVENANCE_UNAVAILABLE", "expected": "native-id" },
+    { "command": "node src/services/desktopCloudTransportDraft.test.js", "exitCode": 1, "assertion": "HTTP 503 must retain the cloud outage state", "actual": false, "expected": true },
+    { "command": "node src/services/questionLocalStore.subject.test.js", "exitCode": 1, "assertion": "local provenance must use the canonical memory session", "actual": "", "expected": "memory-user", "note": "Observed with only the stale sessionStorage read temporarily reinstated; canonical memory read restored immediately afterward" }
+  ],
+  "greenEvidence": "desktop-task1-green.log",
+  "typecheck": { "command": "npm run typecheck", "exitCode": 0 },
+  "integrationObservations": [
+    "ScheduleCalendar.sidebar-parity.test.js has an unrelated existing expectation mismatch: current card titles include numbering.",
+    "DesktopIdentityGate.test.js:133 searches an LF string in a CRLF source file and fails although the source contains the required setPolling(false); setBusy(true); sequence.",
+    "Root owns package.json addition for newly required packaged desktopIdentityPartition.mjs dependency. Desktop runtime packaging dependency test subsequently passed."
+  ]
+}

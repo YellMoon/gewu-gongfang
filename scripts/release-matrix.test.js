@@ -50,6 +50,20 @@ matrix.recordReceipt(deployedStorageManifest, {
 });
 assert.deepStrictEqual(matrix.validateManifest(deployedStorageManifest).issues, [],
   'the deployed 8.8.4 runtime must retain exact contract and parser receipt checks');
+const repairedStorageManifest = matrix.createReleaseManifest({
+  componentVersions: { ...versions, storage_proxy: '8.9.1' }, commit: 'deadline-repair-requires-new-runtime',
+});
+const repairedStorageReceipt = {
+  target: 'storage_proxy', version: '8.9.1', runtimeVersion: '8.8.4',
+  runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
+  parserSha256: runtimeParserSha256,
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.4' }, evidence: 'synthetic runtime evidence',
+};
+assert.throws(() => matrix.recordReceipt(repairedStorageManifest, repairedStorageReceipt), /runtime version.*(?:minimum|repair)/i,
+  'an old compatible protocol does not prove that the request deadline repair is running');
+matrix.recordReceipt(repairedStorageManifest, { ...repairedStorageReceipt, runtimeVersion: '8.9.1',
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.9.1' } });
+assert.deepEqual(matrix.validateManifest(repairedStorageManifest).issues, []);
 assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
   componentVersions: { ...versions, storage_proxy: '8.8.4' },
   commit: 'reject-unreviewed-nas-runtime',
@@ -346,6 +360,7 @@ assert.throws(
   'recording a receipt must reuse the persisted-receipt rule for verifiedAt',
 );
 
+const childProcess = require('node:child_process');
 const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-release-matrix-'));
 try {
   for (const target of targets) {
@@ -359,6 +374,10 @@ try {
     fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
     fs.writeFileSync(absolutePath, JSON.stringify({ version: versions[target] }), 'utf8');
   }
+  childProcess.execFileSync('git', ['init'], { cwd: fixtureRoot, stdio: 'ignore' });
+  childProcess.execFileSync('git', ['add', '.'], { cwd: fixtureRoot, stdio: 'ignore' });
+  childProcess.execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture'], { cwd: fixtureRoot, stdio: 'ignore' });
+  const fixtureCommit = childProcess.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fixtureRoot, encoding: 'utf8' }).trim();
   const localMatrix = matrix.assertSourceVersionMatrix(matrix.readSourceVersionMatrix({ rootDir: fixtureRoot }));
   assert.deepStrictEqual(localMatrix, versions, 'source packages may intentionally have different component versions');
   const manifestPath = matrix.defaultManifestPath(fixtureRoot);
@@ -377,7 +396,7 @@ try {
     return originalRenameSync(sourcePath, destinationPath);
   };
   try {
-    matrix.writeManifest(manifestPath, matrix.createReleaseManifest({ componentVersions: versions, commit: 'abc123' }));
+    matrix.writeManifest(manifestPath, matrix.createReleaseManifest({ componentVersions: versions, commit: fixtureCommit }));
   } finally {
     fs.writeFileSync = originalWriteFileSync;
     fs.renameSync = originalRenameSync;
@@ -399,6 +418,15 @@ try {
     'a requested source version that is not declared in the matrix must fail',
   );
 
+  const wrongSource = matrix.readManifest(manifestPath);
+  wrongSource.commit = '0'.repeat(40);
+  matrix.writeManifest(manifestPath, wrongSource);
+  assert.throws(() => matrix.assertReleaseTarget({ rootDir: fixtureRoot, manifestPath, target: 'desktop' }), /source commit mismatch/i);
+  wrongSource.commit = fixtureCommit;
+  matrix.writeManifest(manifestPath, wrongSource);
+  fs.appendFileSync(path.join(fixtureRoot, 'package.json'), '\n');
+  assert.throws(() => matrix.assertReleaseTarget({ rootDir: fixtureRoot, manifestPath, target: 'desktop' }), /uncommitted source/i);
+  childProcess.execFileSync('git', ['restore', 'package.json'], { cwd: fixtureRoot, stdio: 'ignore' });
   const pending = matrix.readManifest(manifestPath);
   for (const target of ['cloud_business', 'storage_proxy', 'miniapp']) {
     matrix.recordReceipt(pending, {

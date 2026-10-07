@@ -80,6 +80,11 @@ function readCompatibilityDeclaration({ rootDir = path.resolve(__dirname, '..') 
         throw new Error(`Release runtime receipt declaration is invalid: ${target || '<empty>'}`);
       }
       const runtimeContracts = normalizedStringRecord(policy.contracts);
+      if (policy.runtimeFloor !== undefined && (!policy.runtimeFloor
+        || !isVersion(policy.runtimeFloor.sourceVersion) || !isVersion(policy.runtimeFloor.runtimeVersion)
+        || !policy.approvedRuntimeVersions.includes(policy.runtimeFloor.runtimeVersion))) {
+        throw new Error(`Release runtime receipt floor is invalid: ${target}`);
+      }
       if (!runtimeContracts || Object.keys(runtimeContracts).length === 0) {
         throw new Error(`Release runtime receipt declaration is invalid: ${target}`);
       }
@@ -396,6 +401,15 @@ function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, r
     throw new Error(`Release target ${target || '<empty>'} runtime receipt cannot be validated`);
   }
   if (runtimeReceiptRequired) {
+    const floor = policy.runtimeFloor;
+    const atLeast = (left, right) => {
+      const a = left.split('.').map(Number), b = right.split('.').map(Number);
+      for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }
+      return true;
+    };
+    if (floor && atLeast(manifest.componentVersions[target], floor.sourceVersion) && !atLeast(runtimeVersion, floor.runtimeVersion)) {
+      throw new Error(`Release target ${target} runtime version is below the repair minimum: ${floor.runtimeVersion}`);
+    }
     if (!Array.isArray(policy?.approvedRuntimeVersions) || !policy.approvedRuntimeVersions.includes(runtimeVersion)) {
       throw new Error(`Release target ${target} runtime version is not approved: ${runtimeVersion}`);
     }
@@ -439,9 +453,23 @@ function assertRuntimeReceiptCompatibility({ manifest, target, runtimeVersion, r
   };
 }
 
+function assertReleaseSource({ rootDir, manifest }) {
+  const head = gitHead(rootDir);
+  if (manifest.commit !== head) throw new Error(`Release source commit mismatch: ${manifest.commit} != ${head}`);
+  const changes = childProcess.execFileSync('git', ['diff', 'HEAD', '--name-only'], { cwd: rootDir, encoding: 'utf8' }).trim();
+  const untracked = childProcess.execFileSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: rootDir, encoding: 'utf8' }).trim().split(/\r?\n/).filter(file => /^(src|public|shared|scripts|config|cloud-business-api|miniapp|storage-agent|backend|\.github)\//.test(file));
+  if (untracked.length) throw new Error('Release has uncommitted source files');
+  if (changes) throw new Error('Release has uncommitted source; commit reviewed changes before building or publishing');
+  const compatibilityPath = compatibilityDeclarationPath(rootDir);
+  if (fs.existsSync(compatibilityPath) && JSON.stringify(manifest.compatibility) !== JSON.stringify(readCompatibilityDeclaration({ rootDir }))) {
+    throw new Error('Release source compatibility declaration mismatch');
+  }
+}
+
 function assertReleaseTarget({ rootDir = path.resolve(__dirname, '..'), manifestPath = defaultManifestPath(rootDir), target, requestedVersion } = {}) {
   if (!DEFAULT_TARGETS.includes(target)) throw new Error(`Unknown release target: ${target || '<empty>'}`);
   const manifest = readManifest(manifestPath);
+  assertReleaseSource({ rootDir, manifest });
   const version = resolveTargetVersion({ manifest, target, requestedVersion });
   const sourceVersions = assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }));
   if (sourceVersions[target] !== version) {
@@ -461,6 +489,7 @@ function assertDesktopReleasePrerequisites({
   requestedVersion,
 } = {}) {
   const manifest = suppliedManifest || readManifest(manifestPath);
+  assertReleaseSource({ rootDir, manifest });
   const version = resolveTargetVersion({ manifest, target: 'desktop', requestedVersion });
   const sourceVersions = assertSourceVersionMatrix(readSourceVersionMatrix({ rootDir }));
   if (sourceVersions.desktop !== version) throw new Error(`Release target desktop source version mismatch: ${sourceVersions.desktop} != ${version}`);

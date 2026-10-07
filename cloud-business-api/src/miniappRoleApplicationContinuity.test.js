@@ -15,6 +15,7 @@ async function verifyApprovalContinuity() {
       bootstrapAdminAccountId: 'admin', ticketSecret: 'test-only-approval-continuity-secret',
       canonicalWechatIdentity: { resolveOrBind: async ({ loginCode }) => ({ authorityId: 'authority', accountId: loginCode, phoneHmac: 'a'.repeat(64), provisioned: false, bound: true }) },
       accountRepository: {
+        readCanonicalFence: async ({ authorityId, accountId }) => ({ authorityId, accountId, authorityUpdatedAt: '2026-09-24T00:00:00.000000Z', authVersion: '1', accessVersion: '1', revocationVersion: '1' }),
         resolveOrCreate: async ({ accountId }) => {
           const context = { accountId, status: 'active', roles: [], profile: null };
           identities.set(accountId, context); return context;

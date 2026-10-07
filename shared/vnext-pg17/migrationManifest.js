@@ -1870,6 +1870,12 @@ const DESKTOP_DEVICE_NAMES_MIGRATION = Object.freeze({
   sql: DESKTOP_DEVICE_NAMES_SQL, manifestSha256: sha256(DESKTOP_DEVICE_NAMES_SQL),
 });
 
+const MINIAPP_ACCOUNT_FENCE_SQL = require('./miniappAccountFenceMigration');
+const MINIAPP_ACCOUNT_FENCE_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-miniapp-account-fence-30', semanticVersion: 30,
+  sql: MINIAPP_ACCOUNT_FENCE_SQL, manifestSha256: sha256(MINIAPP_ACCOUNT_FENCE_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1900,6 +1906,7 @@ const MIGRATIONS = Object.freeze([
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
   DESKTOP_DEVICE_NAMES_MIGRATION,
+  MINIAPP_ACCOUNT_FENCE_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -2040,6 +2047,7 @@ $function$
   vnext_exchange_desktop_session_challenge: 'ea2c2d275682e8e24510f9c994bd90dbae0ffb08dbcb281e00b2ef0c2d707554',
   vnext_list_desktop_account_devices: 'a771a2026fa361bbbcfe5af338a33ace7d51f27c254fcad11367bbcfad364de6',
   vnext_list_named_desktop_account_devices: '3a38fe2384722008f984570e618808815fb93c9bec5e3056425c9e8124d371a8',
+  vnext_read_miniapp_account_fence: 'c8508ae95d0c631e20759b1b7e2d2ec7e6c9a98450259c65ac2035391a3a3799',
   vnext_register_named_desktop_online: '25007dd16e0fca118a55caa655d3ea0edd6c693bb9358b3ac172c537e0fcf1aa',
   vnext_read_desktop_session_installation: 'f53001ea28551e5ab6c8bf68c80876eeb0a1ac4b8c311fbcdc6547bd5e492356',
   vnext_revoke_desktop_device: '47d293c38deef43393a1e2a2ebe2f1d9367bf54b71a9ec82251c5ef427862469',
@@ -2137,6 +2145,7 @@ module.exports = {
   FAMILY_MEMBER_CANONICAL_ROLE_MIGRATION,
   DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
   DESKTOP_DEVICE_NAMES_MIGRATION,
+  MINIAPP_ACCOUNT_FENCE_MIGRATION,
   MIGRATIONS,
   expectedCatalog,
   sha256,

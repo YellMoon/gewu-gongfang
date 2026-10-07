@@ -7,6 +7,13 @@ function fixture(initial) {
   const calls = [], assets = [];
   const bridge = {
     list: async () => structuredClone(items),
+    confirmBatch: async snapshots => {
+      for (const snapshot of snapshots) {
+        const item = items.find(row => row.id === snapshot.id);
+        if (!item || item.type !== snapshot.type || JSON.stringify(item.payload) !== JSON.stringify(snapshot.payload)) throw new Error('AUTHORITY_DRAFT_CONFIRMATION_CHANGED');
+      }
+      for (const snapshot of snapshots) { const item = items.find(row => row.id === snapshot.id); if (item.status === 'awaiting_confirmation') item.status = 'confirmed'; }
+    },
     confirmAndSubmit: async (id, input, confirmation) => {
       calls.push({ id, input, confirmation });
       const item = items.find(row => row.id === id);
@@ -100,4 +107,19 @@ console.log('unified desktop sync batch, reconnect, conflict, race and history c
   assert.equal(f.controller.getState().items[0].status, 'conflict', 'thrown failure reads back durable state immediately');
   assert.equal(f.controller.getState().open, true);
   await f.controller.tick(); assert.equal(attempts, 1);
+}
+
+{
+  const f = fixture([draft('one'), draft('two')]);
+  await f.controller.tick();
+  let first = true;
+  const normal = f.bridge.confirmAndSubmit;
+  f.bridge.confirmAndSubmit = async (...args) => {
+    if (first) { first = false; f.items[0].status = 'submitted'; throw new Error('ECONNRESET'); }
+    return normal(...args);
+  };
+  await f.controller.confirm(f.controller.getState().items);
+  assert.deepEqual(f.items.map(item => item.status), ['submitted', 'confirmed'], 'one whole-batch decision must survive the first failed send');
+  await f.controller.tick();
+  assert.deepEqual(f.items.map(item => item.status), ['completed', 'completed'], 'recovery must not require a second confirmation');
 }

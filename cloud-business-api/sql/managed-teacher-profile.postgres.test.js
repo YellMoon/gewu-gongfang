@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext } = require('./businessCommandFixture');
 // UTF-8: no account is provisioned by creating a teaching-only profile.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createDisposablePg17Runtime,withVNextPg17SyntheticQuery:withQuery}=require('../../shared/vnext-pg17/disposableRuntime');
@@ -53,9 +54,10 @@ const migration=path.join(__dirname,'20260912-managed-teacher-profile.sql');
   };
   const withTeacherClient=async(actor,action)=>{
    const {createBusinessTeacherLifecycleMutations}=require('../src/businessTeacherLifecycleMutationService');
-   const httpApp=createCloudBusinessApp({businessTenantId:'one',query:async()=>{throw new Error('profile edits must not provision accounts');},
-    desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>({roles:['teacher'],profile:{type:'teacher',id:actor}})},
-    businessTeacherLifecycleMutations:createBusinessTeacherLifecycleMutations({query:(sql,values)=>withQuery(handle,'writer',db=>db.query(sql,values))})});
+   const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+   const httpApp=createCloudBusinessApp({businessCommandWriter,businessTenantId:'one',query:async()=>{throw new Error('profile edits must not provision accounts');},
+    desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext({roles:['teacher'],profile:{type:'teacher',id:actor}},'teacher-account-'+actor)},
+    businessTeacherLifecycleMutations:createBusinessTeacherLifecycleMutations({query:businessCommandWriter.query})});
    const http=httpApp.listen(0,'127.0.0.1');await new Promise(resolve=>http.once('listening',resolve));
    try{
     const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');

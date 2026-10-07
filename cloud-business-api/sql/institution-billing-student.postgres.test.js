@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: execute the unchanged institution REST service's PostgreSQL functions.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createDisposablePg17Runtime,withVNextPg17SyntheticQuery}=require('../../shared/vnext-pg17/disposableRuntime');
@@ -6,17 +7,18 @@ const {createVNextPg17CatalogBoundary}=require('../../shared/vnext-pg17/catalogA
 const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17/businessFoundationCatalogAssertion');
 const APPLY={appliedAt:'2026-09-08T00:00:00.000Z',appliedBy:'institution-billing-test'};
 const marker='机构课程费用专用学生';
-async function confirmedHttpRoundTrip(writer,admin){
+async function confirmedHttpRoundTrip(handle,writer,admin){
  const {createCloudBusinessApp}=require('../src/app');
  const {createBusinessFoundationLifecycleMutations}=require('../src/businessFoundationLifecycleMutationService');
  const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');
  const {createDesktopCloudBusinessDraftAdapter}=await import('../../src/services/desktopCloudBusinessDraft.mjs');
  const {createDesktopAuthorityClient}=await import('../../src/services/desktopAuthorityClient.mjs');
  const {createDesktopCommandOutbox}=await import('../../src/services/desktopCommandOutbox.mjs');
- const query=(sql,values)=>writer(db=>db.query(sql,values));
+ const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+ const query=businessCommandWriter.query;
  let role='super_admin';
- const app=createCloudBusinessApp({query,businessTenantId:'tenant',businessFoundationLifecycleMutations:createBusinessFoundationLifecycleMutations({query}),
-  desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>({roles:[role]})}});
+ const app=createCloudBusinessApp({businessCommandWriter,query,businessTenantId:'tenant',businessFoundationLifecycleMutations:createBusinessFoundationLifecycleMutations({query}),
+  desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext({roles:[role]})}});
  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
  try{
   let storage='',sequence=0,requests=0;
@@ -42,6 +44,7 @@ async function confirmedHttpRoundTrip(writer,admin){
   }
   await admin(async db=>assert.equal((await db.query("SELECT id FROM business.institutions WHERE id IN ('denied-visitor','denied-student')")).rows.length,0));
   assert(!storage.includes(session.sessionToken));
+  await assertPgBusinessCommandReceipts(handle);
  }finally{await new Promise(resolve=>server.close(resolve));}
 }
 (async()=>{
@@ -127,7 +130,7 @@ async function confirmedHttpRoundTrip(writer,admin){
    await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
    await db.query(fs.readFileSync(path.join(__dirname,'20260913-teacher-institution-scope.sql'),'utf8'));
   });
-  await confirmedHttpRoundTrip(writer,admin);
+  await confirmedHttpRoundTrip(handle,writer,admin);
   // UTF-8: execute the actual desktop projection fragments as its read-only role.
   const appSource=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
   const fragment=entity=>{

@@ -19,7 +19,13 @@ const query = async (text, values) => {
 };
 
 (async () => {
-  const repository = createMiniappCloudAccountRepository({ query, tenantId: 'default' });
+  const canonicalCalls = [];
+  const canonicalRow = { authorityId: 'authority', accountId: 'account-1', authorityUpdatedAt: '2026-10-07T00:00:00.000000Z', authVersion: '9007199254740993', accessVersion: '1', revocationVersion: '1' };
+  const repository = createMiniappCloudAccountRepository({ query, tenantId: 'default', canonicalQuery: async (sql, values) => { canonicalCalls.push([sql, values]); return { rows: [canonicalRow] }; } });
+  assert.deepEqual(await repository.readCanonicalFence({ authorityId: 'authority', accountId: 'account-1' }), canonicalRow);
+  assert.deepEqual(canonicalCalls[0][1], ['authority', 'account-1']);
+  assert.match(canonicalCalls[0][0], /vnext_read_miniapp_account_fence/);
+  assert.equal(calls.length, 0, 'canonical state must use the separate least-privilege credential');
   const created = await repository.resolveOrCreate({ accountId: 'canonical-account-1', phoneHmac: 'a'.repeat(64), bootstrapAdmin: true });
   assert.deepStrictEqual(created, { accountId: 'canonical-account-1', status: 'active', roles: ['super_admin'], profile: null });
   assert.deepStrictEqual(calls[0][1], ['canonical-account-1', 'a'.repeat(64), true]);

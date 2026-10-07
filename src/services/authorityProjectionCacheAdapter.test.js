@@ -5,6 +5,7 @@ const assert = require('assert');
   const projection = {
     protocol: 'gewu.authority-projection.v1',
     authorityId: 'authority-1',
+    businessAuthority: 'https://business.fixture',
     hostEpochId: 'epoch-1',
     userId: 'admin-1',
     role: 'admin',
@@ -96,6 +97,7 @@ const assert = require('assert');
     },
   ];
 
+  for (const item of outbox) item.draftScope = { userId: projection.userId, businessAuthority: projection.businessAuthority, activeRole: String(projection.role || '') };
   const cache = buildAuthorityBackedBrowserCache({ projection, outbox, localOnly });
   assert.strictEqual(cache.students[0].notes, 'offline draft');
   assert.deepStrictEqual(cache.student_contacts.map(contact => ({
@@ -135,7 +137,8 @@ const assert = require('assert');
     ...projection,
     payload: { schedules: [{ id: 'schedule-attendance', student_pricings: JSON.stringify([{ student_id: 'student-1', attendance_status: 4, tuition: 100, teacher_fee: 50 }]) }] },
   };
-  const attendanceCache = (outbox = []) => buildAuthorityBackedBrowserCache({ projection: attendanceProjection, outbox });
+  const attendanceCache = (outbox = []) => buildAuthorityBackedBrowserCache({ projection: attendanceProjection,
+    outbox: outbox.map(item => ({ ...item, draftScope: { userId: projection.userId, businessAuthority: projection.businessAuthority, activeRole: String(projection.role || '') } })) });
   assert.deepStrictEqual(attendanceCache().schedules[0].student_pricings, [
     { student_id: 'student-1', status: 4, tuition: 100, teacher_fee: 50 },
   ]);

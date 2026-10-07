@@ -99,3 +99,13 @@ assert.deepStrictEqual(normalizedLayout.layout, {
 }, 'valid edits must be normalized to the exact cloud layout contract before submission');
 
 console.log('question paper workflow checks passed');
+
+const stableDraft = workflow.createTaskDraft({ taskType: 'paper-export-word', questionIds: ['q1'], title: 'Original', subject: 'physics', answerPosition: 'after', formulaMode: 'latex-vector' }, { idFactory: () => 'stable-key' });
+const resend = workflow.prepareTaskSubmission({ taskType: 'paper-export-word', questionIds: ['changed'], title: 'Changed', subject: 'math', answerPosition: 'end', formulaMode: 'mathtype-compatible' }, { ...stableDraft, error: 'timeout' });
+assert.deepStrictEqual(resend.request, stableDraft.request, 'an uncertain submission must replay its original complete request');
+assert.equal(resend.localId, stableDraft.localId);
+const newAttempt = workflow.prepareTaskSubmission({ taskType: 'paper-export-word' }, { ...stableDraft, confirmed: true, status: 'failed' }, { idFactory: () => 'new-attempt' });
+assert.equal(newAttempt.request.idempotencyKey, 'new-attempt');
+assert.deepStrictEqual(newAttempt.request.payload, stableDraft.request.payload);
+assert.throws(() => workflow.prepareTaskSubmission({ taskType: 'paper-export-pdf' }, stableDraft), /PAPER_RETRY_REQUEST_INVALID/);
+assert.throws(() => workflow.prepareTaskSubmission({ taskType: 'paper-export-word' }, { ...stableDraft, request: { ...stableDraft.request, payload: { ...stableDraft.request.payload, subject: undefined } } }), /PAPER_RETRY_REQUEST_INVALID/);

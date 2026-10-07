@@ -19,7 +19,7 @@ const { act } = React;
   window.setInterval = fn => { intervals.add(fn); return fn; }; window.clearInterval = fn => intervals.delete(fn);
   const draft = (id, createdOffline) => ({ id, type: 'student.update.v1', status: 'awaiting_confirmation', createdOffline, payload: { id, changes: { name: id } } });
   let items = [draft('offline-one', true), draft('offline-two', true), { ...draft('history', false), status: 'completed' }];
-  window.desktopAuthority = { list: async () => structuredClone(items), confirmAndSubmit: async id => {
+  window.desktopAuthority = { list: async () => structuredClone(items), confirmBatch: async snapshots => { for (const snapshot of snapshots) { const item = items.find(row => row.id === snapshot.id); if (item) item.status = 'confirmed'; } }, confirmAndSubmit: async id => {
     calls.push(id); items.find(row => row.id === id).status = 'completed'; return { receipt: { status: 'committed' } };
   } };
   window.dbService = { data: {}, refreshAuthorityProjection: async options => assert.equal(options.businessOnly, true) };

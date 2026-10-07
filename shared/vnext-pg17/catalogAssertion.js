@@ -46,6 +46,7 @@ const LEDGER_FUNCTIONS = Object.freeze([
   'vnext_read_desktop_password_by_login_name',
   'vnext_read_desktop_password_by_phone_hash',
   'vnext_read_desktop_session_installation',
+  'vnext_read_miniapp_account_fence',
   'vnext_recent_reauthentication_events_no_delete',
   'vnext_recent_reauthentication_events_no_update',
   'vnext_recent_reauthentication_events_session_state_match',
@@ -78,6 +79,7 @@ const COMMAND_FUNCTION_ARGUMENTS = Object.freeze({
   vnext_read_desktop_password_by_login_name: 'p_login_name text',
   vnext_read_desktop_password_by_phone_hash: 'p_phone_hash text',
   vnext_read_desktop_session_installation: 'p_authority_id text, p_account_id text, p_session_id text',
+  vnext_read_miniapp_account_fence: 'p_authority_id text, p_account_id text',
   vnext_register_unified_desktop_online: 'p_assertion_id text, p_idempotency_key text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_session_id text, p_link_id text, p_session_expires_at timestamp with time zone, p_canonical_result_json text, p_result_sha256 text, p_canonical_payload_json text, p_payload_sha256 text',
   vnext_revoke_desktop_device: 'p_authority_id text, p_actor_account_id text, p_actor_session_id text, p_device_id text, p_expected_row_version bigint, p_reason text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
   vnext_rotate_desktop_role_session: 'p_authority_id text, p_account_id text, p_previous_session_id text, p_expected_row_version bigint, p_session_id text, p_active_role text, p_receipt_id text, p_audit_event_id text, p_outbox_event_id text, p_canonical_request_sha256 text, p_canonical_result_json text, p_canonical_result_sha256 text, p_canonical_payload_json text, p_canonical_payload_sha256 text',
@@ -879,7 +881,7 @@ function createVNextPg17CatalogBoundary(runtime) {
             || row.proconfig[0] !== 'search_path=pg_catalog, pg_temp'
             || row.public_execute || row.runtime_execute || row.verifier_execute
             || row.writer_execute !== WRITER_COMMAND_FUNCTIONS.has(row.proname)
-            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account' || row.proname === 'vnext_bind_canonical_wechat_identity' || row.proname === 'vnext_read_canonical_account_by_verified_contact' || row.proname === 'vnext_set_desktop_password_credential' || row.proname === 'vnext_read_desktop_password_by_phone_hash' || row.proname === 'vnext_read_desktop_password_by_login_name')
+            || row.identity_verifier_execute !== (row.proname === 'vnext_issue_online_identity_assertion' || row.proname === 'vnext_provision_canonical_phone_account' || row.proname === 'vnext_bind_canonical_wechat_identity' || row.proname === 'vnext_read_canonical_account_by_verified_contact' || row.proname === 'vnext_set_desktop_password_credential' || row.proname === 'vnext_read_desktop_password_by_phone_hash' || row.proname === 'vnext_read_desktop_password_by_login_name' || row.proname === 'vnext_read_miniapp_account_fence')
             || row.arguments !== (COMMAND_FUNCTION_ARGUMENTS[row.proname] || '')
             || sha256(row.definition) !== expectedCatalog.functionDefinitionSha256[row.proname])) throw schemaDrift();
         const ledger = await facade.query(

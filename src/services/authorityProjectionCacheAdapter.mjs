@@ -284,7 +284,13 @@ export function buildAuthorityBackedBrowserCache({
     ...studentContactFormValues(student, cache.student_contacts)}));
   for (const key of LOCAL_ONLY_KEYS) cache[key] = array(localOnly[key]);
   const pending = array(outbox)
-    .filter(item => item && item.status !== 'completed')
+    .filter(item => item && item.status !== 'completed'
+      && typeof projection.userId === 'string' && projection.userId.length > 0
+      && typeof projection.businessAuthority === 'string' && projection.businessAuthority.length > 0
+      && item.draftScope?.userId === projection.userId
+      && item.draftScope?.businessAuthority === projection.businessAuthority.replace(/\/+$/, '')
+      && typeof item.draftScope?.activeRole === 'string'
+      && item.draftScope.activeRole === String(projection.role || ''))
     .sort((left, right) => (
       String(left.createdAt || left.updatedAt || '').localeCompare(
         String(right.createdAt || right.updatedAt || ''),

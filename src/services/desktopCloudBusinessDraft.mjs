@@ -238,7 +238,7 @@ function personalAssetRecordInput(record) {
 function callInput(baseUrl, sessionToken, values) {
   return {
     baseUrl,
-    currentSession: { token: sessionToken, offline: false },
+    currentSession: typeof sessionToken === 'object' ? { ...sessionToken, offline: false } : { token: sessionToken, offline: false },
     ...values,
   };
 }
@@ -284,180 +284,181 @@ export function createDesktopCloudBusinessDraftAdapter({
   }
 
   async function dispatch(command, sessionToken) {
+    const commandSession = { token: sessionToken, commandId: command.commandId, payloadHash: command.payloadHash };
     const payload = command.payload || {};
     const createRecord = payload.record || {};
     const updateRecord = payload.changes || {};
     switch (command.type) {
       case 'student.create.v1':
-        return cloudClient.createCloudStudentRecord(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudStudentRecord(callInput(normalizedBaseUrl, commandSession, {
           studentId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...studentInput(createRecord),
         }));
       case 'student.update.v1':
-        return cloudClient.updateCloudStudentRecord(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudStudentRecord(callInput(normalizedBaseUrl, commandSession, {
           studentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...studentInput(updateRecord, true),
         }));
       case 'student.delete.v1':
-        return cloudClient.deleteCloudStudent(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudStudent(callInput(normalizedBaseUrl, commandSession, {
           studentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'teacher.create.v1':
-        return cloudClient.createCloudTeacher(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudTeacher(callInput(normalizedBaseUrl, commandSession, {
           teacherId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...teacherInput(createRecord),
         }));
       case 'teacher.update.v1':
-        return cloudClient.updateCloudTeacher(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudTeacher(callInput(normalizedBaseUrl, commandSession, {
           teacherId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...teacherInput(updateRecord),
         }));
       case 'teacher.delete.v1':
-        return cloudClient.deleteCloudTeacher(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudTeacher(callInput(normalizedBaseUrl, commandSession, {
           teacherId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'room.create.v1':
-        return cloudClient.createCloudRoom(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudRoom(callInput(normalizedBaseUrl, commandSession, {
           roomId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...roomInput(createRecord),
         }));
       case 'room.update.v1':
-        return cloudClient.updateCloudRoom(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudRoom(callInput(normalizedBaseUrl, commandSession, {
           roomId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...roomInput(updateRecord),
         }));
       case 'room.delete.v1':
-        return cloudClient.deleteCloudRoom(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudRoom(callInput(normalizedBaseUrl, commandSession, {
           roomId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'institution.create.v1':
-        return cloudClient.createCloudInstitution(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudInstitution(callInput(normalizedBaseUrl, commandSession, {
           institutionId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...institutionInput(createRecord),
         }));
       case 'institution.update.v1':
-        return cloudClient.updateCloudInstitution(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudInstitution(callInput(normalizedBaseUrl, commandSession, {
           institutionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...institutionInput(updateRecord),
         }));
       case 'institution.delete.v1':
-        return cloudClient.deleteCloudInstitution(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudInstitution(callInput(normalizedBaseUrl, commandSession, {
           institutionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'school.create.v1':
-        return cloudClient.createCloudSchool(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudSchool(callInput(normalizedBaseUrl, commandSession, {
           schoolId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...schoolInput(createRecord),
         }));
       case 'school.update.v1':
-        return cloudClient.updateCloudSchool(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudSchool(callInput(normalizedBaseUrl, commandSession, {
           schoolId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...schoolInput(updateRecord),
         }));
       case 'school.delete.v1':
-        return cloudClient.deleteCloudSchool(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudSchool(callInput(normalizedBaseUrl, commandSession, {
           schoolId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'course.create.v1':
-        return cloudClient.createCloudCourse(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudCourse(callInput(normalizedBaseUrl, commandSession, {
           courseId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...courseInput(createRecord),
         }));
       case 'course.update.v1':
-        return cloudClient.updateCloudCourse(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudCourse(callInput(normalizedBaseUrl, commandSession, {
           courseId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...(Object.keys(updateRecord).length === 1 && typeof updateRecord.active === 'boolean'
             ? { active: updateRecord.active } : courseInput(updateRecord)),
         }));
       case 'course.delete.v1':
-        return cloudClient.deleteCloudCourse(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudCourse(callInput(normalizedBaseUrl, commandSession, {
           courseId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'schedule.update.v1':
-        return cloudClient.updateCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudSchedule(callInput(normalizedBaseUrl, commandSession, {
           scheduleId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
           ...scheduleInput(updateRecord),
         }));
       case 'schedule.create.v1':
         if (payload.restoreDeleted === true) {
-          return cloudClient.updateCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+          return cloudClient.updateCloudSchedule(callInput(normalizedBaseUrl, commandSession, {
             scheduleId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
             expectedUpdatedAt: expectedVersion(payload), restoreDeleted: true,
             ...scheduleCreateInput(createRecord),
           }));
         }
-        return cloudClient.createCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudSchedule(callInput(normalizedBaseUrl, commandSession, {
           scheduleId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           ...scheduleCreateInput(createRecord),
         }));
       case 'schedule.delete.v1':
-        return cloudClient.deleteCloudSchedule(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudSchedule(callInput(normalizedBaseUrl, commandSession, {
           scheduleId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'),
           expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'payment.create.v1':
-        return cloudClient.createCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudPayment(callInput(normalizedBaseUrl, commandSession, {
           paymentId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...paymentInput(createRecord),
         }));
       case 'payment.update.v1':
-        return cloudClient.updateCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudPayment(callInput(normalizedBaseUrl, commandSession, {
           paymentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...paymentInput(updateRecord),
         }));
       case 'payment.delete.v1':
-        return cloudClient.deleteCloudPayment(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudPayment(callInput(normalizedBaseUrl, commandSession, {
           paymentId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'consumption.create.v1':
-        return cloudClient.createCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudConsumption(callInput(normalizedBaseUrl, commandSession, {
           consumptionId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...consumptionInput(createRecord),
         }));
       case 'consumption.update.v1':
-        return cloudClient.updateCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudConsumption(callInput(normalizedBaseUrl, commandSession, {
           consumptionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...consumptionInput(updateRecord),
         }));
       case 'consumption.delete.v1':
-        return cloudClient.deleteCloudConsumption(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudConsumption(callInput(normalizedBaseUrl, commandSession, {
           consumptionId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'grade.create.v1':
-        return cloudClient.createCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudGrade(callInput(normalizedBaseUrl, commandSession, {
           gradeId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...gradeInput(createRecord),
         }));
       case 'grade.update.v1':
-        return cloudClient.updateCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudGrade(callInput(normalizedBaseUrl, commandSession, {
           gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...gradeInput(updateRecord),
         }));
       case 'grade.delete.v1':
-        return cloudClient.deleteCloudGrade(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudGrade(callInput(normalizedBaseUrl, commandSession, {
           gradeId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'personal-asset-category.create.v1':
-        return cloudClient.createCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudPersonalAssetCategory(callInput(normalizedBaseUrl, commandSession, {
           categoryId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetCategoryInput(createRecord),
         }));
       case 'personal-asset-category.update.v1':
-        return cloudClient.updateCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudPersonalAssetCategory(callInput(normalizedBaseUrl, commandSession, {
           categoryId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...personalAssetCategoryInput(updateRecord),
         }));
       case 'personal-asset-category.delete.v1':
-        return cloudClient.deleteCloudPersonalAssetCategory(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudPersonalAssetCategory(callInput(normalizedBaseUrl, commandSession, {
           categoryId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       case 'personal-asset-record.create.v1':
-        return cloudClient.createCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.createCloudPersonalAssetRecord(callInput(normalizedBaseUrl, commandSession, {
           recordId: requiredText(createRecord.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), ...personalAssetRecordInput(createRecord),
         }));
       case 'personal-asset-record.update.v1':
-        return cloudClient.updateCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.updateCloudPersonalAssetRecord(callInput(normalizedBaseUrl, commandSession, {
           recordId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload), ...personalAssetRecordInput(updateRecord),
         }));
       case 'personal-asset-record.delete.v1':
-        return cloudClient.deleteCloudPersonalAssetRecord(callInput(normalizedBaseUrl, sessionToken, {
+        return cloudClient.deleteCloudPersonalAssetRecord(callInput(normalizedBaseUrl, commandSession, {
           recordId: requiredText(payload.id, 'CLOUD_BUSINESS_DRAFT_RECORD_ID_REQUIRED'), expectedUpdatedAt: expectedVersion(payload),
         }));
       default:

@@ -18,7 +18,7 @@ async function runDesktopDeviceNamesCases() {
     await createVNextPg17CatalogBoundary(runtime).apply(handle, { appliedAt: new Date().toISOString(), appliedBy: 'device-names-test' });
     const query = (role, sql, values) => withVNextPg17SyntheticQuery(handle, role, db => db.query(sql, values));
     const deploymentState = JSON.parse((await query('fixture-provisioner', buildCloudControlPlaneM29StateSql())).rows[0].state);
-    assert.deepEqual(deploymentState, { ledgerCount: 29, prefixValid: true, targetCount: 1, columnCount: 1, functionCount: 2, metadataValid: true });
+    assert.deepEqual(deploymentState, { ledgerCount: 30, prefixValid: true, targetCount: 1, columnCount: 1, functionCount: 2, metadataValid: true });
     const register = createDesktopRegistrationPgAdapter({ writerPool: { query: (sql, values) => query('writer', sql, values) } });
     await query('fixture-provisioner', "INSERT INTO vnext_control_plane.vnext_authorities(authority_id,status,created_at,updated_at) VALUES('authority-name','active',now(),now())");
     await query('fixture-provisioner', "INSERT INTO vnext_control_plane.vnext_accounts(account_id,authority_id,status,auth_version,access_version,revocation_version,row_version,created_at,updated_at) VALUES('account-name','authority-name','active',2,3,4,1,now(),now()),('other-account','authority-name','active',1,1,1,1,now(),now())");

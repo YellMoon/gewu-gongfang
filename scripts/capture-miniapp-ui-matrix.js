@@ -14,6 +14,8 @@ const automatorRuntime = path.join(ROOT, 'miniapp', 'node_modules', 'miniprogram
 const AutomationConnection = require(path.join(automatorRuntime, 'Connection')).default;
 const AutomationMiniProgram = require(path.join(automatorRuntime, 'MiniProgram')).default;
 const VERSION = require('../miniapp/package.json').version;
+const { miniappUiSourceHash } = require('./verify-miniapp-ui-evidence');
+const { readMiniappBuildProof, compiledMiniappHash } = require('./build-miniapp-with-proof');
 const scenarioIdFilter = new Set(String(process.env.MINIAPP_UI_SCENARIO_IDS || '').split(',').map(value => value.trim()).filter(Boolean));
 const focusedRun = scenarioIdFilter.size > 0;
 const scenarios = focusedRun ? runtimeScenarios.filter(scenario => scenarioIdFilter.has(scenario.id)) : runtimeScenarios;
@@ -498,6 +500,7 @@ async function launchScenarioPage(miniProgram, scenario) {
 }
 
 async function run() {
+  const buildReceipt = readMiniappBuildProof(ROOT);
   const compiledCommon = fs.readFileSync(path.join(ROOT, 'miniapp', 'dist', 'common.js'), 'utf8');
   assert.ok(
     compiledCommon.includes(FIXTURE_BASE),
@@ -584,6 +587,9 @@ async function run() {
   const fatalExceptions = exceptionEvents.filter(value => !/request:fail|network/i.test(value));
   const report = {
     version: VERSION,
+    sourceHash: buildReceipt.sourceHash,
+    buildReceipt,
+    focusedRun,
     generatedAt: new Date().toISOString(),
     runtime: 'WeChat DevTools miniprogram-automator',
     fixtureBase: FIXTURE_BASE,
@@ -601,7 +607,8 @@ async function run() {
     pages: results,
   };
   const runtimeCategoriesComplete = REQUIRED_COVERAGE_CATEGORIES.every(category => report.requiredStatesCovered.includes(category));
-  report.completed = report.completed && (focusedRun || runtimeCategoriesComplete);
+  report.completed = report.completed && (focusedRun || runtimeCategoriesComplete)
+    && buildReceipt.sourceHash === miniappUiSourceHash(ROOT) && buildReceipt.compiledHash === compiledMiniappHash(ROOT);
   fs.writeFileSync(path.join(OUTPUT, 'matrix.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   const lines = [
     `# 格物工坊小程序 ${VERSION} 全页面运行验收`, '',

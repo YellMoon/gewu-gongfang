@@ -1,0 +1,5 @@
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+business microsecond version REST roundtrip and invalid-version checks passed
+cloud business API health checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed

@@ -36,6 +36,14 @@ function issue(secret, payload) {
   return `${encoded}.${sign(secret, encoded)}`;
 }
 
+function canonicalFence(value) {
+  const copy = exact(value, ['authorityId', 'accountId', 'authorityUpdatedAt', 'authVersion', 'accessVersion', 'revocationVersion']);
+  if (!text(copy.authorityId) || !text(copy.accountId)
+    || typeof copy.authorityUpdatedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(copy.authorityUpdatedAt)
+    || ['authVersion', 'accessVersion', 'revocationVersion'].some(key => typeof copy[key] !== 'string' || !/^[1-9]\d{0,18}$/u.test(copy[key]) || BigInt(copy[key]) > 9223372036854775807n)) throw rejected();
+  return Object.freeze(copy);
+}
+
 function inspect(secret, token, now) {
   if (typeof token !== 'string' || token.length > 4096) throw rejected();
   const parts = token.split('.');
@@ -49,8 +57,10 @@ function inspect(secret, token, now) {
   } catch (_) {
     throw rejected();
   }
-  const copy = exact(payload, ['v', 'kind', 'accountId', 'expiresAt']);
-  if (copy.v !== 1 || copy.kind !== 'miniapp-cloud' || !text(copy.accountId) || !Number.isSafeInteger(copy.expiresAt) || copy.expiresAt <= now.getTime()) throw rejected();
+  let copy;
+  try { copy = exact(payload, ['v', 'kind', 'authorityId', 'accountId', 'authorityUpdatedAt', 'authVersion', 'accessVersion', 'revocationVersion', 'expiresAt']); } catch (_) { throw rejected(); }
+  if (copy.v !== 2 || copy.kind !== 'miniapp-cloud' || !Number.isSafeInteger(copy.expiresAt) || copy.expiresAt <= now.getTime()) throw rejected();
+  canonicalFence({ authorityId: copy.authorityId, accountId: copy.accountId, authorityUpdatedAt: copy.authorityUpdatedAt, authVersion: copy.authVersion, accessVersion: copy.accessVersion, revocationVersion: copy.revocationVersion });
   return copy;
 }
 
@@ -83,7 +93,7 @@ function publicIdentity(context) {
 function createMiniappCloudAccountService(config) {
   const settings = exact(config, ['now', 'bootstrapAdminAccountId', 'canonicalWechatIdentity', 'accountRepository', 'ticketSecret']);
   if (typeof settings.now !== 'function' || !text(settings.bootstrapAdminAccountId) || !settings.canonicalWechatIdentity || typeof settings.canonicalWechatIdentity.resolveOrBind !== 'function'
-    || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
+    || !settings.accountRepository || typeof settings.accountRepository.resolveOrCreate !== 'function' || typeof settings.accountRepository.readContext !== 'function' || typeof settings.accountRepository.readCanonicalFence !== 'function' || typeof settings.ticketSecret !== 'string' || settings.ticketSecret.length < 24) throw invalid();
   const currentNow = () => {
     const value = settings.now();
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw invalid();
@@ -93,6 +103,8 @@ function createMiniappCloudAccountService(config) {
     const ticket = inspect(settings.ticketSecret, token, currentNow());
     let current;
     try {
+      const fence = canonicalFence(await settings.accountRepository.readCanonicalFence({ authorityId: ticket.authorityId, accountId: ticket.accountId }));
+      if (Object.keys(fence).some(key => fence[key] !== ticket[key])) throw rejected();
       current = identity(await settings.accountRepository.readContext({ accountId: ticket.accountId }));
     } catch (_) {
       throw rejected();
@@ -112,7 +124,10 @@ function createMiniappCloudAccountService(config) {
       }
       if (!canonical || !text(canonical.authorityId) || !text(canonical.accountId) || !/^[0-9a-f]{64}$/u.test(canonical.phoneHmac) || typeof canonical.provisioned !== 'boolean' || typeof canonical.bound !== 'boolean') throw rejected();
       let current;
+      let fence;
       try {
+        fence = canonicalFence(await settings.accountRepository.readCanonicalFence({ authorityId: canonical.authorityId, accountId: canonical.accountId }));
+        if (fence.authorityId !== canonical.authorityId || fence.accountId !== canonical.accountId) throw rejected();
         current = identity(await settings.accountRepository.resolveOrCreate({ accountId: canonical.accountId, phoneHmac: canonical.phoneHmac, bootstrapAdmin: canonical.accountId === settings.bootstrapAdminAccountId }));
       } catch (error) {
         if (error && error.code === 'CLOUD_MINIAPP_IDENTITY_REJECTED') throw error;
@@ -123,7 +138,7 @@ function createMiniappCloudAccountService(config) {
       const issuedAt = currentNow();
       return Object.freeze({
         identity: result,
-        token: issue(settings.ticketSecret, { v: 1, kind: 'miniapp-cloud', accountId: result.accountId, expiresAt: issuedAt.getTime() + 30 * 60 * 1000 }),
+        token: issue(settings.ticketSecret, { v: 2, kind: 'miniapp-cloud', ...fence, expiresAt: issuedAt.getTime() + 30 * 60 * 1000 }),
       });
     },
     async context(input) {

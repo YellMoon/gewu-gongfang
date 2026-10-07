@@ -13,6 +13,7 @@ const familyRow = {
   const repository = createMiniappCloudAccountRepository({
     tenantId: 'default',
     query: async () => ({ rows: [familyRow] }),
+    canonicalQuery: async () => ({ rows: [] }),
   });
   assert.deepStrictEqual(await repository.readContext({ accountId: 'family-account-1' }), {
     accountId: 'family-account-1', status: 'active', roles: ['family_member'],
@@ -24,6 +25,7 @@ const familyRow = {
     bootstrapAdminAccountId: 'fixed-admin',
     canonicalWechatIdentity: { resolveOrBind: async () => ({ authorityId: 'authority-1', accountId: 'family-account-1', phoneHmac: 'a'.repeat(64), provisioned: true, bound: true }) },
     accountRepository: {
+      readCanonicalFence: async ({ authorityId, accountId }) => ({ authorityId, accountId, authorityUpdatedAt: '2026-09-01T00:00:00.000000Z', authVersion: '1', accessVersion: '1', revocationVersion: '1' }),
       resolveOrCreate: async () => ({ accountId: 'family-account-1', status: 'active', roles: ['family_member'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } }),
       readContext: async () => ({ accountId: 'family-account-1', status: 'active', roles: ['family_member'], profile: { type: 'student', id: 'student-1', relationship: 'guardian' } }),
     },

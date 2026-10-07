@@ -1,0 +1,12 @@
+AssertionError [ERR_ASSERTION]: new tickets must bind the canonical fence
+
+1 !== 2
+
+    at C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\src\miniappCanonicalFence.test.js:21:10 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 2,
+  operator: 'strictEqual',
+  diff: 'simple'
+}

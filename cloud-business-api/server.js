@@ -3,6 +3,7 @@
 const { Pool } = require('pg');
 const { createCloudBusinessApp } = require('./src/app');
 const { createOperationAuditRepository } = require('./src/operationAudit');
+const { createBusinessCommandWriter } = require('./src/businessCommandTransaction');
 const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desktopRegistrationService');
 const { createDesktopAccountDisplayNameReader } = require('./src/desktopAccountDisplayName');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
@@ -155,6 +156,7 @@ function createDesktopRegistrationFromEnvironment() {
   const writerPool = new Pool({ ...databaseConfig, user: 'vnext_pg17_writer', password: process.env.COMMAND_WRITER_POSTGRES_PASSWORD });
   const accountRepository = createMiniappCloudAccountRepository({
     query: (text, values) => pool.query(text, values),
+    canonicalQuery: (text, values) => identityPool.query(text, values),
     tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
   });
   const readDesktopDisplayName = createDesktopAccountDisplayNameReader({
@@ -339,31 +341,32 @@ function createDesktopRegistrationFromEnvironment() {
     },
     randomId,
   });
+  const businessCommandWriter = createBusinessCommandWriter(writerPool);
   const businessScheduleUpdate = createBusinessScheduleUpdate({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessScheduleStudentOverride = createBusinessScheduleStudentOverride({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessScheduleLifecycleMutations = createBusinessScheduleLifecycleMutations({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessFoundationLifecycleMutations = createBusinessFoundationLifecycleMutations({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessSupplementalLifecycleMutations = createBusinessSupplementalLifecycleMutations({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessStudentUpdate = createBusinessStudentUpdate({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
   const businessStudentRecordUpdate = createBusinessStudentRecordUpdate({
-    query: (text, values) => writerPool.query(text, values),
+    query: (text, values) => businessCommandWriter.query(text, values),
   });
-  const businessStudentLifecycleMutations = createBusinessStudentLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
-  const businessTeacherLifecycleMutations = createBusinessTeacherLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
-  const businessRoomLifecycleMutations = createBusinessRoomLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
-  const businessCourseLifecycleMutations = createBusinessCourseLifecycleMutations({ query: (text, values) => writerPool.query(text, values) });
+  const businessStudentLifecycleMutations = createBusinessStudentLifecycleMutations({ query: (text, values) => businessCommandWriter.query(text, values) });
+  const businessTeacherLifecycleMutations = createBusinessTeacherLifecycleMutations({ query: (text, values) => businessCommandWriter.query(text, values) });
+  const businessRoomLifecycleMutations = createBusinessRoomLifecycleMutations({ query: (text, values) => businessCommandWriter.query(text, values) });
+  const businessCourseLifecycleMutations = createBusinessCourseLifecycleMutations({ query: (text, values) => businessCommandWriter.query(text, values) });
   const readCanonicalByPhoneHmac = createDesktopPairingCanonicalPhoneReader({
     query: (text, values) => writerPool.query(text, values),
   });
@@ -384,6 +387,7 @@ function createDesktopRegistrationFromEnvironment() {
     roleApplicationQuery: (text, values) => identityPool.query(text, values),
     operationAudits: createOperationAuditRepository({ query: (text, values) => writerPool.query(text, values) }),
     bootstrapAdminAccountId,
+    businessCommandWriter,
     businessScheduleUpdate,
     businessScheduleStudentOverride,
     businessScheduleLifecycleMutations,
@@ -504,6 +508,7 @@ const app = createCloudBusinessApp({
   operationAuditsRequired: true,
   query: (text, values) => pool.query(text, values),
   releaseVersion: version,
+  businessCommandWriter: desktopRuntime?.businessCommandWriter || null,
   businessScheduleUpdate: desktopRuntime?.businessScheduleUpdate || null,
   businessScheduleStudentOverride: desktopRuntime?.businessScheduleStudentOverride || null,
   businessScheduleLifecycleMutations: desktopRuntime?.businessScheduleLifecycleMutations || null,

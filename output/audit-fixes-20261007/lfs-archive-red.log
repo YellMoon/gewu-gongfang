@@ -1,0 +1,25 @@
+warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+Fwarning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+======================================================================
+FAIL: test_lfs_payload_is_verified_against_the_committed_pointer (__main__.FrozenCloudSourceTests.test_lfs_payload_is_verified_against_the_committed_pointer)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\cloud_release_source.test.py", line 72, in test_lfs_payload_is_verified_against_the_committed_pointer
+    self.assertEqual((snapshot / font.relative_to(self.repo)).read_bytes(), payload)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: b'version https://git-lfs.github.com/spec/v[92 chars]\r\n' != b'OTTOfont fixturefont fixturefont fixturef[79 chars]ture'
+
+----------------------------------------------------------------------
+Ran 5 tests in 10.386s
+
+FAILED (failures=1)

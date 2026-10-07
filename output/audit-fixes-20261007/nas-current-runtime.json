@@ -1,0 +1,14 @@
+[
+  {
+    "agentId": "nas-dx4600-agent",
+    "agentVersion": "8.8.4",
+    "observedAt": "2026-10-07T04:49:21.05077+00:00",
+    "contracts": {
+      "questionPaperExport": 3,
+      "storageAgentTransport": 3,
+      "questionImportParserProof": 1
+    },
+    "parserSha256": "958c2b0e7f292266141ff1eb4a17d30c234b4fc8bc8f928aadf5ab52817b3245",
+    "receiptId": "storage_runtime_receipt_ac590784-e937-4fd1-a3e1-3231604bc23e"
+  }
+]

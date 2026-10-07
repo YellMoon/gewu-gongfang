@@ -1,0 +1,3 @@
+/root/scheduling-backups/cloud-code/20261007-045340
+cloud-business-image.tar: OK
+21d77dd96db9e701170e4c982542533496f577265fbb850cad898b24c7b0b9d0  cloud-business-image.tar

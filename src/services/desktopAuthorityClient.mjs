@@ -99,6 +99,7 @@ export function createDesktopAuthorityClient({
 
   return Object.freeze({
     appendDraft,
+    confirmBatch: snapshots => outbox.confirmBatch(snapshots),
     confirmAndSubmit,
     get: id => outbox.get(id),
     list: () => outbox.list(),

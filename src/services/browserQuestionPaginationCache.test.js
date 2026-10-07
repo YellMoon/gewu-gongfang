@@ -40,6 +40,7 @@ const ts = require('typescript');
   const CacheHarness = vm.runInNewContext(compiled, {
     window: {
       desktopIdentitySessionProvider: {
+        businessAuthority: 'https://cloud.test',
         listCloudBusinessProjection: async () => ({ students: [{ id: 'cloud-student' }], rooms: [{ id: 'cloud-room', name: 'Cloud address' }] }),
         listCloudQuestions: () => client.listCloudQuestions({ baseUrl: 'https://cloud.test', currentSession: { token: 'session', offline: false } }),
       },
@@ -51,6 +52,7 @@ const ts = require('typescript');
     buildAuthorityBackedBrowserCache: ({ projection, outbox, localOnly }) => {
       builds++;
       assert.equal(projection.payload.questions.length, 426);
+      assert.equal(projection.businessAuthority, 'https://cloud.test');
       assert.equal(outbox[0].id, 'pending-draft');
       return { ...projection.payload, ...localOnly };
     },

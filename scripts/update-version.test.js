@@ -3,6 +3,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const version = require('./update-version');
+for (const [file, addition] of [
+  ['cloud-business-api/sql/receipts.sql', 'CREATE TABLE IF NOT EXISTS business.command_receipts(id text);'],
+  ['public/electron.js', "ipcMain.handle('desktop-authority:confirm-batch', handler);"],
+]) {
+  assert.equal(version.analyzeVersionBump({ files: [file], diff: `diff --git a/${file} b/${file}\n+${addition}\n+// fix existing retry` }), 'minor', 'additive schema and exposed IPC capabilities outrank patch wording');
+}
 assert.strictEqual(version.analyzeVersionBump({
   files: ['shared/vnext-pg17/desktopDeviceNamesMigration.js'],
   diff: 'diff --git a/shared/vnext-pg17/desktopDeviceNamesMigration.js b/shared/vnext-pg17/desktopDeviceNamesMigration.js\n+module.exports = String.raw`ALTER TABLE vnext_control_plane.vnext_trusted_devices\n+  ADD COLUMN display_name text;',

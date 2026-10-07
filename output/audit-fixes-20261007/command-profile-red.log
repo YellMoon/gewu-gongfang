@@ -1,0 +1,15 @@
+AssertionError [ERR_ASSERTION]: changed canonical profile cannot replay a receipt from a different scope
++ actual - expected
+
++ 'committed'
+- 'rejected'
+
+    at C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\sql\business-command-receipts.postgres.test.js:68:12
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 'committed',
+  expected: 'rejected',
+  operator: 'strictEqual',
+  diff: 'simple'
+}

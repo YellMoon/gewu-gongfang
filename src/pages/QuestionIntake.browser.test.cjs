@@ -76,7 +76,7 @@ async function verifyDraftRecovery(page) {
   await page.evaluate(async () => {
     const fixture = window.fixture;
     await fixture.saveSession({ token: 'fixture-token', userId: 'user_fixture', deviceId: 'device_fixture', activeRole: 'teacher' });
-    sessionStorage.setItem('gewu_desktop_authorization_session', JSON.stringify({authorization:'Bearer fixture-token',authContext:{userId:'user_fixture',deviceId:'device_fixture'}}));
+    if (sessionStorage.getItem('gewu_desktop_authorization_session') !== null) throw Error('session must remain in memory');
     let issued = 0; window.questionDraftProvenance = { issueDraft: async () => ({questionId:'fixture-draft-'+(++issued)}) };
     fixture.drafts=[];fixture.createAttempts=0;fixture.prepareCalls=0;fixture.taskCreates=0;
     window.dbService.getAllQuestions=()=>fixture.drafts;

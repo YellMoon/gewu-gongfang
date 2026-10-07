@@ -40,8 +40,8 @@ function load(ast, name, deps = {}) {
     assert.equal(draft.id, attemptedId || 'local-1', `${entity}/${outcome} must not replace the attempted resource ID`);
     assert.equal(draft.value.id, draft.id);
     assert.equal(generated, outcome === 'offline' ? 1 : 0, 'do not allocate a second identity after a send attempt');
-    const cache = buildAuthorityBackedBrowserCache({ projection: { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, payload: { [entity + 's']: outcome === 'lost-reply' ? [{ ...draft.value, notes: 'cloud copy' }] : [] } },
-      outbox: [{ type: entity + '.create.v1', status: 'awaiting_confirmation', payload: { record: draft.value } }] });
+    const cache = buildAuthorityBackedBrowserCache({ projection: { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, userId: 'fixture-user', businessAuthority: 'https://business.fixture', payload: { [entity + 's']: outcome === 'lost-reply' ? [{ ...draft.value, notes: 'cloud copy' }] : [] } },
+      outbox: [{ draftScope: { userId: 'fixture-user', businessAuthority: 'https://business.fixture' }, type: entity + '.create.v1', status: 'awaiting_confirmation', payload: { record: draft.value } }] });
     assert.equal(cache[entity + 's'].length, 1, 'cloud readback and pending draft must refer to one record');
     const invokeWithId = id => entity === 'room' ? dbService[method](values.name, values.address, id) : dbService[method](values, id);
     for (const id of [draft.id, '', '  invalid  ']) {

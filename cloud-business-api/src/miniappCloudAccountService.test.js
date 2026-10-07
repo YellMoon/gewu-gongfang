@@ -6,6 +6,9 @@ const { createMiniappCloudAccountService } = require('./miniappCloudAccountServi
 const now = new Date('2026-08-22T08:00:00.000Z');
 const records = new Map();
 const repository = {
+  async readCanonicalFence({ authorityId, accountId }) {
+    return { authorityId, accountId, authorityUpdatedAt: '2026-08-22T00:00:00.000000Z', authVersion: '1', accessVersion: '1', revocationVersion: '1' };
+  },
   async resolveOrCreate({ accountId, phoneHmac, bootstrapAdmin }) {
     let account = records.get(accountId);
     if (!account) {

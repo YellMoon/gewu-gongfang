@@ -90,6 +90,13 @@ def fixture_manifest_path(root):
     return root / "output" / f"release-matrix-{matrix_id}" / "active.json"
 
 
+def fixture_git(root, *args):
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    return subprocess.check_output(
+        ["git", *args], cwd=root, env=environment, text=True, encoding="utf-8", stderr=subprocess.PIPE,
+    ).strip()
+
+
 def prepare_node_release_fixture(root):
     scripts_dir = root / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
@@ -100,6 +107,8 @@ def prepare_node_release_fixture(root):
         Path("package.json"),
         Path("cloud-business-api/package.json"),
         Path("storage-agent/package.json"),
+        Path("backend/package.json"),
+        Path("gateway/package.json"),
         Path("miniapp/package.json"),
     ):
         write_json(root / relative_path, {"version": "7.2.10"})
@@ -124,6 +133,12 @@ def prepare_node_release_fixture(root):
         encoding="utf-8",
     )
     compatibility = json.loads((source_scripts.parent / "config/release-compatibility.json").read_text(encoding="utf-8"))
+    write_json(root / "config/release-compatibility.json", compatibility)
+    (root / ".gitignore").write_text("output/\nminiapp/node_modules/\nminiapp/upload-count.txt\nprivate.*.key\n", encoding="utf-8")
+    fixture_git(root, "init")
+    fixture_git(root, "add", ".")
+    fixture_git(root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "fixture")
+    fixture_commit = fixture_git(root, "rev-parse", "HEAD")
     component_versions = {
         "desktop": "7.2.10",
         "cloud_business": "7.2.10",
@@ -135,14 +150,14 @@ def prepare_node_release_fixture(root):
         "version": "7.2.10",
         "componentVersions": component_versions,
         "compatibility": compatibility,
-        "commit": "离线集成提交",
+        "commit": fixture_commit,
+        "note": "离线集成提交",
         "createdAt": "2026-08-01T00:00:00.000Z",
         "targets": {
             target: {"status": "pending"}
             for target in ("desktop", "cloud_business", "storage_proxy", "miniapp")
         },
     }
-    write_json(root / "config/release-compatibility.json", compatibility)
     manifest_path = fixture_manifest_path(root)
     write_json(manifest_path, manifest)
     private_key_path = root / "private.wx-offline-test.key"
@@ -199,7 +214,7 @@ class FixedEgressIntegrationTests(unittest.TestCase):
 
     def run_offline_deferred_upload(self, root, *, fail_post_health):
         manifest_path, marker_path, private_key_path = prepare_node_release_fixture(root)
-        environment = dict(os.environ)
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         environment["WECHAT_MINIAPP_PRIVATE_KEY_PATH"] = str(private_key_path)
         config = FixedEgressConfig(
             fixed_egress_ip="203.0.113.17",
@@ -261,7 +276,7 @@ class FixedEgressIntegrationTests(unittest.TestCase):
             upload_counter = root / "miniapp/upload-count.txt"
             self.assertEqual(upload_counter.read_text(encoding="utf-8"), "1")
 
-            environment = dict(os.environ)
+            environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
             environment["WECHAT_MINIAPP_PRIVATE_KEY_PATH"] = str(
                 root / "private.wx-offline-test.key"
             )
@@ -309,7 +324,7 @@ class FixedEgressIntegrationTests(unittest.TestCase):
                     if marker_content is not None:
                         marker_path.parent.mkdir(parents=True, exist_ok=True)
                         marker_path.write_text(marker_content, encoding="utf-8")
-                    environment = dict(os.environ)
+                    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
                     environment["WECHAT_MINIAPP_PRIVATE_KEY_PATH"] = str(private_key_path)
                     health_events = []
                     config = FixedEgressConfig(
@@ -354,7 +369,8 @@ class FixedEgressIntegrationTests(unittest.TestCase):
                 manifest["targets"]["miniapp"]["receipt"]["version"],
                 "7.2.10",
             )
-            self.assertEqual(manifest["commit"], "离线集成提交")
+            self.assertEqual(manifest["commit"], fixture_git(root, "rev-parse", "HEAD"))
+            self.assertEqual(manifest["note"], "离线集成提交")
             self.assertFalse(marker_path.exists())
             manifest_after_finalize = manifest_path.read_bytes()
             with self.assertRaises(subprocess.CalledProcessError):

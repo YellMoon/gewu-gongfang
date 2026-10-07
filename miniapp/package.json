@@ -1,6 +1,6 @@
 {
   "name": "scheduling-miniapp",
-  "version": "8.8.27",
+  "version": "8.8.28",
   "private": true,
   "description": "格物工坊微信小程序",
   "templateInfo": {
@@ -9,7 +9,7 @@
     "css": "sass"
   },
   "scripts": {
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "node ../scripts/build-miniapp-with-proof.js",
     "build:swan": "taro build --type swan",
     "build:alipay": "taro build --type alipay",
     "build:tt": "taro build --type tt",

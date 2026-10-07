@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -9,7 +10,7 @@ const APPLY = { appliedAt: '2026-09-07T00:00:00.000Z', appliedBy: 'student-schoo
 const migration = path.join(__dirname, '20260907-student-school-registration.sql');
 const createSql = 'SELECT * FROM business.vnext_create_student_record_v1($1,$2,$3,$4,NULL,NULL,NULL,NULL,NULL,1,NULL,NULL,$5::jsonb)';
 const updateSql = 'SELECT * FROM business.vnext_update_student_record_v4($1,$2,$3::timestamptz,$4,$5,NULL,NULL,NULL,NULL,NULL,1,NULL,$6::jsonb)';
-async function desktopRoundTrip(writer, admin) {
+async function desktopRoundTrip(handle, writer, admin) {
   const { createCloudBusinessApp } = require('../src/app');
   const { createBusinessStudentLifecycleMutations } = require('../src/businessStudentLifecycleMutationService');
   const { createBusinessStudentRecordUpdate } = require('../src/businessStudentRecordMutationService');
@@ -17,16 +18,17 @@ async function desktopRoundTrip(writer, admin) {
   const { createDesktopCloudBusinessDraftAdapter } = await import('../../src/services/desktopCloudBusinessDraft.mjs');
   const { createDesktopAuthorityClient } = await import('../../src/services/desktopAuthorityClient.mjs');
   const { createDesktopCommandOutbox } = await import('../../src/services/desktopCommandOutbox.mjs');
-  const query = (sql, values) => writer(db => db.query(sql, values));
+  const businessCommandWriter = await createPgBusinessCommandFixture(handle);
+  const query = businessCommandWriter.query;
   let role = 'teacher';
   let miniappOnly = false;
-  const app = createCloudBusinessApp({
+  const app = createCloudBusinessApp({businessCommandWriter,
     query, businessTenantId: 't1',
     businessStudentLifecycleMutations: createBusinessStudentLifecycleMutations({ query }),
     businessStudentRecordUpdate: createBusinessStudentRecordUpdate({ query }),
     desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => {
       if (miniappOnly) throw new Error('not a desktop session');
-      return { roles: [role], teacherId: 'http-teacher' };
+      return canonicalFixtureContext({ roles: [role], teacherId: 'http-teacher' });
     } },
     miniappCloudAccount: { login: async () => {}, context: async () => ({ roles: ['super_admin'] }) },
   });
@@ -146,6 +148,7 @@ async function desktopRoundTrip(writer, admin) {
       assert.equal((await outbox.get(denied.id)).status, 'conflict');
     }
     await admin(async db => assert.equal((await db.query("SELECT id FROM business.schools WHERE name='Denied HTTP school'")).rows.length, 0));
+    await assertPgBusinessCommandReceipts(handle);
   } finally { await new Promise(resolve => server.close(resolve)); }
 }
 (async () => {
@@ -206,7 +209,7 @@ async function desktopRoundTrip(writer, admin) {
       await db.query("INSERT INTO business.students(id,tenant_id,name,school_legacy,legacy_source_type,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('imported','t1','Imported','Historical missing school',1,false,false,now(),now())");
       assert.deepEqual(await schools(), before, 'owner backup/migration imports must not acquire new business side effects');
     });
-    await desktopRoundTrip(writer, admin);
+    await desktopRoundTrip(handle, writer, admin);
   } finally {
     await runtime.disposeHandle(handle).catch(() => {});
     await runtime.stop().catch(() => {});

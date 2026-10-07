@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: original teacher deletion removes a teaching record, not its business history.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createDisposablePg17Runtime,withVNextPg17SyntheticQuery:withQuery}=require('../../shared/vnext-pg17/disposableRuntime');
@@ -29,11 +30,12 @@ function originalDelete(){
    await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
   });
   let context={roles:['teacher'],profile:{type:'teacher',id:'owner'}},requests=0,source;
-  const app=createCloudBusinessApp({businessTenantId:'one',query:async sql=>{source=sql;return {rows:[]};},desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},
-   businessTeacherLifecycleMutations:require('../src/businessTeacherLifecycleMutationService').createBusinessTeacherLifecycleMutations({query:writer}),
-   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:writer}),
-   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:writer}),
-   businessScheduleUpdate:require('../src/businessScheduleMutationService').createBusinessScheduleUpdate({query:writer})});
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const app=createCloudBusinessApp({businessCommandWriter,businessTenantId:'one',query:async sql=>{source=sql;return {rows:[]};},desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext(context)},
+   businessTeacherLifecycleMutations:require('../src/businessTeacherLifecycleMutationService').createBusinessTeacherLifecycleMutations({query:businessCommandWriter.query}),
+   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:businessCommandWriter.query}),
+   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:businessCommandWriter.query}),
+   businessScheduleUpdate:require('../src/businessScheduleMutationService').createBusinessScheduleUpdate({query:businessCommandWriter.query})});
   server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
   const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');
   const client=createDesktopIdentityClient({desktopIdentity:{status:async()=>({})},fetchImpl:(...args)=>{requests++;return fetch(...args);}});
@@ -129,6 +131,7 @@ function originalDelete(){
   await admin(db=>db.query("DELETE FROM business.miniapp_cloud_role_grants WHERE profile_id='managed'"));
   assert.deepEqual((await read('owner')).courses,[]);
   await assert.rejects(()=>client.updateCloudCourse({...session,courseId:course.id,expectedUpdatedAt:course.updatedAt,active:false}),denied);
+  await assertPgBusinessCommandReceipts(handle);
   console.log('original teacher deletion confirmed over HTTP; retained reader/course/lesson operations and account/tenant/role boundaries passed');
  }finally{if(server)await new Promise(r=>server.close(r));await runtime.disposeHandle(handle).catch(()=>{});await runtime.stop().catch(()=>{});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

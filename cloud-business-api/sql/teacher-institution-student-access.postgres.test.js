@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext } = require('./businessCommandFixture');
 // Real PostgreSQL authorization and production projection SQL, using synthetic records only.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -60,14 +61,15 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     });
     let context = { roles: ['teacher'], profile: { type: 'teacher', id: 'owner' } };
     let projectionSql;
-    const app = createCloudBusinessApp({ businessTenantId: 'one',
+    const businessCommandWriter = await createPgBusinessCommandFixture(handle);
+    const app = createCloudBusinessApp({businessCommandWriter, businessTenantId: 'one',
       query: async sql => { projectionSql = sql; return { rows: [{ projection: {
         students: [], studentContacts: [], teachers: [], courses: [], schedules: [], institutions: [],
         schools: [], rooms: [], assetRecords: [], assetCategories: [], payments: [], consumptions: [],
       } }] }; },
-      desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => context },
-      businessCourseLifecycleMutations: createBusinessCourseLifecycleMutations({ query: writer }),
-      businessScheduleLifecycleMutations: createBusinessScheduleLifecycleMutations({ query: writer }),
+      desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => canonicalFixtureContext(context) },
+      businessCourseLifecycleMutations: createBusinessCourseLifecycleMutations({ query: businessCommandWriter.query }),
+      businessScheduleLifecycleMutations: createBusinessScheduleLifecycleMutations({ query: businessCommandWriter.query }),
     });
     server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));

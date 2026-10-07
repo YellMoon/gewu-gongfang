@@ -109,46 +109,49 @@ function unavailableResponse(response) {
   return failure('STORAGE_CLOUD_UNAVAILABLE');
 }
 
-function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchImpl = globalThis.fetch } = {}) {
+function createStorageCloudClient({ cloudBaseUrl, agentId, token, fetch: fetchImpl = globalThis.fetch, requestTimeoutMs = 30000 } = {}) {
   if (typeof cloudBaseUrl !== 'string' || !/^https:\/\/[A-Za-z0-9.-]+(?:\/[^?#]*)?$/u.test(cloudBaseUrl)
     || typeof agentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(agentId)
-    || typeof token !== 'string' || token.length < 24 || typeof fetchImpl !== 'function') throw failure('STORAGE_CLOUD_CONFIG_INVALID');
+    || typeof token !== 'string' || token.length < 24 || typeof fetchImpl !== 'function'
+    || !Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1 || requestTimeoutMs > 240000) throw failure('STORAGE_CLOUD_CONFIG_INVALID');
   const baseUrl = cloudBaseUrl.replace(/\/$/, '');
-  async function post(relativePath, body) {
-    let response;
-    try {
-      response = await fetchImpl(`${baseUrl}${relativePath}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-gewu-storage-agent-token': token },
-        body: JSON.stringify(body),
-      });
-    } catch (_) {
-      throw failure('STORAGE_CLOUD_UNAVAILABLE');
-    }
-    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw unavailableResponse(response);
-    try {
-      return await response.json();
-    } catch (_) {
-      throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
-    }
+  // One deadline covers connection, headers and the complete response body.
+  async function request(relativePath, body, headers) {
+    const controller = new AbortController();
+    let timer;
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(failure('STORAGE_CLOUD_TIMEOUT'));
+        controller.abort();
+      }, requestTimeoutMs);
+    });
+    const operation = (async () => {
+      let response;
+      try {
+        response = await fetchImpl(`${baseUrl}${relativePath}`, {
+          method: 'POST', headers, body, signal: controller.signal,
+        });
+      } catch (_) { throw failure('STORAGE_CLOUD_UNAVAILABLE'); }
+      if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') {
+        // Release a rejected HTTP response without waiting for its body.
+        Promise.resolve(response?.body?.cancel?.()).catch(() => {});
+        throw unavailableResponse(response);
+      }
+      try { return await response.json(); }
+      catch (_) { throw failure('STORAGE_CLOUD_RESPONSE_INVALID'); }
+    })();
+    try { return await Promise.race([operation, deadline]); }
+    finally { clearTimeout(timer); }
   }
-  async function postBytes(relativePath, bytes, headers) {
-    let response;
-    try {
-      response = await fetchImpl(`${baseUrl}${relativePath}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/octet-stream', 'x-gewu-storage-agent-token': token, ...headers },
-        body: bytes,
-      });
-    } catch (_) {
-      throw failure('STORAGE_CLOUD_UNAVAILABLE');
-    }
-    if (!response || response.status !== 200 || response.ok !== true || typeof response.json !== 'function') throw unavailableResponse(response);
-    try {
-      return await response.json();
-    } catch (_) {
-      throw failure('STORAGE_CLOUD_RESPONSE_INVALID');
-    }
+  function post(relativePath, body) {
+    return request(relativePath, JSON.stringify(body), {
+      'content-type': 'application/json', 'x-gewu-storage-agent-token': token,
+    });
+  }
+  function postBytes(relativePath, bytes, headers) {
+    return request(relativePath, bytes, {
+      'content-type': 'application/octet-stream', 'x-gewu-storage-agent-token': token, ...headers,
+    });
   }
   return Object.freeze({
     async lease() {

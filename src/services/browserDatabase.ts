@@ -221,6 +221,7 @@ class BrowserDatabaseService {
         projection: {
           protocol: 'gewu.authority-projection.v1',
           authorityId: 'cloud-business',
+          businessAuthority: cloudProvider.businessAuthority,
           hostEpochId: 'cloud-business',
           userId: readCurrentDesktopIdentityContext()?.userId || '',
           role: readCurrentDesktopIdentityContext()?.activeRole || '',

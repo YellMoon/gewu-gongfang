@@ -428,22 +428,27 @@ export default function QuestionPaperPage() {
       setLayoutEdits({});
       setLayoutErrors({});
     }
-    const draft: PaperTask = workflow.createTaskDraft({
-      taskType, questionIds, title: currentTitle, answerPosition: retry?.request?.payload?.answerPosition || answerPosition,
-      formulaMode, layout,
-    }, { idFactory: () => String(Date.now()) + '-' + Math.random().toString(36).slice(2) });
-    setSubmitting(taskType);
+    let draft: PaperTask;
     try {
       const currentQuestion = questions.find(question => question.id === questionIds[0]);
-      const response: any = await miniappCloudBusinessApi.createPaperExportTask(authSessionRuntime.capture().token, taskType, {
-        questionIds, title: currentTitle, subject: currentQuestion?.subject || 'general',
-        answerPosition: draft.request.payload.answerPosition, formulaMode: draft.request.payload.formulaMode, layout: draft.request.payload.layout,
-      }, draft.request.idempotencyKey);
+      draft = workflow.prepareTaskSubmission({
+        taskType, questionIds, title: currentTitle, subject: currentQuestion?.subject || 'general',
+        answerPosition: retry?.request?.payload?.answerPosition || answerPosition, formulaMode, layout,
+      }, retry, { idFactory: () => String(Date.now()) + '-' + Math.random().toString(36).slice(2) });
+    } catch (_error) {
+      Taro.showToast({ title: '原提交信息不完整，请先核对云端任务后重新导出', icon: 'none' });
+      return;
+    }
+    const remainingTasks = taskState.tasks.filter(task => task.localId !== draft.localId);
+    setSubmitting(taskType);
+    try {
+      const response: any = await miniappCloudBusinessApi.createPaperExportTask(authSessionRuntime.capture().token,
+        draft.request.taskType, draft.request.payload, draft.request.idempotencyKey);
       const cloud = response.data?.task;
       if (!response.success || !cloud) throw new Error('云端未确认本次导出');
-      persistTask([{ ...draft, confirmed: true, taskId: cloud.taskId, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), message: cloud.message || '', resultExpiresAt: cloud.resultExpiresAt || cloud.result_expires_at || null, error: '' }, ...taskState.tasks]);
+      persistTask([{ ...draft, confirmed: true, taskId: cloud.taskId, status: cloud.status, phase: cloud.phase || cloud.status, progress: Number(cloud.progress || 0), message: cloud.message || '', resultExpiresAt: cloud.resultExpiresAt || cloud.result_expires_at || null, error: '' }, ...remainingTasks]);
     } catch (error: any) {
-      persistTask([{ ...draft, error: error?.message || '导出提交失败' }, ...taskState.tasks]);
+      persistTask([{ ...draft, error: error?.message || '导出提交失败' }, ...remainingTasks]);
       Taro.showToast({ title: error?.message || '导出提交失败', icon: 'none' });
     } finally { setSubmitting(null); }
   };

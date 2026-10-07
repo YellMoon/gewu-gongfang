@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "mode": "V8 no-opt via diagnostic preload; WebAssembly remains enabled",
+  "command": "npm test"
+}

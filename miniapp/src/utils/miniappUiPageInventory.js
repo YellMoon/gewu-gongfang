@@ -102,7 +102,7 @@ const pageInventory = [
     roleViews: ['super_admin', 'teacher', 'student', 'family_member'],
     surface: 'role-scoped-filtered-list',
     visualStatus: 'optimized',
-    verificationStates: ['active-courses', 'inactive-courses', 'empty'],
+    verificationStates: ['active-courses', 'inactive-courses', 'empty', 'permission-denied'],
     realFeatureBasis: ['cloud business projection refresh', 'identity-scoped derived course cache', 'CourseType'],
     screenshotRequired: true,
     files: ['src/pages/courses/index.tsx', 'src/pages/courses/index.scss'],

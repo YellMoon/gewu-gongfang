@@ -1,0 +1,14 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '../..');
+const matrix = require(path.join(root, 'scripts/release-matrix'));
+const manifest = JSON.parse(fs.readFileSync(matrix.defaultManifestPath(root), 'utf8'));
+manifest.commit = '0'.repeat(40);
+manifest.targets.desktop = { status: 'pending' };
+const manifestPath = path.join(__dirname, 'stale-commit-manifest.json');
+fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+const accepted = matrix.assertReleaseTarget({ rootDir: root, manifestPath, target: 'desktop' });
+assert.equal(accepted.manifest.commit, '0'.repeat(40));
+console.log(JSON.stringify({ accepted: true, manifestCommit: accepted.manifest.commit, externalRequests: 0, releaseMutations: 0 }));

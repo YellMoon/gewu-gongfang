@@ -199,6 +199,19 @@ for (const entry of pageInventory) {
 
 const scenarioIds = runtimeScenarios.map(item => item.id);
 assert.strictEqual(new Set(scenarioIds).size, scenarioIds.length, 'runtime scenario ids must be unique');
+const { deriveAccess, permissionIdentityKey } = require('./miniappAuthorizationRuntime');
+const { canOpenMiniappRoute } = require('./miniappRouteAccess');
+for (const scenario of runtimeScenarios) {
+  if (scenario.roleView === 'guest') continue;
+  const role = scenario.roleView;
+  const user = { id: 'fixture-account', role, user_type: role, account_state: role === 'visitor' ? 'visitor' : 'formal', token_use: role === 'visitor' ? 'miniapp-visitor' : 'miniapp-cloud', identity_kind: role === 'visitor' ? 'visitor' : 'formal', authority_id: 'fixture-authority', capabilities: require('./accountExperience').VISITOR_CAPABILITIES, student_id: 'student-1' };
+  const capabilities = role === 'super_admin' ? ['business:all', 'question-bank:view'] : role === 'teacher' ? ['business:teacher-scope', 'question-bank:view'] : role === 'visitor' ? ['projection:read', 'question-preview:read'] : ['question-bank:view'];
+  const access = deriveAccess(user, { status: 'loaded', identityKey: permissionIdentityKey(user), capabilities });
+  if (!canOpenMiniappRoute(scenario.route, access)) {
+    assert.ok(scenario.categories.includes('permission-denied'), `${scenario.id} must exercise its actual denied route policy`);
+    assert.equal(scenario.expectedText, '当前账号暂不能使用此功能');
+  }
+}
 for (const scenario of runtimeScenarios) {
   const entry = pageInventory.find(item => item.route === scenario.route);
   assert.ok(entry, `${scenario.id} references an unregistered page`);
@@ -363,4 +376,4 @@ const legacyClientSources = listSourceFiles(path.join(root, 'src'))
   .map(file => path.relative(root, file).replace(/\\/g, '/'));
 assert.deepStrictEqual(legacyClientSources, [], 'miniapp UI and client flow must not retain the removed review-demo implementation');
 
-console.log('miniapp full-page UI coverage checks passed');
+console.log('miniapp registered-page source and role-policy coverage checks passed (runtime screenshots require verify:miniapp-ui)');

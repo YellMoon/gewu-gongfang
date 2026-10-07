@@ -1,5 +1,6 @@
 """Only disposable local repositories; no network or deployment credentials."""
 import io
+import hashlib
 import pathlib
 import subprocess
 import tarfile
@@ -57,6 +58,22 @@ class FrozenCloudSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'CLOUD_RELEASE_SOURCE'):
                 with source.frozen_cloud_inputs(self.repo, ref):
                     self.fail('must not yield')
+
+    def test_lfs_payload_is_verified_against_the_committed_pointer(self):
+        font = self.repo / 'backend/assets/fonts/NotoSansCJKsc-Regular.otf'
+        payload = b'OTTO' + b'font fixture' * 10
+        font.write_text('version https://git-lfs.github.com/spec/v1\n'
+                        f'oid sha256:{hashlib.sha256(payload).hexdigest()}\nsize {len(payload)}\n', encoding='ascii')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'LFS fixture')
+        commit = self.git('rev-parse', 'HEAD').strip()
+        font.write_bytes(payload)
+        with source.frozen_cloud_inputs(self.repo, commit) as snapshot:
+            self.assertEqual((snapshot / font.relative_to(self.repo)).read_bytes(), payload)
+        font.write_bytes(b'uncommitted or missing font')
+        with self.assertRaisesRegex(ValueError, 'CLOUD_RELEASE_SOURCE_LFS_INVALID'):
+            with source.frozen_cloud_inputs(self.repo, commit):
+                self.fail('must not package an unverified LFS object')
 
     def test_archive_links_and_parent_traversal_are_rejected(self):
         for name, kind in (('../escape', tarfile.REGTYPE), ('shared/link', tarfile.SYMTYPE)):

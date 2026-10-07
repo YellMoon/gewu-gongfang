@@ -1,0 +1,12 @@
+Error: CLOUD_ONLINE_IDENTITY_UNAVAILABLE
+    at identityError (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopIdentityClient.mjs:28:17)
+    at responseData (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopIdentityClient.mjs:265:11)
+    at request (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopIdentityClient.mjs:315:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.createCloudSchedule (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopIdentityClient.mjs:960:18)
+    at async Object.submit (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopCloudBusinessDraft.mjs:477:16)
+    at async submitCloudDraft (file:///C:/Users/83423/.codex/worktrees/audit-fixes-20261007/scheduling-system/src/services/desktopAuthorityClient.mjs:51:21)
+    at async C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\public\desktopAuthorityRuntime.js:70:22
+    at async C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\sql\schedule-confirmed-undo.postgres.test.js:48:32 {
+  code: 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE'
+}

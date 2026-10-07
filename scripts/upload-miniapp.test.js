@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const releaseMatrix = require('./release-matrix');
+const childProcess = require('child_process');
 
 const {
   EXPECTED_MINIPROGRAM_CI_VERSION,
@@ -80,17 +81,22 @@ function createReleaseRoot() {
   writeJson(path.join(fixtureRoot, 'miniapp', 'project.config.json'), { appid: 'wx-test-app' });
   const privateKeyPath = path.join(fixtureRoot, 'private.wx-test-app.key');
   fs.writeFileSync(privateKeyPath, 'offline-test-key', 'utf8');
+  childProcess.execFileSync('git', ['init'], { cwd: fixtureRoot, stdio: 'ignore' });
+  childProcess.execFileSync('git', ['add', '.'], { cwd: fixtureRoot, stdio: 'ignore' });
+  childProcess.execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture'], { cwd: fixtureRoot, stdio: 'ignore' });
+  const commit = childProcess.execFileSync('git', ['rev-parse', 'HEAD'], { cwd: fixtureRoot, encoding: 'utf8' }).trim();
   const manifestPath = releaseMatrix.defaultManifestPath(fixtureRoot);
   releaseMatrix.writeManifest(
     manifestPath,
     releaseMatrix.createReleaseManifest({
       version: releaseVersion,
-      commit: '测试提交',
+      commit,
       createdAt: '2026-08-01T00:00:00.000Z',
     })
   );
   return {
     fixtureRoot,
+    commit,
     manifestPath,
     markerPath: path.join(path.dirname(manifestPath), 'miniapp-upload-pending.json'),
     privateKeyPath,
@@ -431,7 +437,7 @@ async function testDeferredUploadAndFinalize() {
         version: releaseVersion,
         uploadMode: 'miniprogram-ci',
         completedAt: '2026-08-01T02:03:04.000Z',
-        commit: '测试提交',
+        commit: fixture.commit,
         appid: 'wx-test-app',
       },
       'deferred upload marker should use the fixed non-sensitive schema'
@@ -477,7 +483,7 @@ async function testDeferredUploadAndFinalize() {
     const finalizedManifest = releaseMatrix.readManifest(fixture.manifestPath);
     assert.strictEqual(finalizedManifest.targets.miniapp.status, 'verified');
     assert.strictEqual(finalizedManifest.targets.miniapp.receipt.version, releaseVersion);
-    assert.strictEqual(finalizedManifest.commit, '测试提交', 'atomic UTF-8 manifest replacement should preserve CJK');
+    assert.strictEqual(finalizedManifest.commit, fixture.commit, 'atomic manifest replacement must preserve the actual source commit');
     assert.strictEqual(fs.existsSync(fixture.markerPath), false, 'successful finalize should delete the marker');
 
     const manifestAfterFinalize = fs.readFileSync(fixture.manifestPath, 'utf8');
@@ -759,7 +765,7 @@ async function testFinalizeRecoveryRejectsMismatchedEvidence() {
       version: releaseVersion,
       uploadMode: 'miniprogram-ci',
       completedAt: '2026-08-01T02:03:04.000Z',
-      commit: '测试提交',
+      commit: fixture.commit,
       appid: 'wx-test-app',
     });
     const manifest = releaseMatrix.readManifest(fixture.manifestPath);
@@ -787,7 +793,7 @@ async function testFinalizeRecoveryRejectsMismatchedEvidence() {
       version: '7.2.9',
       uploadMode: 'miniprogram-ci',
       completedAt: '2026-08-01T02:03:04.000Z',
-      commit: '测试提交',
+      commit: fixture.commit,
       appid: 'wx-test-app',
     });
     await assert.rejects(
@@ -819,7 +825,7 @@ async function testDeferredMarkerContextMismatchFailsClosed() {
         version: releaseVersion,
         uploadMode: 'miniprogram-ci',
         completedAt: '2026-08-01T02:03:04.000Z',
-        commit: '测试提交',
+        commit: fixture.commit,
         appid: 'wx-test-app',
         ...markerOverride,
       });

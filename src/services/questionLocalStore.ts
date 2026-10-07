@@ -4,7 +4,7 @@ import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
 import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
 import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
 import { questionSearchText } from './questionInspection';
-const { normalizeDesktopAuthorizationSession } = require('./desktopQuestionDeleteContext');
+import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 
 const DB_VERSION = 2;
 const META_STORE = 'question_meta';
@@ -196,7 +196,7 @@ function trustedLocalQuestion(question: Question, existing?: Question): Question
   if (existing) return { ...question, storage_state: existing.storage_state, sourceDeviceId: existing.sourceDeviceId, ownerUserId: existing.ownerUserId };
   let deviceId = '', userId = '';
   try {
-    const session = normalizeDesktopAuthorizationSession(JSON.parse(globalThis.sessionStorage?.getItem?.('gewu_desktop_authorization_session') || 'null'));
+    const session = readDesktopAuthorizationSession();
     deviceId = session.authContext.deviceId; userId = session.authContext.userId;
   } catch (_error) {}
   return applyTrustedQuestionProvenance(question, { deviceId, userId }, existing) as Question;

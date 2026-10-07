@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: real desktop REST and restricted writer; original deletion retains every related record.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createCloudBusinessApp}=require('../src/app');
@@ -35,11 +36,12 @@ function assertOriginalDeleteRetainsRelatedRows(rows){
   });
   let context={roles:['teacher'],profile:{type:'teacher',id:'owner'}},source;
   const empty={students:[],studentContacts:[],teachers:[],courses:[],schedules:[],institutions:[],schools:[],rooms:[],assetRecords:[],assetCategories:[],payments:[],consumptions:[]};
-  const app=createCloudBusinessApp({businessTenantId:'one',query:async sql=>{source=sql;return {rows:[{projection:empty}]};},
-   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},
-   businessFoundationLifecycleMutations:createBusinessFoundationLifecycleMutations({query:writer}),
-   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:writer}),
-   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:writer})});
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const app=createCloudBusinessApp({businessCommandWriter,businessTenantId:'one',query:async sql=>{source=sql;return {rows:[{projection:empty}]};},
+   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext(context)},
+   businessFoundationLifecycleMutations:createBusinessFoundationLifecycleMutations({query:businessCommandWriter.query}),
+   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:businessCommandWriter.query}),
+   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:businessCommandWriter.query})});
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');
   let requests=0;
@@ -137,6 +139,7 @@ function assertOriginalDeleteRetainsRelatedRows(rows){
   });
   await admin(async db=>assert.equal((await db.query("SELECT count(*)::int AS count FROM business.students WHERE id IN ('institution-student-race-first','institution-student-race-second')")).rows[0].count,0));
   await admin(async db=>assert.equal((await db.query('SELECT count(*)::int AS count FROM business.miniapp_cloud_role_grants')).rows[0].count,0));
+  await assertPgBusinessCommandReceipts(handle);
   console.log('teacher institution confirmed offline CRUD -> billing student -> course -> lesson; restricted read, scope, versions and unchanged retained history passed');
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await pg.disposeHandle(handle).catch(()=>{});await pg.stop().catch(()=>{});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

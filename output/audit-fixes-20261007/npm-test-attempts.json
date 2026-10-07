@@ -1,0 +1,39 @@
+{
+  "schema": "gewu.audit-test-attempts.v1",
+  "attempts": [
+    {
+      "log": "npm-test-final4.log",
+      "result": "failed",
+      "cause": "upload fixture lacked Git commit; corrected in test only"
+    },
+    {
+      "log": "npm-test-final5.log",
+      "result": "process-aborted",
+      "exitCode": -1073740791,
+      "cause": "Windows process abnormal termination, no assertion failure reported; interruption-position test passed independently; Node ABI 137 passed"
+    },
+    {
+      "log": "npm-test-final6.log",
+      "result": "process-aborted",
+      "runner": "cmd.exe output redirection",
+      "exitCode": -1073740791
+    },
+    {
+      "log": "npm-test-final7.log",
+      "result": "diagnostic-unsupported",
+      "exitCode": 1,
+      "cause": "jitless disables WebAssembly needed by Node fetch; no source change"
+    },
+    {
+      "log": "npm-test-final8.log",
+      "result": "passed",
+      "mode": "V8 optimization disabled via diagnostic preload; WebAssembly remains enabled",
+      "exitCode": 0
+    },
+    {
+      "log": "npm-test-final9.log",
+      "result": "pending post-commit verification",
+      "mode": "ordinary Node mode with progress heartbeat"
+    }
+  ]
+}

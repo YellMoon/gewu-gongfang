@@ -1,0 +1,414 @@
+
+> gewu-gongfang@8.12.0 pretest
+> node src/services/operationAuditClient.test.js && node miniapp/src/utils/miniappOfflineQueue.test.js && node miniapp/src/pages/settings/settingsExperience.test.js && npm run test:business-parity && npm run test:course-active
+
+operationAuditClient tests passed
+miniapp authority projection and core-mutation retirement checks passed
+settings and application hierarchy checks passed
+
+> gewu-gongfang@8.12.0 test:business-parity
+> node src/services/desktopCloudTransportDraft.test.js && node src/App.projection-refresh.test.js && node src/pages/ScheduleCalendar.batch-parity.test.js && node src/pages/ScheduleCalendar.refresh-parity.test.js && node src/pages/ScheduleCalendar.refresh-context.test.js && node src/services/desktopAutoSync.test.js && node src/services/desktopAutoSync.integration.test.js && node src/components/DesktopAutoSync.runtime.test.js && node src/services/desktopLoginMemory.test.js && node src/utils/batchSelectionGeometry.test.js && node src/pages/useBatchSelection.time.test.js && node src/services/studentCloudReadbackParity.test.js && node src/components/sync/SyncQuickPanel.placement.test.js && node scripts/business-parity-window-size.test.cjs && node scripts/cloud_postgres_security_fingerprint.test.cjs && python scripts/backup_cloud_postgres.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/run_business_parity_shadow.test.py && python scripts/business_parity_course_refresh.test.py && python scripts/verify_cloud_schedule_snapshot_recovery.test.py && node src/pages/CourseList.room-resolution.test.js && node src/components/DesktopSync.browser.test.cjs && node src/services/desktopSyncRecovery.test.mjs && node src/pages/ScheduleCalendar.local-date.test.js
+
+desktop cloud transport draft capture passed
+actual App preserves calendar/course instances on projection refresh; manual refresh and account partition resets remain
+actual calendar load effect refreshes cache in place and removes its listener on unmount
+actual course load effect refreshes cache in place and removes its listener on unmount
+six actual resource read effects refresh displayed data without writes and remove listeners
+original/current batch save and two-student draft parity checks passed: 144 batch + 108 attendance combinations
+original/current refresh parity passed: 48 fee/status/range combinations, boundary preservation, cancellation and mutation detection
+targeted refresh context-menu checks passed
+desktop auto sync tests passed
+desktop auto sync real outbox dependency batch checks passed
+unified desktop sync batch, reconnect, conflict, race and history checks passed
+actual desktop sync dialog, event, aggregate confirmation and identity cleanup checks passed
+desktop login memory tests passed
+batchSelectionGeometry tests passed
+original batch rectangle cloud-time checks passed
+student canonical contact and original source readback parity checks passed
+single sync window entry checks passed
+parity window sizing waits for native unmaximize and preserves requested dimensions
+backup security fingerprint PostgreSQL fault checks passed
+.......
+----------------------------------------------------------------------
+Ran 7 tests in 0.006s
+
+OK
+....................................................warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+----------------------------------------------------------------------
+Ran 56 tests in 7.943s
+
+OK
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.486s
+
+OK
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+actual course save resolves missing cached cloud addresses without duplicate drafts
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+actual Ant Design sync window wide/narrow, keyboard, silent online and aggregate offline checks passed
+legacy/missing-target sync failure, pause, network retry and durable discard passed
+calendar real day/week rendering: 72 timezone/date/geometry cases passed
+
+> gewu-gongfang@8.12.0 test:course-active
+> node src/pages/CourseList.active-parity.test.js && node public/desktopAuthorityRuntime.course-active.test.js && python scripts/business_parity_course_active.test.py
+
+original course active parity passed: 12
+course state-only outbox confirmation, presentation and merge checks passed (synthetic safeStorage, not encryption acceptance)
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK
+
+> gewu-gongfang@8.12.0 test
+> npm run test:desktop-build-flavor && npm run test:taxonomy && npm run test:institution-student && npm run test:miniapp-identity-schema && npm run test:miniapp-identity && npm run test:miniapp-applications && npm run test:ruby-runtime && npm run test:question-deletion && npm run test:question-intake && npm run test:rich-content && npm run test:formula-export && npm run test:paper-export-desktop && npm run test:backend && npm run test:release-matrix && node miniapp/src/utils/miniappReleaseConfig.test.js && node backend/src/runtimePort.test.js && node scripts/deployEnv.test.js && npm run test:audit-fixes
+
+
+> gewu-gongfang@8.12.0 test:desktop-build-flavor
+> node public/desktopBuildFlavor.test.js && node scripts/unified-desktop-package-boundary.test.js && node scripts/check_deploy_readiness.unifiedDesktopBoundary.test.js && node public/electronDevelopmentFixture.test.js && node public/electronRuntimeContracts.test.js && node public/electronSingleInstance.test.js && node public/electronCrossInstallLock.test.js && node scripts/verify-packaged-electron-native-abi.test.js && node scripts/cleanup-disposable-desktop-profiles.test.js && node scripts/desktop-architecture-cutover.test.js && node public/contentSecurityPolicy.test.js && node public/electronLocalIdentityDiagnostics.test.js && node public/localSessionSigningSecret.test.js && node src/pages/SystemSettings.test.js && node scripts/packaged-smoke-check.test.js
+
+unified desktop build flavor checks passed
+unified desktop package boundary checks passed
+deploy readiness unified desktop boundary checks passed
+Electron development login fixture boundary checks passed
+unified electron runtime contract checks passed
+Electron single-instance checks passed
+Electron cross-install instance lock checks passed
+packaged Electron native ABI verifier checks passed
+disposable desktop profile cleanup checks passed
+desktop architecture cutover checks passed
+desktop content security policy checks passed
+electron local identity diagnostics checks passed
+local session signing secret checks passed
+unified system settings UI checks passed
+packaged smoke isolation checks passed
+
+> gewu-gongfang@8.12.0 test:taxonomy
+> node src/services/taxonomyFilter.test.js && node src/components/TaxonomyManager.test.js && node backend/src/services/questionBankService.test.js
+
+taxonomy filter checks passed
+taxonomy manager integration checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-vUQt9T\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-4WFoCl\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-vKz8SZ\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-IUOjM8\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-1XB3k5\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-zRIbhf\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-ExgvBW\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-O5isQE\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-K42zNW\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-KktfEz\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-BkIAMf\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-question-bank-NqLqaK\test.db
+questionBankService tests passed
+
+> gewu-gongfang@8.12.0 test:institution-student
+> node backend/src/institutionStudentLifecycle.test.js && node src/utils/institutionStudent.test.js && node src/utils/coursePricingRules.test.js && node src/utils/financialDetails.test.js && npm run test:revenue-filters
+
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-institution-student-SPUl1l\test.db
+institution student lifecycle tests passed
+institutionStudent tests passed
+coursePricingRules institution student tests passed
+financialDetails refresh tests passed
+cloud attendance original financial round-trip checks passed
+
+> gewu-gongfang@8.12.0 test:revenue-filters
+> node src/utils/revenueStatisticsFilters.test.js && node src/utils/revenueDetailFilters.test.js
+
+revenueStatisticsFilters tests passed
+revenueDetailFilters tests passed
+
+> gewu-gongfang@8.12.0 test:miniapp-identity-schema
+> node backend/src/miniappIdentitySchema.test.js
+
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-UAvpmt\legacy.db
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-schema-UAvpmt\legacy.db
+miniapp identity schema migration checks passed
+
+> gewu-gongfang@8.12.0 test:miniapp-identity
+> node backend/src/services/authRateLimiter.test.js && node backend/src/services/wechatMiniappService.test.js && node backend/src/services/miniappWechatBindingService.test.js && node backend/src/services/miniappIdentityService.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+auth rate limiter checks passed
+wechat miniapp identity checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-wechat-binding-GJHjSO\binding.db
+miniapp wechat binding service checks passed
+[DB] initialized env=prod schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-miniapp-identity-service-KTzBZJ\identity.db
+miniapp identity service checks passed
+miniapp cloud-only route boundary checks passed
+
+> gewu-gongfang@8.12.0 test:miniapp-applications
+> npm --prefix cloud-business-api run test:role-applications && node backend/src/routes/miniappCloudOnlyRoutes.test.js
+
+
+> gewu-cloud-business-api@8.14.0 test:role-applications
+> node src/miniappRoleApplicationService.test.js && node src/miniappRoleApplicationRepository.test.js && node sql/cloud-role-applications.test.js && node sql/role-application-least-privilege.test.js && node sql/role-application-new-profile-mode.test.js && node sql/role-application-atomic-profile.test.js && node sql/role-application-least-privilege.postgres.test.js && node sql/role-application-atomic-profile.postgres.test.js
+
+role approval continuity: signed sessions, three roles, own history, disabled sessions and visitor-only writes passed
+miniapp role application service checks passed
+miniapp role application repository checks passed
+cloud role application schema checks passed
+role application least-privilege schema checks passed
+role application new-profile mode migration checks passed
+role application atomic profile migration checks passed
+role application least-privilege PostgreSQL checks passed
+role application atomic profile PostgreSQL checks passed
+miniapp cloud-only route boundary checks passed
+
+> gewu-gongfang@8.12.0 test:ruby-runtime
+> node scripts/prepare-ruby-runtime.test.js
+
+prepare Ruby runtime checks passed
+
+> gewu-gongfang@8.12.0 test:question-deletion
+> python -m unittest discover modules/question-bank/parsers/tests -v && node scripts/question-bank-cli.test.js && node public/questionDraftProvenanceRegistry.test.js && node public/questionImportRelay.test.js && node src/services/nativeQuestionDraftCreate.test.js && node src/services/questionBankBindingUi.test.js && node src/services/questionProvenance.test.js && node src/services/desktopQuestionDeleteContext.test.js && node backend/src/services/questionDeletionPolicy.test.js && node backend/src/questionStorageMigration.test.js && node src/services/questionDeletionPresentation.test.js && node src/services/questionLocalDeletionPolicy.test.js && node src/services/questionDeleteApi.test.js && node backend/src/services/questionBankStorageService.test.js
+
+test_actual_exam_comprehensive_section_is_solution (test_exam_section_types.ExamSectionTypes.test_actual_exam_comprehensive_section_is_solution) ... ok
+test_explicit_section_survives_answer_classification (test_exam_section_types.ExamSectionTypes.test_explicit_section_survives_answer_classification) ... ok
+test_generic_non_choice_heading_does_not_force_a_type (test_exam_section_types.ExamSectionTypes.test_generic_non_choice_heading_does_not_force_a_type) ... ok
+test_collects_simple_and_nested_fields_without_mixing_results (test_formula_eq.EqFormulaTests.test_collects_simple_and_nested_fields_without_mixing_results) ... ok
+test_collects_split_instruction_and_visible_result (test_formula_eq.EqFormulaTests.test_collects_split_instruction_and_visible_result) ... ok
+test_converts_common_eq_constructs_to_canonical_latex (test_formula_eq.EqFormulaTests.test_converts_common_eq_constructs_to_canonical_latex) ... ok
+test_converts_left_brace_array_into_piecewise_cases (test_formula_eq.EqFormulaTests.test_converts_left_brace_array_into_piecewise_cases) ... ok
+test_preserves_word_run_scripts_and_skips_nested_layout_overlay (test_formula_eq.EqFormulaTests.test_preserves_word_run_scripts_and_skips_nested_layout_overlay) ... ok
+test_safe_overline_overlay_and_unsupported_overlays (test_formula_eq.EqFormulaTests.test_safe_overline_overlay_and_unsupported_overlays) ... ok
+test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction (test_formula_eq.EqFormulaTests.test_unsupported_field_uses_visible_result_only_and_never_exposes_instruction) ... ok
+test_batch_deduplicates_ole_payloads_and_parses_sentinel_json (test_formula_mathtype.MathTypeFormulaTests.test_batch_deduplicates_ole_payloads_and_parses_sentinel_json) ... ok
+test_batch_ruby_exception_handler_has_valid_syntax (test_formula_mathtype.MathTypeFormulaTests.test_batch_ruby_exception_handler_has_valid_syntax) ... ok
+test_cached_conversion_does_not_start_ruby_again (test_formula_mathtype.MathTypeFormulaTests.test_cached_conversion_does_not_start_ruby_again) ... ok
+test_converter_failure_isolated_as_preview_only_not_fake_latex (test_formula_mathtype.MathTypeFormulaTests.test_converter_failure_isolated_as_preview_only_not_fake_latex) ... ok
+test_mathml_normalizes_fraction_scripts_and_matrix (test_formula_mathtype.MathTypeFormulaTests.test_mathml_normalizes_fraction_scripts_and_matrix) ... ok
+test_successful_ole_conversion_returns_canonical_latex (test_formula_mathtype.MathTypeFormulaTests.test_successful_ole_conversion_returns_canonical_latex) ... ok
+test_wmf_conversion_uses_wmf_suffix_and_separate_cache (test_formula_mathtype.MathTypeFormulaTests.test_wmf_conversion_uses_wmf_suffix_and_separate_cache) ... ok
+test_invalid_display_mode_and_status_are_rejected (test_formula_model.FormulaModelTests.test_invalid_display_mode_and_status_are_rejected) ... ok
+test_public_projection_keeps_latex_and_traceability_without_binary_payload (test_formula_model.FormulaModelTests.test_public_projection_keeps_latex_and_traceability_without_binary_payload) ... ok
+test_visible_fallback_never_returns_source_code_or_xml (test_formula_model.FormulaModelTests.test_visible_fallback_never_returns_source_code_or_xml) ... ok
+test_delimiter_properties_are_local_and_braces_are_escaped (test_formula_omml.OmmlFormulaTests.test_delimiter_properties_are_local_and_braces_are_escaped) ... ok
+test_explicit_blank_delimiter_is_invisible_not_missing (test_formula_omml.OmmlFormulaTests.test_explicit_blank_delimiter_is_invisible_not_missing) ... ok
+test_fraction_radical_and_scripts (test_formula_omml.OmmlFormulaTests.test_fraction_radical_and_scripts) ... ok
+test_matrix_equation_array_accents_bars_and_grouping (test_formula_omml.OmmlFormulaTests.test_matrix_equation_array_accents_bars_and_grouping) ... ok
+test_nary_limits_functions_and_delimiters (test_formula_omml.OmmlFormulaTests.test_nary_limits_functions_and_delimiters) ... ok
+test_nested_script_base_keeps_its_grouping (test_formula_omml.OmmlFormulaTests.test_nested_script_base_keeps_its_grouping) ... ok
+test_plain_text_and_unknown_nodes_report_approximation_without_xml_leak (test_formula_omml.OmmlFormulaTests.test_plain_text_and_unknown_nodes_report_approximation_without_xml_leak) ... ok
+test_superscript_prime_is_a_symbol_not_tex_empty_base_shorthand (test_formula_omml.OmmlFormulaTests.test_superscript_prime_is_a_symbol_not_tex_empty_base_shorthand) ... ok
+test_hidden_occurrences_removed_without_removing_normal_reuse (test_hidden_brand_images.HiddenBrandImageTests.test_hidden_occurrences_removed_without_removing_normal_reuse) ... ok
+test_drawingml_size_survives_as_physical_display_size (test_image_display_geometry.ImageDisplayGeometryTests.test_drawingml_size_survives_as_physical_display_size) ... ok
+test_invalid_dimensions_do_not_enter_rich_content (test_image_display_geometry.ImageDisplayGeometryTests.test_invalid_dimensions_do_not_enter_rich_content) ... ok
+test_real_ordered_token_import_preserves_each_image_occurrence (test_image_display_geometry.ImageDisplayGeometryTests.test_real_ordered_token_import_preserves_each_image_occurrence) ... ok
+test_vml_fractional_points_and_repeated_image_sizes_survive (test_image_display_geometry.ImageDisplayGeometryTests.test_vml_fractional_points_and_repeated_image_sizes_survive) ... ok
+test_answer_explanation_comment_is_preserved (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_answer_explanation_comment_is_preserved) ... ok
+test_choice_stems_mentioning_experiments_or_comprehensive_control_keep_options (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_choice_stems_mentioning_experiments_or_comprehensive_control_keep_options) ... ok
+test_nested_experiment_options_stay_with_subquestion (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_nested_experiment_options_stay_with_subquestion) ... ok
+test_quality_report_does_not_call_missing_choice_options_clean (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_quality_report_does_not_call_missing_choice_options_clean) ... ok
+test_source_comment_is_not_part_of_choice_answer (test_lecture_choice_boundaries.LectureChoiceBoundariesTests.test_source_comment_is_not_part_of_choice_answer) ... ok
+test_converted_formula_does_not_also_render_its_preview_as_a_picture (test_mathtype_preview_dedup.MathTypePreviewDedupTests.test_converted_formula_does_not_also_render_its_preview_as_a_picture) ... ok
+test_standalone_mathtype_wmf_becomes_native_formula_not_image (test_mathtype_preview_dedup.MathTypePreviewDedupTests.test_standalone_mathtype_wmf_becomes_native_formula_not_image) ... ok
+test_asset_keeps_source_part_and_original_format_after_png_conversion (test_metafile_image.MetafileImageTests.test_asset_keeps_source_part_and_original_format_after_png_conversion) ... ok
+test_failed_invalid_or_oversized_conversion_keeps_original_asset (test_metafile_image.MetafileImageTests.test_failed_invalid_or_oversized_conversion_keeps_original_asset) ... ok
+test_linux_wmf_outputs_bounded_png_and_removes_its_temporary_files (test_metafile_image.MetafileImageTests.test_linux_wmf_outputs_bounded_png_and_removes_its_temporary_files) ... ok
+test_non_wmf_or_missing_converter_is_not_mislabelled_as_png (test_metafile_image.MetafileImageTests.test_non_wmf_or_missing_converter_is_not_mislabelled_as_png) ... ok
+test_comment_formula_is_canonical_answer_node_not_body_source (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_comment_formula_is_canonical_answer_node_not_body_source) ... ok
+test_exam_fixture_attaches_answer_and_analysis_formula_metadata (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_exam_fixture_attaches_answer_and_analysis_formula_metadata) ... ok
+test_exam_question_number_after_leading_image_is_not_merged_into_previous_question (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_exam_question_number_after_leading_image_is_not_merged_into_previous_question) ... ok
+test_forced_xml_fallback_returns_canonical_formulas_and_quality_counts (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_forced_xml_fallback_returns_canonical_formulas_and_quality_counts) ... ok
+test_formula_markup_preserves_duplicate_latex_occurrences_by_formula_id (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_formula_markup_preserves_duplicate_latex_occurrences_by_formula_id) ... ok
+test_image_tag_escapes_malicious_file_name_attribute (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_image_tag_escapes_malicious_file_name_attribute) ... ok
+test_inline_first_option_is_recovered_when_following_options_start_at_b (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_inline_first_option_is_recovered_when_following_options_start_at_b) ... ok
+test_lecture_fixture_preserves_comment_and_table_formula_coordinates (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_lecture_fixture_preserves_comment_and_table_formula_coordinates) ... ok
+test_packed_word_options_expand_only_as_a_complete_choice_sequence (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_packed_word_options_expand_only_as_a_complete_choice_sequence) ... ok
+test_parser_optional_null_attrs_match_rich_content_normalizer_contract (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_parser_optional_null_attrs_match_rich_content_normalizer_contract) ... ok
+test_physics_unit_normalization_does_not_mutate_markup_attributes (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_physics_unit_normalization_does_not_mutate_markup_attributes) ... ok
+test_python_docx_path_returns_token_derived_rich_formula (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_python_docx_path_returns_token_derived_rich_formula) ... ok
+test_quality_report_lists_actionable_formula_locations_by_source_and_status (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_quality_report_lists_actionable_formula_locations_by_source_and_status) ... ok
+test_referenced_assets_follow_document_reference_order (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_referenced_assets_follow_document_reference_order) ... ok
+test_rich_content_preserves_formula_field_ownership_and_source_order (test_parse_word_formulas.ParseWordFormulaIntegrationTests.test_rich_content_preserves_formula_field_ownership_and_source_order) ... ok
+test_continuation_without_subquestions_stays_in_stem (test_subquestion_sections.SubquestionSectionsTests.test_continuation_without_subquestions_stays_in_stem) ... ok
+test_diagrams_remain_once_in_their_source_subquestion (test_subquestion_sections.SubquestionSectionsTests.test_diagrams_remain_once_in_their_source_subquestion) ... ok
+test_each_import_path_assigns_body_to_one_section_only (test_subquestion_sections.SubquestionSectionsTests.test_each_import_path_assigns_body_to_one_section_only) ... ok
+test_inline_analysis_marker_keeps_following_numbered_steps_in_analysis (test_subquestion_sections.SubquestionSectionsTests.test_inline_analysis_marker_keeps_following_numbered_steps_in_analysis) ... ok
+test_numbered_analysis_does_not_overwrite_subquestion_answers (test_subquestion_sections.SubquestionSectionsTests.test_numbered_analysis_does_not_overwrite_subquestion_answers) ... ok
+test_subquestion_formula_is_not_relocated_to_stem (test_subquestion_sections.SubquestionSectionsTests.test_subquestion_formula_is_not_relocated_to_stem) ... ok
+test_actual_lecture_parser_keeps_a_table_between_stem_and_options (test_table_structure.TableStructureTests.test_actual_lecture_parser_keeps_a_table_between_stem_and_options) ... ok
+test_empty_and_merged_cells_do_not_shift_columns (test_table_structure.TableStructureTests.test_empty_and_merged_cells_do_not_shift_columns) ... ok
+test_nested_tables_and_word_vertical_merges_preserve_order (test_table_structure.TableStructureTests.test_nested_tables_and_word_vertical_merges_preserve_order) ... ok
+test_rich_document_preserves_cells_and_inline_native_formula (test_table_structure.TableStructureTests.test_rich_document_preserves_cells_and_inline_native_formula) ... ok
+test_common_containers_are_walked_and_non_eq_simple_field_keeps_visible_result (test_word_content.WordContentWalkerTests.test_common_containers_are_walked_and_non_eq_simple_field_keeps_visible_result) ... ok
+test_document_and_comments_share_ordered_token_capabilities (test_word_content.WordContentWalkerTests.test_document_and_comments_share_ordered_token_capabilities) ... ok
+test_source_coordinates_and_relationship_targets_are_preserved (test_word_content.WordContentWalkerTests.test_source_coordinates_and_relationship_targets_are_preserved) ... ok
+test_table_tokens_preserve_row_cell_and_cell_paragraph_coordinates (test_word_content.WordContentWalkerTests.test_table_tokens_preserve_row_cell_and_cell_paragraph_coordinates) ... ok
+test_document_and_comment_import_all_three_formula_sources (test_word_formula_import.WordFormulaImportTests.test_document_and_comment_import_all_three_formula_sources) ... ok
+test_formula_ids_are_stable_and_raw_ole_never_enters_public_projection (test_word_formula_import.WordFormulaImportTests.test_formula_ids_are_stable_and_raw_ole_never_enters_public_projection) ... ok
+
+----------------------------------------------------------------------
+Ran 75 tests in 3.041s
+
+OK
+bundled Word parser bootstrap checks passed
+question draft provenance registry tests passed
+question import relay checks passed
+native question draft create tests passed
+question bank binding UI tests passed
+question provenance tests passed
+desktop question delete context tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-delete-policy-UaDpvD\test.db
+questionDeletionPolicy tests passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-V95OMW\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-V95OMW\test.db
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-qb-migration-V95OMW\test.db
+question storage migration tests passed
+question deletion presentation tests passed
+question local deletion policy tests passed
+question delete API tests passed
+questionBankStorageService tests passed
+
+> gewu-gongfang@8.12.0 test:question-intake
+> node scripts/generate-question-rich-content-contract.js --check && node public/desktopQuestionIntake.test.js && node src/services/desktopQuestionIntake.test.js && node src/services/localQuestionIntakePreview.test.cjs && node src/pages/QuestionBankImport.cloud-authority.test.js && node cloud-business-api/src/desktopQuestionIntake.test.js && node cloud-business-api/src/desktopQuestionIntake.postgres.test.js
+
+canonical question rich-content contract verified
+actual bundled Python desktop intake: original digest, two removed branding occurrences, source geometry, editable LaTeX and temporary cleanup passed
+desktop intake local parse-before-network, unchanged original and cloud candidate submission passed
+edited intake media: upload, deletion, deduplication, digest integrity and immutable source passed
+question bank import cloud authority checks passed
+desktop question intake unit checks passed
+desktop question intake PostgreSQL checks passed
+
+> gewu-gongfang@8.12.0 test:rich-content
+> node src/services/questionRichContent.test.js && node src/constants/questionTypes.test.js && node src/components/richQuestionEditorState.test.js && node src/utils/sanitizeHtml.test.js && node src/components/richQuestionEditorRoundTrip.test.js && node src/components/question-editor/questionStructureOperations.test.js && node src/components/question-editor/questionImageCleanup.test.js && node src/components/question-editor/questionEditorSession.test.js && node src/services/questionValidation.test.js && node src/services/questionWorkflow.test.js && node src/services/questionPaperLayout.test.js && node src/utils/questionRenderCache.test.js && node src/components/taxonomyTreeOperations.test.js && node src/components/QuestionFormulaContent.test.js && node src/components/QuestionPreviewCard.test.js && node src/services/questionLocalStore.subject.test.js && node src/pages/QuestionBankPreview.batch.test.js
+
+questionRichContent tests passed
+question type normalization tests passed
+rich editor controlled-state tests passed
+sanitizeHtml behavior tests passed
+formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL
+legacy table display checks passed: four sections, merged cells, nested tables and cell formulas
+rich editor TipTap HTML/JSON roundtrip tests passed
+question structure operations tests passed
+hidden image cleanup across all question sections passed
+question editor session behavior tests passed
+question import revalidation behavior tests passed
+question checks, import merging and search checks passed
+paper layout restore and regroup checks passed
+bounded formula render cache checks passed
+taxonomy drag and search checks passed
+formula rendering checks passed: block formula, vertical text marks, unresolved placeholder, answer toggle and no raw package URL
+legacy table display checks passed: four sections, merged cells, nested tables and cell formulas
+question preview card answer and basket action checks passed
+whole-card answer, edit cache and nested control interactions passed
+question local subject filtering checks passed
+actual batch tag, custom taxonomy, partial failures and paper navigation checks passed
+
+> gewu-gongfang@8.12.0 test:formula-export
+> python -m unittest discover modules/question-bank/export/tests -v
+
+test_empty_canonical_latex_blocks_the_artifact_with_location (test_formula_renderers.FormulaRendererContractTests.test_empty_canonical_latex_blocks_the_artifact_with_location) ... ok
+test_manifest_preserves_location_and_native_mode (test_formula_renderers.FormulaRendererContractTests.test_manifest_preserves_location_and_native_mode) ... ok
+test_mathtype_cannot_be_claimed_from_a_boolean_without_ole_evidence (test_formula_renderers.FormulaRendererContractTests.test_mathtype_cannot_be_claimed_from_a_boolean_without_ole_evidence) ... ok
+test_mathtype_without_audited_writer_falls_back_truthfully (test_formula_renderers.FormulaRendererContractTests.test_mathtype_without_audited_writer_falls_back_truthfully) ... ok
+test_blank_pdf_with_formula_manifest_fails_closed (test_visible_gate.VisibleGatePackageContractTests.test_blank_pdf_with_formula_manifest_fails_closed) ... ok
+test_broken_relationship_blocks_with_location (test_visible_gate.VisibleGatePackageContractTests.test_broken_relationship_blocks_with_location) ... ok
+test_docx_formula_index_set_must_match_manifest_exactly (test_visible_gate.VisibleGatePackageContractTests.test_docx_formula_index_set_must_match_manifest_exactly) ... ok
+test_empty_canonical_formula_blocks (test_visible_gate.VisibleGatePackageContractTests.test_empty_canonical_formula_blocks) ... ok
+test_empty_native_and_eq_omml_are_not_visible_results (test_visible_gate.VisibleGatePackageContractTests.test_empty_native_and_eq_omml_are_not_visible_results) ... ok
+test_eq_field_requires_instruction_and_visible_omml_result (test_visible_gate.VisibleGatePackageContractTests.test_eq_field_requires_instruction_and_visible_omml_result) ... ok
+test_latex_vector_requires_svg_png_relationships_and_positive_extent (test_visible_gate.VisibleGatePackageContractTests.test_latex_vector_requires_svg_png_relationships_and_positive_extent) ... ok
+test_latex_vector_without_formula_extent_fails_for_that_formula (test_visible_gate.VisibleGatePackageContractTests.test_latex_vector_without_formula_extent_fails_for_that_formula) ... ok
+test_mathtype_claim_fails_closed_without_audited_fixture (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_claim_fails_closed_without_audited_fixture) ... ok
+test_mathtype_evidence_must_be_bound_inside_each_indexed_container (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_evidence_must_be_bound_inside_each_indexed_container) ... ok
+test_mathtype_rejects_fake_ole_and_preview_bytes (test_visible_gate.VisibleGatePackageContractTests.test_mathtype_rejects_fake_ole_and_preview_bytes) ... ok
+test_native_and_eq_missing_first_formula_map_to_first_manifest_row (test_visible_gate.VisibleGatePackageContractTests.test_native_and_eq_missing_first_formula_map_to_first_manifest_row) ... ok
+test_omml_chr_attribute_without_run_text_semantics_is_not_renderable (test_visible_gate.VisibleGatePackageContractTests.test_omml_chr_attribute_without_run_text_semantics_is_not_renderable) ... ok
+test_pdf_comment_or_string_operator_tokens_are_not_paint (test_visible_gate.VisibleGatePackageContractTests.test_pdf_comment_or_string_operator_tokens_are_not_paint) ... ok
+test_pdf_fill_requires_nonzero_subpath_area_and_B_keeps_valid_stroke (test_visible_gate.VisibleGatePackageContractTests.test_pdf_fill_requires_nonzero_subpath_area_and_B_keeps_valid_stroke) ... ok
+test_pdf_flate_page_content_stream_is_decoded (test_visible_gate.VisibleGatePackageContractTests.test_pdf_flate_page_content_stream_is_decoded) ... ok
+test_pdf_formula_evidence_cannot_be_split_across_pages (test_visible_gate.VisibleGatePackageContractTests.test_pdf_formula_evidence_cannot_be_split_across_pages) ... ok
+test_pdf_formula_index_set_must_match_manifest_exactly (test_visible_gate.VisibleGatePackageContractTests.test_pdf_formula_index_set_must_match_manifest_exactly) ... ok
+test_pdf_marker_and_annotation_without_actual_draw_is_not_visible_evidence (test_visible_gate.VisibleGatePackageContractTests.test_pdf_marker_and_annotation_without_actual_draw_is_not_visible_evidence) ... ok
+test_pdf_paint_must_intersect_formula_box_and_text_needs_page_font (test_visible_gate.VisibleGatePackageContractTests.test_pdf_paint_must_intersect_formula_box_and_text_needs_page_font) ... ok
+test_pdf_pending_clip_applies_at_every_path_end (test_visible_gate.VisibleGatePackageContractTests.test_pdf_pending_clip_applies_at_every_path_end) ... ok
+test_pdf_report_uses_final_file_and_truthful_fallback (test_visible_gate.VisibleGatePackageContractTests.test_pdf_report_uses_final_file_and_truthful_fallback) ... ok
+test_pdf_source_residue_is_checked_only_in_referenced_page_text (test_visible_gate.VisibleGatePackageContractTests.test_pdf_source_residue_is_checked_only_in_referenced_page_text) ... ok
+test_pdf_unreferenced_stream_cannot_supply_formula_evidence (test_visible_gate.VisibleGatePackageContractTests.test_pdf_unreferenced_stream_cannot_supply_formula_evidence) ... ok
+test_png_trns_requires_at_least_one_visible_pixel (test_visible_gate.VisibleGatePackageContractTests.test_png_trns_requires_at_least_one_visible_pixel) ... ok
+test_second_formula_broken_relationship_maps_to_second_manifest_location (test_visible_gate.VisibleGatePackageContractTests.test_second_formula_broken_relationship_maps_to_second_manifest_location) ... ok
+test_source_gate_allows_comparisons_and_currency (test_visible_gate.VisibleGatePackageContractTests.test_source_gate_allows_comparisons_and_currency) ... ok
+test_source_gate_allows_ordinary_windows_paths (test_visible_gate.VisibleGatePackageContractTests.test_source_gate_allows_ordinary_windows_paths) ... ok
+test_svg_fill_requires_nonzero_area_but_keeps_polygon_curve_and_stroke (test_visible_gate.VisibleGatePackageContractTests.test_svg_fill_requires_nonzero_area_but_keeps_polygon_curve_and_stroke) ... ok
+test_unreferenced_png_cannot_satisfy_vector_fallback_or_mathtype_preview (test_visible_gate.VisibleGatePackageContractTests.test_unreferenced_png_cannot_satisfy_vector_fallback_or_mathtype_preview) ... ok
+test_vector_media_must_be_structurally_renderable (test_visible_gate.VisibleGatePackageContractTests.test_vector_media_must_be_structurally_renderable) ... ok
+test_visible_source_gate_covers_inline_commands_and_serialized_markup_but_not_field_instruction (test_visible_gate.VisibleGatePackageContractTests.test_visible_source_gate_covers_inline_commands_and_serialized_markup_but_not_field_instruction) ... ok
+test_word_native_requires_omml_and_reports_final_hash (test_visible_gate.VisibleGatePackageContractTests.test_word_native_requires_omml_and_reports_final_hash) ... ok
+test_zero_extent_crop_source_residue_and_placeholder_each_block (test_visible_gate.VisibleGatePackageContractTests.test_zero_extent_crop_source_residue_and_placeholder_each_block) ... ok
+
+----------------------------------------------------------------------
+Ran 38 tests in 1.073s
+
+OK
+
+> gewu-gongfang@8.12.0 test:paper-export-desktop
+> node src/pages/QuestionBankPaper.export-formulas.test.js && node src/services/paperExportTaskClient.test.js && node src/services/paperExportTaskUi.test.js && node src/services/desktopQuestionImportClient.test.js
+
+PASS desktop actual export handler -> word renderer
+PASS desktop actual export handler -> pdf renderer
+PASS miniapp actual export handler -> word renderer
+PASS miniapp actual export handler -> pdf renderer
+PASS miniapp retry preserves layout and requests editable formulas
+paper export task client checks passed
+paper export task UI regression checks passed
+desktop question import client checks passed
+
+> gewu-gongfang@8.12.0 pretest:backend
+> npm run test:authority-architecture && node backend/src/middleware/questionBankReadAccess.test.js && node backend/src/services/electronDependencyCompatibility.test.js && npm run test:desktop-authorization && npm run test:identity-device-center && npm run test:sync-identity
+
+
+> gewu-gongfang@8.12.0 pretest:authority-architecture
+> node scripts/check_cloud_business_authority_contract.test.js && node backend/src/routes/authorityProtocolApp.http.test.js && node backend/serverRuntimeWorker.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js && node cloud-business-api/src/app.test.js && node cloud-business-api/src/desktopActiveRoleAuthorization.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node miniapp/src/utils/miniappRouteAccess.test.js
+
+cloud business authority architecture contract checks passed
+[DB] initialized env=dev schema=3122 path=C:\Users\83423\AppData\Local\Temp\gewu-authority-app-http-tmjbHG\authority-app.db
+authorityProtocol retired app HTTP tests passed
+cloud runtime worker integration checks passed
+miniapp cloud-only route boundary checks passed
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  [
+    'Accept',
+    'Authorization',
+    'Content-Type',
+    'X-Device-Id',
+    'X-Gewu-Artifact-Token',
++   'X-Gewu-Command-Hash',
++   'X-Gewu-Command-Id',
+    'X-Idempotency-Key'
+  ]
+
+    at C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\src\app.test.js:51:10
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [Array],
+  expected: [Array],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+teacher self-update real REST client, active-role and forbidden-scope checks passed
+business microsecond version REST roundtrip and invalid-version checks passed
+actual teacher lifecycle writer PostgreSQL update, readback and conflict checks passed
+actual teacher projection PostgreSQL no-course self and scoped visibility checks passed

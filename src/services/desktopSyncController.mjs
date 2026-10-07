@@ -1,3 +1,4 @@
+import { draftConfirmationSnapshot } from './authorityDraftDependencies.mjs';
 import { planDesktopAutoSync, submitSequentially } from './desktopAutoSync.mjs';
 
 const signature = items => JSON.stringify(items.map(({ id, type, payload, status }) => ({ id, type, payload, status })));
@@ -105,6 +106,7 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
       emit({ error: '' });
       const ids = reviewedItems.filter(item => item.status === 'awaiting_confirmation').map(item => item.id);
       const token = sessionToken();
+      if (ids.length) await bridge.confirmBatch(draftConfirmationSnapshot(reviewedItems), { sessionToken: token });
       const outcomes = await submitSequentially({ bridge, items: reviewedItems, ids, sessionToken: token, shouldContinue: active });
       if (!await acknowledge(reviewedItems, outcomes) || !active()) { await read(); return; }
       for (const item of reviewedItems.filter(item => ['confirmed', 'submitted'].includes(item.status))) {

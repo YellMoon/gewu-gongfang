@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: original handlers -> current draft mapper -> real scoped SQL, disposable database only.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {createCloudBusinessApp}=require('../src/app');
@@ -42,10 +43,11 @@ async function run({studentDeleted=false}={}){
     await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','unrelated-course','student-2',999,888)");
    }
   });
-  const query=(text,values)=>withQuery(handle,'writer',db=>db.query(text,values));
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const query=businessCommandWriter.query;
   let context;
-  const app=createCloudBusinessApp({query:async()=>({rows:[]}),businessTenantId:'tenant-1',
-   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},
+  const app=createCloudBusinessApp({businessCommandWriter,query:async()=>({rows:[]}),businessTenantId:'tenant-1',
+   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext(context,'test-account')},
    businessScheduleUpdate:createBusinessScheduleUpdate({query}),businessScheduleLifecycleMutations:createBusinessScheduleLifecycleMutations({query})});
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   const token='eyJ2IjoxfQ.signature',base=`http://127.0.0.1:${server.address().port}`,out=fs.mkdtempSync(path.join(os.tmpdir(),'gewu-retained-course-'));
@@ -136,6 +138,7 @@ async function run({studentDeleted=false}={}){
    }finally{await writer.query('ROLLBACK');await admin.query('RESET lock_timeout');}
   }));
   assert.deepEqual(await read(handle),beforeLocks);
+  await assertPgBusinessCommandReceipts(handle, 'test-account');
   console.log((studentDeleted?'retained-student':'retained-course')+' original handlers/outbox/REST/scoped PostgreSQL passed: '+count+' teacher/admin mutations, '+restorations+' confirmed restorations, both roster paths and concurrent locks');
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await runtime.disposeHandle(handle).catch(()=>{});await runtime.stop().catch(()=>{});}
 }

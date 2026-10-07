@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: original room edits/deletion must preserve course and lesson snapshots.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {createCloudBusinessApp}=require('../src/app');
@@ -29,10 +30,11 @@ function original(method){
    await db.query("INSERT INTO business.students(id,tenant_id,name,created_by_teacher_id,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student','one','学生','owner',false,false,now(),now())");
   });
   let context={roles:['teacher'],profile:{type:'teacher',id:'owner'}},requests=0;
-  const app=createCloudBusinessApp({businessTenantId:'one',query:async()=>({rows:[]}),desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>context},
-   businessRoomLifecycleMutations:createBusinessRoomLifecycleMutations({query:writer}),
-   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:writer}),
-   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:writer})});
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const app=createCloudBusinessApp({businessCommandWriter,businessTenantId:'one',query:async()=>({rows:[]}),desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>canonicalFixtureContext(context)},
+   businessRoomLifecycleMutations:createBusinessRoomLifecycleMutations({query:businessCommandWriter.query}),
+   businessCourseLifecycleMutations:require('../src/businessCourseLifecycleMutationService').createBusinessCourseLifecycleMutations({query:businessCommandWriter.query}),
+   businessScheduleLifecycleMutations:require('../src/businessScheduleLifecycleMutationService').createBusinessScheduleLifecycleMutations({query:businessCommandWriter.query})});
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   const {createDesktopIdentityClient}=await import('../../src/services/desktopIdentityClient.mjs');
   const client=createDesktopIdentityClient({desktopIdentity:{status:async()=>({})},fetchImpl:(...args)=>{requests++;return fetch(...args);}});
@@ -97,6 +99,7 @@ function original(method){
    }finally{await first.query('ROLLBACK');}
   });
   await admin(async db=>assert.equal((await db.query("SELECT count(*)::int AS count FROM business.rooms WHERE id IN ('concurrent','contender')")).rows[0].count,0));
+  await assertPgBusinessCommandReceipts(handle);
   console.log('original address online/confirmed edits and deletion retain courses/lessons, prices and attendance; teacher scope and versions passed');
  }finally{if(server)await new Promise(resolve=>server.close(resolve));await runtime.disposeHandle(handle).catch(()=>{});await runtime.stop().catch(()=>{});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { stableJson } = require('../shared/authorityProtocol');
 const { DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS } = require('../src/services/desktopOfflineLeasePolicy');
 
@@ -32,6 +33,45 @@ function createDesktopAuthorityRuntime({
     throw runtimeError('DESKTOP_AUTHORITY_RUNTIME_CONFIG_REQUIRED');
   }
   let clientPromise = null;
+  const operationScope = new AsyncLocalStorage();
+
+  function currentScope() {
+    const status = vault.status();
+    const userId = String(status?.user?.id || '').trim();
+    const businessAuthority = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
+    if (status?.state !== 'unlocked' || status.unlocked !== true || !userId || !businessAuthority) {
+      throw runtimeError('DESKTOP_OFFLINE_DRAFT_SESSION_REQUIRED');
+    }
+    return { userId, businessAuthority, deviceId: status.deviceId,
+      authorizationId: status.authorizationId, credentialVersion: status.credentialVersion,
+      activeRole: String(status.activeRole || status.user?.user_type || status.user?.role || '') };
+  }
+
+  function assertOperationScope() {
+    const expected = operationScope.getStore();
+    if (!expected) return;
+    let current;
+    try { current = currentScope(); } catch (_error) {
+      throw runtimeError('DESKTOP_IDENTITY_CHANGED_DURING_DRAFT_OPERATION');
+    }
+    if (JSON.stringify(current) !== JSON.stringify(expected)) {
+      throw runtimeError('DESKTOP_IDENTITY_CHANGED_DURING_DRAFT_OPERATION');
+    }
+  }
+
+  function matchesScope(item, scope = operationScope.getStore()) {
+    return scope && item?.draftScope?.userId === scope.userId
+      && item.draftScope.businessAuthority === scope.businessAuthority
+      && item.draftScope.activeRole === scope.activeRole;
+  }
+
+  async function scopedOperation(job) {
+    return operationScope.run(currentScope(), async () => {
+      const result = await job(await getClient());
+      assertOperationScope();
+      return result;
+    });
+  }
 
   function assertEncryption() {
     if (!safeStorage.isEncryptionAvailable()) {
@@ -41,10 +81,12 @@ function createDesktopAuthorityRuntime({
 
   const store = Object.freeze({
     async read() {
+      assertOperationScope();
       if (!fsImpl.existsSync(filePath)) return '';
       return fsImpl.readFileSync(filePath, 'utf8');
     },
     async write(value) {
+      assertOperationScope();
       const temporary = `${filePath}.tmp`;
       fsImpl.mkdirSync(path.dirname(filePath), { recursive: true });
       try {
@@ -174,6 +216,7 @@ function createDesktopAuthorityRuntime({
       item?.status === 'awaiting_confirmation'
       && item.draftScope?.userId === draftScope.userId
       && item.draftScope?.businessAuthority === draftScope.businessAuthority
+      && item.draftScope?.activeRole === draftScope.activeRole
       && businessDraftDescriptor(item)?.entity === incoming.entity
       && businessDraftDescriptor(item)?.recordId === incoming.recordId
     ));
@@ -252,6 +295,7 @@ function createDesktopAuthorityRuntime({
     const completed = Object.values(state.items).filter(item => item?.status === 'completed'
       && item.draftScope?.userId === draftScope.userId
       && item.draftScope?.businessAuthority === draftScope.businessAuthority
+      && item.draftScope?.activeRole === draftScope.activeRole
       && businessDraftDescriptor(item)?.entity === 'schedule'
       && businessDraftDescriptor(item)?.recordId === recordId);
     const latest = completed.sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt)).at(-1);
@@ -286,6 +330,7 @@ function createDesktopAuthorityRuntime({
     const draftScope = Object.freeze({
       userId: String(localDraftStatus.user.id),
       businessAuthority: String(cloudBusinessBaseUrl || '').replace(/\/+$/, ''),
+      activeRole: String(localDraftStatus.activeRole || localDraftStatus.user?.user_type || localDraftStatus.user?.role || ''),
     });
     const appended = inputs.map(input => {
       const createdAt = new Date(now ? now() : new Date().toISOString()).toISOString();
@@ -406,6 +451,35 @@ function createDesktopAuthorityRuntime({
           createId: createId || createSecureOutboxId,
           ...(now ? { now } : {}),
         });
+        // Guard the entire client boundary, including recursive dependencies and
+        // batch confirmations. Legacy drafts without provenance stay quarantined.
+        const scopedOutbox = { ...outbox,
+          async get(id) {
+            const item = await outbox.get(id);
+            assertOperationScope();
+            if (!matchesScope(item)) throw runtimeError('AUTHORITY_OUTBOX_ITEM_NOT_FOUND');
+            return item;
+          },
+          async list() {
+            const items = await outbox.list();
+            assertOperationScope();
+            return items.filter(item => matchesScope(item));
+          },
+          async confirmBatch(snapshots) {
+            if (Array.isArray(snapshots)) {
+              for (const item of snapshots) await scopedOutbox.get(item?.id);
+            }
+            return outbox.confirmBatch(snapshots);
+          },
+        };
+        for (const method of ['confirm', 'markSubmitted', 'acknowledge', 'recordTransport', 'remove', 'reset']) {
+          scopedOutbox[method] = async (id, ...args) => {
+            await scopedOutbox.get(id);
+            const result = await outbox[method](id, ...args);
+            assertOperationScope();
+            return result;
+          };
+        }
         const normalizedCloudBusinessBaseUrl = String(cloudBusinessBaseUrl || '').replace(/\/+$/, '');
         const cloudBusinessAdapter = normalizedCloudBusinessBaseUrl
           ? createDesktopCloudBusinessDraftAdapter({
@@ -420,7 +494,7 @@ function createDesktopAuthorityRuntime({
           })
           : null;
         return createDesktopAuthorityClient({
-          outbox,
+          outbox: scopedOutbox,
           createCloudQuestionCommand: draft => Object.freeze({
             commandId: draft.id,
             payloadHash: crypto.createHash('sha256')
@@ -429,6 +503,7 @@ function createDesktopAuthorityRuntime({
             payload: draft.payload,
           }),
           submitCloudQuestion: async (command, input) => {
+            assertOperationScope();
             const token = cloudSessionToken(input);
             if (!normalizedCloudBusinessBaseUrl) throw runtimeError('CLOUD_QUESTION_AUTHORITY_UNAVAILABLE');
             const body = await requestJson(`${normalizedCloudBusinessBaseUrl}/api/desktop/question-bank/commands`, {
@@ -448,9 +523,10 @@ function createDesktopAuthorityRuntime({
             ? draft => cloudBusinessAdapter.createCommand(draft)
             : null,
           submitCloudBusiness: cloudBusinessAdapter
-            ? (command, input) => cloudBusinessAdapter.submit(command, {
-              sessionToken: cloudSessionToken(input),
-            })
+            ? (command, input) => {
+              assertOperationScope();
+              return cloudBusinessAdapter.submit(command, { sessionToken: cloudSessionToken(input) });
+            }
             : null,
         });
       })();
@@ -498,32 +574,40 @@ function createDesktopAuthorityRuntime({
     appendDraft: async input => appendDraftSync(input),
     appendDraftSync,
     appendDraftBatchSync,
-    confirmAndSubmit: async (id, input, confirmation) => {
+    confirmBatch: (snapshots, input) => scopedOperation(async client => {
       assertOnlineSubmission();
-      const client = await getClient();
+      cloudSessionToken(input);
+      if (!Array.isArray(snapshots)) throw runtimeError('AUTHORITY_DRAFT_CONFIRMATION_CHANGED');
+      for (const snapshot of snapshots) {
+        validateDraft(snapshot);
+        await client.get(snapshot.id);
+      }
+      return client.confirmBatch(snapshots);
+    }),
+    confirmAndSubmit: (id, input, confirmation) => scopedOperation(async client => {
+      assertOnlineSubmission();
       const draft = await client.get(id);
       if (!isCloudQuestionDraft(draft) && !isCloudBusinessDraft(draft)) {
         throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
       }
       cloudSessionToken(input);
       return client.confirmAndSubmit(id, input, confirmation);
-    },
-    get: async id => (await getClient()).get(id),
-    list: async () => (await getClient()).list(),
-    removeDraft: async id => (await getClient()).removeDraft(id),
-    resetDraft: async id => (await getClient()).resetDraft(id),
+    }),
+    get: id => scopedOperation(client => client.get(id)),
+    list: () => scopedOperation(client => client.list()),
+    removeDraft: id => scopedOperation(client => client.removeDraft(id)),
+    resetDraft: id => scopedOperation(client => client.resetDraft(id)),
     listRoleApplications,
     reviewRoleApplication,
-    submit: async (id, input) => {
+    submit: (id, input) => scopedOperation(async client => {
       assertOnlineSubmission();
-      const client = await getClient();
       const draft = await client.get(id);
       if (!isCloudQuestionDraft(draft) && !isCloudBusinessDraft(draft)) {
         throw runtimeError('CLOUD_AUTHORITY_DRAFT_TYPE_UNSUPPORTED');
       }
       cloudSessionToken(input);
       return client.submit(id, input);
-    },
+    }),
   });
 }
 

@@ -60,7 +60,7 @@ function view(Component, props) {
     { id: 'INTERNAL-D', teacher_id: 'teacher-b', active: true, name: '其他老师的课程' },
     { id: 'INTERNAL-E', teacher_id: 'teacher-a', active: false, name: '已结课程' },
   ];
-  const projection = { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, payload: { courses, teachers } };
+  const projection = { protocol: 'gewu.authority-projection.v1', sourceVersion: 1, userId: 'fixture-user', businessAuthority: 'https://business.fixture', payload: { courses, teachers } };
   const before = JSON.stringify(projection);
   const cache = buildAuthorityBackedBrowserCache({ projection });
   for (const selectedTeacherId of ['teacher-a', 'teacher-b', 'no-courses', undefined]) {
@@ -72,10 +72,10 @@ function view(Component, props) {
   assert.equal(selected.width, '220px');
   assert.deepEqual(selected.headings, ['选择老师', '未结课程 (3)']);
   assert.deepEqual(selected.cards.map(card => card.lines), [
-    ['初二物理', '2026 年 秋学期', '东湖上课点 一对一'],
-    ['双人讨论课', '2025 年 春学期', '西湖上课点 一对二'],
+    ['1. 初二物理', '2026 年 秋学期', '东湖上课点 一对一'],
+    ['2. 双人讨论课', '2025 年 春学期', '西湖上课点 一对二'],
     // UTF-8: the original year fallback reads the leading four digits, even without a semester.
-    ['2026提高班-A01', '2026 年 -', '班课'],
+    ['3. 2026提高班-A01', '2026 年 -', '班课'],
   ]);
   assert(selected.cards.every(card => card.draggable === 'true'));
   assert(!JSON.stringify(selected).includes('INTERNAL-'));
@@ -84,7 +84,7 @@ function view(Component, props) {
   assert.deepEqual(view(Sidebar, { teachers, courses }).empty, ['请先选择老师']);
   assert.equal(JSON.stringify(projection), before, 'rendering and cache hydration must not rewrite cloud data');
   // UTF-8: an unconfirmed course completion only overlays local derived data.
-  const outbox = [{ id: 'draft-complete', type: 'course.update.v1', status: 'awaiting_confirmation',
+  const outbox = [{ draftScope: { userId: projection.userId, businessAuthority: projection.businessAuthority, activeRole: String(projection.role || '') }, id: 'draft-complete', type: 'course.update.v1', status: 'awaiting_confirmation',
     payload: { id: 'INTERNAL-A', changes: { active: false } } }];
   const draftBefore = JSON.stringify(outbox);
   const pending = buildAuthorityBackedBrowserCache({ projection, outbox });

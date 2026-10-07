@@ -1,0 +1,267 @@
+
+> gewu-gongfang@8.13.0 test:release-matrix
+> node scripts/no-hardcoded-deploy-credentials.test.js && node scripts/release-matrix.test.js && node scripts/independent-release-version.test.js && node scripts/release-matrix-python.test.js && node scripts/release-boundary.test.js && node scripts/check-question-import-release.test.js && node scripts/nginx-scheduling.test.js && node scripts/real-cloud-business-acceptance.test.js && node scripts/real-miniapp-role-session.test.js && node scripts/repair-production-question-duplicates.test.js && node scripts/repair-production-question-duplicates.postgres.test.js && node scripts/verify_ecs_ws.test.js && node scripts/vnext-migration/cloudControlPlaneM21Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM22Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM23Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM24Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM25Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM26Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM27Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM28Upgrade.test.js && python scripts/run_real_cloud_business_acceptance.test.py && python scripts/run_real_miniapp_role_ui.test.py && python scripts/run_question_duplicate_repair.test.py && python scripts/apply_cloud_postgres_migrations.test.py && python scripts/apply_cloud_control_plane_m20.test.py && python scripts/apply_cloud_control_plane_m21.test.py && python scripts/apply_cloud_control_plane_m22.test.py && python scripts/apply_cloud_control_plane_m23.test.py && python scripts/apply_cloud_control_plane_m24.test.py && python scripts/apply_cloud_control_plane_m25.test.py && python scripts/apply_cloud_control_plane_m26.test.py && python scripts/apply_cloud_control_plane_m27.test.py && python scripts/apply_cloud_control_plane_m28.test.py && python scripts/deploy_cloud_business_api.test.py && python scripts/deploy_nginx_question_import_limit.test.py && python scripts/verify_public_question_import_limit.test.py && python scripts/verify_cloud_business_release.test.py && python scripts/miniapp_fixed_egress.test.py && python scripts/repair_production_tls.test.py
+
+hardcoded deployment credential retirement checks passed
+release matrix checks passed
+independent release version checks passed
+release matrix python checks passed
+release boundary checks passed
+question import release gate checks passed
+nginx scheduling WebSocket proxy checks passed
+real cloud business acceptance checks passed
+real miniapp role session checks passed
+question formula identity repair checks passed
+repair-production-question-duplicates tests passed
+formula identity repair PostgreSQL checks passed: limited role, CAS rollback, exact metadata-only changes and receipts
+production question repair PostgreSQL rollback and retry checks passed
+verify_ecs_ws security boundary tests passed
+cloud control-plane M21 upgrade tests passed
+cloud control-plane M22 upgrade tests passed
+cloud control-plane M23 upgrade tests passed
+cloud control-plane M24 upgrade tests passed
+cloud control-plane M25 upgrade tests passed
+cloud control-plane M26 upgrade tests passed
+cloud control-plane M27 upgrade tests passed
+cloud control-plane M28 upgrade tests passed
+real cloud business acceptance runner checks passed
+.............{"role": "visitor", "stage": "checking_identity"}
+{"role": "visitor", "stage": "checked", "pageCount": 0}
+..........................
+----------------------------------------------------------------------
+Ran 39 tests in 2.676s
+
+OK
+{"checks": {"visitor": {"identity": {"role": "visitor"}, "pages": []}}, "downloadCheck": null, "marker": "e2e-role-test-0123456789abcdef", "ok": true}
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.107s
+
+OK
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.348s
+
+OK
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.001s
+
+OK
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.001s
+
+OK
+........
+----------------------------------------------------------------------
+Ran 8 tests in 0.135s
+
+OK
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.001s
+
+OK
+....................................................warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.warning: in the working copy of 'backend/assets/fonts/NotoSansCJKsc-Regular.otf', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'cloud-business-api/sql/20260913-lease.sql', LF will be replaced by CRLF the next time Git touches it
+.
+----------------------------------------------------------------------
+Ran 57 tests in 10.876s
+
+OK
+nginx question import limit deployment checks passed
+public question import body-limit smoke checks passed
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.005s
+
+OK
+test_cross_process_post_health_failure_preserves_pending_manifest_and_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_failure_preserves_pending_manifest_and_marker) ... MINIAPP_UPLOAD_FAILED
+ERROR
+test_cross_process_post_health_success_finalizes_once_and_deletes_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_success_finalizes_once_and_deletes_marker) ... MINIAPP_UPLOAD_FAILED
+ERROR
+test_probe_only_owns_real_lock_proxy_ssh_and_handler_cleanup (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_probe_only_owns_real_lock_proxy_ssh_and_handler_cleanup) ... ok
+test_reconciliation_missing_or_bad_marker_fails_before_health_without_upload (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_reconciliation_missing_or_bad_marker_fails_before_health_without_upload) ... MINIAPP_DEFERRED_UPLOAD_MARKER_MISSING
+MINIAPP_DEFERRED_UPLOAD_MARKER_INVALID
+ok
+test_connect_authority_parser_is_strict (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_connect_authority_parser_is_strict) ... ok
+test_incomplete_header_times_out_with_bounded_400 (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_incomplete_header_times_out_with_bounded_400) ... ok
+test_method_allowlist_and_header_limit_fail_closed (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_method_allowlist_and_header_limit_fail_closed) ... ok
+test_real_loopback_proxy_opens_direct_tcpip_and_forwards_header_tail (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_real_loopback_proxy_opens_direct_tcpip_and_forwards_header_tail) ... ok
+test_saturated_proxy_keeps_header_errors_before_bounded_503 (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_saturated_proxy_keeps_header_errors_before_bounded_503) ... ok
+test_slow_header_flood_has_a_hard_handler_and_client_limit (miniapp_fixed_egress_suite_1.ParserPolicyAndRelayTests.test_slow_header_flood_has_a_hard_handler_and_client_limit) ... ok
+test_cleanup_reports_live_handler_without_forgetting_tracked_resources (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_cleanup_reports_live_handler_without_forgetting_tracked_resources) ... ok
+test_concurrent_close_cannot_miss_a_thread_whose_start_is_returning (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_concurrent_close_cannot_miss_a_thread_whose_start_is_returning) ... ok
+test_thread_start_failure_leaves_proxy_safe_to_close (miniapp_fixed_egress_suite_1.ProxyCleanupTests.test_thread_start_failure_leaves_proxy_safe_to_close) ... ok
+test_channel_timeout_is_set_before_a_blocking_tail_send (miniapp_fixed_egress_suite_1.ProxyTimeoutTests.test_channel_timeout_is_set_before_a_blocking_tail_send) ... ok
+test_open_channel_receives_a_finite_timeout (miniapp_fixed_egress_suite_1.ProxyTimeoutTests.test_open_channel_receives_a_finite_timeout) ... ok
+test_config_rejects_cloud_business_target_without_reviewed_miniapp_contract (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_rejects_cloud_business_target_without_reviewed_miniapp_contract) ... ok
+test_config_requires_canonical_ipv4_and_https_port_443 (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_requires_canonical_ipv4_and_https_port_443) ... ok
+test_config_separates_miniapp_upload_and_cloud_health_versions (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_config_separates_miniapp_upload_and_cloud_health_versions) ... ok
+test_default_echo_url_uses_reachable_aws_checkip_endpoint (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_default_echo_url_uses_reachable_aws_checkip_endpoint) ... ok
+test_default_health_target_is_the_cloud_business_authority (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_default_health_target_is_the_cloud_business_authority) ... ok
+test_direct_health_opener_disables_proxies_and_verifies_tls (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_direct_health_opener_disables_proxies_and_verifies_tls) ... ok
+test_egress_request_is_explicitly_tunneled_through_loopback (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_egress_request_is_explicitly_tunneled_through_loopback) ... ok
+test_health_requires_ok_true_and_exact_version (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_health_requires_ok_true_and_exact_version) ... ok
+test_local_preflight_uses_the_miniapp_version_not_the_desktop_version (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_local_preflight_uses_the_miniapp_version_not_the_desktop_version) ... ok
+test_probe_requires_exact_egress_then_servicewechat_tls (miniapp_fixed_egress_suite_2.ConfigurationHealthAndProbeTests.test_probe_requires_exact_egress_then_servicewechat_tls) ... ok
+test_loopback_proxy_port_must_be_between_one_and_65535 (miniapp_fixed_egress_suite_2.ProxyUrlValidationTests.test_loopback_proxy_port_must_be_between_one_and_65535) ... ok
+test_build_upload_post_health_receipt_and_cleanup_order (miniapp_fixed_egress_suite_3.FullLifecycleUnitTests.test_build_upload_post_health_receipt_and_cleanup_order) ... ok
+test_cleanup_closes_proxy_resources_then_ssh_before_waiting_for_handlers (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_closes_proxy_resources_then_ssh_before_waiting_for_handlers) ... ok
+test_cleanup_failure_on_success_returns_stable_error (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_failure_on_success_returns_stable_error) ... ok
+test_cleanup_failure_preserves_unknown_primary_as_cause_and_stable_code (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_cleanup_failure_preserves_unknown_primary_as_cause_and_stable_code) ... ok
+test_primary_and_all_cleanup_failures_are_stably_observable (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_primary_and_all_cleanup_failures_are_stably_observable) ... ok
+test_probe_only_never_finalizes_a_receipt (miniapp_fixed_egress_suite_3.LifecycleCleanupTests.test_probe_only_never_finalizes_a_receipt) ... ok
+test_child_env_forces_loopback_proxy_and_removes_bypass (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_child_env_forces_loopback_proxy_and_removes_bypass) ... ok
+test_interrupt_cleanup_failure_keeps_interrupt_and_cleanup_codes (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_interrupt_cleanup_failure_keeps_interrupt_and_cleanup_codes) ... ok
+test_keyboard_interrupt_cleans_exact_child_without_hiding_interrupt (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_keyboard_interrupt_cleans_exact_child_without_hiding_interrupt) ... ok
+test_lock_holds_descriptor_and_conflicts_with_another_process (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_lock_holds_descriptor_and_conflicts_with_another_process) ... ok
+test_nonzero_child_exit_is_reported_without_broad_cleanup (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_nonzero_child_exit_is_reported_without_broad_cleanup) ... ok
+test_three_failed_cleanup_waits_and_signal_errors_are_not_swallowed (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_three_failed_cleanup_waits_and_signal_errors_are_not_swallowed) ... ok
+test_timeout_terminates_then_kills_only_the_exact_child (miniapp_fixed_egress_suite_3.LockAndExactChildTests.test_timeout_terminates_then_kills_only_the_exact_child) ... ok
+test_post_health_failure_skips_receipt_and_still_cleans_up (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_post_health_failure_skips_receipt_and_still_cleans_up) ... ok
+test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_holds_lock_validates_then_checks_dual_health_and_finalizes) ... ok
+test_reconciliation_rejects_concurrent_use_of_the_upload_lock (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_rejects_concurrent_use_of_the_upload_lock) ... ok
+test_reconciliation_validation_or_health_failure_never_finalizes (miniapp_fixed_egress_suite_3.ReceiptReconciliationTests.test_reconciliation_validation_or_health_failure_never_finalizes) ... ok
+test_post_acquisition_owner_write_failure_releases_the_os_lock (miniapp_fixed_egress_suite_3.UploadLockFailureTests.test_post_acquisition_owner_write_failure_releases_the_os_lock) ... ok
+test_composite_failure_prints_primary_and_cleanup_codes_only (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_composite_failure_prints_primary_and_cleanup_codes_only) ... ok
+test_expected_error_prints_only_its_stable_code (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_expected_error_prints_only_its_stable_code) ... ok
+test_interrupted_cleanup_failure_keeps_exit_130_and_both_codes (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_interrupted_cleanup_failure_keeps_exit_130_and_both_codes) ... ok
+test_invalid_arguments_are_redacted_before_argparse_can_echo_them (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_invalid_arguments_are_redacted_before_argparse_can_echo_them) ... ok
+test_main_supplies_exact_local_node_receipt_finalizer (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_main_supplies_exact_local_node_receipt_finalizer) ... ok
+test_normal_mode_loads_dotenv_before_environment_snapshot (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_normal_mode_loads_dotenv_before_environment_snapshot) ... ok
+test_operational_system_exit_is_redacted (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_operational_system_exit_is_redacted) ... ok
+test_probe_and_reconcile_modes_are_mutually_exclusive (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_probe_and_reconcile_modes_are_mutually_exclusive) ... ok
+test_receipt_finalizer_removes_private_key_environment (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_receipt_finalizer_removes_private_key_environment) ... ok
+test_reconcile_mode_loads_dotenv_without_importing_ssh_module (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_reconcile_mode_loads_dotenv_without_importing_ssh_module) ... ok
+test_reconcile_mode_uses_only_validator_health_and_finalizer_composition (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_reconcile_mode_uses_only_validator_health_and_finalizer_composition) ... ok
+test_unknown_exception_is_redacted_without_traceback (miniapp_fixed_egress_suite_4.CliErrorMappingTests.test_unknown_exception_is_redacted_without_traceback) ... ok
+
+======================================================================
+ERROR: test_cross_process_post_health_failure_preserves_pending_manifest_and_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_failure_preserves_pending_manifest_and_marker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 255, in test_cross_process_post_health_failure_preserves_pending_manifest_and_marker
+    self.run_offline_deferred_upload(root, fail_post_health=True)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 233, in run_offline_deferred_upload
+    run_lifecycle(
+    ~~~~~~~~~~~~~^
+        config,
+        ^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_runtime.py", line 403, in run_lifecycle
+    command_runner(
+    ~~~~~~~~~~~~~~^
+        [
+        ^
+    ...<9 lines>...
+        timeout=UPLOAD_TIMEOUT,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 224, in exact_fixture_child
+    subprocess.run(
+    ~~~~~~~~~~~~~~^
+        exact_argv,
+        ^^^^^^^^^^^
+    ...<4 lines>...
+        shell=False,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Python314\Lib\subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['C:\\nodejs\\node.EXE', 'C:\\Users\\83423\\AppData\\Local\\Temp\\tmp6x1awh0i\\scripts\\upload-miniapp.js', '--upload-mode=miniprogram-ci', '--proxy=http://127.0.0.1:18080', '--threads=1', '--defer-receipt']' returned non-zero exit status 1.
+
+======================================================================
+ERROR: test_cross_process_post_health_success_finalizes_once_and_deletes_marker (miniapp_fixed_egress_suite_0.FixedEgressIntegrationTests.test_cross_process_post_health_success_finalizes_once_and_deletes_marker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 347, in test_cross_process_post_health_success_finalizes_once_and_deletes_marker
+    manifest_path, marker_path, environment = self.run_offline_deferred_upload(
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        root,
+        ^^^^^
+        fail_post_health=False,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 233, in run_offline_deferred_upload
+    run_lifecycle(
+    ~~~~~~~~~~~~~^
+        config,
+        ^^^^^^^
+    ...<12 lines>...
+        ),
+        ^^
+    )
+    ^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_runtime.py", line 403, in run_lifecycle
+    command_runner(
+    ~~~~~~~~~~~~~~^
+        [
+        ^
+    ...<9 lines>...
+        timeout=UPLOAD_TIMEOUT,
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\scripts\miniapp_fixed_egress_integration.test.py", line 224, in exact_fixture_child
+    subprocess.run(
+    ~~~~~~~~~~~~~~^
+        exact_argv,
+        ^^^^^^^^^^^
+    ...<4 lines>...
+        shell=False,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Python314\Lib\subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['C:\\nodejs\\node.EXE', 'C:\\Users\\83423\\AppData\\Local\\Temp\\tmp2gs6ilrp\\scripts\\upload-miniapp.js', '--upload-mode=miniprogram-ci', '--proxy=http://127.0.0.1:18080', '--threads=1', '--defer-receipt']' returned non-zero exit status 1.
+
+----------------------------------------------------------------------
+Ran 56 tests in 2.120s
+
+FAILED (errors=2)

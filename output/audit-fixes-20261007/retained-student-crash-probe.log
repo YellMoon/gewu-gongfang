@@ -1,0 +1,45 @@
+2026-10-07T05:18:41.775Z COMMAND node cloud-business-api/sql/retained-student-schedule.postgres.test.js node=v24.15.0 pid=40220
+2026-10-07T05:18:42.552Z spawn run rssMiB=110
+2026-10-07T05:18:42.976Z child closed run code=0 signal=null
+2026-10-07T05:18:42.978Z spawn inspect rssMiB=111
+2026-10-07T05:18:43.096Z child closed inspect code=0 signal=null
+2026-10-07T05:18:43.098Z spawn image rssMiB=111
+2026-10-07T05:18:43.259Z child closed image code=0 signal=null
+2026-10-07T05:18:43.262Z client connect 1
+2026-10-07T05:18:43.528Z client connect 2
+2026-10-07T05:18:43.793Z client connect 3
+2026-10-07T05:18:44.058Z client connect 4
+2026-10-07T05:18:44.139Z client end 1
+2026-10-07T05:18:44.143Z client connect 5
+2026-10-07T05:18:44.154Z CREATE DATABASE
+2026-10-07T05:18:44.174Z client end 2
+2026-10-07T05:18:44.179Z client connect 6
+2026-10-07T05:18:44.191Z client connect 7
+2026-10-07T05:18:44.200Z client connect 8
+2026-10-07T05:18:44.210Z client connect 9
+2026-10-07T05:18:44.220Z client connect 10
+2026-10-07T05:18:44.231Z client connect 11
+2026-10-07T05:18:44.240Z client connect 12
+2026-10-07T05:18:44.249Z client connect 13
+2026-10-07T05:18:44.260Z client connect 14
+2026-10-07T05:18:44.271Z client connect 15
+2026-10-07T05:20:10.805Z client end 3
+2026-10-07T05:20:10.806Z client end 4
+2026-10-07T05:20:10.807Z client end 5
+2026-10-07T05:20:10.807Z client end 6
+2026-10-07T05:20:10.808Z client end 7
+2026-10-07T05:20:10.808Z client end 8
+2026-10-07T05:20:10.808Z client end 9
+2026-10-07T05:20:10.809Z client end 10
+2026-10-07T05:20:10.809Z client end 11
+2026-10-07T05:20:10.810Z client end 12
+2026-10-07T05:20:10.819Z client connect 16
+2026-10-07T05:20:10.831Z DROP DATABASE
+2026-10-07T05:20:10.839Z client end 13
+2026-10-07T05:20:10.846Z spawn rm rssMiB=287
+2026-10-07T05:20:11.309Z child closed rm code=0 signal=null
+2026-10-07T05:20:11.311Z spawn ps rssMiB=287
+2026-10-07T05:20:11.460Z child closed ps code=0 signal=null
+2026-10-07T05:20:11.461Z beforeExit 0 connects=16 ends=13
+exit 0
+OBSERVED: retained-student passed 384 mutations and 96 restorations; child process exit 0; DROP DATABASE, docker rm and exact absence check all completed.

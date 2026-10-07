@@ -10,7 +10,9 @@ assert.deepStrictEqual(importQuestionMetadata({ source: '', source_info: { sourc
   const calls = [];
   globalThis.questionDraftProvenance = { issueDraft: async () => ({ questionId: 'native-id' }) };
   const db = { createQuestion: (data, id) => (calls.push({ data, id }), { id }) };
-  const storage = { getItem: () => JSON.stringify({ token: 't', userId: 'u', deviceId: 'd' }) };
+  const { saveDesktopAuthorizationSession, clearDesktopAuthorizationSession } = await import('./desktopAuthorizationSession.mjs');
+  const storage = { getItem: () => null, setItem: () => { throw Error('tokens must stay in memory'); } };
+  await saveDesktopAuthorizationSession({ token: 't', userId: 'u', deviceId: 'd', activeRole: 'teacher' }, { storage });
   assert.strictEqual((await createNativeQuestionDraft(db, { x: 1 }, storage)).id, 'native-id');
   assert.deepStrictEqual(calls[0].data, { x: 1 });
   await createNativeQuestionDraft(db, parserCandidate, storage);
@@ -18,8 +20,21 @@ assert.deepStrictEqual(importQuestionMetadata({ source: '', source_info: { sourc
   assert.strictEqual(calls[1].data.year, '2019');
   assert.strictEqual(calls[1].data.accountId, undefined);
   assert.strictEqual(parserCandidate.year, undefined, 'must not mutate parser result');
+  globalThis.questionDraftProvenance = { issueDraft: async authorization => {
+    assert.equal(authorization, 'Bearer t');
+    await saveDesktopAuthorizationSession({ token: 'next-token', userId: 'next-user', deviceId: 'd', activeRole: 'teacher' });
+    return { questionId: 'obsolete-session-draft' };
+  } };
+  await assert.rejects(() => createNativeQuestionDraft(db, { x: 'switch-race' }), e => e.code === 'DRAFT_PROVENANCE_UNAVAILABLE');
+  assert.equal(calls.length, 2, 'account switch during provenance issue must cancel draft creation');
   globalThis.questionDraftProvenance = null;
   await assert.rejects(() => createNativeQuestionDraft(db, { x: 2 }, storage), e => e.code === 'DRAFT_PROVENANCE_UNAVAILABLE');
   assert.strictEqual(calls.length, 2, 'missing provenance must not write a draft');
+  await clearDesktopAuthorizationSession({ storage });
+  globalThis.questionDraftProvenance = { issueDraft: async () => { throw Error('legacy session must not be trusted'); } };
+  await assert.rejects(() => createNativeQuestionDraft(db, { x: 'legacy' }, {
+    getItem: () => JSON.stringify({ token: 'legacy-token', userId: 'u', deviceId: 'd' }),
+  }), e => e.code === 'DRAFT_PROVENANCE_UNAVAILABLE');
+  delete globalThis.questionDraftProvenance;
   console.log('native question draft create tests passed');
 })().catch(error => { console.error(error); process.exit(1); });

@@ -117,10 +117,11 @@ async function captureMiniapp(format, retry) {
       console.log(`PASS ${page} actual export handler -> ${format} renderer`);
     }
   }
-  const retry = await captureMiniapp('word', { request: { payload: {
+  const retry = await captureMiniapp('word', { confirmed: true, status: 'failed', request: { taskType: 'paper-export-word', idempotencyKey: 'old-confirmed-key', payload: {
+    subject: 'physics',
     questionIds: ['question-1'], title: '保留重试编排', answerPosition: 'end', formulaMode: 'latex-vector', layout,
   } } });
-  assert.equal(retry.formulaMode, 'word-native', 'Miniapp retries must not revive image formula mode');
+  assert.equal(retry.formulaMode, 'word-native', 'A confirmed failed task retries as a new attempt with the current native formula mode');
   assert.equal(retry.title, '保留重试编排');
   assert.equal(retry.answerPosition, 'end');
   console.log('PASS miniapp retry preserves layout and requests editable formulas');

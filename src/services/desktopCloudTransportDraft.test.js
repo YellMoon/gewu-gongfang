@@ -8,11 +8,17 @@ const { createDesktopAuthorityRuntime } = require('../../public/desktopAuthority
 
 (async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gewu-cloud-transport-draft-'));
+  const submitted = [];
   const configuration = {
     filePath: path.join(directory, 'outbox.bin'),
     cloudBusinessBaseUrl: 'https://business.example',
     // Windows virtual adapters can report online after physical Wi-Fi is lost.
     isOnline: () => true,
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body); submitted.push(body);
+      return { ok: true, status: 200, json: async () => ({ ok: true,
+        room: { id: body.roomId || 'first', updatedAt: '2026-09-30T00:00:01Z' } }) };
+    },
     now: () => '2026-09-30T00:00:00Z',
     safeStorage: {
       isEncryptionAvailable: () => true,
@@ -36,6 +42,12 @@ const { createDesktopAuthorityRuntime } = require('../../public/desktopAuthority
       fetchImpl: async () => { throw new TypeError('Failed to fetch'); }, sessionStore: { save() {}, clear() {} } });
     await assert.rejects(client.createCloudRoom({ baseUrl: configuration.cloudBusinessBaseUrl,
       currentSession: { token: 'test-session', offline: false }, roomId: 'first', name: 'First' }), TypeError);
+    const outageClient = identity.createDesktopIdentityClient({ desktopIdentity: configuration.vault,
+      fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({ ok: false }) }), sessionStore: { save() {}, clear() {} } });
+    await assert.rejects(outageClient.createCloudRoom({ baseUrl: configuration.cloudBusinessBaseUrl,
+      currentSession: { token: 'test-session', offline: false }, roomId: 'during-503', name: 'Outage' }),
+      error => error.code === 'CLOUD_ONLINE_IDENTITY_UNAVAILABLE');
+    assert.equal(identity.desktopCloudTransportUnavailable(), true, 'HTTP 503 must retain the cloud outage state');
 
     const source = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
     const start = source.indexOf('  private recordAuthorityDraft(');
@@ -72,6 +84,24 @@ const { createDesktopAuthorityRuntime } = require('../../public/desktopAuthority
     assert.equal(all.find(d => d.payload.record?.id === 'fourth').createdOffline, false, 'fresh online edits keep automatic submission');
     assert(all.filter(d => ['first', 'second'].includes(d.payload.record?.id)).every(d => d.createdOffline === true),
       'a later successful cloud request must not clear the durable confirmation requirement');
+    const partition = await import('./desktopIdentityPartition.mjs');
+    partition.setCurrentDesktopIdentityContext({ userId: 'user-test', activeRole: 'teacher', partitionKey: 'test-partition', offline: true });
+    const sessionOffline = native.appendDraftSync(identity.captureDesktopCloudDraftConnectivity({
+      type: 'room.create.v1', payload: { record: { id: 'offline-session', name: 'Effective offline' } } }));
+    assert.equal(sessionOffline.createdOffline, true, 'effective offline session must reach the native boundary even after transport recovery');
+    partition.clearCurrentDesktopIdentityPartition();
+    const { createDesktopSyncController } = await import('./desktopSyncController.mjs');
+    const controller = createDesktopSyncController({ bridge: native, sessionToken: () => 'fake-token',
+      isOnline: () => true, refreshProjection: async () => {} });
+    await controller.tick();
+    assert.equal(submitted.length, 1, 'recovery may auto-submit the fresh online edit only');
+    assert.equal(controller.getState().open, true);
+    assert.equal(controller.getState().items.length, 4, 'offline edits appear in one aggregate review');
+    await controller.confirm(controller.getState().items);
+    assert.equal(submitted.length, 5, 'one confirmation submits the entire reviewed offline batch');
+    assert((await native.list()).every(item => item.status === 'completed'));
+    await controller.tick();
+    assert.equal(submitted.length, 5, 'later ticks must not resubmit a confirmed batch');
     console.log('desktop cloud transport draft capture passed');
   } finally {
     assert.equal(path.dirname(path.resolve(directory)), path.resolve(os.tmpdir()));

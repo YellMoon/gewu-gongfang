@@ -76,6 +76,7 @@ interface Window {
     signChallenge(input: Record<string, any>): Promise<any>;
   };
   desktopIdentitySessionProvider?: {
+    businessAuthority: string;
     listCloudBusinessProjection(): Promise<{
       students: any[];
       student_contacts: any[];
@@ -178,6 +179,7 @@ interface Window {
     submit(id: string, input?: { sessionToken: string }): Promise<any>;
     removeDraft(id: string): Promise<boolean>;
     resetDraft(id: string): Promise<any>;
+    confirmBatch(items: Array<{ id: string; type: string; payload: any }>, input?: { sessionToken: string }): Promise<any>;
     confirmAndSubmit(id: string, input?: { sessionToken: string }, confirmation?: { items: Array<{ id: string; type: string; payload: any }> }): Promise<any>;
     reviewRoleApplication(applicationId: string, review: { decision: 'approved' | 'rejected'; profileId: string | null }, input: { sessionToken: string }): Promise<any>;
   };

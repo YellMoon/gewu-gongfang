@@ -42,7 +42,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
     headers: {
       origin: 'http://localhost:3000',
       'access-control-request-method': 'POST',
-      'access-control-request-headers': 'content-type,authorization,x-idempotency-key,x-device-id,x-gewu-artifact-token',
+      'access-control-request-headers': 'content-type,authorization,x-idempotency-key,x-device-id,x-gewu-artifact-token,x-gewu-command-id,x-gewu-command-hash',
     },
   });
   assert.strictEqual(desktopPreflight.status, 204);
@@ -50,7 +50,7 @@ async function request(app, path, { method = 'GET', body, headers = {} } = {}) {
   assert.strictEqual(desktopPreflight.headers['access-control-allow-methods'], 'GET,POST,PUT,DELETE,OPTIONS');
   assert.deepStrictEqual(
     desktopPreflight.headers['access-control-allow-headers'].split(/,\s*/u).sort(),
-    ['Accept', 'Authorization', 'Content-Type', 'X-Device-Id', 'X-Gewu-Artifact-Token', 'X-Idempotency-Key'].sort(),
+    ['Accept', 'Authorization', 'Content-Type', 'X-Device-Id', 'X-Gewu-Artifact-Token', 'X-Idempotency-Key', 'X-Gewu-Command-Id', 'X-Gewu-Command-Hash'].sort(),
   );
   assert.strictEqual(desktopPreflight.headers['access-control-expose-headers'], undefined);
 

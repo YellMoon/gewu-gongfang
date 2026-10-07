@@ -1,56 +1,119 @@
 name: release
-
 on:
   workflow_dispatch:
     inputs:
       channel:
-        description: Release channel
-        required: true
+        description: Build artifacts or publish through unified release gates
+        type: choice
         default: staging
-        type: choice
-        options:
-          - staging
-          - stable
-      miniapp_version:
-        description: Miniapp version used by stable upload
-        required: false
-        default: 1.0.0
-      miniapp_desc:
-        description: Miniapp upload description
-        required: false
-        default: GitHub Actions upload
-      backend_action:
-        description: Optional backend deploy action
-        required: false
-        default: none
-        type: choice
-        options:
-          - none
-          - deploy
-          - rollback
-      backend_version:
-        description: Backend image version tag for deploy, for example 5.0.2-staging
-        required: false
-        default: ""
-      backend_rollback_image:
-        description: Explicit rollback image, for example scheduling-api:5.0.1
-        required: false
-        default: ""
-
+        options: [staging, stable]
+      deploy_cloud:
+        description: Back up, migrate and deploy cloud business service
+        type: boolean
+        default: false
+      matrix_artifact_run_id:
+        description: Prior run with reviewed component receipts for this source commit
+        default: ''
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gewu-unified-release
+  cancel-in-progress: false
 jobs:
-  desktop:
+  release:
     runs-on: windows-latest
+    environment: ${{ inputs.channel }}
+    env:
+      GEWU_RELEASE_MANIFEST_PATH: output/ci-release/active.json
+      APP_ENV: prod
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            miniapp/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - run: npm ci --legacy-peer-deps
-      - run: npm run build
-      - run: npx electron-builder --win --publish never
-      - name: Publish OSS updater feed
-        if: ${{ github.event.inputs.channel == 'stable' }}
+      - run: npm --prefix backend install --no-package-lock
+      - run: npm --prefix cloud-business-api install --no-package-lock --ignore-scripts
+      - run: npm --prefix miniapp ci
+      - run: python -m pip install -r scripts/requirements-deploy.txt
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.matrix_artifact_run_id != '' }}
+        with:
+          name: unified-release-matrix
+          run-id: ${{ inputs.matrix_artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: output/ci-release
+      - run: npm run release:prepare
+      - name: Verify contracts
+        run: |
+          node scripts/release-boundary.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/release-workflow.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix storage-agent test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run typecheck
+      - name: Load temporary deployment credentials
+        if: ${{ inputs.channel == 'stable' }}
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
+        run: |
+          $keyPath = Join-Path $env:RUNNER_TEMP 'gewu-deploy-key'
+          $hostsPath = Join-Path $env:RUNNER_TEMP 'gewu-known-hosts'
+          $wechatPath = Join-Path $env:RUNNER_TEMP 'gewu-wechat.key'
+          [IO.File]::WriteAllText($keyPath, $env:DEPLOY_KEY)
+          [IO.File]::WriteAllText($hostsPath, $env:KNOWN_HOSTS)
+          [IO.File]::WriteAllText($wechatPath, $env:WECHAT_PRIVATE_KEY)
+          "DEPLOY_KEY_PATH=$keyPath" >> $env:GITHUB_ENV
+          "GEWU_SSH_KNOWN_HOSTS=$hostsPath" >> $env:GITHUB_ENV
+          "WECHAT_MINIAPP_PRIVATE_KEY_PATH=$wechatPath" >> $env:GITHUB_ENV
+      - name: Back up and deploy cloud service
+        if: ${{ inputs.channel == 'stable' && inputs.deploy_cloud }}
+        run: python scripts/deploy_cloud_business_api.py deploy
+      - name: Upload miniapp and record verified fixed-egress receipt
+        if: ${{ inputs.channel == 'stable' }}
+        env:
+          WECHAT_MINIAPP_FIXED_EGRESS_IP: ${{ vars.WECHAT_MINIAPP_FIXED_EGRESS_IP }}
+        run: python scripts/miniapp_fixed_egress.py
+      - name: Build miniapp artifacts
+        if: ${{ inputs.channel == 'staging' }}
+        run: npm --prefix miniapp run build:weapp
+      - name: Obtain reviewed portable Ruby runtime
+        env:
+          GEWU_RUBY_RUNTIME_URL: ${{ vars.GEWU_RUBY_RUNTIME_URL }}
+          GEWU_RUBY_RUNTIME_SHA256: ${{ vars.GEWU_RUBY_RUNTIME_SHA256 }}
+        run: |
+          if ($env:GEWU_RUBY_RUNTIME_URL -notmatch '^https://[^/]+/' -or $env:GEWU_RUBY_RUNTIME_SHA256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Reviewed Ruby runtime URL and SHA-256 are required' }
+          $archive = Join-Path $env:RUNNER_TEMP 'gewu-ruby.zip'
+          $runtimeSource = Join-Path $env:RUNNER_TEMP 'gewu-ruby-runtime'
+          Invoke-WebRequest -Uri $env:GEWU_RUBY_RUNTIME_URL -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GEWU_RUBY_RUNTIME_SHA256.ToLowerInvariant()) { throw 'Ruby runtime checksum mismatch' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $runtimeSource
+          "GEWU_RUBY_RUNTIME_SOURCE=$runtimeSource" >> $env:GITHUB_ENV
+      - name: Package desktop with native ABI verification
+        shell: cmd
+        run: npm run dist:win
+      - name: Restore Node native ABI after every packaging outcome
+        if: ${{ always() }}
+        shell: cmd
+        run: npm run rebuild:node
+      - name: Publish OSS only after compatible component receipts
+        if: ${{ inputs.channel == 'stable' }}
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
@@ -58,199 +121,17 @@ jobs:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_CDN_BASE_URL: ${{ vars.OSS_CDN_BASE_URL }}
           OSS_OBJECT_PREFIX: ${{ vars.OSS_OBJECT_PREFIX }}
-        run: npm run publish:oss-feed
-      - name: Validate updater feed
-        if: ${{ github.event.inputs.channel != 'stable' }}
-        env:
-          DRY_RUN: "1"
-          WRITE_FEED: "1"
-        run: npm run publish:oss-feed
+        run: npm run publish:desktop-update
       - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
         with:
-          name: gewu-desktop-${{ github.event.inputs.channel }}
+          name: unified-release-matrix
+          path: output/ci-release/active.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ success() }}
+        with:
+          name: gewu-release-artifacts
           path: |
             dist/*.exe
             dist/latest.yml
-
-  backend-smoke:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
-      - run: node -e "process.env.DB_PATH='/tmp/scheduling.db'; const { createApp } = require('./src/app'); const { getInstance } = require('./src/database'); createApp(); getInstance(); console.log('backend smoke ok')"
-
-  backend-gray-deploy:
-    runs-on: ubuntu-latest
-    needs: backend-smoke
-    if: ${{ github.event.inputs.backend_action != 'none' }}
-    environment: ${{ github.event.inputs.channel }}
-    env:
-      BACKEND_DEPLOY_USER: ${{ secrets.BACKEND_DEPLOY_USER || 'root' }}
-      BACKEND_DEPLOY_HOST: ${{ secrets.BACKEND_DEPLOY_HOST }}
-      BACKEND_DEPLOY_PORT: ${{ vars.BACKEND_DEPLOY_PORT || '22' }}
-      BACKEND_REMOTE_PATH: ${{ vars.BACKEND_REMOTE_PATH || '/root/scheduling-backend' }}
-      BACKEND_DOCKERFILE: ${{ vars.BACKEND_DOCKERFILE || 'backend/Dockerfile' }}
-      BACKEND_BUILD_CONTEXT: ${{ vars.BACKEND_BUILD_CONTEXT || 'backend' }}
-      BACKEND_DOCKER_NETWORK: ${{ vars.BACKEND_DOCKER_NETWORK || 'app_default' }}
-      BACKEND_DOCKER_VOLUME: ${{ vars.BACKEND_DOCKER_VOLUME || 'scheduling_data' }}
-      BACKEND_HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL || 'http://localhost:3001/api/health' }}
-      BACKEND_JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      BACKEND_DEPLOY_KEY: ${{ secrets.BACKEND_DEPLOY_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate backend deployment inputs
-        run: |
-          if [ -z "$BACKEND_DEPLOY_HOST" ]; then
-            echo "BACKEND_DEPLOY_HOST is required."
-            exit 1
-          fi
-          if [ -z "$BACKEND_JWT_SECRET" ]; then
-            echo "JWT_SECRET is required for backend deploy or rollback."
-            exit 1
-          fi
-          if [ "${{ github.event.inputs.backend_action }}" = "deploy" ] && [ -z "${{ github.event.inputs.backend_version }}" ]; then
-            echo "backend_version is required for backend deploy."
-            exit 1
-          fi
-          if [ "${{ github.event.inputs.backend_action }}" = "rollback" ] && [ -z "${{ github.event.inputs.backend_rollback_image }}" ]; then
-            echo "backend_rollback_image is required for rollback."
-            exit 1
-          fi
-      - name: Configure SSH key
-        run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -p "$BACKEND_DEPLOY_PORT" "$BACKEND_DEPLOY_HOST" >> ~/.ssh/known_hosts
-          if [ -n "$BACKEND_DEPLOY_KEY" ]; then
-            eval "$(ssh-agent -a "$RUNNER_TEMP/backend-ssh-agent.sock")"
-            ssh-add - <<< "$BACKEND_DEPLOY_KEY"
-            {
-              echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
-              echo "SSH_AGENT_PID=$SSH_AGENT_PID"
-            } >> "$GITHUB_ENV"
-          fi
-      - name: Deploy selected backend version
-        if: ${{ github.event.inputs.backend_action == 'deploy' }}
-        run: |
-          python scripts/docker_deploy_gray.py deploy \
-            --host "$BACKEND_DEPLOY_HOST" \
-            --user "$BACKEND_DEPLOY_USER" \
-            --ssh-port "$BACKEND_DEPLOY_PORT" \
-            --remote-path "$BACKEND_REMOTE_PATH" \
-            --dockerfile "$BACKEND_DOCKERFILE" \
-            --build-context "$BACKEND_BUILD_CONTEXT" \
-            --network "$BACKEND_DOCKER_NETWORK" \
-            --volume "$BACKEND_DOCKER_VOLUME" \
-            --health-url "$BACKEND_HEALTH_URL" \
-            --channel "${{ github.event.inputs.channel == 'stable' && 'prod' || github.event.inputs.channel }}" \
-            --revision "${{ github.sha }}" \
-            --version "${{ github.event.inputs.backend_version }}"
-      - name: Rollback backend
-        if: ${{ github.event.inputs.backend_action == 'rollback' }}
-        run: |
-          python scripts/docker_deploy_gray.py rollback \
-            --host "$BACKEND_DEPLOY_HOST" \
-            --user "$BACKEND_DEPLOY_USER" \
-            --ssh-port "$BACKEND_DEPLOY_PORT" \
-            --remote-path "$BACKEND_REMOTE_PATH" \
-            --network "$BACKEND_DOCKER_NETWORK" \
-            --volume "$BACKEND_DOCKER_VOLUME" \
-            --health-url "$BACKEND_HEALTH_URL" \
-            --channel "${{ github.event.inputs.channel == 'stable' && 'prod' || github.event.inputs.channel }}" \
-            --revision "${{ github.sha }}" \
-            --image "${{ github.event.inputs.backend_rollback_image }}"
-
-  miniapp:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: miniapp
-    env:
-      WECHAT_APPID: ${{ secrets.WECHAT_APPID || 'wx3d570539bbe6ba1b' }}
-      WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
-      MINIAPP_CHANNEL: ${{ github.event.inputs.channel }}
-      MINIAPP_VERSION: ${{ github.event.inputs.miniapp_version }}
-      MINIAPP_DESC: ${{ github.event.inputs.miniapp_desc }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm install
-      - run: npm run ci:weapp
-      - name: Validate WeChat upload secrets
-        run: |
-          if [ -z "$WECHAT_APPID" ] || [ -z "$WECHAT_PRIVATE_KEY" ]; then
-            echo "WECHAT_APPID and WECHAT_PRIVATE_KEY are required for miniapp upload."
-            exit 1
-          fi
-      - name: Write WeChat private key
-        run: |
-          umask 077
-          printf '%s' "$WECHAT_PRIVATE_KEY" > private.key
-      - name: Upload WeChat miniapp
-        run: |
-          node <<'NODE'
-          const ci = require('miniprogram-ci');
-          (async () => {
-            const channel = process.env.MINIAPP_CHANNEL || 'staging';
-            const appid = process.env.WECHAT_APPID;
-            const version = process.env.MINIAPP_VERSION || require('./package.json').version;
-            const desc = process.env.MINIAPP_DESC || `GitHub Actions ${channel}`;
-            const project = new ci.Project({
-              appid,
-              type: 'miniProgram',
-              projectPath: process.cwd(),
-              privateKeyPath: './private.key',
-              ignores: ['node_modules/**/*']
-            });
-
-            if (channel === 'stable') {
-              await ci.upload({
-                project,
-                version,
-                desc,
-                setting: {
-                  es6: true,
-                  minify: true,
-                  codeProtect: true,
-                  minifyJS: true,
-                  minifyWXML: true,
-                  minifyWXSS: true,
-                  autoPrefixWXSS: true
-                },
-                onProgressUpdate: console.log
-              });
-              return;
-            }
-
-            await ci.preview({
-              project,
-              desc,
-              setting: {
-                es6: true,
-                minify: false
-              },
-              qrcodeFormat: 'image',
-              qrcodeOutputDest: './preview-qrcode.jpg',
-              onProgressUpdate: console.log
-            });
-          })().catch((error) => {
-            console.error(error);
-            process.exit(1);
-          });
-          NODE
-      - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.channel == 'staging' }}
-        with:
-          name: miniapp-preview-qrcode
-          path: miniapp/preview-qrcode.jpg
+            miniapp/dist/**

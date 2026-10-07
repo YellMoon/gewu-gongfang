@@ -293,6 +293,7 @@ ipcMain.handle('desktop-authority:get', (_event, id) => getDesktopAuthorityRunti
 ipcMain.handle('desktop-authority:list-role-applications', (_event, input) => getDesktopAuthorityRuntime().listRoleApplications(input));
 ipcMain.handle('desktop-authority:review-role-application', (_event, applicationId, review, input) => getDesktopAuthorityRuntime().reviewRoleApplication(applicationId, review, input));
 ipcMain.handle('desktop-authority:submit', (_event, id, input) => getDesktopAuthorityRuntime().submit(id, input));
+ipcMain.handle('desktop-authority:confirm-batch', (_event, snapshots, input) => getDesktopAuthorityRuntime().confirmBatch(snapshots, input));
 ipcMain.handle('desktop-authority:confirm-and-submit', (_event, id, input, confirmation) => getDesktopAuthorityRuntime().confirmAndSubmit(id, input, confirmation));
 ipcMain.handle('issue-question-draft', (_event, { authorization }) => questionDraftRegistry.issue(authorization));
 ipcMain.handle('verify-question-draft-provenance', (_event, { questionId, authorization }) => questionDraftRegistry.verify(questionId, authorization));

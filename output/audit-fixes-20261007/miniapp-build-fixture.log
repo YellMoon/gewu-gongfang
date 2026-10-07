@@ -1,0 +1,209 @@
+
+> scheduling-miniapp@8.8.28 build:weapp
+> node ../scripts/build-miniapp-with-proof.js
+
+👽 Taro v3.6.40
+
+- 开始获取 taro 全局配置文件： C:\Users\83423\.taro-global-config\index.json
+√ 获取 taro 全局配置成功
+Tips:
+1. 建议开启持久化缓存功能，能有效提升二次编译速度，详情请参考: https://docs.taro.zone/docs/config-detail#cache。
+
+
+
+● Webpack █████████████████████████  (0%)
+
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ setup (2%)
+ run
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (10%) 0/40 entries 40/40 dependen
+cies 0/40 modules 1 active
+ babel-loader › src\app.tsx
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (10%) 0/40 entries 40/40 dependen
+cies 0/40 modules 1 active
+ babel-loader › src\app.tsx
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (10%) 0/40 entries 40/40 dependen
+cies 1/40 modules 39 active
+ ...em\miniapp\node_modules\@tarojs\webpack5-runner\dist\template\custom-wrapp
+er.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 200/391 depen
+dencies 18/95 modules 43 active
+ taro-loader › src\pages\schedule\edit\index.tsx
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 346/391 depen
+dencies 18/115 modules 44 active
+ babel-loader › src\pages\payments\paymentsRuntime.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%)
+ ...law\workspace\scheduling-system\miniapp\node_modules\postcss-loader\dist\c
+js.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%)
+ ...enclaw\workspace\scheduling-system\miniapp\node_modules\sass-loader\dist\c
+js.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 346/392 depen
+dencies 18/115 modules 85 active
+ ...loader › resolve-url-loader › sass-loader › src\pages\student-detail\index
+.scss
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 401/410 depen
+dencies 18/150 modules 121 active
+ ...loader › resolve-url-loader › sass-loader › src\pages\student-detail\index
+.scss
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 408/410 depen
+dencies 19/157 modules 138 active
+ ...orkspace\scheduling-system\miniapp\node_modules\@tarojs\react\dist\react.e
+sm.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 495/541 depen
+dencies 22/163 modules 135 active
+ ...orkspace\scheduling-system\miniapp\node_modules\@tarojs\react\dist\react.e
+sm.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 572/587 depen
+dencies 32/196 modules 134 active
+ ... postcss-loader › resolve-url-loader › sass-loader › src\components\shared
+.scss
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 583/590 depen
+dencies 32/197 modules 165 active
+ ...ling-system\miniapp\node_modules\@babel\runtime\helpers\esm\isNativeFuncti
+on.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 667/675 depen
+dencies 63/218 modules 137 active
+ ...uling-system\miniapp\node_modules\react\cjs\react-jsx-runtime.production.m
+in.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (34%) 18/40 entries 673/682 depen
+dencies 68/219 modules 151 active
+ .....\..\..\.openclaw\workspace\scheduling-system\node_modules\crypto-js\sha2
+56.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (36%) 19/40 entries 699/700 depen
+dencies 101/225 modules 122 active
+ ...ing-system\miniapp\node_modules\@babel\runtime\helpers\assertThisInitializ
+ed.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 706/708 depen
+dencies 127/227 modules 100 active
+ ....\..\..\..\.openclaw\workspace\scheduling-system\node_modules\crypto-js\co
+re.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 715/719 depen
+dencies 129/232 modules 101 active
+ ...Users\83423\.openclaw\workspace\scheduling-system\node_modules\crypto-js|c
+rypto
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 724/725 depen
+dencies 136/235 modules 99 active
+ ...ce\scheduling-system\miniapp\node_modules\@tarojs\api\dist\interceptor\cha
+in.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 727/728 depen
+dencies 137/235 modules 98 active
+ ...ce\scheduling-system\miniapp\node_modules\@tarojs\api\dist\interceptor\ind
+ex.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 731/731 depen
+dencies 146/237 modules 91 active
+ ...ng-system\miniapp\node_modules\react-reconciler\node_modules\scheduler\ind
+ex.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 733/733 depen
+dencies 150/239 modules 88 active
+ ...\scheduling-system\miniapp\node_modules\css-loader\dist\runtime\noSourceMa
+ps.js
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (37%) 20/40 entries 736/736 depen
+dencies 153/240 modules 87 active
+ ...css-loader › postcss-loader › resolve-url-loader › sass-loader › src\app.s
+css|0
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (40%) 22/40 entries 747/747 depen
+dencies 165/243 modules 76 active
+ ... › resolve-url-loader › sass-loader › src\components\QuestionBasketOverlay
+.scss
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (41%) 23/40 entries 793/793 depen
+dencies 191/259 modules 54 active
+ ...css-loader › resolve-url-loader › sass-loader › src\pages\students\index.s
+css|0
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ building (62%) 38/40 entries 798/798 depen
+dencies 254/260 modules 6 active
+ ...s-loader › resolve-url-loader › sass-loader › src\pages\schedule\edit\edit
+.scss
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (71%)
+ dependencies optimization
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (75%) chunk optimization
+ RemoveEmptyChunksPlugin
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (78%)
+ chunk modules optimization
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (87%)
+ code generation
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (88%)
+ runtime requirements
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (92%) asset processing
+ TaroMiniPlugin
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (92%) asset processing
+ CssMinimizerPlugin
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ sealing (92%) asset processing
+ RealContentHashPlugin
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+● Webpack █████████████████████████ emitting (98%)
+ after emit
+
+[2K[1A[2K[1A[2K[1A[2K[1A[2K[G
+√ Webpack
+  Compiled successfully in 25.26s

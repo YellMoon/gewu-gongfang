@@ -3,6 +3,7 @@ import {
   saveDesktopAuthorizationSession,
 } from './desktopAuthorizationSession.mjs';
 import offlineLeasePolicy from './desktopOfflineLeasePolicy.js';
+import { readCurrentDesktopIdentityContext } from './desktopIdentityPartition.mjs';
 
 export const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const { DESKTOP_OFFLINE_LEASE_CLOCK_SKEW_MS: CLOCK_SKEW_MS } = offlineLeasePolicy;
@@ -14,7 +15,9 @@ let cloudTransportUnavailable = false;
 // Virtual adapters may remain online after the cloud becomes unreachable.
 // Carry observed transport failure into the durable draft, never grant access.
 export function captureDesktopCloudDraftConnectivity(draft) {
-  return cloudTransportUnavailable ? { ...draft, createdOffline: true } : draft;
+  let sessionOffline = false;
+  try { sessionOffline = readCurrentDesktopIdentityContext().offline === true; } catch (_error) {}
+  return cloudTransportUnavailable || sessionOffline ? { ...draft, createdOffline: true } : draft;
 }
 
 export function desktopCloudTransportUnavailable() {
@@ -286,10 +289,15 @@ function serializeBusinessVersion(key, value) {
   return `${instant.toISOString().slice(0, 19)}.${(match[2] || '').padEnd(3, '0')}Z`;
 }
 
-async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token } = {}) {
+async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token, commandId, payloadHash } = {}) {
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
+  if (pathname.startsWith('/api/business/') && method !== 'GET' && (commandId || payloadHash)) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(commandId || '') || !/^[0-9a-f]{64}$/.test(payloadHash || '')) throw identityError('CLOUD_BUSINESS_COMMAND_INPUT_INVALID');
+    headers['X-Gewu-Command-Id'] = commandId;
+    headers['X-Gewu-Command-Hash'] = payloadHash;
+  }
   const url = `${normalizedBaseUrl(baseUrl)}${pathname}`;
   const options = {
     method,
@@ -303,8 +311,15 @@ async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, tok
     cloudTransportUnavailable = true;
     throw error;
   }
-  cloudTransportUnavailable = false;
-  return responseData(response);
+  try {
+    const data = await responseData(response);
+    cloudTransportUnavailable = false;
+    return data;
+  } catch (error) {
+    if (CLOUD_IDENTITY_OUTAGE_STATUSES.has(Number(response?.status))
+      || error?.code === 'DESKTOP_IDENTITY_RESPONSE_INVALID') cloudTransportUnavailable = true;
+    throw error;
+  }
 }
 
 function dataUrlFromBytes(bytes, mimeType) {
@@ -770,7 +785,7 @@ export function createDesktopIdentityClient({
     let exchanged;
     try {
       exchanged = await request(fetchImpl, baseUrl, '/api/desktop-identity/session/role', {
-        method: 'POST', token: currentSession.token, body,
+        method: 'POST', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body,
       });
     } catch (cause) {
       // A lost or invalid response cannot prove that the old cloud session survived.
@@ -817,7 +832,7 @@ export function createDesktopIdentityClient({
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     }
     const data = await request(fetchImpl, baseUrl, '/api/business/schedules', {
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
     });
     if (!Array.isArray(data?.schedules)) {
       throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
@@ -830,7 +845,7 @@ export function createDesktopIdentityClient({
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     }
     const data = await request(fetchImpl, baseUrl, '/api/business/desktop-projection', {
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
     });
     const projection = data?.projection;
     if (!projection || typeof projection !== 'object' || Array.isArray(projection)
@@ -853,7 +868,7 @@ export function createDesktopIdentityClient({
     for (;;) {
       const suffix = afterId === null ? '' : `&afterId=${encodeURIComponent(afterId)}`;
       const data = await request(fetchImpl, baseUrl, `/api/desktop/question-bank/questions?limit=${limit}${suffix}`, {
-        token: currentSession.token,
+        token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       });
       if (!Array.isArray(data?.questions) || data.questions.length > limit
         || !(data.nextCursor === null || (typeof data.nextCursor === 'string' && data.nextCursor.trim() && data.nextCursor.length <= 128))) {
@@ -880,7 +895,7 @@ export function createDesktopIdentityClient({
     const normalizedAssetKey = String(assetKey || '').trim();
     if (!/^[0-9a-f]{64}$/.test(normalizedAssetKey)) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_INPUT_INVALID');
     let delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/assets/${encodeURIComponent(normalizedAssetKey)}/delivery`, {
-      method: 'POST', body: {}, token: currentSession.token,
+      method: 'POST', body: {}, token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
     })).delivery;
     const deliveryId = delivery?.deliveryId;
     for (let attempt = 0; ; attempt += 1) {
@@ -893,7 +908,7 @@ export function createDesktopIdentityClient({
       if (attempt === 60) throw identityError('DESKTOP_CLOUD_QUESTION_ASSET_PENDING');
       await waitForAssetDelivery(Math.min((attempt + 1) * 1000, 5000));
       delivery = (await request(fetchImpl, baseUrl, `/api/desktop/question-bank/asset-deliveries/${encodeURIComponent(deliveryId)}`, {
-        token: currentSession.token,
+        token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       })).delivery;
     }
     const response = await fetchImpl(`${normalizedBaseUrl(baseUrl)}/api/desktop/question-bank/asset-deliveries/${encodeURIComponent(delivery.deliveryId)}/download`, {
@@ -918,7 +933,7 @@ export function createDesktopIdentityClient({
     if (!normalizedScheduleId || !normalizedCourseId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
       method: 'PUT',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: {
         expectedUpdatedAt, courseId: normalizedCourseId, startAt, endAt, recurringRule,
         ...(restoreDeleted === true ? { restoreDeleted: true } : {}),
@@ -944,7 +959,7 @@ export function createDesktopIdentityClient({
     if (!normalizedScheduleId || !Array.isArray(pricings)) throw identityError('DESKTOP_CLOUD_SCHEDULE_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, '/api/business/schedules', {
       method: 'POST',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: {
         scheduleId: normalizedScheduleId,
         data: { courseId, startAt, endAt, recurringRule, status, roomDisplay, serviceType, tuition, teacherFee, notes, pricings, billingUnit, teacherFeeMode, teacherId, teacherName },
@@ -963,7 +978,7 @@ export function createDesktopIdentityClient({
     const normalizedScheduleId = String(scheduleId || '').trim();
     if (!normalizedScheduleId) throw identityError('DESKTOP_CLOUD_SCHEDULE_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}`, {
-      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+      method: 'DELETE', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt },
     });
     if (!data?.schedule || data.schedule.id !== normalizedScheduleId || typeof data.schedule.updatedAt !== 'string') {
       throw identityError('DESKTOP_CLOUD_SCHEDULE_RESPONSE_INVALID');
@@ -976,7 +991,7 @@ export function createDesktopIdentityClient({
     const normalizedId = String(recordId || '').trim();
     if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/${resource}`, {
-      method: 'POST', token: currentSession.token, body: { [idKey]: normalizedId, data: recordData },
+      method: 'POST', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { [idKey]: normalizedId, data: recordData },
     });
     if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
     return data[responseKey];
@@ -987,7 +1002,7 @@ export function createDesktopIdentityClient({
     const normalizedId = String(recordId || '').trim();
     if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
-      method: 'PUT', token: currentSession.token, body: recordData,
+      method: 'PUT', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: recordData,
     });
     if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
     return data[responseKey];
@@ -998,7 +1013,7 @@ export function createDesktopIdentityClient({
     const normalizedId = String(recordId || '').trim();
     if (!normalizedId) throw identityError('DESKTOP_CLOUD_FOUNDATION_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
-      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+      method: 'DELETE', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt },
     });
     if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_FOUNDATION_RESPONSE_INVALID');
     return data[responseKey];
@@ -1021,7 +1036,7 @@ export function createDesktopIdentityClient({
     if (!normalizedStudentId) throw identityError('DESKTOP_CLOUD_STUDENT_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/students/${encodeURIComponent(normalizedStudentId)}`, {
       method: 'PUT',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: { expectedUpdatedAt, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource },
     });
     if (!data?.student || typeof data.student !== 'object'
@@ -1036,7 +1051,7 @@ export function createDesktopIdentityClient({
     const normalizedTeacherId = String(teacherId || '').trim();
     if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, '/api/business/teachers', {
-      method: 'POST', token: currentSession.token, body: { teacherId: normalizedTeacherId, name, phone, subject, hourlyRate, notes },
+      method: 'POST', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { teacherId: normalizedTeacherId, name, phone, subject, hourlyRate, notes },
     });
     if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
     return data.teacher;
@@ -1047,7 +1062,7 @@ export function createDesktopIdentityClient({
     const normalizedTeacherId = String(teacherId || '').trim();
     if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/teachers/${encodeURIComponent(normalizedTeacherId)}`, {
-      method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, name, phone, subject, hourlyRate, notes },
+      method: 'PUT', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt, name, phone, subject, hourlyRate, notes },
     });
     if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
     return data.teacher;
@@ -1058,7 +1073,7 @@ export function createDesktopIdentityClient({
     const normalizedTeacherId = String(teacherId || '').trim();
     if (!normalizedTeacherId) throw identityError('DESKTOP_CLOUD_TEACHER_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/teachers/${encodeURIComponent(normalizedTeacherId)}`, {
-      method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt },
+      method: 'DELETE', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt },
     });
     if (!data?.teacher || data.teacher.id !== normalizedTeacherId || typeof data.teacher.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_TEACHER_RESPONSE_INVALID');
     return data.teacher;
@@ -1068,7 +1083,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedRoomId = String(roomId || '').trim();
     if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
-    const data = await request(fetchImpl, baseUrl, '/api/business/rooms', { method: 'POST', token: currentSession.token, body: { roomId: normalizedRoomId, name, address } });
+    const data = await request(fetchImpl, baseUrl, '/api/business/rooms', { method: 'POST', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { roomId: normalizedRoomId, name, address } });
     if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
     return data.room;
   }
@@ -1077,7 +1092,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedRoomId = String(roomId || '').trim();
     if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
-    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, name, address } });
+    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'PUT', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt, name, address } });
     if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
     return data.room;
   }
@@ -1086,7 +1101,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedRoomId = String(roomId || '').trim();
     if (!normalizedRoomId) throw identityError('DESKTOP_CLOUD_ROOM_ID_REQUIRED');
-    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt } });
+    const data = await request(fetchImpl, baseUrl, `/api/business/rooms/${encodeURIComponent(normalizedRoomId)}`, { method: 'DELETE', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt } });
     if (!data?.room || data.room.id !== normalizedRoomId || typeof data.room.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_ROOM_RESPONSE_INVALID');
     return data.room;
   }
@@ -1095,7 +1110,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedCourseId = String(courseId || '').trim();
     if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
-    const result = await request(fetchImpl, baseUrl, '/api/business/courses', { method: 'POST', token: currentSession.token, body: { courseId: normalizedCourseId, data } });
+    const result = await request(fetchImpl, baseUrl, '/api/business/courses', { method: 'POST', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { courseId: normalizedCourseId, data } });
     if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
     return result.course;
   }
@@ -1104,7 +1119,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedCourseId = String(courseId || '').trim();
     if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
-    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'PUT', token: currentSession.token, body: { expectedUpdatedAt, ...data } });
+    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'PUT', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt, ...data } });
     if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
     return result.course;
   }
@@ -1113,7 +1128,7 @@ export function createDesktopIdentityClient({
     if (!currentSession || currentSession.offline || !currentSession.token) throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     const normalizedCourseId = String(courseId || '').trim();
     if (!normalizedCourseId) throw identityError('DESKTOP_CLOUD_COURSE_ID_REQUIRED');
-    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'DELETE', token: currentSession.token, body: { expectedUpdatedAt } });
+    const result = await request(fetchImpl, baseUrl, `/api/business/courses/${encodeURIComponent(normalizedCourseId)}`, { method: 'DELETE', token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: { expectedUpdatedAt } });
     if (!result?.course || result.course.id !== normalizedCourseId || typeof result.course.updatedAt !== 'string') throw identityError('DESKTOP_CLOUD_COURSE_RESPONSE_INVALID');
     return result.course;
   }
@@ -1129,7 +1144,7 @@ export function createDesktopIdentityClient({
     if (!normalizedStudentId || !Array.isArray(contacts)) throw identityError('DESKTOP_CLOUD_STUDENT_RECORD_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, `/api/business/students/${encodeURIComponent(normalizedStudentId)}/record`, {
       method: 'PUT',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: { expectedUpdatedAt, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource, contacts },
     });
     if (!data?.student || typeof data.student !== 'object'
@@ -1150,7 +1165,7 @@ export function createDesktopIdentityClient({
     if (!normalizedStudentId || !Array.isArray(contacts)) throw identityError('DESKTOP_CLOUD_STUDENT_RECORD_INPUT_INVALID');
     const data = await request(fetchImpl, baseUrl, '/api/business/students', {
       method: 'POST',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: { studentId: normalizedStudentId, name, school, gradeYear, gradeCurrent, institutionId, parentName, notes, sourceType, studentSource, contacts },
     });
     if (!data?.student || data.student.id !== normalizedStudentId || typeof data.student.updatedAt !== 'string') {
@@ -1167,7 +1182,7 @@ export function createDesktopIdentityClient({
     if (!normalizedStudentId) throw identityError('DESKTOP_CLOUD_STUDENT_ID_REQUIRED');
     const data = await request(fetchImpl, baseUrl, `/api/business/students/${encodeURIComponent(normalizedStudentId)}`, {
       method: 'DELETE',
-      token: currentSession.token,
+      token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
       body: { expectedUpdatedAt },
     });
     if (!data?.student || data.student.id !== normalizedStudentId || typeof data.student.updatedAt !== 'string') {
@@ -1191,7 +1206,7 @@ export function createDesktopIdentityClient({
       `/api/business/schedules/${encodeURIComponent(normalizedScheduleId)}/students/${encodeURIComponent(normalizedStudentId)}`,
       {
         method: 'PUT',
-        token: currentSession.token,
+        token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
         body: { expectedUpdatedAt, attendanceStatus, tuition, teacherFee },
       },
     );
@@ -1218,7 +1233,7 @@ export function createDesktopIdentityClient({
       `/api/business/students/${encodeURIComponent(normalizedStudentId)}/contacts/${contactSlot}`,
       {
         method: 'PUT',
-        token: currentSession.token,
+        token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
         body: { expectedUpdatedAt, relationship, phone, wechat },
       },
     );
@@ -1238,7 +1253,7 @@ export function createDesktopIdentityClient({
     if (!normalizedId) throw identityError('DESKTOP_CLOUD_SUPPLEMENTAL_ID_REQUIRED');
     const create = method === 'POST';
     const data = await request(fetchImpl, baseUrl, create ? `/api/business/${resource}` : `/api/business/${resource}/${encodeURIComponent(normalizedId)}`, {
-      method, token: currentSession.token, body: create ? { [idKey]: normalizedId, data: body } : body,
+      method, token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash, body: create ? { [idKey]: normalizedId, data: body } : body,
     });
     if (!data?.[responseKey] || data[responseKey].id !== normalizedId || typeof data[responseKey].updatedAt !== 'string') {
       throw identityError('DESKTOP_CLOUD_SUPPLEMENTAL_RESPONSE_INVALID');

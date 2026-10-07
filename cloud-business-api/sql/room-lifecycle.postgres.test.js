@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext } = require('./businessCommandFixture');
 // UTF-8: real desktop REST client and production room service against disposable PostgreSQL.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path');
@@ -30,15 +31,16 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
       await db.query(fs.readFileSync(path.join(__dirname, '20260913-teacher-room-maintenance.sql'), 'utf8'));
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant','Test',false,now(),now())");
     });
+    const businessCommandWriter = await createPgBusinessCommandFixture(handle);
     await withQuery(handle, 'writer', async db => {
-      const mutations = createBusinessRoomLifecycleMutations({ query: (sql, values) => db.query(sql, values) });
+      const mutations = createBusinessRoomLifecycleMutations({ query: businessCommandWriter.query });
       // The direct service call must execute SQL, not merely match source text or mock a successful row.
       const seed = await mutations.create({ actorScope: { role: 'super_admin', teacherId: null }, tenantId: 'tenant', roomId: 'room', name: '春禾教室', address: '春禾路一号' });
       const actorScope = { role: 'super_admin', teacherId: null };
       const saved = await mutations.update({ actorScope, tenantId: 'tenant', roomId: 'room', expectedUpdatedAt: seed.updatedAt, name: '春禾二楼', address: '春禾路二号' });
       assert.equal(saved.id, 'room');
-      const app = createCloudBusinessApp({ query: async () => ({ rows: [] }), businessTenantId: 'tenant', businessRoomLifecycleMutations: mutations,
-        desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => ({ roles: ['super_admin'] }) } });
+      const app = createCloudBusinessApp({businessCommandWriter, query: async () => ({ rows: [] }), businessTenantId: 'tenant', businessRoomLifecycleMutations: mutations,
+        desktopRegistration: { begin: async () => {}, register: async () => {}, sessionContext: async () => canonicalFixtureContext({ roles: ['super_admin'] }) } });
       const server = app.listen(0, '127.0.0.1');
       await new Promise(resolve => server.once('listening', resolve));
       const client = createDesktopIdentityClient({ desktopIdentity: { status: async () => ({}) }, fetchImpl: fetch });

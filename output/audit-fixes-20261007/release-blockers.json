@@ -1,0 +1,28 @@
+{
+  "schema": "gewu.audit-fix-blockers.v1",
+  "miniappRuntimeScreenshots": {
+    "status": "blocked",
+    "reason": "WECHAT_LOGIN_EXPIRED",
+    "pendingTask": {
+      "taskId": "login_1d2ec0b9-2ee1-4d47-93ff-154e6327827d",
+      "tool": "login",
+      "status": "pending",
+      "project": "C:\\Users\\83423\\.codex\\worktrees\\audit-fixes-20261007\\scheduling-system\\miniapp"
+    },
+    "pages": 18,
+    "scenarios": 65,
+    "claimedPassed": false
+  },
+  "nasDeployment": {
+    "status": "blocked",
+    "reason": "BROWSER_REQUEST_HEADER_POLICY_UNAVAILABLE",
+    "attempts": 3,
+    "actualRuntimeVersion": "8.8.4",
+    "requiredRuntimeVersion": "8.9.1",
+    "artifactSha256": "8d0da88f5326f6da740da22e04adcde60b0d267f91a67c645dfc0455dedb40b4"
+  },
+  "desktopOssPublication": {
+    "status": "pending",
+    "prerequisite": "verified NAS runtime >=8.9.1; compatible cloud and miniapp receipts"
+  }
+}

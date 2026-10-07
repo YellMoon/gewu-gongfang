@@ -1,0 +1,17 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { MIGRATIONS } = require('../../shared/vnext-pg17/migrationManifest');
+const { buildCloudControlPlaneM30UpgradeSql } = require('./cloudControlPlaneM30Upgrade');
+const { buildCloudControlPlaneM30StateSql } = require('./cloudControlPlaneM30State');
+const value = buildCloudControlPlaneM30UpgradeSql();
+assert.equal(value.semanticVersion, 30); assert.equal(value.migrationCount, 1);
+assert.equal(value.migrationId, 'vnext-pg17-miniapp-account-fence-30');
+assert.match(value.sql, /count\(\*\).*<> 29/);
+assert.match(value.sql, /VNEXT_CLOUD_CONTROL_PLANE_M29_PREFIX_INVALID/);
+for (const item of MIGRATIONS.slice(0, 29)) assert(value.sql.includes(`('${item.migrationId}',${item.semanticVersion},'${item.manifestSha256}')`));
+assert.match(value.sql, /SET LOCAL ROLE vnext_pg17_owner/);
+assert.match(value.sql, /REVOKE vnext_pg17_owner FROM gewu_app;\nCOMMIT;/);
+assert.match(value.sql, /gewu-cloud-control-m30-upgrade/);
+assert.match(buildCloudControlPlaneM30StateSql(), /pg_get_functiondef/);
+assert.match(buildCloudControlPlaneM30StateSql(), /acldefault/);
+console.log('M30 guarded upgrade and state SQL checks passed');

@@ -1,0 +1,9 @@
+AssertionError [ERR_ASSERTION]: savepoint cleanup must not query a released connection
+    at C:\Users\83423\.codex\worktrees\audit-fixes-20261007\scheduling-system\cloud-business-api\src\businessCommandTransaction.test.js:55:10 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}

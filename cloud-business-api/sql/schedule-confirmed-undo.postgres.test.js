@@ -1,4 +1,5 @@
 'use strict';
+const { createPgBusinessCommandFixture, canonicalFixtureContext, assertPgBusinessCommandReceipts } = require('./businessCommandFixture');
 // UTF-8: actual outbox -> REST -> restricted PostgreSQL writer; authentication and OS encryption are test doubles.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {createDisposablePg17Runtime,withVNextPg17SyntheticQuery:withQuery}=require('../../shared/vnext-pg17/disposableRuntime');
@@ -29,10 +30,11 @@ const data={courseId:'course-1',startAt:'2026-09-08T01:00:00.000Z',endAt:'2026-0
    await db.query("INSERT INTO business.courses(id,tenant_id,name,display_name,course_type,legacy_source_type,price_tuition,price_teacher,billing_unit,teacher_fee_mode,teacher_id,legacy_active,legacy_deleted,created_at,updated_at) SELECT id,'tenant-1',id,id,1,1,180,120,2,2,teacher,true,false,now(),now() FROM (VALUES ('course-1','teacher-1'),('course-2','teacher-2')) AS x(id,teacher)");
    await db.query("INSERT INTO business.course_student_pricings(tenant_id,course_id,student_id,tuition,teacher_fee) VALUES ('tenant-1','course-1','student-1',180,120),('tenant-1','course-2','student-2',180,120)");
   });
-  const query=(text,values)=>withQuery(handle,'writer',db=>db.query(text,values));
+  const businessCommandWriter=await createPgBusinessCommandFixture(handle);
+  const query=businessCommandWriter.query;
   let context={roles:['teacher'],teacherId:'teacher-1'},account='account-1',miniappOnly=false;
-  const app=createCloudBusinessApp({query:async()=>({rows:[]}),businessTenantId:'tenant-1',
-   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>{if(miniappOnly)throw Error('not desktop');return context;}},
+  const app=createCloudBusinessApp({businessCommandWriter,query:async()=>({rows:[]}),businessTenantId:'tenant-1',
+   desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async()=>{if(miniappOnly)throw Error('not desktop');return canonicalFixtureContext(context,account);}},
    miniappCloudAccount:{login:async()=>{},context:async()=>context},
    businessScheduleUpdate:createBusinessScheduleUpdate({query}),businessScheduleLifecycleMutations:createBusinessScheduleLifecycleMutations({query})});
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
@@ -100,6 +102,7 @@ const data={courseId:'course-1',startAt:'2026-09-08T01:00:00.000Z',endAt:'2026-0
   await withQuery(handle,'writer',db=>assert.rejects(()=>db.query("UPDATE business.schedules SET legacy_deleted=false"),e=>e.code==='42501'));
   const compatibility=JSON.parse(fs.readFileSync(path.join(__dirname,'../../config/release-compatibility.json'),'utf8'));
   assert.deepEqual(compatibility.contracts.desktopScheduleRestoration.participants,['desktop','cloud_business']);
+  await assertPgBusinessCommandReceipts(handle, 'account-1');
   console.log('confirmed deletion undo: actual outbox/REST/PostgreSQL restoration, explicit confirmation, original metadata and denial rollback passed');
  } finally {if(server)await new Promise(resolve=>server.close(resolve));await pg.disposeHandle(handle).catch(()=>{});await pg.stop().catch(()=>{});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

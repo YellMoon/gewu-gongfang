@@ -1,0 +1,46 @@
+node public/desktopAuthorityRuntime.test.js
+desktop draft account/authority isolation and identity races passed
+desktop authority runtime tests passed
+node public/desktopAuthorityRuntimeRetirement.test.js
+desktop authority retired relay and projection checks passed
+node public/desktopAuthorityRuntime.course-active.test.js
+course state-only outbox confirmation, presentation and merge checks passed (synthetic safeStorage, not encryption acceptance)
+node src/services/nativeQuestionDraftCreate.test.js
+native question draft create tests passed
+node src/services/questionLocalStore.subject.test.js
+question local subject filtering checks passed
+node src/services/desktopCloudTransportDraft.test.js
+desktop cloud transport draft capture passed
+node src/services/desktopIdentityClient.test.js
+desktop complete question pagination checks passed
+desktop question asset polling checks passed
+asset in-flight coalescing passed
+desktop business version REST round-trip checks passed
+desktop schedule financial snapshot real REST round-trip checks passed
+desktop identity client checks passed
+node src/services/desktopIdentityClient.http.test.js
+desktop identity HTTP cold-start fixture passed on http://127.0.0.1:51140
+node src/services/desktopAuthorizationSession.test.js
+desktop authorization session tests passed
+node src/services/desktopAutoSync.test.js
+desktop auto sync tests passed
+node src/services/desktopAutoSync.integration.test.js
+desktop auto sync real outbox dependency batch checks passed
+node src/services/desktopQuestionDeleteContext.test.js
+desktop question delete context tests passed
+node src/services/authorityProjectionCacheAdapter.test.js
+authorityProjectionCacheAdapter tests passed
+node src/services/browserDatabaseSyncCapture.test.js
+course inline-room draft identity and atomic capture checks passed
+student school derived-cache and single confirmation checks passed
+browser database safety checks passed
+browserDatabase sync capture checks passed
+schedule draft comparison checks passed
+institution single confirmation and derived billing student draft checks passed
+node src/services/browserAuthorityProjectionCutover.test.js
+browser authority projection cutover checks passed
+browser question pagination cache checks passed: failed refresh preserves cache; complete refresh commits once
+node src/services/studentCloudReadbackParity.test.js
+student canonical contact and original source readback parity checks passed
+node src/pages/BusinessCreateIdentity.test.js
+business create request/draft identity checks passed: 12
