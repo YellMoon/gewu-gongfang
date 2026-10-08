@@ -1,4 +1,6 @@
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import DesktopAccountMenu from './DesktopAccountMenu';
+import { DesktopAccountContext } from './DesktopAccountContext';
 import {
   Alert,
   Button,
@@ -75,6 +77,7 @@ const DesktopIdentityGate: React.FC = () => {
   const [pending, setPending] = useState<any>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
   const [onlineSession, setOnlineSession] = useState<any>(null);
+  const [runtimeAccountName, setRuntimeAccountName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>(
     () => (loadRememberedLogin()?.type === 'account_name' ? 'account_name' : 'phone')
@@ -168,6 +171,7 @@ const DesktopIdentityGate: React.FC = () => {
     } : null;
     onlineSessionRef.current = nextOnlineSession;
     setOnlineSession(nextOnlineSession);
+    setRuntimeAccountName(result.profile?.user?.name || result.vaultStatus?.user?.name || '');
     setGateState(next);
     setRuntimeSuspended(false);
     setError('');
@@ -211,6 +215,7 @@ const DesktopIdentityGate: React.FC = () => {
           clearRoleCache: suspendBusinessMemory,
         });
         const vaultStatus = await client.status();
+        setRuntimeAccountName(vaultStatus?.user?.name || '');
         if (cancelled) return;
         clientRef.current = client;
         installedProvider = {
@@ -815,6 +820,14 @@ const DesktopIdentityGate: React.FC = () => {
       && gateState.activeRole !== 'teacher';
     const offlineRuntime = gateState.kind === 'offline-unlocked';
     return (
+      <DesktopAccountContext.Provider value={{ userId: gateState.userId, activeRole: gateState.activeRole, name: runtimeAccountName, controls: (
+        <DesktopAccountMenu
+          name={runtimeAccountName || '我的账号'}
+          role={roleLabel(gateState.activeRole)} busy={busy}
+          canElevate={canElevate} canReturnTeacher={canReturnTeacher}
+          onSwitchRole={role => void performRoleSwitch(role)} onLock={lock}
+        />
+      ) }}>
       <div className={`desktop-identity-runtime${offlineRuntime ? ' desktop-identity-runtime--offline' : ''}`}>
         {offlineRuntime && (
           <Alert
@@ -825,18 +838,6 @@ const DesktopIdentityGate: React.FC = () => {
             message={'\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7f16\u8f91\u672c\u5730\u8349\u7a3f\uff0c\u8fde\u63a5\u7f51\u7edc\u540e\u7531\u4f60\u786e\u8ba4\u63d0\u4ea4\u4e91\u7aef\u3002'}
           />
         )}
-        <div className="desktop-identity-runtime-bar">
-          <Space size={8} wrap>
-            <SafetyCertificateOutlined />
-            <Text>{onlineSession?.profile?.user?.name || '当前身份'}</Text>
-            <Tag color={gateState.activeRole === 'super_admin' ? 'gold' : 'blue'}>
-              {roleLabel(gateState.activeRole)}
-            </Tag>
-            {canElevate && <Button size="small" onClick={() => void performRoleSwitch('super_admin')} loading={busy}>{'\u5207\u6362\u4e3a\u8d85\u7ea7\u7ba1\u7406\u5458'}</Button>}
-            {canReturnTeacher && <Button size="small" onClick={() => void performRoleSwitch('teacher')} loading={busy}>{'\u5207\u6362\u4e3a\u8001\u5e08'}</Button>}
-            <Button size="small" icon={<LockOutlined />} onClick={lock} loading={busy}>{'\u9501\u5b9a'}</Button>
-          </Space>
-        </div>
         {error && <Alert className="desktop-identity-runtime-error" type="error" showIcon message={error} closable onClose={() => setError('')} />}
         {runtimeSuspended ? (
           <Spin spinning tip="正在切换身份分区…"><div className="desktop-identity-business-loading" /></Spin>
@@ -847,6 +848,7 @@ const DesktopIdentityGate: React.FC = () => {
         )}
         {!runtimeSuspended && <DesktopAutoSync key={gateState.partitionKey} />}
       </div>
+      </DesktopAccountContext.Provider>
     );
   }
 

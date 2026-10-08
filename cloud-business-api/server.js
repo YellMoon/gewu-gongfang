@@ -6,6 +6,7 @@ const { createOperationAuditRepository } = require('./src/operationAudit');
 const { createBusinessCommandWriter } = require('./src/businessCommandTransaction');
 const { createCloudDesktopRegistrationService, hmacPhone } = require('./src/desktopRegistrationService');
 const { createDesktopAccountDisplayNameReader } = require('./src/desktopAccountDisplayName');
+const { createDesktopAccountProfileReader, createDesktopAccountProfileService } = require('./src/desktopAccountProfileService');
 const { createBusinessScheduleUpdate } = require('./src/businessScheduleMutationService');
 const { createBusinessScheduleStudentOverride } = require('./src/businessScheduleStudentOverrideService');
 const { createBusinessScheduleLifecycleMutations } = require('./src/businessScheduleLifecycleMutationService');
@@ -252,6 +253,17 @@ function createDesktopRegistrationFromEnvironment() {
       };
     },
   });
+  const desktopProfileReader = createDesktopAccountProfileReader({
+    canonicalQuery: (text, values) => writerPool.query(text, values),
+    identityQuery: (text, values) => identityPool.query(text, values),
+    businessQuery: (text, values) => pool.query(text, values),
+    tenantId: process.env.CLOUD_BUSINESS_TENANT_ID || 'default',
+  });
+  const desktopAccountProfile = createDesktopAccountProfileService({
+    sessionContext: input => registration.sessionContext(input),
+    readAccountName: desktopProfileReader.readAccountName,
+    readTeacher: desktopProfileReader.readTeacher,
+  });
   const desktopCloudIdentity = createCloudDesktopIdentityService({
     repository: createCloudDesktopIdentityPgRepository({ writerPool }),
     sessionContext: input => registration.sessionContext(input),
@@ -382,6 +394,7 @@ function createDesktopRegistrationFromEnvironment() {
   return {
     registration,
     desktopCloudIdentity,
+    desktopAccountProfile,
     desktopVerifiedAccess,
     desktopPasswordAuthentication,
     desktopTeacherSelfRegistration,
@@ -531,6 +544,7 @@ const app = createCloudBusinessApp({
   businessRoomLifecycleMutations: desktopRuntime?.businessRoomLifecycleMutations || null,
   businessCourseLifecycleMutations: desktopRuntime?.businessCourseLifecycleMutations || null,
   desktopRegistration: desktopRuntime?.registration || null,
+  desktopAccountProfile: desktopRuntime?.desktopAccountProfile || null,
   desktopVerifiedAccess: desktopRuntime?.desktopVerifiedAccess || null,
   desktopTeacherSelfRegistration: desktopRuntime?.desktopTeacherSelfRegistration || null,
   desktopPasswordAuthentication: desktopRuntime?.desktopPasswordAuthentication || null,

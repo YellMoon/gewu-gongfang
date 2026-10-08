@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Card, Descriptions, message, Progress, Space, Tag } from 'antd';
+import { Alert, Button, Card, message, Progress, Space } from 'antd';
 import { CloudDownloadOutlined } from '@ant-design/icons';
 import desktopPackage from '../../package.json';
-import SyncSettings from './SyncSettings';
-import type { CloudSyncContext } from '../navigation/navigationContext';
-import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 import {
   desktopUpdateErrorMessage,
   desktopUpdateStateAfterCheck,
@@ -20,9 +17,10 @@ type DesktopUpdateState = {
   latestVersion?: string;
   feedUrl?: string;
   error?: string;
+  errorPhase?: 'check' | 'download' | 'install';
 };
 
-const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) => {
+const SystemSettings: React.FC = () => {
   const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
     checking: false,
     available: false,
@@ -30,11 +28,6 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
     downloaded: false,
     progress: 0,
   });
-
-  useEffect(() => {
-    if (context?.section !== 'sync-settings') return;
-    window.setTimeout(() => document.getElementById('sync-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-  }, [context]);
 
   useEffect(() => {
     const api = window.api;
@@ -50,11 +43,14 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
       setDesktopUpdate(prev => ({ ...prev, downloading: true, progress: Math.round(Number(progress?.percent || 0)) }));
     });
     const offDownloaded = api.on('update-downloaded', () => {
-      setDesktopUpdate(prev => ({ ...prev, downloading: false, downloaded: true, progress: 100 }));
+      setDesktopUpdate(prev => ({ ...prev, downloading: false, downloaded: true, progress: 100, error: undefined }));
       message.success('\u66f4\u65b0\u5df2\u4e0b\u8f7d\u5b8c\u6210\uff0c\u53ef\u91cd\u542f\u5b89\u88c5');
     });
     const offError = api.on('update-error', (error: any) => {
-      setDesktopUpdate(prev => ({ ...prev, checking: false, downloading: false, error: String(error || '\u66f4\u65b0\u5931\u8d25') }));
+      setDesktopUpdate(prev => {
+        const phase = prev.errorPhase || 'check';
+        return { ...prev, checking: false, downloading: false, error: desktopUpdateErrorMessage(error, phase), errorPhase: phase };
+      });
     });
     return () => {
       offAvailable();
@@ -67,79 +63,73 @@ const SystemSettings: React.FC<{ context?: CloudSyncContext }> = ({ context }) =
 
   const handleCheckDesktopUpdate = async () => {
     if (!window.api?.invoke) {
-      message.error('\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u8f6f\u4ef6\u5185\u66f4\u65b0');
+      const safeError = desktopUpdateErrorMessage({ code: 'DESKTOP_UPDATE_BRIDGE_UNAVAILABLE' }, 'check');
+      setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError, errorPhase: 'check' }));
+      message.error(safeError);
       return;
     }
-    setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined }));
+    setDesktopUpdate(prev => ({ ...prev, checking: true, error: undefined, errorPhase: 'check' }));
     try {
       const result = await invokeDesktopUpdateCheck(window.api);
       if (!result?.success) {
-        const safeError = result?.error || desktopUpdateErrorMessage(result, 'check');
-        setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError }));
+        const safeError = desktopUpdateErrorMessage(result?.code ? result : result?.error || result, 'check');
+        setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError, errorPhase: 'check' }));
         message.error(safeError);
         return;
       }
       setDesktopUpdate(prev => desktopUpdateStateAfterCheck(prev, result));
     } catch (error: any) {
       const safeError = desktopUpdateErrorMessage(error, 'check');
-      setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError }));
+      setDesktopUpdate(prev => ({ ...prev, checking: false, error: safeError, errorPhase: 'check' }));
       message.error(safeError);
     }
   };
 
   const handleDownloadDesktopUpdate = async () => {
-    setDesktopUpdate(prev => ({ ...prev, downloading: true, error: undefined }));
+    setDesktopUpdate(prev => ({ ...prev, downloading: true, error: undefined, errorPhase: 'download' }));
     try {
       const result = await window.api?.invoke('download-update');
       if (!result?.success) {
-        const safeError = result?.error || desktopUpdateErrorMessage(result, 'download');
-        setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError }));
+        const safeError = desktopUpdateErrorMessage(result?.code ? result : result?.error || result, 'download');
+        setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError, errorPhase: 'download' }));
         message.error(safeError);
       }
     } catch (error: any) {
       const safeError = desktopUpdateErrorMessage(error, 'download');
-      setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError }));
+      setDesktopUpdate(prev => ({ ...prev, downloading: false, error: safeError, errorPhase: 'download' }));
       message.error(safeError);
     }
   };
 
   const handleInstallDesktopUpdate = async () => {
+    setDesktopUpdate(prev => ({ ...prev, error: undefined, errorPhase: 'install' }));
     try {
       const result = await window.api?.invoke('install-update');
-      if (!result?.success) message.error(result?.error || desktopUpdateErrorMessage(result, 'install'));
+      if (!result?.success) {
+        const safeError = desktopUpdateErrorMessage(result?.code ? result : result?.error || result, 'install');
+        setDesktopUpdate(prev => ({ ...prev, error: safeError, errorPhase: 'install' }));
+        message.error(safeError);
+      }
     } catch (error: any) {
-      message.error(desktopUpdateErrorMessage(error, 'install'));
+      const safeError = desktopUpdateErrorMessage(error, 'install');
+      setDesktopUpdate(prev => ({ ...prev, error: safeError, errorPhase: 'install' }));
+      message.error(safeError);
     }
   };
 
-  let accountLabel = '\u7b49\u5f85\u767b\u5f55';
-  try {
-    const session = readDesktopAuthorizationSession();
-    accountLabel = session.user?.name || session.authContext.userId;
-  } catch (_error) {}
-
   return (
-    <div>
-      <Card title={'\u8d26\u53f7\u4e0e\u540c\u6b65'} style={{ marginBottom: 16 }}>
-        <Alert type="info" showIcon style={{ marginBottom: 16 }} message={'\u540c\u6b65\u8bf4\u660e'} description={'\u79bb\u7ebf\u65f6\u7684\u66f4\u6539\u4f1a\u5148\u4fdd\u5b58\u4e3a\u672c\u673a\u8349\u7a3f\uff1b\u6062\u590d\u8054\u7f51\u540e\uff0c\u7531\u4f60\u786e\u8ba4\u518d\u63d0\u4ea4\u3002'} />
-        <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
-          <Descriptions.Item label={'\u8f6f\u4ef6\u7248\u672c'}>{desktopPackage.version}</Descriptions.Item>
-          <Descriptions.Item label={'\u5f53\u524d\u8d26\u53f7'}>{accountLabel}</Descriptions.Item>
-          <Descriptions.Item label={'\u9898\u5e93\u6587\u4ef6'}><Tag color="blue">{'\u53d7\u63a7\u5b58\u50a8'}</Tag></Descriptions.Item>
-          <Descriptions.Item label={'\u672c\u673a\u767b\u5f55'}><Tag color="green">{'\u9996\u6b21\u767b\u5f55\u540e\u81ea\u52a8\u5b8c\u6210'}</Tag></Descriptions.Item>
-        </Descriptions>
-      </Card>
-      <Card title={'\u8f6f\u4ef6\u66f4\u65b0'} style={{ marginBottom: 16 }}>
-        <Alert type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : desktopUpdate.available ? 'info' : 'success'} showIcon style={{ marginBottom: 16 }} message={desktopUpdate.error ? '\u66f4\u65b0\u68c0\u67e5\u5931\u8d25' : desktopUpdate.downloaded ? '\u66f4\u65b0\u5df2\u4e0b\u8f7d\u5b8c\u6210' : desktopUpdate.available ? `\u53d1\u73b0\u65b0\u7248\u672c ${desktopUpdate.latestVersion || ''}` : '\u53ef\u5728\u8f6f\u4ef6\u5185\u68c0\u67e5\u548c\u5b89\u88c5\u66f4\u65b0'} description={desktopUpdate.error || desktopUpdate.feedUrl || '\u53ef\u76f4\u63a5\u68c0\u67e5\u3001\u4e0b\u8f7d\u5e76\u5b89\u88c5\u65b0\u7248\u672c\u3002'} />
-        <Space wrap>
-          <Button icon={<CloudDownloadOutlined />} loading={desktopUpdate.checking} onClick={handleCheckDesktopUpdate}>{'\u68c0\u67e5\u66f4\u65b0'}</Button>
-          <Button type="primary" disabled={!desktopUpdate.available || desktopUpdate.downloaded} loading={desktopUpdate.downloading} onClick={handleDownloadDesktopUpdate}>{'\u4e0b\u8f7d\u66f4\u65b0'}</Button>
-          <Button disabled={!desktopUpdate.downloaded} onClick={handleInstallDesktopUpdate}>{'\u91cd\u542f\u5e76\u5b89\u88c5'}</Button>
-        </Space>
-        {desktopUpdate.downloading && <Progress style={{ marginTop: 16 }} percent={desktopUpdate.progress} />}
-      </Card>
-      <section id="sync-settings"><SyncSettings variant="advanced" /></section>
-    </div>
+    <Card title="软件与更新" extra={<span>当前版本 {desktopPackage.version}</span>}>
+      {(desktopUpdate.error || desktopUpdate.available || desktopUpdate.downloaded) && <Alert
+        type={desktopUpdate.error ? 'error' : desktopUpdate.downloaded ? 'success' : 'info'} showIcon style={{ marginBottom: 16 }}
+        message={desktopUpdate.error ? desktopUpdate.errorPhase === 'install' ? '更新安装失败' : desktopUpdate.errorPhase === 'download' ? '更新下载失败' : '更新检查失败' : desktopUpdate.downloaded ? '更新已下载完成' : `发现新版本 ${desktopUpdate.latestVersion || ''}`}
+        description={desktopUpdate.error || undefined} />}
+      <Space wrap>
+        <Button icon={<CloudDownloadOutlined />} loading={desktopUpdate.checking} onClick={handleCheckDesktopUpdate}>检查更新</Button>
+        {desktopUpdate.available && !desktopUpdate.downloaded && <Button type="primary" loading={desktopUpdate.downloading} onClick={handleDownloadDesktopUpdate}>下载更新</Button>}
+        {desktopUpdate.downloaded && <Button type="primary" onClick={handleInstallDesktopUpdate}>重启并安装</Button>}
+      </Space>
+      {desktopUpdate.downloading && <Progress style={{ marginTop: 16 }} percent={desktopUpdate.progress} />}
+    </Card>
   );
 };
 

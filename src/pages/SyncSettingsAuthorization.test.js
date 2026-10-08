@@ -40,12 +40,14 @@ assert.ok(outboxPanel.includes('presentation.details.map'));
 assert.ok(!outboxPanel.includes('fetch('), 'renderer authority UI must never bypass the preload facade');
 assert.ok(preload.includes("contextBridge.exposeInMainWorld('desktopAuthority'"));
 assert.ok(customTypes.includes('desktopAuthority?:'));
-for (const statusSurface of [todayWorkbench, syncQuickPanel]) {
+for (const statusSurface of [syncQuickPanel]) {
   assert.ok(!statusSurface.includes('SyncEngine'),
     'desktop status surfaces must not read the retired raw-row sync engine');
   assert.ok(statusSurface.includes('desktopAuthority'),
     'desktop status surfaces must derive pending state from the authority outbox bridge');
 }
+
+assert.ok(!todayWorkbench.includes('desktopAuthority'), 'today workbench must not duplicate global sync status');
 
 const appNavigation = fs.readFileSync('src/navigation/appNavigation.tsx', 'utf8');
 const identityDeviceCenter = fs.readFileSync('src/pages/IdentityDeviceCenter.tsx', 'utf8');

@@ -1,0 +1,7 @@
+.my-account { display: grid; gap: 16px; max-width: 1180px; margin: 0 auto; }
+.my-account__identity { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.my-account__name { font-size: 22px; font-weight: 600; line-height: 1.5; margin-bottom: 6px; overflow-wrap: anywhere; }
+.my-account__profile .ant-alert { margin-bottom: 16px; }
+.my-account .identity-device-center { padding: 0; }
+.my-account .ant-descriptions-item-label { font-size: 14px; }
+.my-account .ant-descriptions-item-content { font-size: 15px; overflow-wrap: anywhere; }

@@ -15,6 +15,14 @@ assert.match(source, /issueSession: input => registration\.issueSession\(input\)
 assert.match(source, /s\.row_version AS "rowVersion"/,
   'the signed desktop role-elevation proof must bind to the current cloud session version');
 assert.match(source, /desktopCloudIdentity: desktopRuntime\?\.desktopCloudIdentity \|\| null/);
+assert.match(source, /createDesktopAccountProfileReader/);
+assert.match(source, /const desktopAccountProfile = createDesktopAccountProfileService\(/);
+assert.match(source, /canonicalQuery: \(text, values\) => writerPool\.query\(text, values\)/,
+  'profile contact reads must use the role with the existing verified-contact SELECT grant');
+assert.match(source, /identityQuery: \(text, values\) => identityPool\.query\(text, values\)/,
+  'profile login metadata must use the existing restricted credential function grant');
+assert.match(source, /businessQuery: \(text, values\) => pool\.query\(text, values\)/);
+assert.match(source, /desktopAccountProfile: desktopRuntime\?\.desktopAccountProfile \|\| null/);
 assert.match(source, /createDesktopPairingCanonicalPhoneReader/);
 assert.match(source, /createDesktopAccountDisplayNameReader/);
 assert.match(source, /displayName: await readDesktopDisplayName\(account\)/,

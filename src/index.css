@@ -666,6 +666,8 @@ select,
   width: 100%;
   height: 100vh;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--app-bg, #f5f7fb);
 }
@@ -675,6 +677,7 @@ select,
   top: 0;
   z-index: 900;
   min-height: 64px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -696,7 +699,7 @@ select,
 }
 
 .app-shell__content {
-  height: calc(100vh - 64px);
+  flex: 1 1 auto;
   min-height: 0;
   padding: 18px;
   overflow: auto;
@@ -720,7 +723,6 @@ select,
 }
 
 .app-shell__content--course-calendar {
-  height: calc(100vh - 64px);
   min-height: 0;
   overflow: hidden;
 }
@@ -732,6 +734,7 @@ select,
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .page-header-bar__main {
@@ -743,6 +746,7 @@ select,
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .page-header-bar__title {
@@ -754,10 +758,9 @@ select,
   white-space: nowrap;
 }
 
-.page-header-bar__description {
-  margin-top: 4px;
+.page-header-bar__context {
   color: var(--app-muted, #6b7280);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
 }
 
@@ -1001,7 +1004,10 @@ select,
 .page-header-bar__actions {
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
+
+.page-header-bar__primary-actions { gap: 8px; min-width: 0; }
 
 .today-workbench {
   width: 100%;
@@ -1024,7 +1030,7 @@ select,
 
 .today-workbench__entry-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
   gap: 12px;
 }
 
@@ -1196,19 +1202,13 @@ select,
 }
 
 @media (max-width: 900px) {
-  .app-shell__topbar,
   .page-header-bar {
-    align-items: flex-start;
-  }
-
-  .page-header-bar {
-    flex-direction: column;
+    flex-direction: row;
     gap: 8px;
   }
 
   .page-header-bar__actions {
-    width: 100%;
-    justify-content: space-between;
+    justify-content: flex-end;
   }
 
   .today-workbench__hero {

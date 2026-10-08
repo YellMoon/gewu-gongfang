@@ -22,6 +22,7 @@ import { PageKey, questionBankPages } from './navigation/appNavigation';
 import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
 import { requestEditorSpaNavigation } from './components/question-editor/questionEditorSession';
 import { openDesktopSync } from './components/AuthorityOutboxPanel';
+import AuthorityRoleApplicationsPanel from './components/AuthorityRoleApplicationsPanel';
 
 const ScheduleCalendar = React.lazy(() => import('./pages/ScheduleCalendar'));
 const QuestionBankTools = React.lazy(() => import('./pages/QuestionBankTools'));
@@ -31,6 +32,7 @@ const QuestionBankEdit = React.lazy(() => import('./pages/QuestionBankEdit'));
 const QuestionBankPaper = React.lazy(() => import('./pages/QuestionBankPaper'));
 const AuditCenter = React.lazy(() => import('./pages/AuditCenter'));
 const IdentityDeviceCenter = React.lazy(() => import('./pages/IdentityDeviceCenter'));
+const MyAccount = React.lazy(() => import('./pages/MyAccount'));
 
 
 const PageLoading: React.FC = () => (
@@ -164,8 +166,10 @@ const App: React.FC = () => {
 
       case 'personal-assets': return <PersonalAssets />;
       case 'identity-devices': return <LazyPage><IdentityDeviceCenter /></LazyPage>;
+      case 'my-account': return <LazyPage><MyAccount context={pageContext as any} /></LazyPage>;
+      case 'account-review': return <AuthorityRoleApplicationsPanel embedded />;
       case 'cloud-sync': return <ErrorBoundary><SyncSettings context={pageContext as any} /></ErrorBoundary>;
-      case 'system-params': return <SystemSettings context={pageContext as any} />;
+      case 'system-params': return <SystemSettings />;
       case 'operate-log': return <OperateLog />;
       default: return (
         <div style={{ padding: '200px', textAlign: 'center', color: '#999' }}>

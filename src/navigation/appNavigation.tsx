@@ -27,7 +27,7 @@ export type PageKey =
   | 'school' | 'address' | 'institution'
   | 'question-bank-tools' | 'question-bank-import' | 'question-bank-preview' | 'question-bank-edit' | 'question-bank-paper' | 'question-bank-audit'
   | 'payment' | 'revenue-statistics' | 'personal-assets'
-  | 'teacher' | 'student' | 'identity-devices'
+  | 'teacher' | 'student' | 'identity-devices' | 'my-account' | 'account-review'
   | 'system-params' | 'operate-log'
   | 'cloud-sync';
 
@@ -106,10 +106,11 @@ const baseNavGroups: NavGroup[] = [
   },
   {
     key: 'system-data',
-    label: '系统与数据',
+    label: '账户与管理',
     icon: <SettingOutlined />,
     items: [
-      { key: 'system-params', label: '系统参数', description: '调整系统基础参数', icon: <SettingOutlined /> },
+      { key: 'my-account', label: '我的', icon: <UserOutlined /> },
+      { key: 'account-review', label: '账号申请审核', icon: <SafetyCertificateOutlined /> },
       { key: 'operate-log', label: '操作日志', description: '查看系统操作记录', icon: <FileProtectOutlined /> },
     ],
   },
@@ -122,11 +123,11 @@ export const identityDeviceNavItem: NavItem = {
   icon: <LaptopOutlined />,
 };
 
-export const navGroups: NavGroup[] = baseNavGroups.map(group => group.key === 'system-data'
-  ? { ...group, items: [identityDeviceNavItem, ...group.items] }
-  : group);
+export const navGroups: NavGroup[] = baseNavGroups;
 
 const legacyQuestionBankItems: Record<PageKey, NavItem> = {
+  'my-account': { key: 'my-account', label: '我的', icon: <UserOutlined /> },
+  'account-review': { key: 'account-review', label: '账号申请审核', icon: <SafetyCertificateOutlined /> },
   'identity-devices': identityDeviceNavItem,
   'question-bank-import': { key: 'question-bank-import', label: '试题导入', description: '导入题库文档和试题', icon: <UploadOutlined /> },
   'question-bank-edit': { key: 'question-bank-edit', label: '试题编辑', description: '编辑已导入的试题', icon: <BookOutlined /> },

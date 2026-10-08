@@ -12,7 +12,6 @@ import {
   loadIdentityDeviceCenter,
   revokeDesktopDevice,
 } from '../services/identityDeviceCenterPolicy.mjs';
-import AuthorityRoleApplicationsPanel from '../components/AuthorityRoleApplicationsPanel';
 import './IdentityDeviceCenter.css';
 
 function localTime(value?: string | null): string {
@@ -21,7 +20,7 @@ function localTime(value?: string | null): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleString('zh-CN', { hour12: false }) : '--';
 }
 
-const IdentityDeviceCenter: React.FC = () => {
+const IdentityDeviceCenter: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [snapshot, setSnapshot] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [errorCode, setErrorCode] = useState('');
@@ -104,14 +103,12 @@ const IdentityDeviceCenter: React.FC = () => {
   return (
     <div className="identity-device-center">
       {/* UTF-8: Login registration stays silent; manage existing devices here. */}
-      <Card title={'我的登录设备'} extra={<Button loading={loading} onClick={() => void load()}>刷新</Button>}>
+      <Card title={embedded ? undefined : '我的登录设备'} extra={<Button loading={loading} onClick={() => void load()}>刷新设备</Button>}>
         {errorCode && <Alert type="error" showIcon style={{ marginBottom: 16 }} message={identityDeviceCenterErrorMessage(errorCode)} />}
         {loading ? <div className="identity-device-center__loading">正在读取设备信息…</div>
           : (snapshot?.mine || []).length ? <Table rowKey="deviceId" columns={columns} dataSource={snapshot.mine} pagination={{ pageSize: 5, showSizeChanger: false }} scroll={{ x: 720 }} />
             : <Empty description={'暂无登录设备'} />}
       </Card>
-      {/* UTF-8: The review panel supplies its own heading; avoid nested duplicate cards. */}
-      {snapshot?.access?.canReview && <div style={{ marginTop: 16 }}><AuthorityRoleApplicationsPanel /></div>}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 // utf-8
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
+  Alert, Button, Card, Checkbox, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select as AntSelect,
   Space, Tag, message, Pagination, Typography
 } from 'antd';
 import { DeleteOutlined, TagsOutlined } from '@ant-design/icons';
@@ -108,6 +108,7 @@ const QuestionBankEdit: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [trashPage, setTrashPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
   const [trashVisible, setTrashVisible] = useState(false);
@@ -166,8 +167,14 @@ const QuestionBankEdit: React.FC = () => {
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     const db = (window as any).dbService; // utf-8 atomic save
-    await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
+    try {
+    try {
+      await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
+    } catch (_error) {
+      setLoadError('暂时无法读取最新题库，显示本地已保存的试题。联网后可刷新重试。');
+    }
     const cachedKnowledge = await getCachedQuestionTree('knowledge');
     const cachedModels = await getCachedQuestionTree('model');
     if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
@@ -180,7 +187,11 @@ const QuestionBankEdit: React.FC = () => {
     await ensureQuestionLocalStoreSeeded(() => db?.getAllQuestions?.()?.map(normalizeQuestion) || []);
     setLocalStoreReady(true);
     setRefreshNonce(value => value + 1);
-    setLoading(false);
+    } catch (_error) {
+      setLoadError('暂时无法读取本地试题，请刷新重试。');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const loadTrash = useCallback(async () => {
@@ -419,8 +430,8 @@ const QuestionBankEdit: React.FC = () => {
   return (
     <>
     {modalContextHolder}
+    {loadError && <Alert type="warning" showIcon message={loadError} style={{ marginBottom: 16 }} />}
     <Card
-      title="试题编辑"
       extra={
         <Space>
           <Button onClick={() => { setTrashVisible(true); loadTrash(); }}>回收站</Button>

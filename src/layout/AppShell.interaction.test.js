@@ -47,6 +47,7 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
           { currentPage: 'course-calendar', onNavigate: () => {}, onRefresh: () => {} },
           React.createElement('p', { id: 'workspace-anchor' }, '课程表核验')));
       }, [
+        ['../components/DesktopAccountContext', compile('src/components/DesktopAccountContext.tsx')],
         ['./PageHeaderBar', compile('src/layout/PageHeaderBar.tsx')],
         ['../navigation/appNavigation', compile('src/navigation/appNavigation.tsx')],
         ['AppShell', compile('src/layout/AppShell.tsx')],

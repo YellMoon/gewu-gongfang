@@ -40,6 +40,7 @@ async function checkMountedCalendar() {
         './navigation/navigationContext':{normalizeNavigationTarget:input=>typeof input==='string'?{page:input}:input},
         './components/question-editor/questionEditorSession':{requestEditorSpaNavigation:callback=>callback()},
         './components/AuthorityOutboxPanel':{openDesktopSync:()=>{window.syncOpened=(window.syncOpened||0)+1;}},
+        './components/AuthorityRoleApplicationsPanel':{default:()=>null,__esModule:true},
         './services/browserDatabase':{default:{refreshAuthorityProjection:async()=>{}},__esModule:true}};
       const exported={};
       Object.entries(resources).forEach(([name,file])=>{modules['./pages/'+file]={default:stateful(name),__esModule:true};});

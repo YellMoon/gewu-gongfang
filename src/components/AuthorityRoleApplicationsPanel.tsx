@@ -63,7 +63,7 @@ function reviewConfirmationText(application: RoleApplication) {
   return `${application.profileName || '该申请人'}申请成为${roleLabel(application.requestedIdentity)}。请确认姓名和手机号无误。`;
 }
 
-const AuthorityRoleApplicationsPanel: React.FC = () => {
+const AuthorityRoleApplicationsPanel: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [visible, setVisible] = useState(false);
   const [items, setItems] = useState<RoleApplication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,7 +109,7 @@ const AuthorityRoleApplicationsPanel: React.FC = () => {
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <Card
-        title={'申请审核'}
+        title={embedded ? undefined : '申请审核'}
         extra={<Button loading={loading} onClick={() => void load()}>{'\u5237\u65b0\u5f85\u5ba1\u5217\u8868'}</Button>}
       >
         <Alert

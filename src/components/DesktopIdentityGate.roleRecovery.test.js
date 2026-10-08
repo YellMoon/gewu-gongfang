@@ -53,7 +53,13 @@ const { JSDOM } = require('jsdom');
   const block = tag => props => React.createElement(tag, null, props.children);
   const Input = props => React.createElement('input', { value: props.value, onChange: props.onChange });
   Input.Password = Input;
+  const accountContext = React.createContext({ controls: null });
   const deps = {
+    './DesktopAccountContext': { DesktopAccountContext: accountContext },
+    './DesktopAccountMenu': { __esModule: true, default: props => React.createElement('div', null, React.createElement('span', null, props.role),
+      props.canElevate && React.createElement(deps.antd.Button, { onClick: () => props.onSwitchRole('super_admin') }, '切换为超级管理员'),
+      props.canReturnTeacher && React.createElement(deps.antd.Button, { onClick: () => props.onSwitchRole('teacher') }, '切换为老师'),
+      React.createElement(deps.antd.Button, { onClick: props.onLock }, '锁定')) },
     react: React,
     antd: {
       Alert: props => React.createElement('div', { role: 'alert' }, props.message, props.description),
@@ -70,7 +76,7 @@ const { JSDOM } = require('jsdom');
     '../services/desktopIdentityGateRuntime.mjs': runtimeModule,
     '../services/desktopLoginMemory.mjs': { loadRememberedLogin: () => ({ type: 'account_name', value: 'original' }), saveRememberedLogin() {}, maskPhone: x => x },
     './DesktopIdentityGate.css': {}, './DesktopAutoSync': () => null,
-    '../App': () => React.createElement('div', { id: 'business' }, 'business'),
+    '../App': () => React.createElement('div', { id: 'business' }, React.useContext(accountContext).controls, 'business'),
   };
   const compiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, 'DesktopIdentityGate.tsx'), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true },

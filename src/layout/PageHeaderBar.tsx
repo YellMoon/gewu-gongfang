@@ -19,9 +19,9 @@ const PageHeaderBar: React.FC<PageHeaderBarProps> = ({
     <div className="page-header-bar__main">
       <div className="page-header-bar__title-row">
         <h1 className="page-header-bar__title">{title}</h1>
+        {description && <span className="page-header-bar__context">{description}</span>}
         {status && <div className="page-header-bar__status">{status}</div>}
       </div>
-      {description && <div className="page-header-bar__description">{description}</div>}
     </div>
     {(secondaryActions || actions) && (
       <div className="page-header-bar__actions">

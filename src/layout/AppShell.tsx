@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Layout, Menu, Tooltip } from 'antd';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Layout, Menu, Tooltip } from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -9,10 +9,7 @@ import PageHeaderBar from './PageHeaderBar';
 import { findNavItem, findOpenGroup, navGroups, PageKey, todayNavItem } from '../navigation/appNavigation';
 import type { NavigationInput } from '../navigation/navigationContext';
 import SyncQuickPanel from '../components/sync/SyncQuickPanel';
-import { getRuntimeConfig } from '../services/runtimeConfigClient';
-import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
-import { resolvePairingApiBase } from '../services/pairingApiBase.mjs';
-import { loadIdentityDevicePendingCount } from '../services/identityDeviceCenterPolicy.mjs';
+import { DesktopAccountContext } from '../components/DesktopAccountContext';
 
 const { Content, Sider } = Layout;
 
@@ -31,11 +28,11 @@ const selectedKeyForPage = (page: PageKey): PageKey => {
 };
 
 const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children }) => {
+  const account = useContext(DesktopAccountContext);
   const [navOpen, setNavOpen] = useState(false);
   const [navPinned, setNavPinned] = useState(false);
   const initialOpenGroup = findOpenGroup(currentPage);
   const [openKeys, setOpenKeys] = useState<string[]>(initialOpenGroup ? [initialOpenGroup] : []);
-  const [identityDevicePendingCount, setIdentityDevicePendingCount] = useState(0);
   const closeTimerRef = useRef<number | null>(null);
   const currentNavItem = findNavItem(currentPage);
   const navVisible = navOpen || navPinned;
@@ -53,33 +50,6 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
 
   useEffect(() => () => {
     if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current);
-  }, []);
-
-  useEffect(() => {
-    let stopped = false;
-    const refreshIdentityDevicePendingCount = async () => {
-      try {
-        const runtimeConfig = await getRuntimeConfig();
-        const session = readDesktopAuthorizationSession();
-        const baseUrl = resolvePairingApiBase(runtimeConfig, window.location);
-        const count = await loadIdentityDevicePendingCount({ runtimeConfig, session, baseUrl });
-        if (!stopped) setIdentityDevicePendingCount(count);
-      } catch (_error) {
-        if (!stopped) setIdentityDevicePendingCount(0);
-      }
-    };
-    const onUpdated = (event: Event) => {
-      const count = Number((event as CustomEvent).detail?.pendingCount);
-      if (!stopped && Number.isSafeInteger(count) && count >= 0) setIdentityDevicePendingCount(count);
-    };
-    void refreshIdentityDevicePendingCount();
-    const timer = window.setInterval(refreshIdentityDevicePendingCount, 30000);
-    window.addEventListener('identity-device-center-updated', onUpdated);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-      window.removeEventListener('identity-device-center-updated', onUpdated);
-    };
   }, []);
 
   const clearCloseTimer = () => {
@@ -129,16 +99,14 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
         key: group.key,
         icon: group.icon,
         label: group.label,
-        children: group.items.map((item) => ({
+        children: group.items.filter(item => item.key !== 'account-review' || account.activeRole === 'super_admin').map((item) => ({
           key: item.key,
           icon: item.icon,
-          label: item.key === 'identity-devices'
-            ? <span className="app-shell__menu-label">{item.label}<Badge count={identityDevicePendingCount} size="small" overflowCount={99} /></span>
-            : item.label,
+          label: item.label,
         })),
       })),
     ],
-    [identityDevicePendingCount],
+    [account.activeRole],
   );
 
   return (
@@ -201,7 +169,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
           </Tooltip>
           <PageHeaderBar
             title={currentNavItem.label}
-            description={currentNavItem.description}
+            description={currentPage === 'today' ? new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : undefined}
             secondaryActions={(
               <Button
                 type="text"
@@ -212,7 +180,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
                 刷新
               </Button>
             )}
-            status={<SyncQuickPanel onNavigate={onNavigate} />}
+            actions={<><SyncQuickPanel onNavigate={onNavigate} />{account.controls}</>}
           />
         </div>
         <Content className={`app-shell__content app-shell__content--${currentPage}`}>

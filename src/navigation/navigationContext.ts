@@ -21,12 +21,15 @@ export type CloudSyncContext = {
   section?: 'sync-settings';
 };
 
+export type MyAccountContext = { section?: 'devices' | 'software-update' };
+
 export type NavigationContext =
   | CourseCalendarContext
   | RevenueStatisticsContext
   | QuestionBankPreviewContext
   | QuestionBankToolsContext
   | CloudSyncContext
+  | MyAccountContext
   | undefined;
 
 export type NavigationTarget = {
@@ -38,13 +41,13 @@ export type NavigationInput = PageKey | NavigationTarget;
 
 export function normalizeNavigationTarget(input: NavigationInput): NavigationTarget {
   const target = typeof input === 'string' ? { page: input } : input;
-  if (target.page === 'cloud-sync') {
+  if (target.page === 'system-params' || target.page === 'identity-devices') {
     return {
-      page: 'system-params',
+      page: 'my-account',
       context: {
         ...(typeof target.context === 'object' ? target.context : {}),
-        section: 'sync-settings',
-      } as CloudSyncContext,
+        section: target.page === 'identity-devices' ? 'devices' : 'software-update',
+      } as MyAccountContext,
     };
   }
   return target;

@@ -110,7 +110,7 @@ function miniappQuestionBrowseFilters(query) {
   return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
 }
 
-function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null, personalFinance = null, billMailbox = null }) {
+function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopAccountProfile = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null, personalFinance = null, billMailbox = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -125,6 +125,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   if (businessCourseLifecycleMutations !== null && (typeof businessCourseLifecycleMutations.create !== 'function' || typeof businessCourseLifecycleMutations.update !== 'function' || typeof businessCourseLifecycleMutations.remove !== 'function')) throw new TypeError('businessCourseLifecycleMutations is invalid');
   if (desktopRegistration && (typeof desktopRegistration.begin !== 'function' || typeof desktopRegistration.register !== 'function')) throw new TypeError('desktopRegistration is invalid');
   if (desktopCloudIdentity && ['startChallenge', 'exchangeChallenge', 'switchRole', 'listDevices', 'revokeDevice'].some(method => typeof desktopCloudIdentity[method] !== 'function')) throw new TypeError('desktopCloudIdentity is invalid');
+  if (desktopAccountProfile && typeof desktopAccountProfile.read !== 'function') throw new TypeError('desktopAccountProfile is invalid');
   if (desktopVerifiedAccess && typeof desktopVerifiedAccess.read !== 'function') throw new TypeError('desktopVerifiedAccess is invalid');
   if (desktopTeacherSelfRegistration && typeof desktopTeacherSelfRegistration.register !== 'function') throw new TypeError('desktopTeacherSelfRegistration is invalid');
   if (desktopPasswordAuthentication && (typeof desktopPasswordAuthentication.enroll !== 'function' || typeof desktopPasswordAuthentication.enrollFromVerificationTicket !== 'function' || typeof desktopPasswordAuthentication.verify !== 'function')) throw new TypeError('desktopPasswordAuthentication is invalid');
@@ -1043,6 +1044,24 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       const issued = await desktopCloudIdentity.switchRole({ sessionToken: token, ...body });
       response.json({ success: true, data: issued });
     } catch (error) {
+      desktopCloudIdentityFailure(response, error);
+    }
+  });
+  app.get('/api/desktop-identity/profile', async (request, response) => {
+    if (!desktopAccountProfile) return desktopUnavailable(response);
+    const token = sessionToken(request);
+    if (!token) return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
+    if (Object.keys(request.query).length !== 0 || (request.body && Object.keys(request.body).length !== 0)) {
+      return response.status(400).json({ success: false, code: 'DESKTOP_IDENTITY_INPUT_FORBIDDEN' });
+    }
+    try {
+      const profile = await desktopAccountProfile.read({ sessionToken: token });
+      response.set('Cache-Control', 'no-store');
+      response.json({ success: true, data: profile });
+    } catch (error) {
+      if (['CLOUD_ONLINE_IDENTITY_REJECTED', 'CLOUD_ONLINE_IDENTITY_INVALID', 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED'].includes(error?.code)) {
+        return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
+      }
       desktopCloudIdentityFailure(response, error);
     }
   });

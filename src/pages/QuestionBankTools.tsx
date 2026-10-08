@@ -162,15 +162,6 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
   return (
     <div className="question-bank-tools-page">
       <div className="question-bank-tools-hero">
-        <div className="question-bank-tools-hero__main">
-          <Space size={8} align="center">
-            <ToolOutlined />
-            <Tag color="blue">压缩工作台</Tag>
-          </Space>
-          <Typography.Text type="secondary">
-            知识点、模型、试题导入、题库统计和问题提醒集中在这里。
-          </Typography.Text>
-        </div>
         <Space wrap>
           {shortcuts.map(item => (
             <Button key={item.key} type={item.type} icon={item.icon} onClick={() => onNavigate(item.key)}>

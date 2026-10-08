@@ -186,7 +186,6 @@ const AuditCenter: React.FC = () => {
 
   return (
     <Card
-      title="审核中心"
       extra={actionButtons}
       bodyStyle={{ paddingTop: 12 }}
     >

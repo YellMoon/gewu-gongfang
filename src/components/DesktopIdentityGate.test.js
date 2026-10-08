@@ -140,14 +140,11 @@ assert.ok(gateSource.includes(String.raw`\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7
   'desktop offline copy must state the actual draft and user-confirmed submission boundary');
 assert.ok(decodedGateSource.includes(String.fromCharCode(27491, 22312, 24674, 22797, 30331, 24405, 29366, 24577)),
   'desktop session recovery must use familiar login language rather than internal cloud-session wording');
-assert.ok(gateStyle.includes('.desktop-identity-runtime--offline > .app-shell'));
-assert.ok(gateStyle.includes('.desktop-identity-runtime--offline .desktop-identity-runtime-bar'));
-assert.ok(gateStyle.includes('.desktop-identity-runtime .app-shell__topbar')
-  && gateStyle.includes('padding-right: 350px'),
-  'the application top bar must reserve space so fixed identity controls cannot cover page actions');
-assert.ok(gateStyle.includes(':has(.desktop-identity-runtime-bar .ant-btn:nth-of-type(2))')
-  && gateStyle.includes('padding-right: 540px'),
-  'the top bar must reserve the wider identity-control footprint when role switching is available');
+assert.ok(gateStyle.includes('.desktop-identity-runtime > .app-shell'));
+assert.ok(!gateStyle.includes('padding-right: 350px') && !gateStyle.includes('padding-right: 540px'),
+  'account controls must share normal header layout instead of reserving guessed overlay widths');
+assert.ok(gateSource.includes('DesktopAccountContext.Provider'),
+  'identity controls must be delivered to the app shell without floating over it');
 assert.ok(
   !appSource.includes('processMiniappCloudTasks'),
   'business renderer must not own primary-host cloud task execution'
