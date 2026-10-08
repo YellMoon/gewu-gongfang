@@ -11,6 +11,7 @@ import './QuestionBasketOverlay.scss';
 interface QuestionBasketOverlayProps {
   canUse: boolean;
   aboveTabBar?: boolean;
+  inline?: boolean;
   onRestricted: () => void;
   resolveNodes?: (value: string) => string;
   onResolveQuestions?: (ids: string[]) => Promise<{ success: boolean; unavailableIds?: string[]; error?: string }>;
@@ -51,7 +52,7 @@ function subjectLabel(subject: string) {
   return labels[subject] || subject || '\u672a\u8bbe\u7f6e\u79d1\u76ee';
 }
 
-export default function QuestionBasketOverlay({ canUse, aboveTabBar = false, onRestricted, resolveNodes, onResolveQuestions, onBeginPaper }: QuestionBasketOverlayProps) {
+export default function QuestionBasketOverlay({ canUse, aboveTabBar = false, inline = false, onRestricted, resolveNodes, onResolveQuestions, onBeginPaper }: QuestionBasketOverlayProps) {
   const basket = useQuestionBasket();
   const resolutionGenerationRef = useRef(0);
   const [open, setOpen] = useState(false);
@@ -193,23 +194,7 @@ export default function QuestionBasketOverlay({ canUse, aboveTabBar = false, onR
     else Taro.navigateTo({ url: '/pages/question-paper/index' });
   };
 
-  return <>
-    <Button className={'global-question-basket ' + (aboveTabBar ? 'above-tab-bar' : 'above-safe-area')} onClick={openBasket}>
-      <Text className='global-question-basket-label'>{copy.basket}</Text>
-      {basket.ids.length ? <Text className='global-question-basket-count'>{String(basket.ids.length)}</Text> : null}
-    </Button>
-
-    <PageContainer
-      show={open}
-      position='bottom'
-      round
-      overlay
-      closeOnSlideDown
-      zIndex={2000}
-      onClickOverlay={() => setOpen(false)}
-      onAfterLeave={() => setOpen(false)}
-    >
-      <View className='question-basket-drawer'>
+  const drawer = <View className='question-basket-drawer'>
         <View className='question-basket-head'>
           <View>
             <Text className='question-basket-title'>{copy.basket}</Text>
@@ -302,7 +287,23 @@ export default function QuestionBasketOverlay({ canUse, aboveTabBar = false, onR
           <Text>{copy.selected + ' ' + selectedIds.length + ' ' + copy.questions}</Text>
           <Button className='question-basket-paper-action' disabled={!selectedIds.length || resolutionState === 'loading' || resolutionState === 'offline' || unresolvedIds.some(id => selectedSet.has(id))} onClick={beginPaper}>{resolutionState === 'loading' ? '\u6b63\u5728\u6062\u590d' : copy.beginPaper}</Button>
         </View>
-      </View>
-    </PageContainer>
+      </View>;
+  return <>
+    <Button className={'global-question-basket ' + (inline ? 'inline-entry' : aboveTabBar ? 'above-tab-bar' : 'above-safe-area')} onClick={openBasket}>
+      <Text className='global-question-basket-label'>{copy.basket}</Text>
+      {basket.ids.length ? <Text className='global-question-basket-count'>{String(basket.ids.length)}</Text> : null}
+    </Button>
+    {open ? process.env.TARO_ENV === 'h5' ? <View className='question-basket-web-overlay' onClick={() => setOpen(false)}>
+      <View className='question-basket-web-dialog' onClick={event => event.stopPropagation()}>{drawer}</View>
+    </View> : <PageContainer
+      show={open}
+      position='bottom'
+      round
+      overlay
+      closeOnSlideDown
+      zIndex={2000}
+      onClickOverlay={() => setOpen(false)}
+      onAfterLeave={() => setOpen(false)}
+    >{drawer}</PageContainer> : null}
   </>;
 }

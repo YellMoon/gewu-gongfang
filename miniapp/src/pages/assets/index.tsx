@@ -14,6 +14,7 @@ import { parsePersonalAssetCsv } from '../../utils/personalAssetCsv';
 // @ts-ignore CommonJS import helpers share the tested retry contract.
 import { personalAssetImportKey, personalAssetImportError } from '../../utils/personalAssetImport';
 import './index.scss';
+import PersonalFinanceSummary from '../../components/PersonalFinanceSummary';
 
 interface AssetRecord { id: string; category_id: string; category_name?: string; amount: number; type: 'income' | 'expense'; date: string; note?: string; }
 interface AssetCategory { id: string; name: string; type: 'income' | 'expense'; color: string; }
@@ -122,14 +123,15 @@ export default function Assets() {
     <View className='assets-page'>
       {loadFailed && <View className='asset-cache-notice'><Text>暂时无法更新，显示已保存的数据</Text></View>}
       <View className={`task-card${importing ? ' review-read-only' : ''}`} onClick={submitAssetImportTask}>
-        <Text className='task-title'>{importing ? '正在处理…' : '导入财务数据'}</Text>
-        <Text className='task-desc'>选择 CSV 文件，确认后导入当前账号。</Text>
+        <Text className='task-title'>{importing ? '正在处理…' : '导入收支记录'}</Text>
+        <Text className='task-desc'>导入手工收支 CSV；银行和支付账单请在下方选择账户导入。</Text>
       </View>
       <View className='overview-card'><View className='overview-row'>
-        <View className='overview-item'><Text className='ov-label'>{'\u603b\u6536\u5165'}</Text><Text className='ov-value income'>{'\u00a5'}{totalIncome.toFixed(2)}</Text></View>
-        <View className='overview-item'><Text className='ov-label'>{'\u603b\u652f\u51fa'}</Text><Text className='ov-value expense'>{'\u00a5'}{totalExpense.toFixed(2)}</Text></View>
-        <View className='overview-item'><Text className='ov-label'>{'\u7ed3\u4f59'}</Text><Text className={`ov-value ${totalIncome - totalExpense >= 0 ? 'income' : 'expense'}`}>{'\u00a5'}{(totalIncome - totalExpense).toFixed(2)}</Text></View>
+        <View className='overview-item'><Text className='ov-label'>记录收入</Text><Text className='ov-value income'>{'\u00a5'}{totalIncome.toFixed(2)}</Text></View>
+        <View className='overview-item'><Text className='ov-label'>记录支出</Text><Text className='ov-value expense'>{'\u00a5'}{totalExpense.toFixed(2)}</Text></View>
+        <View className='overview-item'><Text className='ov-label'>记录结余</Text><Text className={`ov-value ${totalIncome - totalExpense >= 0 ? 'income' : 'expense'}`}>{'\u00a5'}{(totalIncome - totalExpense).toFixed(2)}</Text></View>
       </View></View>
+      <PersonalFinanceSummary />
       <View className='period-bar'>
         {[{ key: 'month' as const, label: '\u672c\u6708' }, { key: 'year' as const, label: '\u672c\u5e74' }, { key: 'all' as const, label: '\u5168\u90e8' }].map(item => <View key={item.key} className={`period-tag ${period === item.key ? 'active' : ''}`} onClick={() => setPeriod(item.key)}><Text>{item.label}</Text></View>)}
       </View>

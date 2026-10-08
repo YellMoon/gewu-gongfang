@@ -34,6 +34,7 @@ function harness(role='teacher') {
     '../../utils/miniappPageAccess':{canAccessMiniappPage:()=>h.allowed,refreshMiniappPageAccess:async()=>h.allowed},
     '../../utils/sync':{getLocalData:key=>{h.reads++;return h.cache[key]||[];},pullFromCloudBusinessProjection:async()=>{h.pulls++;return h.project();}},
     '../../components/shared':{EmptyState:'EmptyState',LoadingSkeleton:'LoadingSkeleton'},'../../components/ForbiddenContent':{default:'Forbidden'},
+    '../../components/PersonalFinanceSummary':{default:'PersonalFinanceSummary'},
   };
   const source=fs.readFileSync(path.join(__dirname,'index.tsx'),'utf8');
   const output=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;

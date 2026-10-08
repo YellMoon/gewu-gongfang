@@ -346,7 +346,7 @@ function fixtureResponse(request, scenario) {
   }
   if (pathname === '/api/business/miniapp-projection') {
     const projection = {};
-    for (const table of ['students', 'studentContacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'assetRecords', 'assetCategories']) projection[table] = [];
+    for (const table of ['students', 'studentContacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'assetRecords', 'assetCategories', 'payments', 'grades']) projection[table] = [];
     return { statusCode: 200, body: { ok: true, projection } };
   }
   if (pathname === '/api/business/miniapp-question-previews') {

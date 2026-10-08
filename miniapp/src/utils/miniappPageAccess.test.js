@@ -71,6 +71,7 @@ function load(sourcePath, customRequire) {
         refreshMiniappPageAccess: async () => { if (page === 'assets' && scenario === 'changed-during-load') currentAccess = false; return permitted; },
       };
       if (name === '../../components/ForbiddenContent') return { default: Forbidden };
+      if (name === '../../components/PersonalFinanceSummary') return { default: 'PersonalFinanceSummary' };
       if (name.endsWith('/sync')) return { getLocalData: key => { reads.push(key); return []; }, pullFromCloudBusinessProjection: async () => {
         reads.push('cloud');
         if (scenario === 'changed-during-load') currentAccess = false;

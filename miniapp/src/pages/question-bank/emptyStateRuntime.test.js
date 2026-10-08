@@ -9,10 +9,10 @@ function harness(status='empty',role='teacher'){
   react:{useState:initial=>{const value=typeof initial==='function'?initial():initial;const i=slot(value==='loading'?status:value);return[state[i],next=>{state[i]=typeof next==='function'?next(state[i]):next;}];},useRef:initial=>state[slot({current:initial})],useEffect:()=>{},useMemo:fn=>fn()},
   'react/jsx-runtime':{jsx,jsxs:jsx},'@tarojs/components':Object.fromEntries(['View','Text','Input','Button','Picker','RichText','ScrollView'].map(n=>[n,n])),
   '@tarojs/taro':{default:{getStorageSync:()=>({id:'test',role,user_type:role}),showModal:o=>modals.push(o),navigateTo:o=>routes.push(o.url)},useDidShow:()=>{},usePullDownRefresh:()=>{},useReachBottom:()=>{}},
-  '../../utils/api':{miniappCloudBusinessApi:{}},'../../utils/questionAssetDelivery':{},'../../utils/authSession':{},
+  '../../utils/api':{miniappCloudBusinessApi:{}},'../../utils/questionAssetDelivery':{},'../../utils/authSession':{authSessionRuntime:{capture:()=>({identity:{id:'test',role,user_type:role}}),isSameSession:()=>true}},
   '../../utils/miniappAuthorizationRuntime':require('../../utils/miniappAuthorizationRuntime'),
   '../../utils/questionBasketStore':{questionBasketStore:{},useQuestionBasket:()=>({ids:[]})},
-  '../../components/QuestionBasketOverlay':{default:'Basket'},'../../utils/questionDisplay':require('../../utils/questionDisplay'),'./index.scss':{},
+  '../../components/QuestionBasketOverlay':{default:'Basket'},'../../utils/questionDisplay':require('../../utils/questionDisplay'),'./questionTypography':require('./questionTypography'),'./index.scss':{},
  };
  const js=ts.transpileModule(fs.readFileSync(path.join(__dirname,'index.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;
  const m={exports:{}};new Function('require','module','exports',js)(name=>{assert.ok(Object.hasOwn(deps,name),name);return deps[name];},m,m.exports);

@@ -1,6 +1,8 @@
 'use strict';
 
 const express = require('express');
+const { registerPersonalFinanceRoutes } = require('./personalFinanceRoutes');
+const { registerBillMailboxRoutes } = require('./billMailboxRoutes');
 const { createBusinessCommandMiddleware } = require('./businessCommandTransaction');
 const { createOperationAuditMiddleware, parseFilters: operationAuditFilters } = require('./operationAudit');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
@@ -15,7 +17,7 @@ const DESKTOP_RENDERER_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ]);
-const DESKTOP_RENDERER_CORS_METHODS = 'GET,POST,PUT,DELETE,OPTIONS';
+const DESKTOP_RENDERER_CORS_METHODS = 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
 const DESKTOP_RENDERER_CORS_HEADERS = [
   'Accept',
   'Authorization',
@@ -108,7 +110,7 @@ function miniappQuestionBrowseFilters(query) {
   return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
 }
 
-function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null }) {
+function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null, personalFinance = null, billMailbox = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -149,6 +151,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   app.use('/api/storage-agent/question-imports', express.json({ limit: '90mb' }));
   app.use('/api/storage-agent/artifact-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
   app.use('/api/storage-agent/question-asset-deliveries', express.raw({ type: 'application/octet-stream', limit: '64mb' }));
+  app.use('/api/business/personal-finance', express.json({ limit: '30mb' }));
+  app.use('/api/business/miniapp-personal-finance', express.json({ limit: '30mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(createOperationAuditMiddleware({ repository: operationAudits, required: operationAuditsRequired, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext, businessContext }));
   app.use(createBusinessCommandMiddleware({ writer: businessCommandWriter, tenantId: businessTenantId, desktopContext: desktopQuestionContext }));
@@ -2246,6 +2250,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       pairingFailure(response, error);
     }
   });
+  registerPersonalFinanceRoutes({ app, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext });
+  registerBillMailboxRoutes({ app, mailbox: billMailbox, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext });
   return app;
 }
 

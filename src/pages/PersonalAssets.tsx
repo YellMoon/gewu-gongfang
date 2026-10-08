@@ -13,122 +13,13 @@ import dayjs from 'dayjs';
 import type { AssetRecord, AssetCategory, AssetStats } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, Legend, ResponsiveContainer } from 'recharts';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import PersonalFinancePanel from '../components/PersonalFinancePanel';
 
 const { RangePicker } = DatePicker;
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
 
 const dbService = () => (window as any).dbService;
-
-function ensureImportCategory(db: any, type: 'income' | 'expense'): AssetCategory {
-  const name = type === 'income' ? '\u5176\u4ed6\u6536\u5165' : '\u5176\u4ed6\u652f\u51fa';
-  const existing = db.getAssetCategoriesByType(type)
-    .find((category: AssetCategory) => category.name === name);
-  if (existing) return existing;
-  return db.createAssetCategory({
-    name,
-    type,
-    color: type === 'income' ? '#13c2c2' : '#eb2f96',
-  });
-}
-
-// ===== 账单 CSV 解析器 =====
-function parseCsvContent(fileName: string, content: string): { type: string; amount: number; date: string; description: string; counterparty: string }[] {
-  const lines = content.replace(/\r\n?/g, '\n').split('\n');
-  const results: any[] = [];
-
-  // Auto-detect platform
-  const isWechat = content.includes('微信支付');
-  const isAlipay = content.includes('支付宝');
-  const isBank = lines.some((l: string) => ['交易日期', '摘要', '借贷方向'].some((k: string) => l.includes(k)));
-
-  let headerIdx = -1, headers: string[] = [];
-
-  // Find header row
-  for (let i = 0; i < Math.min(lines.length, 50); i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    const fields = line.split(',').map((f: string) => f.trim().replace(/^"|"$/g, ''));
-    if (isWechat && fields.includes('交易时间')) { headerIdx = i; headers = fields; break; }
-    if (isAlipay && fields.some((f: string) => ['交易号', '商品说明'].includes(f))) { headerIdx = i; headers = fields; break; }
-    if (!isWechat && !isAlipay && fields.some((f: string) => ['交易日期', '摘要', '对方户名'].includes(f))) { headerIdx = i; headers = fields; break; }
-  }
-  if (headerIdx === -1) return results;
-
-  const mappedHeaders = headers.map((h: string) => {
-    const map: Record<string, string> = {
-      '交易时间': 'dt', '交易对方': 'cp', '商品': 'desc', '商品名称': 'desc',
-      '收/支': 'dir', '金额(元)': 'amt', '金额': 'amt', '金额（元）': 'amt',
-      '交易日期': 'date', '摘要': 'desc', '摘要信息': 'desc', '对方户名': 'cp',
-      '收入金额': 'inc', '支出金额': 'exp', '借方发生额': 'exp', '贷方发生额': 'inc',
-      '交易创建时间': 'dt', '付款时间': 'dt',
-    };
-    return map[h] || h;
-  });
-
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line || line.startsWith('-') || line.startsWith('#')) continue;
-    const fields = line.split(',').map((f: string) => f.trim().replace(/^"|"$/g, ''));
-    if (fields.length < headers.length) continue;
-
-    const raw: Record<string, string> = {};
-    mappedHeaders.forEach((h: string, idx: number) => { raw[h] = fields[idx] || ''; });
-
-    const dir = raw.dir || '';
-    let type = 'other';
-    let amount = 0;
-
-    if (dir.includes('收入') || dir.includes('贷') || raw.inc) {
-      type = 'income'; amount = parseFloat(raw.inc || raw.amt || '0') || 0;
-    } else if (dir.includes('支出') || dir.includes('借') || raw.exp) {
-      type = 'expense'; amount = parseFloat(raw.exp || raw.amt || '0') || 0;
-    } else {
-      amount = parseFloat(raw.amt || '0') || 0;
-      if (amount > 0 && !dir.includes('不计') && !dir.includes('other')) type = 'expense';
-    }
-
-    if (type === 'other' || amount <= 0) continue;
-
-    const dt = (raw.dt || raw.date || '').replace(/\//g, '-');
-    results.push({
-      type, amount,
-      date: dt.split(' ')[0] || '',
-      description: raw.desc || '',
-      counterparty: raw.cp || '',
-      time: dt.split(' ')[1] || '',
-    });
-  }
-  return results;
-}
-
-const handleCsvUpload = (fileName: string, content: string, loadD: () => void, loadS: () => void) => {
-  const records = parseCsvContent(fileName, content);
-  if (records.length === 0) {
-    message.warning('未能从文件中解析出账单记录，请确认文件格式');
-    return;
-  }
-  const db = (window as any).dbService;
-  let added = 0;
-  for (const r of records) {
-    try {
-      const category = ensureImportCategory(db, r.type as 'income' | 'expense');
-      db.createAssetRecord({
-        date: r.date,
-        type: r.type as 'income' | 'expense',
-        category_id: category.id,
-        category_name: category.name,
-        amount: r.amount,
-        student_name: r.counterparty || undefined,
-        note: `[账单导入] ${r.description || fileName}`.slice(0, 200),
-      });
-      added++;
-    } catch (e) { /* skip */ }
-  }
-  loadD();
-  loadS();
-  message.success(`成功导入 ${added} 条账单记录`);
-};
 
 const PersonalAssets: React.FC = () => {
   const [records, setRecords] = useState<AssetRecord[]>([]);
@@ -162,52 +53,6 @@ const PersonalAssets: React.FC = () => {
   }, [dateRange]);
 
   useEffect(() => { loadData(); loadStats(); }, [loadData, loadStats]);
-
-  const handleEmailCheck = async () => {
-    setEmailChecking(true);
-    setEmailResult(null);
-    try {
-      const values = await emailForm.validateFields();
-      const res = await fetch('/api/bill-import/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(values),
-      });
-      const data = await res.json();
-      if (data.error) {
-        message.error('检查失败: ' + data.error);
-      } else {
-        setEmailResult(data);
-        message.success(`找到 ${data.total || 0} 条账单记录`);
-      }
-    } catch (e: any) {
-      message.error('连接后端失败: ' + (e.message || '未知错误'));
-    }
-    setEmailChecking(false);
-  };
-
-  const importBillRecords = (records: any[]) => {
-    const db = (window as any).dbService;
-    let added = 0;
-    for (const r of records) {
-      try {
-        const category = ensureImportCategory(db, r.type as 'income' | 'expense');
-        db.createAssetRecord({
-          date: r.date,
-          type: r.type as 'income' | 'expense',
-          category_id: category.id,
-          category_name: category.name,
-          amount: r.amount,
-          student_name: r.counterparty || undefined,
-          note: `[${r.platform || '账单'}] ${r.description || ''}`.slice(0, 200),
-        });
-        added++;
-      } catch (e) { /* skip */ }
-    }
-    loadData();
-    loadStats();
-    message.success(`已导入 ${added} 条账单记录`);
-  };
 
   // Filter records based on date and tab
   const filteredRecords = records.filter(r => {
@@ -347,7 +192,7 @@ const PersonalAssets: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title={<span><RiseOutlined /> 总收入</span>}
+              title={<span><RiseOutlined /> 手工及历史记录收入</span>}
               value={stats?.totalIncome || 0}
               precision={2} prefix="¥"
               valueStyle={{ color: '#3f8600', fontWeight: 600, fontSize: 28 }}
@@ -357,7 +202,7 @@ const PersonalAssets: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title={<span><FallOutlined /> 总支出</span>}
+              title={<span><FallOutlined /> 手工及历史记录支出</span>}
               value={stats?.totalExpense || 0}
               precision={2} prefix="¥"
               valueStyle={{ color: '#cf1322', fontWeight: 600, fontSize: 28 }}
@@ -367,7 +212,7 @@ const PersonalAssets: React.FC = () => {
         <Col span={6}>
           <Card>
             <Statistic
-              title={<span><WalletOutlined /> 净收益</span>}
+              title={<span><WalletOutlined /> 记录结余</span>}
               value={stats?.netAmount || 0}
               precision={2} prefix="¥"
               valueStyle={{ color: (stats?.netAmount || 0) >= 0 ? '#3f8600' : '#cf1322', fontWeight: 600, fontSize: 28 }}
@@ -528,83 +373,7 @@ const PersonalAssets: React.FC = () => {
       </Modal>
 
       {/* ===== Auto Import Section ===== */}
-      <Card title={<span><InboxOutlined /> 自动导入账单</span>} style={{ marginBottom: 16 }}>
-        <Tabs defaultActiveKey="manual">
-          <Tabs.TabPane tab={<span><UploadOutlined /> 手动上传CSV</span>} key="manual">
-            <p style={{ color: '#666', marginBottom: 16 }}>
-              支持上传微信/支付宝/银行导出的 CSV 账单文件，自动解析为收支记录。
-            </p>
-            <div style={{ border: '2px dashed #d9d9d9', borderRadius: 8, padding: 40, textAlign: 'center', cursor: 'pointer', background: '#fafafa' }}
-              onDragOver={e => e.preventDefault()}
-              onDrop={e => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                  const content = (ev.target?.result || '') as string;
-                  handleCsvUpload(file.name, content, loadData, loadStats);
-                };
-                reader.readAsText(file);
-              }}
-              onClick={() => {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.csv,.xlsx'; input.onchange = (e: any) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = (ev) => {
-                    const content = (ev.target?.result || '') as string;
-                    handleCsvUpload(file.name, content, loadData, loadStats);
-                  };
-                  reader.readAsText(file);
-                };
-                input.click();
-              }}
-            >
-              <UploadOutlined style={{ fontSize: 48, color: '#1890ff' }} />
-              <p style={{ marginTop: 12, color: '#666' }}>点击或拖拽 CSV 文件到此处</p>
-              <p style={{ fontSize: 12, color: '#999' }}>支持格式：微信支付账单、支付宝账单、银行流水</p>
-            </div>
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={<span><MailOutlined /> 邮箱自动拉取</span>} key="email">
-            <p style={{ color: '#666', marginBottom: 16 }}>
-              配置邮箱后，系统将自动搜索并下载账单邮件中的附件进行解析。
-              支持平台：微信、支付宝、云闪付、微众银行、同花顺、各大银行、证券公司。
-            </p>
-            <Form form={emailForm} layout="inline" style={{ flexWrap: 'wrap', gap: 8 }}>
-              <Form.Item name="imap_server" label="IMAP 服务器" rules={[{ required: true }]}>
-                <Input placeholder="imap.qq.com" style={{ width: 160 }} />
-              </Form.Item>
-              <Form.Item name="imap_port" label="端口" initialValue={993}>
-                <InputNumber placeholder="993" style={{ width: 90 }} />
-              </Form.Item>
-              <Form.Item name="email" label="邮箱地址" rules={[{ required: true }]}>
-                <Input placeholder="your@email.com" style={{ width: 200 }} />
-              </Form.Item>
-              <Form.Item name="password" label="密码/授权码" rules={[{ required: true }]}>
-                <Input.Password placeholder="授权码" style={{ width: 180 }} />
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" icon={<MailOutlined />} loading={emailChecking} onClick={handleEmailCheck}>
-                  {emailChecking ? '检查中...' : '测试并导入'}
-                </Button>
-              </Form.Item>
-            </Form>
-            {emailResult && (
-              <div style={{ marginTop: 12, padding: 12, background: '#f6ffed', borderRadius: 6 }}>
-                <p>✅ 成功检查，找到 {emailResult.emails?.length || 0} 封账单邮件，共解析 {emailResult.total || 0} 条记录</p>
-                {emailResult.emails?.map((e: any, idx: number) => (
-                  <div key={idx} style={{ marginTop: 4, fontSize: 13, color: '#666' }}>
-                    <b>{idx + 1}. {e.subject}</b> — {e.filename} ({e.count} 条)
-                    <Button size="small" type="link" onClick={() => importBillRecords(e.records)}>导入</Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Tabs.TabPane>
-        </Tabs>
-      </Card>
+      <PersonalFinancePanel />
 
       {/* ===== Category Management Modal ===== */}
       <Modal

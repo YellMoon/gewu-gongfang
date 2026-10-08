@@ -1,6 +1,6 @@
 .question-bank-page {
   min-height: 100vh;
-  padding: 18rpx 20rpx calc(220rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 20rpx calc(88rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
   background: #f7f4ee;
 }
@@ -470,7 +470,7 @@
   font-size: 27rpx;
   line-height: 42rpx;
   word-break: break-word;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .question-preview-stem image,
@@ -520,6 +520,8 @@
   flex: 1;
   min-width: 0;
   color: #42506a;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 
 .question-subquestions {
@@ -768,6 +770,13 @@
   color: #7d8795;
   font-size: 23rpx;
   line-height: 34rpx;
+}
+
+@media (max-width: 420PX) {
+  .question-options.cols-4 {
+    // UTF-8: Preserve readable number/unit pairs instead of splitting them into four narrow cells.
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 340px) {

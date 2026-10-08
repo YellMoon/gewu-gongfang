@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceLedger": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "apply additive owner-scoped personal-finance tables before deploying cloud routes; original observations and annotation revisions remain immutable, amounts use integer minor-unit strings, duplicate evidence and account movements are separate from consumption, and missing balance anchors stay unknown; desktop edits financial accounts and associations under verified permissions, miniapp only reads statistics and confirms permitted imports; deploy cloud and private encrypted source volume before publishing readers; AgentMail credentials and configured inbox owner remain server-side; existing teaching, legacy assets and NAS byte-storage transport remain compatible"
+    },
     "desktopQuestionIntake": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

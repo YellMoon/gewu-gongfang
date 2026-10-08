@@ -11,6 +11,7 @@ const {
   RICH_VISITOR_QUESTION_LIMIT,
 } = require('./capture-miniapp-ui-matrix');
 const { cloudSessionUser } = require('../miniapp/src/utils/cloudSessionIdentityRuntime');
+const { createCloudBusinessProjectionRuntime } = require('../miniapp/src/utils/cloudBusinessProjection');
 const { createQuestionDisplay, columnsForOptions } = require('../miniapp/src/utils/questionDisplay');
 const { assertPdfArtifact } = require('../cloud-business-api/src/pdfArtifactValidation');
 const fs = require('fs');
@@ -79,6 +80,14 @@ function requestBytes(pathname, token, port = TEST_PORT) {
   assert.strictEqual(typeof startFixtureServer, 'function', 'fixture server must be reusable outside the legacy automator runner');
   const { server } = await startFixtureServer(TEST_PORT);
   try {
+    const projectionWrites = [];
+    await createCloudBusinessProjectionRuntime({
+      readProjection: async token => ({ success: true, data: (await request('/api/business/miniapp-projection', token)).body }),
+      writeCache: (key, rows) => projectionWrites.push([key, rows]),
+    }).refresh('fixture-teacher', () => true);
+    assert.strictEqual(projectionWrites.length, 12, 'the visual fixture must satisfy the real projection reader, including payments and grades');
+    assert.deepStrictEqual(projectionWrites.find(([key]) => key === 'payments')[1], []);
+    assert.deepStrictEqual(projectionWrites.find(([key]) => key === 'grades')[1], []);
     const response = await request('/api/miniapp/cloud-context', 'fixture-teacher');
     assert.strictEqual(response.statusCode, 200);
     assert.strictEqual(response.body.identity.accountId, 'fixture-teacher');

@@ -86,7 +86,9 @@ const basketBottom = Number(overlayStyles.match(/&\.above-tab-bar\s*\{\s*bottom:
 const basketHeight = Number(overlayStyles.match(/\.global-question-basket\s*\{[\s\S]*?height:\s*(\d+)rpx/)?.[1] || 0);
 const cardBottomInset = Number(styles.match(/\.question-preview-item,[\s\S]*?padding:\s*\d+rpx\s+\d+rpx\s+(\d+)rpx/)?.[1] || 0);
 assert.ok(bankBottomPadding > 0 && basketBottom > 0 && basketHeight > 0 && cardBottomInset > 0, 'basket clearance values must remain statically measurable');
-assert.ok(bankBottomPadding + cardBottomInset >= basketBottom + basketHeight + 8, `the last question action must clear the floating basket by at least 8rpx (${bankBottomPadding} + ${cardBottomInset} vs ${basketBottom} + ${basketHeight})`);
+assert.match(source, /<QuestionBasketOverlay[\s\S]*?inline/, 'the bank basket must use an in-flow entrance instead of covering question actions');
+assert.match(overlayStyles, /\.global-question-basket\.inline-entry\s*\{[^}]*position:\s*static/, 'the inline entrance must actually remain in document flow');
+assert.ok(bankBottomPadding >= 88 && bankBottomPadding < basketBottom + basketHeight, 'the bank reserves tab clearance without a retired floating-basket spacer');
 assert.match(source, /question-more-filter-layer/, 'secondary desktop filters must use a mobile bottom sheet instead of occupying half the screen');
 assert.match(source, /<ScrollView\s+className='[^']*question-more-filter-scroll[^']*'\s+scrollY/, 'the tall more-filter form must use a native scroll container');
 assert.match(source, /question-active-filters/, 'active secondary filters must stay visible and individually clearable');

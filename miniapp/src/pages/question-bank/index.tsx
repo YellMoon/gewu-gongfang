@@ -7,6 +7,8 @@ import { authSessionRuntime } from '../../utils/authSession';
 import { canUserSubmitMiniappWrite, isRetiredIdentity, roleOf } from '../../utils/miniappAuthorizationRuntime';
 import { questionBasketStore, useQuestionBasket } from '../../utils/questionBasketStore';
 import QuestionBasketOverlay from '../../components/QuestionBasketOverlay';
+// @ts-ignore Presentation formatting is exercised by the actual page runtime.
+import { keepNumericUnitsTogether } from './questionTypography';
 // @ts-ignore CommonJS display module has no TypeScript declarations.
 import * as questionDisplayRuntime from '../../utils/questionDisplay';
 import './index.scss';
@@ -74,7 +76,7 @@ function questionAssetRequests(question: QuestionPreview): Array<{ questionId: s
 }
 
 function miniRichNodes(value: string, paths: Record<string, string>) {
-  return resolveQuestionAssetRefs(value, paths);
+  return keepNumericUnitsTogether(resolveQuestionAssetRefs(value, paths));
 }
 
 function appendUniqueQuestions(current: QuestionPreview[], incoming: QuestionPreview[]) {
@@ -126,6 +128,8 @@ export default function QuestionBankPage() {
   const loadingMoreRef = useRef(false);
   const hasMoreQuestionsRef = useRef(false);
   const nextQuestionCursorRef = useRef<string | null>(null);
+  const displayedSessionRef = useRef(authSessionRuntime.capture());
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [questions, setQuestions] = useState<QuestionPreview[]>([]);
   const basketState = useQuestionBasket();
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
@@ -164,8 +168,41 @@ export default function QuestionBankPage() {
   }, []);
 
   useDidShow(() => {
+    const session = authSessionRuntime.capture();
+    // UTF-8: A tab may survive account changes; never reuse the prior cloud scope.
+    questionListGenerationRef.current += 1;
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    if (!authSessionRuntime.isSameSession(displayedSessionRef.current)) {
+      displayedSessionRef.current = session;
+      setQuestions([]);
+      setQuestionTotal(0);
+      setFilterOptions({ subjects: [], types: [], sources: [], knowledgePoints: [], difficulties: [], grades: [], semesters: [], examTypes: [], examYears: [] });
+      setExpandedQuestionId(null);
+      setSearchText('');
+      setSelectedSubject('');
+      setSelectedType('');
+      setSelectedSource('');
+      setSelectedKnowledge('');
+      setSelectedDifficulty('');
+      setSelectedGrade('');
+      setSelectedSemester('');
+      setSelectedExamType('');
+      setSelectedExamYear('');
+      setMoreFiltersOpen(false);
+      setAssetPaths({});
+      requestedQuestionAssetsRef.current.clear();
+      moreAccessPromptOpenRef.current = false;
+      hasMoreQuestionsRef.current = false;
+      nextQuestionCursorRef.current = null;
+      setHasMoreQuestions(false);
+      setNextQuestionCursor(null);
+    }
+    setPreviewState('loading');
+    setPreviewMessage('');
     setIdentity(Taro.getStorageSync('user_info'));
     questionBasketStore.reconcileIdentity();
+    setRefreshRevision(current => current + 1);
   });
 
   const loadQuestionAssets = async (question: QuestionPreview) => {
@@ -342,7 +379,7 @@ export default function QuestionBankPage() {
   useEffect(() => {
     const timer = setTimeout(() => { void loadQuestions(); }, searchText.trim() || selectedSource.trim() ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [selectedSubject, selectedType, selectedSource, selectedKnowledge, selectedDifficulty, selectedGrade, selectedSemester, selectedExamType, selectedExamYear, searchText]);
+  }, [refreshRevision, selectedSubject, selectedType, selectedSource, selectedKnowledge, selectedDifficulty, selectedGrade, selectedSemester, selectedExamType, selectedExamYear, searchText]);
 
   const subjectValues = filterOptions.subjects;
   const activeSubject = selectedSubject;
@@ -658,6 +695,13 @@ export default function QuestionBankPage() {
         <Text>{'共 ' + questionTotal + ' 题'}</Text>
         {hasActiveFilters ? <Text className='question-filter-reset' onClick={clearFilters}>{'清除筛选'}</Text> : null}
       </View> : null}
+      <QuestionBasketOverlay
+        canUse={canBuildPaper}
+        inline
+        onRestricted={requestRoleApplication}
+        resolveNodes={value => miniRichNodes(value, assetPaths)}
+        onResolveQuestions={resolveBasketQuestions}
+      />
     </View>
 
     {previewState !== 'ready'
@@ -758,12 +802,5 @@ export default function QuestionBankPage() {
     {loadingMore && nextQuestionCursor ? <View className='question-loading-more'>
       <Text>{'\u6b63\u5728\u52a0\u8f7d\u66f4\u591a\u9898\u76ee'}</Text>
     </View> : null}
-    <QuestionBasketOverlay
-      canUse={canBuildPaper}
-      aboveTabBar
-      onRestricted={requestRoleApplication}
-      resolveNodes={value => miniRichNodes(value, assetPaths)}
-      onResolveQuestions={resolveBasketQuestions}
-    />
   </View>;
 }

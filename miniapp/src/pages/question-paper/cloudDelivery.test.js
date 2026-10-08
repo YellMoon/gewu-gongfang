@@ -4,7 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const source = fs.readFileSync(path.join(__dirname, 'index.tsx'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, 'index.tsx'), 'utf8').replace(/\r\n/g, '\n');
 const styles = fs.readFileSync(path.join(__dirname, 'index.scss'), 'utf8');
 const config = fs.readFileSync(path.join(__dirname, 'index.config.ts'), 'utf8');
 const apiSource = fs.readFileSync(path.join(__dirname, '..', '..', 'utils', 'api.ts'), 'utf8');

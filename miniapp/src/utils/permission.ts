@@ -130,6 +130,7 @@ export interface PermissionState {
   capabilities: MiniappCapability[];
 }
 let _permissionState: PermissionState = { status: 'idle', identityKey: '', capabilities: [] };
+let permissionRequest: { session: ReturnType<typeof authSessionRuntime.capture>; promise: Promise<PermissionData> } | null = null;
 const CACHE_KEY = 'user_permissions';
 const authorizationSession = createAuthorizationSession({
   readCache: () => Taro.getStorageSync(CACHE_KEY) || null,
@@ -273,7 +274,15 @@ export function getMiniappRolePolicy(user: Partial<UserInfo> | null = getCurrent
  * Refresh permissions from the authenticated server. Persistent data is never authoritative.
  */
 export async function fetchPermissions(): Promise<PermissionData> {
-  return permissionFetchBoundary.fetchPermissions();
+  // UTF-8: App launch and page did-show may verify the same session concurrently.
+  // Join only its active authority request; cached capabilities still grant nothing.
+  if (permissionRequest && authSessionRuntime.isSameSession(permissionRequest.session)) return permissionRequest.promise;
+  const request = { session: authSessionRuntime.capture(), promise: null as unknown as Promise<PermissionData> };
+  request.promise = permissionFetchBoundary.fetchPermissions().finally(() => {
+    if (permissionRequest === request) permissionRequest = null;
+  });
+  permissionRequest = request;
+  return request.promise;
 }
 
 /**

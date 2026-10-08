@@ -307,6 +307,67 @@
 }
 
 @media (orientation: landscape), (min-width: 700px) {
+  .schedule-page {
+    // UTF-8: Native tab bars already reserve their own viewport height.
+    padding-bottom: calc(8PX + env(safe-area-inset-bottom));
+  }
+
+  .view-toggle {
+    flex-shrink: 0;
+    margin: 6PX 12PX 4PX;
+    padding: 4PX;
+    gap: 4PX;
+  }
+
+  .toggle-btn,
+  .filter-tag,
+  .nav-arrow,
+  .nav-today {
+    min-height: 44PX;
+    font-size: 14PX;
+    line-height: 20PX;
+  }
+
+  .filter-bar {
+    flex-shrink: 0;
+    padding: 4PX 12PX;
+  }
+
+  .filter-tag {
+    margin-right: 6PX;
+    padding: 0 12PX;
+  }
+
+  .week-nav,
+  .day-nav {
+    min-height: 44PX;
+    flex-shrink: 0;
+    margin: 0 12PX 6PX;
+    padding: 0 6PX;
+  }
+
+  .nav-arrow,
+  .nav-today {
+    min-width: 44PX;
+    width: 44PX;
+  }
+
+  .nav-arrow {
+    font-size: 24PX;
+    line-height: 44PX;
+  }
+
+  .nav-title,
+  .day-title-text {
+    font-size: 16PX;
+    line-height: 22PX;
+  }
+
+  .week-header {
+    // UTF-8: Every landscape day column already contains this date and weekday.
+    display: none;
+  }
+
   .week-view {
     width: calc(100% - 36rpx);
     margin: 0 18rpx;
@@ -328,56 +389,58 @@
   }
 
   .day-section-title {
-    min-height: 70rpx;
+    min-height: 40PX;
     margin: 0;
-    padding: 12rpx 12rpx 8rpx;
+    padding: 4PX;
     box-sizing: border-box;
     display: block;
-    font-size: 22rpx;
-    line-height: 30rpx;
+    font-size: 14PX;
+    line-height: 20PX;
     text-align: center;
   }
 
   .day-section-count {
     display: block;
-    margin-top: 2rpx;
-    font-size: 19rpx;
-    line-height: 26rpx;
+    margin-top: 0;
+    font-size: 12PX;
+    line-height: 16PX;
   }
 
   .day-column-inner {
-    padding: 0 8rpx 12rpx;
+    padding: 0 4PX 8PX;
   }
 
   .schedule-card {
     display: block;
-    min-height: 132rpx;
-    margin-bottom: 10rpx;
-    padding: 18rpx 14rpx 16rpx;
+    min-height: 112PX;
+    margin-bottom: 6PX;
+    padding: 8PX 6PX;
     border-radius: 18rpx;
   }
 
   .schedule-card::before {
-    top: 16rpx;
-    bottom: 16rpx;
-    width: 5rpx;
+    top: 8PX;
+    bottom: 8PX;
+    width: 3PX;
   }
 
   .schedule-time {
     width: auto;
     margin-right: 0;
-    margin-bottom: 6rpx;
+    margin-bottom: 2PX;
+    padding-top: 0;
     justify-content: flex-start;
   }
 
   .time-text {
-    font-size: 24rpx;
-    line-height: 32rpx;
+    // UTF-8: Uppercase PX keeps this readability floor through Taro's pxtransform.
+    font-size: 14PX;
+    line-height: 20PX;
   }
 
   .schedule-course {
-    font-size: 23rpx;
-    line-height: 32rpx;
+    font-size: 14PX;
+    line-height: 20PX;
     white-space: normal;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -386,7 +449,7 @@
 
   .schedule-sub,
   .schedule-note {
-    font-size: 19rpx;
-    line-height: 28rpx;
+    font-size: 12PX;
+    line-height: 18PX;
   }
 }
