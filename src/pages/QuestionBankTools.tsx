@@ -190,6 +190,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
                     rowKey="id"
                     dataSource={stats.recentTasks}
                     pagination={false}
+                    scroll={{ x: 640 }}
                     locale={{ emptyText: '暂无导入记录' }}
                     columns={[
                       { title: '文件', dataIndex: 'file_name', ellipsis: true, render: value => value || '-' },

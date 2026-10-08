@@ -53,7 +53,8 @@
 
 .question-bank-tools-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  /* UTF-8: keep import-history columns inside their card at desktop zoom sizes. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--app-content-gap, 12px);
   align-items: start;
 }
