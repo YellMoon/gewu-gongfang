@@ -822,6 +822,20 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         self.assertNotIn('if args.command == "promote"', source)
 
 
+class FinanceMailTransportTests(unittest.TestCase):
+    def test_imap_transport_requires_complete_owner_bound_credentials(self):
+        values = {'CLOUD_BILL_MAIL_API_KEY': 'am_us_' + 'a' * 40,
+                  'CLOUD_BILL_MAIL_INBOX_ID': 'bill@agentmail.to',
+                  'CLOUD_BILL_MAIL_OWNER_ACCOUNT_ID': 'owner',
+                  'CLOUD_BILL_MAIL_TRANSPORT': 'imap'}
+        self.assertEqual(module.finance_runtime_overrides(values), values)
+        for transport in ('smtp', 'imap\nBAD=value', 'https://attacker.invalid'):
+            with self.assertRaises(Exception):
+                module.finance_runtime_overrides(dict(values, CLOUD_BILL_MAIL_TRANSPORT=transport))
+        with self.assertRaises(Exception):
+            module.finance_runtime_overrides({'CLOUD_BILL_MAIL_TRANSPORT': 'imap'})
+
+
 def load_tests(loader, tests, pattern):
     spec = importlib.util.spec_from_file_location('cloud_release_source_tests',
                                                 Path(__file__).with_name('cloud_release_source.test.py'))

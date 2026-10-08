@@ -24,5 +24,26 @@ assert.deepEqual(applyScheduleCourseContext(unrelated),{schedules:unrelated.sche
 const sql=withScheduleCourseContextSql('SELECT $1::jsonb AS projection');
 assert(sql.includes("c.tenant_id=$1 AND c.id IN (SELECT lesson->>'course_id'"));
 assert(!sql.includes('price_teacher'));assert(!sql.includes('hourly_rate'));
-require('../../miniapp/src/pages/schedule/courseHistory.test');
 console.log(`original course display rules, immutable lesson fields and internal-context removal passed: ${count} cases`);
+
+// The same visible course keeps its desktop color when the caller sees a subset.
+const coloredInput = {
+  courses: [{ id: 'visible-course', room_id: 'visible-room', name: 'Visible' }],
+  schedules: [],
+  _calendarColorBasis: {
+    courses: [{ id: 'private-course', room_id: 'private-room' }, { id: 'visible-course', room_id: 'visible-room' }],
+    rooms: [{ id: 'private-room', name: 'A private location' }, { id: 'visible-room', name: 'Z visible location' }],
+  },
+};
+const coloredBefore = structuredClone(coloredInput);
+const colored = applyScheduleCourseContext(coloredInput);
+assert.equal(colored.courses[0].calendar_color, '#E8F5E9', 'use tenant-wide desktop palette, not the restricted first color');
+assert.equal(colored.courses.length, 1, 'no extra course is exposed');
+assert(!Object.hasOwn(colored, '_calendarColorBasis'));
+assert(!JSON.stringify(colored).includes('private-'));
+assert.deepEqual(coloredInput, coloredBefore, 'color projection never mutates authoritative rows');
+assert(sql.includes("'_calendarColorBasis'"));
+assert(sql.includes('c.tenant_id=$1 AND c.legacy_deleted=false'));
+assert(sql.includes('r.tenant_id=$1 AND r.legacy_deleted=false'));
+console.log('role-independent course color and private palette basis removal passed');
+require('../../miniapp/src/pages/schedule/courseHistory.test');

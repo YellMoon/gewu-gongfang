@@ -1,4 +1,5 @@
 'use strict';
+const { buildCourseColorMap } = require('../../shared/courseColors');
 
 // UTF-8: retain the original course-derived labels for already-authorized lessons.
 // Tombstoned courses remain outside selectors. No rates, contacts or new lessons are exposed.
@@ -6,6 +7,7 @@ function withScheduleCourseContextSql(sql) {
   return [
     `WITH course_context_projection AS (${sql})`,
     'SELECT projection || jsonb_build_object(',
+    "'_calendarColorBasis',jsonb_build_object('courses',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'room_id',c.legacy_room_id,'room_name',c.room_name_snapshot)) FROM business.courses c WHERE c.tenant_id=$1 AND c.legacy_deleted=false),'[]'::jsonb),'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'name',r.name)) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false),'[]'::jsonb)),",
     "'_scheduleCourseContext',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'display_name',c.display_name,'type',c.course_type,'year',c.year,'semester',c.semester) ORDER BY c.id) FROM business.courses c WHERE c.tenant_id=$1 AND c.id IN (SELECT lesson->>'course_id' FROM jsonb_array_elements(projection->'schedules') lesson)),'[]'::jsonb)",
     ') AS projection FROM course_context_projection',
   ].join(' ');
@@ -13,7 +15,11 @@ function withScheduleCourseContextSql(sql) {
 
 function applyScheduleCourseContext(value) {
   if (!value || !Array.isArray(value.schedules)) return value;
-  const { _scheduleCourseContext: context, ...projection } = value;
+  const { _scheduleCourseContext: context, _calendarColorBasis: colorBasis, ...projection } = value;
+  if (Array.isArray(colorBasis?.courses) && Array.isArray(colorBasis?.rooms) && Array.isArray(projection.courses)) {
+    const colors = buildCourseColorMap(colorBasis.courses, colorBasis.rooms);
+    projection.courses = projection.courses.map(course => ({ ...course, calendar_color: colors[course.id] }));
+  }
   const courses = new Map((Array.isArray(context) ? context : []).map(course => [course.id, course]));
   return { ...projection, schedules: value.schedules.map(schedule => {
     const course = courses.get(schedule.course_id);

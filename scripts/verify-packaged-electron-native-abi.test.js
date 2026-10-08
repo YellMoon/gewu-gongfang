@@ -12,7 +12,9 @@ assert.throws(() => verifier.verifyPackagedNativeModule({ appRoot: path.resolve(
   return () => { if (entry.includes(`${path.sep}backend${path.sep}`)) throw new Error('BACKEND_ABI_MISMATCH'); return FakeDatabase; };
 }, log: () => {} }), /BACKEND_ABI_MISMATCH/, 'a working root binary must not hide an incompatible nested backend binary');
 assert.equal(checked.length, 2);
-assert(packageJson.scripts['rebuild:node'].includes('npm --prefix backend rebuild better-sqlite3'), 'Node restore must cover the backend copy');
+assert.equal(packageJson.scripts['rebuild:node'], 'node scripts/rebuild-node-native.js');
+require('./rebuild-node-native.test');
+require('./dist-win-restore.test');
 assert(packageJson.scripts['rebuild:electron'].includes('rebuild-backend-electron-deps.js'), 'Electron preparation must cover the backend copy');
 
 assert.throws(
@@ -34,7 +36,7 @@ assert.strictEqual(
 );
 
 for (const scriptName of ['dist', 'pack', 'dist:win']) {
-  const command = packageJson.scripts[scriptName];
+  const command = packageJson.scripts[scriptName === 'dist:win' ? 'dist:win:build' : scriptName];
   assert.match(
     command,
     /PACKAGED_APP_ROOT=[^&]*\\win-unpacked\\resources\\app/i,

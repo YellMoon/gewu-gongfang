@@ -159,7 +159,7 @@ def cloud_runtime_overrides(environ=None, *, expected_appid=None):
 
 def finance_runtime_overrides(environ=None):
     env = os.environ if environ is None else environ
-    keys = ('CLOUD_BILL_ARCHIVE_KEY', 'CLOUD_BILL_MAIL_API_KEY', 'CLOUD_BILL_MAIL_INBOX_ID', 'CLOUD_BILL_MAIL_OWNER_ACCOUNT_ID', 'CLOUD_BILL_MAIL_DOWNLOAD_HOSTS')
+    keys = ('CLOUD_BILL_ARCHIVE_KEY', 'CLOUD_BILL_MAIL_API_KEY', 'CLOUD_BILL_MAIL_INBOX_ID', 'CLOUD_BILL_MAIL_OWNER_ACCOUNT_ID', 'CLOUD_BILL_MAIL_DOWNLOAD_HOSTS', 'CLOUD_BILL_MAIL_TRANSPORT')
     values = {key: str(env[key]) for key in keys if env.get(key)}
     if not values:
         return {}
@@ -168,7 +168,7 @@ def finance_runtime_overrides(environ=None):
                 or any('\n' in value or '\r' in value or '\x00' in value for value in values.values())):
             raise ValueError()
         mail_keys = keys[1:4]
-        if any(key in values for key in mail_keys):
+        if any(key in values for key in mail_keys) or 'CLOUD_BILL_MAIL_TRANSPORT' in values:
             if not all(key in values for key in mail_keys):
                 raise ValueError()
             if (not re.fullmatch(r'[A-Za-z0-9_.:@=+\-]{10,1024}', values[mail_keys[0]])
@@ -176,6 +176,8 @@ def finance_runtime_overrides(environ=None):
                     or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:\-]{0,159}', values[mail_keys[2]])):
                 raise ValueError()
         if 'CLOUD_BILL_MAIL_DOWNLOAD_HOSTS' in values and not re.fullmatch(r'[a-z0-9.\-,]{1,1024}', values['CLOUD_BILL_MAIL_DOWNLOAD_HOSTS']):
+            raise ValueError()
+        if values.get('CLOUD_BILL_MAIL_TRANSPORT', 'api') not in {'api', 'imap'}:
             raise ValueError()
     except (ValueError, TypeError) as error:
         raise failure('CLOUD_DOCKER_FINANCE_CONFIG_INVALID') from error

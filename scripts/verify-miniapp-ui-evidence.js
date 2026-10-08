@@ -15,6 +15,8 @@ function miniappUiSourceHash(root = ROOT) {
   }
   walk('miniapp/src');
   walk('miniapp/config');
+  // Both the calendar and finance pages compile modules outside miniapp/src.
+  walk('shared');
   for (const file of ['miniapp/package.json', 'scripts/capture-miniapp-ui-matrix.js', 'scripts/build-miniapp-with-proof.js', 'miniapp/project.config.json']) files.push([file, digest(fs.readFileSync(path.join(root, file)))]);
   return digest(JSON.stringify(files));
 }

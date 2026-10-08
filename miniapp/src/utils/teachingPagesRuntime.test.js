@@ -28,6 +28,8 @@ function harness(page, role='teacher') {
   const jsx=(type,props)=>({type,props:props||{}});
   const localData=key=>{h.reads.push(key);return h.cache[key]||[];};
   const shared={
+    'shared/courseColors':require(path.resolve(__dirname,'../../../shared/courseColors')),
+    'shared/calendarHolidays':require(path.resolve(__dirname,'../../../shared/calendarHolidays')),
     types:{ScheduleStatus:{PLANNED:1,COMPLETED:2,CANCELLED:3,LEAVE:4}},
     'utils/sync':{getLocalData:localData,getLocalItem:(key,id)=>localData(key).find(row=>row.id===id),pullFromCloudBusinessProjection:async()=>{h.pulls++;return h.result();}},
     'utils/storage':{getCachedList:localData},
@@ -116,36 +118,37 @@ function harness(page, role='teacher') {
   const visitorDetail=harness('schedule/detail','visitor');visitorDetail.mount();await visitorDetail.refresh();
   assert.equal(visitorDetail.pulls,0,'visitor detail cannot request a forbidden business projection');
   assert.equal(visitorDetail.reads.length,0);assert.ok(find(visitorDetail,'Forbidden'),'visitor detail must explain the role boundary, not suggest a network retry');
-  // UTF-8: Exercise the real day/week/date/filter handlers for every formal role.
+  // Execute the actual two-week/date/detail handlers for every formal role.
   for(const role of ['teacher','super_admin','student','family_member']) {
-    const h=harness('schedule',role),today=dates.shanghaiDateKey(new Date()),tomorrow=dates.shiftShanghaiDateKey(today,1);
-    h.cache.schedules.push({...h.cache.schedules[0],id:'tomorrow',start_time:tomorrow+'T12:00:00+08:00'});
-    h.mount();await h.refresh();byClass(h.render(),'toggle-btn')[1].props.onClick();
-    assert.equal(byClass(h.render(),'day-view').length,1);
-    assert.equal(byClass(h.render(),'schedule-card').length,1,'day only includes its own lessons');
+    const h=harness('schedule',role),today=dates.shanghaiDateKey(new Date()),next=dates.shiftShanghaiDateKey(today,7);
+    h.cache.schedules.push({...h.cache.schedules[0],id:'next-week',start_time:next+'T12:00:00+08:00',end_time:next+'T13:00:00+08:00'});
+    h.mount();await h.refresh();
+    assert.equal(byClass(h.render(),'week-grid').length,2);
+    assert.equal(byClass(h.render(),'day-column').length,14);
+    assert.equal(byClass(h.render(),'schedule-card').length,2);
     assert.ok(text(byClass(h.render(),'schedule-card')[0]).includes('Original Course'));
     assert.ok(text(byClass(h.render(),'schedule-card')[0]).includes('Original Address'));
-    assert.equal(byClass(h.render(),'filter-bar').length,['teacher','super_admin'].includes(role)?1:0);
+    for(const cls of ['filter-bar','filter-tag','toggle-btn','nav-title','day-section-count'])assert.equal(byClass(h.render(),cls).length,0);
     byClass(h.render(),'schedule-card')[0].props.onClick();assert.deepEqual(h.routes,['/pages/schedule/detail/index?id=lesson']);
-    const title=text(byClass(h.render(),'day-title-text')[0]);
-    byClass(h.render(),'nav-arrow')[1].props.onClick();assert.notEqual(text(byClass(h.render(),'day-title-text')[0]),title);
-    byClass(h.render(),'schedule-card')[0].props.onClick();assert.equal(h.routes.at(-1),'/pages/schedule/detail/index?id=tomorrow');
-    h.hide();await h.refresh();assert.notEqual(text(byClass(h.render(),'day-title-text')[0]),title,'detail return must retain selected day');
-    await h.pull();await tick();assert.equal(byClass(h.render(),'day-view').length,1,'native pull retains day mode');
-    byClass(h.render(),'nav-arrow')[1].props.onClick();assert.equal(find(h,'EmptyState').props.text,'当天没有课程');
-    byClass(h.render(),'nav-today')[0].props.onClick();assert.equal(text(byClass(h.render(),'day-title-text')[0]),title);
-    byClass(h.render(),'toggle-btn')[0].props.onClick();assert.equal(byClass(h.render(),'week-view').length,1);
-    byClass(h.render(),'nav-arrow')[1].props.onClick();byClass(h.render(),'toggle-btn')[1].props.onClick();
-    const shifted=dates.shanghaiDateParts(dates.shiftShanghaiDateKey(today,7));
-    assert.ok(text(byClass(h.render(),'day-title-text')[0]).startsWith(shifted.month+'月'+shifted.day+'日'));
+    const original=byClass(h.render(),'day-column')[0].props['data-date'];
+    byClass(h.render(),'nav-arrow')[1].props.onClick();assert.notEqual(byClass(h.render(),'day-column')[0].props['data-date'],original);
+    assert.equal(byClass(h.render(),'schedule-card').length,1);
+    byClass(h.render(),'schedule-card')[0].props.onClick();assert.equal(h.routes.at(-1),'/pages/schedule/detail/index?id=next-week');
+    h.hide();await h.refresh();assert.notEqual(byClass(h.render(),'day-column')[0].props['data-date'],original,'detail return retains selected week');
+    await h.pull();await tick();assert.equal(byClass(h.render(),'week-grid').length,2,'native pull retains two-week board');
+    byClass(h.render(),'nav-arrow')[1].props.onClick();assert.equal(byClass(h.render(),'schedule-card').length,0,'empty days keep real time grids');
+    assert.equal(byClass(h.render(),'day-grid-body').length,14);
+    byClass(h.render(),'nav-today')[0].props.onClick();assert.equal(byClass(h.render(),'day-column')[0].props['data-date'],original);
   }
-  const calendar=harness('schedule');calendar.mount();await calendar.refresh();byClass(calendar.render(),'toggle-btn')[1].props.onClick();
+  const calendar=harness('schedule');calendar.mount();await calendar.refresh();
   const dateKey=dates.shanghaiDateKey(new Date()),year=Number(dateKey.slice(0,4)),last=year+'-12-31';
-  const steps=Math.round((Date.parse(last+'T00:00:00Z')-Date.parse(dateKey+'T00:00:00Z'))/86400000);
+  const currentMonday=dates.shanghaiWeekDateKeys(dateKey)[0],lastMonday=dates.shanghaiWeekDateKeys(last)[0];
+  const steps=Math.round((Date.parse(lastMonday+'T00:00:00Z')-Date.parse(currentMonday+'T00:00:00Z'))/(7*86400000));
   for(let i=0;i<steps;i++)byClass(calendar.render(),'nav-arrow')[1].props.onClick();
-  assert.ok(text(byClass(calendar.render(),'day-title-text')[0]).startsWith('12月31日'));
-  byClass(calendar.render(),'nav-arrow')[1].props.onClick();assert.ok(text(byClass(calendar.render(),'day-title-text')[0]).startsWith('1月1日'));
-  byClass(calendar.render(),'nav-arrow')[0].props.onClick();assert.ok(text(byClass(calendar.render(),'day-title-text')[0]).startsWith('12月31日'));
+  const boundary=byClass(calendar.render(),'day-column').map(column=>column.props['data-date']);
+  assert.ok(boundary.includes(last)&&boundary.includes((year+1)+'-01-01'),'two weeks share the exact year-boundary date keys');
+  byClass(calendar.render(),'nav-arrow')[1].props.onClick();assert.ok(byClass(calendar.render(),'day-column')[0].props['data-date'].startsWith(String(year+1)));
+  byClass(calendar.render(),'nav-arrow')[0].props.onClick();assert.equal(byClass(calendar.render(),'day-column')[0].props['data-date'],lastMonday);
   const switched=harness('schedule');switched.mount();await switched.refresh();
   switched.role='visitor';switched.epoch++;switched.allowed=false;
   const priorPulls=switched.pulls,priorReads=switched.reads.length;await switched.refresh();
@@ -156,16 +159,14 @@ function harness(page, role='teacher') {
   // UTF-8: 最后一张课程卡片必须能滚到固定底部导航的上方。
   const scheduleCss=fs.readFileSync(path.join(__dirname,'../pages/schedule/index.scss'),'utf8');
   const pageCss=scheduleCss.match(/\.schedule-page\s*\{([^}]+)\}/)[1];
-  const scrollCss=scheduleCss.match(/\.day-view,\s*\.week-view\s*\{([^}]+)\}/)[1];
+  const scrollCss=scheduleCss.match(/\.week-view\s*\{([^}]+)\}/)[1];
   assert.match(pageCss,/(?:^|[;\s])height:\s*100vh/,'schedule viewport must be bounded');
   assert.match(pageCss,/display:\s*flex/);assert.match(pageCss,/flex-direction:\s*column/);
-  assert.match(pageCss,/padding-bottom:\s*calc\(148rpx \+ env\(safe-area-inset-bottom\)\)/,'retain tab and safe-area clearance');
+  assert.match(pageCss,/padding-bottom:\s*calc\(8PX \+ env\(safe-area-inset-bottom\)\)/,'native tab reserves its own viewport, keep safe-area clearance');
   assert.match(scrollCss,/flex:\s*1/);assert.match(scrollCss,/height:\s*0/);assert.match(scrollCss,/min-height:\s*0/);
-  // UTF-8: Date, mode and student controls need usable phone touch targets.
-  for(const selector of ['toggle-btn','filter-tag','nav-arrow','nav-today']) {
-    const css=scheduleCss.match(new RegExp('\\.'+selector+'\\s*\\{([^}]+)\\}'))[1];
-    assert.match(css,/min-height:\s*44px/,selector+': at least 44px high');
-    if(selector.startsWith('nav-'))assert.match(css,/min-width:\s*44px/,selector+': at least 44px wide');
-  }
+  // The only toolbar controls are the real previous/current/next week actions.
+  const navigationCss=scheduleCss.match(/\.nav-arrow,\s*\.nav-today\s*\{([^}]+)\}/)[1];
+  assert.match(navigationCss,/min-height:\s*44PX/);
+  assert.match(navigationCss,/min-width:\s*44PX/);
   console.log('teaching pages load/failure/cache/return/role/session/history and action tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

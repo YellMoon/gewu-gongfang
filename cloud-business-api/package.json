@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.16.0",
+  "version": "8.16.1",
   "scripts": {
     "posttest:miniapp-cloud-read": "node sql/personal-asset-import.postgres.test.js",
     "test:desktop-device-names": "node ../shared/vnext-pg17/desktopDeviceNames.postgres.test.js && node ../scripts/vnext-migration/cloudControlPlaneM29Upgrade.test.js && node ../scripts/vnext-migration/cloudControlPlaneM29Upgrade.postgres.test.js",
@@ -11,7 +11,7 @@
     "test:managed-teacher": "node src/businessTeacherLifecycleMutationService.test.js && node src/teacherSelfUpdateRoutes.test.js && node sql/managed-teacher-profile.postgres.test.js && node sql/retained-teacher-profile.postgres.test.js",
     "test:teacher-institution": "node src/businessFoundationLifecycleMutationService.test.js && node src/foundationLifecycleRoutes.test.js && node sql/institution-billing-student.postgres.test.js && node sql/teacher-institution-scope.postgres.test.js && node sql/teacher-institution-student-access.postgres.test.js",
     "test:desktop-student-ledger": "node src/desktopStudentBalance.test.js && node sql/desktop-student-ledger.postgres.test.js",
-    "test:teacher-course": "node src/desktopTeacherCourseAccess.test.js && node src/businessCourseLifecycleMutationService.test.js && node src/businessRoomLifecycleMutationService.test.js && node sql/teacher-room-maintenance.postgres.test.js && node sql/teacher-course-scope.postgres.test.js && node src/scheduleCoursePresentation.test.js && node sql/course-delete-parity.postgres.test.js",
+    "test:teacher-course": "node ../shared/courseColors.test.js && node src/desktopTeacherCourseAccess.test.js && node src/businessCourseLifecycleMutationService.test.js && node src/businessRoomLifecycleMutationService.test.js && node sql/teacher-room-maintenance.postgres.test.js && node sql/teacher-course-scope.postgres.test.js && node src/scheduleCoursePresentation.test.js && node sql/course-delete-parity.postgres.test.js && node sql/calendar-color-projection.postgres.test.js",
     "test:teacher-schedule": "node src/desktopTeacherScheduleAccess.test.js && node src/businessScheduleMutationService.test.js && node src/businessScheduleStudentOverrideService.test.js && node src/businessScheduleLifecycleMutationService.test.js && node sql/teacher-schedule-scope.postgres.test.js && node sql/schedule-financial-snapshot.postgres.test.js && node sql/schedule-confirmed-undo.postgres.test.js && node sql/retained-course-schedule.postgres.test.js && node sql/retained-student-schedule.postgres.test.js",
     "test:runtime-role": "node sql/runtime-reader-membership.test.js",
     "test:question-import-provisioning": "node sql/question-import-task-provisioning.test.js && node sql/question-import-receipt-provisioning.test.js && node sql/question-import-receipt-runtime-provisioning.test.js && node sql/question-import-receipt-writer-provisioning.test.js && node sql/question-import-receipt-returning-provisioning.test.js && node sql/storage-agent-receipt-returning-provisioning.test.js",
@@ -30,6 +30,7 @@
     "docx": "9.6.1",
     "express": "5.2.1",
     "iconv-lite": "0.7.2",
+    "imapflow": "2.2.10",
     "jszip": "3.10.1",
     "mathjax-full": "3.2.2",
     "pdfjs-dist": "6.4.299",

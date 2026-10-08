@@ -104,6 +104,7 @@ export interface Course {
   student_pricings?: StudentCoursePricing[];
   room_id?: string;
   room_name?: string;
+  calendar_color?: string;
   teacher_id?: string;
   teacher_name?: string;
   active: boolean;

@@ -1,455 +1,192 @@
 .schedule-page {
-  // UTF-8: 滚动区域只占顶部控件与底部导航之间的可用高度。
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: calc(148rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
-  background: #f7f4ee;
+  padding-bottom: calc(8PX + env(safe-area-inset-bottom));
+  background: white;
 }
 
-.view-toggle {
+.schedule-toolbar {
   display: flex;
-  gap: 8rpx;
-  margin: 22rpx 24rpx 16rpx;
-  padding: 8rpx;
-  border-radius: 24rpx;
-  background: #e9e4d9;
-}
-
-.toggle-btn {
-  flex: 1;
-  // UTF-8: Keep the existing controls while making them usable on phones.
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 18rpx;
-  font-size: 26rpx;
-  line-height: 34rpx;
-  font-weight: 700;
-  color: #6b7280;
-}
-
-.toggle-btn.active {
-  background: #fffdf8;
-  color: #1f6f68;
-  box-shadow: 0 8rpx 22rpx rgba(23, 32, 51, 0.08);
-}
-
-.filter-bar {
-  display: flex;
-  gap: 12rpx;
-  padding: 18rpx 24rpx 14rpx;
-  background: rgba(247, 244, 238, 0.96);
-  white-space: nowrap;
-  border-bottom: 1rpx solid rgba(23, 32, 51, 0.06);
-  box-sizing: border-box;
-}
-
-.filter-tag {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  padding: 0 24rpx;
-  margin-right: 12rpx;
-  border-radius: 999rpx;
-  font-size: 24rpx;
-  line-height: 32rpx;
-  font-weight: 700;
-  background: #fffdf8;
-  color: #6b7280;
-  border: 1rpx solid rgba(23, 32, 51, 0.06);
-  box-sizing: border-box;
-  transition: all 0.2s;
-}
-
-.filter-tag.active {
-  background: #1f6f68;
-  color: #fffaf1;
-  border-color: #1f6f68;
-}
-
-.week-nav,
-.day-nav {
-  display: flex;
-  align-items: center;
-  min-height: 78rpx;
-  margin: 0 24rpx 16rpx;
-  padding: 0 14rpx;
-  border-radius: 24rpx;
-  background: #fffdf8;
-  border: 1rpx solid rgba(23, 32, 51, 0.06);
-  box-shadow: 0 10rpx 26rpx rgba(23, 32, 51, 0.05);
-  box-sizing: border-box;
-}
-
-.nav-arrow {
-  width: 64rpx;
-  min-width: 44px;
-  min-height: 44px;
   flex-shrink: 0;
-  font-size: 42rpx;
-  line-height: 44px;
-  text-align: center;
-  color: #1f6f68;
-  font-weight: 800;
+  align-items: center;
+  gap: 8PX;
+  padding: 4PX 8PX;
 }
 
-.nav-title,
-.day-title-wrap {
-  flex: 1;
-  min-width: 0;
-  text-align: center;
-}
-
-.nav-title,
-.day-title-text {
-  font-size: 28rpx;
-  line-height: 36rpx;
-  color: #172033;
-  font-weight: 800;
+.nav-arrow,
+.nav-today {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44PX;
+  min-width: 44PX;
+  padding: 0 14PX;
+  box-sizing: border-box;
+  color: #1890ff;
+  background: white;
+  border: 1PX solid #d9d9d9;
+  border-radius: 6PX;
+  font-size: 14PX;
+  line-height: 20PX;
 }
 
 .nav-today {
-  min-width: 44px;
-  min-height: 44px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999rpx;
-  background: #eef5f2;
-  color: #1f6f68;
-  font-size: 23rpx;
-  line-height: 32rpx;
-  font-weight: 800;
+  color: white;
+  background: #1890ff;
+  border-color: #1890ff;
 }
 
-.week-header {
-  display: flex;
-  margin: 0 24rpx 14rpx;
-  padding: 16rpx 12rpx;
-  border-radius: 24rpx;
-  background: #fffdf8;
-  border: 1rpx solid rgba(23, 32, 51, 0.06);
-}
-
-.week-day {
+.week-view {
   flex: 1;
-  text-align: center;
+  min-height: 0;
+  height: 0;
+  width: 100%;
 }
 
-.day-name {
-  display: block;
-  font-size: 22rpx;
-  line-height: 30rpx;
-  color: #8b96a8;
+.week-view.week-view {
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
-.day-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 6rpx;
-  width: 50rpx;
-  height: 50rpx;
-  border-radius: 18rpx;
-  font-size: 27rpx;
-  line-height: 34rpx;
-  color: #172033;
-  font-weight: 800;
+// Only the H5 tab-page wrapper reserves the HTML tab bar's height.
+.taro_tabbar_page .schedule-page {
+  height: calc(100vh - var(--tabbar-height, 50PX));
 }
 
-.week-day.today .day-num {
-  background: #1f6f68;
-  color: #fffaf1;
-}
-
-.day-column-inner {
-  padding: 4rpx 24rpx 28rpx;
+.calendar-board {
+  width: 1028PX;
+  padding: 0 4PX 8PX;
+  box-sizing: content-box;
 }
 
 .week-grid {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 8PX;
+  margin-bottom: 16PX;
+}
+
+.day-column {
+  flex: 0 0 140PX;
+  width: 140PX;
+  border: 2PX solid #d9d9d9;
+  border-radius: 8PX;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: white;
+}
+
+.day-column.today {
+  background: #e6f7ff;
+  border-color: #1890ff;
+}
+
+.day-column.holiday {
+  background: #fff1f0;
 }
 
 .day-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 24rpx 12rpx;
-  padding: 0 4rpx;
-  color: #172033;
-  font-size: 26rpx;
-  line-height: 36rpx;
-  font-weight: 900;
+  padding: 8PX 4PX;
+  background: #1890ff;
+  color: white;
+  text-align: center;
+  font-size: 14PX;
+  line-height: 20PX;
+  font-weight: bold;
 }
 
-.day-section-title.today {
-  color: #1f6f68;
+.holiday .day-section-title {
+  background: #f5222d;
 }
 
-.day-section-count {
-  flex: 0 0 auto;
-  color: #8b96a8;
-  font-size: 22rpx;
-  line-height: 30rpx;
-  font-weight: 700;
-}
-
-.empty-day-text {
+.day-name,
+.day-date {
   display: block;
-  min-height: 68rpx;
-  padding: 18rpx 0 28rpx;
-  color: #a2abb8;
-  font-size: 24rpx;
-  line-height: 34rpx;
   text-align: center;
 }
 
-.schedule-card {
+.day-date {
+  margin-top: 2PX;
+  font-size: 12PX;
+  line-height: 14.4PX;
+  font-weight: normal;
+}
+
+.day-grid-body {
   position: relative;
+  background: white;
+}
+
+.hour-grid-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1PX;
+  border-bottom: 1PX solid rgba(0, 0, 0, 0.08);
+}
+
+.schedule-card {
   display: flex;
-  min-height: 116rpx;
-  margin-bottom: 14rpx;
-  padding: 22rpx 22rpx 22rpx 18rpx;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
-  border-radius: 24rpx;
-  background: #fffdf8;
-  border: 1rpx solid rgba(23, 32, 51, 0.06);
-  box-shadow: 0 10rpx 26rpx rgba(23, 32, 51, 0.05);
+  border-radius: 6PX;
+  padding: 2PX 4PX;
   overflow: hidden;
 }
 
-.schedule-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 22rpx;
-  bottom: 22rpx;
-  width: 7rpx;
-  border-radius: 999rpx;
-  background: #1f6f68;
-}
-
-.schedule-card.status-completed::before {
-  background: #28784f;
-}
-
-.schedule-card.status-cancelled::before {
-  background: #c94f3d;
-}
-
-.schedule-card.status-leave::before {
-  background: #b46f3a;
-}
-
-.schedule-card.status-completed {
-  opacity: 0.88;
-}
-
-.schedule-card.status-cancelled {
-  opacity: 0.68;
-}
-
-.schedule-time {
-  width: 102rpx;
-  margin-right: 18rpx;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 4rpx;
-}
-
-.time-text {
-  font-size: 30rpx;
-  line-height: 38rpx;
-  color: #172033;
-  font-weight: 900;
-}
-
 .schedule-body {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
   min-width: 0;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  text-align: center;
 }
 
 .schedule-course {
   display: block;
-  font-size: 29rpx;
-  line-height: 38rpx;
-  color: #172033;
-  font-weight: 800;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 12PX;
+  font-weight: bold;
+  line-height: 1.2;
+  text-align: center;
 }
 
-.schedule-sub,
-.schedule-note {
-  display: block;
-  margin-top: 4rpx;
-  font-size: 23rpx;
-  line-height: 32rpx;
-  color: #7d8795;
+.schedule-location-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  margin-top: 1PX;
+  font-size: 10PX;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
 }
 
-.schedule-note {
-  color: #a2abb8;
+.schedule-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 
-.day-view,
-.week-view {
-  flex: 1;
-  height: 0;
-  min-height: 0;
+.schedule-time-range {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-@media (orientation: landscape), (min-width: 700px) {
-  .schedule-page {
-    // UTF-8: Native tab bars already reserve their own viewport height.
-    padding-bottom: calc(8PX + env(safe-area-inset-bottom));
-  }
-
-  .view-toggle {
-    flex-shrink: 0;
-    margin: 6PX 12PX 4PX;
-    padding: 4PX;
-    gap: 4PX;
-  }
-
-  .toggle-btn,
-  .filter-tag,
-  .nav-arrow,
-  .nav-today {
-    min-height: 44PX;
-    font-size: 14PX;
-    line-height: 20PX;
-  }
-
-  .filter-bar {
-    flex-shrink: 0;
-    padding: 4PX 12PX;
-  }
-
-  .filter-tag {
-    margin-right: 6PX;
-    padding: 0 12PX;
-  }
-
-  .week-nav,
-  .day-nav {
-    min-height: 44PX;
-    flex-shrink: 0;
-    margin: 0 12PX 6PX;
-    padding: 0 6PX;
-  }
-
-  .nav-arrow,
-  .nav-today {
-    min-width: 44PX;
-    width: 44PX;
-  }
-
-  .nav-arrow {
-    font-size: 24PX;
-    line-height: 44PX;
-  }
-
-  .nav-title,
-  .day-title-text {
-    font-size: 16PX;
-    line-height: 22PX;
-  }
-
-  .week-header {
-    // UTF-8: Every landscape day column already contains this date and weekday.
-    display: none;
-  }
-
-  .week-view {
-    width: calc(100% - 36rpx);
-    margin: 0 18rpx;
-  }
-
-  .week-grid {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 12rpx;
-    align-items: start;
-  }
-
-  .day-column {
-    min-width: 0;
-    border-radius: 22rpx;
-    background: rgba(255, 253, 248, 0.72);
-    border: 1rpx solid rgba(23, 32, 51, 0.05);
-    overflow: hidden;
-  }
-
-  .day-section-title {
-    min-height: 40PX;
-    margin: 0;
-    padding: 4PX;
-    box-sizing: border-box;
-    display: block;
-    font-size: 14PX;
-    line-height: 20PX;
-    text-align: center;
-  }
-
-  .day-section-count {
-    display: block;
-    margin-top: 0;
-    font-size: 12PX;
-    line-height: 16PX;
-  }
-
-  .day-column-inner {
-    padding: 0 4PX 8PX;
-  }
-
-  .schedule-card {
-    display: block;
-    min-height: 112PX;
-    margin-bottom: 6PX;
-    padding: 8PX 6PX;
-    border-radius: 18rpx;
-  }
-
-  .schedule-card::before {
-    top: 8PX;
-    bottom: 8PX;
-    width: 3PX;
-  }
-
-  .schedule-time {
-    width: auto;
-    margin-right: 0;
-    margin-bottom: 2PX;
-    padding-top: 0;
-    justify-content: flex-start;
-  }
-
-  .time-text {
-    // UTF-8: Uppercase PX keeps this readability floor through Taro's pxtransform.
-    font-size: 14PX;
-    line-height: 20PX;
-  }
-
-  .schedule-course {
-    font-size: 14PX;
-    line-height: 20PX;
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-
-  .schedule-sub,
-  .schedule-note {
-    font-size: 12PX;
-    line-height: 18PX;
-  }
+.schedule-unplaced {
+  padding: 4PX;
 }

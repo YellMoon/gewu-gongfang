@@ -44,7 +44,7 @@ const removeSql='SELECT * FROM business.vnext_delete_scoped_course($1,$2,$3::tim
       await db.query(fs.readFileSync(path.join(__dirname,'20260907-zz-schedule-financial-snapshot.sql'),'utf8'));
       await require('./managedTeacherProfileFixture').applyManagedTeacherProfileFixture(db);
       await require('./managedTeacherProfileFixture').applyInstitutionBillingProjectionFixture(db);
-      await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
+      await db.query('GRANT USAGE ON SCHEMA business TO gewu_cloud_schedule_reader; GRANT SELECT ON business.teachers,business.students,business.courses,business.rooms,business.schedules,business.course_student_pricings,business.schedule_student_overrides TO gewu_cloud_schedule_reader');
       await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Own',false,now(),now()),('tenant-2','Other',false,now(),now())");
       await db.query("INSERT INTO business.teachers(id,tenant_id,name,legacy_deleted,created_at,updated_at) VALUES ('teacher-1','tenant-1','One',false,now(),now()),('teacher-2','tenant-1','Other',false,now(),now())");
       await db.query("INSERT INTO business.students(id,tenant_id,name,legacy_is_institution_student,legacy_deleted,created_at,updated_at) VALUES ('student-1','tenant-1','One',false,false,now(),now()),('student-2','tenant-1','Other',false,false,now(),now())");

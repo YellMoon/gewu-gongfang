@@ -42,7 +42,7 @@ const pageInventory = [
     roleViews: ['super_admin', 'teacher', 'student', 'family_member', 'visitor'],
     surface: 'readonly-schedule',
     visualStatus: 'optimized',
-    verificationStates: ['week-view', 'day-view', 'empty-day', 'visitor-empty'],
+    verificationStates: ['two-week-grid', 'empty-grid', 'visitor-empty'],
     realFeatureBasis: ['cloud business projection refresh', 'identity-scoped derived schedule cache', 'identity-scoped derived course cache', 'pages/schedule/detail/index'],
     screenshotRequired: true,
     files: ['src/pages/schedule/index.tsx', 'src/pages/schedule/index.scss'],

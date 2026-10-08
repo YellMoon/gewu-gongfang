@@ -5,6 +5,8 @@ module.exports = {
       const scope = webpackConfig.resolve?.plugins?.find(plugin => plugin?.constructor?.name === 'ModuleScopePlugin');
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/questionImportMetadata.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/ledger.js'));
+      scope?.allowedFiles.add(path.resolve(__dirname, 'shared/courseColors.js'));
+      scope?.allowedFiles.add(path.resolve(__dirname, 'shared/calendarHolidays.js'));
       if (process.env.GEWU_E2E_SKIP_TYPECHECK === '1') {
         webpackConfig.plugins = webpackConfig.plugins.filter(plugin => (
           plugin?.constructor?.name !== 'ForkTsCheckerWebpackPlugin'

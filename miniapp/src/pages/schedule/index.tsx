@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, useDidHide, usePullDownRefresh } from '@tarojs/taro';
-import { Schedule, ScheduleStatus, Course, Student } from '../../types';
+import { Schedule, ScheduleStatus, Course } from '../../types';
 import { getCachedList } from '../../utils/storage';
 import { pullFromCloudBusinessProjection } from '../../utils/sync';
 import {
@@ -15,36 +15,32 @@ import ForbiddenPage from '../../components/ForbiddenContent';
 import { authSessionRuntime } from '../../utils/authSession';
 import { canAccessMiniappPage, refreshMiniappPageAccess } from '../../utils/miniappPageAccess';
 import { isVisitorIdentity } from '../../utils/accountExperience';
-import { isStudentScopedUser } from '../../utils/permission';
 import './index.scss';
+// Both clients use the same location palette and contrast algorithm.
+const { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } = require('../../../../shared/courseColors');
+const { holidays2026 } = require('../../../../shared/calendarHolidays');
 
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日'];
 
-// ScheduleStatus: PLANNED=1, CANCELLED=3, LEAVE=4
-const SCHEDULE_STATUS_CANCELLED = 3;
-const SCHEDULE_STATUS_LEAVE = 4;
+const MIN_START_HOUR = 8;
+const MAX_END_HOUR = 23;
+const SLOT_DURATION = 5;
+const SLOT_HEIGHT = 2.5;
 
 interface ScheduleWithCourse extends Schedule {
   course_name?: string;
   course_type?: number;
-}
-
-function displayStudentName(student: Student) {
-  const name = String(student?.name || '').trim();
-  return name && !/^e2e-/i.test(name) && !name.toLowerCase().includes('e2e-role-test-') ? name : '学生';
+  room_display?: string;
+  card_background?: string;
+  card_text_color?: string;
 }
 
 export default function SchedulePage() {
   const identity = authSessionRuntime.capture().identity;
   const isVisitor = isVisitorIdentity(identity);
-  const isStudent = isStudentScopedUser(identity);
   const isLimitedIdentity = isVisitor;
-  const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [currentDateKey, setCurrentDateKey] = useState(() => shanghaiDateKey(new Date()));
   const [schedules, setSchedules] = useState<ScheduleWithCourse[]>([]);
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -54,24 +50,36 @@ export default function SchedulePage() {
   const loadData = () => {
     if (isLimitedIdentity) {
       setSchedules([]);
-      setCourses([]);
-      setStudents([]);
       setLoading(false);
       return;
     }
     const allSchedules = getCachedList<ScheduleWithCourse>('schedules');
     const cachedCourses = getCachedList<Course>('courses');
-    const allStudents = getCachedList<Student>('students');
+    const rooms = getCachedList<{ id: string; name: string }>('rooms');
+    const colorMap = buildCourseColorMap(cachedCourses, rooms);
+    // Match the desktop calendar's display derivation without changing cloud data.
+    const normalizeRoom = (value?: string) => String(value || '').split(',').map(item => item.trim()).find(Boolean) || '';
+    const resolveRoom = (schedule: ScheduleWithCourse, course?: Course) => {
+      const room = normalizeRoom(course?.room_name ? course.room_name : schedule.room);
+      const courseRoomId = normalizeRoom(course?.room_id);
+      const courseRoomName = normalizeRoom(course?.room_name);
+      if (room) {
+        const match = rooms.find(item => item.id === room || item.name === room);
+        if (match) return normalizeRoom(match.name);
+        return room === courseRoomId && courseRoomName ? courseRoomName : room;
+      }
+      return courseRoomName || normalizeRoom(rooms.find(item => item.id === courseRoomId || item.name === courseRoomId)?.name || courseRoomId);
+    };
 
     const enriched: ScheduleWithCourse[] = allSchedules.map((s) => {
       const course = cachedCourses.find((c) => c.id === s.course_id);
       // UTF-8: retain cloud-backed lesson labels after its course leaves the selector.
-      return { ...s, course_name: course?.display_name || course?.name || s.course_name || '未知课程', course_type: course?.type ?? s.course_type };
+      const courseName = String(course?.display_name || '').trim() || String(course?.name || '').replace(/^\d{4}\s+\S+学期\s+/, '').trim() || String(s.course_name || '').trim();
+      const background = colorMap[s.course_id] || DEFAULT_COURSE_COLOR;
+      return { ...s, course_name: courseName || '未知课程', course_type: course?.type ?? s.course_type, room_display: resolveRoom(s, course), card_background: background, card_text_color: getTextColorForBackground(background) };
     });
 
     setSchedules(enriched);
-    setCourses(cachedCourses);
-    setStudents(allStudents);
     setLoading(false);
   };
 
@@ -79,8 +87,7 @@ export default function SchedulePage() {
     const sequence = ++requestSequence.current;
     const session = authSessionRuntime.capture();
     const isCurrent = () => sequence === requestSequence.current && authSessionRuntime.isSameSession(session);
-    if (resultSession.current !== null && !authSessionRuntime.isSameSession(resultSession.current)) setSelectedStudentId('');
-    setSchedules([]); setCourses([]); setStudents([]);
+    setSchedules([]);
     setLoading(true); setLoadFailed(false);
     setRefreshing(true);
     try {
@@ -101,28 +108,14 @@ export default function SchedulePage() {
 
   useDidShow(handleRefresh);
   usePullDownRefresh(handleRefresh);
-  useDidHide(() => { requestSequence.current++; setSchedules([]); setCourses([]); setStudents([]); setLoading(true); });
+  useDidHide(() => { requestSequence.current++; setSchedules([]); setLoading(true); });
   useEffect(() => () => { requestSequence.current++; }, []);
 
-  const weekRange = useMemo(() => {
-    if (viewMode === 'day') return null;
-    return shanghaiWeekDateKeys(currentDateKey);
-  }, [currentDateKey, viewMode]);
-  const weekTitle = useMemo(() => {
-    if (!weekRange) return '';
-    const start = shanghaiDateParts(weekRange[0]);
-    const end = shanghaiDateParts(weekRange[6]);
-    return `${start.month}\u6708${start.day}\u65e5 - ${end.month}\u6708${end.day}\u65e5`;
-  }, [weekRange]);
-  const currentDateParts = useMemo(() => shanghaiDateParts(currentDateKey), [currentDateKey]);
+  const weekRange = useMemo(() => shanghaiWeekDateKeys(currentDateKey), [currentDateKey]);
+  const weekRows = [weekRange, shanghaiWeekDateKeys(shiftShanghaiDateKey(currentDateKey, 7))];
 
-  const formatTime = (time: string) => time.substring(11, 16);
+  const formatTime = (time?: string) => String(time || '').substring(11, 16);
   const isToday = (dateKey: string) => dateKey === shanghaiDateKey(new Date());
-
-  const getCourseTypeLabel = (type?: number) => {
-    const map: Record<number, string> = { 1: '一对一', 2: '一对二', 3: '小组课', 4: '大班课' };
-    return map[type || 1] || '';
-  };
 
   const getStatusClass = (status: ScheduleStatus) => {
     switch (status) {
@@ -134,57 +127,46 @@ export default function SchedulePage() {
     }
   };
 
-  const getStatusLabel = (status: ScheduleStatus) => {
-    const map: Record<number, string> = { 1: '待上课', 2: '已完成', 3: '已取消', 4: '请假' };
-    return map[status] || '未知';
-  };
-
   const navigateWeek = (dir: number) => {
     setCurrentDateKey(current => shiftShanghaiDateKey(current, dir * 7));
   };
 
-  const getSchedulesForDate = (dateKey: string): ScheduleWithCourse[] => {
-    return schedules.filter((schedule) => {
-      if (!schedule.start_time?.startsWith(dateKey)) return false;
-      
-      // 如果选中了学生，筛选该学生的课程，但排除请假和取消的
-      if (!isStudent && selectedStudentId) {
-        if (schedule.status === SCHEDULE_STATUS_CANCELLED || schedule.status === SCHEDULE_STATUS_LEAVE) {
-          return false;
-        }
-        // 检查课程的学生列表
-        const course = courses.find(c => c.id === schedule.course_id);
-        const courseStudentIds = (course?.student_pricings || []).map(p => p.student_id);
-        const scheduleStudentIds = schedule.student_ids || [];
-        const allStudentIds = [...new Set([...courseStudentIds, ...scheduleStudentIds])];
-        if (!allStudentIds.includes(selectedStudentId)) {
-          return false;
-        }
-      }
-      
-      return true;
-    });
+  const getSchedulesForDate = (dateKey: string) => schedules.filter(schedule => schedule.start_time?.startsWith(dateKey));
+  const minuteOfDay = (time?: string) => {
+    const clock = formatTime(time);
+    return /^\d{2}:\d{2}$/.test(clock) ? Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3)) : null;
   };
-  const getDayTitle = (dateKey: string, index: number) => {
-    const date = shanghaiDateParts(dateKey);
-    return `\u5468${WEEKDAYS[index]} ${date.month}/${date.day}`;
+  const timeToSlot = (minutes: number) => Math.floor((minutes - MIN_START_HOUR * 60) / SLOT_DURATION);
+  const getWeekHours = (dates: readonly string[]) => {
+    let minHour = MIN_START_HOUR, maxHour = MAX_END_HOUR;
+    for (const schedule of schedules) {
+      if (!dates.includes(schedule.start_time?.slice(0, 10)) || [3, 4].includes(schedule.status)) continue;
+      const start = minuteOfDay(schedule.start_time), end = minuteOfDay(schedule.end_time);
+      if (start !== null && start / 60 < minHour) minHour = Math.floor(start / 60);
+      if (end !== null && end / 60 > maxHour) maxHour = Math.ceil(end / 60);
+    }
+    return { minHour, maxHour };
+  };
+  const getPosition = (schedule: ScheduleWithCourse, minStartSlot: number) => {
+    const start = minuteOfDay(schedule.start_time), end = minuteOfDay(schedule.end_time);
+    if (start === null || end === null || end <= start) return null;
+    return { top: (timeToSlot(start) - minStartSlot) * SLOT_HEIGHT, height: (timeToSlot(end) - timeToSlot(start)) * SLOT_HEIGHT };
   };
 
-  const renderScheduleCard = (schedule: ScheduleWithCourse, index: number) => (
+  const renderScheduleCard = (schedule: ScheduleWithCourse, position?: { top: number; height: number } | null) => (
     <View
       key={schedule.id}
       className={`schedule-card ${getStatusClass(schedule.status)}`}
+      // Desktop's final settled JSX overrides status opacity/border after its status helper.
+      style={{ background: schedule.card_background, opacity: 1, position: position ? 'absolute' : 'relative', top: position ? `${position.top}px` : undefined, height: position ? `${position.height}px` : 'auto', minHeight: '24px', left: position ? '4px' : undefined, right: position ? '4px' : undefined, zIndex: 10 }}
       onClick={() => Taro.navigateTo({ url: `/pages/schedule/detail/index?id=${schedule.id}` })}
     >
-      <View className="schedule-time">
-        <Text className="time-text">{formatTime(schedule.start_time)}</Text>
-      </View>
       <View className="schedule-body">
-        <Text className="schedule-course">{index + 1}. {schedule.course_name}</Text>
-        <Text className="schedule-sub">
-          {getCourseTypeLabel(schedule.course_type)} · {getStatusLabel(schedule.status)}
-        </Text>
-        <Text className="schedule-note">{schedule.room || ''}</Text>
+        <Text className="schedule-course" style={{ color: schedule.card_text_color }}>{schedule.course_name}</Text>
+        <View className="schedule-location-time" style={{ color: schedule.card_text_color }}>
+          {schedule.room_display && <Text className="schedule-place">{`${schedule.room_display} `}</Text>}
+          <Text className="schedule-time-range">{[formatTime(schedule.start_time), formatTime(schedule.end_time)].filter(Boolean).join('-')}</Text>
+        </View>
       </View>
     </View>
   );
@@ -217,118 +199,56 @@ export default function SchedulePage() {
 
 
 
-      <View className="view-toggle">
-        <View className={`toggle-btn ${viewMode === 'week' ? 'active' : ''}`} onClick={() => setViewMode('week')}>
-          <Text>周视图</Text>
-        </View>
-        <View className={`toggle-btn ${viewMode === 'day' ? 'active' : ''}`} onClick={() => setViewMode('day')}>
-          <Text>日视图</Text>
-        </View>
+      <View className="schedule-toolbar">
+        <View className="nav-arrow" onClick={() => navigateWeek(-1)}><Text>上一周</Text></View>
+        <View className="nav-today" onClick={() => setCurrentDateKey(shanghaiDateKey(new Date()))}><Text>本周</Text></View>
+        <View className="nav-arrow" onClick={() => navigateWeek(1)}><Text>下一周</Text></View>
       </View>
 
-      {/* 学生筛选栏 */}
-      {!isStudent && students.length > 0 && (
-        <ScrollView scrollX className="filter-bar">
-          <View
-            className={`filter-tag ${!selectedStudentId ? 'active' : ''}`}
-            onClick={() => setSelectedStudentId('')}
-          >
-            <Text>全部学生</Text>
-          </View>
-          {students.map(student => (
-            <View
-              key={student.id}
-              className={`filter-tag ${selectedStudentId === student.id ? 'active' : ''}`}
-              onClick={() => setSelectedStudentId(student.id)}
-            >
-              <Text>{displayStudentName(student)}</Text>
-            </View>
-          ))}
-        </ScrollView>
-      )}
-
-      {loading ? (
-        <LoadingSkeleton rows={5} />
-      ) : viewMode === 'week' ? (
-        <ScrollView
-          className="week-view"
-          scrollY
-          enableFlex
-          refresherEnabled
-          refresherTriggered={refreshing}
-          onRefresherRefresh={handleRefresh}
-          refresherBackground="#f7f4ee"
-        >
-          <View className="week-nav">
-            <Text className="nav-arrow" onClick={() => navigateWeek(-1)}>‹</Text>
-            <Text className="nav-title">
-              {weekTitle}
-            </Text>
-            <Text className="nav-arrow" onClick={() => navigateWeek(1)}>›</Text>
-            <Text className="nav-today" onClick={() => setCurrentDateKey(shanghaiDateKey(new Date()))}>今天</Text>
-          </View>
-
-          <View className="week-header">
-            {weekRange?.map((dateKey, index) => (
-              <View key={dateKey} className={`week-day ${isToday(dateKey) ? 'today' : ''}`}>
-                <Text className="day-name">{WEEKDAYS[index]}</Text>
-                <Text className="day-num">{shanghaiDateParts(dateKey).day}</Text>
-              </View>
-            ))}
-          </View>
-
-          <View className="week-grid">
-            {weekRange?.map((dateKey, index) => {
-              const daySchedules = getSchedulesForDate(dateKey);
-              const previousCount = weekRange.slice(0, index).reduce((sum, date) => sum + getSchedulesForDate(date).length, 0);
+      {loading ? <LoadingSkeleton rows={5} /> : (
+        <ScrollView className="week-view" scrollX scrollY enableFlex refresherEnabled
+          refresherTriggered={refreshing} onRefresherRefresh={handleRefresh} refresherBackground="#fff">
+          <View className="calendar-board">
+            {weekRows.map((dates) => {
+              const { minHour, maxHour } = getWeekHours(dates);
+              const minStartSlot = timeToSlot(minHour * 60);
               return (
-                <View key={dateKey} className={`day-column ${daySchedules.length === 0 ? 'is-empty' : ''}`}>
-                  <View className={`day-section-title ${isToday(dateKey) ? 'today' : ''}`}>
-                    <Text>{getDayTitle(dateKey, index)}</Text>
-                    <Text className="day-section-count">{daySchedules.length} {'\u8282'}</Text>
-                  </View>
-                  <View className="day-column-inner">
-                    {daySchedules.length > 0 ? (
-                      daySchedules.map((schedule, cardIndex) => renderScheduleCard(schedule, previousCount + cardIndex))
-                    ) : (
-                      <Text className="empty-day-text">{'\u6682\u65e0\u8bfe\u7a0b'}</Text>
-                    )}
-                  </View>
+                <View className="week-grid" key={dates[0]}>
+                  {dates.map((dateKey, index) => {
+                    const daySchedules = getSchedulesForDate(dateKey);
+                    let maxEndSlot = timeToSlot(maxHour * 60);
+                    for (const schedule of daySchedules) {
+                      const end = minuteOfDay(schedule.end_time);
+                      if (end !== null) maxEndSlot = Math.max(maxEndSlot, timeToSlot(end) + 1);
+                    }
+                    const bodyHeight = Math.max(SLOT_HEIGHT, (maxEndSlot - minStartSlot) * SLOT_HEIGHT);
+                    const date = shanghaiDateParts(dateKey);
+                    const holiday = holidays2026.find((item: { start: string; end: string }) => dateKey >= item.start && dateKey <= item.end);
+                    const unplaced = daySchedules.filter(schedule => !getPosition(schedule, minStartSlot));
+                    return (
+                      <View key={dateKey} data-date={dateKey} className={`day-column ${isToday(dateKey) ? 'today' : ''} ${holiday ? 'holiday' : ''}`}>
+                        <View className="day-section-title">
+                          <Text className="day-name">{`周${WEEKDAYS[index]}${holiday ? ` (${holiday.name})` : ''}`}</Text>
+                          <Text className="day-date">{`${date.month}月${date.day}日`}</Text>
+                        </View>
+                        <View className="day-grid-body" data-min-start-slot={minStartSlot} style={{ height: `${bodyHeight}px` }}>
+                          {Array.from({ length: Math.ceil((maxEndSlot - minStartSlot) / 12) + 1 }, (_, lineIndex) => lineIndex * 30).filter(top => top <= bodyHeight).map(top => (
+                            <View key={top} className="hour-grid-line" style={{ top: `${top}px` }} />
+                          ))}
+                          <View className="hour-grid-line grid-bottom-line" style={{ top: `${bodyHeight - 1}px` }} />
+                          {daySchedules.map(schedule => {
+                            const position = getPosition(schedule, minStartSlot);
+                            return position ? renderScheduleCard(schedule, position) : null;
+                          })}
+                        </View>
+                        {unplaced.length > 0 && <View className="schedule-unplaced">{unplaced.map(schedule => renderScheduleCard(schedule))}</View>}
+                      </View>
+                    );
+                  })}
                 </View>
               );
             })}
           </View>
-
-          {schedules.length === 0 && <EmptyState icon="课" text="暂无排课数据" />}
-        </ScrollView>
-      ) : (
-        <ScrollView
-          className="day-view"
-          scrollY
-          enableFlex
-          refresherEnabled
-          refresherTriggered={refreshing}
-          onRefresherRefresh={handleRefresh}
-          refresherBackground="#f7f4ee"
-        >
-          <View className="day-nav">
-            <Text className="nav-arrow" onClick={() => setCurrentDateKey(current => shiftShanghaiDateKey(current, -1))}>‹</Text>
-            <View className="day-title-wrap">
-              <Text className="day-title-text">
-                {currentDateParts.month}{'\u6708'}{currentDateParts.day}{'\u65e5'}{isToday(currentDateKey) ? '\uff08\u4eca\u5929\uff09' : ''}
-              </Text>
-            </View>
-            <Text className="nav-arrow" onClick={() => setCurrentDateKey(current => shiftShanghaiDateKey(current, 1))}>›</Text>
-            <Text className="nav-today" onClick={() => setCurrentDateKey(shanghaiDateKey(new Date()))}>今天</Text>
-          </View>
-
-          <View className="day-column-inner">
-            {getSchedulesForDate(currentDateKey).map(renderScheduleCard)}
-          </View>
-
-          {getSchedulesForDate(currentDateKey).length === 0 && (
-            <EmptyState icon="课" text="当天没有课程" />
-          )}
         </ScrollView>
       )}
     </View>
