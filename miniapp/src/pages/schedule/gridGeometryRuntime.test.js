@@ -72,7 +72,7 @@ const px = value => Number.parseFloat(String(value));
           assert.equal(px(lines[1].props.style.top), 30, 'hour lines must follow desktop twelve slots × 2.5px');
         });
         const scroller = page.find('week-view')[0];
-        assert.equal(scroller.props.scrollX, true, 'fixed 140px desktop columns remain horizontally scrollable');
+        assert.equal(scroller.props.scrollX, true, 'portrait fixed 140px columns remain horizontally scrollable; landscape fits seven columns via orientation CSS');
         assert.equal(scroller.props.scrollY, true, 'full 450px day is vertically reachable');
       }
     }

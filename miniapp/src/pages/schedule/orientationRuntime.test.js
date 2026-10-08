@@ -12,7 +12,26 @@ const styles = fs.readFileSync(path.join(__dirname, 'index.scss'), 'utf8');
   const pxtransform = require(path.resolve(__dirname, '../../../..', 'miniapp/node_modules/postcss-pxtransform'));
   const compiled = await postcss([pxtransform({ platform: 'weapp', designWidth: 375, deviceRatio: { 375: 2 } })]).process(sass.compileString(styles).css, { from: path.join(__dirname, 'index.scss') });
   const declarations = {};
-  compiled.root.walkRules(rule => rule.walkDecls(decl => { for (const selector of rule.selector.split(',').map(value => value.trim())) (declarations[selector] ||= {})[decl.prop] = decl.value; }));
+  compiled.root.walkRules(rule => {
+    if (rule.parent.type === 'atrule') return;
+    rule.walkDecls(decl => { for (const selector of rule.selector.split(',').map(value => value.trim())) (declarations[selector] ||= {})[decl.prop] = decl.value; });
+  });
+  const landscape = {};
+  compiled.root.walkAtRules('media', media => {
+    if (media.params !== '(orientation: landscape)') return;
+    media.walkRules(rule => rule.walkDecls(decl => { for (const selector of rule.selector.split(',').map(value => value.trim())) (landscape[selector] ||= {})[decl.prop] = decl.value; }));
+  });
+  assert.ok(landscape['.calendar-board'], 'real Taro WXSS must retain a landscape rule showing all seven days');
+  for (const [selector, property, expected] of [
+    ['.calendar-board','width','100%'],['.calendar-board','box-sizing','border-box'],
+    ['.week-grid','width','100%'],['.week-grid','gap','4px'],
+    ['.day-column','flex','1 1 0'],['.day-column','width','0'],['.day-column','min-width','0'],
+    ['.schedule-card','padding','2px 2px'],
+  ]) assert.equal(landscape[selector]?.[property]?.toLowerCase(), expected, selector + ' must fit all seven equal columns within the landscape viewport');
+  for (const rule of Object.values(landscape)) {
+    assert.equal(rule['font-size'], undefined, 'landscape must retain desktop 12px/10px typography');
+    assert.equal(rule.height, undefined, 'landscape must retain actual duration geometry');
+  }
   for (const [selector, property, expected] of [
     ['.calendar-board','width','1028px'],['.day-column','width','140px'],['.week-grid','gap','8px'],
     ['.schedule-course','font-size','12px'],['.schedule-location-time','font-size','10px'],
@@ -23,6 +42,9 @@ const styles = fs.readFileSync(path.join(__dirname, 'index.scss'), 'utf8');
   assert.equal(declarations['.schedule-course']['white-space'], 'nowrap');
   assert.equal(declarations['.schedule-course']['text-overflow'], 'ellipsis');
   assert.equal(declarations['.schedule-time-range']['white-space'], 'nowrap');
+  assert.equal(declarations['.schedule-time-range']['flex-shrink'], '0', 'complete start/end time takes priority over place text');
+  assert.equal(declarations['.schedule-place']['min-width'], '0', 'place text may shrink within the seven visible columns');
+  assert.equal(declarations['.schedule-place']['text-overflow'], 'ellipsis');
   assert.equal(declarations['.schedule-card']['min-height'], undefined, 'no oversized list-card minimum may override actual duration');
   for (const selector of ['.schedule-card','.schedule-body']) {
     assert.equal(declarations[selector]['align-items'], 'center');
@@ -73,6 +95,6 @@ const styles = fs.readFileSync(path.join(__dirname, 'index.scss'), 'utf8');
   }
   const visitor=harness('visitor',{schedules:lessons,courses:[],students:[],rooms:[]}); await visitor.mount();
   assert.equal(visitor.find('schedule-card').length,0);
-  console.log('actual Taro fixed 140px two-week grid/readable desktop typography/compact toolbar/role-scoped navigation/scroll/rotation checks passed');
+  console.log('actual Taro landscape full seven columns/portrait fixed 140px two-week grid/readable desktop typography/compact toolbar/role-scoped navigation/scroll/rotation checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 

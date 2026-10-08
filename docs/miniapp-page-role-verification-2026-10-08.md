@@ -10,7 +10,7 @@
 | `pages/login/privacy` | G | 登录页隐私链接与静态政策，`privacy-guest` 场景需点击进入 | 文案与布局契约通过；点击后的视觉未验证 | 未验证 |
 | `pages/index/index` | S/T/U/F/V | 按权限展示现有路由，云端派生缓存，访客申请 | 五角色导航、会话失效、退出、重试和触摸检查通过 | 未验证 |
 | `pages/forbidden/index` | S/T/U/F/V | 注册的无权限状态页与安全返回 | 路由/权限/场景检查通过 | 未验证 |
-| `pages/schedule/index` | S/T/U/F/V | 云端只读角色范围；桌面两周、每周七列的真实时间网格；上一周/本周/下一周；课名/地点/完整起止时间/共享课色；访客不读教务数据 | 实际组件与桌面 AST 结构/几何/最终静态色回归通过；5min/2.5px、默认08–23、早晚扩展、重叠顺序、14日、无额外筛选/总结/计数通过；最终H5四正式角色、横竖屏/全天/第二周/两轴滚动/底栏/三个导航按钮实测通过；微信硬件旋转未验证 | 最终 [管理员](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks.png)、[教师](../output/personal-finance-integration-20261008/screenshots/schedule-teacher-two-weeks.png)、[学生](../output/personal-finance-integration-20261008/screenshots/schedule-student-two-weeks.png)、[家属](../output/personal-finance-integration-20261008/screenshots/schedule-family-two-weeks.png)已审阅；竖屏、下午、第二周及最右/最底部证据见下；前轮 aligned/corrected/普通课表图不作为本轮整体布局证据 |
+| `pages/schedule/index` | S/T/U/F/V | 云端只读角色范围；两周真实时间网格，横屏每周七列全部适应视口，竖屏140px列可横向滚动；上一周/本周/下一周；课名/地点/完整起止时间/共享课色；访客不读教务数据 | 实际组件与桌面 AST 时间几何/最终静态色回归通过；5min/2.5px、默认08–23、早晚扩展、重叠顺序、14日、无额外筛选/总结/计数通过；最终H5四正式角色横屏七天全见，clientWidth=scrollWidth829，12/10px及完整起止时间、全天/第二周/底栏/导航实测通过；竖屏140px保留；微信硬件旋转未验证 | 最终 [管理员](../output/personal-finance-integration-20261008/screenshots/schedule-admin-seven-days.png)、[教师](../output/personal-finance-integration-20261008/screenshots/schedule-teacher-seven-days.png)、[学生](../output/personal-finance-integration-20261008/screenshots/schedule-student-seven-days.png)、[家属](../output/personal-finance-integration-20261008/screenshots/schedule-family-seven-days.png)、[学生竖屏](../output/personal-finance-integration-20261008/screenshots/schedule-student-final-portrait.png)已审阅；下午、第二周及测量证据见下；旧固定列横屏图不是最终证据，原two-weeks竖屏图仍适用 |
 | `pages/schedule/detail/index` | S/T/U/F | 云端派生排课详情、角色范围内学生明细 | 教务页正常/缺失/缓存/会话契约通过 | 未验证 |
 | `pages/schedule/edit/index` | S/T/U/F | 只读边界说明，禁止小程序编辑排课 | 实际组件正常返回/直接启动恢复、四角色只读提示通过 | 未验证 |
 | `pages/students/index` | S/T | 云端学生范围、搜索、详情导航 | 列表权限、搜索、详情、失败、缓存与过期会话检查通过 | 未验证 |
@@ -27,7 +27,7 @@
 
 ## 本轮修复与红绿记录
 
-第 1–15 项是前轮阶段记录，尤其 13–15 仅修正了卡片内容/颜色，不能证明整体课程表布局已对齐。用户最新要求以第 16 项之后的两周时间网格、三个导航按钮为准：不再保留日/周切换、学生筛选、日期区间总结或每日节数。
+第 1–19 项是前轮阶段记录，尤其 13–15 仅修正了卡片内容/颜色，而16–19直接沿用140px横屏列宽也没有满足七天全部可见。用户最新要求以第20项的横屏七列适应视口为准；两周时间几何、三个导航按钮保留，不再恢复日/周切换、学生筛选、日期区间总结或每日节数。
 
 1. `schedule/orientationRuntime.test.js` 初始失败：缺少 `pageOrientation: 'auto'`。页面已添加自动方向配置，保留七列周视图。
 2. 相同回归使用项目实际 Sass + `postcss-pxtransform`，再次失败：`14px` 被编译为 `28rpx`。采用 Taro 支持的 `PX` 保留课名/时间 `14px`、辅文 `12px`，行高分别 `20px`/`18px`；再次运行通过。只证明配置、编译单位与交互，不冒充设备上的实际字形证据。
@@ -49,26 +49,39 @@
 18. 主任务实际H5发现Taro同时scrollX/scrollY时默认纵向类把overflow-x改为hidden。新增回归组合真实Taro组件CSS后先失败 hidden（预期auto）；现 `.week-view.week-view` 双类选择器明确两轴auto，真实CSS selector权重与计算样式检查通过。主任务又测得H5的tab-page祖先340px但课表100vh为390px，导致底栏覆盖；现在仅 `.taro_tabbar_page .schedule-page` 扣除HTML tabbar高度，原生页面仍100vh。最终实际CUA读取两轴计算样式均为auto；横屏scrollLeft207.2可到周日，学生竖屏scrollLeft660.8可到周末，scrollTop420.8达到最大值且第二周完整底边位于tabbar上方。WeApp编译/属性回归仍明确同时scrollX/scrollY，但此H5操作证据不冒充微信硬件触摸/旋转验证。
 19. 最新隔离fixture改为两周不重叠真实课次：08:05–09:35、09:40–11:10、11:15–12:45、13:30–15:00、15:10–16:10、16:20–17:20；管理员84/教师64/学生与家属43课，各角色只返回其允许课程和地点，云派生同课色稳定。HTTP真实投影读取器验证全部12表、14日、不重叠时段及同课跨角色色通过；遗留重叠另由组件几何回归单独验证，不再用旧每小时90分钟的重叠fixture作为视觉验收样本。
 
-## 最终整体课表渲染证据
+20. 用户指出横屏截图仍没有完整七天。新增真实Sass/Taro回归先失败缺少orientation规则；现 `(orientation: landscape)` 保留于编译WXSS，横屏board/每周行宽100%，board使用border-box，七列flex1/width0/min-width0、间距4px；竖屏仍1028px board和140px列。实际H5横屏clientWidth与scrollWidth均829px，七列约113.83px且全部可见。真实渲染又发现八字课名需要96px，但正文仅94.625px；第二次编译回归先红，随后仅将横屏课卡左右padding从4px减为2px，正文扩至约98.625px。12px/10px字号、5分钟2.5px定位、60/90分钟高度、left/right4px、配色均不变；地点可ellipsis，起止时间flex-shrink0完整保留。最终H5构建19.711s成功，两个相关测试入口再次exit0。
 
-主任务使用受支持 CUA 操作最终 H5，横屏实际外框为844 × 390，竖屏为390 × 740（适配本机浏览器可用高度，不能记录成390 × 844）。本子任务已逐一打开以下11张最终 `two-weeks` 图片审阅；这些图片取代旧卡片阶段的课表结论。
+## 最终横屏完整七天与竖屏证据
+
+用户最新“横屏完整七天”要求优先于直接搬用桌面固定140px横向列宽。主任务用受支持CUA操作最终H5，本子任务已逐一view_image审阅七张新图：
+
+- 管理员：[完整七天](../output/personal-finance-integration-20261008/screenshots/schedule-admin-seven-days.png)、[下午课程](../output/personal-finance-integration-20261008/screenshots/schedule-admin-seven-days-afternoon.png)、[第二周完整七天](../output/personal-finance-integration-20261008/screenshots/schedule-admin-seven-days-second-week.png)。周一到周日均完整，四课色保持，60分钟课15:10–16:10和16:20–17:20完整居中可读，第二周10月12–18日也完整七列。
+- 教师：[完整七天](../output/personal-finance-integration-20261008/screenshots/schedule-teacher-seven-days.png)。只返回允许的三课色，空闲/无范围课程时段保持真实时间网格。
+- 学生：[完整七天](../output/personal-finance-integration-20261008/screenshots/schedule-student-seven-days.png)、[最终竖屏](../output/personal-finance-integration-20261008/screenshots/schedule-student-final-portrait.png)。只显示允许的两课色；竖屏列宽140px、原时间网格与上下两周保留。
+- 家属：[完整七天](../output/personal-finance-integration-20261008/screenshots/schedule-family-seven-days.png)。数据范围与同课颜色对应其关联学生。
+
+横屏外框844 × 390的实际DOM结果：clientWidth=scrollWidth=829px，七列各约113.83px，allSevenVisible=true；标题12px、地点/时间10px。八字课名实际width/scrollWidth=96/96，不触发ellipsis；时间范围width/scrollWidth=53/53，完整起止不被地点挤掉。地点可ellipsis，不改原数据。竖屏外框390 × 740，实际首列140px、clientWidth375px/scrollWidth1036px、标题12px，保留横向滚动而非压缩字体。前轮two-weeks竖屏及最底部图仍有效，其横屏固定列图片已被纠正，不能继续当作“全七天可见”的最终证明。
+
+## 前轮固定横屏列宽的历史渲染证据
+
+主任务曾使用受支持 CUA 操作前轮 H5，横屏实际外框为844 × 390，竖屏为390 × 740（适配本机浏览器可用高度，不能记录成390 × 844）。本子任务已逐一打开以下11张 `two-weeks` 图片审阅。它们验证了前轮的时间几何与竖向滚动，但横屏固定列宽未满足七天全部可见，不能作为最终横屏合格证据；新 `seven-days` 图取代其横屏结论。
 
 - 管理员：[横屏初始](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks.png)、[横向周末](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks-weekend.png)、[下午课程](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks-afternoon.png)、[第二周](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks-second-week.png)、[竖屏](../output/personal-finance-integration-20261008/screenshots/schedule-admin-two-weeks-portrait.png)。四色课程按真实时间纵向定位，一天多节及下午60分钟课均可读，第二周日期为10月12–18日；周末横向滚动可到周日。
 - 教师：[横屏](../output/personal-finance-integration-20261008/screenshots/schedule-teacher-two-weeks.png)、[竖屏](../output/personal-finance-integration-20261008/screenshots/schedule-teacher-two-weeks-portrait.png)。仅教师允许的三课色，缺少权限内课程的时段保留时间网格空白；没有全部学生/验收学生筛选栏。
 - 学生：[横屏](../output/personal-finance-integration-20261008/screenshots/schedule-student-two-weeks.png)、[竖屏](../output/personal-finance-integration-20261008/screenshots/schedule-student-two-weeks-portrait.png)、[最右与最底](../output/personal-finance-integration-20261008/screenshots/schedule-student-two-weeks-bottom.png)。仅学生允许的两课色；最后图可见第二周周六/周日、16:20–17:20完整起止时间及课程居中，第二周列底边完整位于tabbar上方。
 - 家属：[横屏](../output/personal-finance-integration-20261008/screenshots/schedule-family-two-weeks.png)。同学生允许范围与同课配色，不展示额外教师/管理员课程。
 
-主任务还逐个实际点击上一周、下一周、本周：前两者分别移动7天，本周复位。最终图片只有这三个紧凑按钮与每列两行日期表头，不存在日/周切换、独立日期区间、学生筛选、每日节数或卡片序号/班型/状态文字。15:10–16:10与16:20–17:20的30px高课卡完整居中可读，90分钟45px课卡亦完整呈现。课程名12px与地点/起止时间10px来自桌面真实规则，并有本机H5渲染证据；微信真机字形、双轴手势及方向切换仍未在本子任务验证。
+主任务还逐个实际点击上一周、下一周、本周：前两者分别移动7天，本周复位。上述前轮图片只有这三个紧凑按钮与每列两行日期表头，不存在日/周切换、独立日期区间、学生筛选、每日节数或卡片序号/班型/状态文字；这些内容与导航在最终版保持。课程名12px与地点/起止时间10px来自桌面真实规则，并有本机H5渲染证据；微信真机字形、双轴手势及方向切换仍未在本子任务验证。
 
 ## 已执行验证
 
 - `npm run test:miniapp-ui`：通过，覆盖上述 18 页面清单及 fixture 契约。
-- `node miniapp/src/pages/schedule/orientationRuntime.test.js`：通过。
+- `node miniapp/src/pages/schedule/orientationRuntime.test.js`：横屏七列适应视口及八字课名padding两次红绿通过；实际Taro WXSS保留orientation媒体规则，竖屏140px、12/10px、时间不缩断和原5分钟高度均保持。
 - `node miniapp/src/pages/schedule/cloudBusinessSchedule.test.js`：通过。
 - `node miniapp/src/pages/schedule/cardContentRuntime.test.js`：红绿通过，实际组件两周中的四角色卡片内容与桌面 JSX、最终背景/文字色/透明度/边框及范围派生色对齐；已纳入 `scripts/test-personal-finance.js`。
 - `node miniapp/src/pages/schedule/gridGeometryRuntime.test.js`：红绿通过，实际两周结构、真实5分钟定位/60与90分钟课高、时间范围/整点线、14日列头、移除计数/筛选/总结/切换以及旧重叠顺序；已纳入同一测试入口。
 - `node miniapp/src/pages/schedule/courseHistory.test.js`、`node miniapp/src/utils/teachingPagesRuntime.test.js`：通过；旧 harness 已注入真实共享配色依赖及 rooms 缓存，不删减原角色/会话/历史课程断言。
-- `node scripts/test-personal-finance.js`：两周网格及双轴/底栏修正后的最终相关测试 exit 0，包括 IMAP、个人财务、题库、题篮、组卷与新卡片/几何回归。
+- `node scripts/test-personal-finance.js`：横屏七天全部可见及最后padding修正后的最终相关测试 exit 0，包括 IMAP、个人财务、题库、题篮、组卷与新卡片/几何回归；`npm run test:miniapp-ui`同一最终源码再次exit0。
 - `node miniapp/src/pages/question-bank/featureParityRuntime.test.js` 与 `emptyStateRuntime.test.js`、`cloudDelivery.test.js`：通过。
 - `node miniapp/src/pages/question-paper/featureParityRuntime.test.js`、`cloudDelivery.test.js`、`downloadHandler.test.js`：通过。
 - 共享 `questionDisplay`、`questionPaperWorkflow`、`questionBasketStore`、`questionBasketHydrationRuntime`、`questionPaperDownload`：通过。
@@ -80,7 +93,7 @@
 - `node miniapp/src/components/PersonalFinanceSummary.runtime.test.js`：通过。
 - `node scripts/capture-miniapp-ui-matrix.fixture.test.js`：通过，使用真正投影读取器验证 HTTP 结果。
 - `node output/miniapp-parity-20261008/projection-http.test.cjs`：通过，验证隔离服务器四角色的完整投影与数字余额。
-- 本机 fixture 目标 `npm --prefix miniapp run build:h5`：双轴/底栏修正后成功（24.788s）；构建仍报告入口 372 KiB 超过 360 KiB 的警告。未因此放宽预算。
+- 本机 fixture 目标 `npm --prefix miniapp run build:h5`：横屏七天全部可见及课名padding修正后成功（19.711s）；构建仍报告入口 372 KiB 超过 360 KiB 的警告。未因此放宽预算。
 
 ## 子任务变更文件清单
 

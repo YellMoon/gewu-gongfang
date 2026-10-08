@@ -190,3 +190,25 @@
 .schedule-unplaced {
   padding: 4PX;
 }
+
+@media (orientation: landscape) {
+  .calendar-board {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .week-grid {
+    width: 100%;
+    gap: 4PX;
+  }
+
+  .day-column {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+  }
+
+  .schedule-card {
+    padding: 2PX 2PX;
+  }
+}
