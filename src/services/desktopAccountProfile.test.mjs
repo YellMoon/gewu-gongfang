@@ -13,6 +13,10 @@ assert.equal(request.url, 'https://cloud.example/api/desktop-identity/profile');
 assert.equal(request.options.headers.Authorization, 'Bearer fixture');
 assert.equal(request.options.method, 'GET');
 assert.equal(request.options.cache, 'no-store');
+await loadDesktopAccountProfile({ baseUrl: 'https://physicsedu.xyz/cloud-business/', session, fetchImpl: async (url, options) => {
+  request = { url, options }; return { ok: true, json: async () => ({ success: true, data: profile }) };
+} });
+assert.equal(request.url, 'https://physicsedu.xyz/cloud-business/api/desktop-identity/profile', 'production proxy prefix must be preserved');
 await assert.rejects(loadDesktopAccountProfile({ baseUrl: 'https://cloud.example', session: {} }), /AUTHORIZATION_CONTEXT_REQUIRED/);
 await assert.rejects(loadDesktopAccountProfile({ baseUrl: 'https://cloud.example', session, fetchImpl: async () => ({ ok: false, json: async () => ({ success: false, code: 'CLOUD_ONLINE_IDENTITY_REJECTED' }) }) }), /CLOUD_ONLINE_IDENTITY_REJECTED/);
 await assert.rejects(loadDesktopAccountProfile({ baseUrl: 'https://cloud.example', session, fetchImpl: async () => ({ ok: true, json: async () => ({ success: true, data: { ...profile, activeRole: 'super_admin' } }) }) }), /DESKTOP_ACCOUNT_PROFILE_INVALID/);

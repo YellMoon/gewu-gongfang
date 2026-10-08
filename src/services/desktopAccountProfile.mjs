@@ -46,7 +46,7 @@ export async function loadDesktopAccountProfile({ baseUrl, session, signal, fetc
   if (!session?.authorization?.startsWith('Bearer ') || !['teacher', 'super_admin'].includes(session?.authContext?.activeRole)) {
     throw failure('AUTHORIZATION_CONTEXT_REQUIRED');
   }
-  const url = new URL('/api/desktop-identity/profile', baseUrl);
+  const url = new URL('api/desktop-identity/profile', String(baseUrl).replace(/\/+$/, '') + '/');
   const response = await fetchImpl(url.href, {
     method: 'GET', headers: { Accept: 'application/json', Authorization: session.authorization },
     signal, cache: 'no-store',

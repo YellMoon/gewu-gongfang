@@ -32,12 +32,15 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
       };
       const profile = { accountName: 'alice', name: '教师甲', phone: '13800000000', subject: '物理', wechat: null,
         activeRole: 'teacher', eligibleRoles: ['teacher'] };
-      window.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: profile }) });
+      window.fetch = async url => {
+        if (url !== 'https://physicsedu.xyz/cloud-business/api/desktop-identity/profile') throw Error('profile proxy prefix was discarded');
+        return { ok: true, json: async () => ({ success: true, data: profile }) };
+      };
       const modules = {
         react: React, antd, '@ant-design/icons': icons,
         '../services/desktopAuthorizationSession.mjs': { readDesktopAuthorizationSession: () => ({ authorization: 'Bearer fixture', authContext: { userId: 'a', activeRole: 'teacher' } }) },
         '../services/runtimeConfigClient': { getRuntimeConfig: async () => ({}) },
-        '../services/managedSyncConfig.mjs': { resolveDesktopIdentityBaseUrl: () => 'https://cloud.test' },
+        '../services/managedSyncConfig.mjs': { resolveDesktopIdentityBaseUrl: () => 'https://physicsedu.xyz/cloud-business' },
         './IdentityDeviceCenter': { __esModule: true, default: () => null },
         '../../package.json': { version: '1.0.0' },
         './MyAccount.css': {},
