@@ -63,7 +63,7 @@ const MyAccount: React.FC<{ context?: MyAccountContext }> = ({ context }) => {
 
   const roles = profile?.eligibleRoles || (account.activeRole ? [account.activeRole] : []);
   const retryProfile = useCallback(() => setRetry(value => value + 1), []);
-  const value = (field: string) => profile ? (profile[field] || '未登记') : '暂不可用';
+  const value = (field: string) => profile?.[field] || ''; // UTF-8: absent personal fields stay blank.
 
   return <div className="my-account">
     <Card className="my-account__profile">

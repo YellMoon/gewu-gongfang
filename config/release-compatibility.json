@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopAccountProfile": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "deploy the additive authenticated GET desktop-identity/profile route before desktop rollout; derive the account exclusively from the current verified desktop session and linked teacher, never client-supplied identities; no schema migration or business write; missing WeChat handle remains null; desktop caches display fields only by userId and activeRole, never permissions or credentials; existing miniapp and storage contracts remain compatible"
+    },
     "personalFinanceLedger": {
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],

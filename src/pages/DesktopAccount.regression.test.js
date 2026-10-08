@@ -66,6 +66,9 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
       ['MyAccount', compile('src/pages/MyAccount.tsx')],
     ] });
     await page.getByText('alice', { exact: true }).waitFor();
+    assert.equal(await page.getByText('未登记', { exact: true }).count(), 0, 'UTF-8: absent personal fields stay blank');
+    assert.equal(await page.getByText('暂不可用', { exact: true }).count(), 0);
+    assert.equal(await page.locator('.ant-descriptions-item').filter({ hasText: '微信号' }).locator('.ant-descriptions-item-content').innerText(), '');
     await page.evaluate(() => { window.online = false; window.dispatchEvent(new Event('offline')); window.unmountAccount(); });
     await page.locator('.my-account').waitFor({ state: 'detached' });
     await page.evaluate(() => window.renderAccount('a', 'teacher', 'offline-remount'));
@@ -74,6 +77,7 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
     await page.evaluate(() => window.renderAccount('b', 'teacher', 'different-account'));
     await page.getByText('当前离线，联网后可读取个人资料。', { exact: true }).waitFor();
     assert.equal(await page.getByText('alice', { exact: true }).count(), 0, 'another account cannot see verified cached fields');
+    assert.equal(await page.getByText('暂不可用', { exact: true }).count(), 0);
     await page.evaluate(() => window.renderAccount('a', 'super_admin', 'different-role'));
     assert.equal(await page.getByText('alice', { exact: true }).count(), 0, 'role partitions cannot reuse cached fields');
 

@@ -170,23 +170,23 @@ const QuestionBankEdit: React.FC = () => {
     setLoadError('');
     const db = (window as any).dbService; // utf-8 atomic save
     try {
-    try {
-      await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
-    } catch (_error) {
-      setLoadError('暂时无法读取最新题库，显示本地已保存的试题。联网后可刷新重试。');
-    }
-    const cachedKnowledge = await getCachedQuestionTree('knowledge');
-    const cachedModels = await getCachedQuestionTree('model');
-    if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
-    if (cachedModels.length > 0) setModelNodes(cachedModels);
-    const kn = db?.getKnowledgeTree?.() || [];
-    const models = db?.getModelTree?.() || [];
-    if (kn.length > 0) setKnowledgeNodes(kn);
-    if (models.length > 0) setModelNodes(models);
-    cacheQuestionTrees(kn, models).catch(() => undefined);
-    await ensureQuestionLocalStoreSeeded(() => db?.getAllQuestions?.()?.map(normalizeQuestion) || []);
-    setLocalStoreReady(true);
-    setRefreshNonce(value => value + 1);
+      try {
+        await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
+      } catch (_error) {
+        setLoadError('暂时无法读取最新题库，显示本地已保存的试题。联网后可刷新重试。');
+      }
+      const cachedKnowledge = await getCachedQuestionTree('knowledge');
+      const cachedModels = await getCachedQuestionTree('model');
+      if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
+      if (cachedModels.length > 0) setModelNodes(cachedModels);
+      const kn = db?.getKnowledgeTree?.() || [];
+      const models = db?.getModelTree?.() || [];
+      if (kn.length > 0) setKnowledgeNodes(kn);
+      if (models.length > 0) setModelNodes(models);
+      cacheQuestionTrees(kn, models).catch(() => undefined);
+      await ensureQuestionLocalStoreSeeded(() => db?.getAllQuestions?.()?.map(normalizeQuestion) || []);
+      setLocalStoreReady(true);
+      setRefreshNonce(value => value + 1);
     } catch (_error) {
       setLoadError('暂时无法读取本地试题，请刷新重试。');
     } finally {
