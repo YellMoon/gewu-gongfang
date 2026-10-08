@@ -2,6 +2,7 @@ import React from 'react';
 
 interface PageHeaderBarProps {
   title: React.ReactNode;
+  titleActions?: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   secondaryActions?: React.ReactNode;
@@ -10,6 +11,7 @@ interface PageHeaderBarProps {
 
 const PageHeaderBar: React.FC<PageHeaderBarProps> = ({
   title,
+  titleActions,
   description,
   actions,
   secondaryActions,
@@ -19,6 +21,7 @@ const PageHeaderBar: React.FC<PageHeaderBarProps> = ({
     <div className="page-header-bar__main">
       <div className="page-header-bar__title-row">
         <h1 className="page-header-bar__title">{title}</h1>
+        {titleActions}
         {description && <span className="page-header-bar__context">{description}</span>}
         {status && <div className="page-header-bar__status">{status}</div>}
       </div>

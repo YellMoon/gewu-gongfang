@@ -77,7 +77,7 @@ const baseNavGroups: NavGroup[] = [
     label: '题库',
     icon: <DatabaseOutlined />,
     items: [
-      { key: 'question-bank-tools', label: '题库工具', description: '导入、知识点、模型和问题提醒', icon: <ToolOutlined /> },
+      { key: 'question-bank-tools', label: '题库管理', description: '导入试题、整理体系和处理问题', icon: <ToolOutlined /> },
       { key: 'question-bank-preview', label: '试题库', description: '检索题目内容', icon: <FileTextOutlined /> },
       { key: 'question-bank-paper', label: '组卷', description: '从题篮生成试卷', icon: <FileWordOutlined /> },
     ],
@@ -139,7 +139,7 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   school: { key: 'school', label: '学校', icon: <BankOutlined /> },
   address: { key: 'address', label: '上课地址', icon: <HomeOutlined /> },
   institution: { key: 'institution', label: '机构', icon: <TeamOutlined /> },
-  'question-bank-tools': { key: 'question-bank-tools', label: '题库工具', icon: <ToolOutlined /> },
+  'question-bank-tools': { key: 'question-bank-tools', label: '题库管理', icon: <ToolOutlined /> },
   'question-bank-preview': { key: 'question-bank-preview', label: '试题库', icon: <FileTextOutlined /> },
   'question-bank-paper': { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> },
   payment: { key: 'payment', label: '缴费', icon: <DollarOutlined /> },

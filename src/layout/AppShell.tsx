@@ -4,6 +4,8 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
+  FileSearchOutlined,
+  FileWordOutlined,
 } from '@ant-design/icons';
 import PageHeaderBar from './PageHeaderBar';
 import { findNavItem, findOpenGroup, navGroups, PageKey, todayNavItem } from '../navigation/appNavigation';
@@ -169,6 +171,10 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
           </Tooltip>
           <PageHeaderBar
             title={currentNavItem.label}
+            titleActions={currentPage === 'question-bank-tools' ? <>
+              <Button icon={<FileSearchOutlined />} onClick={() => onNavigate('question-bank-preview')}>试题库</Button>
+              <Button type="primary" icon={<FileWordOutlined />} onClick={() => onNavigate('question-bank-paper')}>去组卷</Button>
+            </> : undefined}
             description={currentPage === 'today' ? new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : undefined}
             secondaryActions={(
               <Button

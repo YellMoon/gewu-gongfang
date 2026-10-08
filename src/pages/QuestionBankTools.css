@@ -34,7 +34,7 @@
 
 .question-bank-tools-metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(132px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--app-content-gap, 12px);
 }
 
@@ -70,7 +70,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 700px) {
   .question-bank-tools-hero {
     align-items: flex-start;
     flex-direction: column;

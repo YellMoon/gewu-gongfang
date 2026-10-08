@@ -1,5 +1,5 @@
 import dayjs, { Dayjs } from 'dayjs';
-import { Course, Payment, Question, Schedule, ScheduleStatus, Student, Teacher } from '../types';
+import { Course, Payment, Question, Room, Schedule, ScheduleStatus, Student, Teacher } from '../types';
 import { StudentCourseFeeDetail, buildFinancialDetails, isStudentTuitionCollectible } from './financialDetails';
 
 export interface TodayCourseRow {
@@ -50,7 +50,8 @@ export function getTodayCourseRows(
   schedules: Schedule[],
   courses: Course[],
   teachers: Teacher[],
-  today: Dayjs = dayjs()
+  today: Dayjs = dayjs(),
+  rooms: Room[] = []
 ): TodayCourseRow[] {
   const target = today.format('YYYY-MM-DD');
   return schedules
@@ -69,7 +70,10 @@ export function getTodayCourseRows(
         teacherId,
         teacherName: teacher?.name || schedule.teacher_name || course?.teacher_name || '未设置老师',
         courseName: course?.display_name || course?.name || (schedule as any).course_name || '未知课程',
-        room: schedule.room || course?.room_name,
+        // UTF-8: show resolved names only; internal room references are not UI text.
+        room: course?.room_name || rooms.find(room =>
+          [schedule.room, course?.room_id?.split(',')[0].trim()].includes(room.id) || room.name === schedule.room
+        )?.name || '',
       };
     })
     .sort((a, b) => a.timeRange.localeCompare(b.timeRange));

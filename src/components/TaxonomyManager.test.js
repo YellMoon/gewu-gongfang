@@ -33,7 +33,8 @@ assert.ok(preview.includes('>\u5c55\u5f00\u4f53\u7cfb</Button>'), 'collapsed que
 assert.ok(!preview.includes('placeholder="\u5305\u542b\u77e5\u8bc6\u70b9"'), 'legacy knowledge include filter must not render beside dynamic taxonomy filters');
 assert.ok(!preview.includes('placeholder="\u6392\u9664\u77e5\u8bc6\u70b9"'), 'legacy knowledge exclude filter must not render beside dynamic taxonomy filters');
 assert.ok(!preview.includes('placeholder="\u6a21\u578b"'), 'legacy model filter must not render beside dynamic taxonomy filters');
-assert.ok(importer.includes('<BranchesOutlined /> \u4f53\u7cfb</span>'), 'import sidebar must use the unified taxonomy label');
+// UTF-8: import sidebar combines its subject and taxonomy heading.
+assert.ok(importer.includes('onSubjectChange={setTaxonomySubject}'), 'import sidebar must switch subject from its taxonomy heading');
 assert.ok(importer.includes('>\u5c55\u5f00\u4f53\u7cfb</Button>'), 'collapsed import sidebar must use the unified taxonomy label');
 assert.ok(!globalStyles.includes(':has(> .taxonomy-manager)'), 'legacy taxonomy trees must not be rendered and hidden through a global CSS selector');
 assert.ok(tools.includes('\u5bfc\u5165\u4e0e\u4f53\u7cfb'), 'question bank tools entry must use the unified taxonomy label');

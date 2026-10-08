@@ -9,7 +9,7 @@ import {
   RightOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { Course, Payment, Question, Student, Teacher } from '../types';
+import { Course, Payment, Question, Room, Student, Teacher } from '../types';
 import type { NavigationInput } from '../navigation/navigationContext';
 import {
   StudentAlertRow,
@@ -76,7 +76,8 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
         const teachers: Teacher[] = dbService.getAllTeachers?.() || [];
         const payments: Payment[] = dbService.getAllPayments?.() || [];
         const questions: Question[] = dbService.getAllQuestions?.() || [];
-        const todayRows = getTodayCourseRows(schedules, courses, teachers);
+        const rooms: Room[] = dbService.getAllRooms?.() || [];
+        const todayRows = getTodayCourseRows(schedules, courses, teachers, undefined, rooms);
         const financialAlerts = buildStudentFinancialAlerts(schedules, courses, students, teachers, payments);
         const issues = buildQuestionIssues(questions);
 
@@ -152,7 +153,7 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
         <button className="today-workbench__entry-card" onClick={() => onNavigate('question-bank-tools')}>
           <DatabaseOutlined />
           <strong>题库</strong>
-          <span>试题库、导入与体系、组卷</span>
+          <span>管理试题、导入与体系、组卷</span>
         </button>
       </div>
 
@@ -168,7 +169,7 @@ const TodayWorkbench: React.FC<TodayWorkbenchProps> = ({ onNavigate }) => {
               {todayGroup.rows.map((row, index) => (
                 <button key={row.scheduleId} className="today-workbench__course-row" onClick={() => goSchedule(row)}>
                   <span>{index + 1}. {row.timeRange}</span>
-                  <span>{row.room || '未设置地点'} · {row.teacherName}</span>
+                  <span>{row.room}{row.room && ' · '}{row.teacherName}</span>
                   <strong>{row.courseName}</strong>
                 </button>
               ))}

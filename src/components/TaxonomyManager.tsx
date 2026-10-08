@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Empty, Input, Modal, Space, Tree, Tooltip, message } from 'antd';
-import { DeleteOutlined, EditOutlined, HistoryOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Empty, Input, Modal, Space, Tree, Tooltip, message } from 'antd';
+import { BranchesOutlined, DownOutlined, DeleteOutlined, EditOutlined, HistoryOutlined, PlusOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, TaxonomySystem } from '../types';
 import { filterTaxonomyNodes, planTaxonomyDrop } from './taxonomyTreeOperations';
 import './TaxonomyManager.css';
@@ -8,6 +8,10 @@ import './TaxonomyManager.css';
 type Props = {
   subject: string;
   database: any;
+  subjects?: string[];
+  onSubjectChange?: (subject: string) => void;
+  onCollapse?: () => void;
+  showRecovery?: boolean;
   onChanged?: (systems: TaxonomySystem[], nodesBySystem: Record<string, KnowledgeNode[]>) => void;
 };
 
@@ -36,7 +40,7 @@ function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 
 type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
-const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
+const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjects, onSubjectChange, onCollapse, showRecovery = true }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
   const [backupModalOpen, setBackupModalOpen] = useState(false);
@@ -106,7 +110,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
           confirmed: true,
           expectedAffectedQuestionCount: impact.affected_question_count,
         });
-        message.success(`\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d`);
+        message.success(showRecovery ? `\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d` : '已删除');
         reload();
         return result;
       },
@@ -160,7 +164,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
           confirmed: true,
           expectedAffectedQuestionCount: impact.affected_question_count,
         });
-        message.success(`\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d`);
+        message.success(showRecovery ? `\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d` : '已删除');
         reload();
         return result;
       },
@@ -180,12 +184,19 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged }) => {
   };
 
   return <div className="taxonomy-manager">
-    <div className="taxonomy-manager__actions">
+    {/* UTF-8: subject selection and creation share the taxonomy heading. */}
+    {onSubjectChange ? <div className="taxonomy-manager__heading">
+      <Dropdown trigger={['click']} menu={{ selectedKeys: [subject], items: (subjects || [subject]).map(value => ({ key: value, label: `${value}体系` })), onClick: ({ key }) => onSubjectChange(key) }}>
+        <Button className="taxonomy-manager__subject" type="text" aria-label="选择科目体系"><BranchesOutlined /><strong>{subject}体系</strong><DownOutlined /></Button>
+      </Dropdown>
+      <Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip>
+      {onCollapse && <Button className="taxonomy-manager__collapse" type="link" size="small" onClick={onCollapse}>收起</Button>}
+    </div> : <div className="taxonomy-manager__actions">
       <Button icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>
-      <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>
-    </div>
+      {showRecovery && <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>}
+    </div>}
     {edit?.kind === 'system-create' && inlineEditor()}
-    <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索知识点或体系节点" value={search} onChange={event => setSearch(event.target.value)} />
+    <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索体系节点" value={search} onChange={event => setSearch(event.target.value)} />
     {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">

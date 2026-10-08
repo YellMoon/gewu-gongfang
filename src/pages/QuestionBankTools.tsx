@@ -1,16 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Space, Statistic, Tabs, Tag, Typography, message } from 'antd';
+import { Card, Empty, Space, Statistic, Tabs, Tag, message } from 'antd';
 import Table from '../components/NumberedTable';
-import {
-  FileSearchOutlined,
-  FileWordOutlined,
-  ToolOutlined,
-} from '@ant-design/icons';
 import QuestionBankImport from './QuestionBankImport';
 import QuestionIssueQueue, { QuestionIssue } from '../components/question-bank/QuestionIssueQueue';
 import type { ImportTask, Question } from '../types';
 import { inspectQuestion, questionSearchText } from '../services/questionInspection';
-import type { PageKey } from '../navigation/appNavigation';
 import type { NavigationInput, QuestionBankToolsContext } from '../navigation/navigationContext';
 import './QuestionBankTools.css';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
@@ -24,15 +18,11 @@ interface QuestionBankToolsProps {
 
 type QuestionBankStats = {
   questions: Question[];
-  knowledgeCount: number;
-  modelCount: number;
   recentTasks: ImportTask[];
 };
 
 const EMPTY_STATS: QuestionBankStats = {
   questions: [],
-  knowledgeCount: 0,
-  modelCount: 0,
   recentTasks: [],
 };
 
@@ -99,8 +89,6 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
       const questions = (db?.getAllQuestions?.() || []).map(normalizeQuestion);
       setStats({
         questions,
-        knowledgeCount: db?.getKnowledgeTree?.().length || 0,
-        modelCount: db?.getModelTree?.().length || 0,
         recentTasks: db?.getRecentImportTasks?.(8) || [],
       });
     } catch {
@@ -151,33 +139,14 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
   const issues = useMemo(() => buildIssues(stats.questions), [stats.questions]);
   const publishedCount = stats.questions.filter(question => question.status === 'published').length;
   const draftCount = stats.questions.filter(question => question.status !== 'published').length;
-  const formulaCount = stats.questions.filter(question => question.has_formula).length;
-  const imageCount = stats.questions.filter(question => question.has_image).length;
-
-  const shortcuts = [
-    { key: 'question-bank-preview' as PageKey, icon: <FileSearchOutlined />, label: '试题库', type: 'primary' as const },
-    { key: 'question-bank-paper' as PageKey, icon: <FileWordOutlined />, label: '去组卷', type: 'primary' as const },
-  ];
 
   return (
     <div className="question-bank-tools-page">
-      <div className="question-bank-tools-hero">
-        <Space wrap>
-          {shortcuts.map(item => (
-            <Button key={item.key} type={item.type} icon={item.icon} onClick={() => onNavigate(item.key)}>
-              {item.label}
-            </Button>
-          ))}
-        </Space>
-      </div>
-
+      {/* UTF-8: navigation lives beside the shell title; keep only useful metrics. */}
       <div className="question-bank-tools-metrics">
         <Card size="small"><Statistic title="试题总数" value={stats.questions.length} suffix="题" /></Card>
         <Card size="small"><Statistic title="已发布" value={publishedCount} suffix="题" /></Card>
         <Card size="small"><Statistic title="草稿/待处理" value={draftCount} suffix="题" /></Card>
-        <Card size="small"><Statistic title="知识点" value={stats.knowledgeCount} /></Card>
-        <Card size="small"><Statistic title="模型点" value={stats.modelCount} /></Card>
-        <Card size="small"><Statistic title="含公式/图片" value={`${formulaCount}/${imageCount}`} /></Card>
       </div>
 
       <Tabs
@@ -194,17 +163,9 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
             key: 'quality',
             label: `问题提醒 ${issues.length}`,
             children: (
-              <div className="question-bank-tools-grid">
+              <div>
                 <Card title="问题试题" size="small">
                   <QuestionIssueQueue issues={issues} onEdit={questionId => onNavigate({ page: 'question-bank-preview', context: { questionId } })} onDelete={deleteIssue} />
-                </Card>
-                <Card title="处理建议" size="small">
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="个人使用场景下，问题提醒优先于独立审核流程"
-                    description="导入时标注异常后，在试题库中置顶处理，确认修改或删除即可。"
-                  />
                 </Card>
               </div>
             ),

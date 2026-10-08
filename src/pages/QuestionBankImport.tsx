@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
-  Tree, Divider, Checkbox, Empty, Row, Col, Typography, Tooltip, Radio, Steps, Alert, Statistic, Drawer
+  Tree, Divider, Checkbox, Collapse, Empty, Row, Col, Typography, Tooltip, Radio, Steps, Alert, Statistic, Drawer
 } from 'antd';
 import Table from '../components/NumberedTable';
 import {
@@ -942,20 +942,14 @@ const QuestionBankImport: React.FC = () => {
   };
 
   return (
-    <Row gutter={16}>
+    <Row gutter={[16, 16]} className="question-bank-import-layout">
       {/* Knowledge Tree Sidebar */}
       {treeVisible && (
-        <Col span={5}>
+        <Col xs={24} lg={7} xl={6}>
           <Card
             size="small"
-            title={<span><BranchesOutlined /> 体系</span>}
-            extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
-            style={{ height: '100%' }}
           >
-            <div className="taxonomy-subject-selector">
-              <Select value={taxonomySubject} options={SUBJECTS.map(subject => ({ label: subject, value: subject }))} onChange={setTaxonomySubject} />
-            </div>
-            <TaxonomyManager subject={taxonomySubject} database={(window as any).dbService} onChanged={handleTaxonomiesChanged} />
+            <TaxonomyManager subject={taxonomySubject} subjects={SUBJECTS} onSubjectChange={setTaxonomySubject} onCollapse={() => setTreeVisible(false)} showRecovery={false} database={(window as any).dbService} onChanged={handleTaxonomiesChanged} />
             {legacyTaxonomyUiEnabled() && <>
             <div className="qb-tree-section-title qb-knowledge-tree-title"><TagsOutlined /> 知识点</div>
             {/* Root-level inline add */}
@@ -1095,7 +1089,7 @@ const QuestionBankImport: React.FC = () => {
         </Col>
       )}
       {/* Main Content */}
-      <Col span={treeVisible ? 19 : 24}>
+      <Col xs={24} lg={treeVisible ? 17 : 24} xl={treeVisible ? 18 : 24}>
         <Card style={{ margin: 0 }}>
           {!treeVisible && (
             <div style={{ marginBottom: 12 }}>
@@ -1116,11 +1110,11 @@ const QuestionBankImport: React.FC = () => {
 
           <div style={{ background: '#f7f9fc', border: '1px solid #e8edf3', borderRadius: 8, padding: 20, marginBottom: 16 }}>
             <Row gutter={[20, 16]} align="top">
-              <Col xs={24} lg={9}>
+              <Col xs={24} lg={wordSourceType === 'exam' ? 9 : 24}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <FileWordOutlined style={{ fontSize: 22, color: '#1890ff' }} />
-                    <Text strong>导入格式与说明</Text>
+                    <Text strong>导入格式</Text>
                   </div>
                   <Radio.Group
                     value={wordSourceType}
@@ -1143,11 +1137,11 @@ const QuestionBankImport: React.FC = () => {
                     <Radio.Button value="lecture">讲义格式</Radio.Button>
                     <Radio.Button value="exam">试卷格式</Radio.Button>
                   </Radio.Group>
-                  <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
+                  <Collapse ghost size="small" items={[{ key: 'instructions', label: '查看导入说明', children: <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
                     <li><b>讲义格式</b>：适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。</li>
                     <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全年份、考试类型、年级、学期、地区、学校和试卷名。</li>
                     <li>开始解析在本机读取文档、清理微小标识并保留图片显示尺寸；校对后生成草稿时才归档原件和图片。</li>
-                  </ul>
+                  </ul> }]} />
                   {selectedWordFile && (
                     <Tag color="blue" style={{ whiteSpace: 'normal', lineHeight: 1.6 }}>
                       已选择：{selectedWordFile.name}
@@ -1155,7 +1149,8 @@ const QuestionBankImport: React.FC = () => {
                   )}
                 </Space>
               </Col>
-              <Col xs={24} lg={15}>
+              {/* UTF-8: keep form state connected while hiding irrelevant exam metadata. */}
+              <Col xs={24} lg={15} style={{ display: wordSourceType === 'exam' ? undefined : 'none' }}>
                 <Form form={examForm} layout="vertical" disabled={wordSourceType !== 'exam' || wordImporting || committingBatch || !!wordResult} initialValues={{ year: toSchoolYear(new Date().getFullYear().toString()) }}>
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="year" label="学年"><Select options={getSchoolYearOptions()} /></Form.Item></Col>
