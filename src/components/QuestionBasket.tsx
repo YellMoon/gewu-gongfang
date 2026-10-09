@@ -15,6 +15,7 @@ export const QUESTION_BASKET_STORAGE_KEY = 'question_basket_ids';
 export const QUESTION_BASKET_SELECTED_STORAGE_KEY = 'question_basket_selected';
 export const QUESTION_BASKET_EVENT = 'question-basket-changed';
 const QUESTION_BASKET_DOCK_TOP_KEY = 'question_basket_dock_top';
+const QUESTION_BASKET_POSITION_KEY = 'question_basket_position_v2';
 
 function readBasketIds(): string[] {
   try {
@@ -104,16 +105,30 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
   const [open, setOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [dockTop, setDockTop] = useState(() => {
-    const saved = Number(localStorage.getItem(QUESTION_BASKET_DOCK_TOP_KEY));
-    return Number.isFinite(saved) && saved >= 12 && saved <= 88 ? saved : 50;
+  const [position, setPosition] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(QUESTION_BASKET_POSITION_KEY) || 'null');
+      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) return saved as { x: number; y: number };
+    } catch {}
+    const savedTop = Number(localStorage.getItem(QUESTION_BASKET_DOCK_TOP_KEY));
+    return { x: 94, y: savedTop >= 12 && savedTop <= 88 ? savedTop : 50 };
   });
-  const dragRef = useRef<{ startY: number; startTop: number; dragging: boolean; moved: boolean }>({
-    startY: 0,
-    startTop: 50,
-    dragging: false,
-    moved: false,
-  });
+  const floatRef = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, dragging: false, moved: false });
+  const clampPosition = useCallback((x: number, y: number) => {
+    const width = floatRef.current?.offsetWidth || 76;
+    const height = floatRef.current?.offsetHeight || 102;
+    return {
+      x: Math.min(Math.max(8, window.innerWidth - width - 8), Math.max(8, x)) / window.innerWidth * 100,
+      y: Math.min(Math.max(8, window.innerHeight - height - 8), Math.max(8, y)) / window.innerHeight * 100,
+    };
+  }, []);
+  useEffect(() => {
+    const resize = () => setPosition(current => clampPosition(current.x / 100 * window.innerWidth, current.y / 100 * window.innerHeight));
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [clampPosition, visible]);
 
   useEffect(() => {
     setSelectedIds(prev => prev.length === 0 ? [...ids] : prev.filter(id => ids.includes(id)));
@@ -167,25 +182,27 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
 
   const handlePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
-    dragRef.current = { startY: event.clientY, startTop: dockTop, dragging: true, moved: false };
+    const box = event.currentTarget.getBoundingClientRect();
+    dragRef.current = { startX: event.clientX, startY: event.clientY, startLeft: box.left, startTop: box.top, dragging: true, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag.dragging) return;
-    const deltaPercent = ((event.clientY - drag.startY) / window.innerHeight) * 100;
-    if (Math.abs(event.clientY - drag.startY) > 3) drag.moved = true;
-    setDockTop(Math.min(88, Math.max(12, drag.startTop + deltaPercent)));
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (Math.hypot(dx, dy) > 3) drag.moved = true;
+    if (drag.moved) setPosition(clampPosition(drag.startLeft + dx, drag.startTop + dy));
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag.dragging) return;
     drag.dragging = false;
-    const nextTop = Math.min(88, Math.max(12, dockTop));
     if (drag.moved) {
-      localStorage.setItem(QUESTION_BASKET_DOCK_TOP_KEY, String(nextTop));
+      const box = event.currentTarget.getBoundingClientRect();
+      localStorage.setItem(QUESTION_BASKET_POSITION_KEY, JSON.stringify(clampPosition(box.left, box.top)));
     }
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -205,8 +222,10 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
   return (
     <>
       <button
+        ref={floatRef}
         className={open ? 'question-basket-float open' : 'question-basket-float'}
-        style={{ top: `${dockTop}%` }}
+        style={{ left: `${position.x}%`, top: `${position.y}%` }}
+        title={'\u70b9\u51fb\u6253\u5f00\u8bd5\u9898\u7bee\uff0c\u62d6\u52a8\u53ef\u79fb\u52a8\u4f4d\u7f6e'}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

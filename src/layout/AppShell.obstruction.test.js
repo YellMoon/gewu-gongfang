@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
       });
       assert.equal(result.scrollLeft,0,'decorative sidebar overflow must not scroll/crop its contents');
       assert(result.brandLeft>=0);
-      assert(result.actionRight+12<=result.basketLeft,'floating basket needs a clear lane outside page actions');
+      assert.equal(await page.locator('.app-shell__content').evaluate(element=>getComputedStyle(element).paddingRight),'18px','floating basket must overlay the page without reserving a separate column');
       await page.locator('.question-basket-float').evaluate(element=>element.remove());
       assert.equal(await page.locator('.app-shell__content').evaluate(element=>getComputedStyle(element).paddingRight),'18px','non-question pages must not inherit an empty basket lane');
       await page.close();

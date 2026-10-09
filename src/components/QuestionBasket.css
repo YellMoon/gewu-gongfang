@@ -1,8 +1,8 @@
 .question-basket-float {
   position: fixed;
-  right: var(--question-basket-dock-inset, 18px);
+  left: 94%;
   top: 50%;
-  z-index: 1200;
+  z-index: 900;
   width: var(--question-basket-dock-width, 76px);
   min-height: 102px;
   padding: 12px 8px;
@@ -17,7 +17,6 @@
   box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
   color: #007aff;
   cursor: grab;
-  transform: translateY(-50%);
   backdrop-filter: blur(18px);
   text-align: center;
   touch-action: none;

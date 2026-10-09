@@ -17,6 +17,8 @@
 }
 
 .qb-preview-sidebar {
+  flex: 0 0 280px;
+  max-width: 280px;
   position: sticky;
   top: 0;
   align-self: flex-start;
@@ -26,10 +28,15 @@
 .qb-preview-sidebar .ant-card-body {
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  max-height: calc(100dvh - 120px);
+  overflow: auto;
+  scrollbar-width: thin;
 }
 
 .qb-preview-main {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: calc(100% - 280px);
   transition: flex-basis 0.24s ease, max-width 0.24s ease;
 }
 

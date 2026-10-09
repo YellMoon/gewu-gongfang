@@ -13,6 +13,7 @@ import {
 import type { Question, KnowledgeNode, QuestionVersion, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
+import QuestionBankFilters from '../components/QuestionBankFilters';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
@@ -66,7 +67,7 @@ const LIMIT_STATUSES = [
 ];
 
 const YEAR_OPTIONS = Array.from({ length: 18 }, (_, i) => {
-  const start = 2026 - i;
+  const start = new Date().getFullYear() - i;
   const end = start + 1;
   return { label: `${start}-${end}学年`, value: `${start}-${end}` };
 });
@@ -96,7 +97,7 @@ function filterTreeDataByText(treeData: any[], keyword: string): any[] {
     .filter(Boolean);
 }
 
-const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ context }) => {
+const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject?: string }> = ({ context, subject = '物理' }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionTotal, setQuestionTotal] = useState(0);
   const [localStoreReady, setLocalStoreReady] = useState(false);
@@ -109,12 +110,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
   const [taxonomySelections, setTaxonomySelections] = useState<Record<string, { include: string[]; exclude: string[] }>>({});
 
   // Multi-select filter state
-  const [filterSubjects, setFilterSubjects] = useState<string[]>(['物理']);
+  const [filterSubjects, setFilterSubjects] = useState<string[]>([subject]);
   const [filterTypes, setFilterTypes] = useState<string[]>(['全部']); // default: 全部
   const [filterExamTypes, setFilterExamTypes] = useState<string[]>(['全部']); // default: 全部
   const [filterGrades, setFilterGrades] = useState<string[]>(['全部']); // default: 全部
   const [filterSemesters, setFilterSemesters] = useState<string[]>(['全部']); // default: 全部
-  const [filterYear, setFilterYear] = useState<string>('全部');
+  const [filterYears, setFilterYears] = useState<string[]>([]);
   const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
   const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
   const [basketOnly, setBasketOnly] = useState(false);
@@ -275,10 +276,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
     }
     return vals.length === 0 ? ['全部'] : vals as string[];
   };
-  const singleValue = (values: string[]) => values.find(value => value !== '全部') || '全部';
-  const setSingleValue = (setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) => {
-    setter([value || '全部']);
-  };
   const difficultyBucket = (difficulty?: number) => {
     const value = Number(difficulty || 1);
     if (value <= 2) return '简单';
@@ -290,7 +287,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
     setFilterExamTypes(['全部']);
     setFilterGrades(['全部']);
     setFilterSemesters(['全部']);
-    setFilterYear('全部');
+    setFilterYears([]);
     setFilterDifficulties(['全部']);
     setFilterStatuses(['全部']);
     setBasketOnly(false);
@@ -346,11 +343,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
         grades: filterGrades,
         semesters: filterSemesters,
         difficulties: filterDifficulties,
-        year: filterYear,
+        years: filterYears,
         basketIds,
         basketOnly,
         source: sourceFilter,
         searchTerms,
+        searchScope: 'stem',
         taxonomyFilters: expandedTaxonomyFilters,
         dedupe: true,
       });
@@ -361,7 +359,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
     }
   }, [
     localStoreReady, refreshNonce, currentPage, filterSubjects, filterTypes, filterExamTypes, filterStatuses,
-    filterGrades, filterSemesters, filterDifficulties, filterYear, basketIds, basketOnly,
+    filterGrades, filterSemesters, filterDifficulties, filterYears, basketIds, basketOnly,
     sourceFilter, searchTerms, expandedTaxonomyFilters,
   ]);
 
@@ -379,7 +377,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYear, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(',')]);
+  }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYears, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(','), taxonomySelections]);
 
   const jumpToQuestionPage = useCallback((page: number) => {
     setCurrentPage(page);
@@ -484,17 +482,43 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
     setModelNodes(nodes.model || []);
     setTaxonomySelections(previous => Object.fromEntries(systems.map(system => [
       system.id,
-      previous[system.id] || { include: [], exclude: [] },
+      { include: (previous[system.id]?.include || []).filter(id => (nodes[system.id] || []).some(node => node.id === id)), exclude: (previous[system.id]?.exclude || []).filter(id => (nodes[system.id] || []).some(node => node.id === id)) },
     ])));
+  }, []);
+  const yearOptions = useMemo(() => {
+    const values = new Set<string>(YEAR_OPTIONS.map(option => option.value));
+    (dbService?.getAllQuestions?.() || []).forEach((question: any) => { if (question.year) values.add(String(question.year)); });
+    return [...values].sort((a, b) => b.localeCompare(a)).map(value => ({ value, label: value.endsWith('学年') ? value : value + '学年' }));
+  }, [dbService, refreshNonce]);
+  const updateTaxonomySelection = useCallback((systemId: string, mode: 'include' | 'exclude', values: string[]) => {
+    setTaxonomySelections(previous => {
+      const current = previous[systemId] || { include: [], exclude: [] };
+      const other = mode === 'include' ? 'exclude' : 'include';
+      return { ...previous, [systemId]: { ...current, [mode]: [...new Set(values)], [other]: current[other].filter(id => !values.includes(id)) } };
+    });
+  }, []);
+  const handleTreeFilterChange = useCallback((systemId: string, nodeId: string, mode: 'include' | 'exclude' | 'clear') => {
+    setTaxonomySelections(previous => {
+      const current = previous[systemId] || { include: [], exclude: [] };
+      return { ...previous, [systemId]: {
+        include: [...current.include.filter(id => id !== nodeId), ...(mode === 'include' ? [nodeId] : [])],
+        exclude: [...current.exclude.filter(id => id !== nodeId), ...(mode === 'exclude' ? [nodeId] : [])],
+      } };
+    });
   }, []);
   const subjectKnowledgeNodes = knowledgeNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const changeSubject = (value: string) => {
+    resetFilters();
+    setSelectedRowKeys([]);
     setFilterSubjects([value]);
     setKnowledgeSelectedIds([undefined]);
     setFilterExcludeKnowledgeIds([undefined]);
     setModelSelectedIds([undefined]);
     setTaxonomySelections({});
   };
+  useEffect(() => {
+    if (subject !== filterSubjects[0]) changeSubject(subject);
+  }, [subject, filterSubjects]);
   const subjectModelNodes = modelNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const treeData = buildTreeData(subjectKnowledgeNodes);
   const modelTreeData = buildTreeData(subjectModelNodes);
@@ -930,7 +954,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
             size="small"
             className="qb-preview-tree-card"
           >
-            <TaxonomyManager subject={currentSubject} subjects={SUBJECTS} onSubjectChange={changeSubject} database={dbService} onChanged={handleTaxonomiesChanged} />
+            <TaxonomyManager subject={currentSubject} heading={currentSubject + '体系'} database={dbService} onChanged={handleTaxonomiesChanged} filterSelections={taxonomySelections} onFilterChange={handleTreeFilterChange} />
             {legacyTaxonomyUiEnabled() && <>
             <Input
               allowClear
@@ -978,16 +1002,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
       <Col span={19} className="qb-preview-main">
         <Card className="qb-preview-main-card">
           {/* Header */}
-          <div className="qb-preview-header">
-            <Space className="qb-preview-titlebar">
-              <Select
-                className="qb-subject-select"
-                value={currentSubject}
-                onChange={changeSubject}
-                options={SUBJECTS.map(subject => ({ label: subject, value: subject }))}
-              />
-              <Badge count={questionTotal} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />
-            </Space>
+          {selectedRowKeys.length > 0 && <div className="qb-preview-header">
             <Space>
               {selectedRowKeys.length > 0 && (
                 <>
@@ -1001,94 +1016,36 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
                 </>
               )}
             </Space>
-          </div>
+          </div>}
 
           {/* Filters */}
           <div className="qb-filter-panel">
-            <div className="qb-filter-row">
-              <Select
-                className="qb-filter-select"
-                value={singleValue(filterGrades)}
-                onChange={(value) => setSingleValue(setFilterGrades, value)}
-                options={LIMIT_GRADES.map(item => ({ label: item, value: item }))}
-                prefix="年级"
-              />
-              <Select
-                className="qb-filter-select wide"
-                value={filterYear}
-                onChange={setFilterYear}
-                options={[{ label: '全部', value: '全部' }, ...YEAR_OPTIONS]}
-                prefix="学年"
-              />
-              <Select
-                className="qb-filter-select"
-                value={singleValue(filterSemesters)}
-                onChange={(value) => setSingleValue(setFilterSemesters, value)}
-                options={LIMIT_SEMESTERS.map(item => ({ label: item, value: item }))}
-                prefix="学期"
-              />
-              <Select
-                className="qb-filter-select"
-                value={singleValue(filterTypes)}
-                onChange={(value) => setSingleValue(setFilterTypes, value)}
-                options={LIMIT_TYPES.map(item => ({ label: item, value: item }))}
-                prefix="题型"
-              />
-              <Select
-                className="qb-filter-select"
-                value={singleValue(filterExamTypes)}
-                onChange={(value) => setSingleValue(setFilterExamTypes, value)}
-                options={LIMIT_EXAM_TYPES.map(item => ({ label: item, value: item }))}
-                prefix="考试类型"
-              />
-              <Button icon={<FilterOutlined />} onClick={() => setMoreFiltersOpen(true)}>更多筛选</Button>
-              <Button type="link" icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
-            </div>
+            <QuestionBankFilters key={currentSubject} subject={currentSubject}
+              rows={[
+                { id: 'exam', label: '考试类型', options: LIMIT_EXAM_TYPES.map(value => ({ value, label: value })), values: filterExamTypes, onChange: setFilterExamTypes },
+                { id: 'type', label: '题型', options: LIMIT_TYPES.map(value => ({ value, label: value })), values: filterTypes, onChange: setFilterTypes },
+                { id: 'difficulty', label: '难度', options: LIMIT_DIFFICULTIES, values: filterDifficulties, onChange: setFilterDifficulties },
+                { id: 'grade', label: '年级', options: LIMIT_GRADES.map(value => ({ value, label: value })), values: filterGrades, onChange: setFilterGrades },
+                { id: 'semester', label: '学期', options: LIMIT_SEMESTERS.map(value => ({ value, label: value })), values: filterSemesters, onChange: setFilterSemesters },
+                { id: 'status', label: '发布状态', options: LIMIT_STATUSES, values: filterStatuses, onChange: setFilterStatuses },
+              ]}
+              years={yearOptions} selectedYears={filterYears} onYearsChange={setFilterYears}
+              systems={taxonomySystems} nodes={taxonomyNodes} selections={taxonomySelections}
+              actions={<>
+                <Button size="small" icon={<FilterOutlined />} onClick={() => setMoreFiltersOpen(true)}>更多筛选</Button>
+                <Button size="small" aria-label="重置" type="link" icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
+                <div className="qb-result-search">
+                  <Input size="small" placeholder="在结果中搜索" aria-label="在结果中搜索" allowClear
+                    prefix={<SearchOutlined />} value={searchText}
+                    onChange={event => setSearchText(event.target.value)} onPressEnter={handleSearch} />
+                  <Button size="small" type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
+                </div>
+                <Text className="qb-result-count" type="secondary" aria-live="polite">共 {questionTotal} 题</Text>
+              </>}
+              onSelectionChange={updateTaxonomySelection}
+            />
 
-            <div className="qb-filter-row qb-filter-row-secondary">
-              {taxonomySystems.map(system => {
-                const selection = taxonomySelections[system.id] || { include: [], exclude: [] };
-                const options = (taxonomyNodes[system.id] || []).map(node => ({ label: node.name, value: node.id }));
-                return <div key={system.id} className="taxonomy-filter-pair">
-                  <Text strong>{system.name}</Text>
-                  <AntSelect
-                    mode="multiple"
-                    allowClear
-                    placeholder={`${'\u5305\u542b'}${system.name}`}
-                    value={selection.include}
-                    options={options}
-                    onChange={include => setTaxonomySelections(previous => ({
-                      ...previous,
-                      [system.id]: { include, exclude: (previous[system.id]?.exclude || []).filter(id => !include.includes(id)) },
-                    }))}
-                  />
-                  <AntSelect
-                    mode="multiple"
-                    allowClear
-                    placeholder={`${'\u6392\u9664'}${system.name}`}
-                    value={selection.exclude}
-                    options={options}
-                    onChange={exclude => setTaxonomySelections(previous => ({
-                      ...previous,
-                      [system.id]: { include: (previous[system.id]?.include || []).filter(id => !exclude.includes(id)), exclude },
-                    }))}
-                  />
-                </div>;
-              })}
-            </div>
-
-            <div className="qb-search-row">
-              <Input
-                placeholder="搜索题干、选项、答案解析、公式、题号或标签"
-                allowClear
-                prefix={<SearchOutlined />}
-                value={searchText}
-                onChange={event => setSearchText(event.target.value)}
-                onPressEnter={handleSearch}
-              />
-              <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-            </div>
-          </div>
+    </div>
 
           <Drawer
             title="更多筛选"
@@ -1103,22 +1060,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
               </div>
             }
           >
-            <div className="qb-more-filter-group">
-              <Text strong>难度</Text>
-              <Checkbox.Group
-                options={LIMIT_DIFFICULTIES}
-                value={filterDifficulties}
-                onChange={(vals) => setFilterDifficulties(normalizeCheckGroup(vals as string[]))}
-              />
-            </div>
-            <div className="qb-more-filter-group">
-              <Text strong>发布状态</Text>
-              <Checkbox.Group
-                options={LIMIT_STATUSES}
-                value={filterStatuses}
-                onChange={(vals) => setFilterStatuses(normalizeCheckGroup(vals as string[]))}
-              />
-            </div>
             <div className="qb-more-filter-group">
               <Text strong>来源</Text>
               <Input allowClear placeholder="来源 / 地区 / 学校 / 年份" value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} />
@@ -1151,9 +1092,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
           )}
 
           {/* Table */}
-          <div className="qb-question-display-toolbar">
-            <Text type="secondary">共 {questionTotal} 题，第 {safeCurrentPage}/{totalPages} 页</Text>
-          </div>
           <div className="qb-question-display-viewport">
             <div className="qb-question-display-stage">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

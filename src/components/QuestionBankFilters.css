@@ -1,0 +1,46 @@
+.qb-row-filters { font-style: normal; }
+.qb-subject-title-button { display:inline-flex; align-items:center; gap:10px; background:transparent; border:0; padding:0; font:inherit; color:inherit; cursor:pointer; }
+.qb-subject-title-button .anticon { font-size:14px; }
+.qb-choice-row--exam { grid-template-columns:var(--qb-filter-label-width,90px) minmax(0,1fr) auto; }
+.qb-choice-row--exam > .ant-btn { align-self:start; }
+.qb-filter-settings-bar { display:flex; justify-content:flex-end; margin-bottom:0; }
+.qb-choice-row { display:grid; grid-template-columns:var(--qb-filter-label-width,76px) minmax(0,1fr); align-items:start; column-gap:8px; padding:var(--qb-filter-gap,3px) 8px; border:0; border-radius:6px; background:#f2f5fa; box-sizing:border-box; }
+.qb-choice-label { color:#667085; line-height:24px; overflow-wrap:anywhere; }
+.qb-choice-values { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; min-width:0; }
+.qb-choice { background:transparent; border:0; padding:2px 0; font:inherit; color:#344054; line-height:20px; cursor:pointer; }
+.qb-choice.active { color:#1677ff; font-weight:600; }
+.qb-choice:focus-visible,.qb-filter-text-tag button:focus-visible { outline:2px solid #1677ff; outline-offset:3px; }
+.qb-taxonomy-conditions { display:flex; flex-wrap:wrap; gap:4px 24px; min-width:0; }
+.qb-taxonomy-condition { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; line-height:24px; }
+.qb-taxonomy-condition > span { color:#667085; }
+.qb-tag-picker { display:flex; flex-wrap:wrap; align-items:center; gap:12px; min-width:0; }
+.qb-filter-text-tag { display:inline-flex; position:relative; gap:4px; align-items:center; padding:0 10px 0 0; color:#1677ff; line-height:24px; overflow-wrap:anywhere; }
+.qb-filter-text-tag button { position:absolute; right:-4px; top:-4px; width:14px; height:14px; display:flex; align-items:center; justify-content:center; padding:0; border:0; background:transparent; color:#667085; font-size:10px; cursor:pointer; }
+.qb-filter-text-tag button:hover { color:#d92d20; }
+.qb-tag-editor { max-width:100%; }
+.qb-tag-editor .ant-select { width:200px; max-width:100%; }
+.qb-filter-add.ant-btn { border:0; color:#1677ff; }
+.qb-add-system-filter { margin:2px 0; height:24px; padding:0 8px; }
+.qb-preview-main-card .qb-preview-header { margin-bottom:4px; }
+.qb-preview-main-card .qb-filter-panel { margin-bottom:8px; }
+.qb-filter-actions { margin-top:8px; margin-bottom:6px; gap:8px; }
+.qb-filter-lines { display:flex; flex-wrap:wrap; gap:4px 6px; }
+.qb-filter-lines > .qb-choice-row,.qb-taxonomy-filter-rows { width:100%; box-sizing:border-box; }
+.qb-filter-lines > .qb-choice-group { flex:1 1 calc(33.333% - 4px); width:auto; grid-template-columns:var(--qb-filter-label-width,76px) minmax(0,1fr); }
+.qb-filter-lines > .qb-choice-group--type,.qb-filter-lines > .qb-choice-group--status { flex-basis:calc(50% - 3px); }
+.qb-choice-group .qb-choice-values { gap:2px 10px; }
+.qb-filter-lines > .qb-choice-group--type { background:#f2f5fa; }
+.qb-filter-lines > .qb-choice-group--status { background:#faf5ef; }
+.qb-filter-lines > .qb-choice-group--difficulty { background:#f5f2fa; }
+.qb-filter-lines > .qb-choice-group--grade { background:#eff5fc; }
+.qb-filter-lines > .qb-choice-group--semester { background:#f0f7f2; }
+.qb-taxonomy-filter-rows { display:flex; flex-direction:column; gap:4px; }
+.qb-filter-setting-description { color:#667085; line-height:1.7; }
+.qb-filter-setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:16px 0; }
+@media(max-width:900px) { .qb-choice-row { grid-template-columns:minmax(65px,85px) minmax(0,1fr); column-gap:8px; } .qb-choice-values { gap:8px 12px; } .qb-tag-editor .ant-select { width:155px; } }
+
+.qb-filter-actions { flex-wrap:wrap; }
+.qb-result-search { display:flex; align-items:center; gap:6px; flex:1 1 200px; min-width:180px; max-width:420px; }
+.qb-result-search .ant-input-affix-wrapper { flex:1; min-width:0; }
+.qb-result-count { margin-left:auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.qb-filter-lines > .qb-choice-row--exam { grid-template-columns:var(--qb-filter-label-width,76px) minmax(0,1fr) auto; }

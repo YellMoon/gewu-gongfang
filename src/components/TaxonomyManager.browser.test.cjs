@@ -51,7 +51,7 @@ async function compile() {
     const page=await browser.newPage({viewport:{width:1280,height:900}});
     const errors=[];page.on('pageerror',error=>errors.push(error.message));
     await page.goto('http://127.0.0.1:'+server.address().port);
-    await page.getByLabel('重命名节点 力学',{exact:true}).waitFor();
+    await page.getByLabel('重命名节点 力学',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.title(),'桌面题库交互验证');
     await page.evaluate(()=>document.fonts.ready);
     const typography=await page.evaluate(()=>{const range=document.createRange(),index=document.querySelector('.qb-card-index'),paragraph=document.querySelector('.qb-card-body .structured-question-viewer > p');range.selectNodeContents(index);const a=range.getBoundingClientRect();range.setStart(paragraph.firstChild.firstChild,0);range.setEnd(paragraph.firstChild.firstChild,2);const b=range.getBoundingClientRect();return {indexCentre:a.y+a.height/2,textCentre:b.y+b.height/2,paragraphMargin:getComputedStyle(paragraph).marginTop,quantities:Array.from(paragraph.querySelectorAll('i')).map(el=>({text:el.textContent,font:getComputedStyle(el).fontFamily,style:getComputedStyle(el).fontStyle}))};});
@@ -97,6 +97,13 @@ async function compile() {
     assert(alignment.length>0&&alignment.every(delta=>delta<1),'circles and node text must share a vertical centre');
     const actionAlignment=await page.evaluate(()=>{const centre=el=>{const box=el.getBoundingClientRect();return box.x+box.width/2;};const heading=Array.from(document.querySelectorAll('.taxonomy-system-title .taxonomy-node-actions button')).map(centre);return Array.from(document.querySelectorAll('.taxonomy-node-title')).map(row=>Array.from(row.querySelectorAll('.taxonomy-node-actions button')).map((button,index)=>Math.abs(centre(button)-heading[index])));});
     assert(actionAlignment.length>0&&actionAlignment.every(row=>row.length===3&&row.every(delta=>delta<1)),'system and node action buttons must align in all three columns');
+    async function clickNodeAction(label){
+      const action=page.getByLabel(label,{exact:true});
+      const id=await action.evaluate(el=>el.closest('[data-node-id]')?.getAttribute('data-node-id'));
+      assert(id,'node action has an owning row');
+      await page.locator('[data-node-id="'+id+'"]').hover();
+      await action.click();
+    }
     const rootAdd=page.getByLabel('添加根节点 知识点',{exact:true});
     assert.equal(await rootAdd.count(),1,'root plus button must have an accessible name');
     assert(await rootAdd.evaluate(el=>Boolean(el.closest('.taxonomy-system-title'))),'root plus belongs to the system title action group');
@@ -114,22 +121,22 @@ async function compile() {
     await page.waitForFunction(()=>!document.querySelector('.ant-tooltip:not(.ant-tooltip-hidden)'));
     await page.screenshot({path:path.join(output,'01-tree-and-formulas.png'),fullPage:true});
     const row=await page.locator('[data-node-id="c"]').boundingBox();
-    await page.getByLabel('重命名节点 运动的描述',{exact:true}).click();
+    await clickNodeAction('重命名节点 运动的描述');
     const input=page.getByRole('textbox',{name:'节点名称',exact:true});
     await input.waitFor();assert.equal(await page.locator('.ant-modal-content').count(),0);
     const box=await input.boundingBox();assert(Math.abs(box.x-row.x)<10 && Math.abs(box.y-row.y)<10,'edit remains at the original row');
     await page.screenshot({path:path.join(output,'02-inline-rename.png'),fullPage:true});
     await input.fill('运动描述与测量');await input.press('Enter');
-    await page.getByLabel('添加子节点 力学',{exact:true}).click();
+    await clickNodeAction('添加子节点 力学');
     await page.getByRole('textbox',{name:'节点名称',exact:true}).fill('参考系');
     await page.screenshot({path:path.join(output,'03-inline-add.png'),fullPage:true});
     await page.locator('.taxonomy-inline-editor__actions button').first().click();
     assert(await page.evaluate(()=>window.fixture.getNodes().some(n=>n.name==='参考系'&&n.parent_id==='a')));
-    await page.getByLabel('重命名节点 牛顿运动定律',{exact:true}).click();
+    await clickNodeAction('重命名节点 牛顿运动定律');
     await page.getByRole('textbox',{name:'节点名称',exact:true}).fill('不应保存');await page.getByRole('textbox',{name:'节点名称',exact:true}).press('Escape');
     assert(await page.evaluate(()=>!window.fixture.getNodes().some(n=>n.name==='不应保存')));
     await page.getByLabel('搜索体系节点').fill('匀变速');
-    await page.getByLabel('重命名节点 匀变速直线运动',{exact:true}).waitFor();
+    await page.getByLabel('重命名节点 匀变速直线运动',{exact:true}).waitFor({state:'attached'});
     assert.equal(await page.locator('[data-node-id="b"]').count(),0,'search keeps the matching branch');
     await page.getByLabel('搜索体系节点').fill('');
     const drag=page.locator('.ant-tree-treenode').filter({has:page.locator('[data-node-id="d"]')}).locator('.ant-tree-node-content-wrapper');
@@ -149,7 +156,7 @@ async function compile() {
     await page.waitForFunction(()=>!document.querySelector('.ant-tree-treenode-motion'));
     assert.equal(await nodeRow('c').locator('.ant-tree-switcher_close').count(),1,'a manually collapsed parent stays closed even with an expanded descendant');
     const beforeClosedAdd=await openNodes();
-    await page.getByLabel('\u6dfb\u52a0\u5b50\u8282\u70b9 \u8fd0\u52a8\u63cf\u8ff0\u4e0e\u6d4b\u91cf',{exact:true}).click();
+    await clickNodeAction('\u6dfb\u52a0\u5b50\u8282\u70b9 \u8fd0\u52a8\u63cf\u8ff0\u4e0e\u6d4b\u91cf');
     await page.getByRole('textbox',{name:'\u8282\u70b9\u540d\u79f0',exact:true}).fill('\u6536\u8d77\u72b6\u6001\u4e0b\u65b0\u589e');
     await page.getByRole('textbox',{name:'\u8282\u70b9\u540d\u79f0',exact:true}).press('Enter');
     await page.waitForFunction(()=>!document.querySelector('.ant-tree-treenode-motion'));
@@ -158,7 +165,7 @@ async function compile() {
     await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
     assert.deepEqual(await openNodes(),beforeClosedAdd,'cloud acknowledgement keeps the parent collapsed');
     await page.screenshot({path:path.join(output,'03-save-preserves-collapsed-state.png'),fullPage:true});
-    await page.getByLabel('\u6dfb\u52a0\u5b50\u8282\u70b9 \u8fd0\u52a8\u63cf\u8ff0\u4e0e\u6d4b\u91cf',{exact:true}).click();
+    await clickNodeAction('\u6dfb\u52a0\u5b50\u8282\u70b9 \u8fd0\u52a8\u63cf\u8ff0\u4e0e\u6d4b\u91cf');
     await page.getByRole('textbox',{name:'\u8282\u70b9\u540d\u79f0',exact:true}).press('Escape');
     await page.waitForFunction(()=>!document.querySelector('.ant-tree-treenode-motion'));
     assert.deepEqual(await openNodes(),beforeClosedAdd,'cancelling restores the originally collapsed parent');

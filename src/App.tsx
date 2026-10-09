@@ -55,6 +55,7 @@ let dbService: any = null;
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<PageKey>(DEFAULT_PAGE);
+  const [questionBankSubject, setQuestionBankSubject] = useState('物理');
   const [pageContext, setPageContext] = useState<NavigationContext>(undefined);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +160,7 @@ const App: React.FC = () => {
       case 'revenue-statistics': return <RevenueStatistics context={pageContext as any} />;
       case 'question-bank-tools': return <LazyPage><QuestionBankTools onNavigate={navigateTo} context={pageContext as any} /></LazyPage>;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
-      case 'question-bank-preview': return <LazyPage><QuestionBankPreview context={pageContext as any} /></LazyPage>;
+      case 'question-bank-preview': return <LazyPage><QuestionBankPreview context={pageContext as any} subject={questionBankSubject} /></LazyPage>;
       case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
       case 'question-bank-audit': return <LazyPage><AuditCenter /></LazyPage>;
       case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
@@ -180,7 +181,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <AppShell currentPage={currentPage} onNavigate={navigateTo} onRefresh={refreshCurrentPage}>
+    <AppShell currentPage={currentPage} onNavigate={navigateTo} onRefresh={refreshCurrentPage} questionBankSubject={questionBankSubject} onQuestionBankSubjectChange={setQuestionBankSubject}>
       <div key={`${currentPage}-${refreshKey}`}>
         {renderPage()}
       </div>

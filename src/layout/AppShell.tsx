@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Layout, Menu, Tooltip } from 'antd';
+import { Button, Dropdown, Layout, Menu, Tooltip } from 'antd';
 import {
+  DownOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ReloadOutlined,
@@ -20,6 +21,8 @@ interface AppShellProps {
   onNavigate: (page: NavigationInput) => void;
   onRefresh: () => void;
   children: React.ReactNode;
+  questionBankSubject?: string;
+  onQuestionBankSubjectChange?: (subject: string) => void;
 }
 
 const selectedKeyForPage = (page: PageKey): PageKey => {
@@ -29,7 +32,7 @@ const selectedKeyForPage = (page: PageKey): PageKey => {
   return page;
 };
 
-const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children }) => {
+const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh, children, questionBankSubject, onQuestionBankSubjectChange }) => {
   const account = useContext(DesktopAccountContext);
   const [navOpen, setNavOpen] = useState(false);
   const [navPinned, setNavPinned] = useState(false);
@@ -170,7 +173,13 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
             />
           </Tooltip>
           <PageHeaderBar
-            title={currentNavItem.label}
+            title={currentPage === 'question-bank-preview' && questionBankSubject && onQuestionBankSubjectChange
+              ? <Dropdown trigger={['click']} menu={{
+                selectedKeys: [questionBankSubject],
+                items: ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'].map(subject => ({ key: subject, label: subject + '题库' })),
+                onClick: ({ key }) => onQuestionBankSubjectChange(key),
+              }}><button className="qb-subject-title-button" type="button" aria-label="选择科目题库">{questionBankSubject}题库<DownOutlined /></button></Dropdown>
+              : currentNavItem.label}
             titleActions={currentPage === 'question-bank-tools' ? <>
               <Button icon={<FileSearchOutlined />} onClick={() => onNavigate('question-bank-preview')}>试题库</Button>
               <Button type="primary" icon={<FileWordOutlined />} onClick={() => onNavigate('question-bank-paper')}>去组卷</Button>

@@ -28,10 +28,34 @@ vm.runInNewContext(compiled, { module: moduleValue, exports: moduleValue.exports
   assert.equal((await query('custom-physics')).total, 1, 'unknown subjects must match only themselves');
   assert.equal((await query('biology')).total, 0);
   assert.equal((await query('physics')).rows[0].subject, 'physics', 'filtering must not rewrite authoritative payloads');
+  await store.ensureQuestionLocalStoreSeeded(() => [
+    { id: 'year-one', subject: 'physics', content: 'One', year: '2025-2026' },
+    { id: 'year-two', subject: 'physics', content: 'Two', year: '2026-2027' },
+    { id: 'year-three', subject: 'physics', content: 'Three', year: '2035-2036' },
+  ]);
+  assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, years: ['2025-2026', '2026-2027'] })).total, 2, 'multiple years must use OR matching');
+  assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, years: [] })).total, 3, 'clearing years means all years');
+  assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, year: '2035-2036' })).total, 1, 'legacy single-year callers remain compatible');
   await store.ensureQuestionLocalStoreSeeded(() => questions.map(row => ({ ...row, content: 'Updated ' + row.id })));
   assert((await query('physics')).rows.every(row => row.content.startsWith('Updated ')), 'same-count cloud updates must replace the derived index');
   await store.ensureQuestionLocalStoreSeeded(() => [{id:'structured',subject:'physics',content:'题干',options:[{label:'A',content:'独特选项'}],tags:['力学专项'],rich_content:{type:'question-document',sections:{stem:{type:'doc',content:[{type:'formula',attrs:{canonicalLatex:'x^2'}}]},analysis:{type:'doc',content:[{type:'text',text:'推导过程'}]},subQuestions:[]}}}]);
   for (const term of ['独特选项','力学专项','x^2','推导过程']) assert.equal((await store.queryQuestionPage({page:1,pageSize:10,searchTerms:[term]})).total,1,term+' must be found by actual query');
+  const doc = text => ({ type: 'doc', content: [{ type: 'text', text }] });
+  await store.ensureQuestionLocalStoreSeeded(() => [
+    { id: 'prompt-rich', subject: 'physics', content: 'staleLegacy', answer: 'answerOnly', tags: ['tagOnly'], rich_content: { type: 'question-document', sections: {
+      stem: doc('stemOnly'), options: [{ label: 'A', content: doc('optionOnly') }],
+      answer: doc('richAnswerOnly'), analysis: doc('analysisOnly'),
+      subQuestions: [{ content: doc('experimentOnly'), answer: doc('subAnswerOnly'), analysis: doc('subAnalysisOnly') }],
+    } } },
+    { id: 'prompt-legacy', subject: 'physics', content: '<p>legacyStem</p>', options: ['legacyOption'],
+      sub_questions: [{ stem: 'legacySmallQuestion', options: [{ text: 'smallOption' }], answer: 'legacySubAnswer' }], answer: 'legacyAnswer' },
+  ]);
+  const searchPrompt = term => store.queryQuestionPage({ page: 1, pageSize: 20, searchScope: 'stem', searchTerms: [term] });
+  for (const term of ['stemOnly', 'optionOnly', 'experimentOnly', 'legacyStem', 'legacyOption', 'legacySmallQuestion', 'smallOption'])
+    assert.equal((await searchPrompt(term)).total, 1, term + ' must match a prompt');
+  for (const term of ['staleLegacy', 'answerOnly', 'richAnswerOnly', 'analysisOnly', 'subAnswerOnly', 'subAnalysisOnly', 'tagOnly', 'legacySubAnswer', 'legacyAnswer', 'prompt-rich'])
+    assert.equal((await searchPrompt(term)).total, 0, term + ' must stay outside prompt search');
+  assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, searchTerms: ['tagOnly'] })).total, 1, 'other broad-search callers remain compatible');
   await store.ensureQuestionLocalStoreSeeded(() => questions.filter(row => row.subject === 'chemistry'));
   assert.equal((await query('physics')).total, 0, 'removed authoritative rows must not survive in the index');
   await store.ensureQuestionLocalStoreSeeded(() => []);

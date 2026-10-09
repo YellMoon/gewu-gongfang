@@ -1,16 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Dropdown, Empty, Input, Modal, Space, Tree, Tooltip, message } from 'antd';
-import { BranchesOutlined, DownOutlined, DeleteOutlined, EditOutlined, HistoryOutlined, PlusOutlined } from '@ant-design/icons';
+import { BranchesOutlined, DownOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import type { KnowledgeNode, TaxonomySystem } from '../types';
 import { filterTaxonomyNodes, planTaxonomyDrop } from './taxonomyTreeOperations';
 import './TaxonomyManager.css';
 
 type Props = {
   subject: string;
+  heading?: string;
   database: any;
   subjects?: string[];
   onSubjectChange?: (subject: string) => void;
-  showRecovery?: boolean;
+  filterSelections?: Record<string, { include: string[]; exclude: string[] }>;
+  onFilterChange?: (systemId: string, nodeId: string, mode: 'include' | 'exclude' | 'clear') => void;
   onChanged?: (systems: TaxonomySystem[], nodesBySystem: Record<string, KnowledgeNode[]>) => void;
 };
 
@@ -25,8 +27,6 @@ const text = {
   nodeName: '\u8282\u70b9\u540d\u79f0',
   removeNode: '\u5220\u9664\u8282\u70b9',
   removeNodeBody: '\u8be5\u8282\u70b9\u53ca\u6240\u6709\u5b50\u8282\u70b9\u5c06\u88ab\u5220\u9664\uff0c\u76f8\u5173\u8bd5\u9898\u6807\u6ce8\u5c06\u540c\u6b65\u6e05\u7406\u3002',
-  backups: '\u5220\u9664\u5907\u4efd',
-  restore: '\u6062\u590d',
   empty: '\u6682\u65e0\u4f53\u7cfb\uff0c\u53ef\u4ee5\u4e3a\u5f53\u524d\u5b66\u79d1\u65b0\u5efa\u3002',
 };
 
@@ -39,14 +39,13 @@ function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 
 type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
-const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjects, onSubjectChange, showRecovery = true }) => {
+const TaxonomyManager: React.FC<Props> = ({ subject, heading, database, onChanged, subjects, onSubjectChange, filterSelections, onFilterChange }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
-  const [backupModalOpen, setBackupModalOpen] = useState(false);
-  const [backups, setBackups] = useState<any[]>([]);
   const [edit, setEdit] = useState<InlineEdit | null>(null);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Record<string, React.Key[]>>({});
+  const [collapsedSystems, setCollapsedSystems] = useState<Record<string, boolean>>({});
 
   const reload = useCallback(() => {
     const nextSystems: TaxonomySystem[] = database?.getTaxonomySystems?.(subject) || [];
@@ -57,7 +56,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
   }, [database, onChanged, subject]);
 
   useEffect(() => {
-    setEdit(null); setSearch(''); setExpanded({});
+    setEdit(null); setSearch(''); setExpanded({}); setCollapsedSystems({});
   }, [subject]);
 
   useEffect(() => {
@@ -109,7 +108,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
           confirmed: true,
           expectedAffectedQuestionCount: impact.affected_question_count,
         });
-        message.success(showRecovery ? `\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d` : '已删除');
+        message.success('已删除');
         reload();
         return result;
       },
@@ -162,49 +161,43 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
           confirmed: true,
           expectedAffectedQuestionCount: impact.affected_question_count,
         });
-        message.success(showRecovery ? `\u5df2\u5220\u9664\uff0c\u53ef\u5728\u300c${text.backups}\u300d\u4e2d\u6062\u590d` : '已删除');
+        message.success('已删除');
         reload();
         return result;
       },
     });
   };
 
-  const showBackups = () => {
-    setBackups(database.listTaxonomyDeletionBackups?.() || []);
-    setBackupModalOpen(true);
-  };
-
-  const restoreBackup = (backupId: string) => {
-    database.restoreTaxonomyDeletion(backupId);
-    message.success('\u4f53\u7cfb\u548c\u8bd5\u9898\u6807\u6ce8\u5df2\u6062\u590d');
-    setBackups(database.listTaxonomyDeletionBackups?.() || []);
-    reload();
-  };
-
   return <div className="taxonomy-manager">
     {/* UTF-8: subject selection and creation share the taxonomy heading. */}
-    {onSubjectChange ? <div className="taxonomy-manager__heading">
+    {heading ? <div className="taxonomy-manager__heading"><strong>{heading}</strong><Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip></div> : onSubjectChange ? <div className="taxonomy-manager__heading">
       <Dropdown trigger={['click']} menu={{ selectedKeys: [subject], items: (subjects || [subject]).map(value => ({ key: value, label: `${value}体系` })), onClick: ({ key }) => onSubjectChange(key) }}>
         <Button className="taxonomy-manager__subject" type="text" aria-label="选择科目体系"><BranchesOutlined /><strong>{subject}体系</strong><DownOutlined /></Button>
       </Dropdown>
-      {showRecovery && <Tooltip title={text.backups}><Button type="text" aria-label={text.backups} icon={<HistoryOutlined />} onClick={showBackups} /></Tooltip>}
       <Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip>
     </div> : <div className="taxonomy-manager__actions">
       <Button icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>
-      {showRecovery && <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>}
     </div>}
     {edit?.kind === 'system-create' && inlineEditor()}
     <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索体系节点" value={search} onChange={event => setSearch(event.target.value)} />
     {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
-        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <strong>{index + 1}. {system.name}</strong>}
+        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <button type="button" className="taxonomy-system-toggle"
+          aria-label={system.name}
+          aria-expanded={!collapsedSystems[system.id] || Boolean(search.trim()) || edit?.system?.id === system.id}
+          aria-controls={'taxonomy-system-body-' + system.id}
+          onClick={() => setCollapsedSystems(current => ({ ...current, [system.id]: !current[system.id] }))}>
+          <DownOutlined className={collapsedSystems[system.id] && !search.trim() && edit?.system?.id !== system.id ? 'is-collapsed' : ''} />
+          <strong>{index + 1}. {system.name}</strong>
+        </button>}
         <Space className="taxonomy-node-actions" size={0}>
           <Tooltip title={text.addRoot}><Button type="text" size="small" aria-label={`添加根节点 ${system.name}`} icon={<PlusOutlined />} onClick={() => addNode(system)} /></Tooltip>
           <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名体系 ${system.name}`} icon={<EditOutlined />} onClick={() => setEdit({ kind: 'system-rename', system, value: system.name })} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
         </Space>
       </div>
+      <div id={'taxonomy-system-body-' + system.id} hidden={Boolean(collapsedSystems[system.id]) && !search.trim() && edit?.system?.id !== system.id}>
       {edit?.kind === 'node-create' && edit.system?.id === system.id && !edit.node && inlineEditor()}
       <Tree
         className="taxonomy-tree"
@@ -220,26 +213,33 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
         draggable={edit || search.trim() ? false : { icon: false }}
         onDrop={info => dropNode(system, info)}
         treeData={systemTreeData(system)}
-        titleRender={(treeNode: any) => treeNode.inlineDraft || (edit?.kind === 'node-rename' && edit.node?.id === treeNode.key) ? inlineEditor() : <div className="taxonomy-node-title" data-node-id={treeNode.key}>
-          <span title={treeNode.node.name}>{treeNode.node.name}</span>
-          <Space className="taxonomy-node-actions" size={0}>
-            <Tooltip title={text.addChild}><Button type="text" size="small" aria-label={`添加子节点 ${treeNode.node.name}`} icon={<PlusOutlined />} onClick={event => { event.stopPropagation(); addNode(system, treeNode.node); }} /></Tooltip>
-            <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名节点 ${treeNode.node.name}`} icon={<EditOutlined />} onClick={event => { event.stopPropagation(); renameNode(system, treeNode.node); }} /></Tooltip>
-            <Tooltip title={text.removeNode}><Button type="text" danger size="small" aria-label={`删除节点 ${treeNode.node.name}`} icon={<DeleteOutlined />} onClick={event => { event.stopPropagation(); removeNode(system, treeNode.node); }} /></Tooltip>
-          </Space>
-        </div>}
+        titleRender={(treeNode: any) => {
+          if (treeNode.inlineDraft || (edit?.kind === 'node-rename' && edit.node?.id === treeNode.key)) return inlineEditor();
+          const selection = filterSelections?.[system.id];
+          const included = selection?.include.includes(treeNode.key);
+          const excluded = selection?.exclude.includes(treeNode.key);
+          const row = <div className="taxonomy-node-title" tabIndex={0} data-node-id={treeNode.key}>
+            <span title={treeNode.node.name} style={{ color: included ? '#1677ff' : excluded ? '#d92d20' : undefined }}>{treeNode.node.name}{included ? '（包含）' : excluded ? '（排除）' : ''}</span>
+            <Space className="taxonomy-node-actions" size={0}>
+              <Tooltip title={text.addChild}><Button type="text" size="small" aria-label={'添加子节点 ' + treeNode.node.name} icon={<PlusOutlined />} onClick={event => { event.stopPropagation(); addNode(system, treeNode.node); }} /></Tooltip>
+              <Tooltip title={text.rename}><Button type="text" size="small" aria-label={'重命名节点 ' + treeNode.node.name} icon={<EditOutlined />} onClick={event => { event.stopPropagation(); renameNode(system, treeNode.node); }} /></Tooltip>
+              <Tooltip title={text.removeNode}><Button type="text" danger size="small" aria-label={'删除节点 ' + treeNode.node.name} icon={<DeleteOutlined />} onClick={event => { event.stopPropagation(); removeNode(system, treeNode.node); }} /></Tooltip>
+            </Space>
+          </div>;
+          return onFilterChange ? <Dropdown trigger={['contextMenu']} menu={{
+            items: [
+              { key: 'include', label: included ? '已选定包含' : '选定为包含标签', disabled: included },
+              { key: 'exclude', label: excluded ? '已选定排除' : '选定为排除标签', disabled: excluded },
+              { key: 'clear', label: '取消标签筛选', disabled: !included && !excluded },
+            ],
+            onClick: ({ key, domEvent }) => { domEvent.stopPropagation(); onFilterChange(system.id, String(treeNode.key), key as 'include' | 'exclude' | 'clear'); },
+          }}>{row}</Dropdown> : row;
+        }}
       />
       {search.trim() && filterTaxonomyNodes(nodesBySystem[system.id] || [], search).length === 0 && <span className="taxonomy-no-match">无匹配节点</span>}
+      </div>
     </div>)}
-    <Modal title={text.backups} open={backupModalOpen} footer={null} onCancel={() => setBackupModalOpen(false)}>
-      {backups.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="\u6682\u65e0\u4f53\u7cfb\u5220\u9664\u5907\u4efd" /> : backups.map((backup, index) => <div key={backup.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
-        <div>
-          <div>{index + 1}. {backup.entity_type === 'system' ? '\u4f53\u7cfb' : '\u8282\u70b9'}\u5220\u9664\uff1a\u5f71\u54cd {backup.affected_question_count} \u9053\u8bd5\u9898 / {backup.deleted_node_count} \u4e2a\u8282\u70b9</div>
-          <small>{backup.created_at}</small>
-        </div>
-        <Button disabled={Boolean(backup.restored_at)} onClick={() => restoreBackup(backup.id)}>{backup.restored_at ? '\u5df2\u6062\u590d' : text.restore}</Button>
-      </div>)}
-    </Modal>
+
   </div>;
 };
 

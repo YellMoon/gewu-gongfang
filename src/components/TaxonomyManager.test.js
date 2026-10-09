@@ -21,7 +21,8 @@ assert.ok(manager.includes('getTaxonomySystemDeletionImpact'));
 assert.ok(manager.includes('getTaxonomyNodeDeletionImpact'));
 assert.ok(manager.includes('affected_question_count'));
 assert.ok(manager.includes('expectedAffectedQuestionCount'));
-assert.ok(manager.includes('restoreTaxonomyDeletion'));
+assert.ok(!manager.includes('restoreTaxonomyDeletion'), 'automatic deletion snapshots must not render as a user backup workflow');
+assert.ok(manager.includes('onFilterChange') && manager.includes('contextMenu'), 'tree right-click must connect to tag filters');
 assert.ok(preview.includes('<TaxonomyManager'));
 for (const page of [preview, importer]) {
   assert.ok(page.includes("window.addEventListener('authority-projection-refreshed', loadData)"), 'mounted question pages must reload cloud data');
@@ -63,7 +64,8 @@ assert.ok(manager.includes('className="taxonomy-manager__actions"'));
 assert.ok(!manager.includes('<Space.Compact block>'), 'taxonomy actions must wrap in narrow sidebars');
 assert.match(globalStyles, /\.taxonomy-manager__actions\s*\{[^}]*flex-wrap:\s*wrap/u);
 
-assert.ok(preview.includes('onSubjectChange={changeSubject}'), 'question bank owns subject selection and taxonomy editing');
+assert.ok(preview.includes('subject={currentSubject}') && preview.includes('heading={currentSubject'), 'subject title controls the taxonomy subject');
+assert.ok(!preview.includes('className="qb-subject-select"'), 'question bank must not duplicate the title subject selector');
 assert.ok(!preview.includes('setTreeVisible'), 'question bank taxonomy column is always visible');
 assert.ok(!importer.includes('<TaxonomyManager') && !tools.includes('<TaxonomyManager'), 'management and import pages do not duplicate taxonomy editing');
 assert.ok(tools.includes('title="试题综述"') && tools.includes('title="已发布"') && tools.includes('title="待处理"'), 'management retains three real question metrics above task tabs');

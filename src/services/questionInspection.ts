@@ -63,6 +63,21 @@ export function inspectQuestion(question: any): string[] {
   return [...new Set(issues)];
 }
 
+/** Text visible in the prompt only; answers, explanations and metadata stay outside this index. */
+export function questionStemSearchText(question: any): string {
+  const sections = questionSections(question);
+  const promptText = (value: any): string => typeof value === 'string'
+    ? value.replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/g, ' ')
+    : richNodeText(value);
+  const optionsText = (options: any[]) => options.map((option: any) => typeof option === 'string'
+    ? promptText(option) : [option.label, promptText(option.content || option.text)].filter(Boolean).join(' '));
+  const subText = (sub: any): string => [promptText(sub.stem || sub.content),
+    ...optionsText(sub.options || []), ...(sub.subQuestions || sub.sub_questions || []).map(subText)].join(' ');
+  const subQuestions = sections.structured ? sections.subQuestions : question.subQuestions || question.sub_questions || [];
+  return [promptText(sections.stem), ...optionsText(sections.options), ...subQuestions.map(subText)]
+    .join('\n').toLocaleLowerCase();
+}
+
 export function questionSearchText(question: any): string {
   const sections = questionSections(question);
   const structured = sections.structured ? [richNodeText(sections.stem), richNodeText(sections.answer), richNodeText(sections.analysis),

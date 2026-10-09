@@ -706,10 +706,6 @@ select,
   overscroll-behavior: contain;
 }
 
-.app-shell__content:has(.question-basket-float) {
-  padding-right: calc(var(--question-basket-dock-width) + var(--question-basket-dock-inset) + 18px);
-}
-
 .taxonomy-manager__actions {
   display: flex;
   flex-wrap: wrap;

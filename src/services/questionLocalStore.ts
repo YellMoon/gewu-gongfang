@@ -3,7 +3,7 @@ const { canRemoveQuestionLocalRecord } = require('./questionLocalDeletionPolicy'
 import { applyTrustedQuestionProvenance } from './questionProvenance.mjs';
 import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
 import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
-import { questionSearchText } from './questionInspection';
+import { questionSearchText, questionStemSearchText } from './questionInspection';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 
 const DB_VERSION = 2;
@@ -40,6 +40,7 @@ type QuestionMeta = {
   has_formula?: boolean;
   fingerprint?: string;
   search_text?: string;
+  stem_search_text?: string;
   storage_state?: 'local_draft' | 'host_committed';
   sourceDeviceId?: string;
   ownerUserId?: string;
@@ -61,10 +62,12 @@ export type QuestionPageQuery = {
   semesters?: string[];
   difficulties?: string[];
   year?: string;
+  years?: string[];
   basketIds?: string[];
   basketOnly?: boolean;
   source?: string;
   searchTerms?: string[];
+  searchScope?: 'stem' | 'all';
   includeKnowledgeGroups?: string[][];
   excludeKnowledgeIds?: string[];
   includeModelGroups?: string[][];
@@ -186,6 +189,7 @@ function buildMeta(question: Question): QuestionMeta {
     has_formula: Boolean((question as any).has_formula),
     fingerprint: stripHtml(content).replace(/\s+/g, ''),
     search_text: searchText,
+    stem_search_text: questionStemSearchText(question),
     storage_state: (question as any).storage_state,
     sourceDeviceId: (question as any).sourceDeviceId,
     ownerUserId: (question as any).ownerUserId,
@@ -232,6 +236,7 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (!matchesList(meta.grade, query.grades)) return false;
   if (!matchesList(meta.semester, query.semesters)) return false;
   if (!matchesList(difficultyBucket(meta.difficulty), query.difficulties)) return false;
+  if (!matchesList(meta.year, query.years)) return false;
   if (query.year && query.year !== '全部' && meta.year !== query.year) return false;
   if (query.basketOnly && !(query.basketIds || []).includes(meta.id)) return false;
   if (query.source?.trim()) {
@@ -239,7 +244,8 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
     if (!source.includes(query.source.trim().toLowerCase())) return false;
   }
   const searchTerms = (query.searchTerms || []).map(term => term.trim().toLowerCase()).filter(Boolean);
-  if (searchTerms.length > 0 && !searchTerms.every(term => (meta.search_text || '').includes(term))) return false;
+  const searchText = query.searchScope === 'stem' ? meta.stem_search_text : meta.search_text;
+  if (searchTerms.length > 0 && !searchTerms.every(term => (searchText || '').includes(term))) return false;
   const knowledgeIds = normalizeArray(meta.knowledge_ids);
   if (!matchesAnyGroup(knowledgeIds, query.includeKnowledgeGroups)) return false;
   const exclude = new Set(query.excludeKnowledgeIds || []);
