@@ -10,7 +10,6 @@ type Props = {
   database: any;
   subjects?: string[];
   onSubjectChange?: (subject: string) => void;
-  onCollapse?: () => void;
   showRecovery?: boolean;
   onChanged?: (systems: TaxonomySystem[], nodesBySystem: Record<string, KnowledgeNode[]>) => void;
 };
@@ -40,7 +39,7 @@ function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 
 type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
-const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjects, onSubjectChange, onCollapse, showRecovery = true }) => {
+const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjects, onSubjectChange, showRecovery = true }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
   const [backupModalOpen, setBackupModalOpen] = useState(false);
@@ -119,7 +118,6 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
 
   const addNode = (system: TaxonomySystem, parent?: KnowledgeNode) => {
     setEdit({ kind: 'node-create', system, node: parent, value: '' });
-    if (parent) setExpanded(current => ({ ...current, [system.id]: [...new Set([...(current[system.id] || []), parent.id])] }));
   };
 
   const renameNode = (system: TaxonomySystem, node: KnowledgeNode) => setEdit({ kind: 'node-rename', system, node, value: node.name });
@@ -189,8 +187,8 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
       <Dropdown trigger={['click']} menu={{ selectedKeys: [subject], items: (subjects || [subject]).map(value => ({ key: value, label: `${value}体系` })), onClick: ({ key }) => onSubjectChange(key) }}>
         <Button className="taxonomy-manager__subject" type="text" aria-label="选择科目体系"><BranchesOutlined /><strong>{subject}体系</strong><DownOutlined /></Button>
       </Dropdown>
+      {showRecovery && <Tooltip title={text.backups}><Button type="text" aria-label={text.backups} icon={<HistoryOutlined />} onClick={showBackups} /></Tooltip>}
       <Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip>
-      {onCollapse && <Button className="taxonomy-manager__collapse" type="link" size="small" onClick={onCollapse}>收起</Button>}
     </div> : <div className="taxonomy-manager__actions">
       <Button icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>
       {showRecovery && <Button icon={<HistoryOutlined />} onClick={showBackups}>{text.backups}</Button>}
@@ -213,7 +211,11 @@ const TaxonomyManager: React.FC<Props> = ({ subject, database, onChanged, subjec
         blockNode
         showLine={{ showLeafIcon: false }}
         switcherIcon={<span className="taxonomy-toggle" aria-hidden="true" />}
-        expandedKeys={search.trim() ? (nodesBySystem[system.id] || []).map(node => node.id) : expanded[system.id] || []}
+        autoExpandParent={false}
+        expandedKeys={search.trim() ? (nodesBySystem[system.id] || []).map(node => node.id)
+          : edit?.kind === 'node-create' && edit.system?.id === system.id && edit.node
+            ? [...new Set([...(expanded[system.id] || []), edit.node.id])]
+            : expanded[system.id] || []}
         onExpand={keys => setExpanded(current => ({ ...current, [system.id]: keys }))}
         draggable={edit || search.trim() ? false : { icon: false }}
         onDrop={info => dropNode(system, info)}

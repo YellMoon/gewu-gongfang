@@ -18,7 +18,7 @@
 
 .qb-preview-sidebar {
   position: sticky;
-  top: 62px;
+  top: 0;
   align-self: flex-start;
   transition: flex-basis 0.24s ease, max-width 0.24s ease, opacity 0.2s ease, transform 0.24s ease;
 }
@@ -267,14 +267,6 @@
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid #edf0f5;
-}
-
-.qb-preview-tree-card > .ant-card-head .qb-tree-section-title {
-  font-size: 0;
-}
-
-.qb-preview-tree-card > .ant-card-head .qb-tree-section-title .anticon {
-  font-size: 14px;
 }
 
 .qb-filter-row-secondary > .qb-filter-multi {

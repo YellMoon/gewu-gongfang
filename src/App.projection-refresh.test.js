@@ -15,7 +15,7 @@ async function checkMountedCalendar() {
     for(const file of ['react/umd/react.production.min.js','react-dom/umd/react-dom.production.min.js'])await page.addScriptTag({path:path.join(root,'node_modules',file)});
     await page.evaluate(code=>{
       const R=window.React,element=R.createElement;
-      const resources={student:'StudentList',teacher:'TeacherList',address:'RoomManager',school:'SchoolManager',institution:'InstitutionManager',payment:'PaymentList'};
+      const resources={student:'StudentList',teacher:'TeacherList',address:'RoomManager',school:'SchoolManager',institution:'InstitutionManager',payment:'PaymentList','question-bank-preview':'QuestionBankPreview','question-bank-import':'QuestionBankImport','question-bank-tools':'QuestionBankTools'};
       window.mounts={calendar:0,course:0};window.unmounts={calendar:0,course:0};
       Object.keys(resources).forEach(name=>{window.mounts[name]=0;window.unmounts[name]=0;});
       const stateful=name=>function Probe(){
@@ -64,7 +64,7 @@ async function checkMountedCalendar() {
     await page.locator('#manual-refresh').click();assert.equal(await page.locator('#calendar').innerText(),'0');
     await page.waitForFunction(()=>mounts.calendar===2&&unmounts.calendar===1);
     // UTF-8: cloud acknowledgement must not discard another unfinished resource editor.
-    for(const name of ['student','teacher','address','school','institution','payment']) {
+    for(const name of ['student','teacher','address','school','institution','payment','question-bank-preview','question-bank-import','question-bank-tools']) {
       await page.locator('#'+name+'-nav').click();await page.locator('#'+name).click();
       for(let n=0;n<3;n++) {
         await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));

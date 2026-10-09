@@ -149,7 +149,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
   const [editorDirty, setEditorDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [versions, setVersions] = useState<QuestionVersion[]>([]);
-  const [treeVisible, setTreeVisible] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingNodeName, setEditingNodeName] = useState('');
@@ -255,6 +254,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
 
   useEffect(() => {
     loadData();
+    window.addEventListener('authority-projection-refreshed', loadData);
+    return () => window.removeEventListener('authority-projection-refreshed', loadData);
   }, [loadData]);
 
   useEffect(() => {
@@ -487,6 +488,13 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
     ])));
   }, []);
   const subjectKnowledgeNodes = knowledgeNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
+  const changeSubject = (value: string) => {
+    setFilterSubjects([value]);
+    setKnowledgeSelectedIds([undefined]);
+    setFilterExcludeKnowledgeIds([undefined]);
+    setModelSelectedIds([undefined]);
+    setTaxonomySelections({});
+  };
   const subjectModelNodes = modelNodes.filter((node: any) => !node.subject || filterSubjects.includes(node.subject));
   const treeData = buildTreeData(subjectKnowledgeNodes);
   const modelTreeData = buildTreeData(subjectModelNodes);
@@ -917,15 +925,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
   return (
     <Row gutter={16} className="qb-preview-page">
       {/* Knowledge Tree Sidebar */}
-      {treeVisible && (
         <Col span={5} className="qb-preview-sidebar">
           <Card
             size="small"
-            title={<span className="qb-tree-section-title"><BranchesOutlined /> 体系</span>}
-            extra={<Button type="link" size="small" onClick={() => setTreeVisible(false)}>收起</Button>}
             className="qb-preview-tree-card"
           >
-            <TaxonomyManager subject={currentSubject} database={dbService} onChanged={handleTaxonomiesChanged} />
+            <TaxonomyManager subject={currentSubject} subjects={SUBJECTS} onSubjectChange={changeSubject} database={dbService} onChanged={handleTaxonomiesChanged} />
             {legacyTaxonomyUiEnabled() && <>
             <Input
               allowClear
@@ -968,27 +973,17 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string } }> = ({ 
             </>}
           </Card>
         </Col>
-      )}
 
       {/* Main Content */}
-      <Col span={treeVisible ? 19 : 24} className="qb-preview-main">
+      <Col span={19} className="qb-preview-main">
         <Card className="qb-preview-main-card">
           {/* Header */}
           <div className="qb-preview-header">
             <Space className="qb-preview-titlebar">
-              {!treeVisible && (
-                <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开体系</Button>
-              )}
               <Select
                 className="qb-subject-select"
                 value={currentSubject}
-                onChange={(value) => {
-                  setFilterSubjects([value]);
-                  setKnowledgeSelectedIds([undefined]);
-                  setFilterExcludeKnowledgeIds([undefined]);
-                  setModelSelectedIds([undefined]);
-                  setTaxonomySelections({});
-                }}
+                onChange={changeSubject}
                 options={SUBJECTS.map(subject => ({ label: subject, value: subject }))}
               />
               <Badge count={questionTotal} style={{ backgroundColor: '#1890ff' }} overflowCount={9999} />

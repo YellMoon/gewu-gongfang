@@ -77,7 +77,7 @@ const baseNavGroups: NavGroup[] = [
     label: '题库',
     icon: <DatabaseOutlined />,
     items: [
-      { key: 'question-bank-tools', label: '题库管理', description: '导入试题、整理体系和处理问题', icon: <ToolOutlined /> },
+      { key: 'question-bank-tools', label: '题库管理', description: '导入试题、处理问题和查看统计', icon: <ToolOutlined /> },
       { key: 'question-bank-preview', label: '试题库', description: '检索题目内容', icon: <FileTextOutlined /> },
       { key: 'question-bank-paper', label: '组卷', description: '从题篮生成试卷', icon: <FileWordOutlined /> },
     ],

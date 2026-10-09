@@ -86,7 +86,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const onProjectionRefreshed = () => {
       // UTF-8: these pages read cache in place; remounting discards original history/filters/forms.
-      if (!['course-calendar', 'course-info', 'student', 'teacher', 'address', 'school', 'institution', 'payment'].includes(currentPage)) setRefreshKey(key => key + 1);
+      if (!['course-calendar', 'course-info', 'student', 'teacher', 'address', 'school', 'institution', 'payment', 'question-bank-preview', 'question-bank-import', 'question-bank-tools'].includes(currentPage)) setRefreshKey(key => key + 1);
     };
     window.addEventListener('authority-projection-refreshed', onProjectionRefreshed);
     return () => window.removeEventListener('authority-projection-refreshed', onProjectionRefreshed);

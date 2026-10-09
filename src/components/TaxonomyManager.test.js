@@ -5,7 +5,6 @@ const manager = fs.readFileSync('src/components/TaxonomyManager.tsx', 'utf8');
 const preview = fs.readFileSync('src/pages/QuestionBankPreview.tsx', 'utf8');
 const importer = fs.readFileSync('src/pages/QuestionBankImport.tsx', 'utf8');
 const tools = fs.readFileSync('src/pages/QuestionBankTools.tsx', 'utf8');
-const workbench = fs.readFileSync('src/pages/TodayWorkbench.tsx', 'utf8');
 const globalStyles = fs.readFileSync('src/index.css', 'utf8');
 const database = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
 const schema = fs.readFileSync('backend/src/schema.sql', 'utf8');
@@ -24,21 +23,18 @@ assert.ok(manager.includes('affected_question_count'));
 assert.ok(manager.includes('expectedAffectedQuestionCount'));
 assert.ok(manager.includes('restoreTaxonomyDeletion'));
 assert.ok(preview.includes('<TaxonomyManager'));
-assert.ok(importer.includes('<TaxonomyManager'));
+for (const page of [preview, importer]) {
+  assert.ok(page.includes("window.addEventListener('authority-projection-refreshed', loadData)"), 'mounted question pages must reload cloud data');
+  assert.ok(page.includes("window.removeEventListener('authority-projection-refreshed', loadData)"), 'question pages must clean up refresh listeners');
+}
 assert.ok(preview.includes('taxonomySelections'));
 assert.ok(preview.includes('includeGroups'));
 assert.ok(preview.includes('excludeIds'));
-assert.ok(preview.includes('<BranchesOutlined /> \u4f53\u7cfb</span>'), 'question bank sidebar must be named from the unified taxonomy concept');
-assert.ok(preview.includes('>\u5c55\u5f00\u4f53\u7cfb</Button>'), 'collapsed question bank sidebar must use the unified taxonomy label');
 assert.ok(!preview.includes('placeholder="\u5305\u542b\u77e5\u8bc6\u70b9"'), 'legacy knowledge include filter must not render beside dynamic taxonomy filters');
 assert.ok(!preview.includes('placeholder="\u6392\u9664\u77e5\u8bc6\u70b9"'), 'legacy knowledge exclude filter must not render beside dynamic taxonomy filters');
 assert.ok(!preview.includes('placeholder="\u6a21\u578b"'), 'legacy model filter must not render beside dynamic taxonomy filters');
-// UTF-8: import sidebar combines its subject and taxonomy heading.
-assert.ok(importer.includes('onSubjectChange={setTaxonomySubject}'), 'import sidebar must switch subject from its taxonomy heading');
-assert.ok(importer.includes('>\u5c55\u5f00\u4f53\u7cfb</Button>'), 'collapsed import sidebar must use the unified taxonomy label');
+// UTF-8: taxonomy editing has one entry point in the question bank.
 assert.ok(!globalStyles.includes(':has(> .taxonomy-manager)'), 'legacy taxonomy trees must not be rendered and hidden through a global CSS selector');
-assert.ok(tools.includes('\u5bfc\u5165\u4e0e\u4f53\u7cfb'), 'question bank tools entry must use the unified taxonomy label');
-assert.ok(workbench.includes('\u5bfc\u5165\u4e0e\u4f53\u7cfb'), 'workbench entry must use the unified taxonomy label');
 assert.ok(preview.includes("name={['taxonomy_ids', systemId, node.id]}"));
 assert.ok(importer.includes("name={['taxonomy_ids', systemId, node.id]}"));
 assert.ok(database.includes("subject: '\\u7269\\u7406'"));
@@ -66,4 +62,8 @@ for (const table of ['taxonomy_systems', 'taxonomy_nodes', 'question_taxonomy_no
 assert.ok(manager.includes('className="taxonomy-manager__actions"'));
 assert.ok(!manager.includes('<Space.Compact block>'), 'taxonomy actions must wrap in narrow sidebars');
 assert.match(globalStyles, /\.taxonomy-manager__actions\s*\{[^}]*flex-wrap:\s*wrap/u);
-console.log('taxonomy manager integration checks passed');
+
+assert.ok(preview.includes('onSubjectChange={changeSubject}'), 'question bank owns subject selection and taxonomy editing');
+assert.ok(!preview.includes('setTreeVisible'), 'question bank taxonomy column is always visible');
+assert.ok(!importer.includes('<TaxonomyManager') && !tools.includes('<TaxonomyManager'), 'management and import pages do not duplicate taxonomy editing');
+assert.ok(tools.includes('title="试题综述"') && tools.includes('title="已发布"') && tools.includes('title="待处理"'), 'management retains three real question metrics above task tabs');

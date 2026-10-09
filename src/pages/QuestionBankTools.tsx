@@ -144,9 +144,9 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
     <div className="question-bank-tools-page">
       {/* UTF-8: navigation lives beside the shell title; keep only useful metrics. */}
       <div className="question-bank-tools-metrics">
-        <Card size="small"><Statistic title="试题总数" value={stats.questions.length} suffix="题" /></Card>
+        <Card size="small"><Statistic title="试题综述" value={stats.questions.length} suffix="题" /></Card>
         <Card size="small"><Statistic title="已发布" value={publishedCount} suffix="题" /></Card>
-        <Card size="small"><Statistic title="草稿/待处理" value={draftCount} suffix="题" /></Card>
+        <Card size="small"><Statistic title="待处理" value={draftCount} suffix="题" /></Card>
       </div>
 
       <Tabs
@@ -156,7 +156,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
         items={[
           {
             key: 'import',
-            label: '导入与体系',
+            label: '导入',
             children: <QuestionBankImport />,
           },
           {
@@ -172,7 +172,7 @@ const QuestionBankTools: React.FC<QuestionBankToolsProps> = ({ onNavigate, conte
           },
           {
             key: 'stats',
-            label: '统计与导入记录',
+            label: '统计记录',
             children: (
               <div className="question-bank-tools-grid">
                 <Card title="学科分布" size="small">

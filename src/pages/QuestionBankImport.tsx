@@ -1,17 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Card, Button, Modal, Form, Input, InputNumber, Select as AntSelect, Space, Tag, message,
-  Tree, Divider, Checkbox, Collapse, Empty, Row, Col, Typography, Tooltip, Radio, Steps, Alert, Statistic, Drawer
+  Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
+  Divider, Checkbox, Collapse, Empty, Row, Col, Typography, Radio, Steps, Alert, Statistic, Drawer
 } from 'antd';
 import Table from '../components/NumberedTable';
-import {
-  PlusOutlined, FileWordOutlined, BookOutlined, FormOutlined,
-  FileAddOutlined, CheckCircleOutlined, BranchesOutlined, FolderOpenOutlined,
-  DeleteOutlined, EditOutlined, CloseCircleOutlined, DownloadOutlined, TagsOutlined, AimOutlined
-} from '@ant-design/icons';
+import { FileWordOutlined, CheckCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { Question, KnowledgeNode, ImportTask, ImportTaskItem, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
-import TaxonomyManager from '../components/TaxonomyManager';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
 import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
@@ -32,7 +27,6 @@ import {
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
-const legacyTaxonomyUiEnabled = () => false;
 
 const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
@@ -141,19 +135,6 @@ function mergeDefinedMeta(current: ExamMeta, incoming: ExamMeta): ExamMeta {
   return next;
 }
 
-// Build tree data for Ant Design Tree
-function buildTreeData(nodes: KnowledgeNode[], parentId?: string): any[] {
-  return nodes
-    .filter(n => n.parent_id === parentId || (!parentId && !n.parent_id))
-    .sort((a, b) => a.order - b.order)
-    .map(n => ({
-      key: n.id,
-      title: n.name,
-      children: buildTreeData(nodes, n.id),
-      isLeaf: false,
-    }));
-}
-
 function normalizeQuestion(row: any): Question {
   let options = row.options || [];
   if (typeof options === 'string') {
@@ -229,19 +210,12 @@ const QuestionBankImport: React.FC = () => {
   const [taxonomySubject, setTaxonomySubject] = useState('\u7269\u7406');
   const [taxonomySystems, setTaxonomySystems] = useState<TaxonomySystem[]>([]);
   const [taxonomyNodes, setTaxonomyNodes] = useState<Record<string, KnowledgeNode[]>>({});
-  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const [editingNodeName, setEditingNodeName] = useState('');
-  const [addingChildParentId, setAddingChildParentId] = useState<string | null | '__ROOT__'>(null);
-  const [addingChildName, setAddingChildName] = useState('');
-  const [contextMenuNode, setContextMenuNode] = useState<{ id: string; name: string; x: number; y: number } | null>(null);
-  const [deleteConfirmNode, setDeleteConfirmNode] = useState<{ id: string; name: string } | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [editingImportKey, setEditingImportKey] = useState<string | null>(null);
   const [richDocument, setRichDocument] = useState<QuestionRichDocument>(() => createQuestionRichDocument());
   const [editorDirty, setEditorDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [treeVisible, setTreeVisible] = useState(true);
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
@@ -335,280 +309,20 @@ const QuestionBankImport: React.FC = () => {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('authority-projection-refreshed', loadData);
+    return () => window.removeEventListener('authority-projection-refreshed', loadData);
   }, [loadData]);
 
   useEffect(() => {
-    if (!contextMenuNode) return;
-    const close = () => setContextMenuNode(null);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [contextMenuNode]);
-
-  // Tree CRUD handlers
-  const handleCreateKnowledgeNode = useCallback((name: string, parentId?: string | null) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.createKnowledgeNode({ name, parent_id: parentId || null });
-    const kn = db.getKnowledgeTree?.() || [];
-    setKnowledgeNodes([...kn]);
-  }, []);
-
-  const handleCreateModelNode = useCallback((name: string, parentId?: string | null) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.createModelNode?.({ name, parent_id: parentId || null });
-    setModelNodes([...(db.getModelTree?.() || [])]);
-  }, []);
-
-  const handleRenameModelNode = useCallback((id: string, name: string) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.updateModelNode?.(id, { name });
-    setModelNodes([...(db.getModelTree?.() || [])]);
-  }, []);
-
-  const handleDeleteModelNode = useCallback((id: string) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.deleteModelNode?.(id);
-    setModelNodes([...(db.getModelTree?.() || [])]);
-  }, []);
-
-  const handleRenameKnowledgeNode = useCallback((id: string, name: string) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.updateKnowledgeNode(id, { name });
-    const kn = db.getKnowledgeTree?.() || [];
-    setKnowledgeNodes([...kn]);
-  }, []);
-
-  const handleDeleteKnowledgeNode = useCallback((id: string) => {
-    const db = (window as any).dbService;
-    if (!db) return;
-    db.deleteKnowledgeNode(id);
-    const kn = db.getKnowledgeTree?.() || [];
-    setKnowledgeNodes([...kn]);
-  }, []);
-
-  const handleTreeDrop = (info: any) => {
-    const dragKey = info.dragNode.key as string;
-    const dropKey = info.node.key as string;
-    const dropToGap = info.dropToGap as boolean;
-    const dropPosition = info.dropPosition as number;
-    if (dragKey === dropKey) return;
-    let newParentId: string | null;
-    if (dropToGap) {
-      const dropNode = knowledgeNodes.find(n => n.id === dropKey);
-      newParentId = dropNode?.parent_id || null;
-    } else {
-      newParentId = dropKey;
-    }
-    const isDescendant = (nodeId: string, ancestorId: string): boolean => {
-      const node = knowledgeNodes.find(n => n.id === nodeId);
-      if (!node || !node.parent_id) return false;
-      if (node.parent_id === ancestorId) return true;
-      return isDescendant(node.parent_id, ancestorId);
+    const reloadTaxonomy = () => {
+      const db = (window as any).dbService;
+      const systems: TaxonomySystem[] = db?.getTaxonomySystems?.(taxonomySubject) || [];
+      handleTaxonomiesChanged(systems, Object.fromEntries(systems.map(system => [system.id, db?.getTaxonomyNodes?.(system.id) || []])));
     };
-    if (isDescendant(dropKey, dragKey)) { message.warning('不能将知识点移动到其子节点下'); return; }
-    const draggedNode = knowledgeNodes.find(n => n.id === dragKey);
-    if (!draggedNode) return;
-    const prevParentId = draggedNode.parent_id || null;
-    const prevOrder = draggedNode.order;
-    const db = (window as any).dbService;
-    if (!db) return;
-    const isSameLevel = dropToGap && draggedNode.parent_id === newParentId;
-    if (isSameLevel) {
-      const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
-      const siblings = allNodes
-        .filter((n: KnowledgeNode) => n.parent_id === newParentId || (!newParentId && !n.parent_id))
-        .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
-      const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
-      let dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
-      if (dragIdx >= 0 && dropIdx >= 0 && dragIdx !== dropIdx) {
-        siblings.splice(dragIdx, 1);
-        dropIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dropKey);
-        siblings.splice(dropPosition > 0 ? dropIdx + 1 : dropIdx, 0, draggedNode);
-        siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
-      }
-    } else { db.updateKnowledgeNode(dragKey, { parent_id: newParentId }); }
-    setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
-    Modal.confirm({
-      title: '确认移动', content: isSameLevel ? '确定调整该知识点的排序位置？' : '确定将选中知识点及其所有子节点移动到此位置？',
-      okText: '移动', cancelText: '取消',
-      onOk: () => { message.success(isSameLevel ? '顺序已调整' : '知识点已移动'); },
-      onCancel: () => {
-        if (isSameLevel) {
-          const allNodes = db.getKnowledgeTree?.() || knowledgeNodes;
-          const siblings = allNodes
-            .filter((n: KnowledgeNode) => n.parent_id === prevParentId || (!prevParentId && !n.parent_id))
-            .sort((a: KnowledgeNode, b: KnowledgeNode) => a.order - b.order);
-          const dragIdx = siblings.findIndex((n: KnowledgeNode) => n.id === dragKey);
-          if (dragIdx >= 0) {
-            siblings.splice(dragIdx, 1);
-            siblings.splice(Math.min(prevOrder, siblings.length), 0, draggedNode);
-            siblings.forEach((n: KnowledgeNode, i: number) => db.updateKnowledgeNode(n.id, { order: i }));
-          }
-        } else { db.updateKnowledgeNode(dragKey, { parent_id: prevParentId }); }
-        setKnowledgeNodes((db.getKnowledgeTree?.() || []).map((n: any) => ({...n})));
-        message.info('已取消移动');
-      },
-    });
-  };
-
-  const treeData = buildTreeData(knowledgeNodes);
-  const modelTreeData = buildTreeData(modelNodes);
-
-  const nodeTitleRender = useCallback((nodeData: any) => {
-    const nodeId = nodeData.key as string;
-    const nodeName = nodeData.title as string;
-    const isEditing = editingNodeId === nodeId;
-    const isAdding = addingChildParentId === nodeId;
-    return (
-      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {isEditing ? (
-            <Input
-              size="small" value={editingNodeName}
-              onChange={e => setEditingNodeName(e.target.value)}
-              onBlur={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              onPressEnter={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameKnowledgeNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              style={{ width: 120 }} autoFocus onClick={e => e.stopPropagation()}
-            />
-          ) : (
-            <>
-              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
-              <Tooltip title="添加子知识点">
-                <Button type="link" size="small" icon={<PlusOutlined />}
-                  onClick={e => { e.stopPropagation(); setAddingChildParentId(nodeId); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-              <Tooltip title="编辑知识点">
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={e => { e.stopPropagation(); setEditingNodeId(nodeId); setEditingNodeName(nodeName); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-              <Tooltip title="删除知识点">
-                <Button type="link" size="small" danger icon={<DeleteOutlined />}
-                  onClick={e => {
-                    e.stopPropagation();
-                    Modal.confirm({
-                      title: '确认删除',
-                      content: `确定删除知识点「${nodeName}」及其子知识点吗？`,
-                      okText: '删除',
-                      cancelText: '取消',
-                      okButtonProps: { danger: true },
-                      onOk: () => handleDeleteKnowledgeNode(nodeId),
-                    });
-                  }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-            </>
-          )}
-        </div>
-        {isAdding && (
-          <div style={{ paddingLeft: 20, marginTop: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Input size="small" placeholder="子知识点名称" value={addingChildName}
-                onChange={e => setAddingChildName(e.target.value)}
-                onBlur={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                onPressEnter={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateKnowledgeNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                style={{ width: 140 }} autoFocus onClick={e => e.stopPropagation()} />
-              <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
-                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }} />
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameKnowledgeNode, handleCreateKnowledgeNode, handleDeleteKnowledgeNode]);
-
-  const modelNodeTitleRender = useCallback((nodeData: any) => {
-    const nodeId = nodeData.key as string;
-    const nodeName = nodeData.title as string;
-    const isEditing = editingNodeId === `model:${nodeId}`;
-    const isAdding = addingChildParentId === `model:${nodeId}`;
-    return (
-      <div style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 2, padding: '1px 0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {isEditing ? (
-            <Input
-              size="small" value={editingNodeName}
-              onChange={e => setEditingNodeName(e.target.value)}
-              onBlur={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameModelNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              onPressEnter={(e) => {
-                const v = (e.target as HTMLInputElement).value;
-                if (v.trim()) handleRenameModelNode(nodeId, v.trim());
-                setEditingNodeId(null); setEditingNodeName('');
-              }}
-              style={{ width: 120 }} autoFocus onClick={e => e.stopPropagation()}
-            />
-          ) : (
-            <>
-              <span style={{ flex: 1, userSelect: 'none', fontSize: 13 }}>{nodeName}</span>
-              <Tooltip title="添加子模型">
-                <Button type="link" size="small" icon={<PlusOutlined />}
-                  onClick={e => { e.stopPropagation(); setAddingChildParentId(`model:${nodeId}`); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-              <Tooltip title="编辑模型">
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={e => { e.stopPropagation(); setEditingNodeId(`model:${nodeId}`); setEditingNodeName(nodeName); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-              <Tooltip title="删除模型">
-                <Button type="link" size="small" danger icon={<DeleteOutlined />}
-                  onClick={e => { e.stopPropagation(); Modal.confirm({ title: '确认删除', content: `确定删除模型「${nodeName}」及其子模型吗？`, okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => handleDeleteModelNode(nodeId) }); }}
-                  style={{ padding: 0, minWidth: 18, height: 18, fontSize: 11, lineHeight: '18px' }} />
-              </Tooltip>
-            </>
-          )}
-        </div>
-        {isAdding && (
-          <div style={{ paddingLeft: 20, marginTop: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Input size="small" placeholder="子模型名称" value={addingChildName}
-                onChange={e => setAddingChildName(e.target.value)}
-                onBlur={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateModelNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                onPressEnter={(e) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  if (v.trim()) handleCreateModelNode(v.trim(), nodeId);
-                  setAddingChildParentId(null); setAddingChildName('');
-                }}
-                style={{ width: 140 }} autoFocus onClick={e => e.stopPropagation()} />
-              <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                onClick={e => { e.stopPropagation(); setAddingChildParentId(null); setAddingChildName(''); }}
-                style={{ padding: 0, minWidth: 16, height: 16, fontSize: 11, color: '#999' }} />
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }, [editingNodeId, editingNodeName, addingChildParentId, addingChildName, handleRenameModelNode, handleCreateModelNode, handleDeleteModelNode]);
+    reloadTaxonomy();
+    window.addEventListener('authority-projection-refreshed', reloadTaxonomy);
+    return () => window.removeEventListener('authority-projection-refreshed', reloadTaxonomy);
+  }, [taxonomySubject, handleTaxonomiesChanged]);
 
   // Knowledge tree checkbox renderer in modal
   const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
@@ -943,159 +657,9 @@ const QuestionBankImport: React.FC = () => {
 
   return (
     <Row gutter={[16, 16]} className="question-bank-import-layout">
-      {/* Knowledge Tree Sidebar */}
-      {treeVisible && (
-        <Col xs={24} lg={7} xl={6}>
-          <Card
-            size="small"
-          >
-            <TaxonomyManager subject={taxonomySubject} subjects={SUBJECTS} onSubjectChange={setTaxonomySubject} onCollapse={() => setTreeVisible(false)} showRecovery={false} database={(window as any).dbService} onChanged={handleTaxonomiesChanged} />
-            {legacyTaxonomyUiEnabled() && <>
-            <div className="qb-tree-section-title qb-knowledge-tree-title"><TagsOutlined /> 知识点</div>
-            {/* Root-level inline add */}
-            {addingChildParentId === '__ROOT__' ? (
-              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Input size="small" placeholder="根节点名称" value={addingChildName}
-                  onChange={e => setAddingChildName(e.target.value)}
-                  onBlur={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  onPressEnter={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateKnowledgeNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  style={{ flex: 1 }} autoFocus />
-                <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                  onClick={() => { setAddingChildParentId(null); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 16, height: 16, color: '#999' }} />
-              </div>
-            ) : (
-              <Button type="dashed" size="small" icon={<PlusOutlined />}
-                onClick={() => { setAddingChildParentId('__ROOT__'); setAddingChildName(''); }}
-                style={{ marginBottom: 8, width: '100%' }}>新建根节点</Button>
-            )}
-
-            {/* Right-click context menu */}
-            {contextMenuNode && (
-              <div style={{
-                position: 'fixed', left: Math.min(contextMenuNode.x, window.innerWidth - 160),
-                top: Math.min(contextMenuNode.y, window.innerHeight - 160),
-                zIndex: 1050, background: '#fff', borderRadius: 6,
-                boxShadow: '0 3px 12px rgba(0,0,0,0.15)', padding: '4px 0',
-                minWidth: 150, border: '1px solid #e8e8e8',
-              }}>
-                <div style={{ padding: '6px 12px', color: '#666', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
-                  <FolderOpenOutlined style={{ marginRight: 6 }} />{contextMenuNode.name}
-                </div>
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
-                  onClick={() => { setAddingChildParentId(contextMenuNode.id); setAddingChildName(''); setContextMenuNode(null); }}>
-                  <PlusOutlined /> 添加子知识点
-                </div>
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}
-                  onClick={() => { setEditingNodeId(contextMenuNode.id); setEditingNodeName(contextMenuNode.name); setContextMenuNode(null); }}>
-                  <EditOutlined /> 重命名
-                </div>
-                <div style={{ borderTop: '1px solid #f0f0f0', margin: '4px 0' }} />
-                <div style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, color: '#ff4d4f' }}
-                  onClick={() => { setDeleteConfirmNode({ id: contextMenuNode.id, name: contextMenuNode.name }); setContextMenuNode(null); }}>
-                  <DeleteOutlined /> 删除知识点
-                </div>
-              </div>
-            )}
-
-            {/* Delete confirmation modal */}
-            <Modal
-              open={!!deleteConfirmNode} title="确认删除"
-              onCancel={() => setDeleteConfirmNode(null)}
-              onOk={() => {
-                if (deleteConfirmNode) {
-                  handleDeleteKnowledgeNode(deleteConfirmNode.id);
-                  message.success(`已删除知识点「${deleteConfirmNode.name}」及其所有子节点，关联题目已同步清理`);
-                  setDeleteConfirmNode(null);
-                }
-              }}
-              okText="确定删除" cancelText="取消"
-              okButtonProps={{ danger: true }} width={420}
-            >
-              {deleteConfirmNode && (
-                <div>
-                  <p style={{ fontSize: 14, marginBottom: 8 }}>
-                    确定要删除知识点 <Tag color="red">{deleteConfirmNode.name}</Tag> 吗？
-                  </p>
-                  <p style={{ color: '#ff4d4f', fontSize: 13 }}>
-                    <DeleteOutlined /> 此操作将同时删除该知识点下的所有次级知识点，不可恢复。
-                  </p>
-                </div>
-              )}
-            </Modal>
-            <div className="knowledge-tree">
-            <Tree
-              treeData={treeData} titleRender={nodeTitleRender}
-              draggable onDrop={handleTreeDrop}
-              showIcon={false}
-              showLine={{ showLeafIcon: false }}
-              blockNode allowDrop={() => true}
-              onRightClick={({ event, node }: any) => {
-                event.preventDefault();
-                const targetNode = knowledgeNodes.find(n => n.id === node.key);
-                if (targetNode) {
-                  setContextMenuNode({ id: targetNode.id, name: targetNode.name, x: event.clientX, y: event.clientY });
-                }
-              }}
-              style={{ fontSize: 13 }} />
-            </div>
-
-            <div className="qb-tree-section-title qb-model-tree-title"><AimOutlined /> 模型</div>
-            {addingChildParentId === 'model:__ROOT__' ? (
-              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Input size="small" placeholder="根模型名称" value={addingChildName}
-                  onChange={e => setAddingChildName(e.target.value)}
-                  onBlur={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateModelNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  onPressEnter={(e) => {
-                    const v = (e.target as HTMLInputElement).value;
-                    if (v.trim()) handleCreateModelNode(v.trim(), null);
-                    setAddingChildParentId(null); setAddingChildName('');
-                  }}
-                  style={{ flex: 1 }} autoFocus />
-                <Button type="link" size="small" icon={<CloseCircleOutlined />}
-                  onClick={() => { setAddingChildParentId(null); setAddingChildName(''); }}
-                  style={{ padding: 0, minWidth: 16, height: 16, color: '#999' }} />
-              </div>
-            ) : (
-              <Button type="dashed" size="small" icon={<PlusOutlined />}
-                onClick={() => { setAddingChildParentId('model:__ROOT__'); setAddingChildName(''); }}
-                style={{ marginBottom: 8, width: '100%' }}>新建根模型</Button>
-            )}
-            <div className="knowledge-tree">
-              <Tree
-                treeData={modelTreeData}
-                titleRender={modelNodeTitleRender}
-                showIcon={false}
-                showLine={{ showLeafIcon: false }}
-                blockNode
-                draggable={false}
-                style={{ fontSize: 13 }}
-              />
-            </div>
-            </>}
-          </Card>
-        </Col>
-      )}
       {/* Main Content */}
-      <Col xs={24} lg={treeVisible ? 17 : 24} xl={treeVisible ? 18 : 24}>
+      <Col span={24}>
         <Card style={{ margin: 0 }}>
-          {!treeVisible && (
-            <div style={{ marginBottom: 12 }}>
-              <Button type="link" icon={<BranchesOutlined />} onClick={() => setTreeVisible(true)}>展开体系</Button>
-            </div>
-          )}
 
           <Steps
             current={importStep}

@@ -34,4 +34,3 @@
 .taxonomy-manager .taxonomy-no-match { color: #667085; font-size: 13px; }
 .taxonomy-manager__heading { display: flex; align-items: center; gap: 2px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--app-border-color, #d8dee9); }
 .taxonomy-manager__subject { padding-inline: 0; font-size: 16px; min-width: 0; }
-.taxonomy-manager__collapse { margin-left: auto; padding-inline: 0; }
