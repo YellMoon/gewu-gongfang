@@ -33,6 +33,25 @@ const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试',
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];
 
+const IMPORT_INSTRUCTIONS = {
+  lecture: {
+    title: '讲义格式导入说明',
+    items: ['适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。'],
+  },
+  exam: {
+    title: '试卷格式导入说明',
+    items: ['适合整卷导入。选择文件后，会尝试从文件名补全学年、考试类型、年级、学期、地区、学校和试卷名。'],
+  },
+  topic: {
+    title: '专题题集导入说明',
+    items: [
+      '适合同类题目汇集，答案和详解需紧跟题目。',
+      '保留选项、小题、公式和图片，移除题号后开头的来源括号。',
+      '共用材料、合并答案却分成多个题号的题组会跳过并提示，不自动拆题。',
+    ],
+  },
+};
+
 type ExamMeta = {
   year?: string;
   exam_type?: string;
@@ -703,10 +722,8 @@ const QuestionBankImport: React.FC = () => {
                     <Radio.Button value="exam">试卷格式</Radio.Button>
                     <Radio.Button value="topic">专题题集</Radio.Button>
                   </Radio.Group>
-                  <Collapse ghost size="small" defaultActiveKey={['instructions']} items={[{ key: 'instructions', label: '查看导入说明', children: <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
-                    <li><b>讲义格式</b>：适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。</li>
-                    <li><b>专题题集</b>：适合同类题目汇集，答案和详解紧跟题目；保留选项、小题、公式和图片，移除题号后开头的来源括号。共用材料、合并答案却分成多个题号的题组会跳过并提示，不自动拆题。</li>
-                    <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全学年、考试类型、年级、学期、地区、学校和试卷名。</li>
+                  <Collapse ghost size="small" defaultActiveKey={['instructions']} items={[{ key: 'instructions', label: IMPORT_INSTRUCTIONS[wordSourceType].title, children: <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
+                    {IMPORT_INSTRUCTIONS[wordSourceType].items.map(instruction => <li key={instruction}>{instruction}</li>)}
                     <li>开始解析在本机读取文档、清理微小标识并保留图片显示尺寸；校对后生成草稿时才归档原件和图片。</li>
                   </ul> }]} />
                   {selectedWordFile && (
