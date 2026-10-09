@@ -331,12 +331,12 @@ assert(
 );
 
 assert(
-  questionBankTools.includes('试题库') && !questionBankTools.includes('原试题编辑') && !questionBankTools.includes('原审核中心') && !questionBankTools.includes('独立导入页'),
+  questionBankTools.includes('题库') && !questionBankTools.includes('原试题编辑') && !questionBankTools.includes('原审核中心') && !questionBankTools.includes('独立导入页'),
   'question bank tools should expose the integrated question bank and hide legacy shortcuts'
 );
 
 assert(
-  appNavigation.includes("label: '试题库'") && !appNavigation.includes("label: '试题预览'"),
+  appNavigation.includes("label: '题库'") && appNavigation.includes("label: '试题导入'") && !appNavigation.includes("label: '试题预览'"),
   'question bank preview navigation should be renamed to question bank'
 );
 

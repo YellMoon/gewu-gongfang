@@ -1,14 +1,14 @@
 ﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
-  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography, Drawer,
+  Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography,
   Pagination, Alert, Popover
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
   FolderOpenOutlined, TagsOutlined, AimOutlined, BranchesOutlined,
   CheckCircleOutlined, FileWordOutlined, CloseCircleOutlined, EyeOutlined,
-  FilterOutlined, ReloadOutlined
+  ReloadOutlined
 } from '@ant-design/icons';
 import type { Question, KnowledgeNode, QuestionVersion, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
@@ -34,6 +34,7 @@ import {
   ensureQuestionLocalStoreSeeded,
   getCachedQuestionTree,
   queryQuestionPage,
+  questionMetadataFilterOptions,
 } from '../services/questionLocalStore';
 import './QuestionBankPreview.css';
 
@@ -119,8 +120,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   const [filterDifficulties, setFilterDifficulties] = useState<string[]>(['全部']);
   const [filterStatuses, setFilterStatuses] = useState<string[]>(['全部']);
   const [basketOnly, setBasketOnly] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState('');
-  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [filterSources, setFilterSources] = useState<string[]>([]);
+  const [filterRegions, setFilterRegions] = useState<string[]>([]);
+  const [filterSchools, setFilterSchools] = useState<string[]>([]);
   const [treeSearchText, setTreeSearchText] = useState('');
 
   // 排除知识点
@@ -291,7 +293,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
     setFilterDifficulties(['全部']);
     setFilterStatuses(['全部']);
     setBasketOnly(false);
-    setSourceFilter('');
+    setFilterSources([]);
+    setFilterRegions([]);
+    setFilterSchools([]);
     setKnowledgeSelectedIds([undefined]);
     setFilterExcludeKnowledgeIds([undefined]);
     setModelSelectedIds([undefined]);
@@ -346,7 +350,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
         years: filterYears,
         basketIds,
         basketOnly,
-        source: sourceFilter,
+        sources: filterSources,
+        regions: filterRegions,
+        schools: filterSchools,
         searchTerms,
         searchScope: 'stem',
         taxonomyFilters: expandedTaxonomyFilters,
@@ -360,7 +366,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   }, [
     localStoreReady, refreshNonce, currentPage, filterSubjects, filterTypes, filterExamTypes, filterStatuses,
     filterGrades, filterSemesters, filterDifficulties, filterYears, basketIds, basketOnly,
-    sourceFilter, searchTerms, expandedTaxonomyFilters,
+    filterSources, filterRegions, filterSchools, searchTerms, expandedTaxonomyFilters,
   ]);
 
   useEffect(() => { refreshQuestionPage(); }, [refreshQuestionPage]);
@@ -377,7 +383,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYears, filterDifficulties, filterStatuses, basketOnly, sourceFilter, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(','), taxonomySelections]);
+  }, [appliedSearchText, filterSubjects, filterTypes, filterExamTypes, filterGrades, filterSemesters, filterYears, filterDifficulties, filterStatuses, basketOnly, filterSources, filterRegions, filterSchools, activeKnowledgeIds.join(','), activeModelIds.join(','), expandedExcludeIds.join(','), taxonomySelections]);
 
   const jumpToQuestionPage = useCallback((page: number) => {
     setCurrentPage(page);
@@ -485,6 +491,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
       { include: (previous[system.id]?.include || []).filter(id => (nodes[system.id] || []).some(node => node.id === id)), exclude: (previous[system.id]?.exclude || []).filter(id => (nodes[system.id] || []).some(node => node.id === id)) },
     ])));
   }, []);
+  const metadataOptions = useMemo(() => questionMetadataFilterOptions((dbService?.getAllQuestions?.() || []).map(normalizeQuestion), [currentSubject]), [dbService, refreshNonce, currentSubject]);
   const yearOptions = useMemo(() => {
     const values = new Set<string>(YEAR_OPTIONS.map(option => option.value));
     (dbService?.getAllQuestions?.() || []).forEach((question: any) => { if (question.year) values.add(String(question.year)); });
@@ -1030,9 +1037,14 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
                 { id: 'status', label: '发布状态', options: LIMIT_STATUSES, values: filterStatuses, onChange: setFilterStatuses },
               ]}
               years={yearOptions} selectedYears={filterYears} onYearsChange={setFilterYears}
+              metadataRows={[
+                { id: 'sources', label: '导入卷名', options: metadataOptions.sources.map(value => ({ value, label: value })), values: filterSources, onChange: setFilterSources },
+                { id: 'regions', label: '地区', options: metadataOptions.regions.map(value => ({ value, label: value })), values: filterRegions, onChange: setFilterRegions },
+                { id: 'schools', label: '学校', options: metadataOptions.schools.map(value => ({ value, label: value })), values: filterSchools, onChange: setFilterSchools },
+              ]}
               systems={taxonomySystems} nodes={taxonomyNodes} selections={taxonomySelections}
               actions={<>
-                <Button size="small" icon={<FilterOutlined />} onClick={() => setMoreFiltersOpen(true)}>更多筛选</Button>
+                <Checkbox checked={basketOnly} onChange={event => setBasketOnly(event.target.checked)}>只看已加入试题篮</Checkbox>
                 <Button size="small" aria-label="重置" type="link" icon={<ReloadOutlined />} onClick={resetFilters}>重置</Button>
                 <div className="qb-result-search">
                   <Input size="small" placeholder="在结果中搜索" aria-label="在结果中搜索" allowClear
@@ -1047,27 +1059,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
 
     </div>
 
-          <Drawer
-            title="更多筛选"
-            open={moreFiltersOpen}
-            onClose={() => setMoreFiltersOpen(false)}
-            width={420}
-            className="qb-more-filter-drawer"
-            footer={
-              <div className="qb-more-filter-footer">
-                <Button onClick={resetFilters}>重置全部</Button>
-                <Button type="primary" onClick={() => setMoreFiltersOpen(false)}>完成</Button>
-              </div>
-            }
-          >
-            <div className="qb-more-filter-group">
-              <Text strong>来源</Text>
-              <Input allowClear placeholder="来源 / 地区 / 学校 / 年份" value={sourceFilter} onChange={event => setSourceFilter(event.target.value)} />
-            </div>
-            <div className="qb-more-filter-group">
-              <Checkbox checked={basketOnly} onChange={event => setBasketOnly(event.target.checked)}>只看已加入试题篮</Checkbox>
-            </div>
-          </Drawer>
           {/* Batch Operations */}
           {selectedRowKeys.length > 0 && (
             <div style={{ marginBottom: 12, padding: '8px 12px', background: '#e6f7ff', borderRadius: 6 }}>

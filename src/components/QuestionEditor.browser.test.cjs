@@ -7,7 +7,7 @@ const webpack = require('webpack');
 const { chromium } = require('playwright');
 const { spawn, execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
-const output = path.join(root, 'output/playwright/question-editor-20261006');
+const output = process.env.QUESTION_EDITOR_EVIDENCE_DIR || path.join(root, 'output/playwright/question-editor-20261006');
 fs.mkdirSync(output, { recursive: true });
 const entry = path.join(output, 'fixture.tsx');
 let fixturePng;
@@ -74,17 +74,31 @@ async function verify(page, carrier) {
   await page.waitForFunction(() => window.fixture.value.sections.stem.content.some(n => n.type === 'image' && n.attrs.width === 215 && n.attrs.height === 98));
   await stem.getByLabel('图片右对齐', { exact: true }).click();
   assert.equal(await stem.locator('.rich-image-node').first().getAttribute('data-align'), 'right');
-  await stem.getByRole('button', { name: '剪切图片', exact: true }).click();
-  assert.equal(await stem.locator('.rich-image-node img').count(), 0);
+
+  assert.equal(await page.getByRole('button',{name:/^H[123]$/}).count(),0);
+  await stem.getByRole('button',{name:'上标',exact:true}).waitFor({state:'visible'});
+  await stem.getByRole('button',{name:'下标',exact:true}).waitFor({state:'visible'});
+  assert.equal(await page.getByRole('button',{name:'剪切图片',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'粘贴图片到光标',exact:true}).count(),0);
+  assert.equal(await page.getByLabel('图片替代文本',{exact:true}).count(),0);
+  assert.equal(await stem.locator('.rich-image-node').first().evaluate(el=>getComputedStyle(el).display),'block');
+  await page.setViewportSize({width:1280,height:1800});
+  const stemSurface=stem.locator('.rich-question-editor__surface');const stemBox=await stemSurface.boundingBox();
+  await stem.locator('.rich-image-node').first().dragTo(stemSurface,{targetPosition:{x:20,y:stemBox.height-8}});
+  await page.waitForFunction(()=>{const c=window.fixture.value.sections.stem.content;return c.findIndex(n=>n.type==='image')>c.findIndex(n=>JSON.stringify(n).includes('图片之后'));});
   await tab('解析').click();
-  const analysis = activeEditors().first();
-  await analysis.locator('.rich-question-editor__surface').click();
-  await analysis.locator('.rich-question-editor__surface').press('Control+End');
-  await analysis.getByRole('button', { name: '粘贴图片到光标', exact: true }).click();
-  await page.waitForFunction(() => window.fixture.value.sections.analysis.content.filter(n => n.type === 'image').length === 2);
-  await analysis.locator('.rich-image-node img').last().click();
-  await analysis.getByLabel('删除图片', { exact: true }).click();
-  assert.equal(await analysis.locator('.rich-image-node img').count(), 1);
+  const analysis=activeEditors().first();const surface=analysis.locator('.rich-question-editor__surface');const targetBox=await surface.boundingBox();
+  await stem.locator('.rich-image-node').first().dragTo(surface,{targetPosition:{x:20,y:targetBox.height-8}});
+  await page.waitForFunction(()=>window.fixture.value.sections.stem.content.every(n=>n.type!=='image')&&window.fixture.value.sections.analysis.content.filter(n=>n.type==='image').length===2);
+  const moved=analysis.locator('.rich-image-node').filter({has:page.locator('img[alt="题图 题干"]')});
+  assert.equal(await moved.locator('img').getAttribute('width'),'215');assert.equal(await moved.locator('img').getAttribute('height'),'98');
+  await moved.hover();const close=moved.getByRole('button',{name:'删除图片',exact:true});
+  const corner=await close.boundingBox(),picture=await moved.locator('img').boundingBox();
+  assert(Math.abs(corner.x+corner.width-(picture.x+picture.width))<1&&Math.abs(corner.y-picture.y)<1,'delete cross sits at the image top-right corner');
+  await close.click();assert.equal(await analysis.locator('.rich-image-node img').count(),1);
+  await analysis.getByRole('button',{name:'撤销',exact:true}).click();assert.equal(await analysis.locator('.rich-image-node img').count(),2);
+  await moved.hover();await moved.getByRole('button',{name:'删除图片',exact:true}).click();
+  await page.screenshot({path:path.join(output,carrier+'-image-move-delete.png'),fullPage:false});
 
   const editArea = async (editor, marker) => {
     const surface = editor.locator('.rich-question-editor__surface');
@@ -159,7 +173,7 @@ async function verify(page, carrier) {
   const url = `http://127.0.0.1:${server.address().port}`;
   try {
     const browser = await chromium.launch({ channel: 'chrome', headless: true });
-    try { const page = await browser.newPage({ viewport: { width: 1280, height: 920 } }); await page.goto(url); await verify(page, 'chrome'); }
+    try { const page = await browser.newPage({ viewport: { width: 1280, height: 920 } }); await page.goto(url); try { await verify(page, 'chrome'); } catch(error) { await page.screenshot({path:path.join(output,'failure.png'),fullPage:true}); console.error((await page.locator('.question-structure-editor').innerText()).slice(0,3000)); throw error; } }
     finally { await browser.close(); }
     const main = path.join(output, 'electron-main.cjs');
     fs.writeFileSync(main, `const {app,BrowserWindow}=require('electron');let win;app.whenReady().then(()=>{win=new BrowserWindow({width:1280,height:920,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,offscreen:true,backgroundThrottling:false}});win.loadURL(${JSON.stringify(url)});});app.on('window-all-closed',()=>app.quit());`);

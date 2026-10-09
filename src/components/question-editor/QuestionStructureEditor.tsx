@@ -15,6 +15,7 @@ export type QuestionStructureEditorProps = {
   disabled?: boolean;
   questionType?: string;
   imageAssets?: Array<Record<string, any>>;
+  wholeQuestionAnswer?: boolean;
 };
 
 const labels = {
@@ -28,7 +29,7 @@ const labels = {
 
 const defaultId = (kind: 'option' | 'sub') => `${kind}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
-const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value, onChange, createId = defaultId, confirmDelete, disabled = false, questionType, imageAssets = [] }) => {
+const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value, onChange, createId = defaultId, confirmDelete, disabled = false, questionType, imageAssets = [], wholeQuestionAnswer = false }) => {
   const { sections } = value;
   const mode = choiceMode(questionType);
   const [modal, contextHolder] = Modal.useModal();
@@ -59,13 +60,13 @@ const QuestionStructureEditor: React.FC<QuestionStructureEditorProps> = ({ value
       <Space size={8}><Typography.Text>{labels.subLabel}</Typography.Text><Input disabled={disabled} aria-label={labels.subLabel} value={sub.label} style={{ width: 120 }} onChange={event => onChange(updateEntity(value, 'subQuestions', sub.id, { label: event.target.value }))} /></Space>
       <Typography.Text strong>{labels.subStem}</Typography.Text>
       <RichQuestionEditor disabled={disabled} output="json" value={sub.content} minHeight={96} onChange={content => onChange(updateEntity(value, 'subQuestions', sub.id, { content: content as JSONContent }))} />
-      <Typography.Text strong>{labels.subAnswer}</Typography.Text>
-      <RichQuestionEditor disabled={disabled} output="json" value={sub.answer} minHeight={80} onChange={answer => onChange(updateEntity(value, 'subQuestions', sub.id, { answer: answer as JSONContent }))} />
+      {!wholeQuestionAnswer && <><Typography.Text strong>{labels.subAnswer}</Typography.Text>
+      <RichQuestionEditor disabled={disabled} output="json" value={sub.answer} minHeight={80} onChange={answer => onChange(updateEntity(value, 'subQuestions', sub.id, { answer: answer as JSONContent }))} /></>}
     </Space>,
   }));
   return <QuestionImageClipboardProvider><div className="question-structure-editor" data-testid="question-structure-editor">
     {contextHolder}
-    <Typography.Paragraph type="secondary">所有部分均可编辑文字、LaTeX 公式和图片。双击公式可修改；选中图片可调尺寸、删除，或剪切后在任一内容区域的光标位置粘贴。</Typography.Paragraph>
+    <Typography.Paragraph type="secondary">可编辑文字、公式和图片。双击公式可修改；图片默认独占一行，拖动可调整位置，右上角×可删除，选中后可调整尺寸。</Typography.Paragraph>
     {imageCleanup.removed.length > 0 && <Button disabled={disabled} style={{ marginBottom: 12 }} onClick={() => modal.confirm({ title: `清理 ${imageCleanup.removed.length} 张微小标识图片`, content: <div><p>将清理全部内容区域中的微缩图片和带网站标识信息的微小图片。保存试题后生效。</p>{imageCleanup.removed.map((image, index) => <div key={index}>{image.section}：{image.reason}（{image.width} × {image.height} px）</div>)}</div>, okText: '清理', cancelText: '保留', onOk: () => onChange(imageCleanup.value) })}>清理微小标识图片（{imageCleanup.removed.length}）</Button>}
     <Card size="small" title={labels.stem}><RichQuestionEditor disabled={disabled} output="json" value={sections.stem} minHeight={180} placeholder={labels.stemPlaceholder} onChange={stem => onChange({ ...value, sections: { ...sections, stem: stem as JSONContent } })} /></Card>
     <Tabs items={[

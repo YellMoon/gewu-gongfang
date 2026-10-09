@@ -19,3 +19,9 @@ assert.strictEqual(result.rows[0].status === 'success' || result.rows[0].status 
 result = validateImportQuestions([{ content: '', answer: 'A' }], []);
 assert.strictEqual(result.summary.failed, 1, 'editing a valid row to an empty stem must block import again');
 console.log('question import revalidation behavior tests passed');
+const rich = text => ({type:'doc',content:[{type:'paragraph',content:text?[{type:'text',text}]:[]}]});
+const wholeAnswer = {rich_content:{type:'question-document',sections:{stem:rich('Experiment'),options:[],subQuestions:[{content:rich('Part one'),answer:rich('')}],answer:rich('(1) Whole answer'),analysis:rich('Explanation')}},knowledge_point:'Experiment'};
+result=validateImportQuestions([wholeAnswer]);
+assert.equal(result.summary.success,1, 'a whole-question answer satisfies import validation without separate sub-answers');
+wholeAnswer.rich_content.sections.answer=rich('');
+result=validateImportQuestions([wholeAnswer]);assert(result.rows[0].issues.some(issue=>issue.message==='\u7b54\u6848\u4e3a\u7a7a'));

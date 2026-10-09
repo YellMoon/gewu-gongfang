@@ -15,6 +15,7 @@ type Props = {
   years: Option[];
   selectedYears: string[];
   onYearsChange: (values: string[]) => void;
+  metadataRows: ChoiceRow[];
   systems: TaxonomySystem[];
   nodes: Record<string, KnowledgeNode[]>;
   selections: Record<string, Selection>;
@@ -22,7 +23,7 @@ type Props = {
 };
 type Preferences = { order: string[]; hidden: string[]; gap: number; labelWidth: number; mergeFixed: boolean };
 // 新增按账号与学科保存的筛选布局设置。
-const defaults: Preferences = { order: ['exam', 'type', 'status', 'difficulty', 'grade', 'semester', 'year', 'taxonomy'], hidden: [], gap: 3, labelWidth: 76, mergeFixed: true };
+const defaults: Preferences = { order: ['exam', 'type', 'status', 'difficulty', 'grade', 'semester', 'year', 'sources', 'regions', 'schools', 'taxonomy'], hidden: [], gap: 3, labelWidth: 76, mergeFixed: true };
 
 function readPreferences(key: string): Preferences {
   try {
@@ -51,7 +52,7 @@ export function taxonomyTagOptions(nodes: KnowledgeNode[]): Option[] {
   });
 }
 
-export const SearchTagPicker: React.FC<{ label: string; options: Option[]; values: string[]; onChange: (values: string[]) => void }> = ({ label, options, values, onChange }) => {
+export const SearchTagPicker: React.FC<{ label: string; options: Option[]; values: string[]; onChange: (values: string[]) => void; leafLabel?: boolean }> = ({ label, options, values, onChange, leafLabel = false }) => {
   const [editing, setEditing] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -63,7 +64,7 @@ export const SearchTagPicker: React.FC<{ label: string; options: Option[]; value
   };
   return <div className="qb-tag-picker" aria-label={label}>
     {values.map(value => <span className="qb-filter-text-tag" key={value}>
-      <span title={options.find(option => option.value === value)?.label}>{options.find(option => option.value === value)?.label.split(' / ').pop() || value}</span>
+      <span title={options.find(option => option.value === value)?.label}>{leafLabel ? (options.find(option => option.value === value)?.label.split(' / ').pop() || value) : (options.find(option => option.value === value)?.label || value)}</span>
       <button type="button" aria-label={'移除' + label + ' ' + (options.find(option => option.value === value)?.label || value)} onClick={() => onChange(values.filter(id => id !== value))}><CloseOutlined /></button>
     </span>)}
     {editing ? <Space size={4} className="qb-tag-editor">
@@ -78,7 +79,7 @@ export const SearchTagPicker: React.FC<{ label: string; options: Option[]; value
   </div>;
 };
 
-const QuestionBankFilters: React.FC<Props> = ({ subject, actions, rows, years, selectedYears, onYearsChange, systems, nodes, selections, onSelectionChange }) => {
+const QuestionBankFilters: React.FC<Props> = ({ subject, actions, rows, years, selectedYears, onYearsChange, metadataRows, systems, nodes, selections, onSelectionChange }) => {
   const storageKey = partitionedStorageKey('question_filter_layout_v1:' + subject);
   const [preferences, setPreferences] = useState(() => readPreferences(storageKey));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -95,7 +96,7 @@ const QuestionBankFilters: React.FC<Props> = ({ subject, actions, rows, years, s
   const orderedSystems = [...systems].sort((a, b) => a.sort_no - b.sort_no);
   const visibleSystems = orderedSystems.filter((system, index) => index < 3 || extraSystems.includes(system.id) || selections[system.id]?.include.length || selections[system.id]?.exclude.length);
   const nextSystem = orderedSystems.find(system => !visibleSystems.includes(system));
-  const rowLabels = Object.fromEntries([...rows.map(row => [row.id, row.label]), ['year', '学年'], ['taxonomy', '体系标签']]);
+  const rowLabels = Object.fromEntries([...rows.map(row => [row.id, row.label]), ...metadataRows.map(row => [row.id, row.label]), ['year', '学年'], ['taxonomy', '体系标签']]);
   const toggle = (row: ChoiceRow, value: string) => {
     if (value === '全部') return row.onChange(['全部']);
     const active = row.values.filter(item => item !== '全部');
@@ -113,14 +114,22 @@ const QuestionBankFilters: React.FC<Props> = ({ subject, actions, rows, years, s
     <div className="qb-filter-lines">
     {preferences.order.map(id => {
       if (preferences.hidden.includes(id)) return null;
+      const metadataRow = metadataRows.find(row => row.id === id);
+      if (metadataRow) return <div className={'qb-choice-row qb-metadata-choice' + (preferences.mergeFixed ? ' qb-choice-group qb-choice-group--' + id : '')} key={id} data-filter-row={id}>
+        <span className="qb-choice-label">{metadataRow.label}：</span>
+        <div className="qb-choice-values">
+          <button type="button" aria-pressed={!metadataRow.values.length} className={!metadataRow.values.length ? 'qb-choice active' : 'qb-choice'} onClick={() => metadataRow.onChange([])}>全部</button>
+          <SearchTagPicker label={metadataRow.label} options={metadataRow.options} values={metadataRow.values} onChange={metadataRow.onChange} />
+        </div>
+      </div>;
       if (id === 'year') return <div className="qb-choice-row" key={id}><span className="qb-choice-label">学年：</span><div className="qb-choice-values"><button type="button" aria-pressed={!selectedYears.length} className={!selectedYears.length ? 'qb-choice active' : 'qb-choice'} onClick={() => onYearsChange([])}>全部</button><SearchTagPicker key={subject} label="学年" options={years} values={selectedYears} onChange={onYearsChange} /></div></div>;
       if (id === 'taxonomy') return <div className="qb-taxonomy-filter-rows" key={id}>
         {visibleSystems.map(system => <div className="qb-choice-row" key={system.id} data-filter-system={system.id}>
           <span className="qb-choice-label" title={system.name}>{system.name}：</span>
           <div className="qb-taxonomy-conditions">
-            {(['include', 'exclude'] as const).map(mode => <div className="qb-taxonomy-condition" key={mode}>
+            {(['include', 'exclude'] as const).map(mode => <div className="qb-taxonomy-condition" key={mode} data-mode={mode}>
               <span>{mode === 'include' ? '包含' : '排除'}</span>
-              <SearchTagPicker label={system.name + (mode === 'include' ? '包含' : '排除')} options={taxonomyTagOptions(nodes[system.id] || [])} values={selections[system.id]?.[mode] || []} onChange={values => onSelectionChange(system.id, mode, values)} />
+              <SearchTagPicker leafLabel label={system.name + (mode === 'include' ? '包含' : '排除')} options={taxonomyTagOptions(nodes[system.id] || [])} values={selections[system.id]?.[mode] || []} onChange={values => onSelectionChange(system.id, mode, values)} />
             </div>)}
           </div>
         </div>)}
@@ -149,6 +158,7 @@ const QuestionBankFilters: React.FC<Props> = ({ subject, actions, rows, years, s
           if (!event.target.checked) {
             const row = rows.find(item => item.id === id);
             row?.onChange(['全部']);
+            metadataRows.find(item => item.id === id)?.onChange([]);
             if (id === 'year') onYearsChange([]);
             if (id === 'taxonomy') systems.forEach(system => { onSelectionChange(system.id, 'include', []); onSelectionChange(system.id, 'exclude', []); });
           }

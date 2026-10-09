@@ -67,6 +67,9 @@ export type QuestionPageQuery = {
   basketOnly?: boolean;
   source?: string;
   searchTerms?: string[];
+  sources?: string[];
+  regions?: string[];
+  schools?: string[];
   searchScope?: 'stem' | 'all';
   includeKnowledgeGroups?: string[][];
   excludeKnowledgeIds?: string[];
@@ -226,6 +229,19 @@ function subjectKey(value: string): string {
   return SUBJECT_KEYS[key] || key;
 }
 
+export function questionMetadataFilterOptions(questions: Question[], subjectIds: string[] = []): { sources: string[]; regions: string[]; schools: string[] } {
+  const sources = new Set<string>(), regions = new Set<string>(), schools = new Set<string>();
+  for (const question of questions) {
+    if ((question as any).deleted || (subjectIds.length && !subjectIds.some(subject => subjectKey(subject) === subjectKey(question.subject || '')))) continue;
+    for (const [field, values] of [['source', sources], ['region', regions], ['school', schools]] as const) {
+      const value = question[field];
+      if (value && String(value).trim()) values.add(String(value));
+    }
+  }
+  const sorted = (values: Set<string>) => [...values].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  return { sources: sorted(sources), regions: sorted(regions), schools: sorted(schools) };
+}
+
 function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (meta.deleted) return false;
   if (query.pendingEditOnly && !isPendingEdit(meta)) return false;
@@ -237,6 +253,9 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (!matchesList(meta.semester, query.semesters)) return false;
   if (!matchesList(difficultyBucket(meta.difficulty), query.difficulties)) return false;
   if (!matchesList(meta.year, query.years)) return false;
+  if (!matchesList(meta.source, query.sources)) return false;
+  if (!matchesList(meta.region, query.regions)) return false;
+  if (!matchesList(meta.school, query.schools)) return false;
   if (query.year && query.year !== '全部' && meta.year !== query.year) return false;
   if (query.basketOnly && !(query.basketIds || []).includes(meta.id)) return false;
   if (query.source?.trim()) {

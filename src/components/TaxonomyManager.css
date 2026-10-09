@@ -5,7 +5,7 @@
 .taxonomy-manager .taxonomy-system-title strong { font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
 .taxonomy-manager .taxonomy-system-title { padding-right: 4px; }
 .taxonomy-manager .taxonomy-node-title { width: 100%; line-height: 19.5px; position:relative; min-height:24px; }
-.taxonomy-manager .taxonomy-node-title > span { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.taxonomy-manager .taxonomy-node-title > span { flex: 1; min-width: 0; white-space: normal; overflow-wrap: anywhere; transition: opacity .12s; }
 .taxonomy-manager .taxonomy-node-actions { flex: none; opacity: .55; }
 .taxonomy-manager .taxonomy-node-title:hover .taxonomy-node-actions, .taxonomy-manager .taxonomy-node-title:focus-within .taxonomy-node-actions, .taxonomy-manager .taxonomy-system-title:hover .taxonomy-node-actions, .taxonomy-manager .taxonomy-system-title:focus-within .taxonomy-node-actions { opacity: 1; }
 .taxonomy-manager .taxonomy-node-actions button { width: 24px; height: 26px; padding: 0; }
@@ -34,14 +34,17 @@
 .taxonomy-manager .taxonomy-no-match { color: #667085; font-size: 13px; }
 .taxonomy-manager__heading { display: flex; align-items: center; gap: 2px; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--app-border-color, #d8dee9); }
 .taxonomy-manager__subject { padding-inline: 0; font-size: 16px; min-width: 0; }
-.taxonomy-system-toggle { display:flex; align-items:center; gap:6px; flex:1; min-width:0; border:0; background:transparent; color:inherit; padding:0; font:inherit; text-align:left; cursor:pointer; }
-.taxonomy-system-toggle .anticon { font-size:11px; transition:transform .15s; }
+.taxonomy-system-toggle { position:relative; display:flex; align-items:center; gap:6px; flex:1; min-width:0; border:0; background:transparent; color:inherit; padding:0; font:inherit; text-align:left; cursor:pointer; }
+.taxonomy-system-toggle .anticon { position:absolute; left:-15px; font-size:11px; transition:transform .15s; }
 .taxonomy-system-toggle .is-collapsed { transform:rotate(-90deg); }
 .taxonomy-system-toggle:focus-visible { outline:2px solid #1677ff; outline-offset:3px; }
-.taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { position:absolute; right:0; top:0; visibility:hidden; opacity:0; background:#fff; }
+.taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { position:absolute; right:0; top:0; z-index:1; visibility:hidden; opacity:0; background:rgba(240,245,255,.92); border-radius:4px; }
 .taxonomy-manager .taxonomy-node-title:hover > .taxonomy-node-actions,.taxonomy-manager .taxonomy-node-title:focus-within > .taxonomy-node-actions { visibility:visible; opacity:1; }
-.taxonomy-manager .taxonomy-node-title:hover > span,.taxonomy-manager .taxonomy-node-title:focus-within > span { padding-right:76px; }
-@media(hover:none) { .taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { position:static; visibility:visible; opacity:1; } }
+.taxonomy-manager .taxonomy-node-title:hover > span,.taxonomy-manager .taxonomy-node-title:focus-within > span { opacity:.4; }
+@media(hover:none) {
+  .taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { visibility:visible; opacity:1; }
+  .taxonomy-manager .taxonomy-node-title > span { opacity:.4; }
+}
 
 .taxonomy-manager--compact .taxonomy-search { margin-top:0; }
 .taxonomy-manager--compact .taxonomy-system-block { margin-top:8px; padding-top:8px; }

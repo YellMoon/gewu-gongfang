@@ -181,7 +181,7 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
               }}><button className="qb-subject-title-button" type="button" aria-label="选择科目题库">{questionBankSubject}题库<DownOutlined /></button></Dropdown>
               : currentNavItem.label}
             titleActions={currentPage === 'question-bank-tools' ? <>
-              <Button icon={<FileSearchOutlined />} onClick={() => onNavigate('question-bank-preview')}>试题库</Button>
+              <Button icon={<FileSearchOutlined />} onClick={() => onNavigate('question-bank-preview')}>题库</Button>
               <Button type="primary" icon={<FileWordOutlined />} onClick={() => onNavigate('question-bank-paper')}>去组卷</Button>
             </> : undefined}
             description={currentPage === 'today' ? new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' }) : undefined}

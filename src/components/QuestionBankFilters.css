@@ -15,6 +15,8 @@
 .qb-taxonomy-condition > span { color:#667085; }
 .qb-tag-picker { display:flex; flex-wrap:wrap; align-items:center; gap:12px; min-width:0; }
 .qb-filter-text-tag { display:inline-flex; position:relative; gap:4px; align-items:center; padding:0 10px 0 0; color:#1677ff; line-height:24px; overflow-wrap:anywhere; }
+.qb-taxonomy-condition[data-mode="include"] .qb-filter-text-tag { color:#175cd3; }
+.qb-taxonomy-condition[data-mode="exclude"] .qb-filter-text-tag,.qb-taxonomy-condition[data-mode="exclude"] .qb-filter-add.ant-btn { color:#b42318; }
 .qb-filter-text-tag button { position:absolute; right:-4px; top:-4px; width:14px; height:14px; display:flex; align-items:center; justify-content:center; padding:0; border:0; background:transparent; color:#667085; font-size:10px; cursor:pointer; }
 .qb-filter-text-tag button:hover { color:#d92d20; }
 .qb-tag-editor { max-width:100%; }
@@ -44,3 +46,16 @@
 .qb-result-search .ant-input-affix-wrapper { flex:1; min-width:0; }
 .qb-result-count { margin-left:auto; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .qb-filter-lines > .qb-choice-row--exam { grid-template-columns:var(--qb-filter-label-width,76px) minmax(0,1fr) auto; }
+
+.qb-filter-lines > .qb-choice-group--sources { flex-basis:calc(50% - 3px); }
+.qb-filter-lines > .qb-choice-group--regions,.qb-filter-lines > .qb-choice-group--schools { flex-basis:calc(25% - 4.5px); }
+.qb-choice-group--regions { background:#eff7f3; }
+.qb-choice-group--schools { background:#faf5ef; }
+.qb-metadata-choice .qb-choice-values { gap:4px 8px; }
+.qb-metadata-choice .qb-tag-picker { flex:1; min-width:0; }
+.qb-metadata-choice .qb-filter-text-tag { min-width:0; max-width:100%; }
+.qb-metadata-choice .qb-filter-text-tag > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.qb-metadata-choice .qb-tag-editor { display:flex; flex-wrap:wrap; gap:4px; width:100%; min-width:0; }
+.qb-metadata-choice .qb-tag-editor .ant-space-item:first-child { flex:1 1 90px; min-width:0; }
+.qb-metadata-choice .qb-tag-editor .ant-select { width:100%; max-width:200px; }
+.qb-metadata-choice .qb-tag-editor .ant-btn { padding-inline:2px; }

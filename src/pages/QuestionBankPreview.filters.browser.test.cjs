@@ -24,6 +24,7 @@ const nodes=Object.fromEntries(systems.map((system,index)=>[system.id, [
  {id:system.id+'b',name:index===0?'匀变速直线运动':'其他标签'+index,parent_id:system.id+'root',order:1},
 ]]));
 const questions=Array.from({length:24},(_,index)=>({id:'q'+index,subject:'物理',type:index%3===2?'填空题':'单选题',content:'第'+index+'道验证试题，研究小球的运动。',options:[{label:'A',content:'独特选项'+index}],subQuestions:[{content:'实验小题'+index}],answer:'参考答案',analysis:'解析内容',status:'published',exam_type:index%2?'模拟题':'高考真题',grade:['高一','高二','高三'][index%3],semester:'上学期',difficulty:index%3+1,year:index===2?'2034-2035':index%2?'2026-2027':'2025-2026',taxonomy_ids:{s1:[index%2?'s1b':'s1a'],s5:['s5a']},knowledge_ids:[],model_ids:[]}));
+questions.forEach((question,index)=>{question.source='原卷来源'+index;question.region=index%2?'上海':'浙江';question.school='验证中学'+index;});
 let basket=[];
 window.__GEWU_DESKTOP_IDENTITY_PARTITION__='question-filter-isolated-fixture';
 window.dbService={
@@ -70,7 +71,28 @@ function compile() {
   await page.screenshot({path:path.join(output,'00-compact-first-screen-1366.png'),fullPage:false});
   const firstCard=await page.locator('.qb-question-card').first().boundingBox();
   assert(firstCard && firstCard.y+firstCard.height<=768,'default merged filters must leave a complete question card visible at 1366x768 with the application header');
-  const labelLefts=await page.locator('.qb-filter-lines > .qb-choice-row:not([data-filter-row="status"]):not([data-filter-row="grade"]):not([data-filter-row="semester"]) > .qb-choice-label,.qb-taxonomy-filter-rows > .qb-choice-row > .qb-choice-label').evaluateAll(labels=>labels.map(el=>el.getBoundingClientRect().x));
+  assert.equal(await page.getByRole('button',{name:'更多筛选',exact:true}).count(),0);
+  const metadataBoxes=await Promise.all(['sources','regions','schools'].map(id=>page.locator('[data-filter-row="'+id+'"]').boundingBox()));
+  assert(metadataBoxes.every(box=>Math.abs(box.y-metadataBoxes[0].y)<1),'paper, region and school filters share one compact row');
+  assert(metadataBoxes[0].width>metadataBoxes[1].width*1.9,'paper name has more width than region and school');
+  await add('导入卷名','来源0','原卷来源0');await total(1);
+  await add('导入卷名','来源1','原卷来源1');await total(2);
+  await add('地区','浙江','浙江');await total(1);
+  await add('学校','中学1','验证中学1');await total(0);
+  await page.getByRole('button',{name:'移除学校 验证中学1',exact:true}).click();await total(1);
+  await add('地区','上海','上海');await total(2);
+  await page.getByRole('button',{name:'移除导入卷名 原卷来源0',exact:true}).click();await total(1);
+  await page.screenshot({path:path.join(output,'12-separate-metadata-filters.png'),fullPage:false});
+  await page.getByRole('button',{name:'重置',exact:true}).click();await total(24);
+  await page.getByRole('button',{name:'添加导入卷名',exact:true}).click();
+  await page.getByRole('combobox',{name:'搜索导入卷名',exact:true}).fill('2034');
+  assert.equal(await page.locator('.ant-select-dropdown:visible .ant-select-item-option').count(),0,'paper candidates do not include year values');
+  await page.getByRole('combobox',{name:'搜索导入卷名',exact:true}).press('Escape');
+  await page.getByRole('checkbox',{name:'只看已加入试题篮',exact:true}).check();await total(0);
+  await page.getByRole('button',{name:'重置',exact:true}).click();await total(24);
+  assert.equal(await page.getByRole('checkbox',{name:'只看已加入试题篮',exact:true}).isChecked(),false);
+  checks.push('paper, region and school share one row with fuzzy multi-select; same-field OR, cross-field AND, removal/reset; years stay in their independent row');
+  const labelLefts=await page.locator('.qb-filter-lines > .qb-choice-row:not([data-filter-row="status"]):not([data-filter-row="grade"]):not([data-filter-row="semester"]):not([data-filter-row="regions"]):not([data-filter-row="schools"]) > .qb-choice-label,.qb-taxonomy-filter-rows > .qb-choice-row > .qb-choice-label').evaluateAll(labels=>labels.map(el=>el.getBoundingClientRect().x));
   assert(labelLefts.every(left=>Math.abs(left-labelLefts[0])<1),'first-column labels align across every background block');
   const backgrounds=await page.locator('.qb-choice-row').evaluateAll(rows=>rows.map(el=>getComputedStyle(el).backgroundColor));
   assert(backgrounds.every(color=>color!=='rgba(0, 0, 0, 0)'&&color!=='transparent'),'all filter rows have visible background blocks');
@@ -80,6 +102,8 @@ function compile() {
   assert(Math.abs(difficultyBox.y-gradeBox.y)<1&&Math.abs(gradeBox.y-semesterBox.y)<1,'difficulty, grade and semester share one row');
   assert.equal(await page.getByText('物理体系',{exact:true}).count(),0,'redundant taxonomy subject heading is removed');
   assert.equal(await page.locator('.taxonomy-manager__heading').count(),0);
+  measurements.systemHierarchy=await page.locator('.taxonomy-system-toggle').evaluateAll(buttons=>buttons.map(button=>({arrowLeft:button.querySelector('.anticon').getBoundingClientRect().x,nameLeft:button.querySelector('strong').getBoundingClientRect().x,rootCircleLeft:button.closest('.taxonomy-system-block').querySelector('.taxonomy-toggle').getBoundingClientRect().x,cardLeft:button.closest('.qb-preview-tree-card').getBoundingClientRect().x})));
+  assert(measurements.systemHierarchy.every(row=>row.arrowLeft>=row.cardLeft&&row.arrowLeft<row.nameLeft&&row.nameLeft<row.rootCircleLeft),'system arrow stays inside the card and the numbered title starts left of its root-node circle');
   const systemButton=page.getByRole('button',{name:'课程知识',exact:true});
   await systemButton.click({button:'right'});
   await page.getByRole('menuitem',{name:'新建体系',exact:true}).click();
@@ -105,11 +129,21 @@ function compile() {
   assert(measurements.tree.sidebarWidth>=260,'tree card retains stable usable width');
   await page.locator('[data-node-id="s1b"]').focus();
   await page.locator('[data-node-id="s1b"] .taxonomy-node-actions button').first().waitFor({state:'visible'});
+  const nodeLabel=page.locator('[data-node-id="s1b"] > span');
+  await page.waitForFunction(()=>Number(getComputedStyle(document.querySelector('[data-node-id="s1b"] > span')).opacity)<=0.41);
+  measurements.treeFocused=await nodeLabel.evaluate(el=>{const b=el.getBoundingClientRect(),s=getComputedStyle(el);return{width:b.width,height:b.height,opacity:Number(s.opacity),paddingRight:s.paddingRight};});
+  assert(Math.abs(measurements.treeFocused.width-measurements.tree.width)<0.5&&Math.abs(measurements.treeFocused.height-measurements.tree.height)<0.5,'keyboard actions overlay without shrinking or wrapping the node label');
+  assert.equal(measurements.treeFocused.paddingRight,'0px','no action-width reservation is added');
   assert.equal(await page.getByLabel('添加子节点 匀变速直线运动',{exact:true}).isVisible(),true,'keyboard focus reveals node CRUD actions');
   await page.locator('[data-node-id="s1b"]').hover();
+  measurements.treeHovered=await nodeLabel.evaluate(el=>{const b=el.getBoundingClientRect(),s=getComputedStyle(el),a=el.parentElement.querySelector('.taxonomy-node-actions');return{width:b.width,height:b.height,opacity:Number(s.opacity),actionsPosition:getComputedStyle(a).position};});
+  assert(Math.abs(measurements.treeHovered.width-measurements.tree.width)<0.5&&Math.abs(measurements.treeHovered.height-measurements.tree.height)<0.5,'hover actions do not change text geometry');
+  assert.equal(measurements.treeHovered.actionsPosition,'absolute');
+  assert(measurements.treeHovered.opacity<=0.41,'node label fades while actions are visible');
   await page.screenshot({path:path.join(output,'10-node-actions-hover.png'),fullPage:false});
   await page.getByLabel('搜索体系节点').click();await page.mouse.move(1100,700);
   await page.locator('[data-node-id="s1b"] .taxonomy-node-actions button').first().waitFor({state:'hidden'});
+  await page.waitForFunction(()=>Number(getComputedStyle(document.querySelector('[data-node-id="s1b"] > span')).opacity)>=0.99);
   assert.equal(await page.getByLabel('添加子节点 匀变速直线运动',{exact:true}).isVisible(),false,'actions hide outside hover/focus');
   await page.screenshot({path:path.join(output,'08-tree-readable-1200.png'),fullPage:false});
   await systemButton.click();
@@ -145,7 +179,7 @@ function compile() {
    await page.getByRole('button',{name:'添加'+label,exact:true}).click();
    const input=page.getByRole('combobox',{name:'搜索'+label,exact:true});
    await input.fill(search);
-   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({hasText:option}).click();
+   await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({has:page.getByText(option,{exact:true})}).click();
    await page.locator('.qb-tag-picker[aria-label="'+label+'"]').getByRole('button',{name:'确定',exact:true}).click();
   }
   await add('学年','2025','2025-2026学年');await total(11);
@@ -169,6 +203,11 @@ function compile() {
   await tree.click({button:'right'});
   await page.getByRole('menuitem',{name:'选定为包含标签',exact:true}).click();await total(12);
   await page.screenshot({path:path.join(output,'02-search-and-tree-filter.png'),fullPage:true});
+  await add('\u8bfe\u7a0b\u77e5\u8bc6\u6392\u9664','\u5300\u53d8\u901f','\u529b\u5b66\u4e3b\u9898 / \u5300\u53d8\u901f\u76f4\u7ebf\u8fd0\u52a8');await total(12);
+  measurements.taxonomyTagColors=await page.locator('[data-filter-system="s1"] .qb-filter-text-tag > span').evaluateAll(labels=>labels.map(el=>({mode:el.closest('[data-mode]').dataset.mode,color:getComputedStyle(el).color})));
+  assert.deepEqual(measurements.taxonomyTagColors,[{mode:'include',color:'rgb(23, 92, 211)'},{mode:'exclude',color:'rgb(180, 35, 24)'}],'include and exclude node names render in distinct blue/red colors');
+  await page.screenshot({path:path.join(output,'11-include-exclude-colors.png'),fullPage:false});
+  checks.push('include node names are blue and exclude node names red; opposite-node exclusion preserves real matching results');
   await page.getByRole('button',{name:'重置',exact:true}).click();await total(24);
   await page.getByLabel('搜索体系节点').fill('');
   checks.push('fuzzy node search, full path candidates, include/exclude mutual exclusion, tree right-click selection/cancellation');
@@ -183,7 +222,9 @@ function compile() {
   await page.getByRole('button',{name:'重置',exact:true}).click();
   await page.getByLabel('搜索体系节点').fill('');
   checks.push('fourth system appended in order; right-click fifth system reveals its filter row');
+  await add('地区','浙江','浙江');await total(12);
   await page.getByRole('button',{name:'调整筛选栏',exact:true}).click();
+  await page.getByRole('checkbox',{name:'地区',exact:true}).uncheck();await total(24);
   await page.getByRole('checkbox',{name:'合并固定选项到同一行',exact:true}).uncheck();
   assert.equal(await page.locator('.qb-choice-group').count(),0,'manual setting can split each fixed filter into a separate row');
   await page.getByRole('checkbox',{name:'合并固定选项到同一行',exact:true}).check();
@@ -198,6 +239,7 @@ function compile() {
   await page.reload();await total(24);
   assert.equal(await page.locator('[data-filter-row]').first().getAttribute('data-filter-row'),'type');
   assert.equal(await page.locator('[data-filter-row="status"]').count(),0);
+  assert.equal(await page.locator('[data-filter-row="regions"]').count(),0,'hidden region row clears its conditions and stays hidden after reload');
   assert.equal(await page.locator('.qb-row-filters').evaluate(el=>el.style.getPropertyValue('--qb-filter-gap')),'20px');
   assert.equal(await page.locator('.qb-row-filters').evaluate(el=>el.style.getPropertyValue('--qb-filter-label-width')),'110px');
   checks.push('manual row ordering, visibility, spacing and width persisted across reload');

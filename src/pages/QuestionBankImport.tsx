@@ -52,7 +52,7 @@ type ImportCommitResult = {
   failed: number;
   warning: number;
   created_at: string;
-  source_type: 'lecture' | 'exam';
+  source_type: 'lecture' | 'exam' | 'topic';
   file_name?: string;
 };
 
@@ -166,7 +166,7 @@ function getQuestionStem(q: any): string {
   return q.stem || q.content || '';
 }
 
-function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lecture' | 'exam') {
+function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lecture' | 'exam' | 'topic') {
   if (sourceType !== 'exam') return q;
   return {
     ...q,
@@ -219,7 +219,7 @@ const QuestionBankImport: React.FC = () => {
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
-  const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam'>('lecture');
+  const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam' | 'topic'>('lecture');
   const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
   const [importStep, setImportStep] = useState<ImportStep>(0);
   const [validationRows, setValidationRows] = useState<ImportValidationRow[]>([]);
@@ -491,14 +491,15 @@ const QuestionBankImport: React.FC = () => {
       const parsed = await intakeClient().parseFromWord({ sourceType: wordSourceType, sourceFileName: file.name, bytes });
       const candidates = (await prepareLocalIntakePreview(parsed)).map(question => applyExamMetaToQuestion(question, examMeta || {}, wordSourceType));
       const validation = validateImportQuestions(candidates, questions);
-      localIntakeRef.current = { bytes, parsed, sourceType: wordSourceType, sourceFileName: file.name,
+      localIntakeRef.current = { bytes, parsed, sourceType: wordSourceType === 'topic' ? 'lecture' : wordSourceType, sourceFileName: file.name,
         sourceMimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        metadata: { ...(examMeta || {}), sourceFileName: file.name } };
+        metadata: { ...(examMeta || {}), sourceFileName: file.name, importFormat: wordSourceType } };
       setWordResult({ questions: candidates, count: candidates.length, quality_report: parsed.qualityReport });
       setValidationRows(validation.rows);
       setValidationSummary(validation.summary);
       setImportStep(2);
-      message.success('本机解析与图片清理完成，请校对试题后生成待提交草稿。');
+      if (candidates.length) message.success('本机解析与图片清理完成，请校对试题后生成待提交草稿。');
+      else message.warning('没有可独立导入的试题，请查看跳过提示。');
     } catch (error: any) {
       message.error((error.code || error.message) === 'QUESTION_INTAKE_DOC_CONVERSION_REQUIRED'
         ? '旧版 .doc 文件请先另存为 .docx 后再导入。'
@@ -700,16 +701,24 @@ const QuestionBankImport: React.FC = () => {
                   >
                     <Radio.Button value="lecture">讲义格式</Radio.Button>
                     <Radio.Button value="exam">试卷格式</Radio.Button>
+                    <Radio.Button value="topic">专题题集</Radio.Button>
                   </Radio.Group>
-                  <Collapse ghost size="small" items={[{ key: 'instructions', label: '查看导入说明', children: <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
+                  <Collapse ghost size="small" defaultActiveKey={['instructions']} items={[{ key: 'instructions', label: '查看导入说明', children: <ul style={{ margin: 0, paddingLeft: 18, color: '#666', lineHeight: 1.8 }}>
                     <li><b>讲义格式</b>：适合按专题、题号、题干、选项和批注答案解析整理的讲义文件。</li>
-                    <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全年份、考试类型、年级、学期、地区、学校和试卷名。</li>
+                    <li><b>专题题集</b>：适合同类题目汇集，答案和详解紧跟题目；保留选项、小题、公式和图片，移除题号后开头的来源括号。共用材料、合并答案却分成多个题号的题组会跳过并提示，不自动拆题。</li>
+                    <li><b>试卷格式</b>：适合整卷导入，选择文件后会尝试从文件名补全学年、考试类型、年级、学期、地区、学校和试卷名。</li>
                     <li>开始解析在本机读取文档、清理微小标识并保留图片显示尺寸；校对后生成草稿时才归档原件和图片。</li>
                   </ul> }]} />
                   {selectedWordFile && (
+                    <Space wrap size={4}>
                     <Tag color="blue" style={{ whiteSpace: 'normal', lineHeight: 1.6 }}>
                       已选择：{selectedWordFile.name}
                     </Tag>
+                    {!wordResult && <Button type="link" size="small" disabled={wordImporting || committingBatch || modalVisible}
+                      onClick={() => { setSelectedWordFile(null); setImportStep(0); }}>
+                      {'\u53d6\u6d88\u9009\u62e9'}
+                    </Button>}
+                    </Space>
                   )}
                 </Space>
               </Col>
@@ -795,7 +804,7 @@ const QuestionBankImport: React.FC = () => {
           >
             <FileWordOutlined style={{ fontSize: 64, color: '#1890ff' }} />
             <h3 style={{ marginTop: 16 }}>拖拽或选择 Word 文件</h3>
-            <p style={{ color: '#999' }}>支持 .docx；旧版 .doc 请先另存为 .docx。当前模式：{wordSourceType === 'lecture' ? '讲义格式' : '试卷格式'}</p>
+            <p style={{ color: '#999' }}>支持 .docx；旧版 .doc 请先另存为 .docx。当前模式：{wordSourceType === 'lecture' ? '讲义格式' : wordSourceType === 'topic' ? '专题题集' : '试卷格式'}</p>
             <Space>
               <Button size="large" icon={<FileWordOutlined />} disabled={wordImporting || committingBatch || modalVisible} onClick={openWordFilePicker}>
                 选择文件
@@ -813,6 +822,14 @@ const QuestionBankImport: React.FC = () => {
             </Space>
           </div>
 
+          {wordResult?.quality_report?.topic_collection?.skipped_groups?.length > 0 && (
+            <Alert showIcon type="warning" style={{ marginTop: 16 }} message={'\u5df2\u8df3\u8fc7\u65e0\u6cd5\u72ec\u7acb\u62c6\u5206\u7684\u9898\u7ec4'}
+              description={<ul style={{ margin: 0, paddingLeft: 18 }}>
+                {wordResult.quality_report.topic_collection.skipped_groups.map((group: any, index: number) => (
+                  <li key={index}>{'\u539f\u6587\u9898\u53f7 ' + group.numbers.join('\u3001') + '\uff1a\u5171\u7528\u6750\u6599\u6216\u5408\u5e76\u7b54\u6848\uff0c\u4e0d\u4f5c\u4e3a\u72ec\u7acb\u8bd5\u9898\u5bfc\u5165\uff1b\u8bf7\u6574\u7406\u4e3a\u4e00\u9053\u542b\u5c0f\u9898\u7684\u5b8c\u6574\u8bd5\u9898\u540e\u91cd\u65b0\u5bfc\u5165\u3002'}</li>
+                ))}
+              </ul>} />
+          )}
           {wordResult?.quality_report?.image_cleanup && (
             <Alert showIcon type="info" style={{ marginTop: 16 }} message={`本机图片清理：已移除 ${wordResult.quality_report.image_cleanup.removed_count || 0} 处微小标识图片`}
               description="正常题图保留录入文档中的显示尺寸；原件内容保持不变。" />
@@ -1017,7 +1034,7 @@ const QuestionBankImport: React.FC = () => {
           </Row>
 
           {/* utf-8 rich structure */}
-          <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} onChange={updateRichDocument} />
+          <QuestionStructureEditor value={richDocument} disabled={saving} questionType={editorQuestionType} wholeQuestionAnswer={wordSourceType === 'topic'} onChange={updateRichDocument} />
 
           <Divider orientation="left" style={{ fontSize: 12 }}>扩展信息</Divider>
 

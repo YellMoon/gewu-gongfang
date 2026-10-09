@@ -85,9 +85,9 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
     const response = await fetchImpl(`${base}${path}`, { ...options, headers: { ...authorization(deps), ...(options.headers || {}) } });
     return responseJson(response);
   }
-  function parsedRow(value) {
+  function parsedRow(value, allowSkippedEmpty = false) {
     if (!value || !/^[0-9a-f]{64}$/.test(value.sourceSha256 || '') || !/^[0-9a-f]{64}$/.test(value.parserSha256 || '')
-      || !Array.isArray(value.candidates) || value.candidates.length < 1 || value.candidates.length > 500
+      || !Array.isArray(value.candidates) || (value.candidates.length < 1 && !(allowSkippedEmpty && value.qualityReport?.topic_collection?.skipped_groups?.length)) || value.candidates.length > 500
       || !Array.isArray(value.mediaBytes) || value.mediaBytes.length !== value.candidates.length
       || value.candidates.some((item, index) => !Array.isArray(item.mediaManifest) || !Array.isArray(value.mediaBytes[index])
         || item.mediaManifest.length !== value.mediaBytes[index].length
@@ -141,15 +141,17 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
     },
     async parseFromWord(input) {
       const current = exact(input, ['sourceType', 'sourceFileName', 'bytes']);
-      if (!['lecture', 'exam'].includes(current.sourceType) || !safeWordFileName(current.sourceFileName)
+      if (!['lecture', 'exam', 'topic'].includes(current.sourceType) || !safeWordFileName(current.sourceFileName)
         || !(current.bytes instanceof Uint8Array) || !current.bytes.length || current.bytes.length > 64 * 1024 * 1024) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
       if (typeof parse !== 'function') throw failure('QUESTION_INTAKE_DESKTOP_REQUIRED');
-      return parsedRow(await parse(current));
+      return parsedRow(await parse(current), current.sourceType === 'topic');
     },
     async createFromWord(input) {
       const original = exact(input, ['sourceType', 'sourceFileName', 'sourceMimeType', 'bytes', 'metadata']);
       const parsed = await this.parseFromWord({ sourceType: original.sourceType, sourceFileName: original.sourceFileName, bytes: original.bytes });
-      return this.createFromParsed({ ...original, parsed });
+      return this.createFromParsed({ ...original, parsed,
+        sourceType: original.sourceType === 'topic' ? 'lecture' : original.sourceType,
+        metadata: original.sourceType === 'topic' ? { ...original.metadata, importFormat: 'topic' } : original.metadata });
     },
     async createFromParsed(input) {
       if (typeof seal !== 'function') throw failure('QUESTION_IMPORT_CLIENT_CONFIG_INVALID');

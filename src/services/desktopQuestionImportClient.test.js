@@ -61,6 +61,18 @@ async function main() {
     'Unicode support must not permit a path separator in the source file name',
   );
 
+  const offlineCalls = [];
+  const localClient = createDesktopQuestionImportClient({}, {
+    parse: async input => { offlineCalls.push(input.sourceType); return { sourceSha256: 'a'.repeat(64), parserSha256: 'c'.repeat(64), candidates: [], mediaBytes: [], qualityReport: {topic_collection: {skipped_groups: [{numbers: [1,2], reason: 'shared_material_or_combined_answers'}]}} }; },
+    fetchImpl: async () => { throw new Error('local preview must not contact cloud'); },
+  });
+  const empty = await localClient.parseFromWord({sourceType:'topic',sourceFileName:'topic.docx',bytes:new Uint8Array([1])});
+  assert.equal(empty.candidates.length,0);assert.deepEqual(offlineCalls,['topic']);
+  await assert.rejects(localClient.parseFromWord({sourceType:'lecture',sourceFileName:'lecture.docx',bytes:new Uint8Array([1])}), /QUESTION_INTAKE_RESULT_INVALID/);
+  await client.createFromWord({sourceType:'topic',sourceFileName:'topic.docx',sourceMimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',bytes:new Uint8Array(Buffer.from('raw-document-payload')),metadata:{subject:'physics'}});
+  const topicBody=JSON.parse(calls.at(-1).options.body);
+  assert.equal(topicBody.sourceType,'lecture');assert.equal(topicBody.metadata.importFormat,'topic');
+  assert.equal(topicBody.metadata.subject,'physics');
   const assetCalls = [];
   const assetClient = createDesktopQuestionImportClient({ cloudBusinessIdentityBaseUrl: 'https://cloud.example/cloud-business' }, {
     idFactory: () => '87654321', now: () => new Date('2026-08-23T00:00:00.000Z'),

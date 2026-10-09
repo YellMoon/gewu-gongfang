@@ -36,6 +36,25 @@ vm.runInNewContext(compiled, { module: moduleValue, exports: moduleValue.exports
   assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, years: ['2025-2026', '2026-2027'] })).total, 2, 'multiple years must use OR matching');
   assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, years: [] })).total, 3, 'clearing years means all years');
   assert.equal((await store.queryQuestionPage({ page: 1, pageSize: 20, year: '2035-2036' })).total, 1, 'legacy single-year callers remain compatible');
+  const metadataRows=[
+    {id:'metadata-one',subject:'physics',content:'One',source:'Paper A',region:'Zhejiang',school:'School A',year:'2025-2026'},
+    {id:'metadata-two',subject:'physics',content:'Two',source:'Paper B',region:'Zhejiang',school:'School B',year:'2025-2026'},
+    {id:'metadata-three',subject:'physics',content:'Three',source:'Paper B',region:'Shanghai',school:'School A',year:'2026-2027'},
+    {id:'metadata-history',subject:'history',content:'History',source:'History paper',region:'Other region',school:'Other school'},
+    {id:'metadata-deleted',subject:'physics',content:'Deleted',source:'Deleted paper',region:'Deleted region',school:'Deleted school',deleted:true},
+  ];
+  await store.ensureQuestionLocalStoreSeeded(()=>metadataRows);
+  const metadataQuery=facets=>store.queryQuestionPage({page:1,pageSize:20,subjectIds:['physics'],...facets});
+  assert.equal((await metadataQuery({sources:['Paper A','Paper B']})).total,3,'multiple paper names match with OR');
+  assert.equal((await metadataQuery({regions:['Zhejiang','Shanghai']})).total,3,'multiple regions match with OR');
+  assert.equal((await metadataQuery({sources:['Paper B'],schools:['School A','School B']})).total,2,'multiple schools match with OR inside a field');
+  assert.equal((await metadataQuery({sources:['Paper A'],regions:['Shanghai']})).total,0,'different metadata fields match with AND');
+  assert.equal((await metadataQuery({regions:['Zhejiang'],schools:['School A']})).total,1);
+  assert.equal((await metadataQuery({sources:['Zhejiang']})).total,0,'region text never leaks into paper filtering');
+  assert.equal((await metadataQuery({schools:['2025-2026']})).total,0,'academic-year values never leak into school filtering');
+  assert.equal((await metadataQuery({sources:['Paper B'],years:['2025-2026']})).total,1,'independent academic-year row remains compatible');
+  assert.equal((await metadataQuery({source:'2025-2026'})).total,2,'legacy aggregate callers remain compatible');
+  assert.deepEqual(JSON.parse(JSON.stringify(store.questionMetadataFilterOptions(metadataRows,['\u7269\u7406']))),{sources:['Paper A','Paper B'],regions:['Shanghai','Zhejiang'],schools:['School A','School B']},'candidate values are distinct, scoped to subject aliases and exclude deleted rows');
   await store.ensureQuestionLocalStoreSeeded(() => questions.map(row => ({ ...row, content: 'Updated ' + row.id })));
   assert((await query('physics')).rows.every(row => row.content.startsWith('Updated ')), 'same-count cloud updates must replace the derived index');
   await store.ensureQuestionLocalStoreSeeded(() => [{id:'structured',subject:'physics',content:'题干',options:[{label:'A',content:'独特选项'}],tags:['力学专项'],rich_content:{type:'question-document',sections:{stem:{type:'doc',content:[{type:'formula',attrs:{canonicalLatex:'x^2'}}]},analysis:{type:'doc',content:[{type:'text',text:'推导过程'}]},subQuestions:[]}}}]);

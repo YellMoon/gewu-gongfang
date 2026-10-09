@@ -38,7 +38,7 @@ export function inspectQuestion(question: any): string[] {
   if (!hasQuestionContent(sections.answer) && !sections.subQuestions.some((sub: any) => hasQuestionContent(sub.answer))) issues.push('答案为空');
   if (!hasQuestionContent(sections.analysis) && !sections.subQuestions.some((sub: any) => hasQuestionContent(sub.analysis))) issues.push('解析为空');
   for (const [index, sub] of sections.subQuestions.entries()) {
-    if (!hasQuestionContent(sub.answer)) issues.push(`第 ${index + 1} 小题答案为空`);
+    if (!hasQuestionContent(sections.answer) && !hasQuestionContent(sub.answer)) issues.push(`第 ${index + 1} 小题答案为空`);
   }
   const choice = ['单选题', '多选题', 'single_choice', 'multiple_choice'].includes(question.type);
   if (choice) {

@@ -115,35 +115,11 @@
   max-width: 880px;
 }
 
-.qb-more-filter-drawer .ant-drawer-content {
-  border-radius: 22px 0 0 22px;
-}
-
-.qb-more-filter-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
-}
-
-.qb-more-filter-group .ant-checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-}
-
 .qb-filter-line {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 6px;
   align-items: center;
-}
-
-.qb-more-filter-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
 }
 
 .qb-subject-select .ant-select-selector,
