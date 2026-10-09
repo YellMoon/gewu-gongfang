@@ -61,6 +61,8 @@ test('ZIP compressed expansion and entry count limits block resource abuse', asy
 });
 test('PDF text table decodes while scanned/encrypted PDFs require human verification', async () => {
   const text = await parseBillFile(file('synthetic.pdf', await pdf()));
+  assert.deepEqual(text.errors, [], 'synthetic text PDF must decode without errors');
+  assert.equal(text.records.length, 1, 'synthetic PDF has exactly one transaction');
   assert.equal(text.records[0].amountMinor, '125');
   assert.ok(text.warnings.some(w => w.code === 'BILL_PDF_VERIFY_REQUIRED'));
   const scanned = await parseBillFile(file('scanned.pdf', await pdf({scanned:true})));

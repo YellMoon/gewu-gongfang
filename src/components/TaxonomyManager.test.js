@@ -64,7 +64,7 @@ assert.ok(manager.includes('className="taxonomy-manager__actions"'));
 assert.ok(!manager.includes('<Space.Compact block>'), 'taxonomy actions must wrap in narrow sidebars');
 assert.match(globalStyles, /\.taxonomy-manager__actions\s*\{[^}]*flex-wrap:\s*wrap/u);
 
-assert.ok(preview.includes('subject={currentSubject}') && preview.includes('heading={currentSubject'), 'subject title controls the taxonomy subject');
+assert.ok(preview.includes('subject={currentSubject}') && preview.includes('compact'), 'subject title controls the taxonomy subject');
 assert.ok(!preview.includes('className="qb-subject-select"'), 'question bank must not duplicate the title subject selector');
 assert.ok(!preview.includes('setTreeVisible'), 'question bank taxonomy column is always visible');
 assert.ok(!importer.includes('<TaxonomyManager') && !tools.includes('<TaxonomyManager'), 'management and import pages do not duplicate taxonomy editing');

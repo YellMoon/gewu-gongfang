@@ -1,6 +1,6 @@
 .question-basket-float {
   position: fixed;
-  left: 94%;
+  left: calc(100% - var(--question-basket-dock-width, 76px));
   top: 50%;
   z-index: 900;
   width: var(--question-basket-dock-width, 76px);

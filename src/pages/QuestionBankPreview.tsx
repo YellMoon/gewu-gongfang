@@ -954,7 +954,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
             size="small"
             className="qb-preview-tree-card"
           >
-            <TaxonomyManager subject={currentSubject} heading={currentSubject + '体系'} database={dbService} onChanged={handleTaxonomiesChanged} filterSelections={taxonomySelections} onFilterChange={handleTreeFilterChange} />
+            <TaxonomyManager subject={currentSubject} compact database={dbService} onChanged={handleTaxonomiesChanged} filterSelections={taxonomySelections} onFilterChange={handleTreeFilterChange} />
             {legacyTaxonomyUiEnabled() && <>
             <Input
               allowClear

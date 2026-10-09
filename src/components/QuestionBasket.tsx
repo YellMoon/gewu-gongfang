@@ -115,16 +115,16 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
   });
   const floatRef = useRef<HTMLButtonElement>(null);
   const dragRef = useRef({ startX: 0, startY: 0, startLeft: 0, startTop: 0, dragging: false, moved: false });
-  const clampPosition = useCallback((x: number, y: number) => {
+  const clampPosition = useCallback((x: number, y: number, dock = false) => {
     const width = floatRef.current?.offsetWidth || 76;
     const height = floatRef.current?.offsetHeight || 102;
     return {
-      x: Math.min(Math.max(8, window.innerWidth - width - 8), Math.max(8, x)) / window.innerWidth * 100,
+      x: (dock ? Math.max(0, window.innerWidth - width) : Math.min(Math.max(8, window.innerWidth - width - 8), Math.max(8, x))) / window.innerWidth * 100,
       y: Math.min(Math.max(8, window.innerHeight - height - 8), Math.max(8, y)) / window.innerHeight * 100,
     };
   }, []);
   useEffect(() => {
-    const resize = () => setPosition(current => clampPosition(current.x / 100 * window.innerWidth, current.y / 100 * window.innerHeight));
+    const resize = () => setPosition(current => clampPosition(current.x / 100 * window.innerWidth, current.y / 100 * window.innerHeight, true));
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
@@ -202,7 +202,9 @@ const QuestionBasket: React.FC<{ visible?: boolean }> = ({ visible = true }) => 
     drag.dragging = false;
     if (drag.moved) {
       const box = event.currentTarget.getBoundingClientRect();
-      localStorage.setItem(QUESTION_BASKET_POSITION_KEY, JSON.stringify(clampPosition(box.left, box.top)));
+      const docked = clampPosition(box.left, box.top, true);
+      setPosition(docked);
+      localStorage.setItem(QUESTION_BASKET_POSITION_KEY, JSON.stringify(docked));
     }
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);

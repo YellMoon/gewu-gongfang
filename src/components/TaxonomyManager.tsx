@@ -7,7 +7,7 @@ import './TaxonomyManager.css';
 
 type Props = {
   subject: string;
-  heading?: string;
+  compact?: boolean;
   database: any;
   subjects?: string[];
   onSubjectChange?: (subject: string) => void;
@@ -39,7 +39,7 @@ function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 
 type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
-const TaxonomyManager: React.FC<Props> = ({ subject, heading, database, onChanged, subjects, onSubjectChange, filterSelections, onFilterChange }) => {
+const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChanged, subjects, onSubjectChange, filterSelections, onFilterChange }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
   const [edit, setEdit] = useState<InlineEdit | null>(null);
@@ -168,34 +168,42 @@ const TaxonomyManager: React.FC<Props> = ({ subject, heading, database, onChange
     });
   };
 
-  return <div className="taxonomy-manager">
-    {/* UTF-8: subject selection and creation share the taxonomy heading. */}
-    {heading ? <div className="taxonomy-manager__heading"><strong>{heading}</strong><Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip></div> : onSubjectChange ? <div className="taxonomy-manager__heading">
+  return <div className={compact ? 'taxonomy-manager taxonomy-manager--compact' : 'taxonomy-manager'}>
+    {!compact && (onSubjectChange ? <div className="taxonomy-manager__heading">
       <Dropdown trigger={['click']} menu={{ selectedKeys: [subject], items: (subjects || [subject]).map(value => ({ key: value, label: `${value}体系` })), onClick: ({ key }) => onSubjectChange(key) }}>
         <Button className="taxonomy-manager__subject" type="text" aria-label="选择科目体系"><BranchesOutlined /><strong>{subject}体系</strong><DownOutlined /></Button>
       </Dropdown>
       <Tooltip title={text.addSystem}><Button type="text" aria-label="新建体系" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })} /></Tooltip>
     </div> : <div className="taxonomy-manager__actions">
       <Button icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>
-    </div>}
+    </div>)}
     {edit?.kind === 'system-create' && inlineEditor()}
     <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索体系节点" value={search} onChange={event => setSearch(event.target.value)} />
-    {systems.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />}
+    {systems.length === 0 && <><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />{compact && <Button aria-label={text.addSystem} size="small" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>}</>}
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
-        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <button type="button" className="taxonomy-system-toggle"
+        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <Dropdown trigger={['contextMenu']} menu={{ items: [
+          { key: 'create', label: text.addSystem }, { key: 'root', label: text.addRoot },
+          { key: 'rename', label: '重命名体系' }, { key: 'delete', label: text.removeSystem, danger: true },
+        ], onClick: ({ key, domEvent }) => {
+          domEvent.stopPropagation();
+          if (key === 'create') setEdit({ kind: 'system-create', value: '' });
+          else if (key === 'root') addNode(system);
+          else if (key === 'rename') setEdit({ kind: 'system-rename', system, value: system.name });
+          else if (key === 'delete') removeSystem(system);
+        } }}><button type="button" className="taxonomy-system-toggle"
           aria-label={system.name}
           aria-expanded={!collapsedSystems[system.id] || Boolean(search.trim()) || edit?.system?.id === system.id}
           aria-controls={'taxonomy-system-body-' + system.id}
           onClick={() => setCollapsedSystems(current => ({ ...current, [system.id]: !current[system.id] }))}>
           <DownOutlined className={collapsedSystems[system.id] && !search.trim() && edit?.system?.id !== system.id ? 'is-collapsed' : ''} />
           <strong>{index + 1}. {system.name}</strong>
-        </button>}
-        <Space className="taxonomy-node-actions" size={0}>
+        </button></Dropdown>}
+        {!compact && <Space className="taxonomy-node-actions" size={0}>
           <Tooltip title={text.addRoot}><Button type="text" size="small" aria-label={`添加根节点 ${system.name}`} icon={<PlusOutlined />} onClick={() => addNode(system)} /></Tooltip>
           <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名体系 ${system.name}`} icon={<EditOutlined />} onClick={() => setEdit({ kind: 'system-rename', system, value: system.name })} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
-        </Space>
+        </Space>}
       </div>
       <div id={'taxonomy-system-body-' + system.id} hidden={Boolean(collapsedSystems[system.id]) && !search.trim() && edit?.system?.id !== system.id}>
       {edit?.kind === 'node-create' && edit.system?.id === system.id && !edit.node && inlineEditor()}

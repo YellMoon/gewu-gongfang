@@ -42,3 +42,6 @@
 .taxonomy-manager .taxonomy-node-title:hover > .taxonomy-node-actions,.taxonomy-manager .taxonomy-node-title:focus-within > .taxonomy-node-actions { visibility:visible; opacity:1; }
 .taxonomy-manager .taxonomy-node-title:hover > span,.taxonomy-manager .taxonomy-node-title:focus-within > span { padding-right:76px; }
 @media(hover:none) { .taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { position:static; visibility:visible; opacity:1; } }
+
+.taxonomy-manager--compact .taxonomy-search { margin-top:0; }
+.taxonomy-manager--compact .taxonomy-system-block { margin-top:8px; padding-top:8px; }
