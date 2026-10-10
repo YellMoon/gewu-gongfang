@@ -486,9 +486,34 @@ def upload_source(ssh, tag, source_root):
     return build_dir
 
 
+def verified_npm_cache_image(ssh):
+    # Only reuse the immutable release image that is actually running. npm still
+    # resolves the new manifest and verifies cache integrity; app code is never reused.
+    try:
+        _, output, _ = ssh.exec_command(
+            "docker inspect --format '{{.Config.Image}} {{.Image}}' gewu-cloud-business-api", timeout=20,
+        )
+        observed = output.read().decode("utf-8").strip().split()
+        if output.channel.recv_exit_status() != 0 or len(observed) != 2:
+            return None
+        image, image_id = observed
+        if (not re.fullmatch(r"gewu-cloud-business-api:[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}", image)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id)):
+            return None
+        _, inspected, _ = ssh.exec_command(f"docker image inspect --format '{{{{.Id}}}}' '{image}'", timeout=20)
+        resolved = inspected.read().decode("utf-8").strip()
+        if inspected.channel.recv_exit_status() != 0 or resolved != image_id:
+            return None
+        return image
+    except Exception:
+        return None
+
+
 def build_image(ssh, tag):
     build_dir = remote_build_dir(tag)
-    deploy.run(ssh, f"cd '{build_dir}' && docker build --pull=false -t 'gewu-cloud-business-api:{tag}' -f cloud-business-api/Dockerfile .", timeout=600)
+    cache_image = verified_npm_cache_image(ssh)
+    cache_argument = f" --build-arg 'NPM_CACHE_IMAGE={cache_image}'" if cache_image else ""
+    deploy.run(ssh, f"cd '{build_dir}' && docker build --pull=false{cache_argument} -t 'gewu-cloud-business-api:{tag}' -f cloud-business-api/Dockerfile .", timeout=600)
 
 
 def run_cloud_migrations(source_root):
