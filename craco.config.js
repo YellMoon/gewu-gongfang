@@ -4,6 +4,7 @@ module.exports = {
     configure: (webpackConfig) => {
       const scope = webpackConfig.resolve?.plugins?.find(plugin => plugin?.constructor?.name === 'ModuleScopePlugin');
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/questionImportMetadata.js'));
+      scope?.allowedFiles.add(path.resolve(__dirname, 'shared/questionDifficulty.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/ledger.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/courseColors.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/calendarHolidays.js'));
