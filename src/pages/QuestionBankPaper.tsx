@@ -44,6 +44,7 @@ import {
 import type { AnswerPosition, PaperArtifactFormat, PaperExportTaskRecord } from '../services/paperExportTaskService';
 import { getPaperExportTaskPresentation } from '../services/paperExportTaskPresentation.mjs';
 import './QuestionBankPaper.css';
+const { difficultyLabel } = require('../../shared/questionDifficulty');
 
 const TASK_TEXT = {
   submit: '\u63d0\u4ea4\u4e91\u7aef\u4efb\u52a1',
@@ -246,9 +247,9 @@ const QuestionBankPaper: React.FC = () => {
   }, [items]);
 
   const difficultyStats = useMemo(() => {
-    const stats = new Map<number, number>();
-    items.forEach(item => stats.set(item.question.difficulty || 1, (stats.get(item.question.difficulty || 1) || 0) + 1));
-    return Array.from(stats.entries()).sort((a, b) => a[0] - b[0]);
+    const stats = new Map<string, number>();
+    items.forEach(item => { const label = difficultyLabel(item.question.difficulty_coefficient); stats.set(label, (stats.get(label) || 0) + 1); });
+    return Array.from(stats.entries());
   }, [items]);
 
   const totalScore = useMemo(() => items.reduce((sum, item) => sum + Number(item.score || 0), 0), [items]);
@@ -386,7 +387,7 @@ const QuestionBankPaper: React.FC = () => {
           <div>
             <Typography.Text type="secondary">难度分布</Typography.Text>
             <div style={{ marginTop: 6 }}>
-              {difficultyStats.length === 0 ? <Tag>暂无</Tag> : difficultyStats.map(([level, count]) => <Tag key={level}>难度{level} {count}</Tag>)}
+              {difficultyStats.length === 0 ? <Tag>暂无</Tag> : difficultyStats.map(([level, count]) => <Tag key={level}>{level} {count}</Tag>)}
             </div>
           </div>
         </Space>
@@ -461,7 +462,7 @@ const QuestionBankPaper: React.FC = () => {
                       <Tag>{row.question.subject || '物理'}</Tag>
                       <Tag color="blue">{row.question.type}</Tag>
                       <Tag color={(row.question.status || 'draft') === 'published' ? 'green' : 'orange'}>{row.question.status || 'draft'}</Tag>
-                      <Tag>难度{row.question.difficulty || 1}</Tag>
+                      <Tag>{difficultyLabel(row.question.difficulty_coefficient)}{row.question.difficulty_coefficient == null ? '' : ` ${row.question.difficulty_coefficient}`}</Tag>
                       <Tag>{renderSource(row.question)}</Tag>
                     </Space>
                     {row.question.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={row.question.rich_content} showAnswer={answerPosition === 'after-each'} /> : <><QuestionRenderer
