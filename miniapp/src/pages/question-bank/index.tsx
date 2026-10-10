@@ -1,3 +1,5 @@
+
+const { difficultyLabel } = require('../../../../shared/questionDifficulty');
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, Picker, RichText, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh, useReachBottom } from '@tarojs/taro';
@@ -23,7 +25,7 @@ interface QuestionPreview {
   answer?: string;
   explanation?: string;
   options?: any[];
-  difficulty?: number;
+  difficulty?: number; difficultyCoefficient?: number | null;
   sourceLabel?: string;
   source?: string;
   region?: string;
@@ -662,12 +664,12 @@ export default function QuestionBankPage() {
         <Picker
           className='question-filter-cell question-filter-difficulty'
           mode='selector'
-          range={['\u5168\u90e8\u96be\u5ea6', ...difficultyValues.map(value => '\u96be\u5ea6 ' + String(value))]}
+          range={['\u5168\u90e8\u96be\u5ea6', ...difficultyValues.map(value => difficultyLabel(value === 2 ? 0.7 : value === 3 ? 0.4 : 0))]}
           value={selectedDifficulty ? Math.max(1, difficultyValues.indexOf(Number(selectedDifficulty)) + 1) : 0}
           onChange={event => setSelectedDifficulty(Number(event.detail.value) ? String(difficultyValues[Number(event.detail.value) - 1]) : '')}
         >
           <View className={'question-filter-picker ' + (selectedDifficulty ? 'active' : '')}>
-            <Text>{selectedDifficulty ? '\u96be\u5ea6 ' + selectedDifficulty : '\u96be\u5ea6'}</Text>
+            <Text>{selectedDifficulty ? difficultyLabel(Number(selectedDifficulty) === 2 ? 0.7 : Number(selectedDifficulty) === 3 ? 0.4 : 0) : '\u96be\u5ea6'}</Text>
           </View>
         </Picker>
       </View>
@@ -736,7 +738,7 @@ export default function QuestionBankPage() {
               <View className='question-card-body'>
                 <View className='question-card-meta'>
                   <Text>{questionTypeLabel(question.type)}</Text>
-                  {question.difficulty ? <Text>{'难度 ' + question.difficulty}</Text> : null}
+                  <Text>{difficultyLabel(question.difficultyCoefficient) + (question.difficultyCoefficient == null ? '' : ' ' + question.difficultyCoefficient)}</Text>
                 </View>
                 <RichText className='question-preview-stem' nodes={miniRichNodes(display.stem, assetPaths)} />
                 {display.subQuestions.length ? <View className='question-subquestions'>

@@ -40,7 +40,7 @@ async function main() {
       return { rows: [{
         id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
         content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
-        source: '2026 city mock', knowledgeLabels: ['Dynamics'],
+        source: '2026 city mock', knowledgeLabels: ['Dynamics'], difficulty_coefficient: null,
         taxonomy: { knowledgePointIds: [], modelPointIds: [], taxonomyIds: [] }, has_formula: false, version: 1,
       }] };
     }
@@ -75,7 +75,7 @@ async function main() {
   assert.deepStrictEqual(listed.questions, [{
     id: 'question-1', subject: 'physics', type: 'single_choice', difficulty: 3, status: 'draft',
     content: 'Cloud text', options: ['A'], answer: 'answer', analysis: 'analysis', rich_content: null,
-    source: '2026 city mock', knowledgeLabels: ['Dynamics'],
+    source: '2026 city mock', knowledgeLabels: ['Dynamics'], difficulty_coefficient: null,
     knowledge_point_ids: [], model_point_ids: [], taxonomy_ids: {}, has_formula: false, version: 1,
   }]);
   assert.ok(calls.some(call => call[0].includes('FROM business.questions q') && call[0].includes('business.question_contents c')),

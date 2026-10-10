@@ -389,6 +389,7 @@ export interface Question {
   taxonomy_ids?: Record<string, string[]>;
   type: string;
   difficulty: number;
+  difficulty_coefficient?: number | null;
   content: string;
   options?: string[];
   answer: string;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
-  Divider, Checkbox, Collapse, Empty, Row, Col, Typography, Radio, Steps, Alert, Statistic, Drawer
+  InputNumber, Divider, Checkbox, Collapse, Empty, Row, Col, Typography, Radio, Steps, Alert, Statistic, Drawer
 } from 'antd';
 import Table from '../components/NumberedTable';
 import { FileWordOutlined, CheckCircleOutlined, DownloadOutlined } from '@ant-design/icons';
@@ -17,6 +17,8 @@ import type { QuestionRichDocument } from '../types/questionRichContent';
 import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/questionRichContent';
 import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, mergeImportedQuestionMetadata, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
+const { applyImportLabels } = require('../../shared/questionImportMetadata');
+const { validDifficultyCoefficient, coefficientDifficulty } = require('../../shared/questionDifficulty');
 const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 import { collectEditedIntakeMedia, prepareLocalIntakePreview } from '../services/localQuestionIntakePreview';
 import {
@@ -188,20 +190,7 @@ function getQuestionStem(q: any): string {
 }
 
 function applyExamMetaToQuestion(q: any, meta: ExamMeta = {}, sourceType: 'lecture' | 'exam' | 'topic') {
-  if (sourceType !== 'exam') return q;
-  return {
-    ...q,
-    year: toSchoolYear(q.year || meta.year || ''),
-    grade: q.grade || meta.grade || '',
-    semester: q.semester || meta.semester || '',
-    exam_type: q.exam_type || meta.exam_type || '其他',
-    region: q.region || meta.region || '',
-    school: q.school || meta.school || '',
-    alliance: q.alliance || meta.alliance || '',
-    paper_name: q.paper_name || meta.paper_name || '',
-    question_number: q.question_number || q.number || null,
-    source: q.source || meta.paper_name || '',
-  };
+  return applyImportLabels(q, meta, sourceType);
 }
 
 function statusColor(status: string): string {
@@ -364,7 +353,8 @@ const QuestionBankImport: React.FC = () => {
     const data: any = {
       subject: values.subject,
       type: normalizeQuestionType(values.type),
-      difficulty: values.difficulty,
+      difficulty: coefficientDifficulty(values.difficulty_coefficient) ?? originalQuestion?.difficulty ?? 3,
+      difficulty_coefficient: values.difficulty_coefficient ?? null,
       content: projection.stem,
       options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
       answer: projection.answer,
@@ -429,7 +419,7 @@ const QuestionBankImport: React.FC = () => {
     setTaxonomySubject(questionSubject);
     handleTaxonomiesChanged(questionSystems, questionNodes);
     setEditing(null); setEditingImportKey(row.key); openRichDocument(normalizeStructureOrder(question.rich_content?.type === 'question-document' ? createQuestionRichDocument(question.rich_content) : migrateLegacyQuestion(question)));
-    form.setFieldsValue({ subject: questionSubject, type: question.type ? normalizeQuestionType(question.type) : questionTypeFromParser(question.question_types), difficulty: question.difficulty || 3, taxonomy_ids: questionTaxonomyValues(question), tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
+    form.setFieldsValue({ subject: questionSubject, type: question.type ? normalizeQuestionType(question.type) : questionTypeFromParser(question.question_types), difficulty_coefficient: question.difficulty_coefficient ?? null, taxonomy_ids: questionTaxonomyValues(question), tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
     setModalVisible(true);
   };
 
@@ -992,8 +982,8 @@ const QuestionBankImport: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={4}>
-              <Form.Item name="difficulty" label="难度" rules={[{ required: true }]}>
-                <Select>{[1,2,3,4,5].map(d => <Select.Option key={d} value={d}>{'★'.repeat(d)}</Select.Option>)}</Select>
+              <Form.Item name="difficulty_coefficient" label="难度系数" rules={[{ validator: (_rule, value) => validDifficultyCoefficient(value ?? null) ? Promise.resolve() : Promise.reject(new Error('系数必须在 0 到 1 之间')) }]}>
+                <InputNumber min={0} max={1} step={0.01} placeholder="0 ~ 1" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>

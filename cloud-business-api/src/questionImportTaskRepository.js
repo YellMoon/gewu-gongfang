@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { types } = require('util');
 const { INVALID_CHOICE_STRUCTURE, validateChoiceQuestionStructure } = require('./questionChoiceStructure');
 const { normalizeQuestionRichContent, projectQuestionRichContent } = require('../../shared/questionRichContentContract');
+const { applyImportLabels, inferImportedQuestionType } = require('../../shared/questionImportMetadata');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -404,6 +405,7 @@ function desktopCandidateRows(value, randomId) {
         typeof option !== 'string' && (!plainObject(option) || typeof option.label !== 'string' || typeof option.content !== 'string'))))) {
       throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
     }
+    candidate = { ...candidate, type: inferImportedQuestionType(candidate), question_types: [inferImportedQuestionType(candidate)] };
     const assets = candidate.assets ?? [];
     if (!Array.isArray(assets) || assets.length !== item.mediaManifest.length || assets.some((asset, index) => {
       const manifest = item.mediaManifest[index];
@@ -489,7 +491,9 @@ function createQuestionImportTaskRepository({
       exact(parsed, ['parserSha256', 'candidates']);
       if (typeof parsed.parserSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(parsed.parserSha256)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
       const source = sourceRequest(sourceBody, now());
-      const candidates = desktopCandidateRows(parsed.candidates, randomId);
+      if (!Array.isArray(parsed.candidates)) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const candidates = desktopCandidateRows(parsed.candidates.map(item => ({ ...item,
+        candidate: applyImportLabels(item.candidate, source.metadata, source.sourceType) })), randomId);
       const hash = requestHash({ ...sourceBody, relay: { agentKeyFingerprint: source.relay.agentKeyFingerprint,
         envelope: source.relay.envelope, expiresAt: source.relay.expiresAt }, parsed: { parserSha256: parsed.parserSha256,
         candidates: candidates.map(item => ({ candidate: item.candidate, validation: item.validation,

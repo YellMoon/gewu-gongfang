@@ -1197,7 +1197,9 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       ];
       const result = await query(
         `WITH published AS (
-           SELECT q.id,q.tenant_id,q.subject,q.question_type AS type,q.difficulty,q.source,q.region,q.school,q.exam_type,q.exam_year,q.grade,q.semester,q.taxonomy_json,q.status,
+           SELECT q.id,q.tenant_id,q.subject,q.question_type AS type,
+                  CASE WHEN q.difficulty_coefficient IS NULL THEN q.difficulty WHEN q.difficulty_coefficient>=0.7 THEN 2 WHEN q.difficulty_coefficient>=0.4 THEN 3 ELSE 4 END AS difficulty,
+                  q.difficulty_coefficient AS "difficultyCoefficient",q.source,q.region,q.school,q.exam_type,q.exam_year,q.grade,q.semester,q.taxonomy_json,q.status,
                   c.stem,c.answer,c.explanation,c.options_json AS options,c.rich_content_json AS "richContent",c.updated_at AS "contentUpdatedAt"
              FROM business.questions q
              JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
@@ -1228,7 +1230,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
              ), '[]'::jsonb),
              'difficulties', COALESCE((
                SELECT jsonb_agg(difficulty ORDER BY difficulty)
-                 FROM (SELECT DISTINCT difficulty FROM published WHERE $2::text IS NOT NULL AND subject=$2) difficulty_values
+                 FROM (SELECT DISTINCT difficulty FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND "difficultyCoefficient" IS NOT NULL) difficulty_values
              ), '[]'::jsonb),
              'grades', COALESCE((
                SELECT jsonb_agg(grade ORDER BY grade)
@@ -1269,7 +1271,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
                  WHERE n.tenant_id=p.tenant_id AND n.deleted=false AND n.system_id='knowledge' AND n.id=selected.node_id AND lower(n.name)=lower($5)
               ))
               AND ($6::text IS NULL OR p.type=$6)
-              AND ($7::integer IS NULL OR p.difficulty=$7)
+              AND ($7::integer IS NULL OR p.difficulty=$7 AND p."difficultyCoefficient" IS NOT NULL)
               AND ($8::text IS NULL OR p.grade=$8)
               AND ($9::text IS NULL OR p.semester=$9)
               AND ($10::text IS NULL OR p.exam_type=$10)
@@ -1335,6 +1337,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
           options: Array.isArray(question.options) ? question.options : [],
           richContent: question.richContent && typeof question.richContent === 'object' ? question.richContent : null,
           difficulty: Number.isSafeInteger(Number(question.difficulty)) ? Number(question.difficulty) : 3,
+          difficultyCoefficient: question.difficultyCoefficient == null ? null : Number(question.difficultyCoefficient),
           source, sourceLabel, region, school, examType, examYear,
           grade: textValue(question.grade), semester: textValue(question.semester),
           knowledgeLabels: Array.isArray(question.knowledgeLabels) ? question.knowledgeLabels.filter(label => typeof label === 'string' && label.trim()) : [],

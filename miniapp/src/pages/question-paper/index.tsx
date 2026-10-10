@@ -1,3 +1,5 @@
+
+const { difficultyLabel } = require('../../../../shared/questionDifficulty');
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Input, Button, Picker, RichText } from '@tarojs/components';
 import Taro, { usePullDownRefresh } from '@tarojs/taro';
@@ -18,10 +20,10 @@ import * as questionDisplayRuntime from '../../utils/questionDisplay';
 import './index.scss';
 
 type PaperAction = 'paper-export-word' | 'paper-export-pdf';
-interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; sourceLabel?: string; source?: string; region?: string; school?: string; examType?: string; examYear?: string | number; knowledgeLabels?: string[]; richContent?: any; status: string; }
+interface QuestionPreview { id: string; subject: string; type: string; stemPreview: string; answer?: string; explanation?: string; options?: any[]; difficulty?: number; difficultyCoefficient?: number | null; sourceLabel?: string; source?: string; region?: string; school?: string; examType?: string; examYear?: string | number; knowledgeLabels?: string[]; richContent?: any; status: string; }
 interface PaperItem {
   id: string; subject: string; type: string; stemPreview: string; sectionTitle: string; score: number;
-  answer?: string; explanation?: string; options?: any[]; difficulty?: number; sourceLabel?: string; source?: string; region?: string; school?: string; examType?: string; examYear?: string | number; knowledgeLabels?: string[]; richContent?: any;
+  answer?: string; explanation?: string; options?: any[]; difficulty?: number; difficultyCoefficient?: number | null; sourceLabel?: string; source?: string; region?: string; school?: string; examType?: string; examYear?: string | number; knowledgeLabels?: string[]; richContent?: any;
 }
 interface PaperTask { localId: string; confirmed: boolean; taskId?: string; status: string; phase: string; progress: number; request: any; error?: string; message?: string; resultExpiresAt?: string | null; }
 interface PaperDraft { title: string; answerPosition: 'end' | 'after'; formulaMode: string; items: Array<{ id: string; sectionTitle: string; score: number }>; }
@@ -115,7 +117,7 @@ function defaultItems(questions: QuestionPreview[], ids: string[]): PaperItem[] 
   return ids.map(id => byId.get(id)).filter(Boolean).map(question => ({
     id: question!.id, subject: question!.subject, type: question!.type, stemPreview: question!.stemPreview,
     answer: question!.answer, explanation: question!.explanation, options: question!.options,
-    difficulty: question!.difficulty,
+    difficulty: question!.difficulty, difficultyCoefficient: question!.difficultyCoefficient,
     sourceLabel: question!.sourceLabel, source: question!.source, region: question!.region, school: question!.school,
     examType: question!.examType, examYear: question!.examYear,
     knowledgeLabels: question!.knowledgeLabels, richContent: question!.richContent,
@@ -286,9 +288,9 @@ export default function QuestionPaperPage() {
 
   const totalScore = useMemo(() => items.reduce((total, item) => total + item.score, 0), [items]);
   const typeStats = useMemo(() => Array.from(items.reduce((result, item) => result.set(item.type, (result.get(item.type) || 0) + 1), new Map<string, number>()).entries()), [items]);
-  const difficultyStats = useMemo(() => Array.from(items.filter(item => Number.isFinite(item.difficulty)).reduce((result, item) => {
-    const level = Number(item.difficulty); return result.set(level, (result.get(level) || 0) + 1);
-  }, new Map<number, number>()).entries()).sort(([left], [right]) => left - right), [items]);
+  const difficultyStats = useMemo(() => Array.from(items.reduce((result, item) => {
+    const label = difficultyLabel(item.difficultyCoefficient); return result.set(label, (result.get(label) || 0) + 1);
+  }, new Map<string, number>()).entries()), [items]);
   const groupedItems = useMemo(() => {
     const result: Array<{ title: string; rows: Array<{ item: PaperItem; index: number }> }> = [];
     items.forEach((item, index) => {
@@ -581,7 +583,7 @@ export default function QuestionPaperPage() {
       </View>
       <View className='paper-distribution-row'>
         <Text className='paper-distribution-label'>{'\u96be\u5ea6'}</Text>
-        <View className='paper-distribution-tags'>{difficultyStats.length ? difficultyStats.map(([level, count]) => <Text key={String(level)}>{String(level) + ' \u7ea7 ' + count}</Text>) : <Text>{'\u6682\u65e0'}</Text>}</View>
+        <View className='paper-distribution-tags'>{difficultyStats.length ? difficultyStats.map(([level, count]) => <Text key={String(level)}>{String(level) + ' ' + count}</Text>) : <Text>{'\u6682\u65e0'}</Text>}</View>
       </View>
     </View>
 

@@ -649,7 +649,7 @@ class BrowserDatabaseService {
       ...richNormalized,
       subject: question.subject || '物理',
       type: normalizeQuestionType(question.type),
-      exam_type: question.exam_type || '其他',
+      exam_type: question.exam_type || '',
       edit_status: question.edit_status || '未编辑',
       status: question.status || 'draft',
       has_image: richNormalized.has_image || this.detectQuestionHasImage(question),

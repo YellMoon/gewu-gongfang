@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { types } = require('util');
 const { validateChoiceQuestionStructure } = require('./questionChoiceStructure');
 const { normalizeQuestionRichContent, projectQuestionRichContent } = require('../../shared/questionRichContentContract');
+const { validDifficultyCoefficient } = require('../../shared/questionDifficulty');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -57,7 +58,7 @@ function canonicalHash(value) {
 }
 
 const LEGACY_QUESTION_FIELDS = new Set([
-  'id', 'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'status',
+  'id', 'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'difficulty_coefficient', 'status',
   'content', 'stem', 'options', 'answer', 'analysis', 'explanation', 'rich_content',
   'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids', 'source', 'year', 'grade',
   'semester', 'exam_type', 'region', 'school', 'edit_status', 'has_image', 'has_formula',
@@ -100,13 +101,17 @@ const QUESTION_METADATA_COLUMNS = Object.freeze({
   source: 'source', year: 'exam_year', grade: 'grade', semester: 'semester',
   exam_type: 'exam_type', region: 'region', school: 'school', subject_id: 'subject_id',
   chapter_id: 'chapter_id', edit_status: 'edit_status', has_image: 'has_image',
+  difficulty_coefficient: 'difficulty_coefficient',
 });
 function questionMetadata(value, strict = false) {
   if (!plainObject(value) || (strict && Reflect.ownKeys(value).some(key => !Object.hasOwn(QUESTION_METADATA_COLUMNS, key)))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   const result = {};
   for (const key of Object.keys(QUESTION_METADATA_COLUMNS)) {
     if (!Object.hasOwn(value, key) || value[key] === undefined) continue;
-    if (key === 'has_image') {
+    if (key === 'difficulty_coefficient') {
+      if (!validDifficultyCoefficient(value[key])) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      result[key] = value[key];
+    } else if (key === 'has_image') {
       if (typeof value[key] !== 'boolean') throw failure('CLOUD_QUESTION_INPUT_INVALID');
       result[key] = value[key];
     } else if (key === 'edit_status') {
@@ -121,6 +126,7 @@ function questionMetadata(value, strict = false) {
 function metadataInsertValues(parameter, sourceFallback = 'NULL') {
   return Object.keys(QUESTION_METADATA_COLUMNS).map(key => {
     const value = `${parameter}::jsonb->>'${key}'`;
+    if (key === 'difficulty_coefficient') return `(${value})::numeric`;
     if (key === 'source') return `CASE WHEN ${parameter}::jsonb ? 'source' THEN ${value} ELSE ${sourceFallback} END`;
     if (key === 'has_image') return `COALESCE((${value})::boolean,false)`;
     if (key === 'edit_status') return `COALESCE(${value},'unreviewed')`;
@@ -130,7 +136,8 @@ function metadataInsertValues(parameter, sourceFallback = 'NULL') {
 function metadataUpdateAssignments(parameter) {
   return Object.entries(QUESTION_METADATA_COLUMNS).map(([key, column]) => {
     const value = `${parameter}::jsonb->>'${key}'`;
-    return `${column}=CASE WHEN ${parameter}::jsonb ? '${key}' THEN ${key === 'has_image' ? `(${value})::boolean` : value} ELSE q.${column} END`;
+    const typed = key === 'has_image' ? `(${value})::boolean` : key === 'difficulty_coefficient' ? `(${value})::numeric` : value;
+    return `${column}=CASE WHEN ${parameter}::jsonb ? '${key}' THEN ${typed} ELSE q.${column} END`;
   }).join(',');
 }
 
@@ -324,7 +331,7 @@ function questionListRow(row) {
     content: row.content, options: row.options, answer: row.answer ?? null, analysis: row.analysis ?? null,
     rich_content: row.rich_content ?? null, knowledge_point_ids: knowledgePointIds, model_point_ids: modelPointIds,
     taxonomy_ids: taxonomyIds, has_formula: row.has_formula, version: Number(row.version),
-    ...questionMetadata(row), source: row.source ?? '', knowledgeLabels,
+    ...questionMetadata({ ...row, difficulty_coefficient: row.difficulty_coefficient == null ? null : Number(row.difficulty_coefficient) }), source: row.source ?? '', knowledgeLabels,
   };
 }
 
@@ -424,10 +431,11 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
       if (!plainObject(request.question)
-        || Reflect.ownKeys(request.question).some(key => !['id', 'subject', 'questionType', 'difficulty', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula', 'importBinding', 'metadata'].includes(key))) {
+        || Reflect.ownKeys(request.question).some(key => !['id', 'subject', 'questionType', 'difficulty', 'status', 'stem', 'answer', 'explanation', 'options', 'richContent', 'taxonomy', 'hasFormula', 'importBinding', 'metadata'].includes(key))) {
         throw failure('CLOUD_QUESTION_INPUT_INVALID');
       }
       const question = request.question;
+      if (question.status !== undefined && !['draft', 'published'].includes(question.status)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
       const id = text(question.id, { max: 128 });
       const subject = text(question.subject, { max: 128 });
       const questionType = text(question.questionType, { max: 128 });
@@ -488,8 +496,8 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
              FROM import_item item
             WHERE (SELECT count(*) FROM all_media)=(SELECT count(*) FROM verified_media)
          ), inserted_question AS (
-           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,${Object.values(QUESTION_METADATA_COLUMNS).join(',')})
-           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,${metadataInsertValues('$15', 'task.source_file_name')}
+           INSERT INTO business.questions (id,tenant_id,subject,question_type,difficulty,created_by_account_id,taxonomy_json,has_formula,status,${Object.values(QUESTION_METADATA_COLUMNS).join(',')})
+           SELECT $1,$2,$3,$4,$5,$6,$7::jsonb,$8,'published',${metadataInsertValues('$15', 'task.source_file_name')}
              FROM binding_complete
              JOIN business.question_import_tasks task ON task.task_id=binding_complete.import_task_id
            RETURNING id,status

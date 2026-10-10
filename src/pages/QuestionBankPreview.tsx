@@ -2,7 +2,7 @@
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography,
-  Pagination, Alert
+  Pagination, Alert, InputNumber
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -15,6 +15,8 @@ import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
 import QuestionBankFilters from '../components/QuestionBankFilters';
 import QuestionTaxonomyFields from '../components/QuestionTaxonomyFields';
+import QuestionDifficultyField from '../components/QuestionDifficultyField';
+const { validDifficultyCoefficient, coefficientDifficulty, difficultyLabel } = require('../../shared/questionDifficulty');
 import { parseQuestionNumbers, questionTaxonomyPatch, questionTaxonomyValues, TaxonomyValues } from '../services/questionTaxonomyEditing';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
@@ -63,10 +65,7 @@ const LIMIT_DIFFICULTIES = [
 const LIMIT_STATUSES = [
   { label: '全部', value: '全部' },
   { label: '草稿', value: 'draft' },
-  { label: '待审核', value: 'pending' },
   { label: '已发布', value: 'published' },
-  { label: '已下线', value: 'offline' },
-  { label: '已废弃', value: 'deprecated' },
 ];
 
 const YEAR_OPTIONS = Array.from({ length: 18 }, (_, i) => {
@@ -220,7 +219,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
     type: normalizeQuestionType(row.type),
     content: row.content ?? row.stem ?? '',
     analysis: row.analysis ?? row.explanation ?? '',
-    exam_type: row.exam_type || '其他',
+    exam_type: row.exam_type || '',
     edit_status: row.edit_status || '未编辑',
     status: row.status || 'draft',
     has_image: !!row.has_image,
@@ -291,12 +290,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       return vals.filter(v => v !== '全部') as string[];
     }
     return vals.length === 0 ? ['全部'] : vals as string[];
-  };
-  const difficultyBucket = (difficulty?: number) => {
-    const value = Number(difficulty || 1);
-    if (value <= 2) return '简单';
-    if (value === 3) return '中等';
-    return '较难';
   };
   const resetFilters = () => {
     setFilterTypes(['全部']);
@@ -394,6 +387,26 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       setQuestions(rows => rows.map(row => row.id === question.id ? normalizeQuestion(updated) : row));
     } catch (error) { message.error((error as Error).message); }
   };
+  const saveDifficulty = async (coefficient: number | null, ids: string[]) => {
+    if (taggingGate.current || !ids.length) return;
+    taggingGate.current = true; setTaggingBusy(true);
+    const failed: string[] = [];
+    try {
+      const db = (window as any).dbService;
+      for (const id of ids) {
+        const question = db?.getAllQuestions?.().find((row: Question) => row.id === id);
+        try {
+          if (!question || db.updateQuestion(id, { difficulty_coefficient: coefficient,
+            difficulty: coefficientDifficulty(coefficient) ?? question.difficulty ?? 3 }) !== true) failed.push(id);
+        } catch { failed.push(id); }
+      }
+      if (ids.length > 1) setSelectedRowKeys(failed);
+      if (failed.length) message.warning(`有 ${failed.length} 题未保存难度，请重试`);
+      else message.success('难度系数已保存');
+      await loadData();
+    } finally { taggingGate.current = false; setTaggingBusy(false); }
+  };
+
   const applyTaxonomyBatch = async () => {
     if (taggingGate.current) return;
     const changes = Object.fromEntries(Object.entries(batchValues).filter(([, ids]) => ids.length));
@@ -594,7 +607,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
     const data: any = {
       subject: values.subject,
       type: normalizeQuestionType(values.type),
-      difficulty: values.difficulty,
+      difficulty: coefficientDifficulty(values.difficulty_coefficient) ?? editing?.difficulty ?? 3,
+      difficulty_coefficient: values.difficulty_coefficient ?? null,
       content: projection.stem,
       options: projection.options.map(option => ({ label: option.label, content: option.content, is_correct: option.isCorrect })),
       answer: projection.answer,
@@ -610,7 +624,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       year: values.year || '',
       grade: values.grade || '',
       semester: values.semester || '',
-      exam_type: values.exam_type || '其他',
+      exam_type: values.exam_type || '',
       region: values.region || '',
       school: values.school || '',
       edit_status: '已编辑',
@@ -760,10 +774,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
     window.dispatchEvent(new CustomEvent('navigate-page', { detail: 'question-bank-paper' }));
   };
 
-  const difficultyColor = (d: number) => {
-    if (d <= 2) return 'green';
-    if (d <= 3) return 'orange';
-    return 'red';
+  const difficultyColor = (coefficient?: number | null) => {
+    const level = coefficientDifficulty(coefficient);
+    return level === 2 ? 'green' : level === 3 ? 'orange' : level === 4 ? 'red' : 'default';
   };
 
   const openEditModal = (r: Question) => {
@@ -773,13 +786,13 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
     setVersions(db?.getLatestQuestionVersions?.(r.id, 5) || []);
 
     form.setFieldsValue({
-      subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty,
+      subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty, difficulty_coefficient: r.difficulty_coefficient ?? null,
       knowledge_point: r.knowledge_point,
       model_point: r.model_point,
       taxonomy_ids: questionTaxonomyValues(r),
       tags: (r.tags || []).join(','),
       source: r.source, year: r.year, grade: r.grade,
-              semester: r.semester, exam_type: r.exam_type || '其他',
+              semester: r.semester, exam_type: r.exam_type || '',
               region: r.region, school: r.school,
     });
     setModalVisible(true);
@@ -823,8 +836,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
     { title: '科目', dataIndex: 'subject', key: 'subject', width: 65, render: (s: string) => <Tag>{s}</Tag> },
     { title: '题型', dataIndex: 'type', key: 'type', width: 75 },
     {
-      title: '难度', dataIndex: 'difficulty', key: 'difficulty', width: 60,
-      render: (d: number) => <Tag color={difficultyColor(d)}>{'★'.repeat(d)}</Tag>
+      title: '难度', dataIndex: 'difficulty_coefficient', key: 'difficulty', width: 60,
+      render: (d: number) => <Tag color={difficultyColor(d)}>{difficultyLabel(d)}</Tag>
     },
     {
       title: '知识点', key: 'knowledge', width: 120, ellipsis: true,
@@ -973,7 +986,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       <Col span={19} className="qb-preview-main">
         <Card className="qb-preview-main-card">
           {/* Header */}
-          {selectedRowKeys.length > 0 && <div className="qb-preview-header">
+          {!taggingWorkspace && selectedRowKeys.length > 0 && <div className="qb-preview-header">
             <Space>
               {selectedRowKeys.length > 0 && (
                 <>
@@ -990,7 +1003,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
           </div>}
 
           {/* Filters */}
-          <div className="qb-filter-panel">
+          {!taggingWorkspace && <div className="qb-filter-panel">
             <QuestionBankFilters key={currentSubject} subject={currentSubject}
               rows={[
                 { id: 'exam', label: '考试类型', options: LIMIT_EXAM_TYPES.map(value => ({ value, label: value })), values: filterExamTypes, onChange: setFilterExamTypes },
@@ -1021,10 +1034,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
               onSelectionChange={updateTaxonomySelection}
             />
 
-    </div>
+    </div>}
 
           {taggingWorkspace && <div className="qb-tagging-toolbar">
             <Text strong>批量打标</Text>
+            <QuestionDifficultyField batch disabled={taggingBusy || !selectedRowKeys.length} onSave={value => saveDifficulty(value, selectedRowKeys)} />
+            <Text type="secondary">系数越大越容易；简单 0.70–1.00，中等 0.40–不足 0.70，较难 0–不足 0.40。</Text>
             <Text type="secondary">每题下方按当前学科显示全部体系，可搜索任意层级节点并多选。在线修改沿用自动同步；离线修改联网后需整体确认提交。</Text>
             <Space wrap>
               <Checkbox disabled={taggingBusy || pageLoading || loading} checked={!!visibleFiltered.length && visibleFiltered.every(q => selectedRowKeys.includes(q.id))}
@@ -1036,7 +1051,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
               <Text className="qb-tagging-selection">已选 {selectedRowKeys.length} 题（跨页保留）</Text>
               <Button disabled={taggingBusy || !selectedRowKeys.length} onClick={() => setSelectedRowKeys([])}>清空选择</Button>
             </Space>
-            <Text type="secondary">题号以当前筛选结果中题目左侧的编号为准；批量操作只作用于下方已选节点的体系，其余体系保持原值。</Text>
+            <Text type="secondary">题号以当前学科题目左侧的编号为准；批量操作只作用于下方已选节点的体系，其余体系保持原值。</Text>
             <QuestionTaxonomyFields systems={taxonomySystems} nodes={taxonomyNodes} value={batchValues} onChange={setBatchValues} disabled={taggingBusy} />
             <Space wrap>
               <AntSelect aria-label="批量打标方式" value={batchMode} disabled={taggingBusy} style={{ width: 150 }} onChange={setBatchMode}
@@ -1089,6 +1104,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
                     onDelete={questionDeletePresentation(q, deleteContext).enabled ? () => { void handleDelete(q.id); } : undefined}
                   onToggleBasket={() => toggleQuestionBasket(q.id)}
                 />
+                {taggingWorkspace && <QuestionDifficultyField value={q.difficulty_coefficient} disabled={taggingBusy} onSave={value => saveDifficulty(value, [q.id])} />}
                 {taggingWorkspace && <QuestionTaxonomyFields systems={taxonomySystems} nodes={taxonomyNodes}
                   value={questionTaxonomyValues(q)} onChange={next => saveTaxonomy(q, next)} disabled={taggingBusy} />}
                 </div>
@@ -1127,7 +1143,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
             <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Tag color="blue">{previewQuestion.subject}</Tag>
               <Tag color="purple">{previewQuestion.type}</Tag>
-              <Tag color={difficultyColor(previewQuestion.difficulty)}>{'★'.repeat(previewQuestion.difficulty)}</Tag>
+              <Tag color={difficultyColor(previewQuestion.difficulty_coefficient)}>{difficultyLabel(previewQuestion.difficulty_coefficient)}</Tag>
               {previewQuestion.exam_type && <Tag>{previewQuestion.exam_type}</Tag>}
               {previewQuestion.grade && <Tag>{previewQuestion.grade}</Tag>}
               {previewQuestion.year && <Tag>{previewQuestion.year}</Tag>}
@@ -1173,8 +1189,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
               </Form.Item>
             </Col>
             <Col span={4}>
-              <Form.Item name="difficulty" label="难度" rules={[{ required: true }]}>
-                <Select>{[1,2,3,4,5].map(d => <Select.Option key={d} value={d}>{'★'.repeat(d)}</Select.Option>)}</Select>
+              <Form.Item name="difficulty_coefficient" label="难度系数" rules={[{ validator: (_rule, value) => validDifficultyCoefficient(value ?? null) ? Promise.resolve() : Promise.reject(new Error('系数必须在 0 到 1 之间')) }]}>
+                <InputNumber min={0} max={1} step={0.01} placeholder="0 ~ 1" style={{ width: '100%' }} />
               </Form.Item>
             </Col>
           </Row>

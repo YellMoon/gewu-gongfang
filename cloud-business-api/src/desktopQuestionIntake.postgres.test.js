@@ -113,6 +113,18 @@ function richDocument() {
       let read = await imports.read({ tenantId: 'default', actor: teacher, taskId: created.taskId });
       assert.strictEqual(read.items[0].validation.status, 'accepted', 'cloud must disregard caller validation');
       assert.notStrictEqual(read.items[0].contentHash, candidate.contentHash, 'cloud must recompute candidate digest');
+      assert.equal(read.items[0].candidate.type, '\u5355\u9009\u9898');
+      for (const format of ['exam','lecture']) {
+        const metadata={paper_name:'Paper',year:'2026-2027',grade:'Grade',semester:'Semester',exam_type:'Mock',region:'Region',school:'School'};
+        const labelRequest={...source('labels'+format,[{...candidate,candidate:{stem:'\u5b9e\u9a8c\u63a2\u7a76',answer:'\u2714\uFE0F',source:'parser',year:'old'},mediaManifest:[]}]),sourceType:format,metadata};
+        const labelTask=await imports.createParsed({...input,idempotencyKey:'labels'+format,request:labelRequest});
+        const labelCandidate=(await imports.read({tenantId:'default',actor:teacher,taskId:labelTask.taskId})).items[0].candidate;
+        assert.equal(labelCandidate.type,'\u5224\u65ad\u9898');
+        for (const key of ['year','grade','semester','exam_type','region','school']) assert.equal(labelCandidate[key],format==='exam'?metadata[key]:'');
+        assert.equal(labelCandidate.source,format==='exam'?'Paper':'');
+        await facade.query("UPDATE business.storage_object_tasks SET state='quarantined' WHERE task_id=$1",[labelRequest.storage.taskId]);
+      }
+
       assert.strictEqual(read.mediaTargets.length, 1, 'targets remain available for media upload retry');
       assert.deepStrictEqual((await facade.query('SELECT processing_location,local_parser_sha256,parser_contract_version,parser_sha256 FROM business.question_import_tasks WHERE task_id=$1', [created.taskId])).rows[0],
         { processing_location: 'desktop', local_parser_sha256: '9'.repeat(64), parser_contract_version: 0, parser_sha256: null });

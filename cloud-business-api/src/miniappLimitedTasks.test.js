@@ -117,7 +117,7 @@ async function request(app, path, { method = 'GET', headers = {}, body } = {}) {
   });
   assert.deepStrictEqual(filteredBrowse.body.questions[0], {
     id: 'q-public', subject: 'physics', type: 'single_choice', stemPreview: 'Published stem 1', answer: 'A', explanation: 'Published explanation',
-    options: [], richContent: null, difficulty: 2, source: '2026 city mock', sourceLabel: '2026 city mock / Zhejiang / Gewu School / mock / 2026',
+    options: [], richContent: null, difficulty: 2, difficultyCoefficient: null, source: '2026 city mock', sourceLabel: '2026 city mock / Zhejiang / Gewu School / mock / 2026',
     region: 'Zhejiang', school: 'Gewu School', examType: 'mock', examYear: '2026', grade: 'senior-three', semester: 'second', knowledgeLabels: ['Dynamics'], status: 'published',
   }, 'the cloud must return the same structured source metadata the desktop card uses');
   assert.match(browseQueries.at(-1).text, /p\.subject=\$2/u);

@@ -18,7 +18,7 @@ const record = { id: 'question-metadata', subject: 'physics', type: 'solution', 
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, receipt);
     await withQuery(handle, 'fixture-provisioner', async db => {
       await db.query('CREATE ROLE gewu_cloud_schedule_reader');
-      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql']) {
+      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20261010-question-difficulty-coefficient.sql']) {
         let sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
         if (file.startsWith('20260823-')) sql = sql.replace('BEGIN;', 'BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;');
         await db.query(sql);
@@ -49,6 +49,15 @@ const record = { id: 'question-metadata', subject: 'physics', type: 'solution', 
         await assert.rejects(() => send('question.update.v1',{id,changes:{...changes,...invalid},expectedVersion:4}), e => e.code === 'CLOUD_QUESTION_INPUT_INVALID');
       }
       assert.equal((await read()).version,4);
+      for (const invalid of [-0.01, 1.01, '0.5', NaN]) await assert.rejects(() => send('question.update.v1',{id, changes:{...changes,difficulty_coefficient:invalid},expectedVersion:4}), e => e.code === 'CLOUD_QUESTION_INPUT_INVALID');
+      assert.equal((await send('question.update.v1',{id,changes:{...changes,difficulty_coefficient:0.700123456},expectedVersion:4})).status,'committed');
+      assert.equal((await read()).difficulty_coefficient,0.700123456);
+      assert.equal((await send('question.update.v1',{id,changes:{...changes,source:'Preserve coefficient'},expectedVersion:5})).status,'committed');
+      assert.equal((await read()).difficulty_coefficient,0.700123456);
+      assert.equal((await send('question.update.v1',{id,changes:{...changes,difficulty_coefficient:null},expectedVersion:6})).status,'committed');
+      assert.equal((await read()).difficulty_coefficient,null);
+      await assert.rejects(() => db.query('UPDATE business.questions SET difficulty_coefficient=1.01'), /check constraint/);
+
     });
     console.log('actual cloud question metadata create/update/readback, omitted-field preservation, clear, conflict and invalid input passed');
   } finally { await runtime.disposeHandle(handle).catch(()=>{}); await runtime.stop().catch(()=>{}); }

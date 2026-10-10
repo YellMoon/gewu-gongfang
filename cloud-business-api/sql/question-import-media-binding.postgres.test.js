@@ -49,6 +49,7 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} 
         '20260822-storage-agent-tasks.sql',
         '20260823-cloud-question-import-tasks.sql',
         '20260823-cloud-question-authority.sql',
+        '20261010-question-difficulty-coefficient.sql',
         '20260823-question-import-media-objects.sql',
         '20260823-cloud-question-command-receipts.sql',
       ]) await facade.query(ownedSql(name));
@@ -149,6 +150,7 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} 
       assert.deepStrictEqual((await facade.query("SELECT source FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.source), ['manual-label'],
         'the historical source migration must preserve a pre-existing source label');
       assert.deepStrictEqual((await facade.query("SELECT status FROM business.question_import_items WHERE item_id='question_import_item_demo_0'")).rows.map(row => row.status), ['submitted']);
+      assert.deepStrictEqual((await facade.query("SELECT status FROM business.questions WHERE id='question-bound-1'")).rows.map(row => row.status), ['published'], 'verified import submission publishes automatically');
       assert.deepStrictEqual((await facade.query("SELECT status,phase FROM business.question_import_tasks WHERE task_id='question_import_task_demo'")).rows.map(row => ({ status: row.status, phase: row.phase })), [{ status: 'submitted', phase: 'submitted' }]);
 
       await assert.rejects(

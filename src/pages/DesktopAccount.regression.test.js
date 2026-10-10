@@ -105,7 +105,7 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
     assert(boxes[0].y + boxes[0].height <= boxes[1].y, 'offline errors must reserve their height above the app shell');
     const audit = fs.readFileSync(path.join(root, 'src/pages/AuditCenter.tsx'), 'utf8');
     assert(!audit.includes('title="审核中心"'), 'audit page must use the single global title');
-    assert(audit.includes('extra={actionButtons}'), 'audit actions must remain available');
+    assert(!audit.includes('actionButtons'), 'publication status is automatic; no manual retirement actions');
   } finally { await browser.close(); }
   console.log('account offline remount, identity isolation, update failure feedback and offline error layout passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -19,7 +19,7 @@ const APPLY = { appliedAt: '2026-09-06T00:00:00.000Z', appliedBy: 'question-pagi
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, APPLY);
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       await facade.query('CREATE ROLE gewu_cloud_schedule_reader');
-      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql']) {
+      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20261010-question-difficulty-coefficient.sql']) {
         let sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
         if (file.startsWith('20260823-')) sql = sql.replace('BEGIN;', 'BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;');
         await facade.query(sql);

@@ -21,6 +21,7 @@ const APPLY = { appliedAt: '2026-08-24T00:00:00.000Z', appliedBy: 'question-taxo
     await withVNextPg17SyntheticQuery(handle, 'fixture-provisioner', async facade => {
       await facade.query('CREATE ROLE gewu_cloud_schedule_reader');
       await facade.query(questionSql); await facade.query(receiptSql); await facade.query(taxonomySql);
+      await facade.query(fs.readFileSync(path.join(__dirname, '20261010-question-difficulty-coefficient.sql'), 'utf8'));
       await facade.query(versionFenceSql);
       await facade.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES ('tenant-1','Tenant',false,transaction_timestamp(),transaction_timestamp())");
     });

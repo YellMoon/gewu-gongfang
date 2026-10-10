@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery: withQ } = require('../../shared/vnext-pg17/disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('../../shared/vnext-pg17/catalogAssertion');
 const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-pg17/businessFoundationCatalogAssertion');
-const files = ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20260906-question-taxonomy-version-fence.sql', '20261007-question-taxonomy-atomic-fence.sql'];
+const files = ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20261010-question-difficulty-coefficient.sql', '20260906-question-taxonomy-version-fence.sql', '20261007-question-taxonomy-atomic-fence.sql'];
 const APPLY = { appliedAt: '2026-10-07T00:00:00.000Z', appliedBy: 'taxonomy-atomic-test' };
 const version = row => row.updated_at.toISOString();
 (async () => {

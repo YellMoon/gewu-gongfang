@@ -84,7 +84,7 @@ const COLLECTIONS = Object.freeze({
   questions: {
     entity: 'question',
     fields: [
-      'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'status',
+      'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'difficulty_coefficient', 'status',
       'content', 'stem', 'options', 'answer', 'analysis', 'explanation',
       'rich_content', 'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids',
       'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school',

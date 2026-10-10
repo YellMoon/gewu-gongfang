@@ -5,6 +5,7 @@ import { partitionedStorageKey } from './desktopIdentityPartition.mjs';
 import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
 import { questionSearchText, questionStemSearchText } from './questionInspection';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
+const { difficultyLabel } = require('../../shared/questionDifficulty');
 
 const DB_VERSION = 2;
 const META_STORE = 'question_meta';
@@ -20,6 +21,7 @@ type QuestionMeta = {
   status?: string;
   edit_status?: string;
   difficulty?: number;
+  difficulty_coefficient?: number | null;
   year?: string;
   grade?: string;
   semester?: string;
@@ -149,12 +151,7 @@ function normalizeArray(value: any): string[] {
   return Array.isArray(value) ? value.filter(Boolean).map(String) : [];
 }
 
-function difficultyBucket(difficulty?: number): string {
-  const value = Number(difficulty || 1);
-  if (value <= 2) return '简单';
-  if (value === 3) return '中等';
-  return '较难';
-}
+
 
 function isPendingEdit(question: QuestionMeta): boolean {
   const status = String(question.edit_status || '未编辑').trim().toLowerCase();
@@ -172,6 +169,7 @@ function buildMeta(question: Question): QuestionMeta {
     status: (question as any).status,
     edit_status: (question as any).edit_status,
     difficulty: Number((question as any).difficulty || 1),
+    difficulty_coefficient: question.difficulty_coefficient ?? null,
     year: (question as any).year,
     grade: (question as any).grade,
     semester: (question as any).semester,
@@ -247,11 +245,11 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (query.pendingEditOnly && !isPendingEdit(meta)) return false;
   if (query.subjectIds?.length && !query.subjectIds.some(subject => subjectKey(subject) === subjectKey(meta.subject || ''))) return false;
   if (!matchesList(meta.type, query.types)) return false;
-  if (!matchesList(meta.exam_type || '其他', query.examTypes)) return false;
+  if (!matchesList(meta.exam_type || '', query.examTypes)) return false;
   if (!matchesList(meta.status || 'draft', query.statuses)) return false;
   if (!matchesList(meta.grade, query.grades)) return false;
   if (!matchesList(meta.semester, query.semesters)) return false;
-  if (!matchesList(difficultyBucket(meta.difficulty), query.difficulties)) return false;
+  if (!matchesList(difficultyLabel(meta.difficulty_coefficient), query.difficulties)) return false;
   if (!matchesList(meta.year, query.years)) return false;
   if (!matchesList(meta.source, query.sources)) return false;
   if (!matchesList(meta.region, query.regions)) return false;
