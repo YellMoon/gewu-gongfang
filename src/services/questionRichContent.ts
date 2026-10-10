@@ -153,6 +153,7 @@ export function normalizeQuestionRichContent(value: unknown): QuestionRichDocume
     if (node.attrs && (node.type === 'formula' || node.type === 'formulaBlock')) for (const key of ['sourceRef', 'warnings', 'conversionStatus', 'sourceFormat', 'previewRef']) if (node.attrs[key] == null) delete node.attrs[key];
     if (node.attrs && node.type === 'image') for (const key of ['src', 'alt', 'title', 'width', 'height', 'align']) if (node.attrs[key] == null) delete node.attrs[key];
     if (Array.isArray(node.content)) node.content.forEach(stripOptionalNulls);
+    else if (isRecord(node.content)) stripOptionalNulls(node.content);
     if (node.answer) stripOptionalNulls(node.answer);
   };
   const sectionsForCleanup = isRecord(parsed) && isRecord(parsed.sections) ? parsed.sections : {};

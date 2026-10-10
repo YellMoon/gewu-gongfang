@@ -1,5 +1,5 @@
 // Generated from src/services/questionRichContent.ts; edit the canonical source and regenerate.
-// Source SHA256: 821b61fdc8037418238400587dabea2bb1e2c042ecefd6c92b0e1c19835c3182
+// Source SHA256: 2eb27847fed769a9470f2f719621df90129f8617a17949b1d27bb9a871f74cfa
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.mergeBrowserQuestionUpdate = exports.buildBrowserQuestionSearchText = exports.applyQuestionSyncRecords = exports.normalizeBrowserQuestionRecord = exports.projectQuestionRichContent = exports.migrateLegacyQuestion = exports.normalizeQuestionRichContent = void 0;
@@ -223,6 +223,8 @@ function normalizeQuestionRichContent(value) {
                     delete node.attrs[key];
         if (Array.isArray(node.content))
             node.content.forEach(stripOptionalNulls);
+        else if (isRecord(node.content))
+            stripOptionalNulls(node.content);
         if (node.answer)
             stripOptionalNulls(node.answer);
     };

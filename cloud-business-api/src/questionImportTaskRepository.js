@@ -373,7 +373,7 @@ function bindDesktopRichMedia(richContent, assets) {
       node.attrs.assetKey = hash;
       node.attrs.src = 'question-asset://' + hash;
     }
-    if (['formula', 'formulaBlock'].includes(node.type) && node.attrs.previewRef !== undefined) {
+    if (['formula', 'formulaBlock'].includes(node.type) && node.attrs.previewRef != null) {
       node.attrs.previewRef = 'question-asset://' + resolve(node.attrs.previewRef);
     }
     Object.values(node).forEach(child => Array.isArray(child) ? child.forEach(visit) : visit(child));

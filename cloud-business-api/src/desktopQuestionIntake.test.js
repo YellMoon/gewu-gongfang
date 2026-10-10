@@ -40,6 +40,29 @@ const { createStorageTaskRepository } = require('./storageTaskRepository');
   const unboundRich = { contentHash: '0'.repeat(64), candidate: { stem: 'Question', rich_content: richDoc, assets: [] }, validation: { status: 'accepted' }, mediaManifest: [] };
   await assert.rejects(() => repository.createParsed({ ...input, request: { ...source,
     parsed: { parserSha256: '9'.repeat(64), candidates: [unboundRich] } } }), /INPUT_INVALID/, 'unallocated rich images cannot pass the source-only receipt gate');
+  const formula = { type: 'formula', attrs: { id: 'formula-null-preview', canonicalLatex: '2v', displayMode: 'inline',
+    conversionStatus: 'complete', sourceFormat: 'omml', previewRef: null, sourceRef: null } };
+  const formulaDoc = { type: 'doc', content: [{ type: 'paragraph', content: [formula] }] };
+  const nestedRich = { ...richDoc, sections: { ...richDoc.sections, stem: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Question' }] }] },
+    options: [{ id: 'option-null-preview', label: 'A', isCorrect: true, content: formulaDoc }],
+    subQuestions: [{ id: 'sub-null-preview', label: '(1)', content: formulaDoc, answer: formulaDoc }] } };
+  let validated = false;
+  const validationRepository = createQuestionImportTaskRepository({ query: async () => { validated = true; throw Error('VALIDATION_PASSED'); } });
+  await assert.rejects(() => validationRepository.createParsed({ ...input, request: { ...source, parsed: {
+    parserSha256: '9'.repeat(64), candidates: [{ ...unboundRich, candidate: { stem: 'Question', rich_content: nestedRich, assets: [] } }] } } }),
+    /VALIDATION_PASSED/, 'native formulas inside options and subquestions need no preview asset');
+  assert(validated);
+  const normalized = require('../../shared/questionRichContentContract').normalizeQuestionRichContent(nestedRich);
+  assert.equal(normalized.sections.options[0].content.content[0].content[0].attrs.previewRef, undefined);
+  assert.equal(normalized.sections.subQuestions[0].content.content[0].content[0].attrs.sourceRef, undefined);
+  assert.equal(formula.attrs.previewRef, null, 'cleanup must preserve the caller input');
+  for (const reference of ['word/media/unallocated.png', 'question-asset://' + 'f'.repeat(64)]) {
+    const invalid = JSON.parse(JSON.stringify(nestedRich));
+    invalid.sections.options[0].content.content[0].content[0].attrs.previewRef = reference;
+    await assert.rejects(() => validationRepository.createParsed({ ...input, request: { ...source, parsed: {
+      parserSha256: '9'.repeat(64), candidates: [{ ...unboundRich, candidate: { stem: 'Question', rich_content: invalid, assets: [] } }] } } }),
+      /INPUT_INVALID/, 'a real unallocated preview reference still fails closed');
+  }
   for (const filename of ['../本地录入.docx', '目录/本地录入.docx', '目录\\本地录入.docx', '本地\u0000录入.docx', '本地\r录入.docx', '本地\n录入.docx', ' 本地录入.docx', '本地录入.docx ', '题'.repeat(508) + '.docx']) {
     await assert.rejects(() => repository.create({ ...input, request: { ...source, sourceFileName: filename } }), /INPUT_INVALID/, filename);
     await assert.rejects(() => repository.createParsed({ ...input, request: { ...source, sourceFileName: filename,

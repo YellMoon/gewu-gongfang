@@ -238,6 +238,7 @@ const QuestionBankImport: React.FC = () => {
   const [wordImporting, setWordImporting] = useState(false);
   const [wordResult, setWordResult] = useState<any>(null);
   const [committingBatch, setCommittingBatch] = useState(false);
+  const [draftPreparationError, setDraftPreparationError] = useState<string | null>(null);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam' | 'topic'>('lecture');
   const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
   const [importStep, setImportStep] = useState<ImportStep>(0);
@@ -562,6 +563,7 @@ const QuestionBankImport: React.FC = () => {
     if (!db) { message.error('本地草稿库未就绪'); return; }
     intakeEpochRef.current++;
     setCommittingBatch(true);
+    setDraftPreparationError(null);
     try {
       const client = intakeClient();
       let task = cloudImportTask;
@@ -619,7 +621,11 @@ const QuestionBankImport: React.FC = () => {
       message.success('已生成 ' + created + ' 条本地待提交草稿；仍需在同步面板整体确认提交。');
     } catch (error: any) {
       if (error.task) setCloudImportTask(error.task);
-      message.error('生成待提交草稿失败: ' + (error.message || 'unknown error'));
+      const detail = error.code === 'CLOUD_BUSINESS_INPUT_INVALID' || error.message === 'CLOUD_BUSINESS_INPUT_INVALID'
+        ? '云端未通过导入数据校验，本批题目尚未全部生成草稿。解析结果仍保留在下方，请修复后重试。'
+        : '本批题目尚未全部生成草稿，解析结果仍保留在下方，可重试。错误：' + (error.message || '未知错误');
+      setDraftPreparationError(detail);
+      message.error('生成待提交草稿失败');
     } finally { intakeEpochRef.current++; setCommittingBatch(false); }
   };
 
@@ -631,6 +637,7 @@ const QuestionBankImport: React.FC = () => {
     preparedDraftItemsRef.current.clear();
     setCloudImportTask(null);
     setSelectedWordFile(file);
+    setDraftPreparationError(null);
     setWordResult(null);
     setValidationRows([]);
     setValidationSummary({ success: 0, warning: 0, failed: 0, total: 0 });
@@ -878,6 +885,7 @@ const QuestionBankImport: React.FC = () => {
               ) : null}
               {validationRows.length > 0 && (
                 <>
+                  {draftPreparationError && <Alert showIcon type="error" message="草稿生成未完成" description={draftPreparationError} style={{ marginBottom: 12 }} />}
                   <Table
                     size="small"
                     rowKey="key"
@@ -926,7 +934,7 @@ const QuestionBankImport: React.FC = () => {
                   type="success"
                   showIcon
                   message={`\u5f85\u63d0\u4ea4\u8349\u7a3f\u5df2\u751f\u6210\uff1a${commitResult.imported} \u9898\uff0c\u8b66\u544a ${commitResult.warning} \u9898\uff0c\u62d2\u7edd ${commitResult.failed} \u9898`}
-                  description={commitResult.file_name ? `文件：${commitResult.file_name}` : undefined}
+                  description={`${commitResult.file_name ? `文件：${commitResult.file_name}。` : ''}题目预览保留在本页“解析与校对”列表；在同步面板整体确认提交后，才会进入云端题库。`}
                 />
               )}
             </div>

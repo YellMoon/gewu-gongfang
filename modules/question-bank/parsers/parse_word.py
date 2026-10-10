@@ -1248,16 +1248,16 @@ def annotate_format_warnings(question):
     review_text = re.sub(r"<img\b[^>]*>", "", review_text, flags=re.I)
     warnings = []
     italic_unit_re = re.compile(
-        r"(?<=\d)\s*(?:<i>)?(%s)(?:</i>)?"
+        r"(?<=\d)(?P<gap>\s*)<i>(?P<unit>%s)</i>(?![A-Za-zα-ωΑ-Ω])"
         % "|".join(re.escape(token) for token in _unit_tokens()),
-        re.I,
     )
     for match in italic_unit_re.finditer(review_text):
-        token = match.group(0)
-        if "<i>" not in token.lower():
+        unit = match.group("unit")
+        # Unit symbols are case-sensitive. A bare product such as 2m may
+        # contain a quantity variable; never match only a variable prefix.
+        if len(unit) == 1 and not match.group("gap"):
             continue
-        unit = re.sub(r"</?i>", "", token, flags=re.I).strip()
-        message = "原文中的单位“%s”使用斜体，规范建议使用正体，请人工校准" % unit
+        message = "数值后的“%s”疑似单位且使用斜体，请确认语义；若为单位应使用正体" % unit
         if message not in warnings:
             warnings.append(message)
 
