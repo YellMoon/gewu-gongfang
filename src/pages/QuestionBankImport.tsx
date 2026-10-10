@@ -328,21 +328,23 @@ const QuestionBankImport: React.FC = () => {
   };
   const preparedDraftItemsRef = useRef(new Set<string>());
   const intakeEpochRef = useRef(0);
+  const historyEpochRef = useRef(0);
+  const detailRequestRef = useRef(0);
   const preparationBusyRef = useRef(false);
-  useEffect(() => () => { intakeEpochRef.current++; }, []);
+  useEffect(() => () => { intakeEpochRef.current++; historyEpochRef.current++; detailRequestRef.current++; }, []);
 
   const loadImportHistory = async () => {
-    const epoch = intakeEpochRef.current;
+    const epoch = historyEpochRef.current;
     setHistoryLoading(true);
     try {
       const tasks = await intakeClient().list();
-      if (epoch !== intakeEpochRef.current) return;
+      if (epoch !== historyEpochRef.current) return;
       setRecentImportTasks(tasks.map(importHistoryRow));
       setHistoryError('');
       return tasks;
     } catch (error: any) {
-      if (epoch === intakeEpochRef.current) setHistoryError('\u5bfc\u5165\u8bb0\u5f55\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u8bd5\uff1a' + (error.message || 'unknown error'));
-    } finally { if (epoch === intakeEpochRef.current) setHistoryLoading(false); }
+      if (epoch === historyEpochRef.current) setHistoryError('\u5bfc\u5165\u8bb0\u5f55\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u8bd5\uff1a' + (error.message || 'unknown error'));
+    } finally { if (epoch === historyEpochRef.current) setHistoryLoading(false); }
   };
 
   const loadData = useCallback(async () => {
@@ -731,10 +733,11 @@ const QuestionBankImport: React.FC = () => {
   const openImportTaskDetail = async (task: ImportHistoryTask) => {
     setImportTaskDetail({ ...task, items: [] });
     setImportTaskDrawerOpen(true);
-    const epoch = intakeEpochRef.current;
+    const epoch = historyEpochRef.current;
+    const request = ++detailRequestRef.current;
     try {
       const detail = await intakeClient().read(task.id);
-      if (epoch !== intakeEpochRef.current) return;
+      if (epoch !== historyEpochRef.current || request !== detailRequestRef.current) return;
       setImportTaskDetail({ ...importHistoryRow(detail), items: (detail.items || []).map((item: any) => ({
         id: item.itemId, task_id: detail.taskId, item_index: item.itemIndex, content_hash: item.contentHash,
         status: item.status === 'submitted' ? 'imported' : item.status, quality_score: 0,
@@ -743,7 +746,7 @@ const QuestionBankImport: React.FC = () => {
         created_at: detail.createdAt, updated_at: detail.updatedAt,
       })) });
     } catch (error: any) {
-      if (epoch === intakeEpochRef.current) setHistoryError('\u8bfb\u53d6\u5bfc\u5165\u8be6\u60c5\u5931\u8d25\uff1a' + (error.message || 'unknown error'));
+      if (epoch === historyEpochRef.current && request === detailRequestRef.current) setHistoryError('\u8bfb\u53d6\u5bfc\u5165\u8be6\u60c5\u5931\u8d25\uff1a' + (error.message || 'unknown error'));
     }
   };
 
