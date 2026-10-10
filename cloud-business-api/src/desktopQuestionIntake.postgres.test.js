@@ -111,6 +111,17 @@ function richDocument() {
       await assert.rejects(() => imports.read({ tenantId: 'other', actor: teacher, taskId: created.taskId }), /NOT_FOUND/);
       await assert.rejects(() => imports.read({ tenantId: 'default', actor: { accountId: 'teacher-2', roles: ['teacher'] }, taskId: created.taskId }), /NOT_FOUND/);
       let read = await imports.read({ tenantId: 'default', actor: teacher, taskId: created.taskId });
+      assert.equal(read.sourceFileName, request.sourceFileName);
+      assert.equal(read.sourceType, request.sourceType);
+      assert.deepEqual(read.metadata, request.metadata);
+      const history = await imports.list({ tenantId: 'default', actor: teacher, limit: 50 });
+      assert.ok(history.some(task => task.taskId === created.taskId && task.totalItems === 1
+        && task.sourceFileName === request.sourceFileName && task.processingLocation === 'desktop'));
+      assert.deepEqual(await imports.list({ tenantId: 'other', actor: teacher, limit: 50 }), []);
+      assert.deepEqual(await imports.list({ tenantId: 'default', actor: { accountId: 'teacher-2', roles: ['teacher'] }, limit: 50 }), []);
+      await assert.rejects(() => imports.list({ tenantId: 'default', actor: { accountId: 'student', roles: ['student'] }, limit: 50 }), /ACCESS_DENIED/);
+      await assert.rejects(() => imports.list({ tenantId: 'default', actor: teacher, limit: 0 }), /INPUT_INVALID/);
+      await assert.rejects(() => imports.list({ tenantId: 'default', actor: teacher, limit: 101 }), /INPUT_INVALID/);
       assert.strictEqual(read.items[0].validation.status, 'accepted', 'cloud must disregard caller validation');
       assert.notStrictEqual(read.items[0].contentHash, candidate.contentHash, 'cloud must recompute candidate digest');
       assert.equal(read.items[0].candidate.type, '\u5355\u9009\u9898');

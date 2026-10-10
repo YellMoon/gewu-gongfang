@@ -200,6 +200,12 @@ export function createDesktopQuestionImportClient(config = {}, deps = {}) {
       catch (error) { error.task = task; throw error; }
     },
     async resumeMedia(task, parsed) { return uploadParsedMedia(taskRow(task), parsedRow(parsed)); },
+    async list(limit = 50) {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
+      const payload = await request(`?limit=${limit}`);
+      if (!Array.isArray(payload.tasks)) throw failure('QUESTION_IMPORT_CLIENT_RESPONSE_INVALID');
+      return payload.tasks.map(taskRow);
+    },
     async read(taskId) {
       if (!ids(taskId, 'question_import_task')) throw failure('QUESTION_IMPORT_CLIENT_INPUT_INVALID');
       return taskRow((await request(`/${encodeURIComponent(taskId)}`)).task);

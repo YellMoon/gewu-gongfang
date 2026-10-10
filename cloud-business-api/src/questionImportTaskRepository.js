@@ -251,6 +251,7 @@ const readSql = [
   'RETURNING task_id,status,phase,updated_at',
   ') SELECT task.task_id AS "taskId",COALESCE(reconciled.status,task.status) AS status,COALESCE(reconciled.phase,task.phase) AS phase,task.request_hash AS "requestHash",task.created_at AS "createdAt",COALESCE(reconciled.updated_at,task.updated_at) AS "updatedAt",',
   'source.storage_state AS "sourceStorageState",',
+  'task.source_file_name AS "sourceFileName",task.source_type AS "sourceType",task.metadata_json AS metadata,',
   'task.processing_location AS "processingLocation",',
   "CASE WHEN EXISTS (SELECT 1 FROM business.question_import_media_objects media WHERE media.import_task_id=task.task_id AND media.storage_state<>'verified') THEN 'queued' ELSE 'verified' END AS \"mediaStorageState\",",
   "COALESCE((SELECT jsonb_agg(jsonb_build_object('mediaId',media.media_id,'itemIndex',media.item_index,'assetIndex',media.asset_index,'objectId',media.object_id,'objectVersion',media.object_version,'storageTaskId',media.storage_task_id,'sha256',media.expected_sha256,'bytes',media.expected_bytes,'mimeType',media.mime_type,'storageState',media.storage_state) ORDER BY media.item_index,media.asset_index) FROM business.question_import_media_objects media WHERE media.import_task_id=task.task_id),'[]'::jsonb) AS \"mediaTargets\",",
@@ -284,6 +285,7 @@ function readTaskRow(row) {
   const task = taskRow(row, false);
   if (!['queued', 'verified', 'quarantined'].includes(row.sourceStorageState)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
   return { ...task, sourceStorageState: row.sourceStorageState, items: itemRows(row.items, { allowEmpty: true }),
+    ...(row.sourceFileName ? { sourceFileName: row.sourceFileName, sourceType: row.sourceType, metadata: row.metadata } : {}),
     ...(row.processingLocation ? { processingLocation: row.processingLocation, mediaStorageState: row.mediaStorageState, mediaTargets: row.mediaTargets } : {}) };
 }
 
@@ -615,6 +617,25 @@ function createQuestionImportTaskRepository({
       if (!result || !Array.isArray(result.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
       if (result.rows.length !== 1) throw failure('CLOUD_QUESTION_IMPORT_NOT_FOUND');
       return readTaskRow(result.rows[0]);
+    },
+    async list(input) {
+      const request = exact(input, ['tenantId', 'actor', 'limit']);
+      const tenantId = text(request.tenantId, 128), currentActor = actor(request.actor);
+      if (!Number.isSafeInteger(request.limit) || request.limit < 1 || request.limit > 100) throw failure('CLOUD_QUESTION_IMPORT_INPUT_INVALID');
+      const result = await query(`SELECT task.task_id AS "taskId",task.status,task.phase,task.request_hash AS "requestHash",
+        task.created_at AS "createdAt",task.updated_at AS "updatedAt",task.source_file_name AS "sourceFileName",
+        task.source_type AS "sourceType",task.metadata_json AS metadata,task.processing_location AS "processingLocation",
+        count(item.item_id)::integer AS "totalItems",
+        count(item.item_id) FILTER (WHERE item.status='submitted')::integer AS "submittedItems",
+        count(item.item_id) FILTER (WHERE item.validation_json->>'status'='warning')::integer AS "warningItems",
+        count(item.item_id) FILTER (WHERE item.status='rejected')::integer AS "failedItems"
+        FROM business.question_import_tasks task LEFT JOIN business.question_import_items item ON item.import_task_id=task.task_id
+        WHERE task.tenant_id=$1 AND task.account_id=$2 GROUP BY task.task_id
+        ORDER BY task.created_at DESC,task.task_id DESC LIMIT $3`, [tenantId, currentActor.accountId, request.limit]);
+      if (!Array.isArray(result?.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
+      return result.rows.map(row => ({ ...taskRow(row), sourceFileName: row.sourceFileName, sourceType: row.sourceType,
+        metadata: row.metadata, processingLocation: row.processingLocation, totalItems: row.totalItems,
+        submittedItems: row.submittedItems, warningItems: row.warningItems, failedItems: row.failedItems }));
     },
     async completeSourceAndStoreCandidates(input) {
       const request = plainObject(input) && Object.hasOwn(input, 'parserSha256')

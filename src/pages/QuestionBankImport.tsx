@@ -86,7 +86,24 @@ type CloudImportTask = {
   sourceStorageState?: string;
   mediaStorageState?: string;
   items?: any[];
+  sourceFileName?: string;
+  sourceType?: 'lecture' | 'exam';
+  metadata?: any;
+  processingLocation?: string;
 };
+
+type ImportHistoryTask = Omit<ImportTask, 'status'> & { status: string; processing_location?: string };
+
+function importHistoryRow(task: any): ImportHistoryTask {
+  return { id: task.taskId, file_name: task.sourceFileName,
+    source_type: task.metadata?.importFormat || task.sourceType,
+    status: task.status, processing_location: task.processingLocation,
+    total_items: task.totalItems ?? task.items?.length ?? 0,
+    success_items: task.submittedItems ?? task.items?.filter((item: any) => item.status === 'submitted').length ?? 0,
+    warning_items: task.warningItems ?? task.items?.filter((item: any) => item.validation?.status === 'warning').length ?? 0,
+    failed_items: task.failedItems ?? task.items?.filter((item: any) => item.status === 'rejected').length ?? 0,
+    duplicate_items: 0, created_at: task.createdAt, updated_at: task.updatedAt };
+}
 
 function stripFileExtension(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, '').trim();
@@ -200,6 +217,10 @@ function statusColor(status: string): string {
   return 'blue';
 }
 
+function storageStatusText(status?: string): string {
+  return status === 'verified' ? '已归档' : status === 'quarantined' ? '校验失败' : '正在归档';
+}
+
 function importTaskStatusText(status: string): string {
   const map: Record<string, string> = {
     pending: '待处理',
@@ -209,6 +230,18 @@ function importTaskStatusText(status: string): string {
     imported: '已导入',
     partial_failed: '部分失败',
     failed: '失败',
+    awaiting_source_storage: '原件与图片归档中',
+    queued_for_parse: '等待解析',
+    parsing: '解析中',
+    candidates_ready: '待完成导入',
+    drafts_prepared: '正在提交',
+    submitted: '已入库',
+    quarantined: '存储校验异常',
+    cancelled: '已取消',
+    accepted: '校验通过',
+    warning: '有警告',
+    rejected: '校验未通过',
+    draft_prepared: '待提交',
   };
   return map[status] || status;
 }
@@ -237,8 +270,10 @@ const QuestionBankImport: React.FC = () => {
   const [validationSummary, setValidationSummary] = useState<ImportValidationSummary>({ success: 0, warning: 0, failed: 0, total: 0 });
   const [commitResult, setCommitResult] = useState<ImportCommitResult | null>(null);
   const [cloudImportTask, setCloudImportTask] = useState<CloudImportTask | null>(null);
-  const [recentImportTasks] = useState<ImportTask[]>([]);
-  const [importTaskDetail, setImportTaskDetail] = useState<(ImportTask & { items: ImportTaskItem[] }) | null>(null);
+  const [recentImportTasks, setRecentImportTasks] = useState<ImportHistoryTask[]>([]);
+  const [historyError, setHistoryError] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [importTaskDetail, setImportTaskDetail] = useState<(ImportHistoryTask & { items: ImportTaskItem[] }) | null>(null);
   const [importTaskDrawerOpen, setImportTaskDrawerOpen] = useState(false);
   const [examPapers] = useState<any[]>([]);
   const [examForm] = Form.useForm();
@@ -293,6 +328,22 @@ const QuestionBankImport: React.FC = () => {
   };
   const preparedDraftItemsRef = useRef(new Set<string>());
   const intakeEpochRef = useRef(0);
+  const preparationBusyRef = useRef(false);
+  useEffect(() => () => { intakeEpochRef.current++; }, []);
+
+  const loadImportHistory = async () => {
+    const epoch = intakeEpochRef.current;
+    setHistoryLoading(true);
+    try {
+      const tasks = await intakeClient().list();
+      if (epoch !== intakeEpochRef.current) return;
+      setRecentImportTasks(tasks.map(importHistoryRow));
+      setHistoryError('');
+      return tasks;
+    } catch (error: any) {
+      if (epoch === intakeEpochRef.current) setHistoryError('\u5bfc\u5165\u8bb0\u5f55\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u8bd5\uff1a' + (error.message || 'unknown error'));
+    } finally { if (epoch === intakeEpochRef.current) setHistoryLoading(false); }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -448,7 +499,7 @@ const QuestionBankImport: React.FC = () => {
       setValidationRows(validation.rows);
       setValidationSummary(validation.summary);
       setImportStep(2);
-      if (candidates.length) message.success('本机解析与图片清理完成，请校对试题后生成待提交草稿。');
+      if (candidates.length) message.success('本机解析与图片清理完成，请校对后确认导入；在线时会自动提交。');
       else message.warning('没有可独立导入的试题，请查看跳过提示。');
     } catch (error: any) {
       message.error((error.code || error.message) === 'QUESTION_INTAKE_DOC_CONVERSION_REQUIRED'
@@ -469,7 +520,7 @@ const QuestionBankImport: React.FC = () => {
         message.info('\u4e91\u7aef\u4efb\u52a1\u5f53\u524d\u9636\u6bb5: ' + task.phase);
         return;
       }
-      const candidates = task.items.map((item: any) => applyExamMetaToQuestion(item.candidate || {}, examMetaRef.current || {}, wordSourceType));
+      const candidates = task.items.map((item: any) => item.candidate || {});
       const validation = validateImportQuestions(candidates, questions);
       const rows = validation.rows.map((row, index) => {
         const remote = task.items?.[index];
@@ -481,17 +532,18 @@ const QuestionBankImport: React.FC = () => {
       setWordResult({ questions: candidates, count: candidates.length });
       setValidationRows(rows);
       setValidationSummary(summary);
-      message.success('\u4e91\u7aef\u89e3\u6790\u5b8c\u6210\uff0c\u8bf7\u6838\u5bf9\u540e\u751f\u6210\u5f85\u63d0\u4ea4\u8349\u7a3f\u3002');
     } catch (error: any) {
       message.error('\u8bfb\u53d6\u4e91\u7aef\u5bfc\u5165\u4efb\u52a1\u5931\u8d25: ' + (error.message || 'unknown error'));
     }
   };
 
   const prepareCloudImportDrafts = async () => {
-    if (validationSummary.failed > 0 || !wordResult || commitResult || committingBatch) return;
+    if (validationSummary.failed > 0 || !wordResult || commitResult || committingBatch || preparationBusyRef.current) return;
     const db = (window as any).dbService;
     if (!db) { message.error('本地草稿库未就绪'); return; }
     intakeEpochRef.current++;
+    preparationBusyRef.current = true;
+    const epoch = intakeEpochRef.current;
     setCommittingBatch(true);
     setDraftPreparationError(null);
     try {
@@ -512,9 +564,11 @@ const QuestionBankImport: React.FC = () => {
         task = await client.read(task.taskId);
         setCloudImportTask(task);
       }
+      if (epoch !== intakeEpochRef.current) return;
       if (!task || !['candidates_ready', 'drafts_prepared'].includes(task.status) || task.sourceStorageState !== 'verified'
+        || (task.processingLocation === 'desktop' && task.mediaStorageState !== 'verified')
         || (localIntakeRef.current && task.mediaStorageState !== 'verified')) {
-        message.info('原件与图片正在归档；存储校验完成后可生成待提交草稿。');
+        message.info('原件与图片正在归档；校验完成后会自动继续导入。');
         return;
       }
       const prepared = (task.status === 'drafts_prepared'
@@ -522,7 +576,8 @@ const QuestionBankImport: React.FC = () => {
         : await client.prepareDrafts(task.taskId)) as CloudImportTask;
       const existingDrafts = db.getAllQuestions?.() || [];
       for (const item of prepared.items || []) {
-        if (existingDrafts.some((draft: any) => draft.storage_state === 'local_draft' && draft.import_task_id === prepared.taskId && draft.import_item_id === item.itemId)) {
+        if (epoch !== intakeEpochRef.current) return;
+        if (existingDrafts.some((draft: any) => draft.import_task_id === prepared.taskId && draft.import_item_id === item.itemId)) {
           preparedDraftItemsRef.current.add(item.itemId);
         }
         if (preparedDraftItemsRef.current.has(item.itemId)) continue;
@@ -544,11 +599,12 @@ const QuestionBankImport: React.FC = () => {
         preparedDraftItemsRef.current.add(item.itemId);
       }
       const created = preparedDraftItemsRef.current.size;
-      setCloudImportTask(prepared);
+      setCloudImportTask({ ...task, ...prepared });
       setImportStep(3);
-      setCommitResult({ id: prepared.taskId, imported: created, failed: validationSummary.failed, warning: validationSummary.warning, created_at: new Date().toISOString(), source_type: wordSourceType, file_name: selectedWordFile?.name });
+      setCommitResult({ id: prepared.taskId, imported: created, failed: validationSummary.failed, warning: validationSummary.warning, created_at: new Date().toISOString(), source_type: wordSourceType, file_name: selectedWordFile?.name || task.sourceFileName });
       loadData();
-      message.success('已生成 ' + created + ' 条本地待提交草稿；仍需在同步面板整体确认提交。');
+      window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
+      message.success('已准备 ' + created + ' 道题目，在线时会静默提交；离线修改联网后才需整体确认。');
     } catch (error: any) {
       if (error.task) setCloudImportTask(error.task);
       const detail = error.code === 'CLOUD_BUSINESS_INPUT_INVALID' || error.message === 'CLOUD_BUSINESS_INPUT_INVALID'
@@ -556,7 +612,10 @@ const QuestionBankImport: React.FC = () => {
         : '本批题目尚未全部生成草稿，解析结果仍保留在下方，可重试。错误：' + (error.message || '未知错误');
       setDraftPreparationError(detail);
       message.error('生成待提交草稿失败');
-    } finally { intakeEpochRef.current++; setCommittingBatch(false); }
+    } finally {
+      preparationBusyRef.current = false;
+      if (epoch === intakeEpochRef.current) { intakeEpochRef.current++; setCommittingBatch(false); }
+    }
   };
 
   const handleSelectWordFile = (file: File) => {
@@ -607,9 +666,85 @@ const QuestionBankImport: React.FC = () => {
     startLocalIntake(selectedWordFile, meta);
   };
 
-  const openImportTaskDetail = (task: ImportTask) => {
+  const restoreImportTask = async (taskId: string) => {
+    if (committingBatch || wordImporting || preparationBusyRef.current) return;
+    const epoch = ++intakeEpochRef.current;
+    try {
+      const task = await intakeClient().read(taskId) as CloudImportTask;
+      if (epoch !== intakeEpochRef.current) return;
+      localIntakeRef.current = null;
+      stagedIntakeRef.current = null;
+      preparedDraftItemsRef.current.clear();
+      setSelectedWordFile(null);
+      setDraftPreparationError(null);
+      setCommitResult(null);
+      const format = task.metadata?.importFormat || task.sourceType;
+      setWordSourceType(format === 'exam' || format === 'topic' ? format : 'lecture');
+      examMetaRef.current = task.metadata || null;
+      setCloudImportTask(task);
+      const candidates = (task.items || []).map((item: any) => item.candidate || {});
+      const validation = validateImportQuestions(candidates, (window as any).dbService?.getAllQuestions?.() || []);
+      const rows = validation.rows.map((row, index) => mergeImportValidation(row, task.items?.[index]?.validation, formatCloudImportValidationCode));
+      setWordResult({ questions: candidates, count: candidates.length });
+      setValidationRows(rows);
+      setValidationSummary(rows.reduce<ImportValidationSummary>((summary, row) => {
+        summary[row.status]++; summary.total++; return summary;
+      }, { success: 0, warning: 0, failed: 0, total: 0 }));
+      setImportStep(task.status === 'submitted' ? 3 : 2);
+    } catch (error: any) {
+      if (epoch === intakeEpochRef.current) setHistoryError('\u6062\u590d\u5bfc\u5165\u4efb\u52a1\u5931\u8d25\uff1a' + (error.message || 'unknown error'));
+    }
+  };
+
+  useEffect(() => {
+    const epoch = intakeEpochRef.current;
+    void loadImportHistory().then(tasks => {
+      if (epoch !== intakeEpochRef.current) return;
+      const pending = tasks?.find((task: any) => task.processingLocation === 'desktop'
+        && ['awaiting_source_storage', 'candidates_ready', 'drafts_prepared'].includes(task.status));
+      if (pending) void restoreImportTask(pending.taskId);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!cloudImportTask || committingBatch || preparationBusyRef.current || draftPreparationError
+      || ['submitted', 'failed', 'cancelled', 'quarantined'].includes(cloudImportTask.status)) return;
+    const ready = ['candidates_ready', 'drafts_prepared'].includes(cloudImportTask.status)
+      && cloudImportTask.sourceStorageState === 'verified'
+      && (cloudImportTask.processingLocation !== 'desktop' || cloudImportTask.mediaStorageState === 'verified');
+    if (ready && wordResult && !commitResult && validationSummary.failed === 0) {
+      void prepareCloudImportDrafts();
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshCloudImportTask().then(() => loadImportHistory());
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [cloudImportTask, committingBatch, draftPreparationError, wordResult, commitResult, validationSummary.failed]);
+
+  useEffect(() => {
+    const refresh = () => { void loadImportHistory(); };
+    window.addEventListener('authority-projection-refreshed', refresh);
+    return () => window.removeEventListener('authority-projection-refreshed', refresh);
+  }, []);
+
+  const openImportTaskDetail = async (task: ImportHistoryTask) => {
     setImportTaskDetail({ ...task, items: [] });
     setImportTaskDrawerOpen(true);
+    const epoch = intakeEpochRef.current;
+    try {
+      const detail = await intakeClient().read(task.id);
+      if (epoch !== intakeEpochRef.current) return;
+      setImportTaskDetail({ ...importHistoryRow(detail), items: (detail.items || []).map((item: any) => ({
+        id: item.itemId, task_id: detail.taskId, item_index: item.itemIndex, content_hash: item.contentHash,
+        status: item.status === 'submitted' ? 'imported' : item.status, quality_score: 0,
+        payload: item.candidate, errors: item.validation?.status === 'rejected' ? item.validation.codes || [] : [],
+        warnings: item.validation?.status === 'warning' ? item.validation.codes || [] : [],
+        created_at: detail.createdAt, updated_at: detail.updatedAt,
+      })) });
+    } catch (error: any) {
+      if (epoch === intakeEpochRef.current) setHistoryError('\u8bfb\u53d6\u5bfc\u5165\u8be6\u60c5\u5931\u8d25\uff1a' + (error.message || 'unknown error'));
+    }
   };
 
   return (
@@ -625,7 +760,7 @@ const QuestionBankImport: React.FC = () => {
               { title: '选择文件' },
               { title: '选择类型' },
               { title: '解析与校对' },
-              { title: '准备草稿' },
+              { title: '归档与入库' },
             ]}
           />
 
@@ -793,7 +928,7 @@ const QuestionBankImport: React.FC = () => {
             <Alert
               showIcon
               type={cloudImportTask.status === 'candidates_ready' ? 'success' : 'info'}
-              message={'原件归档：' + cloudImportTask.sourceStorageState + '；图片归档：' + (cloudImportTask.mediaStorageState || cloudImportTask.phase)}
+              message={'原件归档：' + storageStatusText(cloudImportTask.sourceStorageState) + '；图片归档：' + storageStatusText(cloudImportTask.mediaStorageState)}
               description={<Button size="small" disabled={committingBatch} onClick={refreshCloudImportTask}>{'刷新存储状态'}</Button>}
               style={{ marginTop: 16 }}
             />
@@ -853,7 +988,7 @@ const QuestionBankImport: React.FC = () => {
                   <Space style={{ marginTop: 12 }}>
                     <Button icon={<DownloadOutlined />} onClick={() => downloadImportValidationReport(validationRows)}>导出错误报告</Button>
                     <Button type="primary" loading={committingBatch} disabled={!wordResult || validationSummary.failed > 0 || !!commitResult || modalVisible} onClick={prepareCloudImportDrafts}>
-                      生成待提交草稿
+                      确认导入
                     </Button>
                   </Space>
                 </>
@@ -863,17 +998,19 @@ const QuestionBankImport: React.FC = () => {
                   style={{ marginTop: 12 }}
                   type="success"
                   showIcon
-                  message={`\u5f85\u63d0\u4ea4\u8349\u7a3f\u5df2\u751f\u6210\uff1a${commitResult.imported} \u9898\uff0c\u8b66\u544a ${commitResult.warning} \u9898\uff0c\u62d2\u7edd ${commitResult.failed} \u9898`}
-                  description={`${commitResult.file_name ? `文件：${commitResult.file_name}。` : ''}题目预览保留在本页“解析与校对”列表；在同步面板整体确认提交后，才会进入云端题库。`}
+                  message={cloudImportTask?.status === 'submitted' || recentImportTasks.some(task => task.id === commitResult.id && task.status === 'submitted') ? `已入库：${commitResult.imported} 题` : `正在自动提交：${commitResult.imported} 题`}
+                  description={`${commitResult.file_name ? `文件：${commitResult.file_name}。` : ''}在线时静默提交云端题库，入库后可在题库和编辑打标页面查看；只有离线修改在恢复联网后需整体确认一次。`}
                 />
               )}
             </div>
           )}
 
           {/* 最近导入记录 */}
-          {(recentImportTasks.length > 0 || questions.length > 0) && (
+          {(
             <div style={{ marginTop: 16 }}>
               <Divider orientation="left">最近导入</Divider>
+              <Button size="small" loading={historyLoading} onClick={() => { void loadImportHistory(); }} style={{ marginBottom: 12 }}>刷新记录</Button>
+              {historyError && <Alert showIcon type="warning" message={historyError} style={{ marginBottom: 12 }} />}
               {recentImportTasks.length > 0 ? (
                 <Table
                   size="small"
@@ -882,19 +1019,18 @@ const QuestionBankImport: React.FC = () => {
                   pagination={false}
                   columns={[
                     { title: '文件', dataIndex: 'file_name', render: (v: string) => v || '-' },
-                    { title: '类型', dataIndex: 'source_type', width: 90, render: (v: string) => v === 'exam' ? '试卷' : '讲义' },
+                    { title: '类型', dataIndex: 'source_type', width: 90, render: (v: string) => v === 'exam' ? '试卷' : v === 'topic' ? '专题题集' : '讲义' },
                     { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{importTaskStatusText(v)}</Tag> },
                     { title: '总数', dataIndex: 'total_items', width: 70 },
+                    { title: '已入库', dataIndex: 'success_items', width: 80 },
                     { title: '警告', dataIndex: 'warning_items', width: 70 },
                     { title: '失败', dataIndex: 'failed_items', width: 70 },
                     { title: '时间', dataIndex: 'created_at', width: 170, render: (v: string) => v ? new Date(v).toLocaleString() : '-' },
-                    { title: '操作', width: 80, render: (_: any, record: ImportTask) => <Button type="link" onClick={() => openImportTaskDetail(record)}>详情</Button> },
+                    { title: '操作', width: 170, render: (_: any, record: ImportHistoryTask) => <Space><Button type="link" onClick={() => { void openImportTaskDetail(record); }}>详情</Button>{['awaiting_source_storage', 'candidates_ready', 'drafts_prepared'].includes(record.status) && <Button type="link" disabled={committingBatch || wordImporting} onClick={() => { void restoreImportTask(record.id); }}>继续导入</Button>}</Space> },
                   ]}
                 />
               ) : (
-                <div style={{ color: '#666', fontSize: 13 }}>
-                  题库中共有 <b>{questions.length}</b> 道题目，来自多次导入操作。
-                </div>
+                <Empty description={historyLoading ? "正在读取导入记录" : "暂无导入记录"} />
               )}
             </div>
           )}
@@ -928,7 +1064,7 @@ const QuestionBankImport: React.FC = () => {
               pagination={{ pageSize: 10, showSizeChanger: false, showQuickJumper: true, showTotal: total => `共 ${total} 题` }}
               columns={[
                 { title: '原文题号', dataIndex: 'item_index', width: 70, render: (v: number) => Number(v || 0) + 1 },
-                { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag> },
+                { title: '状态', dataIndex: 'status', width: 90, render: (v: string) => <Tag color={statusColor(v)}>{importTaskStatusText(v)}</Tag> },
                 {
                   title: '题干',
                   render: (_: any, row: ImportTaskItem) => (

@@ -24,6 +24,18 @@ async function main() {
   const task = await client.createFromWord({ sourceType: 'lecture', sourceFileName: 'word.docx', sourceMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', bytes: new Uint8Array(Buffer.from('raw-document-payload')), metadata: { subject: 'physics' } });
   assert.strictEqual(task.taskId, 'question_import_task_12345678');
   assert.strictEqual(calls[0].options.headers.Authorization, 'Bearer desktop-token');
+  const historyCalls = [];
+  const historyClient = createDesktopQuestionImportClient({}, {
+    parse: async () => {}, readSession: () => ({ authorization: 'Bearer history-token', authContext: { deviceId: 'history-device' } }),
+    fetchImpl: async (url, options) => {
+      historyCalls.push({ url, options });
+      return { ok: true, json: async () => ({ ok: true, tasks: [{ taskId: 'question_import_task_history01', status: 'candidates_ready', phase: 'candidates_ready', sourceFileName: 'topic.docx', totalItems: 7 }] }) };
+    },
+  });
+  assert.equal((await historyClient.list())[0].totalItems, 7);
+  assert.ok(historyCalls[0].url.endsWith('/api/desktop/question-imports?limit=50'));
+  assert.equal(historyCalls[0].options.headers.Authorization, 'Bearer history-token');
+  await assert.rejects(historyClient.list(101), /INPUT_INVALID/);
   const body = JSON.parse(calls[1].options.body);
   assert.deepStrictEqual(body.storage, { taskId: 'task_12345678', objectId: 'obj_12345678', objectVersion: 1 });
   assert.ok(!calls[1].options.body.includes('raw-document-payload'), 'plaintext Word bytes must not be sent to cloud');

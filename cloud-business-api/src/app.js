@@ -860,6 +860,14 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       response.status(relay.replayed ? 200 : 202).json({ ok: true, relay });
     } catch (error) { questionImportFailure(response, error); }
   });
+  app.get('/api/desktop/question-imports', async (request, response) => {
+    if (!questionImportTasks || businessTenantId === null) return businessUnavailable(response);
+    try {
+      const limit = request.query.limit === undefined ? 50 : Number(request.query.limit);
+      const tasks = await questionImportTasks.list({ tenantId: businessTenantId, actor: await desktopQuestionContext(request), limit });
+      response.json({ ok: true, tasks });
+    } catch (error) { questionImportFailure(response, error); }
+  });
   app.get('/api/desktop/question-imports/:taskId', async (request, response) => {
     if (!questionImportTasks || businessTenantId === null) return businessUnavailable(response);
     try {
