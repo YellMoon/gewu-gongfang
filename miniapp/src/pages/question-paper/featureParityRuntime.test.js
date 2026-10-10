@@ -12,6 +12,7 @@ function page(role) {
   const slot = value => { const i = cursor++; if (!(i in state)) state[i] = value; return i; };
   const jsx = (type, props) => ({ type, props: props || {} });
   const deps = {
+    '../../../../shared/questionDifficulty': require('../../../../shared/questionDifficulty'),
     react: { useState: initial => { const i = slot(typeof initial === 'function' ? initial() : initial); return [state[i], next => { const value = typeof next === 'function' ? next(state[i]) : next; dirty = dirty || !Object.is(state[i], value); state[i] = value; }]; }, useRef: initial => state[slot({ current: initial })], useMemo: fn => fn(), useEffect: (fn, dependencies) => {
       const i = slot(null), old = effectSlots[i];
       if (!old || !dependencies || dependencies.some((value, index) => !Object.is(value, old.dependencies[index]))) {

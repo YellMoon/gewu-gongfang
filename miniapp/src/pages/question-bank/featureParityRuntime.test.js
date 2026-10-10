@@ -14,6 +14,7 @@ function page(role = 'teacher') {
   const slot = value => { const i = cursor++; if (!(i in state)) state[i] = value; return i; };
   const jsx = (type, props) => ({ type, props: props || {} });
   const deps = {
+    '../../../../shared/questionDifficulty': require('../../../../shared/questionDifficulty'),
     react: {
       useState: initial => { const i = slot(typeof initial === 'function' ? initial() : initial); return [state[i], next => { state[i] = typeof next === 'function' ? next(state[i]) : next; }]; },
       useRef: initial => state[slot({ current: initial })], useMemo: fn => fn(),
