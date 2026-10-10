@@ -8,6 +8,7 @@ function page(role){
  const user={id:'test-account',role,user_type:role,teacher_id:'test-teacher',student_id:'test-student'};
  const state=[],effects=[],routes=[];let cursor=0,mounted=false,reads=0;const jsx=(type,props)=>({type,props:props||{}}),slot=v=>{const i=cursor++;if(!(i in state))state[i]=v;return i;};
  const deps={
+  '../../../../shared/questionDifficulty':require('../../../../shared/questionDifficulty'),
   react:{useRef:v=>state[slot({current:v})],useState:v=>{const i=slot(typeof v==='function'?v():v);return[state[i],n=>{state[i]=typeof n==='function'?n(state[i]):n;}];},useMemo:fn=>fn(),useEffect:fn=>{if(!mounted)effects.push(fn);}},
   'react/jsx-runtime':{jsx,jsxs:jsx},'@tarojs/components':Object.fromEntries(['View','Text','Input','Button','Picker','RichText'].map(x=>[x,x])),
   '@tarojs/taro':{default:{getStorageSync:()=>user,showToast:()=>{},navigateBack:async()=>{throw Error('no prior page');},switchTab:async o=>routes.push(o.url),navigateTo:async o=>routes.push(o.url),stopPullDownRefresh:()=>{}},usePullDownRefresh:()=>{}},

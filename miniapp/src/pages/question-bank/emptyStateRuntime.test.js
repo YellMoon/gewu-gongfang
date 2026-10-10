@@ -6,6 +6,7 @@ const text=t=>Array.isArray(t)?t.map(text).join(''):t==null||typeof t==='boolean
 function harness(status='empty',role='teacher'){
  const state=[],modals=[],routes=[];let cursor=0;const slot=initial=>{const i=cursor++;if(!(i in state))state[i]=initial;return i;};const jsx=(type,props)=>({type,props:props||{}});
  const deps={
+  '../../../../shared/questionDifficulty':require('../../../../shared/questionDifficulty'),
   react:{useState:initial=>{const value=typeof initial==='function'?initial():initial;const i=slot(value==='loading'?status:value);return[state[i],next=>{state[i]=typeof next==='function'?next(state[i]):next;}];},useRef:initial=>state[slot({current:initial})],useEffect:()=>{},useMemo:fn=>fn()},
   'react/jsx-runtime':{jsx,jsxs:jsx},'@tarojs/components':Object.fromEntries(['View','Text','Input','Button','Picker','RichText','ScrollView'].map(n=>[n,n])),
   '@tarojs/taro':{default:{getStorageSync:()=>({id:'test',role,user_type:role}),showModal:o=>modals.push(o),navigateTo:o=>routes.push(o.url)},useDidShow:()=>{},usePullDownRefresh:()=>{},useReachBottom:()=>{}},

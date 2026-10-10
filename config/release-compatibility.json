@@ -136,15 +136,6 @@
       "approvedRuntimeVersions": ["8.8.2", "8.8.3", "8.8.4", "8.9.1"],
       "runtimeFloor": { "sourceVersion": "8.9.1", "runtimeVersion": "8.9.1" },
       "contracts": {
-    "questionDifficultyCoefficient": {
-      "version": "1",
-      "participants": [
-        "desktop",
-        "cloud_business",
-        "miniapp"
-      ],
-      "rule": "Apply the additive nullable numeric 0..1 coefficient column before cloud and client rollout. Omitted metadata preserves values and explicit null clears via existing content-version CAS. All UIs derive simple/medium/hard only from coefficient, never legacy stars; unmarked stays blank. Exam labels come from import form; lecture/topic source labels remain blank; all formats infer type from canonical answer/stem. Verified import submission automatically publishes. NAS byte storage and parser transport are unchanged."
-    },
         "questionPaperExport": "3",
         "storageAgentTransport": "3",
         "questionImportParserProof": "1"
