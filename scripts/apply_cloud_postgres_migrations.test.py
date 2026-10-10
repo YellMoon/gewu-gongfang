@@ -32,6 +32,15 @@ class FakeExecutor:
 
 
 class CloudPostgresMigrationTests(unittest.TestCase):
+    def test_coefficient_migration_uses_actual_production_transaction_contract(self):
+        root = pathlib.Path(__file__).resolve().parents[1] / "cloud-business-api" / "sql"
+        migration = next(row for row in read_migrations(root) if row["name"] == "20261010-question-difficulty-coefficient.sql")
+        generated = atomic_migration_sql(migration)
+        self.assertEqual(generated.count("SET LOCAL ROLE vnext_pg17_business_owner;"), 1)
+        self.assertIn("difficulty_coefficient numeric", generated)
+        self.assertIn("INSERT INTO business.cloud_schema_migrations", generated)
+        self.assertTrue(generated.rstrip().endswith("COMMIT;"))
+
     def test_real_snapshot_migration_can_have_a_leading_comment(self):
         root = pathlib.Path(__file__).resolve().parents[1] / "cloud-business-api" / "sql"
         migration = next(row for row in read_migrations(root) if row["name"] == "20260907-zz-schedule-financial-snapshot.sql")
