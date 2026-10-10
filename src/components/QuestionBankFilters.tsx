@@ -52,7 +52,7 @@ export function taxonomyTagOptions(nodes: KnowledgeNode[]): Option[] {
   });
 }
 
-export const SearchTagPicker: React.FC<{ label: string; options: Option[]; values: string[]; onChange: (values: string[]) => void; leafLabel?: boolean }> = ({ label, options, values, onChange, leafLabel = false }) => {
+export const SearchTagPicker: React.FC<{ label: string; options: Option[]; values: string[]; onChange: (values: string[]) => void; leafLabel?: boolean; disabled?: boolean }> = ({ label, options, values, onChange, leafLabel = false, disabled = false }) => {
   const [editing, setEditing] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string>();
@@ -65,17 +65,17 @@ export const SearchTagPicker: React.FC<{ label: string; options: Option[]; value
   return <div className="qb-tag-picker" aria-label={label}>
     {values.map(value => <span className="qb-filter-text-tag" key={value}>
       <span title={options.find(option => option.value === value)?.label}>{leafLabel ? (options.find(option => option.value === value)?.label.split(' / ').pop() || value) : (options.find(option => option.value === value)?.label || value)}</span>
-      <button type="button" aria-label={'移除' + label + ' ' + (options.find(option => option.value === value)?.label || value)} onClick={() => onChange(values.filter(id => id !== value))}><CloseOutlined /></button>
+      <button type="button" disabled={disabled} aria-label={'移除' + label + ' ' + (options.find(option => option.value === value)?.label || value)} onClick={() => onChange(values.filter(id => id !== value))}><CloseOutlined /></button>
     </span>)}
     {editing ? <Space size={4} className="qb-tag-editor">
-      <AutoComplete autoFocus value={search} options={candidates} aria-label={'搜索' + label}
+      <AutoComplete disabled={disabled} autoFocus value={search} options={candidates} aria-label={'搜索' + label}
         placeholder={'搜索' + label} notFoundContent="无匹配标签" filterOption={false}
         onSearch={value => { setSearch(value); setSelected(undefined); }}
         onSelect={(value, option) => { setSelected(value); setSearch(String(option.label)); }}
         onKeyDown={event => { if (event.key === 'Enter' && !(event.nativeEvent as KeyboardEvent).isComposing) confirm(); if (event.key === 'Escape') setEditing(false); }} />
-      <Button size="small" type="link" onClick={confirm}>确定</Button>
+      <Button disabled={disabled} size="small" type="link" onClick={confirm}>确定</Button>
       <Button size="small" type="text" aria-label={'取消添加' + label} icon={<CloseOutlined />} onClick={() => setEditing(false)} />
-    </Space> : <Button className="qb-filter-add" size="small" type="text" aria-label={'添加' + label} icon={<PlusOutlined />} onClick={() => { setEditing(true); setSearch(''); setSelected(undefined); }} />}
+    </Space> : <Button disabled={disabled} className="qb-filter-add" size="small" type="text" aria-label={'添加' + label} icon={<PlusOutlined />} onClick={() => { setEditing(true); setSearch(''); setSelected(undefined); }} />}
   </div>;
 };
 

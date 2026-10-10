@@ -2,8 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
 
-const source = fs.readFileSync(__dirname + '/QuestionBankEdit.tsx', 'utf8');
-const tree = ts.createSourceFile('QuestionBankEdit.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+const source = fs.readFileSync(__dirname + '/QuestionBankPreview.tsx', 'utf8');
+const tree = ts.createSourceFile('QuestionBankPreview.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let callback;
 function visit(node) {
   if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'loadData') callback = node.initializer.arguments[0];

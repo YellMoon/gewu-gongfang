@@ -26,7 +26,7 @@ interface AppShellProps {
 }
 
 const selectedKeyForPage = (page: PageKey): PageKey => {
-  if (page === 'question-bank-import' || page === 'question-bank-edit' || page === 'question-bank-audit') {
+  if (page === 'question-bank-import' || page === 'question-bank-audit') {
     return 'question-bank-tools';
   }
   return page;
@@ -173,12 +173,12 @@ const AppShell: React.FC<AppShellProps> = ({ currentPage, onNavigate, onRefresh,
             />
           </Tooltip>
           <PageHeaderBar
-            title={currentPage === 'question-bank-preview' && questionBankSubject && onQuestionBankSubjectChange
+            title={(currentPage === 'question-bank-preview' || currentPage === 'question-bank-edit') && questionBankSubject && onQuestionBankSubjectChange
               ? <Dropdown trigger={['click']} menu={{
                 selectedKeys: [questionBankSubject],
                 items: ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'].map(subject => ({ key: subject, label: subject + '题库' })),
                 onClick: ({ key }) => onQuestionBankSubjectChange(key),
-              }}><button className="qb-subject-title-button" type="button" aria-label="选择科目题库">{questionBankSubject}题库<DownOutlined /></button></Dropdown>
+              }}><button className="qb-subject-title-button" type="button" aria-label="选择科目题库">{questionBankSubject}{currentPage === 'question-bank-edit' ? '编辑与打标' : '题库'}<DownOutlined /></button></Dropdown>
               : currentNavItem.label}
             titleActions={currentPage === 'question-bank-tools' ? <>
               <Button icon={<FileSearchOutlined />} onClick={() => onNavigate('question-bank-preview')}>题库</Button>

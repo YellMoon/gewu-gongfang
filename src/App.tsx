@@ -161,7 +161,7 @@ const App: React.FC = () => {
       case 'question-bank-tools': return <LazyPage><QuestionBankTools onNavigate={navigateTo} context={pageContext as any} /></LazyPage>;
       case 'question-bank-import': return <LazyPage><QuestionBankImport /></LazyPage>;
       case 'question-bank-preview': return <LazyPage><QuestionBankPreview context={pageContext as any} subject={questionBankSubject} /></LazyPage>;
-      case 'question-bank-edit': return <LazyPage><QuestionBankEdit /></LazyPage>;
+      case 'question-bank-edit': return <LazyPage><QuestionBankEdit subject={questionBankSubject} context={pageContext as any} /></LazyPage>;
       case 'question-bank-audit': return <LazyPage><AuditCenter /></LazyPage>;
       case 'question-bank-paper': return <LazyPage><QuestionBankPaper /></LazyPage>;
 

@@ -72,12 +72,12 @@ assert.deepStrictEqual(mergeQuestionAssets(
 ), [{ id: 'old', oss_key: 'same.png', metadata: 'keep' }, { assetKey: 'rich-image' }, { oss_url: 'https://asset/new.png' }]);
 
 const componentSource = fs.readFileSync(require.resolve('./QuestionStructureEditor.tsx'), 'utf8');
-const editSource = fs.readFileSync(require.resolve('../../pages/QuestionBankEdit.tsx'), 'utf8');
+const editSource = fs.readFileSync(require.resolve('../../pages/QuestionBankPreview.tsx'), 'utf8');
 assert.ok(componentSource.includes('QuestionStructureEditor') && componentSource.includes('RichQuestionEditor'));
 assert.ok(!componentSource.includes('addonBefore='), 'canonical structure editor must not emit the deprecated Ant Input addon warning');
 assert.ok(componentSource.includes('moveEntity') && componentSource.includes('removeEntity'));
 assert.ok(editSource.includes('beforeunload') && editSource.includes('editorDirty'));
-assert.ok(editSource.includes('confirmLoading={saving}') && editSource.includes('saveGate(saveQuestion)'));
+assert.ok(editSource.includes('confirmLoading={saving}') && editSource.includes('saveGate(handleSave)'));
 assert.ok(editSource.includes('<QuestionStructureEditor'));
 
 console.log('question structure operations tests passed');

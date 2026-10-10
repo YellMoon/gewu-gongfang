@@ -136,14 +136,14 @@ function metadataUpdateAssignments(parameter) {
 
 function idList(value) {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > 4096) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  if (!Array.isArray(value)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   return value.map(item => text(item, { max: 128 }));
 }
 
 function taxonomyMap(value) {
   if (value === undefined || value === null) return {};
   if (Array.isArray(value)) return Object.fromEntries(value.map(id => [text(id, { max: 128 }), []]));
-  if (!plainObject(value) || Reflect.ownKeys(value).length > 128) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+  if (!plainObject(value)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   const result = {};
   for (const [systemId, nodeIds] of Object.entries(value)) {
     const id = text(systemId, { max: 128 });

@@ -7,6 +7,8 @@ import Table from '../components/NumberedTable';
 import { FileWordOutlined, CheckCircleOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { Question, KnowledgeNode, ImportTask, ImportTaskItem, TaxonomySystem } from '../types';
 import AutoCloseSelect from '../components/AutoCloseSelect';
+import QuestionTaxonomyFields from '../components/QuestionTaxonomyFields';
+import { questionTaxonomyPatch, questionTaxonomyValues } from '../services/questionTaxonomyEditing';
 import { QUESTION_TYPES, normalizeQuestionType, questionTypeFromParser } from '../constants/questionTypes';
 import QuestionStructureEditor from '../components/question-editor/QuestionStructureEditor';
 import { normalizeStructureOrder, validateQuestionStructure } from '../components/question-editor/questionStructureOperations';
@@ -256,6 +258,9 @@ const QuestionBankImport: React.FC = () => {
   const richDirtyCoordinator = useRef(createRichDocumentDirtyCoordinator(null)).current;
   const formDirtyRef = useRef(false);
   const editorQuestionType = Form.useWatch('type', form);
+  const editorSubject = Form.useWatch('subject', form) || taxonomySubject;
+  const editorSystems: TaxonomySystem[] = (window as any).dbService?.getTaxonomySystems?.(editorSubject) || [];
+  const editorNodes = Object.fromEntries(editorSystems.map(system => [system.id, (window as any).dbService?.getTaxonomyNodes?.(system.id) || []]));
   const handleTaxonomiesChanged = useCallback((systems: TaxonomySystem[], nodes: Record<string, KnowledgeNode[]>) => {
     setTaxonomySystems(systems);
     setTaxonomyNodes(nodes);
@@ -345,60 +350,6 @@ const QuestionBankImport: React.FC = () => {
   }, [taxonomySubject, handleTaxonomiesChanged]);
 
   // Knowledge tree checkbox renderer in modal
-  const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
-    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return (
-      <div style={{ marginLeft: depth * 20 }}>
-        {children.map(n => (
-          <div key={n.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-              <Form.Item name={['knowledge_ids', n.id]} valuePropName="checked" noStyle>
-                <Checkbox />
-              </Form.Item>
-              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
-            </div>
-            {renderKnowledgeCheckboxes(nodes, n.id, depth + 1)}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderModelCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
-    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return (
-      <div style={{ marginLeft: depth * 20 }}>
-        {children.map(n => (
-          <div key={n.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-              <Form.Item name={['model_ids', n.id]} valuePropName="checked" noStyle>
-                <Checkbox />
-              </Form.Item>
-              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
-            </div>
-            {renderModelCheckboxes(nodes, n.id, depth + 1)}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderTaxonomyCheckboxes = (systemId: string, nodes: KnowledgeNode[], parentId?: string, depth = 0): React.ReactNode => {
-    const children = nodes.filter(node => node.parent_id === parentId || (!parentId && !node.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return <div style={{ marginLeft: depth * 20 }}>
-      {children.map(node => <div key={node.id}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-          <Form.Item name={['taxonomy_ids', systemId, node.id]} valuePropName="checked" noStyle><Checkbox /></Form.Item>
-          <span style={{ fontWeight: node.parent_id ? 'normal' : 600 }}>{node.name}</span>
-        </div>
-        {renderTaxonomyCheckboxes(systemId, nodes, node.id, depth + 1)}
-      </div>)}
-    </div>;
-  };
-
   const handleSave = async () => {
     const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
     if (structureErrors.length > 0) { message.error(structureErrors[0]); return; }
@@ -406,12 +357,9 @@ const QuestionBankImport: React.FC = () => {
     const db = (window as any).dbService;
     const projection = projectQuestionRichContent(richDocument);
 
-    const taxonomy_ids = Object.fromEntries(taxonomySystems.map(system => [
-      system.id,
-      Object.entries(values.taxonomy_ids?.[system.id] || {}).filter(([, checked]) => checked).map(([id]) => id),
-    ]));
-    const knowledge_ids: string[] = taxonomy_ids.knowledge || [];
-    const model_ids: string[] = taxonomy_ids.model || [];
+    const originalQuestion = editingImportKey ? validationRows.find(row => row.key === editingImportKey)?.question : editing;
+    const taxonomyPatch = questionTaxonomyPatch(originalQuestion || {}, values.taxonomy_ids || {});
+    const { model_ids } = taxonomyPatch;
 
     const data: any = {
       subject: values.subject,
@@ -423,13 +371,11 @@ const QuestionBankImport: React.FC = () => {
       analysis: projection.explanation,
       sub_questions: projection.subQuestions,
       rich_content: richDocument,
-      knowledge_ids,
+      ...taxonomyPatch,
       knowledge_point: values.knowledge_point || '',
-      model_ids,
-      taxonomy_ids,
       model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
       formulas: projection.formulas,
-      tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      tags: originalQuestion?.tags || [],
       source: values.source || '',
       year: values.year || '',
       grade: values.grade || '',
@@ -480,16 +426,10 @@ const QuestionBankImport: React.FC = () => {
     const questionNodes: Record<string, KnowledgeNode[]> = Object.fromEntries(
       questionSystems.map(system => [system.id, db?.getTaxonomyNodes?.(system.id) || []]),
     );
-    const knowledgeIds = Object.fromEntries((question.knowledge_ids || question.knowledge_point_ids || []).map((id: string) => [id, true]));
-    const modelIds = Object.fromEntries((question.model_ids || question.model_point_ids || []).map((id: string) => [id, true]));
-    const taxonomyIds = Object.fromEntries(questionSystems.map(system => [
-      system.id,
-      Object.fromEntries((question.taxonomy_ids?.[system.id] || (system.id === 'knowledge' ? question.knowledge_ids : system.id === 'model' ? question.model_ids : []) || []).map((id: string) => [id, true])),
-    ]));
     setTaxonomySubject(questionSubject);
     handleTaxonomiesChanged(questionSystems, questionNodes);
     setEditing(null); setEditingImportKey(row.key); openRichDocument(normalizeStructureOrder(question.rich_content?.type === 'question-document' ? createQuestionRichDocument(question.rich_content) : migrateLegacyQuestion(question)));
-    form.setFieldsValue({ subject: questionSubject, type: question.type ? normalizeQuestionType(question.type) : questionTypeFromParser(question.question_types), difficulty: question.difficulty || 3, knowledge_ids: knowledgeIds, model_ids: modelIds, taxonomy_ids: taxonomyIds, tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
+    form.setFieldsValue({ subject: questionSubject, type: question.type ? normalizeQuestionType(question.type) : questionTypeFromParser(question.question_types), difficulty: question.difficulty || 3, taxonomy_ids: questionTaxonomyValues(question), tags: (question.tags || []).join(','), source: question.source, year: question.year, grade: question.grade, semester: question.semester, exam_type: question.exam_type });
     setModalVisible(true);
   };
 
@@ -1084,32 +1024,9 @@ const QuestionBankImport: React.FC = () => {
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            {/* utf-8 metadata */}
-            <Col span={24}>
-              <Form.Item name="tags" label="标签（逗号分隔）">
-                <Input placeholder="高考、压轴题、易错" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item label="关联知识点">
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识点数据" />}
-            </div>
+          <Form.Item name="taxonomy_ids" label="体系标签">
+            <QuestionTaxonomyFields systems={editorSystems} nodes={editorNodes} disabled={saving} />
           </Form.Item>
-          <Form.Item label="关联模型">
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
-            </div>
-          </Form.Item>
-          {taxonomySystems.map(system => <Form.Item key={system.id} label={system.name}>
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {(taxonomyNodes[system.id] || []).length > 0
-                ? renderTaxonomyCheckboxes(system.id, taxonomyNodes[system.id] || [])
-                : <Empty description={'\u6682\u65e0\u8282\u70b9\u6570\u636e'} />}
-            </div>
-          </Form.Item>)}
         </Form>
       </Modal>
     </Row>

@@ -36,8 +36,8 @@ assert.ok(!preview.includes('placeholder="\u6392\u9664\u77e5\u8bc6\u70b9"'), 'le
 assert.ok(!preview.includes('placeholder="\u6a21\u578b"'), 'legacy model filter must not render beside dynamic taxonomy filters');
 // UTF-8: taxonomy editing has one entry point in the question bank.
 assert.ok(!globalStyles.includes(':has(> .taxonomy-manager)'), 'legacy taxonomy trees must not be rendered and hidden through a global CSS selector');
-assert.ok(preview.includes("name={['taxonomy_ids', systemId, node.id]}"));
-assert.ok(importer.includes("name={['taxonomy_ids', systemId, node.id]}"));
+assert.ok(preview.includes('name="taxonomy_ids"') && preview.includes('<QuestionTaxonomyFields'));
+assert.ok(importer.includes('name="taxonomy_ids"') && importer.includes('<QuestionTaxonomyFields'));
 assert.ok(database.includes("subject: '\\u7269\\u7406'"));
 assert.ok(database.includes("ensure('knowledge', '\\u77e5\\u8bc6\\u70b9'"));
 assert.ok(database.includes("ensure('model', '\\u6a21\\u578b'"));

@@ -1,0 +1,9 @@
+.qb-taxonomy-editor { display:flex; flex-direction:column; gap:6px; min-width:0; margin:0; padding:0; border:0; font:inherit; font-style:normal; }
+.qb-taxonomy-editor .qb-choice-row { grid-template-columns:minmax(90px,120px) minmax(0,1fr); padding:6px 10px; }
+.qb-taxonomy-editor:disabled { opacity:.65; }
+.qb-tagging-question { min-width:0; border:1px solid #e4e7ec; border-radius:8px; overflow:hidden; }
+.qb-tagging-question > .qb-question-card { border:0; border-bottom:1px solid #e4e7ec; border-radius:0; }
+.qb-tagging-question > .qb-taxonomy-editor { padding:12px; }
+.qb-tagging-toolbar { display:flex; flex-direction:column; gap:10px; padding:12px; margin:10px 0; border:1px solid #d0d5dd; border-radius:8px; background:#fafcff; }
+.qb-tagging-toolbar .ant-input { max-width:360px; }
+.qb-tagging-selection { overflow-wrap:anywhere; }

@@ -910,16 +910,14 @@ class BrowserDatabaseService {
   }
 
   private syncQuestionRelsFromLegacyFields(question: Question): void {
-    this.replaceQuestionTagRels(question.id, 'knowledge', [
-      ...(question.knowledge_ids || []),
-      ...(question.knowledge_point_ids || []),
-    ]);
-    this.replaceQuestionTagRels(question.id, 'model', [
-      ...(question.model_ids || []),
-      ...(question.model_point_ids || []),
-    ]);
-    for (const [systemId, nodeIds] of Object.entries(question.taxonomy_ids || {})) {
-      if (systemId === 'knowledge' || systemId === 'model') continue;
+    // Each relation replacement rebuilds the projection in place. Snapshot all
+    // incoming systems first so that rebuilding one cannot erase another.
+    const incoming = {
+      ...Object.fromEntries(Object.entries(question.taxonomy_ids || {}).map(([id, ids]) => [id, [...ids]])),
+      knowledge: [...new Set([...(question.knowledge_ids || []), ...(question.knowledge_point_ids || [])])],
+      model: [...new Set([...(question.model_ids || []), ...(question.model_point_ids || [])])],
+    };
+    for (const [systemId, nodeIds] of Object.entries(incoming)) {
       this.replaceQuestionTagRels(question.id, systemId, nodeIds || []);
     }
   }
@@ -2744,7 +2742,14 @@ class BrowserDatabaseService {
     const idx = this.data.questions.findIndex(q => q.id === id);
     if (idx === -1) return false;
     const { storage_state: _ignoredStorageState, sourceDeviceId: _ignoredSourceDeviceId, ownerUserId: _ignoredOwnerUserId, ...safeUpdates } = updates;
-    const provenanceSafeUpdates = applyTrustedQuestionProvenance(safeUpdates, {}, this.data.questions[idx]) as Partial<Question>;
+    const knowledgeIds = safeUpdates.taxonomy_ids?.knowledge ?? safeUpdates.knowledge_ids ?? safeUpdates.knowledge_point_ids;
+    const modelIds = safeUpdates.taxonomy_ids?.model ?? safeUpdates.model_ids ?? safeUpdates.model_point_ids;
+    const compatibleUpdates = {
+      ...safeUpdates,
+      ...(knowledgeIds !== undefined ? { knowledge_ids: knowledgeIds, knowledge_point_ids: knowledgeIds } : {}),
+      ...(modelIds !== undefined ? { model_ids: modelIds, model_point_ids: modelIds } : {}),
+    };
+    const provenanceSafeUpdates = applyTrustedQuestionProvenance(compatibleUpdates, {}, this.data.questions[idx]) as Partial<Question>;
     this.createQuestionVersionSnapshot(this.data.questions[idx]);
     this.data.questions[idx] = this.normalizeQuestionRecord(mergeBrowserQuestionUpdate(this.data.questions[idx], provenanceSafeUpdates as any) as unknown as Question);
     this.data.questions[idx] = {
@@ -2755,7 +2760,8 @@ class BrowserDatabaseService {
       updates.knowledge_ids ||
       updates.model_ids ||
       updates.knowledge_point_ids ||
-      updates.model_point_ids
+      updates.model_point_ids ||
+      updates.taxonomy_ids
     ) {
       this.syncQuestionRelsFromLegacyFields(this.data.questions[idx]);
     }

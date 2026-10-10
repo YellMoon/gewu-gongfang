@@ -8,7 +8,7 @@ const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compile
 const loaded = new Module(filename); loaded._compile(compiled, filename);
 const { shouldProtectEditorExit, runQuestionEditorSave, nextDirtyState, persistRemoteThenLocal, registerEditorSpaExitGuard, confirmEditorSpaExit, createQuestionEditorSaveGate, requestEditorSpaNavigation, mergeImportedQuestionMetadata, createRichDocumentDirtyCoordinator } = loaded.exports;
 
-for (const page of ['QuestionBankEdit.tsx', 'QuestionBankPreview.tsx', 'QuestionBankImport.tsx']) {
+for (const page of ['QuestionBankPreview.tsx', 'QuestionBankImport.tsx']) {
   const source = fs.readFileSync(require.resolve(`../../pages/${page}`), 'utf8');
   assert.ok(source.includes('<QuestionStructureEditor'), `${page} must render the canonical structure editor`);
   assert.ok(source.includes('createQuestionEditorSaveGate') && source.includes('saveGate'), `${page} must use the tested exclusive save coordinator`);
@@ -25,7 +25,7 @@ const appSource = fs.readFileSync(require.resolve('../../App.tsx'), 'utf8');
 assert.ok((appSource.match(/requestEditorSpaNavigation/g) || []).length >= 3, 'custom events and direct AppShell navigation must share the guarded coordinator');
 const importSource = fs.readFileSync(require.resolve('../../pages/QuestionBankImport.tsx'), 'utf8');
 assert.ok(importSource.includes('onClick={() => openImportedQuestionEditor(row)}'), 'parsed import rows must expose the real structure editor');
-const editSource = fs.readFileSync(require.resolve('../../pages/QuestionBankEdit.tsx'), 'utf8');
+const editSource = fs.readFileSync(require.resolve('../../pages/QuestionBankPreview.tsx'), 'utf8');
 assert.ok(editSource.includes('Modal.useModal()') && editSource.includes('modalApi.confirm('), 'dirty confirmation must use the contextual modal API without console errors');
 
 assert.strictEqual(nextDirtyState(true, 'load'), false);

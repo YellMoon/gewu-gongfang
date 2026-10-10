@@ -1,7 +1,7 @@
 const assert = require('assert');
 const fs = require('fs');
 
-const source = fs.readFileSync(require.resolve('./QuestionBankEdit.tsx'), 'utf8');
+const source = fs.readFileSync(require.resolve('./QuestionBankPreview.tsx'), 'utf8');
 
 assert.ok(source.includes('await db?.refreshAuthorityProjection?.({ notifyConsumers: false })'),
   'question editing must refresh the authenticated cloud projection before indexing local records');

@@ -69,6 +69,7 @@ const QuestionPreviewCard: React.FC<{
   terms?: string[];
   knowledgeNames?: string[];
   modelNames?: string[];
+  taxonomyLabels?: Array<{ id: string; name: string; values: string[] }>;
   inBasket?: boolean;
   selectable?: boolean;
   checked?: boolean;
@@ -84,6 +85,7 @@ const QuestionPreviewCard: React.FC<{
   terms = [],
   knowledgeNames = [],
   modelNames = [],
+  taxonomyLabels,
   inBasket = false,
   selectable = false,
   checked = false,
@@ -194,6 +196,7 @@ const QuestionPreviewCard: React.FC<{
       <div className={`qb-card-main${imageOnly ? ' qb-card-main--image-only' : ''}`}>
         {selectable && (
           <Checkbox
+            aria-label={`选择第${index !== undefined ? index + 1 : question.id}题`}
             className="qb-card-checkbox"
             checked={checked}
             onChange={event => onCheckChange?.(event.target.checked)}
@@ -218,8 +221,10 @@ const QuestionPreviewCard: React.FC<{
       <div className="qb-card-footer">
         <div className="qb-card-source-line">
           <span>来源：<QuestionRichText terms={terms}>{sourceText}</QuestionRichText></span>
-          <span>知识点：<QuestionRichText terms={terms}>{knowledgeText}</QuestionRichText></span>
-          {modelText && <span>模型：<QuestionRichText terms={terms}>{modelText}</QuestionRichText></span>}
+          {taxonomyLabels ? taxonomyLabels.filter(system => system.values.length).map(system => <span key={system.id}>{system.name}：<QuestionRichText terms={terms}>{system.values.join('、')}</QuestionRichText></span>) : <>
+            <span>知识点：<QuestionRichText terms={terms}>{knowledgeText}</QuestionRichText></span>
+            {modelText && <span>模型：<QuestionRichText terms={terms}>{modelText}</QuestionRichText></span>}
+          </>}
         </div>
         <Space className="qb-card-footer-actions" size={8}>
           {onDelete && (
@@ -233,7 +238,7 @@ const QuestionPreviewCard: React.FC<{
               <Button className="qb-delete-button" danger icon={<DeleteOutlined />}>删除</Button>
             </Popconfirm>
           )}
-          {onEdit && <Button className="qb-edit-button" icon={<EditOutlined />} onClick={onEdit}>{editLabel}</Button>}
+          {onEdit && <Button className="qb-edit-button" aria-label={editLabel} icon={<EditOutlined />} onClick={onEdit}>{editLabel}</Button>}
           {onToggleBasket && (
             <Button
               className={inBasket ? 'qb-basket-button active' : 'qb-basket-button'}

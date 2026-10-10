@@ -91,6 +91,11 @@ async function main() {
       knowledge_point_ids: ['kp-1'], model_point_ids: [], taxonomy_ids: [], has_formula: false,
     },
   };
+  // Node selections are unrestricted, including renamed legacy systems and all custom systems.
+  commandPayload.record.knowledge_point_ids = Array.from({ length: 5000 }, (_, index) => `kp-${index}`);
+  commandPayload.record.model_point_ids = Array.from({ length: 5000 }, (_, index) => `mp-${index}`);
+  commandPayload.record.taxonomy_ids = Object.fromEntries(Array.from({ length: 129 }, (_, index) => [`system-${index}`, [`node-${index}`]]));
+  commandPayload.record.taxonomy_ids.custom = Array.from({ length: 5000 }, (_, index) => `custom-${index}`);
   const commandPayloadHash = crypto.createHash('sha256')
     .update(stableJson({ type: 'question.create.v1', payload: commandPayload }), 'utf8').digest('hex');
   const receipt = await service.submitDesktopDraft({
@@ -110,6 +115,13 @@ async function main() {
   });
   assert.match(receipt.resultHash, /^[0-9a-f]{64}$/);
   assert.strictEqual(commandTransactions, 1, 'each accepted desktop draft must execute inside one transaction');
+  const taxonomyParameter = calls.filter(call => call[0].includes('INSERT INTO business.questions')).at(-1)[1]
+    .find(value => typeof value === 'string' && value.includes('"knowledgePointIds"'));
+  const submittedTaxonomy = JSON.parse(taxonomyParameter);
+  assert.strictEqual(submittedTaxonomy.knowledgePointIds.length, 5000);
+  assert.strictEqual(submittedTaxonomy.modelPointIds.length, 5000);
+  assert.strictEqual(submittedTaxonomy.taxonomyIds.custom.length, 5000);
+  assert.strictEqual(Object.keys(submittedTaxonomy.taxonomyIds).length, 130);
   assert.ok(!calls.some(call => call[0].match(/storage_state|file_path|data_url|oss_url/iu)));
   const replayedReceipt = await service.submitDesktopDraft({
     tenantId: 'default',

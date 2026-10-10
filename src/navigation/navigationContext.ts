@@ -10,7 +10,7 @@ export type RevenueStatisticsContext = {
   mode?: 'arrears' | 'closed-balance';
 };
 
-export type QuestionBankPreviewContext = { questionId?: string };
+export type QuestionBankPreviewContext = { questionId?: string; questionIds?: string[] };
 
 export type QuestionBankToolsContext = {
   mode?: 'problem-questions';

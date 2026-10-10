@@ -79,6 +79,7 @@ const baseNavGroups: NavGroup[] = [
     items: [
       { key: 'question-bank-tools', label: '试题导入', description: '导入试题、处理问题和查看统计', icon: <ToolOutlined /> },
       { key: 'question-bank-preview', label: '题库', description: '检索题目内容', icon: <FileTextOutlined /> },
+      { key: 'question-bank-edit', label: '编辑与打标', description: '编辑试题并逐题或批量关联体系节点', icon: <BookOutlined /> },
       { key: 'question-bank-paper', label: '组卷', description: '从题篮生成试卷', icon: <FileWordOutlined /> },
     ],
   },
@@ -130,7 +131,7 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   'account-review': { key: 'account-review', label: '账号申请审核', icon: <SafetyCertificateOutlined /> },
   'identity-devices': identityDeviceNavItem,
   'question-bank-import': { key: 'question-bank-import', label: '试题导入', description: '导入题库文档和试题', icon: <UploadOutlined /> },
-  'question-bank-edit': { key: 'question-bank-edit', label: '试题编辑', description: '编辑已导入的试题', icon: <BookOutlined /> },
+  'question-bank-edit': { key: 'question-bank-edit', label: '编辑与打标', description: '编辑试题并关联体系节点', icon: <BookOutlined /> },
   'question-bank-audit': { key: 'question-bank-audit', label: '审核中心', description: '审核题库变更与内容', icon: <SafetyCertificateOutlined /> },
   today: todayNavItem,
   'course-calendar': { key: 'course-calendar', label: '课程表', icon: <CalendarOutlined /> },

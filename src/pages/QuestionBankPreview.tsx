@@ -2,7 +2,7 @@
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography,
-  Pagination, Alert, Popover
+  Pagination, Alert
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, CopyOutlined,
@@ -14,6 +14,8 @@ import type { Question, KnowledgeNode, QuestionVersion, TaxonomySystem } from '.
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import TaxonomyManager from '../components/TaxonomyManager';
 import QuestionBankFilters from '../components/QuestionBankFilters';
+import QuestionTaxonomyFields from '../components/QuestionTaxonomyFields';
+import { parseQuestionNumbers, questionTaxonomyPatch, questionTaxonomyValues, TaxonomyValues } from '../services/questionTaxonomyEditing';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
 const { normalizeDesktopQuestionDeleteContext, verifyNativeQuestionDraft } = require('../services/desktopQuestionDeleteContext');
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
@@ -98,9 +100,17 @@ function filterTreeDataByText(treeData: any[], keyword: string): any[] {
     .filter(Boolean);
 }
 
-const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject?: string }> = ({ context, subject = '物理' }) => {
+const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionIds?: string[] }; subject?: string; taggingWorkspace?: boolean }> = ({ context, subject = '物理', taggingWorkspace = false }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionTotal, setQuestionTotal] = useState(0);
+  const [loadError, setLoadError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [questionNumbers, setQuestionNumbers] = useState('');
+  const [batchValues, setBatchValues] = useState<TaxonomyValues>({});
+  const [batchMode, setBatchMode] = useState<'add' | 'replace' | 'remove'>('add');
+  const [taggingBusy, setTaggingBusy] = useState(false);
+  const taggingGate = React.useRef(false);
+  const [modalApi, modalContextHolder] = Modal.useModal();
   const [localStoreReady, setLocalStoreReady] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -141,9 +151,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
 
   const [searchText, setSearchText] = useState<string>('');
   const [appliedSearchText, setAppliedSearchText] = useState<string>('');
-  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
-  const [batchTagOpen, setBatchTagOpen] = useState(false);
-  const [batchTagText, setBatchTagText] = useState('');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>(() => taggingWorkspace ? [...new Set(context?.questionIds || [])] : []);
   const [basketIds] = useQuestionBasketIds();
   const [previewQuestion, setPreviewQuestion] = useState<Question | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -165,6 +173,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   const richDirtyCoordinator = React.useRef(createRichDocumentDirtyCoordinator(null)).current;
   const formDirtyRef = React.useRef(false);
   const editorQuestionType = Form.useWatch('type', form);
+  const editorSubject = Form.useWatch('subject', form) || subject;
+  const editorSystems: TaxonomySystem[] = ((window as any).dbService?.getTaxonomySystems?.(editorSubject) || []);
+  const editorNodes = Object.fromEntries(editorSystems.map(system => [system.id, (window as any).dbService?.getTaxonomyNodes?.(system.id) || []]));
 
   const openRichDocument = (document: QuestionRichDocument) => {
     richDirtyCoordinator.reset(document);
@@ -226,9 +237,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   } as Question);
 
   const loadData = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
     try {
       const db = (window as any).dbService;
-      await db?.refreshAuthorityProjection?.({ notifyConsumers: false });
+      try { await db?.refreshAuthorityProjection?.({ notifyConsumers: false }); }
+      catch { setLoadError('暂时无法读取最新题库，显示本地已保存的试题。离线修改在联网后需整体确认提交。'); }
       const cachedKnowledge = await getCachedQuestionTree('knowledge');
       const cachedModels = await getCachedQuestionTree('model');
       if (cachedKnowledge.length > 0) setKnowledgeNodes(cachedKnowledge);
@@ -251,8 +265,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
         setRefreshNonce(value => value + 1);
       }
     } catch (e) {
-      console.error('QuestionBankPreview loadData error:', e);
-    }
+      setLoadError('题库读取失败，请刷新重试。');
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -333,41 +347,73 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
     return n ? n.name : id;
   };
 
+  const pageQuery = useCallback((page: number) => ({
+    page, pageSize: QUESTION_PAGE_SIZE, subjectIds: filterSubjects, types: filterTypes,
+    examTypes: filterExamTypes, statuses: filterStatuses, grades: filterGrades,
+    semesters: filterSemesters, difficulties: filterDifficulties, years: filterYears,
+    basketIds, basketOnly, sources: filterSources, regions: filterRegions, schools: filterSchools,
+    searchTerms, searchScope: 'stem' as const, taxonomyFilters: expandedTaxonomyFilters, dedupe: true,
+  }), [filterSubjects, filterTypes, filterExamTypes, filterStatuses, filterGrades, filterSemesters,
+    filterDifficulties, filterYears, basketIds, basketOnly, filterSources, filterRegions, filterSchools,
+    searchTerms, expandedTaxonomyFilters]);
   const refreshQuestionPage = useCallback(async () => {
     if (!localStoreReady) return;
     setPageLoading(true);
     try {
-      const result = await queryQuestionPage({
-        page: currentPage,
-        pageSize: QUESTION_PAGE_SIZE,
-        subjectIds: filterSubjects,
-        types: filterTypes,
-        examTypes: filterExamTypes,
-        statuses: filterStatuses,
-        grades: filterGrades,
-        semesters: filterSemesters,
-        difficulties: filterDifficulties,
-        years: filterYears,
-        basketIds,
-        basketOnly,
-        sources: filterSources,
-        regions: filterRegions,
-        schools: filterSchools,
-        searchTerms,
-        searchScope: 'stem',
-        taxonomyFilters: expandedTaxonomyFilters,
-        dedupe: true,
-      });
+      const result = await queryQuestionPage(pageQuery(currentPage));
       setQuestionTotal(result.total);
       setQuestions(result.rows.map(normalizeQuestion));
-    } finally {
-      setPageLoading(false);
-    }
-  }, [
-    localStoreReady, refreshNonce, currentPage, filterSubjects, filterTypes, filterExamTypes, filterStatuses,
-    filterGrades, filterSemesters, filterDifficulties, filterYears, basketIds, basketOnly,
-    filterSources, filterRegions, filterSchools, searchTerms, expandedTaxonomyFilters,
-  ]);
+    } finally { setPageLoading(false); }
+  }, [localStoreReady, refreshNonce, currentPage, pageQuery]);
+
+  const selectByNumbers = async () => {
+    if (taggingGate.current) return;
+    taggingGate.current = true; setTaggingBusy(true);
+    try {
+      const numbers = parseQuestionNumbers(questionNumbers, questionTotal);
+      const pages = [...new Set(numbers.map(number => Math.ceil(number / QUESTION_PAGE_SIZE)))];
+      const results = await Promise.all(pages.map(async page => [page, await queryQuestionPage(pageQuery(page))] as const));
+      const byPage = new Map(results);
+      const ids = numbers.map(number => byPage.get(Math.ceil(number / QUESTION_PAGE_SIZE))?.rows[(number - 1) % QUESTION_PAGE_SIZE]?.id);
+      if (ids.some(id => !id)) throw new Error('筛选结果已变化，请刷新后重新选题');
+      setSelectedRowKeys(previous => [...new Set([...previous, ...ids as string[]])]);
+      setQuestionNumbers('');
+    } catch (error) { message.error((error as Error).message); }
+    finally { taggingGate.current = false; setTaggingBusy(false); }
+  };
+  const saveTaxonomy = (question: Question, next: TaxonomyValues) => {
+    if (taggingGate.current) return;
+    const previous = questionTaxonomyValues(question);
+    const changes = Object.fromEntries(Object.entries(next).filter(([system, ids]) => JSON.stringify(ids) !== JSON.stringify(previous[system] || [])));
+    if (!Object.keys(changes).length) return;
+    try {
+      const db = (window as any).dbService;
+      const latest = db?.getAllQuestions?.().find((row: Question) => row.id === question.id);
+      if (!latest || db.updateQuestion(question.id, questionTaxonomyPatch(latest, changes)) !== true) throw new Error('打标未保存，请重试');
+      const updated = db.getAllQuestions().find((row: Question) => row.id === question.id);
+      setQuestions(rows => rows.map(row => row.id === question.id ? normalizeQuestion(updated) : row));
+    } catch (error) { message.error((error as Error).message); }
+  };
+  const applyTaxonomyBatch = async () => {
+    if (taggingGate.current) return;
+    const changes = Object.fromEntries(Object.entries(batchValues).filter(([, ids]) => ids.length));
+    if (!selectedRowKeys.length || !Object.keys(changes).length) { message.warning('请先选择试题和体系节点'); return; }
+    taggingGate.current = true; setTaggingBusy(true);
+    const db = (window as any).dbService;
+    const byId = new Map<string, Question>((db?.getAllQuestions?.() || []).map((row: Question) => [row.id, row]));
+    const failed: string[] = [];
+    try {
+      for (const id of selectedRowKeys) {
+        try {
+          const question = byId.get(id);
+          if (!question || db.updateQuestion(id, questionTaxonomyPatch(question, changes, batchMode)) !== true) failed.push(id);
+        } catch { failed.push(id); }
+      }
+      message[failed.length ? 'warning' : 'success'](`已更新 ${selectedRowKeys.length - failed.length} 题的打标${failed.length ? `，${failed.length} 题未完成，已保留选中以便重试` : ''}`);
+      setSelectedRowKeys(failed);
+      await loadData();
+    } finally { taggingGate.current = false; setTaggingBusy(false); }
+  };
 
   useEffect(() => { refreshQuestionPage(); }, [refreshQuestionPage]);
 
@@ -517,6 +563,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   const changeSubject = (value: string) => {
     resetFilters();
     setSelectedRowKeys([]);
+    setBatchValues({});
+    setQuestionNumbers('');
     setFilterSubjects([value]);
     setKnowledgeSelectedIds([undefined]);
     setFilterExcludeKnowledgeIds([undefined]);
@@ -532,61 +580,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
   const visibleTreeData = filterTreeDataByText(treeData, treeSearchText);
   const visibleModelTreeData = filterTreeDataByText(modelTreeData, treeSearchText);
 
-  // Knowledge tree checkbox renderer in modal
-  const renderKnowledgeCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
-    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return (
-      <div style={{ marginLeft: depth * 20 }}>
-        {children.map(n => (
-          <div key={n.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-              <Form.Item name={['knowledge_ids', n.id]} valuePropName="checked" noStyle>
-                <Checkbox />
-              </Form.Item>
-              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
-            </div>
-            {renderKnowledgeCheckboxes(nodes, n.id, depth + 1)}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderModelCheckboxes = (nodes: KnowledgeNode[], parentId?: string, depth = 0) => {
-    const children = nodes.filter(n => n.parent_id === parentId || (!parentId && !n.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return (
-      <div style={{ marginLeft: depth * 20 }}>
-        {children.map(n => (
-          <div key={n.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-              <Form.Item name={['model_ids', n.id]} valuePropName="checked" noStyle>
-                <Checkbox />
-              </Form.Item>
-              <span style={{ fontWeight: n.parent_id ? 'normal' : 600 }}>{n.name}</span>
-            </div>
-            {renderModelCheckboxes(nodes, n.id, depth + 1)}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  const renderTaxonomyCheckboxes = (systemId: string, nodes: KnowledgeNode[], parentId?: string, depth = 0): React.ReactNode => {
-    const children = nodes.filter(node => node.parent_id === parentId || (!parentId && !node.parent_id)).sort((a, b) => a.order - b.order);
-    if (children.length === 0) return null;
-    return <div style={{ marginLeft: depth * 20 }}>
-      {children.map(node => <div key={node.id}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0' }}>
-          <Form.Item name={['taxonomy_ids', systemId, node.id]} valuePropName="checked" noStyle><Checkbox /></Form.Item>
-          <span style={{ fontWeight: node.parent_id ? 'normal' : 600 }}>{node.name}</span>
-        </div>
-        {renderTaxonomyCheckboxes(systemId, nodes, node.id, depth + 1)}
-      </div>)}
-    </div>;
-  };
-
   const handleSave = async () => {
     if (!richDocument) return;
     const structureErrors = validateQuestionStructure(richDocument, form.getFieldValue('type'));
@@ -595,12 +588,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
     const db = (window as any).dbService;
     const projection = projectQuestionRichContent(richDocument);
 
-    const taxonomy_ids = Object.fromEntries(taxonomySystems.map(system => [
-      system.id,
-      Object.entries(values.taxonomy_ids?.[system.id] || {}).filter(([, checked]) => checked).map(([id]) => id),
-    ]));
-    const knowledge_ids: string[] = taxonomy_ids.knowledge || [];
-    const model_ids: string[] = taxonomy_ids.model || [];
+    const taxonomyPatch = questionTaxonomyPatch(editing || {}, values.taxonomy_ids || {});
+    const { model_ids } = taxonomyPatch;
 
     const data: any = {
       subject: values.subject,
@@ -612,13 +601,11 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
       analysis: projection.explanation,
       sub_questions: projection.subQuestions,
       rich_content: richDocument,
-      knowledge_ids,
+      ...taxonomyPatch,
       knowledge_point: values.knowledge_point || '',
-      model_ids,
-      taxonomy_ids,
       model_point: model_ids.length > 0 ? modelNodes.find(n => n.id === model_ids[0])?.name || '' : '',
       formulas: projection.formulas,
-      tags: values.tags ? values.tags.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      tags: editing?.tags || [],
       source: values.source || '',
       year: values.year || '',
       grade: values.grade || '',
@@ -688,22 +675,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
     setQuestionTotal(previous => Math.max(0, previous - succeeded.length));
     setSelectedRowKeys(previous => previous.filter(id => !succeeded.includes(id)));
     message.info(`Deleted ${succeeded.length}; failed ${selectedRowKeys.length - succeeded.length}`);
-  };
-
-  const handleBatchTag = () => {
-    const tagsToAdd = [...new Set(batchTagText.split(/[,，、;；\n]/).map(tag => tag.trim()).filter(Boolean))];
-    if (!tagsToAdd.length) { message.warning('请输入标签'); return; }
-    const db = (window as any).dbService;
-    const byId = new Map<string, Question>((db?.getAllQuestions?.() || questions).map((q: Question) => [q.id, q]));
-    const failed: string[] = [];
-    for (const id of selectedRowKeys) {
-      try {
-        const q = byId.get(id);
-        if (!q || db.updateQuestion(id, { tags: [...new Set([...(q.tags || []), ...tagsToAdd])] }) !== true) failed.push(id);
-      } catch { failed.push(id); }
-    }
-    message[failed.length ? 'warning' : 'success'](`已为 ${selectedRowKeys.length - failed.length} 题添加标签${failed.length ? `，${failed.length} 题未完成，请重试` : ''}`);
-    setSelectedRowKeys(failed); setBatchTagOpen(false); loadData();
   };
 
   const handleBatchTaxonomy = (systemId: string, nodeId: string) => {
@@ -800,21 +771,12 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
     setEditing(r);
     openRichDocument(normalizeStructureOrder(r.rich_content?.type === 'question-document' ? createQuestionRichDocument(r.rich_content) : migrateLegacyQuestion(r as any)));
     setVersions(db?.getLatestQuestionVersions?.(r.id, 5) || []);
-    const knForm: Record<string, boolean> = {};
-    (r.knowledge_ids || []).forEach(id => { knForm[id] = true; });
-    const modelForm: Record<string, boolean> = {};
-    (r.model_ids || []).forEach(id => { modelForm[id] = true; });
-    const taxonomyForm = Object.fromEntries(taxonomySystems.map(system => [
-      system.id,
-      Object.fromEntries((r.taxonomy_ids?.[system.id] || (system.id === 'knowledge' ? r.knowledge_ids : system.id === 'model' ? r.model_ids : []) || []).map(id => [id, true])),
-    ]));
+
     form.setFieldsValue({
       subject: r.subject || '物理', type: normalizeQuestionType(r.type), difficulty: r.difficulty,
       knowledge_point: r.knowledge_point,
-      knowledge_ids: knForm,
       model_point: r.model_point,
-      model_ids: modelForm,
-      taxonomy_ids: taxonomyForm,
+      taxonomy_ids: questionTaxonomyValues(r),
       tags: (r.tags || []).join(','),
       source: r.source, year: r.year, grade: r.grade,
               semester: r.semester, exam_type: r.exam_type || '其他',
@@ -841,7 +803,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
       setModalVisible(false); setEditing(null); setRichDocument(null); setEditorDirty(false); setVersions([]); form.resetFields(); loadData();
     };
     if (!editorDirty) restore();
-    else Modal.confirm({ title: '\u5f53\u524d\u4fee\u6539\u5c1a\u672a\u4fdd\u5b58', content: '\u6062\u590d\u5386\u53f2\u7248\u672c\u5c06\u4e22\u5f03\u5f53\u524d\u4fee\u6539\uff0c\u662f\u5426\u7ee7\u7eed\uff1f', onOk: restore });
+    else modalApi.confirm({ title: '\u5f53\u524d\u4fee\u6539\u5c1a\u672a\u4fdd\u5b58', content: '\u6062\u590d\u5386\u53f2\u7248\u672c\u5c06\u4e22\u5f03\u5f53\u524d\u4fee\u6539\uff0c\u662f\u5426\u7ee7\u7eed\uff1f', onOk: restore });
   };
 
   const columns: any[] = [
@@ -955,6 +917,8 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
 
   return (
     <Row gutter={16} className="qb-preview-page">
+      {modalContextHolder}
+      {loadError && <Col span={24}><Alert type="warning" showIcon message={loadError} /></Col>}
       {/* Knowledge Tree Sidebar */}
         <Col span={5} className="qb-preview-sidebar">
           <Card
@@ -1059,15 +1023,34 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
 
     </div>
 
+          {taggingWorkspace && <div className="qb-tagging-toolbar">
+            <Text strong>批量打标</Text>
+            <Text type="secondary">每题下方按当前学科显示全部体系，可搜索任意层级节点并多选。在线修改沿用自动同步；离线修改联网后需整体确认提交。</Text>
+            <Space wrap>
+              <Checkbox disabled={taggingBusy || pageLoading || loading} checked={!!visibleFiltered.length && visibleFiltered.every(q => selectedRowKeys.includes(q.id))}
+                indeterminate={visibleFiltered.some(q => selectedRowKeys.includes(q.id)) && !visibleFiltered.every(q => selectedRowKeys.includes(q.id))}
+                onChange={event => setSelectedRowKeys(previous => event.target.checked ? [...new Set([...previous, ...visibleFiltered.map(q => q.id)])] : previous.filter(id => !visibleFiltered.some(q => q.id === id)))}>全选本页</Checkbox>
+              <Input aria-label="批量选择题号" placeholder="题号：1, 3, 8-12（支持跨页）" value={questionNumbers} disabled={taggingBusy || pageLoading || loading}
+                onChange={event => setQuestionNumbers(event.target.value)} onPressEnter={selectByNumbers} />
+              <Button disabled={pageLoading || loading} loading={taggingBusy} onClick={selectByNumbers}>按题号加入选择</Button>
+              <Text className="qb-tagging-selection">已选 {selectedRowKeys.length} 题（跨页保留）</Text>
+              <Button disabled={taggingBusy || !selectedRowKeys.length} onClick={() => setSelectedRowKeys([])}>清空选择</Button>
+            </Space>
+            <Text type="secondary">题号以当前筛选结果中题目左侧的编号为准；批量操作只作用于下方已选节点的体系，其余体系保持原值。</Text>
+            <QuestionTaxonomyFields systems={taxonomySystems} nodes={taxonomyNodes} value={batchValues} onChange={setBatchValues} disabled={taggingBusy} />
+            <Space wrap>
+              <AntSelect aria-label="批量打标方式" value={batchMode} disabled={taggingBusy} style={{ width: 150 }} onChange={setBatchMode}
+                options={[{ value: 'add', label: '追加节点' }, { value: 'replace', label: '替换所选体系' }, { value: 'remove', label: '移除节点' }]} />
+              <Button type="primary" onClick={applyTaxonomyBatch} loading={taggingBusy} disabled={!selectedRowKeys.length}>应用到所选试题</Button>
+            </Space>
+          </div>}
           {/* Batch Operations */}
-          {selectedRowKeys.length > 0 && (
+          {!taggingWorkspace && selectedRowKeys.length > 0 && (
             <div style={{ marginBottom: 12, padding: '8px 12px', background: '#e6f7ff', borderRadius: 6 }}>
               <Space wrap>
                 <CheckCircleOutlined style={{ color: '#1890ff' }} />
                 <Text strong>已选 {selectedRowKeys.length} 题</Text>
-                <Popover trigger="click" open={batchTagOpen} onOpenChange={setBatchTagOpen} content={<Space direction="vertical"><Input.TextArea aria-label="批量标签" placeholder="多个标签用逗号或换行分隔" value={batchTagText} onChange={event => setBatchTagText(event.target.value)} /><Button type="primary" onClick={handleBatchTag}>添加到已选试题</Button></Space>}>
-                  <Button size="small"><TagsOutlined /> 批量打标签</Button>
-                </Popover>
+                <Button size="small" aria-label="批量打标" icon={<TagsOutlined />} onClick={() => window.dispatchEvent(new CustomEvent('navigate-page', { detail: { page: 'question-bank-edit', context: { questionIds: selectedRowKeys } } }))}>批量打标</Button>
                 {taxonomySystems.map(system => <Dropdown key={system.id} menu={{ items: (taxonomyNodes[system.id] || []).map(node => ({ key: node.id, label: node.name })), onClick: ({ key }) => handleBatchTaxonomy(system.id, key) }} disabled={!(taxonomyNodes[system.id] || []).length}>
                   <Button size="small"><BranchesOutlined /> 批量关联{system.name}</Button>
                 </Dropdown>)}
@@ -1089,18 +1072,26 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
             {questionTotal === 0 && !pageLoading ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
               const inBasket = basketIds.includes(q.id);
               return (
+                <div key={q.id} data-question-id={q.id} className={taggingWorkspace ? 'qb-tagging-question' : undefined}>
                 <QuestionPreviewCard
-                  key={q.id}
+                  selectable
+                  checked={selectedRowKeys.includes(q.id)}
+                  onCheckChange={checked => { if (!taggingGate.current) setSelectedRowKeys(previous => checked ? [...new Set([...previous, q.id])] : previous.filter(id => id !== q.id)); }}
                   question={q}
                   index={(safeCurrentPage - 1) * QUESTION_PAGE_SIZE + idx}
                   terms={searchTerms}
                   knowledgeNames={(q.knowledge_ids || []).map(getNodeName)}
                   modelNames={(q.model_ids || []).map(getModelName)}
+                  taxonomyLabels={taggingWorkspace ? [] : taxonomySystems.map(system => ({ id: system.id, name: system.name,
+                    values: (questionTaxonomyValues(q)[system.id] || []).map(id => taxonomyNodes[system.id]?.find(node => node.id === id)?.name || id) }))}
                   inBasket={inBasket}
                   onEdit={() => openEditModal(q)}
                     onDelete={questionDeletePresentation(q, deleteContext).enabled ? () => { void handleDelete(q.id); } : undefined}
                   onToggleBasket={() => toggleQuestionBasket(q.id)}
                 />
+                {taggingWorkspace && <QuestionTaxonomyFields systems={taxonomySystems} nodes={taxonomyNodes}
+                  value={questionTaxonomyValues(q)} onChange={next => saveTaxonomy(q, next)} disabled={taggingBusy} />}
+                </div>
               );
             })}
               </div>
@@ -1161,7 +1152,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
         onCancel={() => {
           const close = () => { setModalVisible(false); setEditing(null); setRichDocument(null); setEditorDirty(false); setVersions([]); form.resetFields(); };
           if (!editorDirty) close();
-          else Modal.confirm({ title: '\u5c1a\u6709\u672a\u4fdd\u5b58\u7684\u4fee\u6539', content: '\u786e\u5b9a\u79bb\u5f00\u5417\uff1f', onOk: close });
+          else modalApi.confirm({ title: '\u5c1a\u6709\u672a\u4fdd\u5b58\u7684\u4fee\u6539', content: '\u786e\u5b9a\u79bb\u5f00\u5417\uff1f', onOk: close });
         }}
         confirmLoading={saving}
         maskClosable={!editorDirty}
@@ -1223,32 +1214,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string }; subject
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            {/* utf-8 metadata */}
-            <Col span={24}>
-              <Form.Item name="tags" label="标签（逗号分隔）">
-                <Input placeholder="高考、压轴题、易错" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item label="关联知识点">
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {knowledgeNodes.length > 0 ? renderKnowledgeCheckboxes(knowledgeNodes) : <Empty description="暂无知识点数据" />}
-            </div>
+          <Form.Item name="taxonomy_ids" label="体系标签">
+            <QuestionTaxonomyFields systems={editorSystems} nodes={editorNodes} disabled={saving} />
           </Form.Item>
-          <Form.Item label="关联模型">
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {modelNodes.length > 0 ? renderModelCheckboxes(modelNodes) : <Empty description="暂无模型数据" />}
-            </div>
-          </Form.Item>
-          {taxonomySystems.map(system => <Form.Item key={system.id} label={system.name}>
-            <div style={{ maxHeight: 200, overflow: 'auto', background: '#fafafa', padding: 12, borderRadius: 6 }}>
-              {(taxonomyNodes[system.id] || []).length > 0
-                ? renderTaxonomyCheckboxes(system.id, taxonomyNodes[system.id] || [])
-                : <Empty description={'\u6682\u65e0\u8282\u70b9\u6570\u636e'} />}
-            </div>
-          </Form.Item>)}
           {editing && (
             <>
               <Divider orientation="left" style={{ fontSize: 12 }}>版本记录</Divider>
