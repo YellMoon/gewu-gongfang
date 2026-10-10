@@ -8,6 +8,12 @@ module.exports = {
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/ledger.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/courseColors.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/calendarHolidays.js'));
+      // ModuleScopePlugin checks the original request before resolving .js.
+      if (scope) {
+        for (const file of [...scope.allowedFiles]) {
+          if (file.endsWith('.js')) scope.allowedFiles.add(file.slice(0, -3));
+        }
+      }
       if (process.env.GEWU_E2E_SKIP_TYPECHECK === '1') {
         webpackConfig.plugins = webpackConfig.plugins.filter(plugin => (
           plugin?.constructor?.name !== 'ForkTsCheckerWebpackPlugin'
