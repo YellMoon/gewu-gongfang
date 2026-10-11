@@ -51,7 +51,7 @@ const { createDesktopAuthorityRuntime } = require('../../public/desktopAuthority
 
     const source = fs.readFileSync('src/services/browserDatabase.ts', 'utf8');
     const start = source.indexOf('  private recordAuthorityDraft(');
-    const end = source.indexOf('  private compactLargeQuestionPayloads()', start);
+    const end = source.indexOf('  private generateId()', start);
     assert(start >= 0 && end > start);
     const compiled = ts.transpileModule('class Capture {\n' + source.slice(start, end) + '\n}\nglobalThis.Capture=Capture;', {
       compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },

@@ -26,6 +26,7 @@ import { createAuthorityDraftFromLocalMutation } from './authorityDraftAdapter.m
 import { captureDesktopCloudDraftConnectivity } from './desktopIdentityClient.mjs';
 import { sameScheduleDraftContent } from './scheduleDraftComparison.mjs';
 import { createAuthorityCacheCheckpoint } from './authorityCacheCheckpoint.mjs';
+import { encodeBrowserDatabase, decodeBrowserDatabase } from './browserDatabaseStorage';
 import { buildAuthorityBackedBrowserCache } from './authorityProjectionCacheAdapter.mjs';
 import { overlayStudentContactDraftProjection } from './studentContactDraftProjection.mjs';
 import { overlayInstitutionBillingDraft } from './institutionBillingDraft.mjs';
@@ -265,10 +266,10 @@ class BrowserDatabaseService {
       if (legacy) {
         try {
           const projected = projectDesktopCacheForIdentity(
-            JSON.parse(legacy),
+            decodeBrowserDatabase(legacy),
             readCurrentDesktopIdentityContext()
           );
-          stored = JSON.stringify(projected);
+          stored = encodeBrowserDatabase(projected);
           localStorage.setItem(this.storageKey, stored);
         } catch (error) {
           console.warn('[browserDatabase] legacy identity partition projection skipped:', error);
@@ -277,7 +278,7 @@ class BrowserDatabaseService {
     }
     let loadedData: any = null;
     if (stored) {
-      loadedData = JSON.parse(stored);
+      loadedData = decodeBrowserDatabase(stored);
       // 合并数据，确保所有数组字段都存在，旧版本数据缺失就用 []
       this.data = {
         students: [],
@@ -430,12 +431,7 @@ class BrowserDatabaseService {
 
   private saveData(): void {
     this.rebuildQuestionIndexes();
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify(this.data));
-    } catch (error) {
-      this.compactLargeQuestionPayloads();
-      localStorage.setItem(this.storageKey, JSON.stringify(this.data));
-    }
+    localStorage.setItem(this.storageKey, encodeBrowserDatabase(this.data));
     this.authorityCacheCheckpoint.commit(this.data);
   }
 
@@ -525,29 +521,6 @@ class BrowserDatabaseService {
       window.desktopAuthority.appendDraftBatchSync(drafts.map(captureDesktopCloudDraftConnectivity));
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
     window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
-  }
-
-  private compactLargeQuestionPayloads(): void {
-    const stripLargeValue = (value: any): any => {
-      if (typeof value === 'string') {
-        return value.length > 2000 ? value.replace(/data:[^"'\s>]+/g, '') : value;
-      }
-      if (Array.isArray(value)) return value.map(stripLargeValue);
-      if (value && typeof value === 'object') {
-        const next: any = { ...value };
-        if (typeof next.data_url === 'string' && next.data_url.startsWith('data:')) next.data_url = '';
-        if (typeof next.url === 'string' && next.url.startsWith('data:')) next.url = '';
-        if (typeof next.oss_url === 'string' && next.oss_url.startsWith('data:')) next.oss_url = '';
-        Object.keys(next).forEach(key => { next[key] = stripLargeValue(next[key]); });
-        return next;
-      }
-      return value;
-    };
-    this.data.questions = (this.data.questions || []).map(question => stripLargeValue(question));
-    this.data.importTaskItems = (this.data.importTaskItems || []).map(item => ({
-      ...item,
-      payload: item.payload ? stripLargeValue(item.payload) : item.payload,
-    }));
   }
 
   private generateId(): string {
