@@ -18,6 +18,7 @@ import Edit from ${JSON.stringify(path.join(root, 'src/pages/QuestionBankEdit.ts
 import {upsertQuestionLocalRecord} from ${JSON.stringify(path.join(root, 'src/services/questionLocalStore.ts'))};
 import AppShell from ${JSON.stringify(path.join(root, 'src/layout/AppShell.tsx'))};
 import Basket from ${JSON.stringify(path.join(root, 'src/components/QuestionBasket.tsx'))};
+import {isQuestionBasketVisible} from ${JSON.stringify(path.join(root, 'src/navigation/appNavigation.tsx'))};
 import ${JSON.stringify(path.join(root, 'src/index.css'))};
 const systems=['课程知识','解题方法','能力层级','教材章节','命题主题'].map((name,index)=>({id:'s'+(index+1),name,subject:'物理',sort_no:index}));
 const nodes=Object.fromEntries(systems.map((system,index)=>[system.id, [
@@ -49,7 +50,7 @@ function Fixture(){const [subject,setSubject]=React.useState('物理'),[route,se
  React.useEffect(()=>{const listener=event=>navigate(event.detail);window.addEventListener('navigate-page',listener);return()=>window.removeEventListener('navigate-page',listener);},[]);
  window.__navigate=navigate;
  return <AppShell currentPage={route} questionBankSubject={subject} onQuestionBankSubjectChange={setSubject} onNavigate={navigate} onRefresh={()=>window.dispatchEvent(new Event('authority-projection-refreshed'))}>
- {route==='question-bank-edit'?<Edit subject={subject} context={context}/>:<Preview subject={subject}/>}<Basket/></AppShell>;}
+ {route==='question-bank-edit'?<Edit subject={subject} context={context}/>:<Preview subject={subject}/>}<Basket visible={isQuestionBasketVisible(route)}/></AppShell>;}
 createRoot(document.getElementById('root')).render(<Fixture/>);
 `, 'utf8');
 function compile() {
@@ -92,6 +93,19 @@ function compile() {
   await page.waitForFunction(()=>document.querySelectorAll('.qb-tagging-question').length===10);
   assert.equal(await page.title(),'编辑与体系打标验证');
   const first=page.locator('[data-question-id="q0"]'), batch=page.locator('.qb-tagging-toolbar');
+  assert.equal(await page.locator('.qb-card-checkbox').count(),10);
+  assert.equal(await page.locator('.qb-basket-button').count(),0);
+  assert.equal(await page.getByRole('button',{name:'打开试题篮',exact:true}).count(),0);
+  assert.equal(await page.locator('.taxonomy-node-actions').count(),0);
+  assert.equal(await page.locator('.taxonomy-tree .ant-tree-node-content-wrapper[draggable="true"]').count(),0);
+  await page.getByRole('button',{name:'课程知识',exact:true}).click({button:'right'});
+  assert.equal(await page.getByRole('menuitem',{name:'新建体系',exact:true}).count(),0);
+  await page.locator('#taxonomy-system-body-s1 .ant-tree-switcher').first().click();
+  await page.locator('[data-node-id="s1a"]').click({button:'right'});
+  await page.getByRole('menuitem',{name:'选定为包含标签',exact:true}).waitFor();
+  await page.keyboard.press('Escape');
+  await page.mouse.click(900,80);
+  checks.push('tagging keeps selection and tree filtering, without basket, taxonomy management or dragging');
   assert.equal(await page.locator('.qb-filter-panel').count(),0);
   const coefficient=first.getByRole('spinbutton',{name:'\u96be\u5ea6\u7cfb\u6570',exact:true});
   await coefficient.fill('0.700123456');
@@ -170,26 +184,31 @@ function compile() {
   assert.equal(await page.locator('.ant-modal:visible [data-tagging-system]').count(),5);
   await page.locator('.ant-modal:visible .ant-modal-footer .ant-btn-primary').click();
   await page.locator('.ant-modal:visible').waitFor({state:'hidden'});
-  await page.getByRole('checkbox',{name:'选择第1题',exact:true}).check();
-  await page.getByRole('button',{name:'批量打标',exact:true}).click();
+  assert.equal(await page.locator('.qb-card-checkbox').count(),0);
+  const card=page.locator('.qb-question-card').first();
+  await card.locator('.qb-basket-button').click();
+  await page.waitForFunction(()=>document.querySelector('.qb-question-card')?.classList.contains('qb-question-card--in-basket'));
+  await page.evaluate(()=>window.__navigate({page:'question-bank-edit',context:{questionIds:['q0']}}));
   await page.waitForFunction(()=>document.querySelector('h1')?.textContent.includes('物理编辑与打标'));
   await page.getByText('已选 1 题（跨页保留）',{exact:true}).waitFor();
+  assert.equal(await page.locator('.qb-question-card--in-basket,.qb-basket-button').count(),0);
+  assert.equal(await page.getByRole('button',{name:'打开试题篮',exact:true}).count(),0);
   await page.evaluate(()=>{window.__offline=true;window.dispatchEvent(new Event('authority-projection-refreshed'));});
   await page.getByText(/暂时无法读取最新题库，显示本地已保存的试题/).waitFor();
   assert.equal(await page.locator('.qb-tagging-question').count(),10);
-  checks.push('original question-bank editor retained; preview batch entry transfers selected IDs; offline cache still readable');
+  checks.push('original question-bank editor retained; tagging route context retains selected IDs and does not fade basket questions; offline cache still readable');
   await page.getByRole('button',{name:'选择科目题库',exact:true}).click();
   await page.getByRole('menuitem',{name:'化学题库',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('h1')?.textContent.includes('化学编辑与打标'));
   await page.waitForFunction(()=>!document.querySelectorAll('.qb-tagging-question').length);
   assert.equal(await batch.locator('[data-tagging-system]').count(),0);
-  await page.getByText('当前学科暂无体系，请在左侧新建体系',{exact:true}).waitFor();
+  await page.getByText('当前学科暂无体系，请先在题库页面新建体系',{exact:true}).waitFor();
   await page.screenshot({path:path.join(output,'04-empty-offline.png')});
   await page.setViewportSize({width:1366,height:768});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[]);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({browserPlugin:'absent; repository Playwright fixture',runtime:useElectron?'Electron':'Chrome',checks,errors,consoleErrors,geometry},null,2),'utf8');
   console.log('Tagging runtime checks passed: '+checks.length+' groups. Evidence: '+output);
- }catch(error){await page.screenshot({path:path.join(output,'failure.png'),fullPage:false});console.error('Runtime errors',errors,'console errors',consoleErrors,'evidence',output);throw error;}
+ }catch(error){await page.screenshot({path:path.join(output,'failure.png'),fullPage:false});console.error('Runtime errors',errors,'console errors',consoleErrors,'evidence',output,'roles',await page.getByRole('button').allTextContents(),'hidden',await page.locator('[aria-hidden="true"]').evaluateAll(els=>els.map(el=>({tag:el.tagName,cls:el.className,text:el.innerText?.slice(0,150)}))));throw error;}
  finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

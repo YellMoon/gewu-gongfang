@@ -33,6 +33,7 @@ window.dbService={
  getKnowledgeTree:()=>[], getModelTree:()=>[],initDefaultModelTree:()=>{},
  getTaxonomySystems:subject=>subject==='物理'?systems:[],
  getTaxonomyNodes:id=>nodes[id]||[],
+ createTaxonomyNode:(systemId,patch)=>{const node={...patch,id:'fixture-new-'+nodes[systemId].length};nodes[systemId]=[...nodes[systemId],node];queueMicrotask(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));return node;},
  getQuestionBasketIds:()=>basket,setQuestionBasketIds:ids=>basket=ids,
 };
 function Fixture(){const [subject,setSubject]=React.useState('物理');return <AppShell currentPage="question-bank-preview" questionBankSubject={subject} onQuestionBankSubjectChange={setSubject} onNavigate={()=>{}} onRefresh={()=>{}}><Preview subject={subject}/><Basket/></AppShell>;}
@@ -67,6 +68,18 @@ function compile() {
   await page.goto('http://127.0.0.1:'+server.address().port);
   const total=async count=> { try { await page.waitForFunction(count=>document.querySelector('.qb-result-count')?.textContent.includes('共 '+count+' 题'),count); } catch(error) { await page.screenshot({path:path.join(output,'failure.png'),fullPage:true}); console.error('EXPECTED',count,'ERRORS',errors,'DOM',await page.locator('body').innerText()); throw error; } };
   await total(24);
+  assert.equal(await page.locator('.qb-card-checkbox').count(),0,'question browsing has no selection checkboxes');
+  const addedCard=page.locator('.qb-question-card').first();
+  await addedCard.locator('.qb-basket-button').click();
+  await page.waitForFunction(()=>document.querySelector('.qb-question-card')?.classList.contains('qb-question-card--in-basket'));
+  const fade=await addedCard.evaluate(card=>({main:getComputedStyle(card.querySelector('.qb-card-main')).opacity,source:getComputedStyle(card.querySelector('.qb-card-source-line')).opacity,actions:getComputedStyle(card.querySelector('.qb-card-footer-actions')).opacity}));
+  assert.deepEqual(fade,{main:'0.46',source:'0.46',actions:'1'});
+  assert.equal(await addedCard.locator('.qb-basket-button').innerText(),'移出试题篮');
+  await page.screenshot({path:path.join(output,'13-in-basket-faded.png'),fullPage:false});
+  await addedCard.locator('.qb-basket-button').click();
+  await page.waitForFunction(()=>!document.querySelector('.qb-question-card')?.classList.contains('qb-question-card--in-basket'));
+  assert.equal(await addedCard.locator('.qb-card-main').evaluate(el=>getComputedStyle(el).opacity),'1');
+  checks.push('browsing has no selection checkboxes; add fades content and source, remove remains clear and restores appearance');
   await page.setViewportSize({width:1366,height:768});
   await page.screenshot({path:path.join(output,'00-compact-first-screen-1366.png'),fullPage:false});
   const firstCard=await page.locator('.qb-question-card').first().boundingBox();
@@ -113,6 +126,16 @@ function compile() {
   checks.push('compact taxonomy panel has no subject heading; system context menu opens new-system inline editor');
   await page.locator('#taxonomy-system-body-s1 .ant-tree-switcher').first().click();
   await page.locator('[data-node-id="s1b"]').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.ant-motion-collapse'));
+  await page.locator('[data-node-id="s1b"]').hover();
+  await page.locator('[data-node-id="s1b"]').getByRole('button',{name:'添加子节点 匀变速直线运动',exact:true}).click();
+  await page.getByRole('textbox',{name:'节点名称',exact:true}).fill('新节点验证');
+  await page.getByRole('textbox',{name:'节点名称',exact:true}).press('Enter');
+  await page.locator('[data-node-id^="fixture-new-"]').waitFor();
+  assert.equal(await systemButton.getAttribute('aria-expanded'),'true');
+  assert(await page.locator('[data-node-id="s1a"]').isVisible(),'expanded sibling survives creation and authority refresh');
+  await page.screenshot({path:path.join(output,'14-created-node-stays-expanded.png'),fullPage:false});
+  checks.push('new child stays visible after save and projection refresh; expanded ancestor and siblings preserved');
   await systemButton.click();assert.equal(await systemButton.getAttribute('aria-expanded'),'false');
   assert.equal(await page.locator('[data-node-id="s1b"]').isVisible(),false);
   assert.equal(await page.locator('#taxonomy-system-body-s2').isVisible(),true,'systems collapse independently');

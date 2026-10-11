@@ -8,6 +8,7 @@ import './TaxonomyManager.css';
 type Props = {
   subject: string;
   compact?: boolean;
+  readOnly?: boolean;
   database: any;
   subjects?: string[];
   onSubjectChange?: (subject: string) => void;
@@ -39,7 +40,7 @@ function treeData(nodes: KnowledgeNode[], parentId?: string): any[] {
 
 type InlineEdit = { kind: 'system-create' | 'system-rename' | 'node-create' | 'node-rename'; system?: TaxonomySystem; node?: KnowledgeNode; value: string };
 
-const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChanged, subjects, onSubjectChange, filterSelections, onFilterChange }) => {
+const TaxonomyManager: React.FC<Props> = ({ subject, compact, readOnly = false, database, onChanged, subjects, onSubjectChange, filterSelections, onFilterChange }) => {
   const [systems, setSystems] = useState<TaxonomySystem[]>([]);
   const [nodesBySystem, setNodesBySystem] = useState<Record<string, KnowledgeNode[]>>({});
   const [edit, setEdit] = useState<InlineEdit | null>(null);
@@ -66,7 +67,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
   }, [reload]);
 
   const saveEdit = () => {
-    if (!edit) return;
+    if (readOnly || !edit) return;
     const name = edit.value.trim();
     if (!name) { message.warning(edit.kind.startsWith('system') ? '请输入体系名称' : '请输入节点名称'); return; }
     try {
@@ -116,6 +117,9 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
   };
 
   const addNode = (system: TaxonomySystem, parent?: KnowledgeNode) => {
+    if (readOnly) return;
+    setCollapsedSystems(current => ({ ...current, [system.id]: false }));
+    if (parent) setExpanded(current => ({ ...current, [system.id]: [...new Set([...(current[system.id] || []), parent.id])] }));
     setEdit({ kind: 'node-create', system, node: parent, value: '' });
   };
 
@@ -169,7 +173,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
   };
 
   return <div className={compact ? 'taxonomy-manager taxonomy-manager--compact' : 'taxonomy-manager'}>
-    {!compact && (onSubjectChange ? <div className="taxonomy-manager__heading">
+    {!compact && !readOnly && (onSubjectChange ? <div className="taxonomy-manager__heading">
       <Dropdown trigger={['click']} menu={{ selectedKeys: [subject], items: (subjects || [subject]).map(value => ({ key: value, label: `${value}体系` })), onClick: ({ key }) => onSubjectChange(key) }}>
         <Button className="taxonomy-manager__subject" type="text" aria-label="选择科目体系"><BranchesOutlined /><strong>{subject}体系</strong><DownOutlined /></Button>
       </Dropdown>
@@ -179,10 +183,10 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
     </div>)}
     {edit?.kind === 'system-create' && inlineEditor()}
     <Input.Search className="taxonomy-search" allowClear aria-label="搜索体系节点" placeholder="搜索体系节点" value={search} onChange={event => setSearch(event.target.value)} />
-    {systems.length === 0 && <><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text.empty} />{compact && <Button aria-label={text.addSystem} size="small" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>}</>}
+    {systems.length === 0 && <><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={readOnly ? '\u5f53\u524d\u5b66\u79d1\u6682\u65e0\u4f53\u7cfb' : text.empty} />{compact && !readOnly && <Button aria-label={text.addSystem} size="small" icon={<PlusOutlined />} onClick={() => setEdit({ kind: 'system-create', value: '' })}>{text.addSystem}</Button>}</>}
     {systems.map((system, index) => <div key={system.id} className="taxonomy-system-block">
       <div className="taxonomy-system-title">
-        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <Dropdown trigger={['contextMenu']} menu={{ items: [
+        {edit?.kind === 'system-rename' && edit.system?.id === system.id ? inlineEditor() : <Dropdown trigger={readOnly ? [] : ['contextMenu']} menu={{ items: readOnly ? [] : [
           { key: 'create', label: text.addSystem }, { key: 'root', label: text.addRoot },
           { key: 'rename', label: '重命名体系' }, { key: 'delete', label: text.removeSystem, danger: true },
         ], onClick: ({ key, domEvent }) => {
@@ -199,7 +203,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
           <DownOutlined className={collapsedSystems[system.id] && !search.trim() && edit?.system?.id !== system.id ? 'is-collapsed' : ''} />
           <strong>{index + 1}. {system.name}</strong>
         </button></Dropdown>}
-        {!compact && <Space className="taxonomy-node-actions" size={0}>
+        {!compact && !readOnly && <Space className="taxonomy-node-actions" size={0}>
           <Tooltip title={text.addRoot}><Button type="text" size="small" aria-label={`添加根节点 ${system.name}`} icon={<PlusOutlined />} onClick={() => addNode(system)} /></Tooltip>
           <Tooltip title={text.rename}><Button type="text" size="small" aria-label={`重命名体系 ${system.name}`} icon={<EditOutlined />} onClick={() => setEdit({ kind: 'system-rename', system, value: system.name })} /></Tooltip>
           <Tooltip title={text.removeSystem}><Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => removeSystem(system)} /></Tooltip>
@@ -218,7 +222,7 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
             ? [...new Set([...(expanded[system.id] || []), edit.node.id])]
             : expanded[system.id] || []}
         onExpand={keys => setExpanded(current => ({ ...current, [system.id]: keys }))}
-        draggable={edit || search.trim() ? false : { icon: false }}
+        draggable={readOnly || edit || search.trim() ? false : { icon: false }}
         onDrop={info => dropNode(system, info)}
         treeData={systemTreeData(system)}
         titleRender={(treeNode: any) => {
@@ -228,11 +232,11 @@ const TaxonomyManager: React.FC<Props> = ({ subject, compact, database, onChange
           const excluded = selection?.exclude.includes(treeNode.key);
           const row = <div className="taxonomy-node-title" tabIndex={0} data-node-id={treeNode.key}>
             <span title={treeNode.node.name} style={{ color: included ? '#1677ff' : excluded ? '#d92d20' : undefined }}>{treeNode.node.name}{included ? '（包含）' : excluded ? '（排除）' : ''}</span>
-            <Space className="taxonomy-node-actions" size={0}>
+            {!readOnly && <Space className="taxonomy-node-actions" size={0}>
               <Tooltip title={text.addChild}><Button type="text" size="small" aria-label={'添加子节点 ' + treeNode.node.name} icon={<PlusOutlined />} onClick={event => { event.stopPropagation(); addNode(system, treeNode.node); }} /></Tooltip>
               <Tooltip title={text.rename}><Button type="text" size="small" aria-label={'重命名节点 ' + treeNode.node.name} icon={<EditOutlined />} onClick={event => { event.stopPropagation(); renameNode(system, treeNode.node); }} /></Tooltip>
               <Tooltip title={text.removeNode}><Button type="text" danger size="small" aria-label={'删除节点 ' + treeNode.node.name} icon={<DeleteOutlined />} onClick={event => { event.stopPropagation(); removeNode(system, treeNode.node); }} /></Tooltip>
-            </Space>
+            </Space>}
           </div>;
           return onFilterChange ? <Dropdown trigger={['contextMenu']} menu={{
             items: [

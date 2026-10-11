@@ -40,10 +40,10 @@
 .taxonomy-system-toggle:focus-visible { outline:2px solid #1677ff; outline-offset:3px; }
 .taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { position:absolute; right:0; top:0; z-index:1; visibility:hidden; opacity:0; background:rgba(240,245,255,.92); border-radius:4px; }
 .taxonomy-manager .taxonomy-node-title:hover > .taxonomy-node-actions,.taxonomy-manager .taxonomy-node-title:focus-within > .taxonomy-node-actions { visibility:visible; opacity:1; }
-.taxonomy-manager .taxonomy-node-title:hover > span,.taxonomy-manager .taxonomy-node-title:focus-within > span { opacity:.4; }
+.taxonomy-manager .taxonomy-node-title:has(> .taxonomy-node-actions):hover > span,.taxonomy-manager .taxonomy-node-title:has(> .taxonomy-node-actions):focus-within > span { opacity:.4; }
 @media(hover:none) {
   .taxonomy-manager .taxonomy-node-title > .taxonomy-node-actions { visibility:visible; opacity:1; }
-  .taxonomy-manager .taxonomy-node-title > span { opacity:.4; }
+  .taxonomy-manager .taxonomy-node-title:has(> .taxonomy-node-actions) > span { opacity:.4; }
 }
 
 .taxonomy-manager--compact .taxonomy-search { margin-top:0; }

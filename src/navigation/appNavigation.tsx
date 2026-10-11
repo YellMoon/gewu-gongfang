@@ -54,6 +54,9 @@ export const questionBankPages: PageKey[] = [
   'question-bank-audit',
 ];
 
+export const isQuestionBasketVisible = (page: PageKey): boolean =>
+  questionBankPages.includes(page) && page !== 'question-bank-edit';
+
 export const todayNavItem: NavItem = {
   key: 'today',
   label: '今日工作台',

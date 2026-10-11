@@ -7,7 +7,7 @@ const source = fs.readFileSync(require.resolve('./QuestionPreviewCard.tsx'), 'ut
 
 assert.ok(source.includes('onToggleBasket'), 'question cards must accept a direct basket action');
 assert.ok(source.includes('inBasket ?'), 'the card action must render a distinct selected-basket state');
-assert.ok(source.includes('String.fromCharCode(31227, 20986, 35797, 39064, 34013)'), 'the selected-basket action must state that clicking removes the question');
+assert.ok(source.includes("'\\u79fb\\u51fa\\u8bd5\\u9898\\u7bee'"), 'the selected-basket action must state that clicking removes the question');
 assert.ok(source.includes('ShoppingCartOutlined'), 'the direct basket action must remain visually identifiable');
 assert.ok(source.includes('showAnswer = false'), 'desktop question cards must keep answers and explanations collapsed by default');
 assert.ok(!source.includes('qb-answer-button'), 'only clicking the question area toggles answers; no separate answer button');

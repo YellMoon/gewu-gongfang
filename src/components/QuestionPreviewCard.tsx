@@ -180,7 +180,7 @@ const QuestionPreviewCard: React.FC<{
     : /<img\b/i.test(displayContent) && !displayContent.replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;/g, ' ').trim();
 
   return (
-    <article id={`question-card-${question.id}`} className="qb-question-card"
+    <article id={`question-card-${question.id}`} className={`qb-question-card${inBasket ? ' qb-question-card--in-basket' : ''}`}
       tabIndex={hasAnswerContent ? 0 : undefined}
       aria-expanded={hasAnswerContent ? answerExpanded : undefined}
       onClick={event => {
@@ -248,7 +248,7 @@ const QuestionPreviewCard: React.FC<{
               icon={<ShoppingCartOutlined />}
               onClick={onToggleBasket}
             >
-              {inBasket ? String.fromCharCode(31227, 20986, 35797, 39064, 34013) : '加入试题篮'}
+              {inBasket ? '\u79fb\u51fa\u8bd5\u9898\u7bee' : '加入试题篮'}
             </Button>
           )}
         </Space>

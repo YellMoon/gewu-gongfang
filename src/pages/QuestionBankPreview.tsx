@@ -938,7 +938,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
             size="small"
             className="qb-preview-tree-card"
           >
-            <TaxonomyManager subject={currentSubject} compact database={dbService} onChanged={handleTaxonomiesChanged} filterSelections={taxonomySelections} onFilterChange={handleTreeFilterChange} />
+            <TaxonomyManager subject={currentSubject} compact readOnly={taggingWorkspace} database={dbService} onChanged={handleTaxonomiesChanged} filterSelections={taxonomySelections} onFilterChange={handleTreeFilterChange} />
             {legacyTaxonomyUiEnabled() && <>
             <Input
               allowClear
@@ -985,23 +985,6 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       {/* Main Content */}
       <Col span={19} className="qb-preview-main">
         <Card className="qb-preview-main-card">
-          {/* Header */}
-          {!taggingWorkspace && selectedRowKeys.length > 0 && <div className="qb-preview-header">
-            <Space>
-              {selectedRowKeys.length > 0 && (
-                <>
-                  <Button
-                    type="primary"
-                    icon={<FileWordOutlined />}
-                    onClick={handleBatchGroupExam}
-                  >
-                    批量组卷 ({selectedRowKeys.length})
-                  </Button>
-                </>
-              )}
-            </Space>
-          </div>}
-
           {/* Filters */}
           {!taggingWorkspace && <div className="qb-filter-panel">
             <QuestionBankFilters key={currentSubject} subject={currentSubject}
@@ -1047,7 +1030,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
                 onChange={event => setSelectedRowKeys(previous => event.target.checked ? [...new Set([...previous, ...visibleFiltered.map(q => q.id)])] : previous.filter(id => !visibleFiltered.some(q => q.id === id)))}>全选本页</Checkbox>
               <Input aria-label="批量选择题号" placeholder="题号：1, 3, 8-12（支持跨页）" value={questionNumbers} disabled={taggingBusy || pageLoading || loading}
                 onChange={event => setQuestionNumbers(event.target.value)} onPressEnter={selectByNumbers} />
-              <Button disabled={pageLoading || loading} loading={taggingBusy} onClick={selectByNumbers}>按题号加入选择</Button>
+              <Button aria-label="按题号加入选择" disabled={pageLoading || loading} loading={taggingBusy} onClick={selectByNumbers}>按题号加入选择</Button>
               <Text className="qb-tagging-selection">已选 {selectedRowKeys.length} 题（跨页保留）</Text>
               <Button disabled={taggingBusy || !selectedRowKeys.length} onClick={() => setSelectedRowKeys([])}>清空选择</Button>
             </Space>
@@ -1056,40 +1039,19 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
             <Space wrap>
               <AntSelect aria-label="批量打标方式" value={batchMode} disabled={taggingBusy} style={{ width: 150 }} onChange={setBatchMode}
                 options={[{ value: 'add', label: '追加节点' }, { value: 'replace', label: '替换所选体系' }, { value: 'remove', label: '移除节点' }]} />
-              <Button type="primary" onClick={applyTaxonomyBatch} loading={taggingBusy} disabled={!selectedRowKeys.length}>应用到所选试题</Button>
+              <Button aria-label="应用到所选试题" type="primary" onClick={applyTaxonomyBatch} loading={taggingBusy} disabled={!selectedRowKeys.length}>应用到所选试题</Button>
             </Space>
           </div>}
-          {/* Batch Operations */}
-          {!taggingWorkspace && selectedRowKeys.length > 0 && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', background: '#e6f7ff', borderRadius: 6 }}>
-              <Space wrap>
-                <CheckCircleOutlined style={{ color: '#1890ff' }} />
-                <Text strong>已选 {selectedRowKeys.length} 题</Text>
-                <Button size="small" aria-label="批量打标" icon={<TagsOutlined />} onClick={() => window.dispatchEvent(new CustomEvent('navigate-page', { detail: { page: 'question-bank-edit', context: { questionIds: selectedRowKeys } } }))}>批量打标</Button>
-                {taxonomySystems.map(system => <Dropdown key={system.id} menu={{ items: (taxonomyNodes[system.id] || []).map(node => ({ key: node.id, label: node.name })), onClick: ({ key }) => handleBatchTaxonomy(system.id, key) }} disabled={!(taxonomyNodes[system.id] || []).length}>
-                  <Button size="small"><BranchesOutlined /> 批量关联{system.name}</Button>
-                </Dropdown>)}
-                <Popconfirm title={`确定删除选中的 ${selectedRowKeys.length} 题？`} onConfirm={handleBatchDelete}>
-                  <Button size="small" danger><DeleteOutlined /> 批量删除</Button>
-                </Popconfirm>
-                <Button size="small" icon={<FileWordOutlined />} type="primary" onClick={handleBatchGroupExam}>
-                  批量组卷
-                </Button>
-                <Button size="small" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
-              </Space>
-            </div>
-          )}
-
           {/* Table */}
           <div className="qb-question-display-viewport">
             <div className="qb-question-display-stage">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {questionTotal === 0 && !pageLoading ? <Empty description="暂无试题" /> : visibleFiltered.map((q, idx) => {
-              const inBasket = basketIds.includes(q.id);
+              const inBasket = !taggingWorkspace && basketIds.includes(q.id);
               return (
                 <div key={q.id} data-question-id={q.id} className={taggingWorkspace ? 'qb-tagging-question' : undefined}>
                 <QuestionPreviewCard
-                  selectable
+                  selectable={taggingWorkspace}
                   checked={selectedRowKeys.includes(q.id)}
                   onCheckChange={checked => { if (!taggingGate.current) setSelectedRowKeys(previous => checked ? [...new Set([...previous, q.id])] : previous.filter(id => id !== q.id)); }}
                   question={q}
@@ -1102,7 +1064,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
                   inBasket={inBasket}
                   onEdit={() => openEditModal(q)}
                     onDelete={questionDeletePresentation(q, deleteContext).enabled ? () => { void handleDelete(q.id); } : undefined}
-                  onToggleBasket={() => toggleQuestionBasket(q.id)}
+                  onToggleBasket={taggingWorkspace ? undefined : () => toggleQuestionBasket(q.id)}
                 />
                 {taggingWorkspace && <QuestionDifficultyField value={q.difficulty_coefficient} disabled={taggingBusy} onSave={value => saveDifficulty(value, [q.id])} />}
                 {taggingWorkspace && <QuestionTaxonomyFields systems={taxonomySystems} nodes={taxonomyNodes}

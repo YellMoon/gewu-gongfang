@@ -18,7 +18,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import TodayWorkbench from './pages/TodayWorkbench';
 import QuestionBasket from './components/QuestionBasket';
 import AppShell from './layout/AppShell';
-import { PageKey, questionBankPages } from './navigation/appNavigation';
+import { PageKey, isQuestionBasketVisible } from './navigation/appNavigation';
 import { NavigationContext, NavigationInput, normalizeNavigationTarget } from './navigation/navigationContext';
 import { requestEditorSpaNavigation } from './components/question-editor/questionEditorSession';
 import { openDesktopSync } from './components/AuthorityOutboxPanel';
@@ -185,7 +185,7 @@ const App: React.FC = () => {
       <div key={`${currentPage}-${refreshKey}`}>
         {renderPage()}
       </div>
-      <QuestionBasket visible={questionBankPages.includes(currentPage)} />
+      <QuestionBasket visible={isQuestionBasketVisible(currentPage)} />
     </AppShell>
   );
 };
