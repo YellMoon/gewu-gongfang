@@ -37,7 +37,7 @@ function renderNode(node: any, key: React.Key, textHtml?: string, prefix?: React
     // Exam layout follows paragraph/hardBreak nodes, not imported math display metadata.
     return <span key={key} className="structured-question-viewer__formula"><QuestionFormulaContent latex={latex} /></span>;
   }
-  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} width={node.attrs?.width || undefined} height={node.attrs?.height || undefined} style={{ width: node.attrs?.width || undefined, maxWidth: '100%', height: 'auto', aspectRatio: node.attrs?.width && node.attrs?.height ? `${node.attrs.width} / ${node.attrs.height}` : undefined }} data-align={node.attrs?.align || 'center'} />;
+  if (node.type === 'image') return <RichAssetImage key={key} src={node.attrs?.src} assetKey={node.attrs?.assetKey} alt={node.attrs?.alt || ''} width={node.attrs?.width || undefined} height={node.attrs?.height || undefined} style={{ width: node.attrs?.width || undefined, maxWidth: '100%', height: 'auto', aspectRatio: node.attrs?.width && node.attrs?.height ? `${node.attrs.width} / ${node.attrs.height}` : undefined }} data-align={node.attrs?.align || 'left'} />;
   const nodes = node.content || [];
   const formattedText = new Map<number, string>();
   const ordinaryText = (child: any) => child.type === 'text' && !(child.marks || []).some((mark: any) => ['subscript', 'superscript'].includes(mark.type));

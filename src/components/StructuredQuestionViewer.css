@@ -2,11 +2,10 @@
 .structured-question-viewer .physics-unit { font-style: normal; }
 .structured-question-viewer .katex { font-size: 1em; white-space: normal; }
 .structured-question-viewer p { margin: 0 0 8px; white-space: pre-wrap; }
-.structured-question-viewer img { display: block; max-width: 100%; height: auto; margin: 10px auto; }
+.structured-question-viewer img { display: block; max-width: 100%; height: auto; margin: 10px auto 10px 0; }
 .structured-question-viewer img[data-align='left'] { margin-left: 0; margin-right: auto; }
+.structured-question-viewer img[data-align='center'] { margin-left: auto; margin-right: auto; }
 .structured-question-viewer img[data-align='right'] { margin-left: auto; margin-right: 0; }
-.structured-question-viewer img[data-align='left'] { margin-left: 0; }
-.structured-question-viewer img[data-align='right'] { margin-right: 0; }
 .structured-question-viewer__formula { display: inline; margin: 0 2px; vertical-align: baseline; }
 .structured-question-viewer__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 22px; margin-top: 10px; align-items: baseline; }
 .structured-question-viewer__option { display: flex; gap: 0.35em; align-items: baseline; min-width: 0; }

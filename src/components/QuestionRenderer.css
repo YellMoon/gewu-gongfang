@@ -148,7 +148,7 @@
 /* ── 题干图片区域 ── */
 .question-images {
   margin: 10px 0;
-  text-align: center;
+  text-align: left;
 }
 
 .question-images img {

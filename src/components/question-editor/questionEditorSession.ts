@@ -36,7 +36,7 @@ function canonicalRichValue(value: unknown): string {
         const attrs = Object.keys(raw).sort().reduce((next, attrKey) => {
           const attrValue = raw[attrKey];
           if (attrValue === undefined || attrValue === null) return next;
-          if (entry.type === 'image' && attrKey === 'align' && attrValue === 'center') return next;
+          if (entry.type === 'image' && attrKey === 'align' && attrValue === 'left') return next;
           if ((entry.type === 'paragraph' || entry.type === 'heading') && attrKey === 'indent' && attrValue === 0) return next;
           next[attrKey] = normalize(attrValue);
           return next;

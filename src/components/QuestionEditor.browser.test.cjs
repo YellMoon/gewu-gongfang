@@ -22,7 +22,7 @@ import {storeQuestionAsset} from '${absolute('src/services/questionAssetStore')}
 import '${absolute('src/index.css')}';
 import '${absolute('node_modules/katex/dist/katex.min.css')}';
 const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6srUAAAAASUVORK5CYII=';
-const doc=(label,id)=>({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:label+' '},{type:'formula',attrs:{id:'formula-'+id,canonicalLatex:'x^2',displayMode:'inline'}}]},{type:'image',attrs:{src:'question-asset://diagram',assetKey:'diagram',alt:'题图 '+label,width:107.5,height:49,align:'center'}},{type:'paragraph',content:[{type:'text',text:'图片之后 '+label}]}]});
+const doc=(label,id)=>({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:label+' '},{type:'formula',attrs:{id:'formula-'+id,canonicalLatex:'x^2',displayMode:'inline'}}]},{type:'image',attrs:{src:'question-asset://diagram',assetKey:'diagram',alt:'题图 '+label,width:107.5,height:49}},{type:'paragraph',content:[{type:'text',text:'图片之后 '+label}]}]});
 const seed={version:1,type:'question-document',sections:{stem:doc('题干','stem'),options:[{id:'option-a',label:'A',isCorrect:true,content:doc('选项','option')},{id:'option-b',label:'B',isCorrect:false,content:doc('选项B','option-b')}],subQuestions:[{id:'sub-1',label:'(1)',content:doc('小题题干','sub'),answer:doc('小题答案','sub-answer')}],answer:doc('主答案','answer'),analysis:doc('解析','analysis')}};
 window.fixture={normalize:normalizeQuestionRichContent};
 function Fixture(){const [value,setValue]=React.useState(seed),[epoch,setEpoch]=React.useState(0);window.fixture.value=value;window.fixture.setValue=setValue;window.fixture.seed=seed;return <main style={{maxWidth:960,margin:'20px auto',padding:16,background:'white'}}><h2>编辑试题 · 实际组件验证</h2><button id="save" onClick={()=>{const saved=normalizeQuestionRichContent(value);localStorage.setItem('question-editor-verification',JSON.stringify(saved));window.fixture.saved=saved}}>保存验证草稿</button><button id="reload" onClick={()=>{setValue(JSON.parse(localStorage.getItem('question-editor-verification')));setEpoch(v=>v+1)}}>重新打开验证草稿</button><QuestionStructureEditor key={epoch} questionType="单选题" value={value} onChange={setValue}/><h3>保存内容预览</h3><StructuredQuestionViewer value={value} showAnswer/></main>}
@@ -57,6 +57,15 @@ async function verify(page, carrier) {
   assert(Math.abs(geometry.width - 107.5) < 0.1 && Math.abs(geometry.height - 49) < 0.1, 'editor retains document display size even when intrinsic image ratio differs');
   const previewGeometry = await page.locator('.structured-question-viewer > img').first().evaluate(img => ({ width: img.getBoundingClientRect().width, height: img.getBoundingClientRect().height }));
   assert.deepEqual(previewGeometry, geometry, 'viewer and editor use identical image dimensions');
+  const alignment = async () => page.evaluate(() => {
+    const editor = document.querySelector('.rich-question-editor__surface');
+    const viewer = document.querySelector('.structured-question-viewer');
+    const measure = (root, selector) => ({ image: root.querySelector(selector).getBoundingClientRect().x, text: root.querySelector('p').getBoundingClientRect().x });
+    return { editor: measure(editor, '.rich-image-node img'), viewer: measure(viewer, ':scope > img') };
+  });
+  const defaultAlignment = await alignment();
+  for (const area of Object.values(defaultAlignment)) assert(Math.abs(area.image - area.text) < 1, 'default image aligns with the text left edge');
+  await page.screenshot({ path: path.join(output, carrier + '-default-image-left.png'), fullPage: true });
   const fonts = await page.evaluate(() => ({ editor: getComputedStyle(document.querySelector('.rich-question-editor__surface')).fontFamily, viewer: getComputedStyle(document.querySelector('.structured-question-viewer')).fontFamily }));
   assert.equal(fonts.editor, fonts.viewer, 'editor defaults to displayed question font');
   const cdp = await page.context().newCDPSession(page);
@@ -69,6 +78,9 @@ async function verify(page, carrier) {
   }
   assert(actualFonts.editor.length && actualFonts.viewer.length, 'font evidence includes actual rendered platform faces');
   await stemImage.click();
+  await stem.getByLabel('图片居中', { exact: true }).click();
+  const centeredAlignment = await alignment();
+  for (const area of Object.values(centeredAlignment)) assert(area.image > area.text + 100, 'explicit center alignment remains available in editor and viewer');
   await stem.getByLabel('图片宽度', { exact: true }).fill('215');
   await stem.getByLabel('图片宽度', { exact: true }).press('Enter');
   await page.waitForFunction(() => window.fixture.value.sections.stem.content.some(n => n.type === 'image' && n.attrs.width === 215 && n.attrs.height === 98));
@@ -115,6 +127,7 @@ async function verify(page, carrier) {
     await surface.click(); await surface.press('Control+End');
     await editor.locator('input[type=file]').setInputFiles({ name: 'new-diagram.png', mimeType: 'image/png', buffer: fixturePng });
     await editor.locator('img[alt="new-diagram.png"]').waitFor();
+    assert.equal(await editor.locator('.rich-image-node').filter({ has: page.locator('img[alt="new-diagram.png"]') }).getAttribute('data-align'), 'left', 'uploaded image defaults to left');
   };
   await editArea(stem, '题干已编辑');
   await tab('选项 (2)').click(); await editArea(activeEditors().first(), '选项已编辑');
@@ -133,6 +146,7 @@ async function verify(page, carrier) {
   await tab('主答案').click();
   assert((await activeEditors().first().innerText()).includes('主答案已编辑'));
   assert.equal(await activeEditors().first().locator('img[alt="new-diagram.png"]').count(), 1);
+  assert.equal(await activeEditors().first().locator('.rich-image-node').filter({ has: page.locator('img[alt="new-diagram.png"]') }).getAttribute('data-align'), 'left', 'left default persists after reopening');
   await tab('选项 (2)').click();
   await activeEditors().nth(1).locator('.rich-question-editor__surface').click();
   await activeEditors().nth(1).locator('.rich-question-editor__surface').press('Control+End');
@@ -159,7 +173,7 @@ async function verify(page, carrier) {
     assert(width.body <= width.viewport + 1, 'editing toolbar and content remain reachable in a narrow window');
     await page.screenshot({ path: path.join(output, 'chrome-narrow.png'), fullPage: true });
   }
-  const report = { carrier, userAgent: await page.evaluate(() => navigator.userAgent), geometry, previewGeometry, fonts, actualFonts, contentAreas: 6, textFormulaImageRoundtrip: true, imageMoveAcrossSections: true, imageResizeAlignDeleteUpload: true, authoredAnswerPreserved: true, cleanupAcrossSixAreas: true, errors, pass: errors.length === 0, verifiedAt: new Date().toISOString() };
+  const report = { carrier, userAgent: await page.evaluate(() => navigator.userAgent), geometry, previewGeometry, defaultAlignment, centeredAlignment, fonts, actualFonts, contentAreas: 6, textFormulaImageRoundtrip: true, imageMoveAcrossSections: true, imageResizeAlignDeleteUpload: true, authoredAnswerPreserved: true, cleanupAcrossSixAreas: true, errors, pass: errors.length === 0, verifiedAt: new Date().toISOString() };
   fs.writeFileSync(path.join(output, `${carrier}-report.json`), JSON.stringify(report, null, 2));
   assert.deepEqual(errors, []);
   console.log(JSON.stringify(report));

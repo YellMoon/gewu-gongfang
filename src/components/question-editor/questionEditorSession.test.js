@@ -68,6 +68,10 @@ assert.strictEqual(richDirty.markSaved().dirty, false, 'successful save must adv
 assert.strictEqual(richDirty.update(JSON.parse(JSON.stringify(userTextEdit))).dirty, false, 'post-save controlled echo must stay clean');
 
 let attempts = 0;
+const imageBaseline = { type: 'doc', content: [{ type: 'image', attrs: { src: 'diagram.png' } }] };
+const imageDirty = createRichDocumentDirtyCoordinator(imageBaseline);
+assert.strictEqual(imageDirty.update({ type: 'doc', content: [{ type: 'image', attrs: { src: 'diagram.png', align: 'left' } }] }).dirty, false, 'default image alignment hydration stays clean');
+assert.strictEqual(imageDirty.update({ type: 'doc', content: [{ type: 'image', attrs: { src: 'diagram.png', align: 'center' } }] }).dirty, true, 'choosing center is an authored change');
 (async () => {
   const first = await runQuestionEditorSave(async () => { attempts += 1; throw new Error('offline'); });
   assert.strictEqual(first.ok, false);
