@@ -18,6 +18,7 @@ import {createRoot} from 'react-dom/client';
 import RichQuestionEditor from '${absolute('src/components/RichQuestionEditor')}';
 import StructuredQuestionViewer from '${absolute('src/components/StructuredQuestionViewer')}';
 import QuestionRenderer from '${absolute('src/components/QuestionRenderer')}';
+import QuestionPreviewCard from '${absolute('src/components/QuestionPreviewCard')}';
 import '${absolute('src/index.css')}';
 const text=(text)=>({type:'text',text});
 const formula=(canonicalLatex)=>({type:'formula',attrs:{canonicalLatex}});
@@ -30,7 +31,8 @@ const options=['A','B','C','D'].map((label,i)=>({id:label,label,content:doc(p(te
 const images=['A','B','C','D'].map((label,i)=>({id:label,label,content:doc({type:'image',attrs:{src:${JSON.stringify(picture)},width:120,height:45+i*12,align:i%2?'right':'center'}})}));
 const subs=[{id:'sub1',label:'(1)',content:doc(p(text('写出粒子的运动方程。')),p(text('第二段仍保留。'))),answer:empty},{id:'sub2',label:'(2)',content:doc(p(text('求速度 '),formula('v_1'),text('，并说明理由。'),{type:'hardBreak'},text('手动换行仍保留。'))),answer:empty}];
 function Fixture(){const [value,setValue]=React.useState(stem);return <main style={{maxWidth:1000,margin:'20px auto',padding:16,background:'white'}}><h2>编辑器与题目排版验证</h2><div id="editor"><RichQuestionEditor value={value} output="json" onChange={setValue}/></div><button id="save" onClick={()=>window.saved=JSON.stringify(value)}>保存验证草稿</button><button id="reload" onClick={()=>setValue(JSON.parse(window.saved))}>重新打开</button><h3>文字选项（含高分式）</h3><div id="text"><StructuredQuestionViewer value={make(options)}/></div><h3>图片选项</h3><div id="images"><StructuredQuestionViewer value={make(images)}/></div><h3>解答题 / 实验题小题</h3><div id="subs"><StructuredQuestionViewer value={make([],subs)}/></div><h3>旧格式图片选项</h3><div id="legacy"><QuestionRenderer content="选择正确轨迹" questionType="单选题" options={images.map(o=>({label:o.label,content:'<img src="'+${JSON.stringify(picture)}+'" width="120" height="55" />'}))}/></div></main>}
-createRoot(document.getElementById('root')).render(<Fixture/>);
+function CardFixture(){const [checked,setChecked]=React.useState(false),[index,setIndex]=React.useState(0);const content='\u901f\u5ea6\u9009\u62e9\u5668\u662f\u8d28\u8c31\u4eea\u7684\u91cd\u8981\u7ec4\u6210\u90e8\u5206\uff0c\u7528\u4e8e\u5254\u9664\u901f\u5ea6\u4e0d\u540c\u7684\u7c92\u5b50\uff0c\u4ece\u800c\u63d0\u9ad8\u68c0\u6d4b\u7cbe\u5ea6\u3002'.repeat(6);const q={id:'layout-rich',type:'\u89e3\u7b54\u9898',content,rich_content:make([],subs)};q.rich_content.sections.stem=doc(p(text(content)));q.rich_content.sections.answer=doc(p(text('\u7b54\u6848\u5185\u5bb9')));return <section id="card-fixture" style={{maxWidth:1000,margin:'20px auto',padding:16}}><h3>{'\u9898\u53f7\u4e0e\u590d\u9009\u6846\u7d27\u51d1\u5e03\u5c40'}</h3><button id="three-digits" onClick={()=>setIndex(122)}>123</button><button id="one-digit" onClick={()=>setIndex(0)}>1</button><div id="rich-card"><QuestionPreviewCard question={q as any} index={index} selectable checked={checked} onCheckChange={setChecked}/></div><div id="legacy-card" style={{marginTop:16}}><QuestionPreviewCard question={{id:'layout-legacy',content,type:'\u5355\u9009\u9898'} as any} index={1}/></div></section>}
+createRoot(document.getElementById('root')).render(<><Fixture/><CardFixture/></>);
 `, 'utf8');
 
 async function compile() {
@@ -64,9 +66,15 @@ async function verify(page,carrier,url) {
   const surface=page.locator('.rich-question-editor__surface');await surface.click();await surface.press('Control+End');await surface.pressSequentially('保存后排版一致');
   await page.locator('#save').click();await page.locator('#reload').click();assert((await surface.innerText()).includes('保存后排版一致'));
   await page.screenshot({path:path.join(output,carrier+'-desktop.png'),fullPage:true});
+  const cardMetrics=async()=>page.locator('#rich-card').evaluate(root=>{const main=root.querySelector('.qb-card-main'),body=root.querySelector('.qb-card-body'),number=root.querySelector('.qb-card-index'),checkbox=root.querySelector('.ant-checkbox-wrapper');return {indent:body.getBoundingClientRect().left-main.getBoundingClientRect().left,numberTop:number.getBoundingClientRect().top,numberBottom:number.getBoundingClientRect().bottom,checkboxTop:checkbox.getBoundingClientRect().top,numberFont:getComputedStyle(number).fontFamily,bodyFont:getComputedStyle(body.querySelector('.structured-question-viewer')).fontFamily,weight:getComputedStyle(number).fontWeight};});
+  const card=await cardMetrics();assert(card.indent<=24,'single-digit question only reserves a compact number gutter');assert(card.checkboxTop>=card.numberBottom,'checkbox is below the number');assert.equal(card.weight,'400');assert.equal(card.numberFont.replace(/\"/g,''),card.bodyFont.replace(/\"/g,'').replace(/\u5b8b\u4f53, /,''));
+  await page.locator('#rich-card input[type=checkbox]').check();assert(await page.locator('#rich-card input[type=checkbox]').isChecked());assert.equal(await page.locator('#rich-card article').getAttribute('aria-expanded'),'false','selection must not open answers');
+  await page.locator('#three-digits').click();assert((await cardMetrics()).indent<=40,'three-digit numbering grows naturally without restoring a wide gutter');await page.locator('#one-digit').click();
+  await page.locator('#card-fixture').screenshot({path:path.join(output,carrier+'-question-card.png')});
   await page.setViewportSize({width:540,height:920});await page.screenshot({path:path.join(output,carrier+'-narrow.png'),fullPage:true});
+  const narrowCard=await cardMetrics();assert(narrowCard.indent<=24&&narrowCard.checkboxTop>=narrowCard.numberBottom,'compact hanging indent and checkbox position survive narrow windows');await page.locator('#card-fixture').screenshot({path:path.join(output,carrier+'-question-card-narrow.png')});
   assert.deepEqual(errors,[]);
-  fs.writeFileSync(path.join(output,carrier+'-report.json'),JSON.stringify({carrier,url,metrics,actualFonts,errors,saveReload:true,verifiedAt:new Date().toISOString()},null,2),'utf8');
+  fs.writeFileSync(path.join(output,carrier+'-report.json'),JSON.stringify({carrier,url,metrics,actualFonts,card,narrowCard,errors,saveReload:true,verifiedAt:new Date().toISOString()},null,2),'utf8');
   console.log(carrier+' typography geometry, font sizes, paragraphs and save/reload passed');
 }
 (async()=>{

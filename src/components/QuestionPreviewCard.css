@@ -16,13 +16,19 @@
 
 .qb-card-main {
   display: grid;
-  grid-template-columns: auto 34px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px;
   align-items: baseline;
 }
 
-.qb-card-main:not(:has(.qb-card-checkbox)) {
-  grid-template-columns: 34px minmax(0, 1fr);
+.qb-card-leading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: 'Times New Roman', 'STIX Two Text', SimSun, serif;
+  font-size: 16px;
+  line-height: 1.62;
 }
 
 .qb-card-main--image-only {
@@ -31,23 +37,21 @@
 
 .qb-card-checkbox {
   align-self: start;
-  margin-top: 5px;
+  margin: 0;
 }
 
 .qb-card-index {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border-radius: 10px;
-  background: #f2f6ff;
-  color: #007aff;
-  font-weight: 700;
+  color: #1a1a1a;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .qb-card-body {
   min-width: 0;
 }
+
+.qb-card-leading:empty { display: none; }
+.qb-card-main:has(.qb-card-leading:empty) { grid-template-columns: minmax(0, 1fr); }
 
 .qb-question-card[aria-expanded] { cursor: pointer; }
 .qb-answer-drawer { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows .24s ease, opacity .2s ease, visibility 0s .24s; }
@@ -110,14 +114,6 @@
 }
 
 @media (max-width: 900px) {
-  .qb-card-main {
-    grid-template-columns: auto 30px minmax(0, 1fr);
-  }
-
-  .qb-card-main:not(:has(.qb-card-checkbox)) {
-    grid-template-columns: 30px minmax(0, 1fr);
-  }
-
   .qb-card-actions {
     grid-column: 3;
   }

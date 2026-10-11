@@ -194,6 +194,8 @@ const QuestionPreviewCard: React.FC<{
         }
       }}>
       <div className={`qb-card-main${imageOnly ? ' qb-card-main--image-only' : ''}`}>
+        <div className="qb-card-leading">
+        {index !== undefined && <span className="qb-card-index">{index + 1}.</span>}
         {selectable && (
           <Checkbox
             aria-label={`选择第${index !== undefined ? index + 1 : question.id}题`}
@@ -203,7 +205,7 @@ const QuestionPreviewCard: React.FC<{
             onClick={event => event.stopPropagation()}
           />
         )}
-        <div className="qb-card-index">{index !== undefined ? index + 1 : ''}</div>
+        </div>
         <div className="qb-card-body">
           {resolvedQuestion.rich_content?.type === 'question-document' ? <StructuredQuestionViewer value={resolvedQuestion.rich_content} /> : <><QuestionRenderer
             content={displayContent}
