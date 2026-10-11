@@ -101,6 +101,7 @@ function compile() {
   await page.getByRole('button',{name:'课程知识',exact:true}).click({button:'right'});
   assert.equal(await page.getByRole('menuitem',{name:'新建体系',exact:true}).count(),0);
   await page.locator('#taxonomy-system-body-s1 .ant-tree-switcher').first().click();
+  await page.waitForFunction(() => !document.querySelector('.ant-motion-collapse'));
   await page.locator('[data-node-id="s1a"]').click({button:'right'});
   await page.getByRole('menuitem',{name:'选定为包含标签',exact:true}).waitFor();
   await page.keyboard.press('Escape');
