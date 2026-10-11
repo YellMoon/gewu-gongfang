@@ -21,7 +21,7 @@ function markStyle(marks: any[] = []): React.CSSProperties {
   return style;
 }
 
-function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNode {
+function renderNode(node: any, key: React.Key, textHtml?: string, prefix?: React.ReactNode): React.ReactNode {
   if (!node) return null;
   if (node.type === 'text') {
     const style = markStyle(node.marks);
@@ -57,7 +57,7 @@ function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNo
     const span = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 1000 ? value : 1;
     return <Tag key={key} colSpan={span(node.attrs?.colspan)} rowSpan={span(node.attrs?.rowspan)}>{children}</Tag>;
   }
-  if (node.type === 'paragraph') return <p key={key} style={style}>{children}</p>;
+  if (node.type === 'paragraph') return <p key={key} style={style}>{prefix}{children}</p>;
   if (node.type === 'heading') { const Tag = `h${Math.min(6, Math.max(1, node.attrs?.level || 2))}` as keyof JSX.IntrinsicElements; return <Tag key={key} style={style}>{children}</Tag>; }
   if (node.type === 'bulletList') return <ul key={key}>{children}</ul>;
   if (node.type === 'orderedList') return <ol key={key}>{children}</ol>;
@@ -67,7 +67,12 @@ function renderNode(node: any, key: React.Key, textHtml?: string): React.ReactNo
   return <React.Fragment key={key}>{children}</React.Fragment>;
 }
 
-const Doc: React.FC<{ value: any }> = ({ value }) => <>{renderNode(value, 'root')}</>;
+const Doc: React.FC<{ value: any; prefix?: React.ReactNode }> = ({ value, prefix }) => {
+  if (prefix && value?.type === 'doc' && value.content?.[0]?.type === 'paragraph') {
+    return <>{value.content.map((node: any, index: number) => renderNode(node, `root-${index}`, undefined, index === 0 ? prefix : undefined))}</>;
+  }
+  return <>{prefix}{renderNode(value, 'root')}</>;
+};
 
 function docPlainText(value: any): string {
   if (!value || typeof value !== 'object') return '';
@@ -93,8 +98,8 @@ const StructuredQuestionViewer: React.FC<{ value: QuestionRichDocument; showAnsw
   })));
   return <div className="structured-question-viewer">
     {!answerOnly && <Doc value={sections.stem} />}
-    {!answerOnly && options.length > 0 && <div className={`structured-question-viewer__options cols-${optionColumns}`} style={{ gridTemplateColumns: `repeat(${optionColumns}, minmax(0, 1fr))` }}>{options.map(option => <div key={option.id} className="structured-question-viewer__option"><strong>{option.label}.</strong><div className="structured-question-viewer__option-content"><Doc value={option.content} /></div></div>)}</div>}
-    {sections.subQuestions.filter(sub => !answerOnly || docHasContent(sub.answer)).map(sub => <div key={sub.id} className="structured-question-viewer__sub"><strong>{sub.label}</strong>{!answerOnly && <Doc value={sub.content} />}{showAnswer && docHasContent(sub.answer) && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
+    {!answerOnly && options.length > 0 && <div className={`structured-question-viewer__options cols-${optionColumns}`} style={{ gridTemplateColumns: `repeat(${optionColumns}, minmax(0, 1fr))` }}>{options.map(option => <div key={option.id} className="structured-question-viewer__option"><span className="structured-question-viewer__label">{option.label}.</span><div className="structured-question-viewer__option-content"><Doc value={option.content} /></div></div>)}</div>}
+    {sections.subQuestions.filter(sub => !answerOnly || docHasContent(sub.answer)).map(sub => <div key={sub.id} className="structured-question-viewer__sub">{!answerOnly ? <Doc value={sub.content} prefix={<span className="structured-question-viewer__label structured-question-viewer__sub-label">{sub.label}{'\u00a0'}</span>} /> : <span className="structured-question-viewer__label">{sub.label}</span>}{showAnswer && docHasContent(sub.answer) && <div className="structured-question-viewer__sub-answer"><Doc value={sub.answer} /></div>}</div>)}
     {showAnswer && <>{docHasContent(sections.answer) && <div className="structured-question-viewer__answer"><strong>{'\u7b54\u6848\uff1a'}</strong><Doc value={sections.answer} /></div>}{docHasContent(sections.analysis) && <div className="structured-question-viewer__analysis"><strong>{'\u89e3\u6790\uff1a'}</strong><Doc value={sections.analysis} /></div>}</>}
   </div>;
 };

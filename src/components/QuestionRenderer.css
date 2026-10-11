@@ -52,6 +52,7 @@
 /* ── 选择题选项网格 ── */
 .question-options {
   display: grid;
+  align-items: baseline;
   column-gap: 12px;
   row-gap: 4px;
   margin-top: 6px;
@@ -90,12 +91,11 @@
 }
 
 .question-option.image-only {
-  align-items: end;
+  align-items: baseline;
 }
 
 .question-option.image-only .question-option-label {
-  align-self: end;
-  padding-bottom: 4px;
+  align-self: baseline;
 }
 
 .question-option img {
@@ -114,6 +114,14 @@
   margin: 4px 0;
   object-fit: contain;
 }
+
+.question-content .question-option img {
+  display: inline-block;
+  margin: 0;
+  vertical-align: baseline;
+}
+
+.question-option p { margin: 0; }
 
 .question-table-scroll {
   min-width: 0;

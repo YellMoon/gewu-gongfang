@@ -8,9 +8,14 @@
 .structured-question-viewer img[data-align='left'] { margin-left: 0; }
 .structured-question-viewer img[data-align='right'] { margin-right: 0; }
 .structured-question-viewer__formula { display: inline; margin: 0 2px; vertical-align: baseline; }
-.structured-question-viewer__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 22px; margin-top: 10px; }
-.structured-question-viewer__option { display: flex; gap: 8px; align-items: flex-start; }
+.structured-question-viewer__options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 22px; margin-top: 10px; align-items: baseline; }
+.structured-question-viewer__option { display: flex; gap: 0.35em; align-items: baseline; min-width: 0; }
 .structured-question-viewer__option-content { min-width: 0; flex: 1; }
+.structured-question-viewer__label { font-weight: 400; flex-shrink: 0; }
+.structured-question-viewer__sub-label { white-space: nowrap; }
+.structured-question-viewer__option-content p { margin: 0; }
+/* Options behave as embedded pictures, regardless of a stem image's alignment. */
+.structured-question-viewer .structured-question-viewer__option-content img { display: inline-block; margin: 0; vertical-align: baseline; }
 .structured-question-viewer__sub { margin: 12px 0; padding-left: 8px; border-left: 2px solid #dbe3ee; }
 .structured-question-viewer__answer, .structured-question-viewer__analysis { margin-top: 12px; padding: 10px 12px; background: #f7f9fc; border-radius: 6px; }
 

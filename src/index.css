@@ -418,6 +418,12 @@ td,
   color: #9ca3af;
 }
 
+/* Match the question viewer without overriding KaTeX's internal script sizes. */
+.rich-question-editor__surface .katex,
+.rich-question-editor__formula-preview .katex {
+  font-size: 1em;
+}
+
 .rich-question-editor__surface img {
   cursor: pointer;
   display: block;

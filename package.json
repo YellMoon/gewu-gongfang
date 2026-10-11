@@ -1,11 +1,12 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.18.2",
+  "version": "8.18.3",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
+    "test:question-typography": "node src/components/QuestionTypography.browser.test.cjs",
     "pretest:miniapp-ui": "node miniapp/src/pages/assets/assetsRuntime.test.js && node miniapp/src/pages/student-detail/detailRuntime.test.js && node miniapp/src/pages/schedule/edit/recoveryRuntime.test.js && node miniapp/src/pages/question-bank/emptyStateRuntime.test.js && node miniapp/src/pages/question-paper/draftRestore.test.js && node miniapp/src/pages/question-paper/pageRecoveryRuntime.test.js",
     "pretest": "node src/services/operationAuditClient.test.js && node miniapp/src/utils/miniappOfflineQueue.test.js && node miniapp/src/pages/settings/settingsExperience.test.js && npm run test:business-parity && npm run test:course-active && node src/pages/QuestionBankEdit.offline.test.js && node src/pages/DesktopAccount.regression.test.js",
     "test:course-active": "node src/pages/CourseList.active-parity.test.js && node public/desktopAuthorityRuntime.course-active.test.js && python scripts/business_parity_course_active.test.py",
