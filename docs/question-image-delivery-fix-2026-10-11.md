@@ -13,7 +13,12 @@ Regression tests cover import and relay IDs through request, export request,
 NAS lease and status, plus malformed, empty and excessive-length rejection.
 Both new regressions failed before the fix and pass afterward. NAS full tests,
 cloud delivery/authorization tests, version tests, release matrix tests and
-TypeScript checks pass. Broader root/cloud suites are still running at this point.
+TypeScript checks pass. The full cloud suite also passes. The root suite passed
+through its production/SQL/browser checks but stopped at an old exact-version
+release fixture; that fixture was updated and the release checks and all remaining
+root checks were rerun successfully. The original root `npm test` exit was 1;
+this is component coverage plus a successful targeted continuation, not a claim
+that the original command exited successfully.
 
 Prepared versions: desktop 8.19.1, cloud 8.18.3, NAS 8.9.2; miniapp remains 8.10.0
 with unchanged reader and wire contracts. The release gate requires NAS 8.9.2
@@ -22,10 +27,30 @@ before publishing the desktop feed. The NAS image artifact is
 `84ffbb4c6f8596b5231a5130b60e766cf80daa0791c9ef7d75ab05b7dbbc140f`.
 Its actual image cloud-client regression passes with networking disabled.
 
-Deployment and actual image download/render checks are pending. The user has
+Cloud 8.18.3 was deployed from source commit `87ce63a0ae3c` on 2026-10-11.
+The pre-deployment database backup is `/root/scheduling-backups/postgres/20261011-130355`,
+SHA-256 `c907cdd4391079b1aff2b5a51548d3e058fa97f98196d023fd2c7628077d3878`;
+restore, ownership and privilege verification passed. Candidate, internal/public
+health, authority contracts and retired-gateway checks passed. The cloud receipt
+is in the active 8.19.1/8.18.3/8.9.2/8.10.0 release matrix in the attached
+`media-delivery-release` worktree. Real requests for both reported image hashes
+now return HTTP 202 with the actual `asset_` record, instead of HTTP 503.
+Evidence: `output/media-diagnosis-20261011130647462/checks.json`.
+
+NAS deployment and actual image download/render checks remain pending. The user has
 opened NAS in Edge, but browser automation currently fails to load the request
 header policy and the native control runtime fails to write its kernel assets.
-No NAS configuration or container has been changed. Retain the running 8.9.1
+No NAS configuration or container has been changed. Desktop `dist:win` correctly
+refuses to build/publish while the required storage-proxy receipt is pending;
+the existing 8.19.0 OSS feed remains active. This is a partial release and does
+not yet restore image display. Retain the running 8.9.1
 container as rollback when updating; verify candidate health and cloud runtime
 receipt before stopping it. Do not claim the reported images are restored until
 the real delivery download and display checks pass.
+
+Resume after the browser/native control connection is restored: use the user's
+already-open Edge NAS page, import the verified 8.9.2 image, preserve mount,
+network and configuration, health-check it, then stop the retained 8.9.1
+container. Record the exact cloud runtime receipt; verify real downloads and
+their SHA-256 values, then render the reported cards. Finally publish and verify
+the 8.19.1 desktop OSS update using the attached clean release worktree.
