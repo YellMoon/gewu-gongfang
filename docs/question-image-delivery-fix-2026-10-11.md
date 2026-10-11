@@ -26,6 +26,19 @@ before publishing the desktop feed. The NAS image artifact is
 `output/media-fix-20261011/gewu-storage-agent-8.9.2.tar`, SHA-256
 `84ffbb4c6f8596b5231a5130b60e766cf80daa0791c9ef7d75ab05b7dbbc140f`.
 Its actual image cloud-client regression passes with networking disabled.
+The non-secret NAS update card is saved as
+`output/media-fix-20261011/nas-gui-release-plan.json`.
+
+The desktop 8.19.1 installer was built in the clean attached worktree. Its
+packaged Electron SQLite checks pass for both root and backend (ABI 119).
+Installer size: 176429476 bytes. SHA-512 (base64):
+`dBAhhBU7BtQqpRcb9Qb+l2dgbe6+6sA9lYJZHaebkZty+5MBHGWqiDRrgKfJe24ZesOSH/Z7GY6nA+2vYTk76w==`.
+Artifact evidence is `output/media-fix-20261011/desktop-build-evidence.json`.
+The first build stalled downloading Python and was stopped at that downloader;
+the Node restoration checks passed. The successful installer attempt reused the
+existing Python 3.11.9 runtime after verifying its version and python-docx import.
+The final `npm run dist:win` exited 0, including Node native restoration (ABI 137
+for root and backend), SQLite GC/teardown checks and questionBankService tests.
 
 Cloud 8.18.3 was deployed from source commit `87ce63a0ae3c` on 2026-10-11.
 The pre-deployment database backup is `/root/scheduling-backups/postgres/20261011-130355`,
@@ -40,13 +53,19 @@ Evidence: `output/media-diagnosis-20261011130647462/checks.json`.
 NAS deployment and actual image download/render checks remain pending. The user has
 opened NAS in Edge, but browser automation currently fails to load the request
 header policy and the native control runtime fails to write its kernel assets.
-No NAS configuration or container has been changed. Desktop `dist:win` correctly
-refuses to build/publish while the required storage-proxy receipt is pending;
-the existing 8.19.0 OSS feed remains active. This is a partial release and does
+No NAS configuration or container has been changed. Desktop `dist:win` is allowed
+to prepare the installer; OSS publication requires the verified storage-proxy receipt.
+The existing 8.19.0 OSS feed remains active. This is a partial release and does
 not yet restore image display. Retain the running 8.9.1
 container as rollback when updating; verify candidate health and cloud runtime
 receipt before stopping it. Do not claim the reported images are restored until
 the real delivery download and display checks pass.
+
+Browser recovery needs the desktop app/browser connection restored. The last
+Edge tab-list attempt still failed before any NAS page access. Official connection
+troubleshooting includes restarting the browser and desktop app, and checking
+the extension connection in Settings > Computer Use:
+https://learn.chatgpt.com/docs/chrome-extension#troubleshooting.
 
 Resume after the browser/native control connection is restored: use the user's
 already-open Edge NAS page, import the verified 8.9.2 image, preserve mount,
