@@ -33,14 +33,18 @@ all created fields and total imported IDs. Later manual corrections to already
 imported nodes take precedence on reruns. Rejected commands or failed reads stop
 the import. Incomplete work can be resumed without duplicating committed nodes.
 
-Current task status: source validated and importer tested; **cloud import in progress**.
+Current task status: **cloud import verified**.
 After the user's online login, the existing device credential resumed through
 the normal signed cloud challenge and granted administrator role switch. The
-authenticated plan contains 21 new systems and 13,534 new nodes, reusing one
+authenticated import committed 21 new systems and 13,534 new nodes, reusing one
 existing system. The pre-write backup was created at 2026-10-11T07:18:13.511Z in
-`tmp/zujuan-import-20261011071811055/taxonomy-before.json`. Final readback evidence
-will be recorded after all commands commit. No password or token is stored in
-the import evidence.
+`output/taxonomy-import-2026-10-11/taxonomy-before.json`. In the same directory,
+`receipts.jsonl` contains 13,555 committed command receipts and `result.json`
+confirms all 22 systems, all 13,534 imported IDs and every created field were
+read back from the cloud. `evidence-audit.json` independently matches every
+receipt to the original planned ID and payload hash. The two original systems
+and 76 original nodes were retained. No password or token is stored in the
+import evidence.
 
 ## Drag regression
 
@@ -69,6 +73,21 @@ Desktop: 8.19.0. Cloud API: 8.18.2. NAS agent: 8.9.1. Miniapp: 8.10.0.
 Cloud, NAS, shared contracts and miniapp sources are unchanged; their compatible
 verified receipts are retained after checking the exact component source paths.
 The miniapp receipt is a development upload, not a production publication.
-Desktop OSS publication and final verification are recorded by the release
-matrix. Do not describe the entire request as complete until the cloud import
-has its final readback evidence.
+Desktop 8.19.0 was pushed to gewu/master, built and published to the OSS update
+feed. Production compilation, actual packaged startup and packaged Electron
+SQLite ABI checks passed. Packaging restored Node ABI 137 in both dependency
+scopes; SQLite GC, backend question-bank and importer/drag checks passed again.
+The actual packaged desktop resumed the existing account through normal cloud
+authentication and its granted admin role switch in an isolated profile. It
+displayed all 11 subject menu entries and the imported physical, information
+technology and general technology roots and their first children without page
+errors. Runtime evidence is `output/playwright/taxonomy-2026-10-11/packaged-cloud-checks.json`
+and the matching `packaged-cloud-13.png`, `packaged-cloud-27.png` and
+`packaged-cloud-28.png` screenshots. No real taxonomy ordering was changed by
+this read-only UI check; the drag regression used an isolated fixture.
+`output/taxonomy-8.19.0-oss-verification.json` confirms the public feed, full
+176,431,623-byte installer download SHA-512 and archived feed match the local
+artifact. The release source commit is `735608f4`; subsequent changes to this
+document only record verification evidence. The unified matrix remains a
+partial production release because the unchanged miniapp has a development
+upload receipt; desktop OSS publication and cloud taxonomy import are verified.
