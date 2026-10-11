@@ -50,26 +50,51 @@ is in the active 8.19.1/8.18.3/8.9.2/8.10.0 release matrix in the attached
 now return HTTP 202 with the actual `asset_` record, instead of HTTP 503.
 Evidence: `output/media-diagnosis-20261011130647462/checks.json`.
 
-NAS deployment and actual image download/render checks remain pending. The user has
-opened NAS in Edge, but browser automation currently fails to load the request
-header policy and the native control runtime fails to write its kernel assets.
-No NAS configuration or container has been changed. Desktop `dist:win` is allowed
-to prepare the installer; OSS publication requires the verified storage-proxy receipt.
-The existing 8.19.0 OSS feed remains active. This is a partial release and does
-not yet restore image display. Retain the running 8.9.1
-container as rollback when updating; verify candidate health and cloud runtime
-receipt before stopping it. Do not claim the reported images are restored until
-the real delivery download and display checks pass.
+NAS 8.9.2 was deployed through the Codex in-app browser after the user logged in.
+The verified image tar was imported and container `gewu-storage-agent-8.9.2` was
+created with the existing read-write `/nas-storage` mount, bridge network, no
+published ports, `unless-stopped` restart policy and
+`node src/launch.js /nas-storage/agent.env` command. The existing configuration
+file was reused. The health CLI returned `ok: true`, version 8.9.2 and
+`writableAuthority: false` at 2026-10-11T14:07:33.065Z. After candidate validation,
+the old 8.9.1 container was stopped and retained for rollback. The new container
+is running; evidence is `output/media-fix-20261011/nas-container-switch.png`.
 
-Browser recovery needs the desktop app/browser connection restored. The last
-Edge tab-list attempt still failed before any NAS page access. Official connection
-troubleshooting includes restarting the browser and desktop app, and checking
-the extension connection in Settings > Computer Use:
-https://learn.chatgpt.com/docs/chrome-extension#troubleshooting.
+The storage release matrix records actual cloud runtime receipt
+`storage_runtime_receipt_15fcacdb-2783-4734-846e-9e3231214b77` with parser SHA-256
+`9947e65ae3241aa9638aed9a0b1dcaaf1b2edae795344355a9e258bd4102c6ad`, matching
+the parser in the actual Docker image. A subsequent query of the latest receipt
+for the agent, without filtering by version, also returned 8.9.2:
+`storage_runtime_receipt_de44c586-99de-425f-8930-5e8d315872dd` at
+2026-10-11T14:19:58.334118Z. Evidence:
+`output/media-fix-20261011/nas-runtime-receipt.json`.
 
-Resume after the browser/native control connection is restored: use the user's
-already-open Edge NAS page, import the verified 8.9.2 image, preserve mount,
-network and configuration, health-check it, then stop the retained 8.9.1
-container. Record the exact cloud runtime receipt; verify real downloads and
-their SHA-256 values, then render the reported cards. Finally publish and verify
-the 8.19.1 desktop OSS update using the attached clean release worktree.
+Both reported diagrams now reach `ready` and download with HTTP 200:
+
+| Question | Bytes | SHA-256 |
+| --- | ---: | --- |
+| 37504a5a-1925-4233-b208-0f9ce797f056 | 71471 | 640b79fddee2aacc1c41e40268d594a392f56c96e94cc10ca7696d12a71de60e |
+| 7e7dbdc2-2eaf-42c6-bd40-e6c985eeefd3 | 66072 | e6851f434531d6eca33ff44db5fe124d2c7a0aac3288cc298bff8e9d0d078620 |
+
+The downloaded hashes exactly match the cloud content identities. The normal
+desktop identity client then independently fetched both images for the real
+`QuestionPreviewCard`, `RichAssetImage` and `questionAssetStore` components,
+using an authenticated loopback adapter without exposing credentials to the
+browser. The two original cloud question records were rendered in the in-app
+browser. Both images decoded successfully (1187x1225 and 2000x1380 pixels), and
+the page had zero loading or failure messages. This verifies the actual card
+components and production cloud/NAS transport; it does not claim that the user's
+already-open installed desktop window was refreshed automatically. Evidence:
+`output/media-diagnosis-20261011141437966/checks.json`,
+`output/media-fix-20261011/real-card-render/asset-download-proof.json`,
+`output/media-fix-20261011/real-card-render/render-report.json` and
+`output/media-fix-20261011/restored-question-images.png`.
+
+Desktop 8.19.1 OSS publication completed with HTTP 200 for the installer, archived
+installer, archived feed and public `latest.yml`. Public feed version, installer
+size and SHA-512 were verified, including a complete download of the 176429476-byte
+public installer and the archived feed. Evidence:
+`output/media-fix-20261011/oss-verification.json`. Post-publication Node SQLite
+GC and teardown verification passed. The miniapp remains the unchanged 8.10.0
+development upload; no new miniapp source was required for the asset ID repair.
+The matrix is therefore not a claim of a miniapp production release.
