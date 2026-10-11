@@ -38,7 +38,9 @@ export function planTaxonomyDrop(nodes: KnowledgeNode[], dragId: string, dropId:
   const parentId = gap ? (drop.parent_id || '') : drop.id;
   const siblings = nodes.filter(node => (node.parent_id || '') === parentId && node.id !== dragId)
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
-  const index = gap ? siblings.findIndex(node => node.id === dropId) + (position > 0 ? 1 : 0) : siblings.length;
+  // rc-tree maps the gap above an expanded parent's first child to an inside
+  // drop on that parent. Prepending also matches its drop indicator semantics.
+  const index = gap ? siblings.findIndex(node => node.id === dropId) + (position > 0 ? 1 : 0) : 0;
   siblings.splice(index, 0, drag);
   return siblings.map((node, order) => ({ id: node.id, parent_id: parentId, order }))
     .filter(update => { const original = nodes.find(node => node.id === update.id)!; return (original.parent_id || '') !== update.parent_id || original.order !== update.order; });

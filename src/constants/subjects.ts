@@ -1,0 +1,5 @@
+export const HIGH_SCHOOL_SUBJECTS = [
+  '\u8bed\u6587', '\u6570\u5b66', '\u82f1\u8bed', '\u7269\u7406', '\u5316\u5b66',
+  '\u751f\u7269', '\u5386\u53f2', '\u5730\u7406', '\u653f\u6cbb',
+  '\u4fe1\u606f\u6280\u672f', '\u901a\u7528\u6280\u672f',
+];

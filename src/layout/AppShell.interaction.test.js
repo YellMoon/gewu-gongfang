@@ -50,6 +50,7 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
         ['../components/DesktopAccountContext', compile('src/components/DesktopAccountContext.tsx')],
         ['./PageHeaderBar', compile('src/layout/PageHeaderBar.tsx')],
         ['../navigation/appNavigation', compile('src/navigation/appNavigation.tsx')],
+        ['../constants/subjects', compile('src/constants/subjects.ts')],
         ['AppShell', compile('src/layout/AppShell.tsx')],
       ]);
       await page.locator('#workspace-anchor').waitFor();

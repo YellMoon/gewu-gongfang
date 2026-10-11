@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { HIGH_SCHOOL_SUBJECTS } from '../constants/subjects';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
   Popconfirm, Tooltip, Tree, Divider, Badge, Checkbox, Dropdown, Menu, Empty, Row, Col, Typography,
@@ -48,7 +49,7 @@ const { Text } = Typography;
 // utf-8
 const QUESTION_PAGE_SIZE = 10;
 
-const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
+const SUBJECTS = HIGH_SCHOOL_SUBJECTS;
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三'];
 const LIMIT_GRADES = ['全部', ...GRADES];

@@ -16,4 +16,13 @@ assert.throws(()=>planTaxonomyDrop(nodes,'a','d',0,false),/子节点/);
 assert.deepEqual(nodes.map(n=>n.order),[0,1,0,0],'planning never mutates the snapshot');
 assert.deepEqual(filterTaxonomyNodes(nodes,'速度').map(n=>n.id),['a','c','d'],'search keeps ancestors');
 assert.deepEqual(filterTaxonomyNodes(nodes,'力学').map(n=>n.id),['a','c','d'],'matching a chapter keeps its descendants');
+const children=[{id:'parent',name:'P',order:0},{id:'first',name:'A',parent_id:'parent',order:0},{id:'last',name:'B',parent_id:'parent',order:1}];
+// rc-tree resolves the top half of the first child to its expanded parent.
+const childToTop=planTaxonomyDrop(children,'last','parent',0,false);
+assert.equal(childToTop.find(n=>n.id==='last')?.order,0,'expanded-parent drop must prepend the child');
+assert.equal(childToTop.find(n=>n.id==='last')?.parent_id,'parent');
+assert.equal(childToTop.find(n=>n.id==='first')?.order,1);
+const childDown=planTaxonomyDrop(children,'first','last',1,true);
+assert.equal(childDown.find(n=>n.id==='first')?.order,1);
+assert.equal(childDown.find(n=>n.id==='last')?.order,0);
 console.log('taxonomy drag and search checks passed');

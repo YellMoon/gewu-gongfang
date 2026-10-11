@@ -55,6 +55,7 @@ const compile = file => ts.transpileModule(fs.readFileSync(path.join(root, file)
         ...(hasContext ? [['../components/DesktopAccountContext', compile('src/components/DesktopAccountContext.tsx')]] : []),
         ['./PageHeaderBar', compile('src/layout/PageHeaderBar.tsx')],
         ['../navigation/appNavigation', compile('src/navigation/appNavigation.tsx')],
+        ['../constants/subjects', compile('src/constants/subjects.ts')],
         ['AppShell', compile('src/layout/AppShell.tsx')],
       ] });
       const refresh = page.locator('.page-header-bar button').filter({ hasText: '刷新' });

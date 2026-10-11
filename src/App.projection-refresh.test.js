@@ -36,7 +36,7 @@ async function checkMountedCalendar() {
         './pages/StudentList':{default:Student,__esModule:true},
         './pages/CourseList':{default:Course,__esModule:true},
         './components/ErrorBoundary':{default:({children})=>children,__esModule:true},
-        './navigation/appNavigation':{questionBankPages:[]},
+        './navigation/appNavigation':{questionBankPages:[],isQuestionBasketVisible:()=>false},
         './navigation/navigationContext':{normalizeNavigationTarget:input=>typeof input==='string'?{page:input}:input},
         './components/question-editor/questionEditorSession':{requestEditorSpaNavigation:callback=>callback()},
         './components/AuthorityOutboxPanel':{openDesktopSync:()=>{window.syncOpened=(window.syncOpened||0)+1;}},

@@ -1,3 +1,4 @@
+import { HIGH_SCHOOL_SUBJECTS } from '../constants/subjects';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Button, Modal, Form, Input, Select as AntSelect, Space, Tag, message,
@@ -32,7 +33,7 @@ import {
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Text } = Typography;
 
-const SUBJECTS = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治'];
+const SUBJECTS = HIGH_SCHOOL_SUBJECTS;
 const EXAM_TYPES = ['高考真题', '模拟题', '期中考试', '期末考试', '月考', '开学考', '单元测试', '竞赛', '强基计划', '其他'];
 const GRADES = ['高一', '高二', '高三', '复习'];
 const SEMESTERS = ['上学期', '下学期'];

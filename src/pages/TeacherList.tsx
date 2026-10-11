@@ -1,3 +1,4 @@
+import { HIGH_SCHOOL_SUBJECTS } from '../constants/subjects';
 import React, { useState, useEffect } from 'react';
 import { hasPendingBusinessDraft } from '../services/businessDraftSubmissionGuard.mjs';
 import { 
@@ -204,7 +205,7 @@ const TeacherList: React.FC = () => {
     },
   ];
 
-  const subjects = ['语文', '数学', '英语', '物理', '化学', '生物', '历史', '地理', '政治', '其他'];
+  const subjects = [...HIGH_SCHOOL_SUBJECTS, '其他'];
 
   const modalFooter = (
     <div className="data-page-layout__modal-footer">
