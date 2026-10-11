@@ -62,14 +62,44 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
     await page.evaluate(() => window.addDraft('online', false));
     await page.waitForFunction(() => window.calls.includes('online'));
     assert.equal(await page.getByRole('dialog').count(), 0, 'online edits submit without a dialog');
+    await page.evaluate(() => {
+      window.failOnline = true;
+      const original = window.desktopAuthority.confirmAndSubmit;
+      window.desktopAuthority.confirmAndSubmit = async id => {
+        if (window.failOnline && id === 'retry-online') {
+          window.rows.find(x => x.id === id).status = 'confirmed';
+          throw new Error('CLOUD_BUSINESS_UNAVAILABLE');
+        }
+        return original(id);
+      };
+      window.desktopAuthority.submit = id => window.desktopAuthority.confirmAndSubmit(id);
+      window.addDraft('retry-online', false);
+    });
+    await page.waitForFunction(() => window.rows.some(x => x.id === 'retry-online' && x.status === 'confirmed'));
+    await page.waitForTimeout(120);
+    assert.equal(await page.getByRole('dialog').count(), 0, 'online failures remain silent');
+    await page.locator('#sync').click();
+    await page.getByRole('dialog').waitFor();
+    assert.equal(await page.getByRole('button', { name: /\u786e\u8ba4\u5e76\u6279\u91cf\u63d0\u4ea4/ }).count(), 0);
+    await page.screenshot({ path: path.join(out, 'confirmed-online-no-repeat-confirm.png'), fullPage: true });
+    await page.evaluate(() => { window.failOnline = false; });
+    await page.getByRole('button', { name: /^\u5237\s*\u65b0$/ }).click();
+    await page.waitForFunction(() => window.rows.find(x => x.id === 'retry-online').status === 'completed');
+    await page.getByRole('button', { name: /^\u5173\s*\u95ed$/ }).last().click();
+    await page.evaluate(() => { window.calls = window.calls.filter(x => x !== 'retry-online'); });
     await page.evaluate(() => { window.addDraft('offline-a', true); window.addDraft('offline-b', true); });
     await page.getByRole('dialog').waitFor();
     assert.equal(await page.getByRole('dialog').count(), 1);
+    await page.waitForFunction(() => document.querySelectorAll('[role=listitem]').length === 2);
     assert.equal(await page.getByRole('listitem').count(), 2);
     assert.deepEqual(await page.evaluate(() => window.calls), ['online']);
     await page.getByText('查看更改内容', { exact: true }).first().click();
     await page.screenshot({ path: path.join(out, 'wide-pending.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 760 });
+    await page.waitForFunction(() => {
+      const r = document.querySelector('[role=dialog]')?.getBoundingClientRect();
+      return r && r.x >= 0 && r.right <= 391;
+    });
     await page.screenshot({ path: path.join(out, 'narrow-pending.png'), fullPage: true });
     const bounds = await page.getByRole('dialog').boundingBox();
     assert(bounds.x >= 0 && bounds.x + bounds.width <= 391, 'narrow modal must fit the viewport');

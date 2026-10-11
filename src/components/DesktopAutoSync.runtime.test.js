@@ -29,7 +29,7 @@ const { act } = React;
     '../services/desktopAutoSync.mjs': { sessionTokenFromStore: () => {
       if (!onlineSessionAvailable) throw new Error('DESKTOP_CLOUD_SESSION_REQUIRED');
       return 'ephemeral-token';
-    } },
+    }, planDesktopAutoSync: (await import('../services/desktopAutoSync.mjs')).planDesktopAutoSync },
     '../services/desktopIdentityClient.mjs': { desktopCloudTransportUnavailable: () => cloudUnavailable },
     '../services/desktopSyncController.mjs': await import('../services/desktopSyncController.mjs'),
     '../services/desktopSyncReview.mjs': await import('../services/desktopSyncReview.mjs'),
@@ -62,6 +62,15 @@ const { act } = React;
     await act(async () => { window.dispatchEvent(new window.Event('desktop-authority-drafts-changed')); await flush(); });
     assert.equal(calls.at(-1), 'online', 'saving an online draft wakes silent submission immediately');
     assert.equal(modal.open, false);
+    items.push({ ...draft('confirmed-online', false), status: 'confirmed' });
+    window.desktopAuthority.submit = async () => { throw new Error('CLOUD_BUSINESS_UNAVAILABLE'); };
+    await tick();
+    assert.equal(modal.open, false, 'an online retry failure stays silent');
+    await act(async () => { window.dispatchEvent(new window.Event('desktop-sync-open')); await flush(); });
+    assert.equal(modal.open, true);
+    assert(!modal.footer.some(x => x?.key === 'confirm'), 'already confirmed drafts never demand confirmation again');
+    items.find(x => x.id === 'confirmed-online').status = 'completed';
+    await act(async () => { modal.onCancel(); await flush(); });
     await act(async () => { window.dispatchEvent(new window.Event('desktop-sync-open')); await flush(); });
     assert.equal(modal.open, true); assert.equal(panel.state.items.length, 0);
     await act(async () => root.unmount()); assert.equal(intervals.size, 0);

@@ -146,6 +146,7 @@ async function main() {
       import_content_hash: 'd'.repeat(64),
     },
   };
+  importedCommandPayload.record.edit_status = '\u672a\u7f16\u8f91';
   const importedCommandHash = crypto.createHash('sha256')
     .update(stableJson({ type: 'question.create.v1', payload: importedCommandPayload }), 'utf8').digest('hex');
   const importedReceipt = await service.submitDesktopDraft({
@@ -156,6 +157,12 @@ async function main() {
     },
   });
   assert.strictEqual(importedReceipt.status, 'committed');
+  const legacyMetadata = calls.filter(call => call[0].includes('INSERT INTO business.questions')).at(-1)[1][14];
+  assert.equal(JSON.parse(legacyMetadata).edit_status, 'unreviewed', 'old sealed draft labels are normalized without changing their signed payload');
+  assert.equal(importedCommandPayload.record.edit_status, '\u672a\u7f16\u8f91');
+  assert.deepEqual(await service.submitDesktopDraft({ tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
+    command: { commandId: 'question-imported-command-1', payloadHash: importedCommandHash, type: 'question.create.v1', payload: importedCommandPayload } }), importedReceipt,
+  'a retry of the original sealed command returns the same receipt');
   const importedWrite = calls.find(call => call[0].includes('question_import_media_objects'));
   assert.ok(importedWrite, 'an imported draft must bind the NAS objects inside the cloud question transaction');
   assert.ok(importedWrite[0].includes('storage_task_receipts') && importedWrite[0].includes('business.question_assets'),

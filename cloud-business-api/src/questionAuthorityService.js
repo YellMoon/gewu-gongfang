@@ -115,8 +115,12 @@ function questionMetadata(value, strict = false) {
       if (typeof value[key] !== 'boolean') throw failure('CLOUD_QUESTION_INPUT_INVALID');
       result[key] = value[key];
     } else if (key === 'edit_status') {
-      if (!['unreviewed', 'reviewed'].includes(value[key])) throw failure('CLOUD_QUESTION_INPUT_INVALID');
-      result[key] = value[key];
+      // Already sealed desktop drafts used the display labels. Normalize only
+      // this legacy boundary; never rewrite their signed payload or command ID.
+      const status = !strict && value[key] === '\u672a\u7f16\u8f91' ? 'unreviewed'
+        : !strict && value[key] === '\u5df2\u7f16\u8f91' ? 'reviewed' : value[key];
+      if (!['unreviewed', 'reviewed'].includes(status)) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      result[key] = status;
     } else {
       result[key] = optionalLegacyText(value[key], 4096);
     }

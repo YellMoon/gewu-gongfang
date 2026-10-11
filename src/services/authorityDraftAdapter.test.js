@@ -192,6 +192,11 @@ require('./businessDeleteConfirmation.test');
   );
 
   console.log('authority draft adapter tests passed');
+  for (const [display, canonical] of [['\u672a\u7f16\u8f91', 'unreviewed'], ['\u5df2\u7f16\u8f91', 'reviewed']]) {
+    const question = createAuthorityDraftFromLocalMutation({ collection: 'questions', action: 'create', recordId: 'legacy-status',
+      value: { subject: 'physics', content: 'Question', edit_status: display } });
+    assert.equal(question.payload.record.edit_status, canonical, 'new question drafts use the cloud enum while the local UI retains its display label');
+  }
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

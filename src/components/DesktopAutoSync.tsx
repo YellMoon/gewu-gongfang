@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Modal } from 'antd';
-import { sessionTokenFromStore } from '../services/desktopAutoSync.mjs';
+import { planDesktopAutoSync, sessionTokenFromStore } from '../services/desktopAutoSync.mjs';
 import { desktopCloudTransportUnavailable } from '../services/desktopIdentityClient.mjs';
 import { createDesktopSyncController } from '../services/desktopSyncController.mjs';
 import { describePendingChanges } from '../services/desktopSyncReview.mjs';
@@ -62,14 +62,15 @@ const DesktopAutoSync: React.FC = () => {
     };
   }, []);
   const blocked = state.items.some((item: any) => item.status === 'conflict' || state.descriptions[item.id]?.blocked);
+  const confirmationIds = planDesktopAutoSync(state.items).offlineIds;
   return <Modal title={'\u4e91\u540c\u6b65'} open={state.open} width="min(760px, calc(100vw - 32px))"
     className="desktop-sync-dialog" onCancel={() => controllerRef.current?.close()}
     maskClosable={!state.busy} closable={!state.busy} keyboard={!state.busy} destroyOnHidden
     footer={[
       <Button key="refresh" disabled={state.busy} onClick={() => controllerRef.current?.tick()}>{'\u5237\u65b0'}</Button>,
       <Button key="close" disabled={state.busy} onClick={() => controllerRef.current?.close()}>{state.items.length ? '\u7a0d\u540e\u518d\u8bf4' : '\u5173\u95ed'}</Button>,
-      state.items.length > 0 && <Button key="confirm" type="primary" loading={state.busy} disabled={!state.online || blocked}
-        onClick={() => controllerRef.current?.confirm(state.items)}>{'\u786e\u8ba4\u5e76\u6279\u91cf\u63d0\u4ea4'} ({state.items.length})</Button>,
+      confirmationIds.length > 0 && <Button key="confirm" type="primary" loading={state.busy} disabled={!state.online || blocked}
+        onClick={() => controllerRef.current?.confirm(state.items)}>{'\u786e\u8ba4\u5e76\u6279\u91cf\u63d0\u4ea4'} ({confirmationIds.length})</Button>,
     ]}>
     <PendingChangesPanel state={state} onDiscard={id => { void controllerRef.current?.discard(id); }} />
   </Modal>;

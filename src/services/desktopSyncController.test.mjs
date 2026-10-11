@@ -95,6 +95,25 @@ function fixture(initial) {
 }
 console.log('unified desktop sync batch, reconnect, conflict, race and history checks passed');
 {
+  const f = fixture([draft('online-failed', false), draft('online-later', false)]);
+  const normal = f.bridge.confirmAndSubmit;
+  f.bridge.confirmAndSubmit = async (...args) => {
+    if (args[0] === 'online-failed') {
+      f.items[0].status = 'confirmed';
+      throw new Error('CLOUD_BUSINESS_INPUT_INVALID');
+    }
+    return normal(...args);
+  };
+  await f.controller.tick();
+  assert.equal(f.controller.getState().open, false, 'online failure must not open the offline confirmation dialog');
+  assert.equal(f.controller.getState().error, 'CLOUD_BUSINESS_INPUT_INVALID');
+  assert.equal(f.items.length, 2, 'both confirmed and not-yet-sent online drafts survive the failure');
+  f.bridge.confirmAndSubmit = normal;
+  await f.controller.tick();
+  assert.deepEqual(f.items.map(item => item.status), ['completed', 'completed']);
+  assert.equal(f.controller.getState().open, false, 'automatic recovery needs no confirmation');
+}
+{
   const f = fixture([{ ...draft('bad-receipt'), status: 'submitted' }]);
   let attempts = 0;
   f.bridge.submit = async () => {

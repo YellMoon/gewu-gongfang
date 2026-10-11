@@ -122,6 +122,10 @@ function selectedFields(value, allowed) {
       selected[field] = JSON.parse(JSON.stringify(value[field]));
     }
   }
+  if (allowed === COLLECTIONS.questions.fields) {
+    if (selected.edit_status === '\u672a\u7f16\u8f91') selected.edit_status = 'unreviewed';
+    else if (selected.edit_status === '\u5df2\u7f16\u8f91') selected.edit_status = 'reviewed';
+  }
   return selected;
 }
 

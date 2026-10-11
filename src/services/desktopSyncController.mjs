@@ -62,7 +62,8 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
     return !failure;
   }
   function prompt(items, force = false) {
-    const key = signature(items.filter(item => item.status === 'awaiting_confirmation' || item.status === 'conflict'));
+    const offlineIds = new Set(planDesktopAutoSync(items).offlineIds);
+    const key = signature(items.filter(item => item.status === 'conflict' || offlineIds.has(item.id)));
     if (force || (key !== '[]' && key !== dismissed && key !== shown)) {
       shown = key;
       emit({ open: true });
