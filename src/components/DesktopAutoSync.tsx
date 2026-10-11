@@ -35,7 +35,7 @@ const DesktopAutoSync: React.FC = () => {
       pruneCancelledImports: async (items: any[], active: () => boolean) => {
         if (!items.some(item => item.type === 'question.create.v1' && item.payload?.record?.import_task_id && item.status !== 'completed')) return;
         const client = createDesktopQuestionImportClient(await getRuntimeConfig(), { parse: async () => {} });
-        await discardCancelledQuestionImportDrafts({ items, bridge, readTask: client.read, active });
+        return discardCancelledQuestionImportDrafts({ items, bridge, readTask: client.read, active });
       },
     });
     const unsubscribe = controller.subscribe(setState);

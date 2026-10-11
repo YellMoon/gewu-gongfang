@@ -5,6 +5,7 @@ const root=path.resolve(__dirname,'../..'),output=process.env.IMPORT_RECOVERY_EV
 fs.mkdirSync(output,{recursive:true});
 const file=name=>path.join(output,name),absolute=name=>JSON.stringify(path.join(root,name));
 fs.writeFileSync(file('client.mjs'),`export function createDesktopQuestionImportClient(){return window.__importClient;}`, 'utf8');
+fs.writeFileSync(file('runtime-config.js'),`export async function getRuntimeConfig(){return {cloudBusinessIdentityBaseUrl:'https://isolated.invalid'};}`, 'utf8');
 fs.writeFileSync(file('native.js'),`module.exports={createNativeQuestionDraft:async(db,data)=>db.createQuestion(data)};`, 'utf8');
 fs.writeFileSync(file('session.mjs'),`export function readDesktopAuthorizationSession(){return {authorization:'Bearer fixture-token',authContext:{userId:'owner',deviceId:'fixture-device',role:'teacher',activeRole:'teacher'}};}export function saveDesktopAuthorizationSession(){}export function clearDesktopAuthorizationSession(){}`, 'utf8');
 fs.writeFileSync(file('entry.tsx'),`
@@ -41,6 +42,7 @@ createRoot(document.getElementById('root')).render(<Fixture/>);
 function compile(){return new Promise((resolve,reject)=>webpack({mode:'development',devtool:false,entry:file('entry.tsx'),output:{path:output,filename:'bundle.js'},
  resolve:{extensions:['.tsx','.ts','.js','.mjs'],modules:[path.join(root,'node_modules'),'node_modules']},
  plugins:[new webpack.NormalModuleReplacementPlugin(/desktopQuestionImportClient\.mjs$/,file('client.mjs')),
+ new webpack.NormalModuleReplacementPlugin(/runtimeConfigClient(?:\.ts)?$/,file('runtime-config.js')),
  new webpack.NormalModuleReplacementPlugin(/nativeQuestionDraftCreate(?:\.js)?$/,file('native.js')),
  new webpack.NormalModuleReplacementPlugin(/desktopAuthorizationSession\.mjs$/,file('session.mjs'))],
  module:{rules:[{test:/\.tsx?$/,exclude:/node_modules/,use:{loader:require.resolve('babel-loader'),options:{presets:[require.resolve('@babel/preset-typescript'),require.resolve('@babel/preset-react')]}}},

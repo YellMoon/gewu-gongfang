@@ -73,7 +73,8 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
     return exclusive(async () => {
       let items = await read();
       if (!active()) return;
-      await pruneCancelledImports(items, active);
+      const removed = await pruneCancelledImports(items, active);
+      if (removed && active()) await refreshProjection({ businessOnly: false });
       items = await read();
       const token = sessionToken();
       let plan = planDesktopAutoSync(items);
