@@ -80,6 +80,8 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
     assert.equal(await page.getByRole('dialog').count(), 0, 'online failures remain silent');
     await page.locator('#sync').click();
     await page.getByRole('dialog').waitFor();
+    await page.getByRole('listitem').waitFor();
+    await page.waitForTimeout(350); // Let Ant Design's opening animation finish before capturing pixels.
     assert.equal(await page.getByRole('button', { name: /\u786e\u8ba4\u5e76\u6279\u91cf\u63d0\u4ea4/ }).count(), 0);
     await page.screenshot({ path: path.join(out, 'confirmed-online-no-repeat-confirm.png'), fullPage: true });
     await page.evaluate(() => { window.failOnline = false; });
