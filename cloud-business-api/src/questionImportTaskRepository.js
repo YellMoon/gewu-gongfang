@@ -630,7 +630,7 @@ function createQuestionImportTaskRepository({
         count(item.item_id) FILTER (WHERE item.validation_json->>'status'='warning')::integer AS "warningItems",
         count(item.item_id) FILTER (WHERE item.status='rejected')::integer AS "failedItems"
         FROM business.question_import_tasks task LEFT JOIN business.question_import_items item ON item.import_task_id=task.task_id
-        WHERE task.tenant_id=$1 AND task.account_id=$2 GROUP BY task.task_id
+        WHERE task.tenant_id=$1 AND task.account_id=$2 AND task.status<>'cancelled' GROUP BY task.task_id
         ORDER BY task.created_at DESC,task.task_id DESC LIMIT $3`, [tenantId, currentActor.accountId, request.limit]);
       if (!Array.isArray(result?.rows)) throw failure('CLOUD_QUESTION_IMPORT_UNAVAILABLE');
       return result.rows.map(row => ({ ...taskRow(row), sourceFileName: row.sourceFileName, sourceType: row.sourceType,

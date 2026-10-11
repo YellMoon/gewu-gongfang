@@ -7,6 +7,9 @@ import { describePendingChanges } from '../services/desktopSyncReview.mjs';
 import { hasPendingQuestionAssetVerification, refreshQuestionAssetVerification, relayQuestionAssetsAfterReceipt } from '../services/desktopQuestionAssetRelay';
 import { PendingChangesPanel } from './AuthorityOutboxPanel';
 import './sync/DesktopSync.css';
+import { discardCancelledQuestionImportDrafts } from '../services/cancelledQuestionImportDrafts.mjs';
+import { getRuntimeConfig } from '../services/runtimeConfigClient';
+const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 
 const DesktopAutoSync: React.FC = () => {
   const controllerRef = useRef<any>(null);
@@ -29,6 +32,11 @@ const DesktopAutoSync: React.FC = () => {
       pendingAssets: hasPendingQuestionAssetVerification,
       afterCommit: relayQuestionAssetsAfterReceipt,
       checkAssets: refreshQuestionAssetVerification,
+      pruneCancelledImports: async (items: any[], active: () => boolean) => {
+        if (!items.some(item => item.type === 'question.create.v1' && item.payload?.record?.import_task_id && item.status !== 'completed')) return;
+        const client = createDesktopQuestionImportClient(await getRuntimeConfig(), { parse: async () => {} });
+        await discardCancelledQuestionImportDrafts({ items, bridge, readTask: client.read, active });
+      },
     });
     const unsubscribe = controller.subscribe(setState);
     const tick = () => {

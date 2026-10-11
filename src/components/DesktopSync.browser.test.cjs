@@ -44,6 +44,9 @@ const codes = Object.fromEntries(files.map(file => [file, ts.transpileModule(fs.
         if (file.endsWith('desktopAuthorizationSession.mjs')) return { readDesktopAuthorizationSession: () => ({ authorization: 'Bearer fixture-session' }) };
         if (file.endsWith('desktopIdentityClient.mjs')) return { desktopCloudTransportUnavailable: () => false };
         if (file.endsWith('desktopQuestionAssetRelay')) return { hasPendingQuestionAssetVerification: () => false, refreshQuestionAssetVerification: async () => {}, relayQuestionAssetsAfterReceipt: async () => {} };
+        if (file.endsWith('cancelledQuestionImportDrafts.mjs')) return { discardCancelledQuestionImportDrafts: async () => {} };
+        if (file.endsWith('runtimeConfigClient')) return { getRuntimeConfig: async () => ({}) };
+        if (file.endsWith('desktopQuestionImportClient.mjs')) return { createDesktopQuestionImportClient: () => ({}) };
         const module = { exports: {} }; loaded[file] = module;
         if (!codes[file]) throw Error('Unexpected module ' + file);
         new Function('require', 'module', 'exports', codes[file])(name => name === 'react' ? window.React : name === 'antd' ? window.antd : load(resolve(file, name)), module, module.exports);

@@ -6,10 +6,10 @@ const signature = items => JSON.stringify(items.map(({ id, type, payload, status
 // One owner serializes automatic work and the single manual/reconnect decision.
 /** @param {{bridge:any, sessionToken:()=>string, isOnline:()=>boolean, refreshProjection:(options?:{businessOnly:boolean})=>any,
  * describe?:(items:any[])=>Promise<any>, pendingAssets?:(item:any)=>boolean,
- * afterCommit?:(item:any,receipt:any,shouldContinue:()=>boolean)=>Promise<any>, checkAssets?:(items:any[])=>Promise<any>}} options */
+ * afterCommit?:(item:any,receipt:any,shouldContinue:()=>boolean)=>Promise<any>, checkAssets?:(items:any[])=>Promise<any>, pruneCancelledImports?:(items:any[],active:()=>boolean)=>Promise<any>}} options */
 export function createDesktopSyncController({ bridge, sessionToken, isOnline, refreshProjection,
   describe = async () => ({}), pendingAssets = () => false, afterCommit = async () => {},
-  checkAssets = async () => {} }) {
+  checkAssets = async () => {}, pruneCancelledImports = async () => {} }) {
   let state = { items: [], descriptions: {}, open: false, busy: false, online: isOnline(), error: '' };
   let stopped = false, working = false, dismissed = '', shown = '';
   const listeners = new Set();
@@ -73,6 +73,8 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
     return exclusive(async () => {
       let items = await read();
       if (!active()) return;
+      await pruneCancelledImports(items, active);
+      items = await read();
       const token = sessionToken();
       let plan = planDesktopAutoSync(items);
       if (plan.blocked) { prompt(items); return; }

@@ -8,6 +8,7 @@ const {createVNextPg17CatalogBoundary}=require('../../shared/vnext-pg17/catalogA
 const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17/businessFoundationCatalogAssertion');
 const {createQuestionAuthorityService}=require('../../cloud-business-api/src/questionAuthorityService');
 const {createCloudBusinessApp}=require('../../cloud-business-api/src/app');
+const {createQuestionImportTaskRepository}=require('../../cloud-business-api/src/questionImportTaskRepository');
 const {createDesktopAuthorityRuntime}=require('../../public/desktopAuthorityRuntime');
 const {QuestionDraftProvenanceRegistry,verifyCloudDesktopSession}=require('../../public/questionDraftProvenanceRegistry');
 const root=path.resolve(__dirname,'../..'),work=fs.mkdtempSync(path.join(os.tmpdir(),'gewu-real-import-submit-'));
@@ -28,8 +29,9 @@ function input(){
   await createVNextPg17CatalogBoundary(pg).apply(handle,apply);await createBusinessFoundationCatalogBoundary(pg).apply(handle,apply);
   await withQuery(handle,'fixture-provisioner',async db=>{
    await db.query('CREATE ROLE gewu_cloud_schedule_reader');
+   await db.query('BEGIN; SET LOCAL ROLE vnext_pg17_business_owner; CREATE TABLE business.storage_agent_runtime_receipts(receipt_id text PRIMARY KEY,parser_sha256 text); COMMIT;');
    for(const name of ['20260822-storage-agent-tasks.sql','20260823-cloud-question-import-tasks.sql','20260823-cloud-question-authority.sql',
-    '20260823-question-import-media-objects.sql','20260823-cloud-question-command-receipts.sql','20260824-question-taxonomy-authority.sql','20261010-question-difficulty-coefficient.sql']){
+    '20260823-question-import-media-objects.sql','20260823-encrypted-import-source-relay.sql','20260823-cloud-question-command-receipts.sql','20260824-question-taxonomy-authority.sql','20260905-zz-question-import-parser-proof-binding.sql','20261006-desktop-question-intake.sql','20261010-question-difficulty-coefficient.sql']){
     await db.query(fs.readFileSync(path.join(root,'cloud-business-api/sql',name),'utf8').replace('BEGIN;','BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;'));
    }
    await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES('tenant-1','Fixture',false,now(),now())");
@@ -54,7 +56,7 @@ function input(){
     await db.query('BEGIN');try{const result=await work(query);await db.query('COMMIT');return result;}catch(error){await db.query('ROLLBACK');throw error;}
    }});
    let interrupt=true,requests=0;
-   const app=createCloudBusinessApp({query,businessTenantId:'tenant-1',questionAuthority:service,desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async({sessionToken})=>{
+   const app=createCloudBusinessApp({query,businessTenantId:'tenant-1',questionAuthority:service,questionImportTasks:createQuestionImportTaskRepository({query}),desktopRegistration:{begin:async()=>{},register:async()=>{},sessionContext:async({sessionToken})=>{
     assert.equal(sessionToken,'fixture.signature');return actor;
    }}});
    // Fault injection is transport-only; successful attempts execute the shipped REST handler/service.
@@ -105,6 +107,19 @@ function input(){
     assert.equal(replay.status,200);assert.deepEqual((await replay.json()).receipt,item.receipt);assert.deepEqual((await native.get(item.id)).submission.command,before);
    }
    assert.equal((await db.query('SELECT count(*)::integer AS count FROM business.questions')).rows[0].count,14,'same sealed command retries never duplicate questions or assets');
+   controller.stop();
+   const {discardCancelledQuestionImportDrafts}=await import('./cancelledQuestionImportDrafts.mjs');
+   const extra=native.appendDraftSync({type:'question.create.v1',payload:{record:{...fresh[0].payload.record,id:crypto.randomUUID()}}});
+   await db.query("INSERT INTO business.import_source_objects(import_task_id,tenant_id,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state,verified_at) SELECT import_task_id,'tenant-1',object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,'verified',now() FROM business.question_import_media_objects WHERE import_task_id='question_import_task_regression_new' ORDER BY item_index,asset_index LIMIT 1");
+   await db.query("UPDATE business.question_import_tasks SET status='cancelled',phase='cancelled' WHERE task_id='question_import_task_regression_new'");
+   const readTask=async id=>{const response=await fetch(base+'/api/desktop/question-imports/'+encodeURIComponent(id),{headers:{authorization:'Bearer fixture.signature'}});assert.equal(response.status,200);return (await response.json()).task;};
+   const cleanupController=createDesktopSyncController({bridge:native,sessionToken:()=> 'fixture.signature',isOnline:()=>true,refreshProjection:async()=>{},pruneCancelledImports:(items,active)=>discardCancelledQuestionImportDrafts({items,bridge:native,readTask,active})});
+   const beforeCleanupRequests=requests;await cleanupController.tick();
+   assert.equal((await native.list()).some(item=>item.id===extra.id),false,'explicit cloud cancellation discards the actual encrypted pending draft: '+cleanupController.getState().error);
+   assert.equal(requests,beforeCleanupRequests,'cancelled imports never submit again');
+   assert.equal(cleanupController.getState().open,false);assert.equal(cleanupController.getState().error,'');cleanupController.stop();
+   const listed=await fetch(base+'/api/desktop/question-imports?limit=50',{headers:{authorization:'Bearer fixture.signature'}});
+   assert.equal((await listed.json()).tasks.length,1,'cancelled import tombstones stay out of visible history');
    controller.stop();console.log(JSON.stringify({actualBrowserDatabase:true,actualNativeDraftProvenance:true,encryptedOutbox:true,actualHttpAndPostgres:true,questions:14,verifiedMedia:mediaCount,silentFailureAndRecovery:true,legacySignedDraftRecovery:true,noDuplicateRetries:true,requests}));
   });
  }finally{

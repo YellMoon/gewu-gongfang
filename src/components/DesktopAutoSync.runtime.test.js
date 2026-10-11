@@ -25,6 +25,9 @@ const { act } = React;
   window.dbService = { data: {}, refreshAuthorityProjection: async options => assert.equal(options.businessOnly, true) };
   const deps = {
     react: React,
+    '../services/cancelledQuestionImportDrafts.mjs': await import('../services/cancelledQuestionImportDrafts.mjs'),
+    '../services/runtimeConfigClient': { getRuntimeConfig: async () => ({}) },
+    '../services/desktopQuestionImportClient.mjs': { createDesktopQuestionImportClient: () => ({}) },
     antd: { Modal: props => { modal = props; return props.open ? React.createElement('div', { role: 'dialog' }, props.children, props.footer) : null; }, Button: props => React.createElement('button', { onClick: props.onClick, disabled: props.disabled }, props.children) },
     '../services/desktopAutoSync.mjs': { sessionTokenFromStore: () => {
       if (!onlineSessionAvailable) throw new Error('DESKTOP_CLOUD_SESSION_REQUIRED');
