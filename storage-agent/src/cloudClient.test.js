@@ -86,6 +86,17 @@ async function main() {
   assert.deepStrictEqual(await client.uploadArtifactDelivery({ deliveryId: delivery.deliveryId, leaseToken: delivery.leaseToken, bytes: Buffer.from('pdf') }), { deliveryId: 'delivery_12345678', status: 'ready' });
   const assetDelivery = await client.leaseQuestionAssetDelivery();
   assert.strictEqual(assetDelivery.deliveryId, 'question_asset_delivery_12345678');
+  for (const assetId of ['question_asset_import_question_1_0', 'asset_ebf0c090b21e41a5b7084793942d2d4b', 'asset_', 'question_asset_', 'asset_../secret', 'unrelated_123', 'asset_' + 'a'.repeat(129)]) {
+    const relayClient = createStorageCloudClient({
+      cloudBaseUrl: 'https://cloud.example.invalid/cloud-business', agentId: 'storage-agent-1', token: 'storage-agent-client-test-token-with-sufficient-length',
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, delivery: { ...assetDelivery, assetId } }) }),
+    });
+    if (assetId === 'question_asset_import_question_1_0' || assetId === 'asset_ebf0c090b21e41a5b7084793942d2d4b') {
+      assert.strictEqual((await relayClient.leaseQuestionAssetDelivery()).assetId, assetId);
+    } else {
+      await assert.rejects(relayClient.leaseQuestionAssetDelivery());
+    }
+  }
   assert.deepStrictEqual(await client.uploadQuestionAssetDelivery({ deliveryId: assetDelivery.deliveryId, leaseToken: assetDelivery.leaseToken, bytes: Buffer.from('png') }), { deliveryId: 'question_asset_delivery_12345678', status: 'ready' });
   assert.strictEqual(calls[0].url, 'https://cloud.example.invalid/cloud-business/api/storage-agent/lease');
   assert.strictEqual(calls[0].options.headers['x-gewu-storage-agent-token'], 'storage-agent-client-test-token-with-sufficient-length');

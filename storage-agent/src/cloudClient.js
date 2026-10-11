@@ -59,7 +59,7 @@ function validArtifactDelivery(value) {
 function validQuestionAssetDelivery(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype
     && /^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(value.deliveryId || '') && value.status === 'leased'
-    && /^question_asset_[A-Za-z0-9_-]{1,128}$/.test(value.assetId || '')
+    && /^(?:question_asset|asset)_[A-Za-z0-9_-]{1,128}$/.test(value.assetId || '')
     && /^obj_[A-Za-z0-9_-]{1,128}$/.test(value.objectId || '') && Number.isSafeInteger(value.objectVersion) && value.objectVersion > 0
     && /^[0-9a-f]{64}$/.test(value.expectedSha256 || '') && Number.isSafeInteger(value.expectedBytes) && value.expectedBytes > 0 && value.expectedBytes <= (64 * 1024 * 1024)
     && typeof value.fileName === 'string' && value.fileName.length > 0 && value.fileName.length <= 512

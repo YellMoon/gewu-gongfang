@@ -51,18 +51,18 @@ matrix.recordReceipt(deployedStorageManifest, {
 assert.deepStrictEqual(matrix.validateManifest(deployedStorageManifest).issues, [],
   'the deployed 8.8.4 runtime must retain exact contract and parser receipt checks');
 const repairedStorageManifest = matrix.createReleaseManifest({
-  componentVersions: { ...versions, storage_proxy: '8.9.1' }, commit: 'deadline-repair-requires-new-runtime',
+  componentVersions: { ...versions, storage_proxy: '8.9.2' }, commit: 'asset-id-repair-requires-new-runtime',
 });
 const repairedStorageReceipt = {
-  target: 'storage_proxy', version: '8.9.1', runtimeVersion: '8.8.4',
+  target: 'storage_proxy', version: '8.9.2', runtimeVersion: '8.9.1',
   runtimeContracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
   parserSha256: runtimeParserSha256,
-  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.8.4' }, evidence: 'synthetic runtime evidence',
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.9.1' }, evidence: 'synthetic runtime evidence',
 };
 assert.throws(() => matrix.recordReceipt(repairedStorageManifest, repairedStorageReceipt), /runtime version.*(?:minimum|repair)/i,
-  'an old compatible protocol does not prove that the request deadline repair is running');
-matrix.recordReceipt(repairedStorageManifest, { ...repairedStorageReceipt, runtimeVersion: '8.9.1',
-  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.9.1' } });
+  'an old compatible protocol does not prove that the relayed asset ID repair is running');
+matrix.recordReceipt(repairedStorageManifest, { ...repairedStorageReceipt, runtimeVersion: '8.9.2',
+  runtimeReceipt: { ...runtimeReceiptEvidence, agentVersion: '8.9.2' } });
 assert.deepEqual(matrix.validateManifest(repairedStorageManifest).issues, []);
 assert.throws(() => matrix.recordReceipt(matrix.createReleaseManifest({
   componentVersions: { ...versions, storage_proxy: '8.8.4' },

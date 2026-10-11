@@ -29,7 +29,7 @@ function publishedDeliveryPredicate(options) {
 
 function output(row, { leaseToken = null, bytes = false } = {}) {
   if (!row || typeof row.deliveryId !== 'string' || !/^question_asset_delivery_[A-Za-z0-9_-]{8,128}$/.test(row.deliveryId)
-    || typeof row.assetId !== 'string' || !/^question_asset_[A-Za-z0-9_-]{1,128}$/.test(row.assetId)
+    || typeof row.assetId !== 'string' || !/^(?:question_asset|asset)_[A-Za-z0-9_-]{1,128}$/.test(row.assetId)
     || typeof row.status !== 'string' || typeof row.fileName !== 'string' || !row.fileName || row.fileName.length > 512
     || typeof row.mimeType !== 'string' || !row.mimeType || !(row.expiresAt instanceof Date)) {
     throw failure('QUESTION_ASSET_DELIVERY_UNAVAILABLE');

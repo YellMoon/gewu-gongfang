@@ -48,6 +48,22 @@ const EXPIRY = new Date('2026-08-27T00:15:00.000Z');
     assert.strictEqual(calls.length, before, 'invalid read scopes never reach SQL');
   }
   await assert.rejects(repository.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }, { includeDrafts: 'true' }), /INPUT_INVALID/);
+  // Imported media and later desktop relays both remain valid through delivery.
+  for (const assetId of ['question_asset_import_question_1_0', 'asset_ebf0c090b21e41a5b7084793942d2d4b']) {
+    const current = createQuestionAssetDeliveryRepository({ query: async () => ({ rows: [{
+      deliveryId: 'question_asset_delivery_12345678', status: 'leased', assetId,
+      objectId: 'obj_relay_12345678', objectVersion: 1, expectedSha256: HASH, expectedBytes: BYTES.length,
+      fileName: 'diagram.png', mimeType: 'image/png', expiresAt: EXPIRY, leaseExpiresAt: EXPIRY,
+    }] }) });
+    assert.strictEqual((await current.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }, { includeDrafts: true })).assetId, assetId);
+    assert.strictEqual((await current.requestForPaperExport({ tenantId: 'default', accountId: 'account-1', taskId: 'paper_task_1', questionId: 'question-1', assetKey: HASH })).assetId, assetId);
+    assert.strictEqual((await current.lease({ agentId: 'storage-agent-1' })).assetId, assetId);
+    assert.strictEqual((await current.status(own)).assetId, assetId);
+  }
+  for (const assetId of ['asset_', 'question_asset_', 'asset_../secret', 'unrelated_123', 'asset_' + 'a'.repeat(129)]) {
+    const invalid = createQuestionAssetDeliveryRepository({ query: async () => ({ rows: [{ deliveryId: 'question_asset_delivery_12345678', status: 'queued', assetId, fileName: 'diagram.png', mimeType: 'image/png', expiresAt: EXPIRY }] }) });
+    await assert.rejects(invalid.request({ tenantId: 'default', accountId: 'account-1', assetKey: HASH }), /QUESTION_ASSET_DELIVERY_UNAVAILABLE/);
+  }
   await require('./paperExportMediaLifetime.postgres.test');
   await require('./questionAssetDeliveryPriority.postgres.test');
   console.log('question asset delivery repository checks passed');
