@@ -91,3 +91,26 @@ artifact. The release source commit is `735608f4`; subsequent changes to this
 document only record verification evidence. The unified matrix remains a
 partial production release because the unchanged miniapp has a development
 upload receipt; desktop OSS publication and cloud taxonomy import are verified.
+
+## Cloud hierarchy correction
+
+At the user's request, the imported library container layer was removed on
+2026-10-11 at 11:30:43 UTC. All 16 nonempty knowledge/method trees now expose
+the original container's children directly under the taxonomy system. Their
+IDs, names, descendant structure and source ordering are preserved. The 65
+original handwritten physics knowledge nodes were removed as requested.
+The physics model system, all 11 model nodes and the model associations on
+all seven existing questions remain identical to the pre-correction snapshot.
+
+The backup and readback evidence is in
+`output/taxonomy-correction-20261011112956555/`. Its 178 committed receipts cover
+155 promotions/order updates and 23 deletes. Child promotion was read back
+before deleting containers, preventing recursive deletion of imported content.
+`independent-audit.json` separately verifies all 22 target systems, the absence
+of all 16 containers, all 13,518 retained imported nodes, source parent/order
+fields, intact model data and receipt payload hashes. There are now 13,529
+active nodes including the 11 original model nodes. The earlier import counts
+and preservation statements above describe the initial import before this
+explicit replacement. This correction changes cloud business data through
+existing authorized commands; application versions and update packages are
+unchanged.
