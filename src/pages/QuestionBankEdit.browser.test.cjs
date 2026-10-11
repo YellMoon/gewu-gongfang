@@ -196,6 +196,7 @@ function compile() {
   assert.equal(await page.getByRole('button',{name:'打开试题篮',exact:true}).count(),0);
   await page.evaluate(()=>{window.__offline=true;window.dispatchEvent(new Event('authority-projection-refreshed'));});
   await page.getByText(/暂时无法读取最新题库，显示本地已保存的试题/).waitFor();
+  await page.waitForFunction(()=>document.querySelectorAll('.qb-tagging-question').length===10);
   assert.equal(await page.locator('.qb-tagging-question').count(),10);
   checks.push('original question-bank editor retained; tagging route context retains selected IDs and does not fade basket questions; offline cache still readable');
   await page.getByRole('button',{name:'选择科目题库',exact:true}).click();
@@ -210,6 +211,6 @@ function compile() {
   assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[]);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({browserPlugin:'absent; repository Playwright fixture',runtime:useElectron?'Electron':'Chrome',checks,errors,consoleErrors,geometry},null,2),'utf8');
   console.log('Tagging runtime checks passed: '+checks.length+' groups. Evidence: '+output);
- }catch(error){await page.screenshot({path:path.join(output,'failure.png'),fullPage:false});console.error('Runtime errors',errors,'console errors',consoleErrors,'evidence',output,'roles',await page.getByRole('button').allTextContents(),'hidden',await page.locator('[aria-hidden="true"]').evaluateAll(els=>els.map(el=>({tag:el.tagName,cls:el.className,text:el.innerText?.slice(0,150)}))));throw error;}
+ }catch(error){await page.screenshot({path:path.join(output,'failure.png'),fullPage:false});console.error('Runtime errors',errors,'console errors',consoleErrors,'evidence',output,'toolbar',await page.locator('.qb-tagging-toolbar button').evaluateAll(els=>els.map(el=>({label:el.getAttribute('aria-label'),text:el.textContent,disabled:el.disabled,loading:el.classList.contains('ant-btn-loading')}))));throw error;}
  finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
