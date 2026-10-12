@@ -25,3 +25,17 @@
 桌面 8.21.0、云业务与退役网关 8.20.0、小程序 8.10.1；NAS 存储代理沿用 8.9.2，媒体与 parser 协议未改变。兼容声明增加 questionImportDeduplication v1，先迁移和发布云端再发布客户端。
 
 云端空间检查仅回收未使用且可重建的 Docker 构建缓存，回收约 484 MB，保留 512 MB 缓存；未删除数据库、备份、镜像或运行容器。部署须先通过已有数据库备份及恢复验证流程。小程序开发版上传回执不能代表正式版发布，适用端状态未全部核验前保持部分发布。
+
+## 已核验的运行环境
+
+- 云业务与退役网关 8.20.0 已部署，运行代码标识为 `8.20.0-c9c878ff099e`。迁移前 PostgreSQL 备份 `/root/scheduling-backups/postgres/20261012-095613` 已通过恢复验证，SHA-256 为 `83130085f878879eefed893c5030e60bdb51f9fa8dbefa4bbd1a8f40d8dc4b63`。内网、公网健康、权限契约及旧权威端点退役检查通过。
+- 正式数据库确认学校类型、联盟成员和试题归属新列存在，学生归属联盟、无效联盟成员、无效试题学校引用均为 0；写入角色可执行受控联盟创建函数。核验结果保存在 `output/question-dedup-20261012/cloud-schema-verification.json`。
+- NAS 沿用 8.9.2，实时回执 `storage_runtime_receipt_661a4775-862b-418d-b7d3-0e10b3d8da3a` 的版本、协议及 parser SHA-256 已核验；仍只承担存储与解析传输职责。
+- 小程序 8.10.1 已通过固定出口的真实 miniprogram-ci 上传，开发版回执时间为 `2026-10-12T10:10:04.841Z`；没有正式版发布回执。
+- 构建补丁提交 `a70c92dd` 仅增加 craco 共享查重模块导入白名单。与 `c9c878ff` 相比，云端、NAS、小程序输入和兼容声明均无变更，小程序编译产物 hash 仍符合源代码证明；重新核验云端健康和权限后，使用发布矩阵恢复流程归档旧矩阵并保留有效回执。证据在 `output/question-dedup-20261012/config-only-release-recovery.json`。
+- 桌面独立发布目录采用完整 Python、Ruby 运行时副本，逐文件校验通过；实际包内 Python 文档解析库、Ruby MathType 转换器运行通过。桌面打包产物实际启动检查通过，页面正常加载且没有阻断性的 JavaScript 错误。
+- `npm run dist:win` 最终退出码为 0，包内 Electron SQLite ABI 119 通过；打包脚本恢复 Node ABI 137，根目录与 backend 均通过 SQLite、垃圾回收和题库服务检查。
+- `npm run publish:desktop-update` 已成功发布桌面 8.21.0。通过公开 OSS 地址实际下载核验 `latest.yml` 内容完全一致，安装包状态 200、大小 `176472663` 字节，SHA-512 为 `vFrtI+UjdFTQpBYNZ0EVAx0bVdpncecBWUU5UH3aVQfvPn9URLofEfqPw4/JDyTtGv75dpKDGKBerEYaUrlgOA==`。结果在 `output/question-dedup-20261012/oss-download-verification.json`，上传日志在 `oss-publish.log`。本次安装包和小程序已上传编译产物均已保存在原工作区的生成产物目录。
+- 发布矩阵源码提交为 `a70c92dd`：桌面 8.21.0、云业务 8.20.0、NAS 8.9.2、小程序开发版 8.10.1 的适用回执均已核验；由于小程序尚无正式版发布回执，整体状态仍为“部分发布”，不能声明所有端正式发布完成。
+- 打包恢复 Node 环境后，完整 `npm test` 再次通过，退出码为 0。日志保存在 `output/question-dedup-20261012/npm-test-after-package.log`；覆盖本次查重、归属关系、资源保护、真实导入恢复与提交，以及同步、权限、富文本、导出、小程序页面状态、财务和桌面身份回归。
+- 临时托管发布 worktree 已归档；已核验安装包、上传的小程序编译产物和发布证据在原工作区保留。最终补充提交只更新本记录，不改变已发布的版本矩阵或运行代码。
