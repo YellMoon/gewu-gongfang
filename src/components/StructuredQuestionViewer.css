@@ -1,4 +1,4 @@
-.structured-question-viewer { font-family: 'Times New Roman', 'STIX Two Text', '宋体', SimSun, serif; font-size: 16px; line-height: 1.62; color: #1a1a1a; }
+.structured-question-viewer { font-family: 'Times New Roman', 'STIX Two Text', '宋体', SimSun, serif; font-size: 16px; line-height: 1.62; color: #000; }
 .structured-question-viewer .physics-unit { font-style: normal; }
 .structured-question-viewer .katex { font-size: 1em; white-space: normal; }
 .structured-question-viewer p { margin: 0 0 8px; white-space: pre-wrap; }

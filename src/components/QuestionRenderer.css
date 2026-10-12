@@ -3,7 +3,7 @@
   font-family: 'Latin Modern Math', 'KaTeX_Main', 'Times New Roman', 'STIX Two Text', 'STIX', '宋体', SimSun, serif;
   font-size: 16px;
   line-height: 1.62;
-  color: #1a1a1a;
+  color: #000;
 }
 
 .question-stem {
@@ -213,7 +213,7 @@
   grid-template-columns: 44px minmax(0, 1fr);
   gap: 8px;
   align-items: start;
-  color: #1f2937;
+  color: #000;
   line-height: 1.62;
 }
 
