@@ -210,7 +210,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     if (code === 'DESKTOP_SESSION_CHALLENGE_NOT_FOUND' || code === 'DESKTOP_DEVICE_NOT_FOUND') {
       return response.status(404).json({ success: false, code });
     }
-    if (code === 'DESKTOP_SESSION_REQUIRED' || code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID'
+    if (code === 'DESKTOP_SESSION_REQUIRED' || code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID' || code === 'DESKTOP_ONLINE_SESSION_EXPIRED'
       || code === 'VNEXT_DESKTOP_AUTHORIZATION_INVALID') {
       return response.status(401).json({ success: false, code });
     }
@@ -276,10 +276,10 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     process.stderr.write(`storage-agent runtime failure: ${String(error?.code || 'UNKNOWN')}:${String(error?.message || 'NO_MESSAGE').slice(0, 512)}\n`);
     return response.status(503).json({ ok: false, code: 'CLOUD_STORAGE_AGENT_UNAVAILABLE' });
   }
-  function exactBody(value, keys) {
+  function exactBody(value, keys, optionalKeys = []) {
     if (!value || typeof value !== 'object' || Array.isArray(value)
       || Object.getPrototypeOf(value) !== Object.prototype
-      || Reflect.ownKeys(value).length !== keys.length
+      || Reflect.ownKeys(value).some(key => !keys.includes(key) && !optionalKeys.includes(key))
       || keys.some(key => !Object.hasOwn(value, key))) return null;
     return value;
   }
@@ -1032,7 +1032,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   });
   app.post('/api/desktop-identity/session/challenges/:challengeId/exchange', async (request, response) => {
     if (!desktopCloudIdentity) return desktopUnavailable(response);
-    const body = exactBody(request.body, ['signature', 'expectedRowVersion']);
+    const body = exactBody(request.body, ['signature', 'expectedRowVersion'], ['offlineLeaseVersion']);
     if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_SESSION_CHALLENGE_INPUT_INVALID' });
     try {
       const issued = await desktopCloudIdentity.exchangeChallenge({ challengeId: request.params.challengeId, ...body });
@@ -1045,8 +1045,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     if (!desktopCloudIdentity) return desktopUnavailable(response);
     const token = sessionToken(request);
     if (!token) return response.status(401).json({ success: false, code: 'DESKTOP_SESSION_REQUIRED' });
-    const body = exactBody(request.body, ['activeRole'])
-      || exactBody(request.body, ['activeRole', 'elevationIssuedAt', 'elevationSignature']);
+    const body = exactBody(request.body, ['activeRole'], ['offlineLeaseVersion'])
+      || exactBody(request.body, ['activeRole', 'elevationIssuedAt', 'elevationSignature'], ['offlineLeaseVersion']);
     if (!body) return response.status(400).json({ success: false, code: 'DESKTOP_ROLE_SWITCH_INPUT_INVALID' });
     try {
       const issued = await desktopCloudIdentity.switchRole({ sessionToken: token, ...body });

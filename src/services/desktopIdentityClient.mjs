@@ -246,18 +246,23 @@ export function desktopIdentityExpiryDelay(gateState, now = new Date()) {
 }
 
 export function isDesktopIdentityNetworkFailure(error) {
-  const causeCode = String(error?.cause?.code || error?.code || '');
-  return error?.name === 'TypeError'
-    || [
+  // Electron IPC can wrap Chromium network errors in an ordinary Error.
+  for (let current = error, depth = 0; current && depth < 4; current = current.cause, depth += 1) {
+    if (current.name === 'TypeError' || [
       'ECONNREFUSED',
       'ECONNRESET',
       'ENETUNREACH',
+      'ENOTFOUND',
       'ETIMEDOUT',
       'EAI_AGAIN',
+      'DESKTOP_IDENTITY_NETWORK_TIMEOUT',
       'CLOUD_ONLINE_IDENTITY_UNAVAILABLE',
       'TARGET_HOST_REQUIRED',
       'TARGET_HOST_NOT_FOUND',
-    ].includes(causeCode);
+    ].includes(String(current.code || ''))
+      || /net::ERR_(?:INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|CONNECTION_(?:REFUSED|RESET|CLOSED|TIMED_OUT)|TIMED_OUT|ADDRESS_UNREACHABLE)\b/.test(String(current.message || ''))) return true;
+  }
+  return false;
 }
 
 async function responseData(response) {
@@ -289,7 +294,7 @@ function serializeBusinessVersion(key, value) {
   return `${instant.toISOString().slice(0, 19)}.${(match[2] || '').padEnd(3, '0')}Z`;
 }
 
-async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token, commandId, payloadHash } = {}) {
+async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, token, commandId, payloadHash, timeoutMs = 0 } = {}) {
   const headers = { Accept: 'application/json' };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -305,11 +310,23 @@ async function request(fetchImpl, baseUrl, pathname, { method = 'GET', body, tok
     ...(body === undefined ? {} : { body: JSON.stringify(body, pathname.startsWith('/api/business/') ? serializeBusinessVersion : undefined) }),
   };
   let response;
+  let timer;
+  const controller = timeoutMs > 0 ? new AbortController() : null;
   try {
-    response = await fetchImpl(url, options);
+    response = controller ? await Promise.race([
+      fetchImpl(url, { ...options, signal: controller.signal }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(identityError('DESKTOP_IDENTITY_NETWORK_TIMEOUT'));
+          controller.abort();
+        }, timeoutMs);
+      }),
+    ]) : await fetchImpl(url, options);
   } catch (error) {
     cloudTransportUnavailable = true;
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
   try {
     const data = await responseData(response);
@@ -359,6 +376,7 @@ export function createDesktopIdentityClient({
   clearRoleCache = async () => {},
   onlineRegistrationCommand = null,
   waitForAssetDelivery = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
+  sessionRecoveryTimeoutMs = 10000,
 } = {}) {
   if (!desktopIdentity || typeof desktopIdentity.status !== 'function') {
     throw identityError('DESKTOP_IDENTITY_BRIDGE_REQUIRED');
@@ -380,6 +398,7 @@ export function createDesktopIdentityClient({
       '/api/desktop-identity/session/challenges/start',
       {
         method: 'POST',
+        timeoutMs: sessionRecoveryTimeoutMs,
         body: {
           authorizationId: vaultStatus.authorizationId,
           deviceId: vaultStatus.deviceId,
@@ -401,7 +420,8 @@ export function createDesktopIdentityClient({
       `/api/desktop-identity/session/challenges/${encodeURIComponent(challenge.id)}/exchange`,
       {
         method: 'POST',
-        body: { signature: proof.signature, expectedRowVersion: challenge.rowVersion },
+        body: { signature: proof.signature, expectedRowVersion: challenge.rowVersion, offlineLeaseVersion: 2 },
+        timeoutMs: sessionRecoveryTimeoutMs,
       }
     );
   }
@@ -454,10 +474,21 @@ export function createDesktopIdentityClient({
         gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }),
       };
     }
-    return saveIssuedSession({
-      issued: await exchangeDirectSession(baseUrl, vaultStatus),
-      vaultStatus,
-    });
+    try {
+      return await saveIssuedSession({
+        issued: await exchangeDirectSession(baseUrl, vaultStatus),
+        vaultStatus,
+      });
+    } catch (error) {
+      // Persist cloud rejection so a subsequent offline restart cannot revive it.
+      if (['VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'DESKTOP_DEVICE_NOT_ACTIVE',
+        'DESKTOP_SESSION_REQUIRED', 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID',
+        'CLOUD_ONLINE_IDENTITY_REJECTED'].includes(error?.code)) {
+        await desktopIdentity.invalidateOfflineLease?.();
+        await sessionStore.clear();
+      }
+      throw error;
+    }
   }
 
   async function beginUnifiedOnlineRegistration({ baseUrl, deviceName, idempotencyKey } = {}) {
@@ -677,6 +708,7 @@ export function createDesktopIdentityClient({
         installationPublicKey: pending.publicIdentity.publicKey,
         deviceProof: proof.signature,
         idempotencyKey: pending.idempotencyKey,
+        offlineLeaseVersion: 2,
         ...(pending.desktopAccess?.deviceNameSupported === true && pending.publicIdentity.deviceName
           ? { deviceName: pending.publicIdentity.deviceName } : {}),
       },
@@ -765,7 +797,7 @@ export function createDesktopIdentityClient({
     if (!uniqueRoles(currentSession.session.eligibleRoles).includes(activeRole)) {
       throw identityError('ACTIVE_ROLE_NOT_GRANTED');
     }
-    const body = { activeRole };
+    const body = { activeRole, offlineLeaseVersion: 2 };
     if (PRIVILEGED_ROLES.has(activeRole) && !PRIVILEGED_ROLES.has(currentRole)) {
       const proof = await desktopIdentity.signChallenge({
         purpose: 'role-elevation',

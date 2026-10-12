@@ -961,7 +961,7 @@ async function main() {
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
       'acceptIssuedSession', 'beginUnifiedOnlineRegistration',
-      'completeRegistration', 'lock', 'resume', 'signChallenge', 'status',
+      'completeRegistration', 'invalidateOfflineLease', 'lock', 'resume', 'signChallenge', 'status',
     ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));
@@ -987,6 +987,7 @@ async function main() {
     'desktop-identity:resume',
     'desktop-identity:lock',
     'desktop-identity:accept-issued-session',
+    'desktop-identity:invalidate-offline-lease',
     'desktop-identity:sign-challenge',
   ]) {
     assert.ok(electronSource.includes(`ipcMain.handle('${channel}'`), `electron main process must register ${channel}`);

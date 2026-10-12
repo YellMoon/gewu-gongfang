@@ -48,11 +48,27 @@ async function request(baseUrl, path, { method = 'GET', body, token } = {}) {
     assert.strictEqual(response.status, 200);
     assert.strictEqual(response.json.data.session.id, 'session-2');
 
+    response = await request(baseUrl, '/api/desktop-identity/session/challenges/challenge-1/exchange', {
+      method: 'POST', body: { signature: 'signature', expectedRowVersion: 1, offlineLeaseVersion: 2 },
+    });
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(calls.at(-1)[1].offlineLeaseVersion, 2);
+
     response = await request(baseUrl, '/api/desktop-identity/session/role', {
       method: 'POST', token: 'current.token', body: { activeRole: 'teacher' },
     });
     assert.strictEqual(response.status, 200);
     assert.strictEqual(calls.find(call => call[0] === 'role')[1].sessionToken, 'current.token');
+
+    response = await request(baseUrl, '/api/desktop-identity/session/role', {
+      method: 'POST', token: 'current.token', body: { activeRole: 'teacher', offlineLeaseVersion: 2 },
+    });
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(calls.at(-1)[1].offlineLeaseVersion, 2);
+    response = await request(baseUrl, '/api/desktop-identity/session/role', {
+      method: 'POST', token: 'current.token', body: { activeRole: 'teacher', offlineLeaseVersion: 2, unrelated: true },
+    });
+    assert.strictEqual(response.status, 400);
 
     response = await request(baseUrl, '/api/desktop-identity/devices', { token: 'current.token' });
     assert.strictEqual(response.status, 200);

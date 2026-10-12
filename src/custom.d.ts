@@ -74,6 +74,7 @@ interface Window {
       offlineLease: Record<string, any>;
     }): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
+    invalidateOfflineLease(): Promise<any>;
   };
   desktopIdentitySessionProvider?: {
     businessAuthority: string;

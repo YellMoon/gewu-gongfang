@@ -166,7 +166,10 @@ function createCloudDesktopIdentityService({ repository, sessionContext, issueSe
   }
 
   async function exchangeChallenge(input) {
-    const request = exact(input, ['challengeId', 'signature', 'expectedRowVersion']);
+    const keys = ['challengeId', 'signature', 'expectedRowVersion'];
+    if (plain(input) && Object.hasOwn(input, 'offlineLeaseVersion')) keys.push('offlineLeaseVersion');
+    const request = exact(input, keys);
+    if (Object.hasOwn(request, 'offlineLeaseVersion') && request.offlineLeaseVersion !== 2) throw failure('DESKTOP_IDENTITY_INPUT_INVALID');
     const challengeId = text(request.challengeId, 'DESKTOP_SESSION_CHALLENGE_ID_REQUIRED', 128);
     const expectedRowVersion = version(request.expectedRowVersion, 'DESKTOP_SESSION_CHALLENGE_STALE');
     const row = await repository.readChallenge({ challengeId });
@@ -207,7 +210,9 @@ function createCloudDesktopIdentityService({ repository, sessionContext, issueSe
       ...evidence,
     });
     if (!created) throw failure('DESKTOP_SESSION_CHALLENGE_REPLAYED');
-    return validateIssued(await issueSession({ ...created, activeRole: null }));
+    return validateIssued(await issueSession({ ...created, activeRole: null,
+      ...(request.offlineLeaseVersion === 2 ? { offlineLeaseVersion: 2 } : {}),
+    }));
   }
 
   async function checkedContext(sessionToken) {
@@ -228,8 +233,9 @@ function createCloudDesktopIdentityService({ repository, sessionContext, issueSe
 
   async function switchRole(input) {
     if (!plain(input)) throw failure('DESKTOP_ROLE_SWITCH_INPUT_INVALID');
-    const allowed = ['sessionToken', 'activeRole', 'elevationIssuedAt', 'elevationSignature'];
+    const allowed = ['sessionToken', 'activeRole', 'elevationIssuedAt', 'elevationSignature', 'offlineLeaseVersion'];
     if (Reflect.ownKeys(input).some(key => !allowed.includes(key))) throw failure('DESKTOP_IDENTITY_INPUT_FORBIDDEN');
+    if (Object.hasOwn(input, 'offlineLeaseVersion') && input.offlineLeaseVersion !== 2) throw failure('DESKTOP_IDENTITY_INPUT_INVALID');
     const activeRole = text(input.activeRole, 'DESKTOP_ROLE_SWITCH_INPUT_INVALID', 32);
     if (!DESKTOP_ROLES.has(activeRole)) throw failure('ACTIVE_ROLE_NOT_GRANTED');
     const context = await checkedContext(input.sessionToken);
@@ -281,7 +287,9 @@ function createCloudDesktopIdentityService({ repository, sessionContext, issueSe
       ...evidence,
     });
     if (!created) throw failure('DESKTOP_SESSION_VERSION_MISMATCH');
-    return validateIssued(await issueSession({ ...created, activeRole }));
+    return validateIssued(await issueSession({ ...created, activeRole,
+      ...(input.offlineLeaseVersion === 2 ? { offlineLeaseVersion: 2 } : {}),
+    }));
   }
 
   async function listDevices(input) {

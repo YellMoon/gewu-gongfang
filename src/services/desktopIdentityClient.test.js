@@ -626,6 +626,7 @@ async function main() {
   assert.deepStrictEqual(unifiedCloudRequests[4].body, {
     verificationToken: 'verification-token-1', installationId: 'desktop-device-a1b2c3d4e5f60708',
     installationPublicKey: 'unified-public-key', deviceProof: 'unified-device-proof', idempotencyKey: 'unified-registration-1',
+    offlineLeaseVersion: 2,
   });
   assert.deepStrictEqual(unifiedCloudSealed.offlineLease, {
     id: 'cloud-lease-1', userId: 'account-cloud-1', deviceId: 'desktop-device-a1b2c3d4e5f60708', authorizationId: 'session-cloud-1',

@@ -4,6 +4,7 @@ const assert = require('assert');
 const crypto = require('node:crypto');
 const { createDisposablePg17Runtime, withVNextPg17SyntheticQuery } = require('./disposableRuntime');
 const { createVNextPg17CatalogBoundary } = require('./catalogAssertion');
+const { createCloudDesktopIdentityPgRepository } = require('../../cloud-business-api/src/cloudDesktopIdentityPgRepository');
 
 const hash = value => crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 
@@ -84,6 +85,16 @@ async function runCloudDesktopSessionControlCases(runtime) {
     });
 
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
+      const repository = createCloudDesktopIdentityPgRepository({ writerPool: facade });
+      for (const [authorizationId, expectedCode] of [
+        ['session-expired', 'DESKTOP_ONLINE_SESSION_EXPIRED'],
+        ['session-revoked', 'P0001'],
+      ]) {
+        await assert.rejects(() => repository.createChallenge({
+          challengeId: `classify-${authorizationId}`, authorizationId, deviceId: 'device-actor',
+          nonceSha256: hash(authorizationId), nonceIssuedAt: challengeIssuedAt, expiresAt: challengeExpiresAt,
+        }), error => error.code === expectedCode, 'classify expiry separately without admitting an expired or revoked online session');
+      }
       for (const [challengeId, authorizationId] of [
         ['challenge-expired', 'session-expired'],
         ['challenge-revoked', 'session-revoked'],

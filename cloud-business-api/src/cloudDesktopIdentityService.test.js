@@ -129,9 +129,11 @@ const service = createCloudDesktopIdentityService({
   }), 'utf8'), keys.privateKey).toString('base64');
   const resumed = await service.exchangeChallenge({
     challengeId: challenge.id, signature: sessionProof, expectedRowVersion: challenge.rowVersion,
+    offlineLeaseVersion: 2,
   });
   assert.strictEqual(resumed.session.activeRole, 'teacher');
   assert.strictEqual(issued[0].accountId, 'account-1');
+  assert.strictEqual(issued[0].offlineLeaseVersion, 2);
   await assert.rejects(
     () => service.exchangeChallenge({ challengeId: challenge.id, signature: sessionProof, expectedRowVersion: 1 }),
     error => error.code === 'DESKTOP_SESSION_CHALLENGE_REPLAYED',
@@ -147,8 +149,10 @@ const service = createCloudDesktopIdentityService({
   }), 'utf8'), keys.privateKey).toString('base64');
   const switched = await service.switchRole({
     sessionToken: 'teacher-token', activeRole: 'super_admin', elevationIssuedAt, elevationSignature,
+    offlineLeaseVersion: 2,
   });
   assert.strictEqual(switched.session.activeRole, 'super_admin');
+  assert.strictEqual(issued.at(-1).offlineLeaseVersion, 2);
   assert.strictEqual(calls.find(call => call[0] === 'rotateRoleSession')[1].expectedRowVersion, 7);
   await assert.rejects(
     () => service.switchRole({ sessionToken: 'teacher-token', activeRole: 'student' }),

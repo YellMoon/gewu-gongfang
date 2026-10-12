@@ -131,14 +131,14 @@ function preferredLeaseRole(roles) {
   return null;
 }
 
-function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
+function offlineLease(leasePrivateKey, ticket, context, issuedAt, leaseVersion = 1) {
   const activeRole = context.activeRole || preferredLeaseRole(context.roles);
   if (!activeRole) throw rejected();
   const scope = { kind: activeRole };
   if (activeRole === 'teacher' && !context.teacherId) throw rejected();
   if (activeRole === 'teacher') scope.teacherId = context.teacherId;
   const lease = {
-    v: 1,
+    v: leaseVersion,
     id: `offline-lease-${ticket.sessionId}`,
     userId: ticket.accountId,
     deviceId: ticket.deviceId,
@@ -149,7 +149,10 @@ function offlineLease(leasePrivateKey, ticket, context, issuedAt) {
     teacherId: activeRole === 'teacher' ? context.teacherId : null,
     studentId: null,
     issuedAt: issuedAt.toISOString(),
-    expiresAt: context.expiresAt,
+    // Offline drafts have a separate signed lifetime; online tokens stay short-lived.
+    expiresAt: leaseVersion === 2
+      ? new Date(issuedAt.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString()
+      : context.expiresAt,
     scope: Object.freeze(scope),
   };
   return Object.freeze({
@@ -237,7 +240,10 @@ function createCloudDesktopRegistrationService(config) {
   const issueSession = async input => {
     let request;
     try {
-      request = exact(input, ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'activeRole']);
+      const keys = ['authorityId', 'accountId', 'deviceId', 'installationId', 'sessionId', 'expiresAt', 'rowVersion', 'activeRole'];
+      if (input && Object.hasOwn(input, 'offlineLeaseVersion')) keys.push('offlineLeaseVersion');
+      request = exact(input, keys);
+      if (Object.hasOwn(request, 'offlineLeaseVersion') && request.offlineLeaseVersion !== 2) throw rejected();
     } catch (_) {
       throw rejected();
     }
@@ -288,7 +294,7 @@ function createCloudDesktopRegistrationService(config) {
       token,
       session,
       profile,
-      offlineLease: offlineLease(settings.leasePrivateKey, ticket, current, currentNow()),
+      offlineLease: offlineLease(settings.leasePrivateKey, ticket, current, currentNow(), request.offlineLeaseVersion),
     });
   };
   return Object.freeze({
@@ -317,8 +323,10 @@ function createCloudDesktopRegistrationService(config) {
     async register(input) {
       // UTF-8: optional device metadata is bound to the verified request digest.
       const keys = ['verificationToken', 'installationId', 'installationPublicKey', 'deviceProof', 'idempotencyKey'];
+      if (input && typeof input === 'object' && !types.isProxy(input) && Object.hasOwn(input, 'offlineLeaseVersion')) keys.push('offlineLeaseVersion');
       if (input && typeof input === 'object' && !types.isProxy(input) && Object.hasOwn(input, 'deviceName')) keys.push('deviceName');
       const request = exact(input, keys);
+      if (Object.hasOwn(request, 'offlineLeaseVersion') && request.offlineLeaseVersion !== 2) throw rejected();
       if (Object.hasOwn(request, 'deviceName') && (typeof request.deviceName !== 'string'
         || !request.deviceName || request.deviceName !== request.deviceName.trim() || request.deviceName.length > 128
         || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(request.deviceName))) throw rejected();
@@ -370,7 +378,7 @@ function createCloudDesktopRegistrationService(config) {
           sessionId: result.sessionId,
           replayed: result.replayed,
           sessionToken,
-          offlineLease: offlineLease(settings.leasePrivateKey, inspectSessionToken(sessionToken), current, now),
+          offlineLease: offlineLease(settings.leasePrivateKey, inspectSessionToken(sessionToken), current, now, request.offlineLeaseVersion),
         });
       } catch (error) {
         if (error && ['CLOUD_ONLINE_IDENTITY_REJECTED', 'CLOUD_DESKTOP_TEACHER_REGISTRATION_REQUIRED'].includes(error.code)) throw error;

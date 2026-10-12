@@ -421,7 +421,7 @@ function normalizeOfflineLease(value, profile, authorization, offlineLeasePublic
   };
   if (Date.parse(expiresAt) <= Date.parse(issuedAt)
     || Date.parse(expiresAt) - Date.parse(issuedAt) > OFFLINE_LEASE_MAX_MS
-    || Date.parse(expiresAt) > Date.parse(authorization.phoneReverifyDueAt)
+    || (lease.v !== 2 && Date.parse(expiresAt) > Date.parse(authorization.phoneReverifyDueAt))
     || lease.userId !== profile.userId
     || lease.deviceId !== authorization.deviceId
     || lease.authorizationId !== authorization.id
@@ -434,7 +434,7 @@ function normalizeOfflineLease(value, profile, authorization, offlineLeasePublic
     || scope.kind !== activeRole) {
     throw vaultError('DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID');
   }
-  if (lease.v !== 1 || !/^[A-Za-z0-9_-]{80,100}$/u.test(lease.signature)
+  if (![1, 2].includes(lease.v) || !/^[A-Za-z0-9_-]{80,100}$/u.test(lease.signature)
     || !offlineLeasePublicKeys.some(publicKey => crypto.verify(
       null,
       Buffer.from(offlineLeaseSignaturePayload(lease), 'utf8'),
@@ -944,7 +944,8 @@ function createDesktopIdentityVault({
       || offlineLease.authorizationId !== sessionId
       || offlineLease.userId !== sessionUserId
       || offlineLease.deviceId !== sessionDeviceId
-      || Date.parse(offlineLease.expiresAt) !== Date.parse(sessionExpiresAt)) {
+      || (offlineLease.v === 1 && Date.parse(offlineLease.expiresAt) !== Date.parse(sessionExpiresAt))
+      || (offlineLease.v === 2 && Date.parse(offlineLease.expiresAt) < Date.parse(sessionExpiresAt))) {
       throw vaultError('DESKTOP_IDENTITY_ISSUED_SESSION_INVALID');
     }
     const previousLeaseIssuedAt = Date.parse(String(verified.offlineLease?.issuedAt || ''));
@@ -975,6 +976,15 @@ function createDesktopIdentityVault({
     unlockedSecret = null;
     lastUnlockedAt = null;
     return status();
+  }
+
+  function invalidateOfflineLease() {
+    if (!unlockedSecret) throw vaultError('DESKTOP_IDENTITY_VAULT_LOCKED');
+    const built = buildEnvelope({ ...unlockedSecret, offlineLease: null });
+    writeEnvelope(built.envelope);
+    unlockedSecret = built.secret;
+    lastUnlockedAt = null;
+    return presentUnlocked();
   }
 
   function status() {
@@ -1092,6 +1102,7 @@ function createDesktopIdentityVault({
     completeRegistration,
     lock,
     acceptIssuedSession,
+    invalidateOfflineLease,
     seal,
     signChallenge,
     status,

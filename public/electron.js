@@ -276,6 +276,7 @@ ipcMain.handle('desktop-identity:complete-registration', (_event, input) => getD
 ipcMain.handle('desktop-identity:resume', () => getDesktopIdentityVault().resume());
 ipcMain.handle('desktop-identity:lock', () => getDesktopIdentityVault().lock());
 ipcMain.handle('desktop-identity:accept-issued-session', (_event, input) => getDesktopIdentityVault().acceptIssuedSession(input));
+ipcMain.handle('desktop-identity:invalidate-offline-lease', () => getDesktopIdentityVault().invalidateOfflineLease());
 ipcMain.handle('desktop-identity:sign-challenge', (_event, input) => getDesktopIdentityVault().signChallenge(input));
 ipcMain.handle('desktop-authority:append-draft', (_event, input) => getDesktopAuthorityRuntime().appendDraft(input));
 ipcMain.on('desktop-authority:append-draft-sync', (event, input) => {

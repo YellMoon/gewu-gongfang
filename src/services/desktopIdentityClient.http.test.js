@@ -216,17 +216,6 @@ async function main() {
       },
     });
 
-    let revokedSessionError = null;
-    try {
-      await client.resume({ baseUrl, online: true });
-    } catch (error) {
-      revokedSessionError = error;
-    }
-    assert.strictEqual(revokedSessionError?.code, 'VNEXT_DESKTOP_AUTHORIZATION_INVALID');
-    assert.strictEqual(isDesktopIdentityNetworkFailure(revokedSessionError), false,
-      'a revoked cloud authorization must never enter the signed-lease offline fallback');
-    await client.lock();
-
     proxyServer = http.createServer((request, response) => {
       const statusMatch = request.url.match(/^\/(502|503|504)\//);
       response.statusCode = Number(statusMatch?.[1] || 503);
@@ -301,6 +290,19 @@ async function main() {
       'online-registration',
       'session-context',
     ]);
+    sessionRecoveryMode = 'revoked';
+    let revokedSessionError = null;
+    try {
+      await client.resume({ baseUrl, online: true });
+    } catch (error) {
+      revokedSessionError = error;
+    }
+    assert.strictEqual(revokedSessionError?.code, 'VNEXT_DESKTOP_AUTHORIZATION_INVALID');
+    assert.strictEqual(isDesktopIdentityNetworkFailure(revokedSessionError), false,
+      'a revoked cloud authorization must never enter the signed-lease offline fallback');
+    await client.lock();
+    assert.strictEqual((await client.resume({ baseUrl, online: false })).gateState.kind, 'offline-blocked',
+      'a later offline restart must also reject the already observed revocation');
     console.log(`desktop identity HTTP cold-start fixture passed on ${baseUrl}`);
   } finally {
     if (proxyServer) await close(proxyServer);

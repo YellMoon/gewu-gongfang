@@ -78,6 +78,7 @@ const DesktopIdentityGate: React.FC = () => {
   const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [runtimeAccountName, setRuntimeAccountName] = useState('');
+  const [hasCachedIdentity, setHasCachedIdentity] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>(
     () => (loadRememberedLogin()?.type === 'account_name' ? 'account_name' : 'phone')
@@ -163,6 +164,7 @@ const DesktopIdentityGate: React.FC = () => {
     }
     clearPendingVerificationState();
     installIdentityContext(next);
+    setHasCachedIdentity(true);
     const nextOnlineSession = result.token ? {
       token: result.token,
       expiresAt: result.expiresAt,
@@ -215,6 +217,7 @@ const DesktopIdentityGate: React.FC = () => {
           clearRoleCache: suspendBusinessMemory,
         });
         const vaultStatus = await client.status();
+        setHasCachedIdentity(['sealed', 'unlocked'].includes(vaultStatus.state));
         setRuntimeAccountName(vaultStatus?.user?.name || '');
         if (cancelled) return;
         clientRef.current = client;
@@ -674,6 +677,19 @@ const DesktopIdentityGate: React.FC = () => {
     }
   };
 
+  const resumeOffline = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await resumeOfflineAfterNetworkFailure({ client: clientRef.current, baseUrl });
+      acceptRuntime(result);
+    } catch (caught) {
+      setError(messageForError(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const returnToPasswordLogin = async () => {
     registrationFlowRef.current += 1;
     setPolling(false);
@@ -890,6 +906,12 @@ const DesktopIdentityGate: React.FC = () => {
             <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {showLoginMethods && renderRegistration()}
+          {hasCachedIdentity && !roleSwitchRecovery && (showLoginMethods || locked) && (
+            <>
+              <Button loading={busy} onClick={resumeOffline} block>{'\u7ee7\u7eed\u79bb\u7ebf\u4f7f\u7528\u672c\u673a\u8d26\u53f7'}</Button>
+              <Text type="secondary">{'\u4ec5\u6062\u590d\u6b64\u7535\u8111\u5df2\u9a8c\u8bc1\u4e14\u672a\u8fc7\u671f\u7684\u8d26\u53f7\u3002\u79bb\u7ebf\u4fee\u6539\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u8054\u7f51\u540e\u9700\u6574\u4f53\u786e\u8ba4\u63d0\u4ea4\u3002'}</Text>
+            </>
+          )}
           {locked && (
             <>
               <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u767b\u5f55\u72b6\u6001\u3002\u82e5\u5df2\u9000\u51fa\u6216\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u767b\u5f55\u3002'}</Paragraph>

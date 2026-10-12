@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopOfflineLease": {
+      "version": "2",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "deploy optional offlineLeaseVersion=2 negotiation before the desktop; cloud signs v2 leases for 14 days independently of unchanged one-hour online tokens; callers omitting the flag retain v1 session-bound leases; desktop validates signature, account/device/role bindings and the 14-day bound, never extends a lease locally; offline access only resumes a previously verified local account and creates drafts requiring batch confirmation after online revalidation; existing miniapp and NAS contracts are unchanged"
+    },
     "questionDifficultyCoefficient": {
       "version": "1",
       "participants": [
