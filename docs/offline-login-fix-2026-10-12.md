@@ -35,5 +35,79 @@ Verification:
 - Typecheck and full-test logs: `output/offline-login-typecheck-20261012.log` and
   `output/offline-login-full-tests-20261012.log`.
 
-Release evidence is appended after deployment and OSS verification. Existing
-unrelated working-tree documents and browser artifacts are preserved.
+Release source: `b651705dbb28be4859340507b3b5a49e6672633f`, pushed to `gewu/master`.
+The full `npm test` completed with exit code 0. Focused affected checks were
+rerun after the final source edits, including `npm run posttest`, typecheck,
+cloud identity repository checks and actual PostgreSQL session controls.
+
+Cloud 8.19.0 was deployed with no schema changes. Public/internal health,
+permission contracts and retired gateway boundaries passed. The deployment
+receipt is in
+`output/release-matrix-desktop-8.20.0__cloud-business-8.19.0__storage-proxy-8.9.2__miniapp-8.10.0/active.json`.
+Final permission checks passed in
+`output/offline-login-cloud-final-contract-20261012.log`.
+
+Pre-deployment backups:
+
+- Code: `/root/scheduling-backups/cloud-code/20261012-043926/cloud-code.tar.gz`,
+  SHA-256 `64ce02e69211310a6c4be52fd24ceac7aa2abbe0b70c3be48a88f60c07a1f6bc`.
+- Database: `/root/scheduling-backups/postgres/20261012-045349/gewu_cloud.dump`,
+  SHA-256 `d026d9405ee6c8c7e62149efe7b50a4e6ad97dd8446795963d4afec8d05039ac`.
+  Isolated restore verified required schemas, ownership and privileges.
+
+No disk-capacity check was performed before code-backup staging. The staging
+and archive occupied additional space on an already near-full root filesystem.
+The first database backup attempt encountered a full server root filesystem and
+PostgreSQL recovery could not write its checkpoint. No new cloud service was
+promoted in that attempt. A failed partial dump and disposable Docker build
+cache were removed; the code tar archive was verified before its duplicate
+extracted source copies were removed. Temporarily reducing ext4 reserved
+blocks allowed PostgreSQL to recover, and the subsequent backup and deployment
+passed. Old reproducible build inputs were archived locally before remote
+cache removal. Tagged images, containers and valid backups were preserved.
+Final reserve restoration and public health evidence are recorded below.
+
+Miniapp 8.10.0 and NAS 8.9.2 executable inputs are unchanged. Their existing
+verified receipts were retained with the exact source-delta evidence. Miniapp
+receipt level remains development; no new miniapp production release is claimed.
+Existing unrelated working-tree documents and browser artifacts are preserved.
+
+Desktop 8.20.0 OSS release:
+
+- `npm run dist:win` completed with exit code 0 from the clean managed checkout
+  of the release commit, preserving unrelated dirty documents in the main checkout.
+  Packaged Electron SQLite ABI checks and the final automatic Node dependency
+  restoration passed, including real SQLite GC and question-bank tests.
+- Actual packaged Electron startup, embedded Python `docx` import, Ruby runtime,
+  and offline identity sources passed. Source comparison accounts only for Git's
+  CRLF/LF checkout conversion. The initial runtime junction was replaced with
+  real copied runtime files before the successful build.
+- `npm run test:offline-login` passed again after packaging and Node restoration.
+- `npm run publish:desktop-update` uploaded the installer and update feed.
+  Public `latest.yml` equals the reviewed local feed; the publicly downloaded
+  `GewuGongfang-Desktop-8.20.0-x64.exe` is 176458727 bytes and matches SHA-512
+  `/wo+9TGM0IxUrNyYmnL11PRJbnDl+UtY8bryq70zjZnNu1i8hdnKURfryS1s9aOUMOU1xNmKotm1KudJR2YJHA==`.
+- Feed: <https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/latest.yml>.
+  Public download receipt: `output/offline-login-oss-verification-20261012.json`.
+  Packaging/runtime evidence: `output/offline-login-desktop-build-final-20261012.log`,
+  `output/offline-login-packaged-smoke-final-20261012.log`,
+  `output/offline-login-packaged-runtime-20261012.json` and
+  `output/offline-login-postpackage-tests-20261012.log`.
+- The successful installer, block map and feed were retained in the main
+  checkout's ignored `dist/` directory before the managed build checkout was archived.
+
+Final server recovery evidence:
+
+- 125 reproducible old build-input directories were archived to
+  `output/offline-login-archived-build-inputs-20261012.tar.gz` before removing
+  their remote cache copies. Archive size is 1259812889 bytes; SHA-256 is
+  `a1d0f17048008b04467d7e4eccfe2e1c680ce47595e36cfddd8468b289e41be2`.
+  The directory list and receipt are in the adjacent `.json` file.
+- Original ext4 reserved block count 468496 was restored and independently
+  asserted. PostgreSQL accepts connections and public cloud health reports
+  `ok: true`, version 8.19.0, at `2026-10-12T05:45:44.801Z`.
+  Receipt: `output/offline-login-cloud-final-health-20261012.json`.
+- Root filesystem ordinary available space is 914 MiB after restoration.
+  Capacity remains limited; subsequent deployment backups/builds require a
+  capacity check before staging. Valid database/code backups, tagged Docker
+  images and containers were retained.
