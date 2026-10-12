@@ -7,6 +7,7 @@ const antd={Button:({children,icon,type, ...props})=>React.createElement('button
 const moduleObject={exports:{}};
 new Function('require','module','exports',ts.transpileModule(fs.readFileSync('src/components/QuestionPreviewCard.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React,esModuleInterop:true}}).outputText)(name=>{
  if(name==='react')return React;if(name==='antd')return antd;if(name==='@ant-design/icons')return new Proxy({},{get:()=>()=>null});
+ if(name.includes('questionDeduplication'))return require('../../shared/questionDeduplication'); // UTF-8
  if(name.endsWith('.css'))return {};if(name.includes('questionAssetStore'))return {isAssetRef:()=>false};
  if(name==='./StructuredQuestionViewer')return {__esModule:true,default:({showAnswer,value})=>React.createElement('div',{'data-testid':'stem'},'题干',showAnswer&&React.createElement('span',{'data-testid':'answer'},value.sections.answer.text))};
  return {__esModule:true,default:()=>null};

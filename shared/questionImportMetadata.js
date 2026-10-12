@@ -1,16 +1,20 @@
 'use strict';
+// UTF-8: additive structured import labels.
 
 // The parser's source_info carries printed source labels, not taxonomy IDs.
 // Explicit desktop edits (including clearing a value) always take precedence.
 function importQuestionMetadata(candidate) {
   const sourceInfo = candidate?.source_info;
   const result = {};
-  for (const key of ['source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school']) {
+  for (const key of ['source', 'year', 'grade', 'semester', 'exam_type', 'region', 'organization_type', 'school']) {
     if (candidate && Object.hasOwn(candidate, key) && candidate[key] !== undefined) {
       result[key] = candidate[key];
     } else if (sourceInfo && typeof sourceInfo[key] === 'string' && sourceInfo[key].trim()) {
       result[key] = sourceInfo[key].trim();
     }
+  }
+  for (const key of ['school_ids', 'metadata_labels']) {
+    if (candidate && Object.hasOwn(candidate, key)) result[key] = candidate[key];
   }
   return result;
 }
@@ -35,11 +39,15 @@ function inferImportedQuestionType(candidate) {
 
 function applyImportLabels(candidate, metadata = {}, sourceType = 'lecture') {
   const labels = {};
-  for (const key of ['year', 'grade', 'semester', 'exam_type', 'region', 'school']) {
+  for (const key of ['year', 'grade', 'semester', 'exam_type', 'region', 'organization_type', 'school']) {
     labels[key] = sourceType === 'exam' ? String(metadata[key] ?? '').trim() : '';
   }
   labels.source = sourceType === 'exam' ? String(metadata.paper_name ?? metadata.source ?? '').trim() : '';
   labels.paper_name = sourceType === 'exam' ? String(metadata.paper_name ?? '').trim() : '';
+  labels.school_ids = sourceType === 'exam' && Array.isArray(metadata.school_ids) ? metadata.school_ids : [];
+  if (sourceType === 'exam' && Array.isArray(metadata.regions)) labels.region = metadata.regions.join('、');
+  labels.metadata_labels = Object.fromEntries(['source','year','grade','semester','exam_type','region', 'organization_type','school'].map(key => [key, labels[key] ? [labels[key]] : []]));
+  if (sourceType === 'exam' && Array.isArray(metadata.regions)) labels.metadata_labels.region = [...new Set(metadata.regions.filter(value => typeof value === 'string' && value.trim()))];
   return { ...candidate, ...labels, type: inferImportedQuestionType(candidate),
     question_types: [inferImportedQuestionType(candidate)] };
 }

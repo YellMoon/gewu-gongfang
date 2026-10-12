@@ -163,7 +163,7 @@ async function main() {
   assert.deepEqual(await service.submitDesktopDraft({ tenantId: 'default', actor: { accountId: 'teacher-account-1', roles: ['teacher'] },
     command: { commandId: 'question-imported-command-1', payloadHash: importedCommandHash, type: 'question.create.v1', payload: importedCommandPayload } }), importedReceipt,
   'a retry of the original sealed command returns the same receipt');
-  const importedWrite = calls.find(call => call[0].includes('question_import_media_objects'));
+  const importedWrite = calls.find(call => call[0].includes('question_import_media_objects') && call[0].includes('INSERT INTO business.questions'));
   assert.ok(importedWrite, 'an imported draft must bind the NAS objects inside the cloud question transaction');
   assert.ok(importedWrite[0].includes('storage_task_receipts') && importedWrite[0].includes('business.question_assets'),
     'only NAS-receipted media may become cloud question assets');

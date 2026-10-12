@@ -1,4 +1,5 @@
-﻿import React from 'react';
+﻿const { labelValues } = require('../../shared/questionDeduplication'); // UTF-8
+import React from 'react';
 import { useEffect, useState } from 'react';
 import { Button, Checkbox, Popconfirm, Space } from 'antd';
 import { DeleteOutlined, EditOutlined, ShoppingCartOutlined } from '@ant-design/icons';
@@ -96,8 +97,8 @@ const QuestionPreviewCard: React.FC<{
   onToggleBasket,
   onDelete,
 }) => {
-  const sourceText = [question.source, question.region, question.school, question.exam_type]
-    .filter(Boolean)
+  const sourceText = ['source','region','school','exam_type','year','grade','semester','organization_type'].flatMap(field => labelValues(question,field))
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index)
     .join(' / ') || '来源未标注';
   const knowledgeText = knowledgeNames.join('、') || question.knowledge_point || '知识点未标注';
   const modelText = modelNames.join('、') || question.model_point || '';

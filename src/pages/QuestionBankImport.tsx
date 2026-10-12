@@ -19,6 +19,7 @@ import { migrateLegacyQuestion, projectQuestionRichContent } from '../services/q
 import { createQuestionEditorSaveGate, createRichDocumentDirtyCoordinator, mergeImportedQuestionMetadata, registerEditorSpaExitGuard, shouldProtectEditorExit } from '../components/question-editor/questionEditorSession'; // utf-8
 const { createNativeQuestionDraft } = require('../services/nativeQuestionDraftCreate');
 const { applyImportLabels } = require('../../shared/questionImportMetadata');
+const { DEFAULT_SIMILARITY_THRESHOLD, ORGANIZATION_TYPES, labelValues } = require('../../shared/questionDeduplication'); // UTF-8
 const { validDifficultyCoefficient, coefficientDifficulty } = require('../../shared/questionDifficulty');
 const { createDesktopQuestionImportClient } = require('../services/desktopQuestionImportClient.mjs');
 import { collectEditedIntakeMedia, prepareLocalIntakePreview } from '../services/localQuestionIntakePreview';
@@ -45,7 +46,7 @@ const IMPORT_INSTRUCTIONS = {
   },
   exam: {
     title: '试卷格式导入说明',
-    items: ['适合整卷导入。选择文件后，会尝试从文件名补全学年、考试类型、年级、学期、地区、学校和试卷名。'],
+    items: ['适合整卷导入。选择文件后，会尝试从文件名补全学年、考试类型、年级、学期、地区、学校或联盟和试卷名。'],
   },
   topic: {
     title: '专题题集导入说明',
@@ -63,7 +64,10 @@ type ExamMeta = {
   grade?: string;
   semester?: string;
   region?: string;
+  regions?: string[];
+  organization_type?: string;
   school?: string;
+  school_ids?: string[];
   alliance?: string;
   paper_name?: string;
 };
@@ -155,8 +159,8 @@ function extractExamMetaFromFileName(fileName: string): ExamMeta {
   else if (/单元测试|单元/.test(name)) meta.exam_type = '单元测试';
   else if (/模拟|一模|二模|三模|联考|适应性|质量检测|调研|教学测试/.test(name)) meta.exam_type = '模拟题';
 
-  const regionMatch = name.match(/(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|香港|澳门|杭州|宁波|温州|绍兴|嘉兴|湖州|金华|台州|丽水|衢州|南京|苏州|无锡|常州|扬州|南通|徐州|成都|深圳|广州)/);
-  if (regionMatch) meta.region = regionMatch[1];
+  const regionMatches = name.match(/(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|香港|澳门|杭州|宁波|温州|绍兴|嘉兴|湖州|金华|台州|丽水|衢州|南京|苏州|无锡|常州|扬州|南通|徐州|成都|深圳|广州)/g);
+  if (regionMatches) { meta.regions = [...new Set(regionMatches)]; meta.region = meta.regions.join('、'); }
 
   const schoolMatch = name.match(/([\u4e00-\u9fa5]{2,24}(?:中学|高中|学校|外国语|实验学校|教育集团))/);
   if (schoolMatch) meta.school = schoolMatch[1];
@@ -171,7 +175,7 @@ function mergeDefinedMeta(current: ExamMeta, incoming: ExamMeta): ExamMeta {
   const next = { ...current };
   (Object.keys(incoming) as Array<keyof ExamMeta>).forEach(key => {
     const value = incoming[key];
-    if (value && value !== current[key]) next[key] = value;
+    if (value && value !== current[key]) Object.assign(next, { [key]: value });
   });
   return next;
 }
@@ -265,6 +269,8 @@ const QuestionBankImport: React.FC = () => {
   const [committingBatch, setCommittingBatch] = useState(false);
   const [draftPreparationError, setDraftPreparationError] = useState<string | null>(null);
   const [wordSourceType, setWordSourceType] = useState<'lecture' | 'exam' | 'topic'>('lecture');
+  const [similarityThreshold, setSimilarityThreshold] = useState(DEFAULT_SIMILARITY_THRESHOLD);
+  const [schoolResources, setSchoolResources] = useState<any[]>([]);
   const [selectedWordFile, setSelectedWordFile] = useState<File | null>(null);
   const [importStep, setImportStep] = useState<ImportStep>(0);
   const [validationRows, setValidationRows] = useState<ImportValidationRow[]>([]);
@@ -358,6 +364,7 @@ const QuestionBankImport: React.FC = () => {
         setQuestions([]);
       }
       if (!db) return;
+      setSchoolResources(db.getAllSchools?.() || []);
       const kn = db.getKnowledgeTree?.() || [];
       setKnowledgeNodes(kn);
       if (kn.length === 0) {
@@ -437,12 +444,12 @@ const QuestionBankImport: React.FC = () => {
       if (row) {
         const nextQuestions = (wordResult?.questions || []).map((item: any, index: number) => index === row.index - 1
           ? { ...mergeImportedQuestionMetadata(item, data), stem: data.content, question_types: [data.type] } : item);
-        const validation = validateImportQuestions(nextQuestions, questions);
+        const validation = validateImportQuestions(nextQuestions, questions, similarityThreshold);
         setWordResult((current: any) => ({ ...current, questions: nextQuestions }));
         setValidationRows(validation.rows);
         setValidationSummary(validation.summary);
       } else {
-        const validation = validateImportQuestions([mergedQuestion], questions);
+        const validation = validateImportQuestions([mergedQuestion], questions, similarityThreshold);
         setValidationRows(validation.rows); setValidationSummary(validation.summary);
       }
     } else if (editing) {
@@ -494,7 +501,7 @@ const QuestionBankImport: React.FC = () => {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const parsed = await intakeClient().parseFromWord({ sourceType: wordSourceType, sourceFileName: file.name, bytes });
       const candidates = (await prepareLocalIntakePreview(parsed)).map(question => applyExamMetaToQuestion(question, examMeta || {}, wordSourceType));
-      const validation = validateImportQuestions(candidates, questions);
+      const validation = validateImportQuestions(candidates, questions, similarityThreshold);
       localIntakeRef.current = { bytes, parsed, sourceType: wordSourceType === 'topic' ? 'lecture' : wordSourceType, sourceFileName: file.name,
         sourceMimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         metadata: { ...(examMeta || {}), sourceFileName: file.name, importFormat: wordSourceType } };
@@ -524,7 +531,7 @@ const QuestionBankImport: React.FC = () => {
         return;
       }
       const candidates = task.items.map((item: any) => item.candidate || {});
-      const validation = validateImportQuestions(candidates, questions);
+      const validation = validateImportQuestions(candidates, questions, similarityThreshold);
       const rows = validation.rows.map((row, index) => {
         const remote = task.items?.[index];
         return mergeImportValidation(row, remote?.validation, formatCloudImportValidationCode);
@@ -638,7 +645,7 @@ const QuestionBankImport: React.FC = () => {
     if (wordSourceType === 'exam') {
       const current = examForm.getFieldsValue();
       const next = mergeDefinedMeta(current, extractExamMetaFromFileName(file.name));
-      examForm.setFieldsValue(next);
+      examForm.setFieldsValue({ ...next, school_ids: current.school_ids?.length ? current.school_ids : schoolResources.filter(resource => [next.school, next.alliance].includes(resource.name)).map(resource => resource.id) });
       message.success('已选择文件，并尝试从文件名补全试卷信息');
     } else {
       message.success('已选择文件，请点击开始解析');
@@ -665,7 +672,9 @@ const QuestionBankImport: React.FC = () => {
       message.warning('请先选择 Word 文件');
       return;
     }
-    const meta = wordSourceType === 'exam' ? examForm.getFieldsValue() : undefined;
+    const fields = examForm.getFieldsValue();
+    const selectedSchools = schoolResources.filter(resource => (fields.school_ids || []).includes(resource.id));
+    const meta = wordSourceType === 'exam' ? { ...fields, region: (fields.regions || []).join('、'), school: selectedSchools.map(resource => resource.name).join('、') } : undefined;
     startLocalIntake(selectedWordFile, meta);
   };
 
@@ -686,7 +695,7 @@ const QuestionBankImport: React.FC = () => {
       examMetaRef.current = task.metadata || null;
       setCloudImportTask(task);
       const candidates = (task.items || []).map((item: any) => item.candidate || {});
-      const validation = validateImportQuestions(candidates, (window as any).dbService?.getAllQuestions?.() || []);
+      const validation = validateImportQuestions(candidates, questions, similarityThreshold);
       const rows = validation.rows.map((row, index) => mergeImportValidation(row, task.items?.[index]?.validation, formatCloudImportValidationCode));
       setWordResult({ questions: candidates, count: candidates.length });
       setValidationRows(rows);
@@ -743,7 +752,8 @@ const QuestionBankImport: React.FC = () => {
         id: item.itemId, task_id: detail.taskId, item_index: item.itemIndex, content_hash: item.contentHash,
         status: item.status === 'submitted' ? 'imported' : item.status, quality_score: 0,
         payload: item.candidate, errors: item.validation?.status === 'rejected' ? item.validation.codes || [] : [],
-        warnings: item.validation?.status === 'warning' ? item.validation.codes || [] : [],
+        // UTF-8: keep cloud merge decisions visible in historical task details.
+        warnings: mergeImportValidation({ status: 'success', issues: [] as ImportValidationRow['issues'] }, item.validation, formatCloudImportValidationCode).issues.map(issue => issue.message),
         created_at: detail.createdAt, updated_at: detail.updatedAt,
       })) });
     } catch (error: any) {
@@ -825,11 +835,11 @@ const QuestionBankImport: React.FC = () => {
                   </Row>
                   <Row gutter={12}>
                     <Col span={8}><Form.Item name="semester" label="学期"><Select options={SEMESTERS.map(v => ({ value: v, label: v }))} /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="region" label="地区"><Input placeholder="如：浙江" /></Form.Item></Col>
-                    <Col span={8}><Form.Item name="alliance" label="联盟"><Input placeholder="如：十校联盟" /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="organization_type" label="考试组织方式"><Select allowClear options={ORGANIZATION_TYPES.map((value: string) => ({value,label:value}))} /></Form.Item></Col>
+                    <Col span={8}><Form.Item name="regions" label="覆盖地区" extra="可填写多个市；跨市或范围未明确时，不必归属单一地区。"><AntSelect mode="tags" placeholder="如：杭州市、宁波市" options={[...new Set(questions.flatMap(question => labelValues(question,'region')))].map(value => ({value,label:value}))} /></Form.Item></Col>
                   </Row>
                   <Row gutter={12}>
-                    <Col span={12}><Form.Item name="school" label="学校"><Input placeholder="如：杭州某中学" /></Form.Item></Col>
+                    <Col span={12}><Form.Item name="school_ids" label="学校或联盟" extra="可多选，与资源模块关联；缺少的资源请先在资源模块添加。"><AntSelect mode="multiple" showSearch optionFilterProp="label" placeholder="选择学校或联盟" options={schoolResources.map(resource => ({ value: resource.id, label: resource.name + (resource.kind === 'alliance' ? '（联盟）' : '（学校）') }))} /></Form.Item></Col>
                     <Col span={12}><Form.Item name="paper_name" label="试卷名"><Input placeholder="选择文件后自动填入文件名，也可手动修改" /></Form.Item></Col>
                   </Row>
                 </Form>
@@ -837,6 +847,11 @@ const QuestionBankImport: React.FC = () => {
             </Row>
           </div>
 
+          <Space wrap style={{ marginBottom: 16 }}>
+            <Text>相似题提示阈值</Text>
+            <InputNumber aria-label="相似题提示阈值" min={1} max={100} value={similarityThreshold} disabled={wordImporting || committingBatch || !!wordResult} onChange={value => setSimilarityThreshold(value || DEFAULT_SIMILARITY_THRESHOLD)} addonAfter="%" />
+            <Text type="secondary">达到阈值时提示；100% 重复在云端自动补齐内容并合并全部标签。</Text>
+          </Space>
           {/* 已有试卷列表 */}
           {wordSourceType === 'exam' && examPapers.length > 0 && (
             <div style={{ marginBottom: 16 }}>
@@ -853,8 +868,8 @@ const QuestionBankImport: React.FC = () => {
                   { title: '年级', dataIndex: 'grade', width: 70 },
                   { title: '考试类型', dataIndex: 'exam_type', width: 90 },
                   { title: '地区', dataIndex: 'region', width: 70 },
-                  { title: '联盟', dataIndex: 'alliance', width: 90 },
-                  { title: '学校', dataIndex: 'school', width: 100 },
+                  { title: '考试组织方式', dataIndex: 'organization_type', width: 110 },
+                  { title: '学校或联盟', dataIndex: 'school', width: 130 },
                   {
                     title: '操作',
                     width: 80,
@@ -868,7 +883,7 @@ const QuestionBankImport: React.FC = () => {
                             exam_type: record.exam_type || '',
                             grade: record.grade || '',
                             semester: record.semester || '',
-                            region: record.region || '',
+                            regions: record.regions || (record.region ? record.region.split('、') : []), organization_type: record.organization_type || '',
                             school: record.school || '',
                             alliance: record.alliance || '',
                             paper_name: record.name || '',

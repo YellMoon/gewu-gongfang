@@ -68,7 +68,7 @@ const COLLECTIONS = Object.freeze({
   },
   schools: {
     entity: 'school',
-    fields: ['name', 'count'],
+    fields: ['name', 'count', 'kind', 'member_school_ids'],
   },
   assetRecords: {
     entity: 'personal-asset-record',
@@ -87,7 +87,8 @@ const COLLECTIONS = Object.freeze({
       'subject', 'subject_id', 'chapter_id', 'type', 'difficulty', 'difficulty_coefficient', 'status',
       'content', 'stem', 'options', 'answer', 'analysis', 'explanation',
       'rich_content', 'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids',
-      'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'school',
+      'source', 'year', 'grade', 'semester', 'exam_type', 'region', 'organization_type', 'school',
+      'metadata_labels', 'school_ids',
       'edit_status', 'has_image', 'has_formula',
       'import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash',
     ],

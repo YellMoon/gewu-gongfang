@@ -31,7 +31,7 @@ function input(){
    await db.query('CREATE ROLE gewu_cloud_schedule_reader');
    await db.query('BEGIN; SET LOCAL ROLE vnext_pg17_business_owner; CREATE TABLE business.storage_agent_runtime_receipts(receipt_id text PRIMARY KEY,parser_sha256 text); COMMIT;');
    for(const name of ['20260822-storage-agent-tasks.sql','20260823-cloud-question-import-tasks.sql','20260823-cloud-question-authority.sql',
-    '20260823-question-import-media-objects.sql','20260823-encrypted-import-source-relay.sql','20260823-cloud-question-command-receipts.sql','20260824-question-taxonomy-authority.sql','20260905-zz-question-import-parser-proof-binding.sql','20261006-desktop-question-intake.sql','20261010-question-difficulty-coefficient.sql']){
+    '20260823-question-import-media-objects.sql','20260823-encrypted-import-source-relay.sql','20260823-cloud-question-command-receipts.sql','20260824-question-taxonomy-authority.sql','20260905-zz-question-import-parser-proof-binding.sql','20261006-desktop-question-intake.sql','20261010-question-difficulty-coefficient.sql', '20261012-question-deduplication-school-alliances.sql']){
     await db.query(fs.readFileSync(path.join(root,'cloud-business-api/sql',name),'utf8').replace('BEGIN;','BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;'));
    }
    await db.query("INSERT INTO business.tenants(id,name,legacy_deleted,created_at,updated_at) VALUES('tenant-1','Fixture',false,now(),now())");
@@ -97,8 +97,8 @@ function input(){
    await controller.tick();assert.equal(controller.getState().error,'CLOUD_BUSINESS_UNAVAILABLE');assert.equal(controller.getState().open,false);assert.equal((await native.list()).length,14);
    interrupt=false;await controller.tick();
    const final=await native.list();assert(final.every(item=>item.status==='completed'),JSON.stringify({error:controller.getState().error,states:final.map(x=>x.status)}));
-   assert.equal(controller.getState().open,false);assert.equal(browserDb.getAllQuestions().filter(q=>q.storage_state==='cloud_cached').length,14,'actual cloud readback populates the real question bank cache');
-   assert.deepEqual((await db.query('SELECT edit_status,count(*)::integer AS count FROM business.questions GROUP BY edit_status')).rows,[{edit_status:'unreviewed',count:14}]);
+   assert.equal(controller.getState().open,false);assert.equal(browserDb.getAllQuestions().filter(q=>q.storage_state==='cloud_cached').length,7,'actual cloud readback populates the real question bank cache');
+   assert.deepEqual((await db.query('SELECT edit_status,count(*)::integer AS count FROM business.questions GROUP BY edit_status')).rows,[{edit_status:'unreviewed',count:7}]);
    assert.equal((await db.query('SELECT count(*)::integer AS count FROM business.question_assets')).rows[0].count,mediaCount);
    assert.equal((await db.query('SELECT count(*)::integer AS count FROM business.desktop_question_command_receipts')).rows[0].count,14);
    assert((await db.query('SELECT status FROM business.question_import_tasks')).rows.every(row=>row.status==='submitted'));
@@ -106,12 +106,12 @@ function input(){
     const replay=await fetch(base+'/api/desktop/question-bank/commands',{method:'POST',headers:{authorization:'Bearer fixture.signature','content-type':'application/json'},body:JSON.stringify(before)});
     assert.equal(replay.status,200);assert.deepEqual((await replay.json()).receipt,item.receipt);assert.deepEqual((await native.get(item.id)).submission.command,before);
    }
-   assert.equal((await db.query('SELECT count(*)::integer AS count FROM business.questions')).rows[0].count,14,'same sealed command retries never duplicate questions or assets');
+   assert.equal((await db.query('SELECT count(*)::integer AS count FROM business.questions')).rows[0].count,7,'same sealed command retries never duplicate questions or assets');
    controller.stop();
    const {discardCancelledQuestionImportDrafts}=await import('./cancelledQuestionImportDrafts.mjs');
    const extraQuestion=await createNativeQuestionDraft(browserDb,{...fresh[0].payload.record});
    const extra=(await native.list()).find(item=>item.payload.record.id===extraQuestion.id);
-   assert.equal(browserDb.getAllQuestions().length,15);
+   assert.equal(browserDb.getAllQuestions().length,8);
    await db.query("INSERT INTO business.import_source_objects(import_task_id,tenant_id,object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,storage_state,verified_at) SELECT import_task_id,'tenant-1',object_id,object_version,storage_task_id,expected_sha256,expected_bytes,mime_type,'verified',now() FROM business.question_import_media_objects WHERE import_task_id='question_import_task_regression_new' ORDER BY item_index,asset_index LIMIT 1");
    await db.query("UPDATE business.question_import_tasks SET status='cancelled',phase='cancelled' WHERE task_id='question_import_task_regression_new'");
    const readTask=async id=>{const response=await fetch(base+'/api/desktop/question-imports/'+encodeURIComponent(id),{headers:{authorization:'Bearer fixture.signature'}});assert.equal(response.status,200);return (await response.json()).task;};
@@ -119,11 +119,11 @@ function input(){
    const beforeCleanupRequests=requests;await cleanupController.tick();
    assert.equal((await native.list()).some(item=>item.id===extra.id),false,'explicit cloud cancellation discards the actual encrypted pending draft: '+cleanupController.getState().error);
    assert.equal(requests,beforeCleanupRequests,'cancelled imports never submit again');
-   assert.equal(browserDb.getAllQuestions().length,14,'cancellation also clears the actual local question cache');
+   assert.equal(browserDb.getAllQuestions().length,7,'cancellation also clears the actual local question cache');
    assert.equal(cleanupController.getState().open,false);assert.equal(cleanupController.getState().error,'');cleanupController.stop();
    const listed=await fetch(base+'/api/desktop/question-imports?limit=50',{headers:{authorization:'Bearer fixture.signature'}});
    assert.equal((await listed.json()).tasks.length,1,'cancelled import tombstones stay out of visible history');
-   controller.stop();console.log(JSON.stringify({actualBrowserDatabase:true,actualNativeDraftProvenance:true,encryptedOutbox:true,actualHttpAndPostgres:true,questions:14,verifiedMedia:mediaCount,silentFailureAndRecovery:true,legacySignedDraftRecovery:true,noDuplicateRetries:true,requests}));
+   controller.stop();console.log(JSON.stringify({actualBrowserDatabase:true,actualNativeDraftProvenance:true,encryptedOutbox:true,actualHttpAndPostgres:true,questions:7,verifiedMedia:mediaCount,silentFailureAndRecovery:true,legacySignedDraftRecovery:true,noDuplicateRetries:true,requests}));
   });
  }finally{
   if(server)await new Promise(resolve=>server.close(resolve));if(priorTs)require.extensions['.ts']=priorTs;else delete require.extensions['.ts'];

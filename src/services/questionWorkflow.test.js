@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript');
 const cache=new Map();
-function load(file) { file=path.resolve(file);if(cache.has(file))return cache.get(file);const m={exports:{}};cache.set(file,m.exports);new Function('require','module','exports',ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText)(name=>name.startsWith('.')?load(path.resolve(path.dirname(file),name+'.ts')):require(name),m,m.exports);cache.set(file,m.exports);return m.exports; }
+// UTF-8: shared modules can be JavaScript or TypeScript.
+function load(file) { file=path.resolve(file);if(cache.has(file))return cache.get(file);const m={exports:{}};cache.set(file,m.exports);new Function('require','module','exports',ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText)(name=>{if(!name.startsWith('.'))return require(name);const base=path.resolve(path.dirname(file),name);return load([base,base+'.ts',base+'.js'].find(candidate=>fs.existsSync(candidate))||base);},m,m.exports);cache.set(file,m.exports);return m.exports; }
 const {validateImportQuestions,mergeImportValidation}=load('src/services/questionValidation.ts');
 let r=validateImportQuestions([{content:'题干',answer:'A',knowledge_ids:['k']}]);
 assert(r.rows[0].issues.some(i=>i.message==='解析为空'),'batch intake must check explanations');
@@ -15,7 +16,7 @@ assert.equal(merged.status,'failed','cloud warning cannot downgrade local failur
 r=validateImportQuestions([{content:'题干',answer:'A',analysis:'',options:[],knowledge_ids:['k'],format_warnings:['解析为空']}]);
 assert.equal(r.rows[0].issues.filter(i=>i.message==='解析为空').length,1);
 r=validateImportQuestions([{content:'<p>重复题干</p>',answer:'A',analysis:'推导',rich_content:{...rich,sections:{...rich.sections,stem:doc('重复题干')}},knowledge_ids:['k']}],[{content:'<p>重复题干</p>',rich_content:{...rich,sections:{...rich.sections,stem:doc('重复题干')}}}]);
-assert(r.rows[0].issues.some(i=>i.message==='疑似重复题目'),'existing and imported structured stems use the same fingerprint');
+assert(r.rows[0].issues.some(i=>i.message.startsWith('重复率 100%')),'existing and imported structured stems use the same fingerprint');
 r=validateImportQuestions([{content:'题干',type:'单选题',answer:'A',analysis:'推导',options:[{label:'A)',content:'选项一'},{label:'B)',content:'选项二'}],knowledge_ids:['k']}]);
 assert(!r.rows[0].issues.some(i=>i.message.includes('答案选项')),'checking and rendering share option label normalization');
 const {questionSearchText}=load('src/services/questionInspection.ts');

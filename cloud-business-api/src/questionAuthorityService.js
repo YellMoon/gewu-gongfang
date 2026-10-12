@@ -5,6 +5,7 @@ const { types } = require('util');
 const { validateChoiceQuestionStructure } = require('./questionChoiceStructure');
 const { normalizeQuestionRichContent, projectQuestionRichContent } = require('../../shared/questionRichContentContract');
 const { validDifficultyCoefficient } = require('../../shared/questionDifficulty');
+const { mergeExactImportedQuestion } = require('./questionImportDeduplication');
 
 function failure(code) {
   return Object.assign(new Error(code), { code });
@@ -62,7 +63,7 @@ const LEGACY_QUESTION_FIELDS = new Set([
   'content', 'stem', 'options', 'answer', 'analysis', 'explanation', 'rich_content',
   'knowledge_point_ids', 'model_point_ids', 'taxonomy_ids', 'source', 'year', 'grade',
   'semester', 'exam_type', 'region', 'school', 'edit_status', 'has_image', 'has_formula',
-  'import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash',
+  'import_task_id', 'import_item_id', 'import_item_index', 'import_content_hash', 'metadata_labels', 'school_ids', 'organization_type',
 ]);
 
 function importBinding(value) {
@@ -102,13 +103,29 @@ const QUESTION_METADATA_COLUMNS = Object.freeze({
   exam_type: 'exam_type', region: 'region', school: 'school', subject_id: 'subject_id',
   chapter_id: 'chapter_id', edit_status: 'edit_status', has_image: 'has_image',
   difficulty_coefficient: 'difficulty_coefficient',
+  metadata_labels: 'metadata_labels', school_ids: 'school_ids', organization_type: 'organization_type',
 });
+const linkedSchoolNames = `COALESCE((SELECT jsonb_agg(s.name ORDER BY s.name) FROM business.schools s WHERE s.tenant_id=q.tenant_id AND NOT s.legacy_deleted AND q.school_ids ? s.id),'[]'::jsonb)`;
+const allSchoolNames = `COALESCE((SELECT jsonb_agg(DISTINCT name ORDER BY name) FROM jsonb_array_elements_text(COALESCE(q.metadata_labels->'school','[]'::jsonb) || ${linkedSchoolNames} || CASE WHEN jsonb_array_length(q.school_ids)=0 AND NULLIF(q.school,'') IS NOT NULL THEN jsonb_build_array(q.school) ELSE '[]'::jsonb END) names(name)),'[]'::jsonb)`;
+function metadataReadColumn(key, column) {
+  if (key === 'school') return `COALESCE((SELECT string_agg(name,'、' ORDER BY name) FROM jsonb_array_elements_text(${allSchoolNames}) names(name)),q.school) AS school`; // UTF-8
+  if (key === 'metadata_labels') return `q.metadata_labels || jsonb_build_object('school',${allSchoolNames}) AS metadata_labels`;
+  return `q.${column} AS "${key}"`;
+}
 function questionMetadata(value, strict = false) {
   if (!plainObject(value) || (strict && Reflect.ownKeys(value).some(key => !Object.hasOwn(QUESTION_METADATA_COLUMNS, key)))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
   const result = {};
   for (const key of Object.keys(QUESTION_METADATA_COLUMNS)) {
     if (!Object.hasOwn(value, key) || value[key] === undefined) continue;
-    if (key === 'difficulty_coefficient') {
+    if (key === 'school_ids') {
+      result[key] = [...new Set(idList(value[key]))];
+    } else if (key === 'metadata_labels') {
+      if (!plainObject(value[key]) || Object.keys(value[key]).some(field => !['source','year','grade','semester','exam_type','region','school','organization_type'].includes(field))) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+      result[key] = Object.fromEntries(Object.entries(value[key]).map(([field, labels]) => {
+        if (!Array.isArray(labels) || labels.length > 500) throw failure('CLOUD_QUESTION_INPUT_INVALID');
+        return [field, [...new Set(labels.map(label => text(label, {max:4096})))]];
+      }));
+    } else if (key === 'difficulty_coefficient') {
       if (!validDifficultyCoefficient(value[key])) throw failure('CLOUD_QUESTION_INPUT_INVALID');
       result[key] = value[key];
     } else if (key === 'has_image') {
@@ -130,6 +147,7 @@ function questionMetadata(value, strict = false) {
 function metadataInsertValues(parameter, sourceFallback = 'NULL') {
   return Object.keys(QUESTION_METADATA_COLUMNS).map(key => {
     const value = `${parameter}::jsonb->>'${key}'`;
+    if (key === 'metadata_labels' || key === 'school_ids') return `COALESCE(${parameter}::jsonb->'${key}','${key === 'school_ids' ? '[]' : '{}'}'::jsonb)`;
     if (key === 'difficulty_coefficient') return `(${value})::numeric`;
     if (key === 'source') return `CASE WHEN ${parameter}::jsonb ? 'source' THEN ${value} ELSE ${sourceFallback} END`;
     if (key === 'has_image') return `COALESCE((${value})::boolean,false)`;
@@ -140,7 +158,7 @@ function metadataInsertValues(parameter, sourceFallback = 'NULL') {
 function metadataUpdateAssignments(parameter) {
   return Object.entries(QUESTION_METADATA_COLUMNS).map(([key, column]) => {
     const value = `${parameter}::jsonb->>'${key}'`;
-    const typed = key === 'has_image' ? `(${value})::boolean` : key === 'difficulty_coefficient' ? `(${value})::numeric` : value;
+    const typed = key === 'metadata_labels' || key === 'school_ids' ? `${parameter}::jsonb->'${key}'` : key === 'has_image' ? `(${value})::boolean` : key === 'difficulty_coefficient' ? `(${value})::numeric` : value;
     return `${column}=CASE WHEN ${parameter}::jsonb ? '${key}' THEN ${typed} ELSE q.${column} END`;
   }).join(',');
 }
@@ -411,7 +429,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const result = await query(
         `SELECT q.id,q.subject,q.question_type AS type,q.difficulty,q.source,q.status,c.stem AS content,c.options_json AS options,
                 c.answer,c.explanation AS analysis,c.rich_content_json AS rich_content,q.taxonomy_json AS taxonomy,q.has_formula,c.version,
-                ${Object.entries(QUESTION_METADATA_COLUMNS).filter(([key]) => key !== 'source').map(([key, column]) => `q.${column} AS "${key}"`).join(',')},
+                ${Object.entries(QUESTION_METADATA_COLUMNS).filter(([key]) => key !== 'source').map(([key, column]) => metadataReadColumn(key, column)).join(',')},
                 COALESCE((
                   SELECT jsonb_agg(DISTINCT n.name ORDER BY n.name)
                   FROM business.question_taxonomy_nodes n
@@ -430,7 +448,9 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const questions = result.rows.slice(0, request.limit).map(questionListRow);
       return { questions, nextCursor: result.rows.length > request.limit ? questions.at(-1).id : null };
     },
-    async create(input, currentQuery = query) {
+    async create(input, currentQuery) {
+      if (!currentQuery && input?.question?.importBinding) return transaction(transactionQuery => this.create(input, transactionQuery));
+      currentQuery ||= query;
       const request = exact(input, ['tenantId', 'actor', 'question']);
       const tenantId = text(request.tenantId, { max: 128 });
       const currentActor = actor(request.actor);
@@ -453,6 +473,10 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const binding = question.importBinding === undefined || question.importBinding === null ? null : importBinding(question.importBinding);
       let hasFormula = question.hasFormula;
       let metadataValue = questionMetadata(question.metadata === undefined ? {} : question.metadata, true);
+      if (metadataValue.school_ids?.length) {
+        metadataValue.school = null;
+        metadataValue.metadata_labels = { ...metadataValue.metadata_labels, school: [] };
+      }
       if (binding !== null && richContent !== null) {
         try {
           const normalized = normalizeQuestionRichContent(question.richContent);
@@ -469,6 +493,12 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const contentHash = canonicalContentHash({ stem, answer, explanation, options: JSON.parse(options), richContent: richContent === null ? null : JSON.parse(richContent) });
       const metadata = json(metadataValue);
       if (binding !== null) assertChoiceQuestionStructure(questionType, JSON.parse(options), answer);
+      if (binding !== null) {
+        const merged = await mergeExactImportedQuestion({ query: currentQuery, tenantId, accountId: currentActor.accountId, binding,
+          incoming: { subject, stem, answer, explanation, options: JSON.parse(options), rich_content: richContent ? JSON.parse(richContent) : null,
+            taxonomy: question.taxonomy, has_formula: hasFormula, ...metadataValue }, canonicalContentHash });
+        if (merged) return { ...questionRow(merged), merged: true, filled: merged.filled, conflicts: merged.conflicts };
+      }
       const result = await currentQuery(binding ?
         `WITH import_item AS (
            SELECT item.import_task_id,item.item_index,item.candidate_json
@@ -554,6 +584,7 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
       const command = desktopCommand(request.command);
       return transaction(async transactionQuery => {
       if (typeof transactionQuery !== 'function') throw failure('CLOUD_QUESTION_UNAVAILABLE');
+      if (command.question?.importBinding) await transactionQuery('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [`${tenantId}:question-import`]);
       const previous = await transactionQuery(
         `SELECT payload_hash AS "payloadHash",status,result_json AS result,result_hash AS "resultHash"
          FROM business.desktop_question_command_receipts WHERE tenant_id=$1 AND command_id=$2`,
@@ -661,4 +692,4 @@ function createQuestionAuthorityService({ query, transaction } = {}) {
   });
 }
 
-module.exports = Object.freeze({ createQuestionAuthorityService });
+module.exports = Object.freeze({ createQuestionAuthorityService, metadataReadColumn });

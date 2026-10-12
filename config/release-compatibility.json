@@ -134,6 +134,15 @@
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],
       "rule": "desktop and miniapp render the same cloud-authoritative question structure, option semantics, filters, basket identities, answers, explanations, and source metadata"
+    },
+    "questionImportDeduplication": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Apply additive metadata_labels, school_ids, organization_type, school kind and member_school_ids migration before cloud and desktop rollout. Cloud import submission serializes tenant imports, compares stem/options/formulas/media/subquestions, retains the original ID and enriches missing answers/analysis while unioning taxonomy and provenance labels; conflicting existing content is preserved and recorded. School/alliance IDs remain tenant-scoped resource references and students may belong only to school resources. Alliances reference multiple school resources and a school may join multiple alliances; membership never infers a paper region. Exam organization type is separate from exam type, and coverage regions are multiple labels with empty coverage allowed. Clients display all merged labels. Default similarity warning is 90 percent and never auto-merges near matches. Existing NAS media transport and miniapp limited-write boundary are unchanged."
     }
   },
   "runtimeReceipts": {

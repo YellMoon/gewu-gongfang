@@ -91,8 +91,8 @@ function compile() {
   await add('导入卷名','来源0','原卷来源0');await total(1);
   await add('导入卷名','来源1','原卷来源1');await total(2);
   await add('地区','浙江','浙江');await total(1);
-  await add('学校','中学1','验证中学1');await total(0);
-  await page.getByRole('button',{name:'移除学校 验证中学1',exact:true}).click();await total(1);
+  await add('学校或联盟','中学1','验证中学1');await total(0);
+  await page.getByRole('button',{name:'移除学校或联盟 验证中学1',exact:true}).click();await total(1);
   await add('地区','上海','上海');await total(2);
   await page.getByRole('button',{name:'移除导入卷名 原卷来源0',exact:true}).click();await total(1);
   await page.screenshot({path:path.join(output,'12-separate-metadata-filters.png'),fullPage:false});

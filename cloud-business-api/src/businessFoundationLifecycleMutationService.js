@@ -15,8 +15,8 @@ function createBusinessFoundationLifecycleMutations({ query } = {}) {
       remove: input => resultRow(`${returned} business.vnext_delete_scoped_institution($1,$2,$3::timestamptz,$4,$5)`, [input.tenantId, input.institutionId, input.expectedUpdatedAt, ...scheduleActorParameters(input.actorScope)]),
     }),
     schools: Object.freeze({
-      create: input => resultRow(`${returned} business.vnext_create_school_v1($1,$2,$3,$4)`, [input.tenantId, input.schoolId, input.name, input.count]),
-      update: input => resultRow(`${returned} business.vnext_update_school_v1($1,$2,$3::timestamptz,$4,$5)`, [input.tenantId, input.schoolId, input.expectedUpdatedAt, input.name, input.count]),
+      create: input => input.kind ? resultRow(`${returned} business.vnext_create_school_v2($1,$2,$3,$4,$5,$6::jsonb)`, [input.tenantId, input.schoolId, input.name, input.count, input.kind, input.memberSchoolIds === undefined ? null : JSON.stringify(input.memberSchoolIds)]) : resultRow(`${returned} business.vnext_create_school_v1($1,$2,$3,$4)`, [input.tenantId, input.schoolId, input.name, input.count]),
+      update: input => input.kind ? resultRow(`${returned} business.vnext_update_school_v2($1,$2,$3::timestamptz,$4,$5,$6,$7::jsonb)`, [input.tenantId, input.schoolId, input.expectedUpdatedAt, input.name, input.count, input.kind, input.memberSchoolIds === undefined ? null : JSON.stringify(input.memberSchoolIds)]) : resultRow(`${returned} business.vnext_update_school_v1($1,$2,$3::timestamptz,$4,$5)`, [input.tenantId, input.schoolId, input.expectedUpdatedAt, input.name, input.count]),
       remove: input => resultRow(`${returned} business.vnext_soft_delete_school($1,$2,$3::timestamptz)`, [input.tenantId, input.schoolId, input.expectedUpdatedAt]),
     }),
   });

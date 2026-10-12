@@ -6,6 +6,7 @@ import { matchesTaxonomyFilters } from './taxonomyFilter.mjs';
 import { questionSearchText, questionStemSearchText } from './questionInspection';
 import { readDesktopAuthorizationSession } from './desktopAuthorizationSession.mjs';
 const { difficultyLabel } = require('../../shared/questionDifficulty');
+const { labelValues } = require('../../shared/questionDeduplication'); // UTF-8
 
 const DB_VERSION = 2;
 const META_STORE = 'question_meta';
@@ -29,6 +30,9 @@ type QuestionMeta = {
   source?: string;
   region?: string;
   school?: string;
+  organization_type?: string;
+  metadata_labels?: Record<string, string[]>;
+  school_ids?: string[];
   knowledge_ids?: string[];
   model_ids?: string[];
   taxonomy_ids?: Record<string, string[]>;
@@ -177,6 +181,9 @@ function buildMeta(question: Question): QuestionMeta {
     source: (question as any).source,
     region: (question as any).region,
     school: (question as any).school,
+    organization_type: question.organization_type,
+    metadata_labels: question.metadata_labels,
+    school_ids: question.school_ids,
     knowledge_ids: normalizeArray((question as any).knowledge_ids ?? (question as any).knowledge_point_ids),
     model_ids: normalizeArray((question as any).model_ids ?? (question as any).model_point_ids),
     taxonomy_ids: Object.fromEntries(Object.entries((question as any).taxonomy_ids || {}).map(([systemId, ids]) => [systemId, normalizeArray(ids)])),
@@ -232,8 +239,7 @@ export function questionMetadataFilterOptions(questions: Question[], subjectIds:
   for (const question of questions) {
     if ((question as any).deleted || (subjectIds.length && !subjectIds.some(subject => subjectKey(subject) === subjectKey(question.subject || '')))) continue;
     for (const [field, values] of [['source', sources], ['region', regions], ['school', schools]] as const) {
-      const value = question[field];
-      if (value && String(value).trim()) values.add(String(value));
+      for (const value of labelValues(question, field)) values.add(value);
     }
   }
   const sorted = (values: Set<string>) => [...values].sort((a, b) => a.localeCompare(b, 'zh-CN'));
@@ -245,19 +251,23 @@ function matchesQuery(meta: QuestionMeta, query: QuestionPageQuery): boolean {
   if (query.pendingEditOnly && !isPendingEdit(meta)) return false;
   if (query.subjectIds?.length && !query.subjectIds.some(subject => subjectKey(subject) === subjectKey(meta.subject || ''))) return false;
   if (!matchesList(meta.type, query.types)) return false;
-  if (!matchesList(meta.exam_type || '', query.examTypes)) return false;
+  const matchesLabels = (field: string, selected?: string[]) => {
+    const active = (selected || []).filter(value => value && value !== '全部'); // UTF-8
+    return !active.length || active.some(value => labelValues(meta, field).includes(value));
+  };
+  if (!matchesLabels('exam_type', query.examTypes)) return false;
   if (!matchesList(meta.status || 'draft', query.statuses)) return false;
-  if (!matchesList(meta.grade, query.grades)) return false;
-  if (!matchesList(meta.semester, query.semesters)) return false;
+  if (!matchesLabels('grade', query.grades)) return false;
+  if (!matchesLabels('semester', query.semesters)) return false;
   if (!matchesList(difficultyLabel(meta.difficulty_coefficient), query.difficulties)) return false;
-  if (!matchesList(meta.year, query.years)) return false;
-  if (!matchesList(meta.source, query.sources)) return false;
-  if (!matchesList(meta.region, query.regions)) return false;
-  if (!matchesList(meta.school, query.schools)) return false;
-  if (query.year && query.year !== '全部' && meta.year !== query.year) return false;
+  if (!matchesLabels('year', query.years)) return false;
+  if (!matchesLabels('source', query.sources)) return false;
+  if (!matchesLabels('region', query.regions)) return false;
+  if (!matchesLabels('school', query.schools)) return false;
+  if (query.year && query.year !== '全部' && !labelValues(meta, 'year').includes(query.year)) return false;
   if (query.basketOnly && !(query.basketIds || []).includes(meta.id)) return false;
   if (query.source?.trim()) {
-    const source = [meta.source, meta.region, meta.school, meta.exam_type, meta.year].filter(Boolean).join(' ').toLowerCase();
+    const source = ['source','region','school','exam_type','year','organization_type'].flatMap(field => labelValues(meta, field)).join(' ').toLowerCase();
     if (!source.includes(query.source.trim().toLowerCase())) return false;
   }
   const searchTerms = (query.searchTerms || []).map(term => term.trim().toLowerCase()).filter(Boolean);

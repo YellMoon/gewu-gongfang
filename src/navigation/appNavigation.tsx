@@ -101,7 +101,7 @@ const baseNavGroups: NavGroup[] = [
     label: '资源',
     icon: <TeamOutlined />,
     items: [
-      { key: 'school', label: '学校', description: '维护学校资源', icon: <BankOutlined /> },
+      { key: 'school', label: '学校或联盟', description: '维护学校或联盟资源', icon: <BankOutlined /> },
       { key: 'address', label: '上课地址', description: '维护教室与上课地点', icon: <HomeOutlined /> },
       { key: 'institution', label: '机构', description: '维护合作机构资料', icon: <TeamOutlined /> },
       { key: 'teacher', label: '老师', description: '管理老师档案', icon: <TeamOutlined /> },
@@ -140,7 +140,7 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   'course-calendar': { key: 'course-calendar', label: '课程表', icon: <CalendarOutlined /> },
   'schedule-list': { key: 'schedule-list', label: '排课列表', icon: <FileTextOutlined /> },
   'course-info': { key: 'course-info', label: '课程信息', icon: <BookOutlined /> },
-  school: { key: 'school', label: '学校', icon: <BankOutlined /> },
+  school: { key: 'school', label: '学校或联盟', icon: <BankOutlined /> },
   address: { key: 'address', label: '上课地址', icon: <HomeOutlined /> },
   institution: { key: 'institution', label: '机构', icon: <TeamOutlined /> },
   'question-bank-tools': { key: 'question-bank-tools', label: '试题导入', icon: <ToolOutlined /> },

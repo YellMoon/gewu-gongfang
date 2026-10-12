@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Form, Input, Space, Popconfirm, message, Tag, Statistic } from 'antd';
+import { Button, Form, Input, Space, Popconfirm, message, Tag, Statistic, Select as AntSelect } from 'antd'; // UTF-8
+import Select from '../components/AutoCloseSelect';
 import Table from '../components/NumberedTable';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import DataPageLayout from '../layout/DataPageLayout';
@@ -7,6 +8,8 @@ import DataPageLayout from '../layout/DataPageLayout';
 let dbService: any = null;
 
 interface School {
+  kind?: 'school' | 'alliance';
+  member_school_ids?: string[];
   id: string;
   name: string;
   count: number;
@@ -20,6 +23,7 @@ const SchoolManager: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingSchool, setEditingSchool] = useState<School | null>(null);
   const [form] = Form.useForm();
+  const selectedKind = Form.useWatch('kind', form) || 'school';
 
   useEffect(() => {
     if (!dbService) {
@@ -45,7 +49,7 @@ const SchoolManager: React.FC = () => {
 
   const handleEdit = (record: School) => {
     setEditingSchool(record);
-    form.setFieldsValue({ name: record.name, notes: record.notes });
+    form.setFieldsValue({ name: record.name, kind: record.kind || 'school', member_school_ids: record.member_school_ids || [], notes: record.notes });
     setModalVisible(true);
   };
 
@@ -60,11 +64,11 @@ const SchoolManager: React.FC = () => {
       const values = await form.validateFields();
       if (editingSchool) {
         // 编辑
-        dbService.updateSchool(editingSchool.id, { name: values.name });
+        dbService.updateSchool(editingSchool.id, { name: values.name, kind: values.kind, member_school_ids: values.kind === 'alliance' ? values.member_school_ids || [] : [] });
         message.success('更新成功');
       } else {
         // 新增
-        dbService.addOrUpdateSchool(values.name);
+        dbService.addOrUpdateSchool(values.name, values.kind, values.kind === 'alliance' ? values.member_school_ids || [] : []);
         message.success('添加成功');
       }
       setModalVisible(false);
@@ -75,8 +79,9 @@ const SchoolManager: React.FC = () => {
   };
 
   const columns = [
+    { title: '类型', dataIndex: 'kind', key: 'kind', width: 90, render: (kind?: string) => <Tag color={kind === 'alliance' ? 'purple' : 'blue'}>{kind === 'alliance' ? '联盟' : '学校'}</Tag> },
     {
-      title: '学校名称',
+      title: '学校或联盟名称',
       dataIndex: 'name',
       key: 'name',
       render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>,
@@ -86,8 +91,9 @@ const SchoolManager: React.FC = () => {
       dataIndex: 'count',
       key: 'count',
       width: 120,
-      render: (count: number) => <Tag color="blue">{count} 人</Tag>,
+      render: (count: number, record: School) => record.kind === 'alliance' ? '-' : <Tag color="blue">{count} 人</Tag>,
     },
+    { title: '联盟成员学校', key: 'members', width: 200, render: (_: unknown, record: School) => record.kind === 'alliance' ? (record.member_school_ids || []).map(id => schools.find(s => s.id === id)?.name || id).join('、') || '未设置' : '-' },
     {
       title: '备注',
       dataIndex: 'notes',
@@ -111,7 +117,7 @@ const SchoolManager: React.FC = () => {
           <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
-          <Popconfirm title="确定删除该学校？" onConfirm={() => handleDelete(record.id)}>
+          <Popconfirm title="确定删除该学校或联盟？" onConfirm={() => handleDelete(record.id)}>
             <Button type="link" danger size="small" icon={<DeleteOutlined />}>
               删除
             </Button>
@@ -126,11 +132,11 @@ const SchoolManager: React.FC = () => {
       toolbar={(
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
           <Space size={18} wrap>
-            <Statistic title="学校总数" value={schools.length} />
-            <Statistic title="关联学生" value={schools.reduce((sum, school) => sum + Number(school.count || 0), 0)} suffix="人" />
+            <Statistic title="学校或联盟总数" value={schools.length} />
+            <Statistic title="关联学生" value={schools.filter(school => school.kind !== 'alliance').reduce((sum, school) => sum + Number(school.count || 0), 0)} suffix="人" />
           </Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            添加学校
+            添加学校或联盟
           </Button>
         </div>
       )}
@@ -140,11 +146,11 @@ const SchoolManager: React.FC = () => {
           dataSource={schools}
           rowKey="id"
           pagination={{ pageSize: 20 }}
-          locale={{ emptyText: '暂无学校数据，点击上方按钮添加' }}
+          locale={{ emptyText: '暂无学校或联盟数据，点击上方按钮添加' }}
         />
       )}
       modalOpen={modalVisible}
-      modalTitle={editingSchool ? '编辑学校' : '添加学校'}
+      modalTitle={editingSchool ? '编辑学校或联盟' : '添加学校或联盟'}
       onModalCancel={() => setModalVisible(false)}
       modalFooter={(
         <div className="data-page-layout__modal-footer">
@@ -153,13 +159,19 @@ const SchoolManager: React.FC = () => {
         </div>
       )}
       modalContent={(
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={{ kind: 'school' }}>
+          <Form.Item name="kind" label="类型" rules={[{ required: true }]} extra="学生只能归属学校；试卷和试题可关联多个学校或联盟。">
+            <Select options={[{value:'school',label:'学校'},{value:'alliance',label:'联盟'}]} />
+          </Form.Item>
+          {selectedKind === 'alliance' && <Form.Item name="member_school_ids" label="联盟成员学校" preserve={false} extra="可关联多所学校；一所学校可加入多个联盟。成员关系不自动决定试卷覆盖地区。">
+            <AntSelect mode="multiple" showSearch optionFilterProp="label" options={schools.filter(s => s.kind !== 'alliance').map(s => ({value:s.id,label:s.name}))} />
+          </Form.Item>}
           <Form.Item 
             name="name" 
-            label="学校名称" 
-            rules={[{ required: true, message: '请输入学校名称' }]}
+            label="学校或联盟名称"
+            rules={[{ required: true, message: '请输入学校或联盟名称' }]}
           >
-            <Input placeholder="请输入学校名称" autoFocus />
+            <Input placeholder="请输入学校或联盟名称" autoFocus />
           </Form.Item>
           {editingSchool && (
             <Form.Item name="notes" label="备注">

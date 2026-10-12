@@ -1,0 +1,42 @@
+'use strict';
+// UTF-8 regression: content identity, safe enrichment and union of all labels.
+const assert = require('node:assert/strict');
+const { identityKey, similarity, mergeQuestion, DEFAULT_SIMILARITY_THRESHOLD } = require('./questionDeduplication');
+const doc = text => ({type:'doc',content:[{type:'paragraph',content:[{type:'text',text}]}]});
+const lecture = {id:'original',subject:'physics',stem:'物体质量为 2 kg，求重力。',options:[],answer:'20 N',explanation:null,
+  taxonomy:{knowledgePointIds:['force'],modelPointIds:[],taxonomyIds:{physics:['node-a']}}};
+assert.equal(DEFAULT_SIMILARITY_THRESHOLD,90);
+const topic = {...lecture,id:'topic',explanation:'由 G=mg 得到 20 N',taxonomy:{knowledgePointIds:['gravity'],taxonomyIds:{physics:['node-b']}}};
+assert.equal(identityKey(topic),identityKey(lecture));
+assert.equal(similarity(topic,lecture),100);
+let merged = mergeQuestion(lecture,topic);
+assert.equal(merged.question.id,'original');assert.equal(merged.question.explanation,topic.explanation);
+assert.deepEqual(merged.question.taxonomy.taxonomyIds.physics,['node-a','node-b']);
+const exam={...topic,source:'联考卷',year:'2025—2026',grade:'高一',school:'甲校、乙联盟',school_ids:['school-a','alliance-b']};
+merged=mergeQuestion(merged.question,exam);
+merged=mergeQuestion(merged.question,{...exam,source:'模拟卷',year:'2026—2027',school_ids:['school-a','school-c']});
+assert.deepEqual(merged.question.metadata_labels.source,['联考卷','模拟卷']);
+assert.deepEqual(merged.question.metadata_labels.year,['2025—2026','2026—2027']);
+assert.deepEqual(merged.question.school_ids,['school-a','alliance-b','school-c']);
+assert.deepEqual(mergeQuestion(lecture,{...topic,answer:'19.6 N'}).conflicts,['answer']);
+assert.equal(mergeQuestion(lecture,{...topic,answer:'19.6 N'}).question.answer,'20 N');
+assert(similarity(lecture,{...lecture,stem:lecture.stem.replace('2 kg','3 kg')})>=90);
+assert(similarity(lecture,{...lecture,stem:lecture.stem.replace('2 kg','3 kg')})<100);
+assert.equal(similarity(lecture,{...lecture,subject:'chemistry'}),0);
+const rich={...lecture,rich_content:{type:'question-document',version:1,sections:{stem:doc(lecture.stem),options:[],subQuestions:[],answer:doc('20 N'),analysis:doc('')}}};
+assert.equal(similarity(rich,lecture),100);
+const formula={type:'formula',attrs:{id:'a',canonicalLatex:'x^2'}};
+const withFormula={...rich,rich_content:structuredClone(rich.rich_content)};
+withFormula.rich_content.sections.stem.content[0].content.push(formula);
+const otherFormula=structuredClone(withFormula);otherFormula.rich_content.sections.stem.content[0].content.at(-1).attrs.canonicalLatex='x^3';
+assert(similarity(withFormula,otherFormula)<100);
+const restyled=structuredClone(withFormula);restyled.rich_content.sections.stem.content[0].content.at(-1).attrs.id='new-import-id';
+assert.equal(similarity(withFormula,restyled),100);
+const explained={...rich,analysis:'Rich explanation',rich_content:structuredClone(rich.rich_content)};explained.rich_content.sections.analysis=doc('Rich explanation');
+assert.deepEqual(mergeQuestion(rich,explained).question.rich_content.sections.analysis,doc('Rich explanation'));
+assert(similarity({...lecture,options:[{label:'A',content:'2'}]},{...lecture,options:[{label:'A',content:'3'}]})<100);
+// UTF-8: legacy markup and separate subquestions retain their meaning.
+assert(similarity({...lecture,stem:'x<sup>2</sup>'},{...lecture,stem:'x2'})<100);
+assert(similarity({...lecture,stem:'<span data-latex="x^2"></span>'},{...lecture,stem:'<span data-latex="x^3"></span>'})<100);
+assert(similarity({...lecture,subQuestions:[{content:'质量为2kg'}]},{...lecture,subQuestions:[{content:'质量为3kg'}]})<100);
+console.log('question deduplication identity, 90% warning, enrichment, conflicts and label unions passed');

@@ -49,7 +49,7 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} 
         '20260822-storage-agent-tasks.sql',
         '20260823-cloud-question-import-tasks.sql',
         '20260823-cloud-question-authority.sql',
-        '20261010-question-difficulty-coefficient.sql',
+        '20261010-question-difficulty-coefficient.sql', '20261012-question-deduplication-school-alliances.sql',
         '20260823-question-import-media-objects.sql',
         '20260823-cloud-question-command-receipts.sql',
       ]) await facade.query(ownedSql(name));
@@ -180,7 +180,7 @@ function commandFor({ id, taskId, itemId, itemIndex, contentHash, metadata = {} 
           VALUES ($1,$2,0,$3,'{"assets":[]}','{}','[]','draft_prepared')`, [itemId,taskId,HASH]);
         const id = `question-bound-${suffix}`;
         const result = await service.submitDesktopDraft({tenantId:'tenant-1',actor:{accountId:'teacher-1',roles:['teacher']},
-          command:commandFor({id,taskId,itemId,itemIndex:0,contentHash:HASH,metadata:{source,year:'2025'}})});
+          command:commandFor({id,taskId,itemId,itemIndex:0,contentHash:HASH,metadata:{source,year:'2025',content:'Different source fixture '+suffix}})});
         assert.strictEqual(result.status,'committed');
         assert.deepStrictEqual((await facade.query('SELECT source,exam_year FROM business.questions WHERE id=$1',[id])).rows,
           [{source,exam_year:'2025'}], 'explicit import source or clear takes precedence over the original filename default');

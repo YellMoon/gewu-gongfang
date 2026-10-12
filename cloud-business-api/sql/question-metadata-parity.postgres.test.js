@@ -18,7 +18,7 @@ const record = { id: 'question-metadata', subject: 'physics', type: 'solution', 
     await createBusinessFoundationCatalogBoundary(runtime).apply(handle, receipt);
     await withQuery(handle, 'fixture-provisioner', async db => {
       await db.query('CREATE ROLE gewu_cloud_schedule_reader');
-      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20261010-question-difficulty-coefficient.sql']) {
+      for (const file of ['20260823-cloud-question-authority.sql', '20260823-cloud-question-command-receipts.sql', '20260824-question-taxonomy-authority.sql', '20261010-question-difficulty-coefficient.sql', '20261012-question-deduplication-school-alliances.sql']) {
         let sql = fs.readFileSync(path.join(__dirname, file), 'utf8');
         if (file.startsWith('20260823-')) sql = sql.replace('BEGIN;', 'BEGIN; SET LOCAL ROLE vnext_pg17_business_owner;');
         await db.query(sql);

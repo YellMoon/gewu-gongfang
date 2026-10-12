@@ -84,7 +84,8 @@ export function questionSearchText(question: any): string {
     ...sections.options.map((o: any) => `${o.label || ''} ${richNodeText(o.content)}`),
     ...sections.subQuestions.map((s: any) => [richNodeText(s.stem || s.content), richNodeText(s.answer), richNodeText(s.analysis)].join(' '))] : [];
   return [question.id, question.content, question.stem, question.answer, question.analysis, question.explanation,
-    question.source, question.exam_type, question.region, question.school, question.year,
+    question.source, question.exam_type, question.organization_type, question.region, question.school, question.year,
+    ...Object.values(question.metadata_labels || {}).flat(),
     ...(question.tags || []), ...(question.options || []).map((o: any) => typeof o === 'string' ? o : `${o.label || ''} ${o.content || o.text || ''}`),
     ...(question.formulas || []).map((f: any) => f.latex || f.canonicalLatex || ''), ...structured,
     ...(question.knowledge_ids || question.knowledge_point_ids || []), ...(question.model_ids || question.model_point_ids || [])]

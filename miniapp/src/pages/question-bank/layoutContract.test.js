@@ -27,7 +27,7 @@ assert.match(source, /selectedSemester/, 'semester must remain available in the 
 assert.match(source, /selectedExamType/, 'exam type must remain available in the mobile version of the desktop filter set');
 assert.match(source, /selectedExamYear/, 'exam year must remain available in the mobile version of the desktop filter set');
 assert.match(source, /className='question-source-input'/, 'source needs a dedicated text field because it searches source, region, school and year');
-assert.match(source, /placeholder='来源、地区、学校或年份'/, 'the source field must describe its own search boundary');
+assert.match(source, /placeholder='来源、覆盖地区、学校或联盟、组织方式'/, 'the source field must describe its own search boundary');
 assert.match(source, /className='question-filter-cell question-filter-knowledge'/, 'knowledge points need their own mobile filter control');
 assert.match(source, /className='question-filter-cell question-filter-type'[\s\S]*?range=\{\['全部题型'/, 'the type filter must occupy its own grid area');
 assert.match(source, /className='question-filter-cell question-filter-knowledge'[\s\S]*?range=\{\['全部知识点'/, 'the knowledge filter must occupy its own grid area');

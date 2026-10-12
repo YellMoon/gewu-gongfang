@@ -250,6 +250,8 @@ export interface Teacher {
 
 // 学校信息（自动存储）
 export interface SchoolInfo {
+  kind?: 'school' | 'alliance';
+  member_school_ids?: string[];
   id: string;
   name: string;
   count: number;  // 使用次数
@@ -410,7 +412,10 @@ export interface Question {
   semester?: string;               // 学期
   exam_type?: string;              // 考试类型
   region?: string;                 // 地区
-  school?: string;                 // 学校
+  school?: string;                 // 学校或联盟（兼容旧字段）
+  school_ids?: string[];
+  organization_type?: string;
+  metadata_labels?: Record<string, string[]>;
   edit_status?: string;            // 编辑状态
   explanation?: string;            // 后端解析字段
   stem?: string;                   // 后端题干字段

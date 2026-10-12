@@ -20,3 +20,8 @@ assert.equal(coefficientDifficulty(0.7), 2); assert.equal(coefficientDifficulty(
 for (const value of [-0.1, 1.1, NaN, Infinity, '0.7']) assert.equal(validDifficultyCoefficient(value), false);
 assert.equal(difficultyLabel(null), '\u672A\u6807\u6CE8');
 console.log('import labels and coefficient boundaries passed');
+
+// UTF-8: multi-city papers retain independent organization and coverage facts.
+const multiCity=applyImportLabels(candidate,{organization_type:'多市联考',regions:['杭州市','宁波市'],school_ids:[]},'exam');
+assert.equal(multiCity.organization_type,'多市联考');assert.deepEqual(multiCity.metadata_labels.region,['杭州市','宁波市']);assert.deepEqual(multiCity.school_ids,[]);
+assert.equal(applyImportLabels(candidate,{organization_type:'联盟联考',school_ids:['alliance']},'exam').region,'','alliance membership never infers region');

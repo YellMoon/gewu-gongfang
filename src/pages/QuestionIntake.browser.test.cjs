@@ -17,7 +17,7 @@ fs.writeFileSync(entry, `import React from 'react';import {createRoot} from 'rea
 import QuestionBankImport from '${absolute('src/pages/QuestionBankImport')}';
 import {saveDesktopAuthorizationSession} from '${absolute('src/services/desktopAuthorizationSession.mjs')}';
 import '${absolute('src/index.css')}';import '${absolute('node_modules/katex/dist/katex.min.css')}';
-window.dbService={getKnowledgeTree:()=>[],getModelTree:()=>[],getTaxonomySystems:()=>[],getTaxonomyNodes:()=>[]};
+window.dbService={getAllSchools:()=>[{id:'school-a',name:'甲校',kind:'school'},{id:'alliance-b',name:'乙联盟',kind:'alliance'}],getKnowledgeTree:()=>[],getModelTree:()=>[],getTaxonomySystems:()=>[],getTaxonomyNodes:()=>[]};
 window.desktopIdentitySessionProvider={listCloudQuestions:async()=>[]};
 window.fixture={cloudRequests:0};
 window.fixture.saveSession=saveDesktopAuthorizationSession;
@@ -36,6 +36,19 @@ async function compile() {
 async function verify(page, carrier) {
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await page.locator('.ant-radio-button-wrapper').filter({ hasText: '试卷格式' }).click();
+  assert.equal(await page.getByRole('spinbutton',{name:'相似题提示阈值'}).inputValue(),'90');
+  const resourcePicker=page.locator('.ant-form-item').filter({has:page.locator('label').filter({hasText:'学校或联盟'})});
+  await resourcePicker.locator('.ant-select-selector').click();
+  await page.getByText('甲校（学校）',{exact:true}).click();
+  await page.getByText('乙联盟（联盟）',{exact:true}).click();
+  await page.locator('main').click({position:{x:5,y:5}});
+  assert.equal(await resourcePicker.locator('.ant-select-selection-item').count(),2);
+  const organizer=page.locator('.ant-form-item').filter({has:page.locator('label').filter({hasText:'考试组织方式'})});
+  await organizer.locator('.ant-select-selector').click();await page.getByText('多市联考',{exact:true}).click();
+  const regions=page.getByRole('combobox',{name:'覆盖地区',exact:true});await regions.fill('杭州市');await regions.press('Enter');await regions.fill('宁波市');await regions.press('Enter');
+  await page.locator('main').click({position:{x:5,y:5}});
+  assert.equal(await page.locator('.ant-form-item').filter({has:page.locator('label').filter({hasText:'覆盖地区'})}).locator('.ant-select-selection-item').count(),2);
+  await page.screenshot({path:path.join(output,carrier+'-school-alliance-multiple.png'),fullPage:true});
   const chooserPromise = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: /选择文件/ }).click();
   await (await chooserPromise).setFiles(path.join(output, '本地录入.docx'));
@@ -71,7 +84,7 @@ async function verify(page, carrier) {
   const report = { carrier, userAgent: await page.evaluate(() => navigator.userAgent), offline: true, cloudRequests: 0, removedImages: 2,
     geometry, latex: 'x', editedTextRoundtrip: true, font, actualFonts, errors, pass: true, verifiedAt: new Date().toISOString() };
   fs.writeFileSync(path.join(output, carrier + '-report.json'), JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
-  if (carrier === 'chrome') await verifyDraftRecovery(page);
+  if (carrier === 'chrome' && process.env.QUESTION_INTAKE_OFFLINE_ONLY !== '1') await verifyDraftRecovery(page);
 }
 async function verifyDraftRecovery(page) {
   await page.context().setOffline(false);

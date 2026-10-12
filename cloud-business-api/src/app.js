@@ -9,6 +9,8 @@ const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
 const { withMiniappStudentLedgerProjection, hasMiniappStudentLedger } = require('./miniappStudentLedgerProjection');
 const { withScheduleCourseContextSql, applyScheduleCourseContext } = require('./scheduleCoursePresentation');
+const { metadataReadColumn } = require('./questionAuthorityService');
+const { labelValues } = require('../../shared/questionDeduplication'); // UTF-8
 
 const { MINIAPP_VISITOR_QUESTION_LIMIT, MINIAPP_QUESTION_ORDER_SQL } = require('./miniappQuestionVisibility');
 const MINIAPP_QUESTION_PAGE_MAXIMUM = 200;
@@ -407,10 +409,12 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   }
   function schoolRecord(value, expectedUpdatedAtRequired = false) {
     const keys = expectedUpdatedAtRequired ? ['expectedUpdatedAt', 'name', 'count'] : ['name', 'count'];
-    const input = exactBody(value, keys); const name = boundedText(input?.name, 256);
+    const input = exactBody(value, [...keys, ...['kind','memberSchoolIds'].filter(key => Object.hasOwn(value || {}, key))]); const name = boundedText(input?.name, 256);
     const expectedUpdatedAt = expectedUpdatedAtRequired ? versionInstant(input?.expectedUpdatedAt) : undefined;
     if (!input || !name || !Number.isInteger(input.count) || input.count < 0 || input.count > 100000000 || (expectedUpdatedAtRequired && !expectedUpdatedAt)) return null;
-    return { expectedUpdatedAt, name, count: input.count };
+    if (input.kind !== undefined && !['school','alliance'].includes(input.kind)) return null;
+    if (input.memberSchoolIds !== undefined && (!input.kind || !Array.isArray(input.memberSchoolIds) || input.memberSchoolIds.length > 500 || input.memberSchoolIds.some(id => !boundedText(id,128)) || (input.kind === 'school' && input.memberSchoolIds.length))) return null;
+    return { expectedUpdatedAt, name, count: input.count, ...(input.kind ? { kind: input.kind } : {}), ...(input.memberSchoolIds !== undefined ? { memberSchoolIds: [...new Set(input.memberSchoolIds)] } : {}) };
   }
   function dateOnly(value, nullable = false) {
     if (nullable && value === null) return null;
@@ -605,7 +609,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     "'courses',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',c.id,'name',c.name,'year',c.year,'semester',c.semester,'display_name',c.display_name,'type',c.course_type,'source_type',c.legacy_source_type,'institution_id',c.institution_id,'price_tuition',c.price_tuition,'price_teacher',CASE WHEN $2 IN ('manager','teacher') THEN c.price_teacher ELSE NULL END,'billing_unit',c.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN c.teacher_fee_mode ELSE NULL END,'room_id',c.legacy_room_id,'room_name',c.room_name_snapshot,'teacher_id',c.teacher_id,'teacher_name',c.teacher_name_snapshot,'active',c.legacy_active,'default_duration_minutes',c.default_duration_minutes,'notes',c.notes,'deleted',false,'created_at',c.created_at,'updated_at',c.updated_at,'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=c.tenant_id AND p.course_id=c.id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY c.id) FROM scoped_courses c),'[]'::jsonb),",
     "'schedules',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'course_id',s.course_id,'start_time',s.start_at,'end_time',s.end_at,'recurring_rule',s.recurring_rule_json,'status',s.status,'room',s.room_display_snapshot,'service_type',s.service_type,'billing_unit',s.billing_unit,'teacher_fee_mode',CASE WHEN $2 IN ('manager','teacher') THEN s.teacher_fee_mode ELSE NULL END,'teacher_id',s.teacher_id,'teacher_name',s.teacher_name,'calculated_tuition',CASE WHEN $2='student' THEN " + STUDENT_SCHEDULE_TUITION_SQL + " ELSE s.calculated_tuition END,'calculated_teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN s.calculated_teacher_fee ELSE NULL END,'notes',s.notes,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at,'student_ids',COALESCE((SELECT jsonb_agg(o.student_id ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(p.student_id ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb),'student_pricings',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',o.student_id,'tuition',o.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN o.teacher_fee ELSE NULL END,'attendance_status',o.attendance_status) ORDER BY o.student_id) FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND ($2<>'student' OR o.student_id=$3)),(SELECT jsonb_agg(jsonb_build_object('student_id',p.student_id,'tuition',p.tuition,'teacher_fee',CASE WHEN $2 IN ('manager','teacher') THEN p.teacher_fee ELSE NULL END) ORDER BY p.student_id) FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND ($2<>'student' OR p.student_id=$3)),'[]'::jsonb)) ORDER BY s.start_at,s.id) FROM scoped_schedules s),'[]'::jsonb),",
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'billing_student_id',(SELECT b.student_id FROM business.institution_billing_students b WHERE b.tenant_id=i.tenant_id AND b.institution_id=i.id),'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND i.created_by_teacher_id=$3 AND EXISTS (SELECT 1 FROM business.teachers actor WHERE actor.tenant_id=$1 AND actor.id=$3 AND actor.legacy_deleted=false)) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
-    "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
+    "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'kind',COALESCE(to_jsonb(s)->>'kind','school'),'member_school_ids',COALESCE(to_jsonb(s)->'member_school_ids','[]'::jsonb),'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND (r.created_by_teacher_id=$3 OR EXISTS (SELECT 1 FROM business.teacher_room_history h WHERE h.tenant_id=r.tenant_id AND (h.teacher_id=$3 OR h.teacher_id IN (SELECT id FROM managed_teachers)) AND h.room_id=r.id) OR EXISTS (SELECT 1 FROM business.courses hc WHERE hc.tenant_id=r.tenant_id AND (hc.teacher_id=$3 OR hc.teacher_id IN (SELECT id FROM managed_teachers)) AND (hc.legacy_room_id=r.id OR (NOT EXISTS (SELECT 1 FROM business.rooms duplicate WHERE duplicate.tenant_id=r.tenant_id AND duplicate.name=r.name AND duplicate.id<>r.id AND duplicate.legacy_deleted=false) AND ((hc.legacy_room_id=r.name AND NOT EXISTS (SELECT 1 FROM business.rooms exact_room WHERE exact_room.tenant_id=hc.tenant_id AND exact_room.id=hc.legacy_room_id)) OR EXISTS (SELECT 1 FROM business.schedules hs WHERE hs.tenant_id=hc.tenant_id AND hs.course_id=hc.id AND hs.room_display_snapshot=r.name))))))) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
     "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.id,'category_id',asset.category_id,'category_name',asset.category_name,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'student_id',asset.student_id,'student_name',asset.student_name,'note',asset.note,'created_at',asset.created_at,'updated_at',asset.updated_at) ORDER BY asset.record_date DESC,asset.id) FROM (SELECT record_id AS id,category_id,category_name,amount,record_type,record_date,NULL::text AS student_id,NULL::text AS student_name,note,created_at,updated_at FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT record_id,category_id,category_name,amount,record_type,record_date,student_id,student_name,note,created_at,updated_at FROM business.personal_asset_manual_records WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) asset),'[]'::jsonb),",
     "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.id,'name',category.name,'type',category.category_type,'color',category.color,'created_at',category.created_at,'updated_at',category.updated_at) ORDER BY category.category_type,category.name) FROM (SELECT category_id AS id,name,category_type,'#999'::text AS color,created_at,updated_at FROM business.personal_asset_categories WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT category_id,name,category_type,COALESCE(color,'#999'),created_at,updated_at FROM business.personal_asset_manual_categories WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) category),'[]'::jsonb)",
@@ -1207,7 +1211,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
         `WITH published AS (
            SELECT q.id,q.tenant_id,q.subject,q.question_type AS type,
                   CASE WHEN q.difficulty_coefficient IS NULL THEN q.difficulty WHEN q.difficulty_coefficient>=0.7 THEN 2 WHEN q.difficulty_coefficient>=0.4 THEN 3 ELSE 4 END AS difficulty,
-                  q.difficulty_coefficient AS "difficultyCoefficient",q.source,q.region,q.school,q.exam_type,q.exam_year,q.grade,q.semester,q.taxonomy_json,q.status,
+                  q.difficulty_coefficient AS "difficultyCoefficient",q.source,q.region,q.organization_type,${metadataReadColumn('school','school')},${metadataReadColumn('metadata_labels','metadata_labels')},q.exam_type,q.exam_year,q.grade,q.semester,q.taxonomy_json,q.status,
                   c.stem,c.answer,c.explanation,c.options_json AS options,c.rich_content_json AS "richContent",c.updated_at AS "contentUpdatedAt"
              FROM business.questions q
              JOIN business.question_contents c ON c.question_id=q.id AND c.tenant_id=q.tenant_id
@@ -1224,7 +1228,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
              ), '[]'::jsonb),
              'sources', COALESCE((
                SELECT jsonb_agg(source ORDER BY source)
-                 FROM (SELECT DISTINCT source FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(source,''))<>'') source_values
+                 FROM (SELECT DISTINCT labels.value AS source FROM published p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.metadata_labels->'source','[]'::jsonb) || jsonb_build_array(p.source)) labels(value) WHERE $2::text IS NOT NULL AND p.subject=$2 AND btrim(COALESCE(labels.value,''))<>'') source_values
              ), '[]'::jsonb),
              'knowledgePoints', COALESCE((
                SELECT jsonb_agg(name ORDER BY name)
@@ -1242,19 +1246,19 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
              ), '[]'::jsonb),
              'grades', COALESCE((
                SELECT jsonb_agg(grade ORDER BY grade)
-                 FROM (SELECT DISTINCT grade FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(grade,''))<>'') grade_values
+                 FROM (SELECT DISTINCT labels.value AS grade FROM published p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.metadata_labels->'grade','[]'::jsonb) || jsonb_build_array(p.grade)) labels(value) WHERE $2::text IS NOT NULL AND p.subject=$2 AND btrim(COALESCE(labels.value,''))<>'') grade_values
              ), '[]'::jsonb),
              'semesters', COALESCE((
                SELECT jsonb_agg(semester ORDER BY semester)
-                 FROM (SELECT DISTINCT semester FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(semester,''))<>'') semester_values
+                 FROM (SELECT DISTINCT labels.value AS semester FROM published p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.metadata_labels->'semester','[]'::jsonb) || jsonb_build_array(p.semester)) labels(value) WHERE $2::text IS NOT NULL AND p.subject=$2 AND btrim(COALESCE(labels.value,''))<>'') semester_values
              ), '[]'::jsonb),
              'examTypes', COALESCE((
                SELECT jsonb_agg(exam_type ORDER BY exam_type)
-                 FROM (SELECT DISTINCT exam_type FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(exam_type,''))<>'') exam_type_values
+                 FROM (SELECT DISTINCT labels.value AS exam_type FROM published p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.metadata_labels->'exam_type','[]'::jsonb) || jsonb_build_array(p.exam_type)) labels(value) WHERE $2::text IS NOT NULL AND p.subject=$2 AND btrim(COALESCE(labels.value,''))<>'') exam_type_values
              ), '[]'::jsonb),
              'examYears', COALESCE((
                SELECT jsonb_agg(exam_year ORDER BY exam_year)
-                 FROM (SELECT DISTINCT exam_year FROM published WHERE $2::text IS NOT NULL AND subject=$2 AND btrim(COALESCE(exam_year,''))<>'') exam_year_values
+                 FROM (SELECT DISTINCT labels.value AS exam_year FROM published p CROSS JOIN LATERAL jsonb_array_elements_text(COALESCE(p.metadata_labels->'year','[]'::jsonb) || jsonb_build_array(p.exam_year)) labels(value) WHERE $2::text IS NOT NULL AND p.subject=$2 AND btrim(COALESCE(labels.value,''))<>'') exam_year_values
              ), '[]'::jsonb)
            ) AS options
          ), filtered AS (
@@ -1271,7 +1275,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
                 SELECT 1 FROM unnest($3::text[]) term
                  WHERE strpos(lower(concat_ws(' ',p.id,p.stem,p.options::text,p."richContent"::text)),term)=0
               ))
-              AND ($4::text IS NULL OR strpos(lower(concat_ws(' ',p.source,p.region,p.school,p.exam_type,p.exam_year)),lower($4))>0)
+              AND ($4::text IS NULL OR strpos(lower(concat_ws(' ',p.source,p.region,p.school,p.exam_type,p.exam_year,p.organization_type,p.metadata_labels::text)),lower($4))>0)
               AND ($5::text IS NULL OR EXISTS (
                 SELECT 1
                   FROM business.question_taxonomy_nodes n
@@ -1280,10 +1284,10 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
               ))
               AND ($6::text IS NULL OR p.type=$6)
               AND ($7::integer IS NULL OR p.difficulty=$7 AND p."difficultyCoefficient" IS NOT NULL)
-              AND ($8::text IS NULL OR p.grade=$8)
-              AND ($9::text IS NULL OR p.semester=$9)
-              AND ($10::text IS NULL OR p.exam_type=$10)
-              AND ($11::text IS NULL OR p.exam_year=$11)
+              AND ($8::text IS NULL OR p.grade=$8 OR p.metadata_labels->'grade' ? $8)
+              AND ($9::text IS NULL OR p.semester=$9 OR p.metadata_labels->'semester' ? $9)
+              AND ($10::text IS NULL OR p.exam_type=$10 OR p.metadata_labels->'exam_type' ? $10)
+              AND ($11::text IS NULL OR p.exam_year=$11 OR p.metadata_labels->'year' ? $11)
          ), filtered_total AS (
            SELECT count(*)::integer AS "filteredTotal" FROM filtered
          ), page_rows AS (
@@ -1337,7 +1341,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
         const school = textValue(question.school);
         const examType = textValue(question.exam_type);
         const examYear = textValue(question.exam_year);
-        const sourceLabel = Array.from(new Set([source, region, school, examType, examYear].filter(Boolean))).join(' / ');
+        const sourceLabel = Array.from(new Set(['source','region','school','exam_type','year','grade','semester','organization_type']
+          .flatMap(field => labelValues({ ...question, year: examYear },field)))).join(' / ');
         return {
           id: question.id, subject: question.subject, type: question.type, stemPreview: String(question.stem || ''),
           answer: question.answer === null || question.answer === undefined ? '' : String(question.answer),
@@ -1881,6 +1886,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.status(201).json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
+        if (codeName === 'SCHOOL' && error?.code === 'P0001' && /^VNEXT_BUSINESS_(SCHOOL|ALLIANCE)_/.test(error.message || '')) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHOOL_CONFLICT' });
         if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
         if (foundationWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
@@ -1897,6 +1903,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
         if (!record) return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_CONFLICT` });
         response.json({ ok: true, [pathName.slice(0, -1)]: record });
       } catch (error) {
+        if (codeName === 'SCHOOL' && error?.code === 'P0001' && /^VNEXT_BUSINESS_(SCHOOL|ALLIANCE)_/.test(error.message || '')) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_SCHOOL_CONFLICT' });
         if (codeName === 'INSTITUTION' && error?.code === 'P0001' && ['VNEXT_INSTITUTION_BILLING_AMBIGUOUS', 'VNEXT_INSTITUTION_BILLING_LINK_INVALID'].includes(error?.message)) return response.status(409).json({ ok: false, code: 'CLOUD_BUSINESS_INSTITUTION_CONFLICT' });
         if (error?.code === '23505') return response.status(409).json({ ok: false, code: `CLOUD_BUSINESS_${codeName}_NAME_EXISTS` });
         if (foundationWriteDenied(error)) return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });

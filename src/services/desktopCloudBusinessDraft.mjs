@@ -112,7 +112,7 @@ function institutionInput(record) {
 }
 
 function schoolInput(record) {
-  return { name: record.name, count: Number(record.count || 0) };
+  return { name: record.name, count: Number(record.count || 0), ...(record.kind ? { kind: record.kind } : {}), ...(record.member_school_ids ? { memberSchoolIds: record.member_school_ids } : {}) };
 }
 
 function courseInput(record) {

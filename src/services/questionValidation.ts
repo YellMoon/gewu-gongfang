@@ -1,5 +1,6 @@
 import type { Question } from '../types';
 import { inspectQuestion, questionSections, richNodeText } from './questionInspection';
+const { similarity, DEFAULT_SIMILARITY_THRESHOLD } = require('../../shared/questionDeduplication');
 
 export type ImportValidationStatus = 'success' | 'warning' | 'failed';
 
@@ -49,10 +50,10 @@ function questionContent(question: any): string {
 
 export function validateImportQuestions(
   parsedQuestions: any[],
-  existingQuestions: Question[] = []
+  existingQuestions: Question[] = [],
+  similarityThreshold: number = DEFAULT_SIMILARITY_THRESHOLD
 ): { rows: ImportValidationRow[]; summary: ImportValidationSummary } {
-  const existingContent = new Set(existingQuestions.map(item => normalizeContent(questionContent(item))).filter(Boolean));
-  const seenInBatch = new Set<string>();
+  const compared: any[] = existingQuestions.filter(item => !(item as any).deleted && (item as any).storage_state !== 'local_draft');
 
   const rows = (parsedQuestions || []).map((question, index) => {
     const issues: ImportValidationIssue[] = [];
@@ -67,10 +68,15 @@ export function validateImportQuestions(
         if (message && !issues.some(issue => issue.message === message)) issues.push({ level: 'warning', message });
       });
     }
-    if (fingerprint && (existingContent.has(fingerprint) || seenInBatch.has(fingerprint))) {
-      issues.push({ level: 'warning', message: '疑似重复题目' });
+    let match: any = null, highest = 0;
+    for (const prior of compared) {
+      const score = similarity(question, prior);
+      if (score > highest) { highest = score; match = prior; }
     }
-    if (fingerprint) seenInBatch.add(fingerprint);
+    if (highest >= similarityThreshold && match) issues.push({ level: 'warning', message: highest === 100
+      ? '重复率 100%：提交时自动合并标签并补齐缺失答案、解析（已有内容差异保留并提示）'
+      : `相似度 ${highest.toFixed(2)}%：请核对${match.id ? '题目 ' + match.id : '本批前面的题目'}` });
+    compared.push(question);
 
     const status: ImportValidationStatus = issues.some(item => item.level === 'failed')
       ? 'failed'
@@ -103,8 +109,11 @@ export function validateImportQuestions(
 
 export function mergeImportValidation<T extends { status: ImportValidationStatus; issues: ImportValidationIssue[] }>(row: T, remote: any, format: (code: string) => string): T {
   const codes: string[] = Array.isArray(remote?.codes) ? remote.codes : [];
+  // UTF-8: show the cloud merge receipt rather than local guesses.
+  const dedup = remote?.deduplication;
+  const dedupIssues: ImportValidationIssue[] = dedup?.merged ? [{ level: 'warning', message: `已合并到题目 ${dedup.questionId}，重复率 100%${dedup.conflicts?.length ? '；答案或解析存在差异，原内容已保留' : ''}` }] : [];
   const remoteLevel: ImportValidationStatus = remote?.status === 'rejected' ? 'failed' : 'warning';
-  const issues = [...row.issues];
+  const issues = [...row.issues, ...dedupIssues];
   for (const code of codes) {
     const message = format(code);
     if (!issues.some(issue => issue.message === message)) issues.push({ level: remoteLevel, message });

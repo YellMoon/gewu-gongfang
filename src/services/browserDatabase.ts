@@ -960,12 +960,12 @@ class BrowserDatabaseService {
     // Student drafts already carry the school name. Expose it locally without
     // inventing a separately writable school record or confirmation command.
     return [...new Set([
-      ...this.data.schools.map(s => s.name),
+      ...this.data.schools.filter(s => s.kind !== 'alliance').map(s => s.name),
       ...this.data.students.map(s => s.school),
     ].filter((name): name is string => typeof name === 'string' && name.trim().length > 0))].sort();
   }
 
-  addOrUpdateSchool(schoolName: string): void {
+  addOrUpdateSchool(schoolName: string, kind: 'school' | 'alliance' = 'school', member_school_ids: string[] = []): void {
     const existing = this.data.schools.find(s => s.name === schoolName);
     if (existing) {
       const baseVersion = existing.updated_at || null;
@@ -976,7 +976,9 @@ class BrowserDatabaseService {
       const school = {
         id: this.generateId(),
         name: schoolName,
-        count: 1,
+        kind,
+        member_school_ids: kind === 'alliance' ? member_school_ids : [],
+        count: kind === 'alliance' ? 0 : 1,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

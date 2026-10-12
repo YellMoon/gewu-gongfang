@@ -17,6 +17,7 @@ import TaxonomyManager from '../components/TaxonomyManager';
 import QuestionBankFilters from '../components/QuestionBankFilters';
 import QuestionTaxonomyFields from '../components/QuestionTaxonomyFields';
 import QuestionDifficultyField from '../components/QuestionDifficultyField';
+const { ORGANIZATION_TYPES, labelValues } = require('../../shared/questionDeduplication'); // UTF-8
 const { validDifficultyCoefficient, coefficientDifficulty, difficultyLabel } = require('../../shared/questionDifficulty');
 import { parseQuestionNumbers, questionTaxonomyPatch, questionTaxonomyValues, TaxonomyValues } from '../services/questionTaxonomyEditing';
 const { questionDeletePresentation } = require('../services/questionDeletionPresentation');
@@ -554,7 +555,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
   const metadataOptions = useMemo(() => questionMetadataFilterOptions((dbService?.getAllQuestions?.() || []).map(normalizeQuestion), [currentSubject]), [dbService, refreshNonce, currentSubject]);
   const yearOptions = useMemo(() => {
     const values = new Set<string>(YEAR_OPTIONS.map(option => option.value));
-    (dbService?.getAllQuestions?.() || []).forEach((question: any) => { if (question.year) values.add(String(question.year)); });
+    (dbService?.getAllQuestions?.() || []).forEach((question: any) => { for (const year of [...(question.metadata_labels?.year || []), question.year].filter(Boolean)) values.add(String(year)); });
     return [...values].sort((a, b) => b.localeCompare(a)).map(value => ({ value, label: value.endsWith('学年') ? value : value + '学年' }));
   }, [dbService, refreshNonce]);
   const updateTaxonomySelection = useCallback((systemId: string, mode: 'include' | 'exclude', values: string[]) => {
@@ -626,8 +627,9 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       grade: values.grade || '',
       semester: values.semester || '',
       exam_type: values.exam_type || '',
-      region: values.region || '',
-      school: values.school || '',
+      region: (values.regions || []).join('、'), organization_type: values.organization_type || '',
+      metadata_labels: { ...(editing?.metadata_labels || {}), region: values.regions || [] },
+      school_ids: values.school_ids || [], school: ((window as any).dbService?.getAllSchools?.() || []).filter((resource: any) => (values.school_ids || []).includes(resource.id)).map((resource: any) => resource.name).join('、'),
       edit_status: '已编辑',
       status: editing?.status || 'draft',
       has_image: projection.hasImage,
@@ -794,7 +796,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
       tags: (r.tags || []).join(','),
       source: r.source, year: r.year, grade: r.grade,
               semester: r.semester, exam_type: r.exam_type || '',
-              region: r.region, school: r.school,
+              regions: labelValues(r,'region'), organization_type: r.organization_type || '', school: r.school, school_ids: r.school_ids || [],
     });
     setModalVisible(true);
   };
@@ -1001,7 +1003,7 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
               metadataRows={[
                 { id: 'sources', label: '导入卷名', options: metadataOptions.sources.map(value => ({ value, label: value })), values: filterSources, onChange: setFilterSources },
                 { id: 'regions', label: '地区', options: metadataOptions.regions.map(value => ({ value, label: value })), values: filterRegions, onChange: setFilterRegions },
-                { id: 'schools', label: '学校', options: metadataOptions.schools.map(value => ({ value, label: value })), values: filterSchools, onChange: setFilterSchools },
+                { id: 'schools', label: '学校或联盟', options: metadataOptions.schools.map(value => ({ value, label: value })), values: filterSchools, onChange: setFilterSchools },
               ]}
               systems={taxonomySystems} nodes={taxonomyNodes} selections={taxonomySelections}
               actions={<>
@@ -1170,10 +1172,11 @@ const QuestionBankPreview: React.FC<{ context?: { questionId?: string; questionI
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="region" label="地区"><Input /></Form.Item>
+              <Form.Item name="organization_type" label="考试组织方式"><Select allowClear options={ORGANIZATION_TYPES.map((value: string) => ({value,label:value}))} /></Form.Item>
+              <Form.Item name="regions" label="覆盖地区" extra="可填写多个市，也可留空；不从联盟成员推定范围。"><AntSelect mode="tags" options={metadataOptions.regions.map(value => ({value,label:value}))} /></Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="school" label="学校"><Input /></Form.Item>
+              <Form.Item name="school_ids" label="学校或联盟"><AntSelect mode="multiple" showSearch optionFilterProp="label" options={((window as any).dbService?.getAllSchools?.() || []).map((resource: any) => ({value: resource.id, label: resource.name}))} /></Form.Item>
             </Col>
           </Row>
 

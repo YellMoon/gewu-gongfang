@@ -626,7 +626,7 @@ export default function QuestionBankPage() {
             <View className='question-source-filter'>
               <Input
                 className='question-source-input'
-                placeholder='来源、地区、学校或年份'
+                placeholder='来源、覆盖地区、学校或联盟、组织方式'
                 value={selectedSource}
                 onInput={event => setSelectedSource(event.detail.value)}
               />
