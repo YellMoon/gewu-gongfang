@@ -260,8 +260,8 @@ async function main() {
     assert.strictEqual(isDesktopIdentityNetworkFailure(coldStartError), true);
     storedSession = { token: 'stale-bearer-before-offline-fallback' };
     const offlineFallback = await client.resume({ baseUrl, online: false });
-    assert.strictEqual(offlineFallback.gateState.kind, 'offline-unlocked',
-      'the unlocked signed lease must remain usable when the cloud session endpoint is unavailable');
+    assert.strictEqual(offlineFallback.gateState.kind, 'offline-authentication-required',
+      'cold-start outage cannot bypass offline password verification');
     assert.strictEqual(storedSession, null,
       'entering the offline partition must clear any process-memory online bearer session');
     const pending = await client.beginPasswordVerification({
@@ -290,6 +290,13 @@ async function main() {
       'online-registration',
       'session-context',
     ]);
+    await client.lock();
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required');
+    await assert.rejects(() => client.loginOffline({ loginType: 'account_name', login: fixtureAccount.login, password: 'wrong-password' }), /LOCAL_PASSWORD_INVALID/);
+    const passwordOffline = await client.loginOffline({ loginType: 'account_name', login: fixtureAccount.login, password: fixtureAccount.password });
+    assert.strictEqual(passwordOffline.gateState.kind, 'offline-unlocked', 'cloud-verified registration must provision the offline password verifier');
+    assert.strictEqual(passwordOffline.gateState.userId, fixtureAccount.id);
+    assert.strictEqual(observed.length, 4, 'offline password login must not call the cloud');
     sessionRecoveryMode = 'revoked';
     let revokedSessionError = null;
     try {

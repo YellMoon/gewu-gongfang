@@ -162,7 +162,7 @@ async function main() {
   };
   const offline = resolveDesktopGateState({
     vaultStatus: {
-      state: 'unlocked', unlocked: true, offlineLease,
+      state: 'unlocked', unlocked: true, offlineLease, offlineLoginAuthenticated: true,
       user: { id: 'user-1' }, deviceId: 'device-1', authorizationId: 'authorization-1',
       credentialVersion: 1, activeRole: 'teacher', teacherId: 'teacher-1', eligibleRoles: ['teacher'],
     },
@@ -174,7 +174,7 @@ async function main() {
   for (const skewMs of [1, 35000, 60000, 60001]) {
     const skewState = resolveDesktopGateState({
       vaultStatus: {
-        state: 'unlocked', unlocked: true,
+        state: 'unlocked', unlocked: true, offlineLoginAuthenticated: true,
         offlineLease: { ...offlineLease, issuedAt: new Date(Date.parse('2026-07-29T00:00:00.000Z') + skewMs).toISOString() },
         user: { id: 'user-1' }, deviceId: 'device-1', authorizationId: 'authorization-1',
         credentialVersion: 1, activeRole: 'teacher', teacherId: 'teacher-1', eligibleRoles: ['teacher'],

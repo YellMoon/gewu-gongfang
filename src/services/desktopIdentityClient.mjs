@@ -229,6 +229,7 @@ export function resolveDesktopGateState({ vaultStatus, online, onlineSession = n
   }
   const lease = validOfflineLease(vaultStatus, current);
   if (!lease) return { kind: 'offline-blocked' };
+  if (vaultStatus.offlineLoginAuthenticated !== true) return { kind: 'offline-authentication-required' };
   return unlockedState('offline-unlocked', lease);
 }
 
@@ -383,6 +384,8 @@ export function createDesktopIdentityClient({
   }
   if (typeof fetchImpl !== 'function') throw identityError('DESKTOP_IDENTITY_FETCH_REQUIRED');
   let activePassword = null;
+  // Ephemeral only: keep one cloud-verified password until its signed registration is sealed.
+  const offlineLoginCredentials = new Map();
 
   function currentDate() {
     const current = now();
@@ -492,6 +495,7 @@ export function createDesktopIdentityClient({
   }
 
   async function beginUnifiedOnlineRegistration({ baseUrl, deviceName, idempotencyKey } = {}) {
+    offlineLoginCredentials.clear();
     if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
     }
@@ -528,6 +532,7 @@ export function createDesktopIdentityClient({
   }
 
   async function beginPasswordVerification({ baseUrl, deviceName, idempotencyKey, loginType, login, password } = {}) {
+    offlineLoginCredentials.clear();
     if (typeof desktopIdentity.beginUnifiedOnlineRegistration !== 'function') {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_UNAVAILABLE');
     }
@@ -542,6 +547,7 @@ export function createDesktopIdentityClient({
     const verified = await request(fetchImpl, normalizedUrl, '/api/desktop/password-verification', {
       method: 'POST',
       body: { loginType, login: normalizedLogin, password },
+      timeoutMs: sessionRecoveryTimeoutMs,
     });
     if (!verified?.verificationToken || !verified?.deviceChallenge) {
       throw identityError('DESKTOP_PASSWORD_VERIFICATION_INVALID');
@@ -551,6 +557,7 @@ export function createDesktopIdentityClient({
     if (!publicIdentity?.deviceId || !publicIdentity?.publicKey || !publicIdentity?.keyFingerprint) {
       throw identityError('DESKTOP_UNIFIED_ONLINE_REGISTRATION_CONTEXT_INVALID');
     }
+    offlineLoginCredentials.set(String(verified.verificationToken), { loginType, login: normalizedLogin, password });
     return Object.freeze({
       baseUrl: normalizedUrl,
       publicIdentity: Object.freeze({ ...publicIdentity }),
@@ -621,6 +628,7 @@ export function createDesktopIdentityClient({
     const value = await request(fetchImpl, baseUrl, '/api/desktop/verified-access', {
       method: 'POST',
       body: { verificationToken },
+      timeoutMs: sessionRecoveryTimeoutMs,
     });
     const roles = uniqueRoles(value?.roles);
     const teacherId = value?.teacherId === null ? null : String(value?.teacherId || '').trim();
@@ -761,7 +769,10 @@ export function createDesktopIdentityClient({
       authorization,
       profile,
       offlineLease: registered.offlineLease,
+      ...(offlineLoginCredentials.has(pending.verificationToken)
+        ? { offlineLoginCredentials: offlineLoginCredentials.get(pending.verificationToken) } : {}),
     });
+    offlineLoginCredentials.clear();
     activePassword = 'managed-session';
     const stored = onlineSessionValue({
       token: registered.sessionToken,
@@ -855,8 +866,17 @@ export function createDesktopIdentityClient({
 
   async function lock() {
     activePassword = null;
+    offlineLoginCredentials.clear();
     await sessionStore.clear();
     return desktopIdentity.lock();
+  }
+
+  async function loginOffline({ loginType, login, password } = {}) {
+    offlineLoginCredentials.clear();
+    if (typeof desktopIdentity.unlockOffline !== 'function') throw identityError('DESKTOP_OFFLINE_LOGIN_SETUP_REQUIRED');
+    const vaultStatus = await desktopIdentity.unlockOffline({ loginType, login, password });
+    await sessionStore.clear();
+    return { offline: true, vaultStatus, gateState: resolveDesktopGateState({ vaultStatus, online: false, now: currentDate() }) };
   }
 
   async function listCloudSchedules({ baseUrl, currentSession } = {}) {
@@ -1313,6 +1333,7 @@ export function createDesktopIdentityClient({
   }
 
   return Object.freeze({
+    loginOffline,
     beginPasswordEnrollment,
     beginPasswordVerification,
     beginUnifiedOnlineRegistration,

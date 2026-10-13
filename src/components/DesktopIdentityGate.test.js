@@ -113,8 +113,8 @@ assert.ok(gateSource.includes("const showLoginMethods = ['registration-required'
   && gateSource.includes("'online-authentication-required',")
   && gateSource.includes('showLoginMethods && renderRegistration()'),
   'an expired online session must return directly to the normal password/WeChat login choices');
-assert.ok(gateSource.includes("const locked = ['locked', 'offline-blocked'].includes(gateState.kind)"),
-  'online reauthentication must not strand the user behind a retry-session-only screen');
+assert.ok(gateSource.includes("'offline-authentication-required', 'locked', 'offline-blocked',"),
+  'online and offline reauthentication must use the same password form');
 const retiredApprovalText = String.fromCharCode(30001, 19968, 21478, 19968, 21488, 24050, 25480, 26435, 35774, 22791, 25209, 20934);
 assert.ok(!decodedGateSource.includes(retiredApprovalText), 'desktop recovery must not require another device approval');
 assert.ok(!gateSource.includes('identity_verified_pending_approval'));
@@ -138,8 +138,8 @@ assert.ok(!decodedGateSource.includes(String.fromCharCode(23457, 26680, 35774, 2
   'desktop offline copy must not expose retired device-approval or host-internal terminology');
 assert.ok(gateSource.includes(String.raw`\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7f16\u8f91\u672c\u5730\u8349\u7a3f`) && gateSource.includes(String.raw`\u8fde\u63a5\u7f51\u7edc\u540e\u7531\u4f60\u786e\u8ba4\u63d0\u4ea4`),
   'desktop offline copy must state the actual draft and user-confirmed submission boundary');
-assert.ok(decodedGateSource.includes(String.fromCharCode(27491, 22312, 24674, 22797, 30331, 24405, 29366, 24577)),
-  'desktop session recovery must use familiar login language rather than internal cloud-session wording');
+assert.ok(gateSource.includes("gateState.kind === 'offline-authentication-required'"),
+  'offline login must retain the normal password form and concise connectivity guidance');
 assert.ok(gateStyle.includes('.desktop-identity-runtime > .app-shell'));
 assert.ok(!gateStyle.includes('padding-right: 350px') && !gateStyle.includes('padding-right: 540px'),
   'account controls must share normal header layout instead of reserving guessed overlay widths');
@@ -189,8 +189,8 @@ assert.ok(gateSource.includes("{ kind: 'initialization-failed' }"),
   'a bootstrap failure must leave the loading state instead of showing a blank login screen');
 assert.ok(gateSource.includes('retryInitialization'),
   'a bootstrap failure must provide a retry action');
-assert.ok((gateSource.match(/resumeOfflineAfterNetworkFailure\(/g) || []).length >= 2,
-  'cold-start and manual recovery must both call the shared offline resume path after a cloud outage');
+assert.ok(gateSource.includes('clientRef.current.loginOffline(credentials)'), 'the normal login action must verify the offline password');
+assert.ok(!gateSource.includes('hasCachedIdentity') && !gateSource.includes('onClick={resumeOffline}'), 'there must be no separate passwordless offline login action');
 assert.ok(gateSource.includes('acceptRuntime(offlineResumed)'),
   'offline recovery must accept the result returned by the offline resume, which clears the online session store');
 assert.ok(gateSource.includes('renewSessionSilently')

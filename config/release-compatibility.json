@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopOfflinePassword": {
+      "version": "1",
+      "participants": ["desktop"],
+      "rule": "desktop-only optional encrypted vault verifier and unlock-offline IPC; cache salted scrypt verifier only when cloud password verification completes signed desktop registration; offline cold start and relock require the same login form, matching cached account/password and an unexpired signed v2 lease; missing verifiers require one successful online password login; local password verification never issues cloud tokens or extends a lease; account changes discard unrelated verifiers, known revocation blocks access, and offline drafts still require one batch confirmation; cloud, NAS and miniapp protocols and binaries are unchanged"
+    },
     "desktopOfflineLease": {
       "version": "2",
       "participants": ["desktop", "cloud_business"],

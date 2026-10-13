@@ -25,7 +25,7 @@ async function main() {
     readSessionContext: async input => ({ ...input, rowVersion: 1, roles: ['teacher'], teacherId: 'teacher-1', studentId: null }),
   });
   const filePath = path.join(workspace, 'identity.bin');
-  const makeVault = () => createDesktopIdentityVault({ filePath, safeStorage, offlineLeasePublicKey: keys.publicKey, now: () => new Date(clock) });
+  const makeVault = () => createDesktopIdentityVault({ filePath, safeStorage, offlineLeasePublicKey: keys.publicKey, now: () => new Date(clock), delay: async () => {} });
   try {
     const vault = makeVault();
     const identity = vault.beginUnifiedOnlineRegistration({ deviceName: 'Offline regression' });
@@ -56,7 +56,8 @@ async function main() {
       status: 'active', authorizationSource: 'wechat_phone', credentialVersion: 1,
       lastPhoneVerifiedAt: start.toISOString(), phoneReverifyDueAt: issued.session.expiresAt,
     };
-    vault.completeRegistration({ authorization, profile: issued.profile, offlineLease: issued.offlineLease });
+    const credentials = { loginType: 'phone', login: '13700000000', password: 'fixture-password-with-spaces !' };
+    vault.completeRegistration({ authorization, profile: issued.profile, offlineLease: issued.offlineLease, offlineLoginCredentials: credentials });
     await vault.acceptIssuedSession(issued);
     vault.lock();
     clock = new Date(start.getTime() + 24 * 60 * 60 * 1000);
@@ -68,14 +69,35 @@ async function main() {
       fetchImpl: async () => { networkCalls += 1; throw new Error('net::ERR_INTERNET_DISCONNECTED'); },
       sessionStore: { clear: async () => { clearedSessions += 1; }, save: async () => { throw new Error('offline must not save an online token'); } },
     });
-    const resumed = await client.resume({ online: false });
-    assert.strictEqual(resumed.gateState.kind, 'offline-unlocked', 'a cold-start the next day must resume the signed offline lease');
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'cold start cannot bypass password verification');
+    await restarted.acceptIssuedSession(issued);
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'replaying a stored signed lease cannot bypass password verification');
+    const beforeFailure = fs.readFileSync(filePath);
+    assert(!beforeFailure.toString().includes(credentials.password), 'plaintext passwords must never be persisted');
+    const oldPayload = JSON.parse(beforeFailure.toString());
+    delete oldPayload.payload.offlineLoginVerifier;
+    const oldPath = path.join(workspace, 'old-v3.bin');
+    fs.writeFileSync(oldPath, JSON.stringify(oldPayload), 'utf8');
+    const oldCache = createDesktopIdentityVault({ filePath: oldPath, safeStorage, offlineLeasePublicKey: keys.publicKey, now: () => new Date(clock) });
+    assert.strictEqual(oldCache.status().state, 'sealed', 'old vaults must remain readable');
+    await assert.rejects(() => oldCache.unlockOffline(credentials), /OFFLINE_LOGIN_SETUP_REQUIRED/);
+    for (const patch of [{ password: 'wrong-password' }, { login: '13800000000' }, { loginType: 'account_name' }]) {
+      await assert.rejects(() => client.loginOffline({ ...credentials, ...patch }), /LOCAL_PASSWORD_INVALID/);
+      assert.deepStrictEqual(fs.readFileSync(filePath), beforeFailure, 'failed credentials must not change the signed vault');
+    }
+    const resumed = await client.loginOffline(credentials);
+    assert.strictEqual(resumed.gateState.kind, 'offline-unlocked', 'correct credentials must unlock a next-day signed offline lease');
+    assert.strictEqual(resumed.vaultStatus.recentUnlockEligible, false, 'offline verification cannot grant cloud role elevation');
+    assert.strictEqual(resumed.vaultStatus.offlineLoginVerifier, undefined, 'the renderer must not receive the verifier');
     assert.strictEqual(resumed.gateState.userId, 'account-1');
     assert.strictEqual(resumed.gateState.activeRole, 'teacher');
     assert.strictEqual(resumed.gateState.teacherId, 'teacher-1');
     assert.strictEqual(resumed.token, undefined);
     assert.strictEqual(networkCalls, 0);
-    assert.strictEqual(clearedSessions, 1);
+    assert.strictEqual(clearedSessions, 3);
+    await client.lock();
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'locking must revoke in-memory offline authentication');
+    await client.loginOffline(credentials);
     const timeoutClient = createDesktopIdentityClient({
       desktopIdentity: restarted, now: () => new Date(clock), sessionRecoveryTimeoutMs: 10,
       fetchImpl: () => new Promise(() => {}), sessionStore: { clear: async () => {}, save: async () => {} },
@@ -95,6 +117,7 @@ async function main() {
       assert.deepStrictEqual(fs.readFileSync(filePath), snapshot, 'tampering must preserve the verified vault');
     }
     clock = new Date(issued.offlineLease.expiresAt);
+    await assert.rejects(() => client.loginOffline(credentials), /OFFLINE_LOGIN_LEASE_EXPIRED/);
     assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-blocked');
     clock = new Date(start.getTime() + 24 * 60 * 60 * 1000);
     const revokedClient = createDesktopIdentityClient({
@@ -103,11 +126,13 @@ async function main() {
     });
     await assert.rejects(() => revokedClient.resume({ baseUrl: 'https://cloud.test', online: true }), error => error.code === 'VNEXT_DESKTOP_AUTHORIZATION_INVALID');
     assert.strictEqual(restarted.status().offlineLease, null, 'known revocation must persist');
+    await assert.rejects(() => client.loginOffline(credentials), /OFFLINE_LOGIN_LEASE_EXPIRED/);
     const afterRevocationRestart = makeVault();
     assert.strictEqual((await afterRevocationRestart.resume()).offlineLease, null);
     assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-blocked');
     await assert.rejects(() => service.issueSession({ ...sessionInput, offlineLeaseVersion: 99 }), error => error.code === 'CLOUD_ONLINE_IDENTITY_REJECTED');
     const emptyVault = createDesktopIdentityVault({ filePath: path.join(workspace, 'empty.bin'), safeStorage, offlineLeasePublicKey: keys.publicKey });
+    await assert.rejects(() => emptyVault.unlockOffline(credentials), /OFFLINE_LOGIN_SETUP_REQUIRED/);
     await assert.rejects(() => emptyVault.resume(), /VAULT/);
     for (const error of [new Error('net::ERR_INTERNET_DISCONNECTED'), { cause: { cause: { code: 'ENOTFOUND' } } }, { code: 'ETIMEDOUT' }]) {
       assert.strictEqual(isDesktopIdentityNetworkFailure(error), true);

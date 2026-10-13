@@ -1,5 +1,9 @@
 # Desktop offline login repair
 
+Desktop 8.22.0 (2026-10-13) supersedes the separate offline-entry button below.
+It uses the same account/password form for online and offline login, following
+the user's explicit choice. The 8.20.0 notes remain a historical release record.
+
 The cloud signed offline leases with the same one-hour expiry as online sessions.
 An overnight restart therefore blocked a previously registered desktop account.
 The desktop also lacked a cached-account entry from the password login screen,
@@ -111,3 +115,42 @@ Final server recovery evidence:
   Capacity remains limited; subsequent deployment backups/builds require a
   capacity check before staging. Valid database/code backups, tagged Docker
   images and containers were retained.
+
+## 2026-10-13: unified password login
+
+The desktop now provisions an optional local password verifier only when cloud
+password verification finishes signed desktop registration. It stores a random
+32-byte salt and a 32-byte scrypt digest (N=32768, r=8, p=1) inside the existing
+OS-encrypted vault; plaintext passwords are not persisted. Verification binds
+the cached login type/identifier to the signed account. A different account
+does not inherit another account's verifier; QR recovery for the same account
+preserves its prior verifier. Online password login refreshes it.
+
+Offline cold start and renderer reload show the usual password form. The same
+submit action verifies the password locally when disconnected or after a
+transport failure. Incorrect cloud credentials never trigger that fallback.
+Locked accounts also use this form. The separate offline and passwordless
+session-recovery buttons were removed. Existing authenticated sessions can
+continue offline while their cloud-signed lease is valid.
+
+First devices and older vaults without a verifier require one successful online
+password login. Local verification does not issue a cloud token, extend the
+14-day lease or grant cloud role elevation. Known revocation and expired leases
+block access. Replaying a cached signed lease cannot authenticate a cold start.
+Offline drafts retain the existing single batch-confirmation rule.
+
+Focused signed-vault, real password REST registration, cold-start, role recovery
+and expiry/revocation checks pass. Typecheck passes. Eight Chromium scenarios
+cover teacher/admin entry, transport failure, incorrect password/account,
+expired lease, old cache and first device. They use real signed leases and the
+real vault/scrypt implementation with injected AES-GCM storage, not production
+accounts or Windows DPAPI. Screenshots and checks are in
+`output/playwright/offline-password-20261013/`.
+Full `npm test` passed with exit code 0, including posttest. Affected signed-vault
+checks were rerun after the replay guard, and the eight UI checks were rerun
+after the final QR-button availability change. Logs are
+`output/offline-password-full-tests-20261013.log`,
+`output/offline-password-focused-20261013.log` and
+`output/offline-password-ui-check-20261013.log`.
+Automatic minor version classification and release-matrix checks passed.
+OSS release evidence follows after publication.

@@ -78,7 +78,6 @@ const DesktopIdentityGate: React.FC = () => {
   const [runtimeConfig, setRuntimeConfig] = useState<any>(null);
   const [onlineSession, setOnlineSession] = useState<any>(null);
   const [runtimeAccountName, setRuntimeAccountName] = useState('');
-  const [hasCachedIdentity, setHasCachedIdentity] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [accountLoginType, setAccountLoginType] = useState<'phone' | 'account_name'>(
     () => (loadRememberedLogin()?.type === 'account_name' ? 'account_name' : 'phone')
@@ -164,7 +163,6 @@ const DesktopIdentityGate: React.FC = () => {
     }
     clearPendingVerificationState();
     installIdentityContext(next);
-    setHasCachedIdentity(true);
     const nextOnlineSession = result.token ? {
       token: result.token,
       expiresAt: result.expiresAt,
@@ -217,7 +215,6 @@ const DesktopIdentityGate: React.FC = () => {
           clearRoleCache: suspendBusinessMemory,
         });
         const vaultStatus = await client.status();
-        setHasCachedIdentity(['sealed', 'unlocked'].includes(vaultStatus.state));
         setRuntimeAccountName(vaultStatus?.user?.name || '');
         if (cancelled) return;
         clientRef.current = client;
@@ -378,25 +375,20 @@ const DesktopIdentityGate: React.FC = () => {
         }
         // UTF-8: renderer reload loses its session even when the main-process vault is unlocked.
         if (['sealed', 'unlocked'].includes(vaultStatus.state)) {
+          if (!browserOnline()) {
+            await client.lock();
+            if (!cancelled) setGateState({ kind: 'offline-authentication-required' });
+            return;
+          }
           try {
             const resumed = await client.resume({ baseUrl: identityBaseUrl, online: browserOnline() });
             if (!cancelled) acceptRuntime(resumed);
           } catch (caught) {
             if (!cancelled) {
               if (isDesktopIdentityNetworkFailure(caught)) {
-                try {
-                  const offlineResumed = await resumeOfflineAfterNetworkFailure({
-                    client,
-                    baseUrl: identityBaseUrl,
-                  });
-                  if (cancelled) return;
-                  if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
-                    acceptRuntime(offlineResumed);
-                    return;
-                  }
-                } catch (_offlineFallbackError) {
-                  // Preserve the original cloud recovery error below.
-                }
+                await client.lock();
+                if (!cancelled) setGateState({ kind: 'offline-authentication-required' });
+                return;
               }
               const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), now: new Date() });
               setGateState(next.kind === 'locked' ? { kind: 'online-authentication-required' } : next);
@@ -534,8 +526,16 @@ const DesktopIdentityGate: React.FC = () => {
     registrationFlowRef.current += 1;
     setBusy(true);
     setError('');
+    const credentials = { loginType: accountLoginType, login: accountLogin, password: accountPassword };
+    let offlineAttempted = false;
     try {
       if (gateState.kind === 'registration-interrupted') await clientRef.current.lock();
+      if (!browserOnline()) {
+        if (roleSwitchRecoveryRef.current) throw new Error('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
+        offlineAttempted = true;
+        acceptRuntime(await clientRef.current.loginOffline(credentials));
+        return;
+      }
       const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));
       const started = await clientRef.current.beginPasswordVerification({
         baseUrl,
@@ -549,11 +549,21 @@ const DesktopIdentityGate: React.FC = () => {
       setPending(started);
       setGateState({ kind: 'registration-active' });
     } catch (caught) {
+      if (!offlineAttempted && !roleSwitchRecoveryRef.current && isDesktopIdentityNetworkFailure(caught)) {
+        try {
+          acceptRuntime(await clientRef.current.loginOffline(credentials));
+          return;
+        } catch (offlineError) {
+          caught = offlineError;
+          setGateState({ kind: 'offline-authentication-required' });
+        }
+      }
       setAccountPassword('');
       try { await clientRef.current?.lock(); } catch (_cleanupError) { /* best effort */ }
       setPending(null);
       setError(messageForError(caught));
     } finally {
+      setAccountPassword('');
       setBusy(false);
     }
   };
@@ -638,51 +648,11 @@ const DesktopIdentityGate: React.FC = () => {
     await completeRegistration({ ...pending, desktopAccess: registeredAccess });
   };
 
-  const resume = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const result = await clientRef.current.resume({ baseUrl, online: browserOnline() });
-      acceptRuntime(result);
-    } catch (caught: any) {
-      if (isDesktopIdentityNetworkFailure(caught)) {
-        try {
-          const offlineResumed = await resumeOfflineAfterNetworkFailure({
-            client: clientRef.current,
-            baseUrl,
-          });
-          if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
-            acceptRuntime(offlineResumed);
-            return;
-          }
-        } catch (_fallbackError) {
-          // Show the original network failure below.
-        }
-      }
-      setError(messageForError(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const lock = async () => {
     setBusy(true);
     try {
       await secureRelock({ kind: 'locked' });
       setError('');
-    } catch (caught) {
-      setError(messageForError(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeOffline = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const result = await resumeOfflineAfterNetworkFailure({ client: clientRef.current, baseUrl });
-      acceptRuntime(result);
     } catch (caught) {
       setError(messageForError(caught));
     } finally {
@@ -772,7 +742,7 @@ const DesktopIdentityGate: React.FC = () => {
             </Space>
           </form>
           <Divider plain>{'\u5176\u4ed6\u767b\u5f55\u65b9\u5f0f'}</Divider>
-          <Button icon={<WechatOutlined />} loading={busy} onClick={beginRegistration} block>{'\u5fae\u4fe1\u626b\u7801\u767b\u5f55'}</Button>
+          <Button icon={<WechatOutlined />} loading={busy} disabled={!browserOnline()} onClick={beginRegistration} block>{'\u5fae\u4fe1\u626b\u7801\u767b\u5f55'}</Button>
         </>
       );
     }
@@ -870,8 +840,8 @@ const DesktopIdentityGate: React.FC = () => {
 
   const showLoginMethods = ['registration-required', 'registration-active', 'registration-interrupted', 'upgrade-required',
     'password-reset-active', 'password-reset-interrupted', 'online-authentication-required',
+    'offline-authentication-required', 'locked', 'offline-blocked',
   ].includes(gateState.kind);
-  const locked = ['locked', 'offline-blocked'].includes(gateState.kind);
   return (
     <main className="desktop-identity-shell">
       <Card className="desktop-identity-card" variant="borderless">
@@ -906,18 +876,10 @@ const DesktopIdentityGate: React.FC = () => {
             <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {showLoginMethods && renderRegistration()}
-          {hasCachedIdentity && !roleSwitchRecovery && (showLoginMethods || locked) && (
-            <>
-              <Button loading={busy} onClick={resumeOffline} block>{'\u7ee7\u7eed\u79bb\u7ebf\u4f7f\u7528\u672c\u673a\u8d26\u53f7'}</Button>
-              <Text type="secondary">{'\u4ec5\u6062\u590d\u6b64\u7535\u8111\u5df2\u9a8c\u8bc1\u4e14\u672a\u8fc7\u671f\u7684\u8d26\u53f7\u3002\u79bb\u7ebf\u4fee\u6539\u4fdd\u5b58\u5728\u672c\u673a\uff0c\u8054\u7f51\u540e\u9700\u6574\u4f53\u786e\u8ba4\u63d0\u4ea4\u3002'}</Text>
-            </>
+          {gateState.kind === 'offline-authentication-required' && (
+            <Alert type="info" showIcon message={'\u5f53\u524d\u79bb\u7ebf\uff0c\u8bf7\u4f7f\u7528\u5728\u6b64\u7535\u8111\u8054\u7f51\u767b\u5f55\u8fc7\u7684\u8d26\u53f7\u548c\u5bc6\u7801\u3002'} />
           )}
-          {locked && (
-            <>
-              <Paragraph className="desktop-identity-copy">{'\u6b63\u5728\u6062\u590d\u767b\u5f55\u72b6\u6001\u3002\u82e5\u5df2\u9000\u51fa\u6216\u767b\u5f55\u5df2\u8fc7\u671f\uff0c\u8bf7\u8054\u7f51\u540e\u91cd\u65b0\u767b\u5f55\u3002'}</Paragraph>
-              <Button type="primary" loading={busy} onClick={resume} block>{'\u6062\u590d\u4f1a\u8bdd'}</Button>
-            </>
-          )}          {gateState.kind === 'offline-blocked' && (
+          {gateState.kind === 'offline-blocked' && (
             <Alert type="error" showIcon message={'\u79bb\u7ebf\u767b\u5f55\u5df2\u8fc7\u671f'} description={'\u8bf7\u8fde\u63a5\u7f51\u7edc\u540e\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {error && gateState.kind !== 'initialization-failed' && <Alert type="error" showIcon message={error} />}

@@ -75,6 +75,7 @@ interface Window {
     }): Promise<any>;
     signChallenge(input: Record<string, any>): Promise<any>;
     invalidateOfflineLease(): Promise<any>;
+    unlockOffline(input: { loginType: 'phone' | 'account_name'; login: string; password: string }): Promise<any>;
   };
   desktopIdentitySessionProvider?: {
     businessAuthority: string;

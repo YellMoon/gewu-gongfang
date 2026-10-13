@@ -15,23 +15,28 @@ assert(recovery, 'test must execute the real initialization recovery branch');
 const code = ts.transpileModule(`return async () => { ${recovery.getText(ast)} };`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 (async () => {
   for (const state of ['sealed', 'unlocked']) {
-    for (const failure of [false, true]) {
+    for (const scenario of ['online', 'rejected', 'outage', 'offline']) {
       const events = [];
       const result = { gateState: { kind: 'online-unlocked' } };
       const deps = {
         vaultStatus: { state, unlocked: state === 'unlocked' }, identityBaseUrl: 'https://cloud.test', cancelled: false,
-        browserOnline: () => true,
-        client: { resume: async input => { events.push(['cloud-recovery', input]); if (failure) throw new Error('DENIED'); return result; } },
+        browserOnline: () => scenario !== 'offline',
+        client: { resume: async input => { events.push(['cloud-recovery', input]); if (scenario !== 'online') throw new Error('DENIED'); return result; }, lock: async () => events.push(['locked']) },
         acceptRuntime: value => { assert.equal(value, result); events.push(['accepted']); },
-        isDesktopIdentityNetworkFailure: () => false,
+        isDesktopIdentityNetworkFailure: () => scenario === 'outage',
         resolveDesktopGateState: () => ({ kind: 'online-authentication-required' }),
         setGateState: value => events.push(['gate', value.kind]), setError: value => events.push(['error', value]),
         messageForError: e => e.message,
       };
       await new Function(...Object.keys(deps), code)(...Object.values(deps))();
-      assert.deepEqual(events[0], ['cloud-recovery', { baseUrl: 'https://cloud.test', online: true }],
-        `${state} must re-establish a cloud-verified session before accepting business runtime`);
-      assert.deepEqual(events.slice(1), failure ? [['gate', 'online-authentication-required'], ['error', 'DENIED']] : [['accepted']]);
+      if (scenario === 'offline') {
+        assert.deepEqual(events, [['locked'], ['gate', 'offline-authentication-required']], 'offline startup must require the normal password form');
+      } else {
+        assert.deepEqual(events[0], ['cloud-recovery', { baseUrl: 'https://cloud.test', online: true }]);
+        assert.deepEqual(events.slice(1), scenario === 'online' ? [['accepted']]
+          : scenario === 'outage' ? [['locked'], ['gate', 'offline-authentication-required']]
+            : [['gate', 'online-authentication-required'], ['error', 'DENIED']]);
+      }
     }
   }
   console.log('desktop cold-start and renderer-reload cloud recovery checks passed');

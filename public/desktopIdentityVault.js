@@ -10,6 +10,7 @@ const LEGACY_SCRYPT_R = 8;
 const LEGACY_SCRYPT_P = 1;
 const LEGACY_SCRYPT_KEY_LENGTH = 32;
 const RECENT_UNLOCK_MS = 2 * 60 * 1000;
+const OFFLINE_LOGIN_KDF = Object.freeze({ N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
 const OFFLINE_LEASE_MAX_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_ENVELOPE_BYTES = 256 * 1024;
 const ROLE_SET = new Set(['visitor', 'super_admin', 'teacher', 'student']);
@@ -564,6 +565,35 @@ function desktopRoleElevationSigningPayload({
   ].join('\n');
 }
 
+function normalizeOfflineLoginCredentials(value) {
+  const login = typeof value?.login === 'string' ? value.login.trim() : '';
+  if (!['phone', 'account_name'].includes(value?.loginType) || !login || login.length > 256
+    || typeof value?.password !== 'string' || !value.password || value.password.length > 1024) {
+    throw vaultError('DESKTOP_PASSWORD_VERIFICATION_INPUT_INVALID');
+  }
+  return { loginType: value.loginType, login, password: value.password };
+}
+
+function normalizeOfflineLoginVerifier(value, userId) {
+  if (value == null) return null;
+  if (value.v !== 1 || value.userId !== userId || !['phone', 'account_name'].includes(value.loginType)
+    || typeof value.login !== 'string' || !value.login || value.login !== value.login.trim() || value.login.length > 256
+    || typeof value.salt !== 'string' || !/^[0-9a-f]{64}$/u.test(value.salt)
+    || typeof value.digest !== 'string' || !/^[0-9a-f]{64}$/u.test(value.digest)) {
+    throw vaultError('DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED');
+  }
+  return Object.freeze({ v: 1, userId, loginType: value.loginType, login: value.login, salt: value.salt, digest: value.digest });
+}
+
+function createOfflineLoginVerifier(input, userId) {
+  const credentials = normalizeOfflineLoginCredentials(input);
+  const salt = crypto.randomBytes(32);
+  const derived = crypto.scryptSync(credentials.password, salt, 32, OFFLINE_LOGIN_KDF);
+  const verifier = { v: 1, userId, loginType: credentials.loginType, login: credentials.login, salt: salt.toString('hex'), digest: derived.toString('hex') };
+  derived.fill(0);
+  return normalizeOfflineLoginVerifier(verifier, userId);
+}
+
 function createDesktopIdentityVault({
   filePath,
   legacyFilePath = null,
@@ -582,6 +612,7 @@ function createDesktopIdentityVault({
   let unlockedSecret = null;
   let lastUnlockedAt = null;
   let unlockFailures = 0;
+  let offlineLoginAuthenticated = false;
 
   function assertEncryptionAvailable() {
     if (!safeStorage.isEncryptionAvailable()) {
@@ -698,6 +729,7 @@ function createDesktopIdentityVault({
       profile,
       offlineLease,
       authorityContext,
+      offlineLoginVerifier: normalizeOfflineLoginVerifier(value.offlineLoginVerifier, profile.userId),
       sealedAt: isoTimestamp(value.sealedAt, 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'),
     });
     privateKeyForSecret(secret);
@@ -711,6 +743,7 @@ function createDesktopIdentityVault({
     profile,
     offlineLease,
     authorityContext,
+    offlineLoginVerifier = null,
   }) {
     const sealedAt = currentDate(now).toISOString();
     const payload = {
@@ -721,6 +754,7 @@ function createDesktopIdentityVault({
       profile,
       offlineLease,
       authorityContext,
+      offlineLoginVerifier,
       sealedAt,
     };
     const envelope = Object.freeze({
@@ -778,6 +812,7 @@ function createDesktopIdentityVault({
       teacherId: profile.teacherId,
       studentId: profile.studentId,
       offlineLease: cloneJson(unlockedSecret.offlineLease),
+      offlineLoginAuthenticated,
       recentUnlockEligible,
     });
   }
@@ -807,6 +842,7 @@ function createDesktopIdentityVault({
       privateKey,
     });
     unlockedSecret = null;
+    offlineLoginAuthenticated = false;
     lastUnlockedAt = null;
     return Object.freeze({ ...publicIdentity });
   }
@@ -823,6 +859,8 @@ function createDesktopIdentityVault({
       profile,
       authorization
     );
+    const previousVerifier = source.offlineLoginVerifier
+      || (fsImpl.existsSync(filePath) ? readEnvelope().secret?.offlineLoginVerifier : null);
     const built = buildEnvelope({
       publicIdentity,
       privateKey: source.privateKey,
@@ -830,9 +868,13 @@ function createDesktopIdentityVault({
       profile,
       offlineLease,
       authorityContext,
+      offlineLoginVerifier: input.offlineLoginCredentials
+        ? createOfflineLoginVerifier(input.offlineLoginCredentials, profile.userId)
+        : (previousVerifier?.userId === profile.userId ? previousVerifier : null),
     });
     writeEnvelope(built.envelope);
     unlockedSecret = built.secret;
+    offlineLoginAuthenticated = true;
     pendingRegistration = null;
     unlockFailures = 0;
     lastUnlockedAt = Date.parse(built.sealedAt);
@@ -856,9 +898,44 @@ function createDesktopIdentityVault({
   async function resume() {
     const envelope = readEnvelope();
     if (envelope.legacyPasswordVault) throw vaultError('DESKTOP_IDENTITY_LEGACY_MIGRATION_REQUIRED');
+    offlineLoginAuthenticated = offlineLoginAuthenticated && unlockedSecret?.profile.userId === envelope.secret.profile.userId
+      && unlockedSecret?.offlineLoginVerifier?.digest === envelope.secret.offlineLoginVerifier?.digest;
     unlockedSecret = envelope.secret;
     pendingRegistration = null;
     unlockFailures = 0;
+    return presentUnlocked();
+  }
+
+  async function unlockOffline(input = {}) {
+    unlockedSecret = null;
+    offlineLoginAuthenticated = false;
+    lastUnlockedAt = null;
+    if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_OFFLINE_LOGIN_SETUP_REQUIRED');
+    const envelope = readEnvelope();
+    const secret = envelope.secret;
+    const verifier = secret?.offlineLoginVerifier;
+    if (!verifier) throw vaultError('DESKTOP_OFFLINE_LOGIN_SETUP_REQUIRED');
+    const credentials = normalizeOfflineLoginCredentials(input);
+    const actual = crypto.scryptSync(credentials.password, Buffer.from(verifier.salt, 'hex'), 32, OFFLINE_LOGIN_KDF);
+    const matches = crypto.timingSafeEqual(actual, Buffer.from(verifier.digest, 'hex'));
+    actual.fill(0);
+    if (!matches || credentials.loginType !== verifier.loginType || credentials.login !== verifier.login) {
+      unlockFailures += 1;
+      await delay(Math.min(unlockFailures * 250, 2000));
+      throw vaultError('DESKTOP_IDENTITY_LOCAL_PASSWORD_INVALID');
+    }
+    const current = currentDate(now).getTime();
+    if (!secret.offlineLease || current >= Date.parse(secret.offlineLease.expiresAt)) {
+      throw vaultError('DESKTOP_OFFLINE_LOGIN_LEASE_EXPIRED');
+    }
+    if (current < Date.parse(secret.offlineLease.issuedAt) - 60000) {
+      throw vaultError('DESKTOP_IDENTITY_CLOCK_INVALID');
+    }
+    unlockedSecret = secret;
+    pendingRegistration = null;
+    unlockFailures = 0;
+    offlineLoginAuthenticated = true;
+    // Offline password verification grants local access, not cloud role elevation.
     return presentUnlocked();
   }
 
@@ -962,9 +1039,12 @@ function createDesktopIdentityVault({
       profile,
       offlineLease,
       authorityContext: null,
+      offlineLoginVerifier: verified.offlineLoginVerifier,
     });
     writeEnvelope(built.envelope);
     unlockedSecret = built.secret;
+    // Replaying a cached signed lease cannot authenticate a cold offline start.
+    offlineLoginAuthenticated = offlineLoginAuthenticated || nextLeaseIssuedAt > previousLeaseIssuedAt;
     pendingRegistration = null;
     unlockFailures = 0;
     lastUnlockedAt = currentDate(now).getTime();
@@ -974,6 +1054,7 @@ function createDesktopIdentityVault({
   function lock() {
     pendingRegistration = null;
     unlockedSecret = null;
+    offlineLoginAuthenticated = false;
     lastUnlockedAt = null;
     return status();
   }
@@ -983,6 +1064,7 @@ function createDesktopIdentityVault({
     const built = buildEnvelope({ ...unlockedSecret, offlineLease: null });
     writeEnvelope(built.envelope);
     unlockedSecret = built.secret;
+    offlineLoginAuthenticated = false;
     lastUnlockedAt = null;
     return presentUnlocked();
   }
@@ -1084,6 +1166,7 @@ function createDesktopIdentityVault({
   function clear() {
     pendingRegistration = null;
     unlockedSecret = null;
+    offlineLoginAuthenticated = false;
     lastUnlockedAt = null;
     unlockFailures = 0;
     for (const candidate of [filePath, `${filePath}.tmp`, legacyFilePath].filter(Boolean)) {
@@ -1107,6 +1190,7 @@ function createDesktopIdentityVault({
     signChallenge,
     status,
     resume,
+    unlockOffline,
   });
 }
 

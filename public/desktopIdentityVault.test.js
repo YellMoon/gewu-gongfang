@@ -961,7 +961,7 @@ async function main() {
     Array.from(Object.keys(exposed.desktopIdentity)).sort(),
     [
       'acceptIssuedSession', 'beginUnifiedOnlineRegistration',
-      'completeRegistration', 'invalidateOfflineLease', 'lock', 'resume', 'signChallenge', 'status',
+      'completeRegistration', 'invalidateOfflineLease', 'lock', 'resume', 'signChallenge', 'status', 'unlockOffline',
     ]
   );
   assert.ok(!('read' in exposed.desktopIdentity));

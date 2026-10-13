@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('desktopIdentity', Object.freeze({
   beginUnifiedOnlineRegistration: input => ipcRenderer.invoke('desktop-identity:begin-unified-online-registration', input),
   completeRegistration: input => ipcRenderer.invoke('desktop-identity:complete-registration', input),
   resume: () => ipcRenderer.invoke('desktop-identity:resume'),
+  unlockOffline: input => ipcRenderer.invoke('desktop-identity:unlock-offline', input),
   lock: () => ipcRenderer.invoke('desktop-identity:lock'),
   acceptIssuedSession: input => ipcRenderer.invoke('desktop-identity:accept-issued-session', input),
   invalidateOfflineLease: () => ipcRenderer.invoke('desktop-identity:invalidate-offline-lease'),
