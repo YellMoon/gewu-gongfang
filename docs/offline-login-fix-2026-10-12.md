@@ -154,3 +154,31 @@ after the final QR-button availability change. Logs are
 `output/offline-password-ui-check-20261013.log`.
 Automatic minor version classification and release-matrix checks passed.
 OSS release evidence follows after publication.
+
+Desktop 8.22.0 was published from source commit
+`0e98a6028b90db40ac46aedd3f241f372bbad2d0`, pushed to `gewu/master`.
+`npm run dist:win` completed successfully, verified both packaged Electron
+database modules, restored both Node database modules and passed the restoration
+checks. The affected offline-login tests also passed after packaging.
+The packaged application passed its actual fresh-profile startup check; bundled
+Python/Ruby worked and packaged identity sources matched the reviewed sources.
+Evidence is in `output/offline-password-desktop-build-20261013.log`,
+`output/offline-password-post-package-tests-20261013.log`,
+`output/offline-password-packaged-smoke-20261013.log` and
+`output/offline-password-packaged-runtime-20261013.json`.
+
+OSS publication succeeded. The public `latest.yml` matched the local feed and
+selected `GewuGongfang-Desktop-8.22.0-x64.exe`. A full public download matched
+the feed size (176473992 bytes) and SHA-512:
+`xLiAPf5jNEG4Vwmil5+cYnNKESnCPf24JWOcTA9XeMFJGMz7t8IWJICPFiySzj9frI9QDvHeI/15DcQ88kmENQ==`.
+Feed: https://gewu-staging-edu.oss-cn-beijing.aliyuncs.com/desktop/latest.yml.
+Receipts: `output/offline-password-oss-publish-20261013.log` and
+`output/offline-password-oss-verification-20261013.json`.
+
+The desktop-only contract was checked against unchanged executable sources for
+cloud business 8.20.0, NAS/storage proxy 8.9.2 and miniapp 8.10.1. Existing
+component receipts were retained; the public cloud health check passed.
+The miniapp receipt remains development, so this is a desktop update, not a
+claim that all components have a new production release.
+Evidence: `output/offline-password-compatibility-20261013.json` and the
+8.22.0 desktop release matrix.
