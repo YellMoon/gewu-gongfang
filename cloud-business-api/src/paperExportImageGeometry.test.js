@@ -32,23 +32,23 @@ async function testSourceGeometryAndPlacement() {
   const answerHeading = '\u53c2\u8003\u7b54\u6848';
   assert.equal(extents.length, 3, 'each placed image occurrence survives; no appended duplicate or early answer image');
   assert(xml.indexOf('Before diagram') < extents[0].index && extents[0].index < xml.indexOf('After diagram'), 'stem image keeps its source position');
-  assert(xml.indexOf('A. ') < extents[1].index && extents[1].index < xml.indexOf(answerHeading), 'image-only option keeps its label and position');
+  assert(xml.indexOf('A．') < extents[1].index && extents[1].index < xml.indexOf(answerHeading), 'image-only option keeps its label and position');
   assert(xml.indexOf(answerHeading) < extents[2].index, 'answer image stays in the answer section');
   const diagramRows = [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].filter(match => match[0].includes('<w:drawing>'));
   assert(diagramRows.every(match => !match[0].includes('Before diagram') && !match[0].includes('After diagram')),
     'match the desktop viewer: diagrams are blocks, not giant inline text lines');
   assert(diagramRows.every(match => match[0].includes('<w:jc w:val="center"')), 'default image alignment matches the desktop viewer');
   const paragraphs = [...xml.matchAll(/<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/g)].map(match => match[0]);
-  assert(paragraphs.find(row => row.includes('A. ')).includes('<w:keepNext/>'), 'an image-only option label must stay with its diagram');
-  for (const [index, [width, height]] of [[215, 98], [554, 152.6266666667], [100, 45]].entries()) {
-    assert(Math.abs(Number(extents[index][1]) / 9525 - width) < 0.001, 'use source display width, not raster pixels or an arbitrary 420px cap');
-    assert(Math.abs(Number(extents[index][2]) / 9525 - height) < 0.001, 'use source display height, including intentional source scaling');
+  assert(paragraphs.find(row => row.includes('A．')).includes('<w:keepNext/>'), 'an image-only option label must stay with its diagram');
+  for (const [index, [width, height]] of [[98 * 1200 / 550, 98], [152.6266666667 * 1200 / 550, 152.6266666667], [45 * 1200 / 550, 45]].entries()) {
+    assert(Math.abs(Number(extents[index][1]) / 9525 - width) < 0.001, 'fit source bounds without stretching the bitmap');
+    assert(Math.abs(Number(extents[index][2]) / 9525 - height) < 0.001, 'preserve the natural image aspect ratio');
   }
   assert.equal(calls, 1, 'same asset at different source sizes is fetched once');
   const pdf = await renderPaperExport({ ...input, format: 'pdf' }, { resolveQuestionAsset });
   const draws = [...pdf.bytes.toString('latin1').matchAll(/([\d.]+) 0 0 (-?[\d.]+) [\d.-]+ [\d.-]+ cm\s*\/I\d+ Do/g)];
   assert.equal(draws.length, 3, 'PDF places the same three occurrences, including the image-only answer');
-  for (const [index, [width, height]] of [[161.25, 73.5], [415.5, 114.47], [75, 33.75]].entries()) {
+  for (const [index, [width, height]] of [[98 * 1200 / 550 * 0.75, 73.5], [152.6266666667 * 1200 / 550 * 0.75, 114.47], [45 * 1200 / 550 * 0.75, 33.75]].entries()) {
     assert(Math.abs(Number(draws[index][1]) - width) < 0.001, 'CSS px must convert to physical PDF points');
     assert(Math.abs(Math.abs(Number(draws[index][2])) - height) < 0.001, 'PDF and Word must share source physical size');
   }

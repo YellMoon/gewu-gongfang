@@ -46,11 +46,11 @@ async function verifyOptionColumns() {
     else {
       const widths = [...xml.matchAll(/<wp:extent cx="(\d+)"/g)].map(match => Number(match[1]) / 9525);
       assert.equal(widths.length, 4);
-      assert(widths.every(width => Math.abs(width - 600) < 0.1), 'wide images keep their readable source size in one column');
+      assert(widths.every(width => Math.abs(width - 420) < 0.1), 'wide images fit the standard diagram bounds in one column');
       const pdf = await renderPaperExport({ ...input, format: 'pdf' }, { resolveQuestionAsset });
       const draws = [...pdf.bytes.toString('latin1').matchAll(/([\d.]+) 0 0 (-?[\d.]+) [\d.-]+ [\d.-]+ cm\s*\/I\d+ Do/g)];
       assert.equal(draws.length, 4);
-      assert(draws.every(match => Math.abs(Number(match[1]) - 450) < 0.1), 'PDF wide images keep their readable source size in one column');
+      assert(draws.every(match => Math.abs(Number(match[1]) - 315) < 0.1), 'PDF uses the same physical diagram size as Word');
     }
   }
   console.log('Word and PDF option column checks passed');

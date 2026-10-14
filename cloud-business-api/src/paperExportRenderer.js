@@ -12,6 +12,7 @@ const { withFormulaTagScope } = require('./formulaTagScope');
 const { applyPaperTemplate, pdfTemplateProfile, questionCategory, isSolution, PAGE } = require('./paperExportTemplate');
 const { isChoiceQuestionType } = require('./questionChoiceStructure');
 const sharp = require('sharp');
+const { paperImageSize } = require('./paperImageSize');
 const { Document, ImageRun, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, TableLayoutType, BorderStyle } = require('docx');
 const { mathjax } = require('mathjax-full/js/mathjax.js');
 const { TeX } = require('mathjax-full/js/input/tex.js');
@@ -208,11 +209,22 @@ function styledText(token) {
 }
 
 function optionTokens(value, index) {
-  if (typeof value === 'string') return prefixedTokens('', tokensOrFallback(value, ''));
+  if (typeof value === 'string') {
+    const source = stripMarkup(value);
+    const match = /^\s*([A-Z])[.．、]\s*/.exec(source);
+    const content = match ? source.slice(match[0].length) : source;
+    return prefixedTokens((match?.[1] || String.fromCharCode(65 + index)) + '．', tokensOrFallback(content, ''));
+  }
   if (!value || typeof value !== 'object') return [];
-  const label = structuredText(value.label || value.key || value.value || String.fromCharCode(65 + index));
+  const label = structuredText(value.label || value.key || value.value || String.fromCharCode(65 + index)).replace(/[.．、]\s*$/, '');
   const tokens = tokensOrFallback(value.content ?? value.text ?? value.title, '');
-  return prefixedTokens(label ? label + '. ' : '', tokens);
+  // Remove leading source whitespace even when it occupies separate styled runs.
+  for (const token of tokens) {
+    if (token.kind !== 'text') break;
+    token.text = token.text.trimStart();
+    if (token.text) break;
+  }
+  return prefixedTokens(label ? label + '．' : '', tokens);
 }
 
 function normalizeOptionTokenGroups(value) {
@@ -240,7 +252,7 @@ function optionText(value, index, formulaMode) {
   if (!value || typeof value !== 'object') return '';
   const label = structuredText(value.label || value.key || value.value || String.fromCharCode(65 + index), formulaMode);
   const content = structuredText(value.content || value.text || value.title, formulaMode);
-  return content ? label + '. ' + content : label;
+  return content ? label + '．' + content.trimStart() : label;
 }
 
 function questionAssets(value) {
@@ -378,7 +390,12 @@ async function hydrateMedia(items, resolveQuestionAsset, nativeWord = false) {
     // A structured document defines its image occurrences, like the desktop
     // viewer. Its asset inventory also contains old formula previews; those
     // are not extra body content. Only legacy documents need implicit placement.
-    result.media = item.hasStructuredPlacement ? [] : item.media.filter(media => !placed.has(media.assetKey));
+    result.media = item.hasStructuredPlacement ? [] : item.media.filter(media => media.assetType !== 'formula_preview' && !placed.has(media.assetKey));
+    // Legacy attachments have no explicit anchor: default to the end of the
+    // stem, before the options/subquestions, through the normal token layout.
+    if (result.media.length) result.stemTokens.push({ kind: 'break' },
+      ...result.media.map(media => ({ kind: 'image', media, align: 'center' })));
+    result.media = [];
     return result;
   });
 }
@@ -438,25 +455,9 @@ function wordFormulaTransformation(media, displayMode = 'block') {
 }
 
 function wordImageTransformation(media) {
-  const source = sourceImageSize(media);
-  if (source) {
-    // Match the supplied template content box, in CSS pixels (15 twips/px).
-    return fitImageSize(source,
-      (PAGE.width - PAGE.left - PAGE.right) / 15,
-      (PAGE.height - PAGE.top - PAGE.bottom) / 15 - 24);
-  }
-  const width = Number.isFinite(media?.width) && media.width > 0 ? media.width : 420;
-  const height = Number.isFinite(media?.height) && media.height > 0 ? media.height : 280;
-  const scale = Math.min(420 / width, 280 / height, 1);
-  return { width: width * scale, height: height * scale };
-}
-
-function sourceImageSize(media) {
-  if (media.displayWidth == null && media.displayHeight == null) return null;
-  return {
-    width: media.displayWidth ?? media.displayHeight * media.width / media.height,
-    height: media.displayHeight ?? media.displayWidth * media.height / media.width,
-  };
+  return fitImageSize(paperImageSize(media),
+    (PAGE.width - PAGE.left - PAGE.right) / 15,
+    (PAGE.height - PAGE.top - PAGE.bottom) / 15 - 24);
 }
 
 function fitImageSize({ width, height }, maxWidth, maxHeight) {
@@ -686,7 +687,7 @@ function pdfBytes(input, items) {
 }
 
 function pdfMediaSize(media, maxPageWidth = 480, maxPageHeight = 360) {
-  const source = media.kind === 'image' ? sourceImageSize(media) : null;
+  const source = media.kind === 'image' ? paperImageSize(media) : null;
   if (source) return fitImageSize({ width: source.width * 0.75, height: source.height * 0.75 }, maxPageWidth, maxPageHeight);
   const naturalWidth = Number.isFinite(media.width) && media.width > 0 ? media.width : 280;
   const naturalHeight = Number.isFinite(media.height) && media.height > 0 ? media.height : 72;

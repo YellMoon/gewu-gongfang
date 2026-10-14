@@ -4,6 +4,7 @@ const BODY_SIZE = 10.5;
 const INDENT_PT = BODY_SIZE * 2;
 const INDENT_TWIPS = INDENT_PT * 20;
 const OPTION_GAP_PT = 12;
+const { paperImageSize } = require('./paperImageSize');
 const optionLabel = text => /^\s*([A-D])[.\uff0e\u3001]\s*$/.exec(text);
 const textOf = tokens => tokens.filter(t => t.kind === 'text').map(t => t.text).join('');
 const isSubquestion = text => /^\s*(?:[\(\uff08][0-9\uff10-\uff19]+[\)\uff09]|[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf]|[abcd][.\uff0e]|[A-G][.\uff0e\u3001])/.test(text);
@@ -13,7 +14,7 @@ const isSubquestion = text => /^\s*(?:[\(\uff08][0-9\uff10-\uff19]+[\)\uff09]|[\
 function imageWidthPt(token) {
   const m = token.media;
   if (!m) return Infinity;
-  const width = m.displayWidth ?? (m.displayHeight != null ? m.displayHeight * m.width / m.height : m.width);
+  const { width } = paperImageSize(m);
   return Number.isFinite(width) && width > 0 ? width * 0.75 : Infinity;
 }
 
@@ -59,7 +60,7 @@ function questionBlocks(tokens, prefix = '', forceIndent = false) {
   for (let i = 0; i < paragraphs.length; i++) {
     const options = paragraphs.slice(i, i + 4);
     if (options.length === 4 && options.every((p, n) => optionLabel(textOf(p))?.[1] === 'ABCD'[n] && p.filter(t => t.kind === 'image').length === 1 && p.every(t => ['text', 'image'].includes(t.kind)))) {
-      blocks.push({ kind: 'options', options }); i += 3;
+      blocks.push({ kind: 'options', options: options.map(p => p.map(t => t.kind === 'text' ? { ...t, text: t.text.replace(/^\s*([A-D])[.．、]\s*$/, '$1．') } : t)) }); i += 3;
     } else {
       const lead = i === 0 ? prefix : '';
       blocks.push({ kind: 'paragraph', tokens: paragraphs[i], prefix: lead, indent: forceIndent || isSubquestion(lead + textOf(paragraphs[i])) });

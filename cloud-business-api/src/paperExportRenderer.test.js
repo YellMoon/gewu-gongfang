@@ -67,6 +67,7 @@ require('./wordNativeFormula.test');
   await require('./paperExportTemplate.test')();
   await require('./paperExportPdfTemplate.test')();
   await require('./paperExportImageGeometry.test')();
+  await require('./paperExportImageDefaults.test')();
   await require('./paperExportTables.test')();
   await require('./paperExportPagination.test')();
   await require('./paperExportAttachmentPlacement.test')();
@@ -191,10 +192,10 @@ require('./wordNativeFormula.test');
   assert.ok(hasVectorCurves(legacyFractionPdf.bytes),
     'legacy TeX fractions must also retain vector geometry');
   assert.deepStrictEqual(normalizeOptionTokenGroups(['A. first', 'B．second']).map(tokens => tokens.map(token => token.text)), [
-    ['A. first'], ['B．second'],
+    ['A．first'], ['B．second'],
   ], 'already-labelled string options must not receive a duplicate generated label');
   assert.deepStrictEqual(normalizeOptionTokenGroups([{ label: 'A', content: 'from A．point to B．point' }]).map(tokens => tokens.map(token => token.text)), [
-    ['A. from A．point to B．point'],
+    ['A．from A．point to B．point'],
   ], 'the renderer must not guess that ordinary option prose contains packed options');
   const inlineWord = await renderPaperExport({
     format: 'word', title: 'Inline formula paper', answerPosition: 'end', formulaMode: 'latex-vector',

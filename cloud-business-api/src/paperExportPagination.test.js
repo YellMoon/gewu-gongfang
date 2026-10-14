@@ -44,9 +44,9 @@ async function verifyWordPagination() {
           'the last compact option row must not chain into unrelated later questions');
       }
       if (length === 30) {
-        for (const label of ['A. ', 'B. ', 'C. ']) assert.match(paragraphs.find(p => p.includes(label)), /<w:keepNext\/>/,
+        for (const label of ['A．', 'B．', 'C．']) assert.match(paragraphs.find(p => p.includes(label)), /<w:keepNext\/>/,
           'single-column options stay together instead of leaving the final option at the top of the next page');
-        assert.doesNotMatch(paragraphs.find(p => p.includes('D. ')), /<w:keepNext\/>/);
+        assert.doesNotMatch(paragraphs.find(p => p.includes('D．')), /<w:keepNext\/>/);
       }
       if (lastBlock.type === 'formula') {
         assert.equal((xml.match(/<m:oMath>/g) || []).length, 1);

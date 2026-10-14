@@ -28,7 +28,7 @@ async function verifyExportIndent() {
   } } }];
   const word = await renderPaperExport({ format: 'word', title: 'Indent', snapshot });
   const xml = await questionXml(await JSZip.loadAsync(word.bytes));
-  for (const label of [...labels, 'A.', 'B.', '(3)']) {
+  for (const label of [...labels, 'A．', 'B．', '(3)']) {
     const p = [...xml.matchAll(/<w:p[ >][\s\S]*?<\/w:p>/g)].map(m => m[0]).find(p => p.includes(label));
     assert(p && /<w:ind\b[^>]*w:left="420"/.test(p), `${label}: whole paragraph must indent 2 x 10.5pt, including wrapped lines`);
     assert(!/w:firstLine="[1-9]/.test(p), 'not first-line-only indentation');
@@ -61,7 +61,7 @@ async function verifyExportIndent() {
       if (columns > 1) assert.match(xml, /<w:tblInd\b[^>]*w:w="420"/, 'whole option grid indents two CJK widths');
       const widths = [...xml.matchAll(/<wp:extent cx="(\d+)"/g)].map(m => Number(m[1]) / 9525);
       assert.equal(widths.length, 4);
-      assert(widths.every(w => Math.abs(w - imageWidth) < 0.1), 'do not shrink images to force more columns');
+      assert(widths.every(w => Math.abs(w - Math.min(imageWidth, 420)) < 0.1), 'apply diagram bounds without further shrinking to force more columns');
       const drawn = [], origImage = PDFDocument.prototype.image;
       PDFDocument.prototype.image = function(data, x, y, dimensions) { drawn.push({ x, y, ...dimensions }); return origImage.call(this, data, x, y, dimensions); };
       try { await renderPaperExport({ ...input, format: 'pdf' }, { resolveQuestionAsset: async () => bytes }); }
@@ -69,7 +69,7 @@ async function verifyExportIndent() {
       assert.equal(drawn.length, 4);
       // Separate pages can have equal y; use distinct x positions for columns.
       assert.equal(new Set(drawn.map(d => d.x)).size, columns);
-      assert(drawn.every(d => Math.abs(d.width - imageWidth * 0.75) < 0.1));
+      assert(drawn.every(d => Math.abs(d.width - Math.min(imageWidth, 420) * 0.75) < 0.1));
     }
   }
   console.log('Export paragraph indentation and size-aware image options passed');

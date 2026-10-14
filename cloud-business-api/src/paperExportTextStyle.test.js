@@ -27,8 +27,8 @@ async function verifyTextStyles() {
   for (const [label, tag] of [['BOLD', '<w:b/>'], ['ITALIC', '<w:i/>'], ['UNDERLINE', '<w:u '], ['STRIKE', '<w:strike/>']]) {
     assert(runs.find(row => row.includes(label)).includes(tag), `Word retains ${label}`);
   }
-  assert(!runs.find(row => row.includes('A. ')).includes('w:vertAlign'), 'option labels must not inherit the first content run superscript');
-  assert(!runs.find(row => row.includes('B. ')).includes('<w:b/>'), 'option labels must not inherit the first content run bold mark');
+  assert(!runs.find(row => row.includes('A．')).includes('w:vertAlign'), 'option labels must not inherit the first content run superscript');
+  assert(!runs.find(row => row.includes('B．')).includes('<w:b/>'), 'option labels must not inherit the first content run bold mark');
   assert(runs.find(row => row.includes('EMPHATICOPTION')).includes('<w:b/>'), 'option content keeps its own bold mark');
 
   const calls = [];
