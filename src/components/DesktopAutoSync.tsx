@@ -22,7 +22,7 @@ const DesktopAutoSync: React.FC = () => {
     const sessionAvailable = () => {
       try { return Boolean(sessionTokenFromStore()); } catch { return false; }
     };
-    const refreshProjection = (options = { businessOnly: true }) => (window as any).dbService?.refreshAuthorityProjection?.({ ...options, notifyConsumers: true });
+    const refreshProjection = (options: { businessOnly: boolean; module?: string } = { businessOnly: true }) => (window as any).dbService?.refreshAuthorityProjection?.({ ...options, notifyConsumers: true });
     const controller = createDesktopSyncController({
       bridge, sessionToken: sessionTokenFromStore,
       isOnline: () => navigator.onLine !== false && !desktopCloudTransportUnavailable() && sessionAvailable(),

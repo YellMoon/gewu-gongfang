@@ -1724,12 +1724,11 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const newStartTimeStr = newStartTime.toISOString();
     const newEndTimeStr = newEndTime.toISOString();
     
-    if (!ctrlKey) {
-      const overlap = checkOverlap(schedule.id, newStartTimeStr, newEndTimeStr);
-      if (overlap) {
-        message.warning(`时间重叠：与「${overlap.course_name}」(${dayjs(overlap.start_time).format('HH:mm')}-${dayjs(overlap.end_time).format('HH:mm')})冲突，已恢复`);
-        return;
-      }
+    // Copies must also check the source lesson, which remains in the calendar.
+    const overlap = checkOverlap(ctrlKey ? '' : schedule.id, newStartTimeStr, newEndTimeStr);
+    if (overlap) {
+      message.warning(`时间重叠：与「${overlap.course_name}」(${dayjs(overlap.start_time).format('HH:mm')}-${dayjs(overlap.end_time).format('HH:mm')})冲突，已恢复`);
+      return;
     }
     
     if (ctrlKey) {
@@ -1785,6 +1784,12 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     
     const newStartTime = oldStartTime.hour(startH).minute(startM).second(0).millisecond(0).toISOString();
     const newEndTime = oldStartTime.hour(endH).minute(endM).second(0).millisecond(0).toISOString();
+
+    // Reject crossed resize handles before creating any local draft or history.
+    if (!dayjs(newEndTime).isAfter(dayjs(newStartTime))) {
+      message.warning('结束时间必须晚于开始时间，已恢复');
+      return;
+    }
     
     const overlap = checkOverlap(schedule.id, newStartTime, newEndTime);
     if (overlap) {

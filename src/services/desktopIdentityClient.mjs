@@ -892,14 +892,16 @@ export function createDesktopIdentityClient({
     return data.schedules;
   }
 
-  async function listCloudBusinessProjection({ baseUrl, currentSession } = {}) {
+  async function listCloudBusinessProjection({ baseUrl, currentSession, module = undefined } = {}) {
     if (!currentSession || currentSession.offline || !currentSession.token) {
       throw identityError('ONLINE_DESKTOP_SESSION_REQUIRED');
     }
-    const data = await request(fetchImpl, baseUrl, '/api/business/desktop-projection', {
+    if (module !== undefined && !['courses', 'schedules'].includes(module)) throw identityError('DESKTOP_CLOUD_PROJECTION_MODULE_INVALID');
+    const data = await request(fetchImpl, baseUrl, '/api/business/desktop-projection' + (module ? `?module=${module}` : ''), {
       token: currentSession.token, commandId: currentSession.commandId, payloadHash: currentSession.payloadHash,
     });
     const projection = data?.projection;
+    if (module && data?.module !== module) throw identityError('DESKTOP_CLOUD_PROJECTION_MODULE_UNSUPPORTED');
     if (!projection || typeof projection !== 'object' || Array.isArray(projection)
       || !['students', 'student_contacts', 'teachers', 'courses', 'schedules', 'institutions', 'schools', 'rooms', 'grades', 'payments', 'consumptions', 'assetRecords', 'assetCategories', 'taxonomy_systems', 'taxonomy_nodes'].every(key => Array.isArray(projection[key]))) {
       throw identityError('DESKTOP_CLOUD_PROJECTION_RESPONSE_INVALID');

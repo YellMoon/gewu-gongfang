@@ -56,6 +56,7 @@ export function createDesktopCommandOutbox({
       id,
       type: input.type,
       payload: clone(input.payload),
+      ...(input.baseDraftId ? { baseDraftId: String(input.baseDraftId) } : {}),
       preview: clone(input.preview || {}),
       status: 'awaiting_confirmation',
       createdAt,
@@ -172,6 +173,40 @@ export function createDesktopCommandOutbox({
     return clone(item);
   }
 
+  async function recoverScheduleVersion(id) {
+    const { state, item } = await itemFor(id);
+    if (!/^schedule\.(update|delete)\.v1$/.test(item.type) || (item.payload.expectedVersion && !item.baseDraftId)
+      || !['awaiting_confirmation', 'confirmed', 'conflict'].includes(item.status)
+      || (item.status === 'conflict' && item.conflict?.code !== 'CLOUD_BUSINESS_DRAFT_EXPECTED_VERSION_REQUIRED')) return false;
+    const items = Object.values(state.items);
+    const earlier = items.slice(0, items.findIndex(row => row.id === id)).filter(row =>
+      /^schedule\.(create|update|delete)\.v1$/.test(row.type)
+      && (row.payload?.record?.id || row.payload?.id) === item.payload.id
+      && row.draftScope?.userId === item.draftScope?.userId
+      && row.draftScope?.businessAuthority === item.draftScope?.businessAuthority
+      && row.draftScope?.activeRole === item.draftScope?.activeRole);
+    const predecessor = item.baseDraftId ? earlier.find(row => row.id === item.baseDraftId) : earlier.at(-1);
+    const receipt = predecessor?.receipt;
+    // Advance only along the explicit local draft lineage, or repair the legacy
+    // missing-create baseline. Real cloud version conflicts stay actionable.
+    if (!(item.baseDraftId ? /^schedule\.(create|update)\.v1$/.test(predecessor?.type || '') : predecessor?.type === 'schedule.create.v1') || predecessor.status !== 'completed'
+      || receipt?.status !== 'committed' || receipt.result?.id !== item.payload.id
+      || typeof receipt.result.updatedAt !== 'string' || !Number.isFinite(Date.parse(receipt.result.updatedAt))) return false;
+    if (item.payload.expectedVersion === receipt.result.updatedAt) return false;
+    item.localRecovery = { code: 'SCHEDULE_CREATE_RECEIPT_VERSION', predecessorId: predecessor.id,
+      previousVersion: item.payload.expectedVersion || null, previousStatus: item.status, previousReceipt: clone(item.receipt), recoveredAt: new Date(now()).toISOString() };
+    item.payload.expectedVersion = receipt.result.updatedAt;
+    if (item.status === 'conflict') {
+      item.status = 'awaiting_confirmation';
+      item.confirmation = null;
+      item.submission = null;
+      item.receipt = null;
+      item.conflict = null;
+    }
+    await save(state);
+    return true;
+  }
+
   return Object.freeze({
     acknowledge,
     append,
@@ -203,6 +238,7 @@ export function createDesktopCommandOutbox({
     list,
     markSubmitted,
     recordTransport,
+    recoverScheduleVersion,
     remove,
     reset,
   });

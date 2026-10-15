@@ -7,6 +7,7 @@ const { createBusinessCommandMiddleware } = require('./businessCommandTransactio
 const { createOperationAuditMiddleware, parseFilters: operationAuditFilters } = require('./operationAudit');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
 const { withDesktopStudentLedgerProjection } = require('./desktopStudentLedgerProjection');
+const { MODULE_COLLECTIONS, scopeProjectionSql } = require('./desktopProjectionScope');
 const { withMiniappStudentLedgerProjection, hasMiniappStudentLedger } = require('./miniappStudentLedgerProjection');
 const { withScheduleCourseContextSql, applyScheduleCourseContext } = require('./scheduleCoursePresentation');
 const { metadataReadColumn } = require('./questionAuthorityService');
@@ -1550,21 +1551,26 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
  });
   app.get('/api/business/desktop-projection', async (request, response) => {
     if (!desktopRegistration || !businessTenantId) return businessUnavailable(response);
+    const module = request.query.module;
+    if (module !== undefined && (typeof module !== 'string' || !Object.hasOwn(MODULE_COLLECTIONS, module))) return businessInputInvalid(response);
     try {
       const context = await desktopQuestionContext(request);
       let result;
       let projection;
       if (Array.isArray(context.roles) && context.roles.includes('super_admin')) {
-        result = await query(withScheduleCourseContextSql(desktopProjectionSql), [businessTenantId, context.accountId]);
+        const sql = withScheduleCourseContextSql(module ? scopeProjectionSql(desktopProjectionSql, module) : desktopProjectionSql);
+        result = await query(sql, module ? [businessTenantId] : [businessTenantId, context.accountId]);
         projection = applyScheduleCourseContext(result?.rows?.[0]?.projection);
       } else {
         const scope = miniappProjectionScope(context);
         if (scope.role !== 'teacher') throw businessAccessDenied();
-        result = await query(withScheduleCourseContextSql(withDesktopStudentLedgerProjection(miniappProjectionSql)), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
-        projection = scopedDesktopProjection(applyScheduleCourseContext(result?.rows?.[0]?.projection));
+        const sql = module ? scopeProjectionSql(miniappProjectionSql, module) : withDesktopStudentLedgerProjection(miniappProjectionSql);
+        result = await query(withScheduleCourseContextSql(sql), module ? [businessTenantId, scope.role, scope.profileId] : [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+        const raw = applyScheduleCourseContext(result?.rows?.[0]?.projection);
+        projection = scopedDesktopProjection(module && raw ? { ...raw, payments: [], consumptions: [] } : raw);
       }
       if (!isDesktopProjection(projection)) return businessUnavailable(response);
-      response.json({ ok: true, projection });
+      response.json({ ok: true, projection, ...(module ? { module, collections: MODULE_COLLECTIONS[module] } : {}) });
     } catch (error) {
       if (error && error.code === 'CLOUD_BUSINESS_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
       businessUnavailable(response);

@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+require('./desktopProjectionScope.test');
 const crypto = require('crypto');
 const { createCloudBusinessApp } = require('./app');
 const { createQuestionAuthorityService } = require('./questionAuthorityService');

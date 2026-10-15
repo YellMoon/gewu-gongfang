@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "desktopBusinessModuleProjection": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "deploy optional desktop-projection module=courses|schedules before the desktop consumer; legacy full projections remain unchanged; scoped queries retain tenant/role/tombstone fences and skip unrelated aggregates; clients merge only the requested module collections and retain unrelated caches; existing NAS and miniapp requests remain compatible"
+    },
     "desktopOfflinePassword": {
       "version": "1",
       "participants": ["desktop"],

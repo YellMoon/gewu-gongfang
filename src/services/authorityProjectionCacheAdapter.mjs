@@ -209,6 +209,7 @@ function applyDraft(cache, item) {
   const payload = item.payload || {};
   if (action === 'create') {
     const record = normalizeForCollection(collection, payload.record || {});
+    if (entity === 'schedule') record._authorityDraftId = item.id;
     const id = String(record?.id || '').trim();
     if (!id) return;
     const index = cache[collection].findIndex(row => String(row.id) === id);
@@ -232,6 +233,7 @@ function applyDraft(cache, item) {
   cache[collection][index] = normalizeForCollection(collection, {
     ...cache[collection][index],
     ...(payload.changes || {}),
+    ...(entity === 'schedule' ? { _authorityDraftId: item.id } : {}),
   });
   if (entity === 'student') applyStudentContacts(cache, id, payload.changes?.contacts);
   if (entity === 'institution') overlayInstitutionBillingDraft(cache,cache[collection][index]);

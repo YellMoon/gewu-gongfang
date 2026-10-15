@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Button, Form, Input, InputNumber, Modal, Select as AntSelect,
   Space, message, Popconfirm, Tag, Row, Col, Divider
@@ -57,6 +57,8 @@ const CourseList: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [rooms, setRooms] = useState<any[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [filterType, setFilterType] = useState<CourseType | undefined>();
   const [filterSource, setFilterSource] = useState<CourseSourceType | undefined>();
@@ -195,7 +197,7 @@ const CourseList: React.FC = () => {
     try {
       await cloudRuntime.deleteCloudCourse({ courseId: id, expectedUpdatedAt: deletedCourse.updated_at });
       cloudWriteCompleted = true;
-      await dbService.refreshAuthorityProjection();
+      await dbService.refreshAuthorityProjection({ module: 'courses' });
       message.success('\u4e91\u7aef\u8bfe\u7a0b\u5df2\u5220\u9664');
       loadData();
     } catch (error: any) {
@@ -239,7 +241,7 @@ const CourseList: React.FC = () => {
       // UTF-8: original finish/reopen changes only the course state, not its historical defaults.
       await cloudRuntime.updateCloudCourse({ courseId: course.id, expectedUpdatedAt: course.updated_at, active: nextActive });
       cloudWriteCompleted = true;
-      await dbService.refreshAuthorityProjection();
+      await dbService.refreshAuthorityProjection({ module: 'courses' });
       message.success(nextActive ? '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u672a\u7ed3\u8bfe' : '\u8bfe\u7a0b\u5df2\u8bbe\u4e3a\u5df2\u7ed3\u8bfe');
       loadData();
     } catch (error: any) {
@@ -296,7 +298,7 @@ const CourseList: React.FC = () => {
         acknowledgedCourseId = courseId;
       }
       cloudWriteCompleted = true;
-      await dbService.refreshAuthorityProjection();
+      await dbService.refreshAuthorityProjection({ module: 'courses' });
       syncSchedulesRoomName(values);
       message.success(editingCourse ? '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u66f4\u65b0' : '\u4e91\u7aef\u8bfe\u7a0b\u5df2\u521b\u5efa');
       return true;
@@ -329,6 +331,9 @@ const CourseList: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       const fv = form.getFieldsValue();
       if (!fv.display_name) { message.warning('请输入课程名称'); return; }
@@ -388,6 +393,9 @@ const CourseList: React.FC = () => {
       if (!error?.errorFields) message.error(error?.message === 'COURSE_ROOM_AMBIGUOUS'
         ? '\u5b58\u5728\u540c\u540d\u5730\u5740\uff0c\u8bf7\u4ece\u5217\u8868\u9009\u62e9\u5177\u4f53\u5730\u5740\u3002'
         : '\u6682\u65f6\u65e0\u6cd5\u786e\u8ba4\u4e0a\u8bfe\u5730\u5740\uff0c\u8bf7\u8054\u7f51\u5237\u65b0\u540e\u91cd\u8bd5\u3002\u7f16\u8f91\u5185\u5bb9\u5df2\u4fdd\u7559\u3002');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -477,8 +485,8 @@ const CourseList: React.FC = () => {
 
   const modalFooter = (
     <div className="data-page-layout__modal-footer">
-      <Button onClick={() => setModalVisible(false)}>取消</Button>
-      <Button type="primary" onClick={handleSubmit}>确定</Button>
+      <Button disabled={saving} onClick={() => setModalVisible(false)}>取消</Button>
+      <Button type="primary" loading={saving} onClick={handleSubmit}>{saving ? '保存中' : '确定'}</Button>
     </div>
   );
 
@@ -550,7 +558,10 @@ const CourseList: React.FC = () => {
     <Modal
       title={editingCourse ? '编辑课程' : '添加课程'}
       open={modalVisible}
-      onCancel={() => setModalVisible(false)}
+      onCancel={() => { if (!savingRef.current) setModalVisible(false); }}
+      closable={!saving}
+      maskClosable={!saving}
+      keyboard={!saving}
       footer={modalFooter}
       width={920}
       destroyOnClose

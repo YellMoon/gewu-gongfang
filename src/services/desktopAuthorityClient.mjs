@@ -58,7 +58,8 @@ export function createDesktopAuthorityClient({
   }
 
   async function submit(id, options = {}) {
-    const draft = await outbox.get(id);
+    await outbox.recoverScheduleVersion?.(id);
+    let draft = await outbox.get(id);
     if (draft.status === 'awaiting_confirmation') return undefined;
     const dependencies = courseRoomDraftDependencies(draft, await outbox.list());
     for (const dependency of dependencies) {
@@ -66,6 +67,7 @@ export function createDesktopAuthorityClient({
       await submit(dependency.id, options);
       if ((await outbox.get(dependency.id)).status !== 'completed') throw authorityClientError('AUTHORITY_DRAFT_DEPENDENCY_BLOCKED');
     }
+    if (dependencies.length && await outbox.recoverScheduleVersion?.(id)) draft = await outbox.get(id);
     if (cloudQuestionDraft(draft)) {
       return submitCloudDraft(id, draft, options, createCloudQuestionCommand, submitCloudQuestion,
         'cloud-question-authority', 'CLOUD_QUESTION_AUTHORITY_UNAVAILABLE', 'CLOUD_QUESTION_COMMAND_INVALID');
@@ -102,7 +104,16 @@ export function createDesktopAuthorityClient({
     confirmBatch: snapshots => outbox.confirmBatch(snapshots),
     confirmAndSubmit,
     get: id => outbox.get(id),
-    list: () => outbox.list(),
+    async list() {
+      const items = await outbox.list();
+      let recovered = false;
+      for (const item of items) {
+        if (item.status === 'conflict' && /^schedule\.(update|delete)\.v1$/.test(item.type) && !item.payload?.expectedVersion) {
+          if (await outbox.recoverScheduleVersion?.(item.id)) recovered = true;
+        }
+      }
+      return recovered ? outbox.list() : items;
+    },
     removeDraft: id => outbox.remove(id),
     resetDraft: id => outbox.reset(id),
     submit,

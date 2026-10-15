@@ -355,6 +355,7 @@ function createDesktopAuthorityRuntime({
         id,
         type: input.type,
         payload: JSON.parse(JSON.stringify(input.payload)),
+        ...(input.baseDraftId && /^schedule\.(update|delete)\.v1$/.test(input.type) ? { baseDraftId: String(input.baseDraftId) } : {}),
         preview: JSON.parse(JSON.stringify(input.preview || {})),
         // UTF-8: online edits auto-submit; drafts created while offline await an aggregate confirmation.
         createdOffline: editedOffline,
@@ -472,7 +473,7 @@ function createDesktopAuthorityRuntime({
             return outbox.confirmBatch(snapshots);
           },
         };
-        for (const method of ['confirm', 'markSubmitted', 'acknowledge', 'recordTransport', 'remove', 'reset']) {
+        for (const method of ['confirm', 'markSubmitted', 'acknowledge', 'recordTransport', 'remove', 'reset', 'recoverScheduleVersion']) {
           scopedOutbox[method] = async (id, ...args) => {
             await scopedOutbox.get(id);
             const result = await outbox[method](id, ...args);

@@ -17,6 +17,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   assert.deepEqual(drafts.map(x=>[x.action,x.recordId,x.baseVersion]),[['update','old',previous.updated_at]]);
   assert.equal(sameScheduleDraftContent(previous,{...previous,student_pricings:[{...previous.student_pricings[0],attendance_status:4}]}),false);
   assert.equal(sameScheduleDraftContent(previous,{...previous,calculated_tuition:120}),false);
+  const local = cache.data.schedules.find(s=>s.id==='old');
+  local._authorityDraftId='previous-submitted-update';
+  const staleUi={...local,end_time:'2026-09-07T03:00:00Z'};delete staleUi._authorityDraftId;
+  drafts=[];cache.replaceSchedules(cache.data.schedules.map(s=>s.id==='old'?staleUi:s));
+  assert.equal(drafts[0].value._authorityDraftId,'previous-submitted-update','UI snapshots must not drop local receipt lineage');
   const calendar=fs.readFileSync(path.join(__dirname,'../pages/ScheduleCalendar.tsx'),'utf8');
   const loadBlock=calendar.slice(calendar.indexOf('const loadData = () =>'),calendar.indexOf('const interval = setInterval(loadData'));
   assert(!loadBlock.includes('updated.room = course.room_name'),'display hydration must not rewrite a historical lesson address');

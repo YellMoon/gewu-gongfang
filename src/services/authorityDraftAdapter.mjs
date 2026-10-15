@@ -196,6 +196,8 @@ export function createAuthorityDraftFromLocalMutation({
   return Object.freeze({
     type: `${definition.entity}.${normalizedAction}.v1`,
     payload: Object.freeze(payload),
+    ...(definition.entity === 'schedule' && normalizedAction !== 'create' && value._authorityDraftId
+      ? { baseDraftId: requiredId(value._authorityDraftId) } : {}),
     // UTF-8: encrypted local history only; never part of a cloud mutation payload.
     ...(definition.entity === 'schedule' && normalizedAction === 'delete'
       && Object.keys(selectedFields(value, definition.fields)).length > 0

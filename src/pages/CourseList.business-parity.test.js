@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const ts = require('typescript');
 const path = require('node:path');
 (async () => {
+  const { resolveCourseRoomSelection } = await import('../services/courseRoomSelection.mjs');
   const source = ts.createSourceFile('CourseList.tsx', fs.readFileSync(path.join(__dirname, 'CourseList.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let handler, submitHandler;
   const declarations = new Map();
@@ -25,8 +26,11 @@ const path = require('node:path');
       sanitizeCourseStudentPricings: value => value, students: [], teachers: [{ id: 't1', name: '教师' }],
       rooms: [{ id: 'r1', name: '原地址' }], dbService: {},
       submitCourseToAuthority: async value => { submitted = { ...value }; return true; },
+      savingRef: { current: false }, setSaving: () => {},
       setModalVisible: () => {}, setTimeout: callback => callback(), loadData: () => {}, console,
     };
+    Object.assign(dependencies, { resolveCourseRoomSelection, navigator: { onLine: false } });
+    dependencies.dbService.getAllRooms = () => dependencies.rooms;
     await new Function(...Object.keys(dependencies), compiled)(...Object.values(dependencies))();
     assert(submitted, 'original form must reach its submission boundary');
     assert.equal(submitted.year, expected, 'editing must retain the original year when validated fields omit it');
@@ -43,8 +47,10 @@ const path = require('node:path');
       sanitizeCourseStudentPricings: v => v, students: [], teachers: [{ id: 't1', name: '教师' }], rooms,
       dbService: { addOrUpdateRoom(name) { created++; rooms.push({ id: 'room-stored', name }); }, getAllRooms: () => rooms },
       submitCourseToAuthority: async v => { submitted = { ...v }; return true; },
+      savingRef: { current: false }, setSaving: () => {},
       setModalVisible() {}, setTimeout: f => f(), loadData() {}, console: { error() {} },
     };
+    Object.assign(dependencies, { resolveCourseRoomSelection, navigator: { onLine: false } });
     await new Function(...Object.keys(dependencies), compiled)(...Object.values(dependencies))();
     assert(submitted, 'original form must accept an inline address without redirecting to another page');
     assert.equal(submitted.room_id, 'room-stored');

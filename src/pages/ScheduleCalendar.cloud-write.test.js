@@ -9,6 +9,7 @@ require('./ScheduleCalendar.render-parity.test.js');
 require('./ScheduleCalendar.sidebar-parity.test.js');
 // UTF-8: include original undo/redo persistence in the existing calendar gate.
 require('./ScheduleCalendar.history.test.js');
+require('./ScheduleCalendar.drag-conflict.test.js');
 
 const source = fs.readFileSync('src/pages/ScheduleCalendar.tsx', 'utf8');
 // UTF-8: exercise the real form's conflict/log templates with cloud UTC timestamps.

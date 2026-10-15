@@ -2,9 +2,14 @@ import { draftConfirmationSnapshot } from './authorityDraftDependencies.mjs';
 import { planDesktopAutoSync, submitSequentially } from './desktopAutoSync.mjs';
 
 const signature = items => JSON.stringify(items.map(({ id, type, payload, status }) => ({ id, type, payload, status })));
+function projectionModule(items) {
+  if (items.length && items.every(item => /^schedule\./.test(item?.type || ''))) return { module: 'schedules' };
+  if (items.length && items.every(item => /^(course|room)\./.test(item?.type || ''))) return { module: 'courses' };
+  return {};
+}
 
 // One owner serializes automatic work and the single manual/reconnect decision.
-/** @param {{bridge:any, sessionToken:()=>string, isOnline:()=>boolean, refreshProjection:(options?:{businessOnly:boolean})=>any,
+/** @param {{bridge:any, sessionToken:()=>string, isOnline:()=>boolean, refreshProjection:(options?:{businessOnly:boolean,module?:string})=>any,
  * describe?:(items:any[])=>Promise<any>, pendingAssets?:(item:any)=>boolean,
  * afterCommit?:(item:any,receipt:any,shouldContinue:()=>boolean)=>Promise<any>, checkAssets?:(items:any[])=>Promise<any>, pruneCancelledImports?:(items:any[],active:()=>boolean)=>Promise<any>}} options */
 export function createDesktopSyncController({ bridge, sessionToken, isOnline, refreshProjection,
@@ -56,7 +61,9 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
     if (active() && outcomes.some(outcome => outcome.result?.receipt?.status === 'committed')) {
       const questionCommitted = outcomes.some(outcome => outcome.result?.receipt?.status === 'committed'
         && /^question\./.test(items.find(item => item.id === outcome.id)?.type || ''));
-      try { await refreshProjection({ businessOnly: !questionCommitted }); }
+      const committed = outcomes.filter(outcome => outcome.result?.receipt?.status === 'committed')
+        .map(outcome => items.find(item => item.id === outcome.id));
+      try { await refreshProjection({ businessOnly: !questionCommitted, ...projectionModule(committed) }); }
       catch { emit({ error: 'AUTHORITY_PROJECTION_REFRESH_FAILED' }); }
     }
     return !failure;
@@ -141,7 +148,7 @@ export function createDesktopSyncController({ bridge, sessionToken, isOnline, re
         const item = state.items.find(row => row.id === id);
         await bridge.removeDraft(id);
         emit({ error: '' });
-        if (active()) { try { await refreshProjection({ businessOnly: !/^question\./.test(item?.type || '') }); } catch { /* draft removal is already durable */ } }
+        if (active()) { try { await refreshProjection({ businessOnly: !/^question\./.test(item?.type || ''), ...projectionModule([item]) }); } catch { /* draft removal is already durable */ } }
         await read();
       });
       await tick();

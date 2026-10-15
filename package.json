@@ -1,11 +1,13 @@
 {
   "name": "gewu-gongfang",
-  "version": "8.22.1",
+  "version": "8.22.2",
   "desktopBuildFlavor": "unified-desktop",
   "description": "格物工坊（综合教育平台）",
   "main": "public/electron.js",
   "homepage": ".",
   "scripts": {
+    "pretest:business-parity": "npm run test:schedule-interactions",
+    "test:schedule-interactions": "node src/pages/ScheduleCalendar.drag-conflict.test.js && node src/services/scheduleVersionRecovery.test.mjs && node src/services/businessModuleRefresh.test.js && node cloud-business-api/src/desktopProjectionScope.test.js && node src/pages/ScheduleInteraction.browser.test.cjs",
     "test:browser-cache": "node src/services/browserDatabaseQuota.test.cjs && node src/services/browserAuthorityProjectionCutover.test.js",
     "test:offline-login": "node src/services/desktopOfflineLogin.test.cjs && node public/desktopIdentityVault.test.js && node src/services/desktopIdentityClient.test.js && node src/services/desktopIdentityClient.http.test.js && node src/components/DesktopIdentityGate.test.js && node cloud-business-api/src/desktopRegistrationService.test.js && node cloud-business-api/src/cloudDesktopIdentityService.test.js && node cloud-business-api/src/cloudDesktopIdentityRoutes.test.js",
     "posttest": "npm run test:offline-login",

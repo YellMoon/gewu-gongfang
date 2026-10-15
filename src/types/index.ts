@@ -151,6 +151,8 @@ export enum ScheduleStatus {
 
 // 排课
 export interface Schedule {
+  // Local outbox lineage only; excluded from cloud business fields.
+  _authorityDraftId?: string;
   id: string;
   course_id: string;
   start_time: string;

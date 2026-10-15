@@ -79,7 +79,7 @@ interface Window {
   };
   desktopIdentitySessionProvider?: {
     businessAuthority: string;
-    listCloudBusinessProjection(): Promise<{
+    listCloudBusinessProjection(options?: { module?: 'courses' | 'schedules' }): Promise<{
       students: any[];
       student_contacts: any[];
       teachers: any[];

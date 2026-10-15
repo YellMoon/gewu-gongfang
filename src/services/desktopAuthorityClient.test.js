@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('./desktopAuthorityDependencies.test');
+import('./scheduleVersionRecovery.test.mjs').catch(error => { console.error(error); process.exitCode = 1; });
 
 (async function main() {
   const { createDesktopCommandOutbox } = await import('./desktopCommandOutbox.mjs');

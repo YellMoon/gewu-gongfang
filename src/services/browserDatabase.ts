@@ -183,7 +183,10 @@ class BrowserDatabaseService {
     minSourceVersion = 0,
     notifyConsumers = true,
     businessOnly = false,
-  }: { minSourceVersion?: number; notifyConsumers?: boolean; businessOnly?: boolean } = {}): Promise<void> {
+    module,
+  }: { minSourceVersion?: number; notifyConsumers?: boolean; businessOnly?: boolean; module?: 'courses' | 'schedules' } = {}): Promise<void> {
+    if (module !== undefined && !['courses', 'schedules'].includes(module)) throw new Error('DESKTOP_CLOUD_PROJECTION_MODULE_INVALID');
+    if (module) businessOnly = true;
     const identity = readCurrentDesktopIdentityContext();
     const partition = this.partitionKey;
     const cloudProvider = window.desktopIdentitySessionProvider;
@@ -200,7 +203,7 @@ class BrowserDatabaseService {
     }
     {
       const [payload, questionResponse] = await Promise.all([
-        cloudProvider.listCloudBusinessProjection(),
+        module ? cloudProvider.listCloudBusinessProjection({ module }) : cloudProvider.listCloudBusinessProjection(),
         businessOnly ? this.data.questions : cloudProvider.listCloudQuestions(),
       ]);
       // Preserve drafts saved while the network projection request was in flight.
@@ -227,7 +230,11 @@ class BrowserDatabaseService {
           userId: readCurrentDesktopIdentityContext()?.userId || '',
           role: readCurrentDesktopIdentityContext()?.activeRole || '',
           sourceVersion: Math.max(0, Number(minSourceVersion) || 0),
-          payload: { ...payload, questions: cloudQuestions },
+          payload: {
+            ...(module ? { ...this.data, ...Object.fromEntries((module === 'courses' ? ['courses', 'rooms'] as const : ['schedules'] as const)
+              .map(key => { if (!Array.isArray(payload[key])) throw new Error('DESKTOP_CLOUD_PROJECTION_RESPONSE_INVALID'); return [key, payload[key]]; })) } : payload),
+            questions: cloudQuestions,
+          },
         },
         outbox,
         localOnly: {
@@ -490,7 +497,11 @@ class BrowserDatabaseService {
           code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
         });
       }
-      window.desktopAuthority.appendDraftSync(captureDesktopCloudDraftConnectivity(draft));
+      const captured = window.desktopAuthority.appendDraftSync(captureDesktopCloudDraftConnectivity(draft));
+      if (collection === 'schedules' && captured?.id) {
+        const row = this.data.schedules.find(row => row.id === recordId);
+        if (row) Object.assign(row, { _authorityDraftId: captured.id });
+      }
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
     window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
@@ -518,7 +529,12 @@ class BrowserDatabaseService {
           code: 'DESKTOP_AUTHORITY_BRIDGE_UNAVAILABLE',
         });
       }
-      window.desktopAuthority.appendDraftBatchSync(drafts.map(captureDesktopCloudDraftConnectivity));
+      const captured = window.desktopAuthority.appendDraftBatchSync(drafts.map(captureDesktopCloudDraftConnectivity));
+      changes.forEach((change, index) => {
+        if (change.collection !== 'schedules' || !captured?.[index]?.id) return;
+        const row = this.data.schedules.find(row => row.id === change.recordId);
+        if (row) Object.assign(row, { _authorityDraftId: captured[index].id });
+      });
     }, (restored: Database) => this.restoreAuthorityCacheCheckpoint(restored));
     window.dispatchEvent(new Event('desktop-authority-drafts-changed'));
   }
@@ -1327,6 +1343,7 @@ class BrowserDatabaseService {
       .filter(s => s?.id)
       .map(s => ({
         ...s,
+        ...(previousById.get(s.id)?._authorityDraftId ? { _authorityDraftId: previousById.get(s.id)!._authorityDraftId } : {}),
         created_at: s.created_at || previousById.get(s.id)?.created_at || now,
         updated_at: s.updated_at || previousById.get(s.id)?.updated_at || now
       } as Schedule));

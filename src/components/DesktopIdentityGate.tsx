@@ -240,10 +240,11 @@ const DesktopIdentityGate: React.FC = () => {
               currentSession,
             });
           },
-          listCloudBusinessProjection: async () => {
+          listCloudBusinessProjection: async (options = {}) => {
             const currentSession = onlineSessionRef.current;
             if (!currentSession) throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
             return client.listCloudBusinessProjection({
+              ...options,
               baseUrl: identityBaseUrl,
               currentSession,
             });
