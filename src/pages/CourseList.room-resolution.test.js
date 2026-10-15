@@ -11,6 +11,7 @@ const {load}=require('./CourseList.active-parity.test');
       addOrUpdateRoom:()=>{created++;throw Error('DUPLICATE_ADDRESS_CREATED');}};
     const errors=[];
     const deps={form:{getFieldsValue:()=>values,validateFields:async()=>structuredClone(values)},dbService,rooms,
+      savingRef:{current:false},setSaving(){},
       editingCourse,teachers:[{id:'teacher',name:'Teacher'}],students:[],CourseSourceType:{INSTITUTION:2,MIXED:3},
       sanitizeCourseStudentPricings:x=>x,getColorForRoom:()=>null,
       submitCourseToAuthority:async value=>{saved=value;return true;},setModalVisible(){},setTimeout(){},loadData(){},
