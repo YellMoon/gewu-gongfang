@@ -2186,6 +2186,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
               <Form.Item name="startTime" label="开始时间">
                 <TimePicker
                   format="HH:mm"
+                  minuteStep={5}
                   style={{ width: '100%' }}
                   onChange={(time) => {
                     if (time) {

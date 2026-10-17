@@ -11,6 +11,8 @@ function declarations(file) {
   function visit(n) {
     if (ts.isFunctionDeclaration(n) && n.name) found[n.name.text] = n.getText(ast);
     if (ts.isVariableDeclaration(n) && n.initializer) found[n.name.getText(ast)] = n.initializer.getText(ast);
+    if (ts.isJsxElement(n) && n.openingElement.tagName.getText(ast) === 'Form.Item'
+      && n.openingElement.attributes.properties.some(p => p.name?.text === 'name' && p.initializer?.text === 'startTime')) found.startTimeField = n.getText(ast);
     ts.forEachChild(n, visit);
   }
   visit(ast); return found;
@@ -27,7 +29,7 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
     await page.route('http://regression.test/', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<html lang="zh-CN"><head><meta charset="UTF-8"><title>Schedule interaction regression</title></head><body><div id="root"></div></body></html>' }));
     await page.goto('http://regression.test/');
     for (const file of ['react/umd/react.production.min.js','react-dom/umd/react-dom.production.min.js','dayjs/dayjs.min.js','dayjs/plugin/isoWeek.js','antd/dist/antd.min.js']) await page.addScriptTag({ path: path.join(root, 'node_modules', file) });
-    await page.evaluate(({ calendar, handlers }) => {
+    await page.evaluate(({ calendar, handlers, startField }) => {
       const React = window.React, dayjs = window.dayjs; dayjs.extend(window.dayjs_plugin_isoWeek);
       const env = { React, dayjs, ...React, Dropdown: window.antd.Dropdown, holidays2026: [],
         ScheduleStatus: { PLANNED: 1, CANCELLED: 3, LEAVE: 4 }, DEFAULT_COURSE_COLOR: '#1890ff',
@@ -57,12 +59,13 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
           onDoubleClickDate: actions.handleDoubleClickDate, onDoubleClickSchedule: actions.handleDoubleClickSchedule, onScheduleStatusChange() {}, onDropCourse() {} }),
           React.createElement(window.antd.Modal, { title: 'Schedule editor', open, onCancel: window.closeSchedule, footer: null },
             React.createElement(window.antd.Form, { form },
-              React.createElement(window.antd.Form.Item, { name: 'startTime', label: 'Start time' }, React.createElement(window.antd.TimePicker, { format: 'HH:mm' })),
+              new Function('React', 'Form', 'TimePicker', 'form', 'DEFAULT_DURATION_HOURS', startField)(React, window.antd.Form, window.antd.TimePicker, form, 2),
               React.createElement(window.antd.Form.Item, { name: 'endTime', label: 'End time' }, React.createElement(window.antd.TimePicker, { format: 'HH:mm' })))));
       }
       window.fixtureRoot = window.ReactDOM.createRoot(document.getElementById('root'));
       window.fixtureRoot.render(React.createElement(App));
-    }, { calendar, handlers: compile(['slotToTime','checkOverlap','handleDragSchedule','handleResizeSchedule','handleDoubleClickDate','handleDoubleClickSchedule'].map(name => schedule[name]).join('\n')) });
+    }, { calendar, handlers: compile(['slotToTime','checkOverlap','handleDragSchedule','handleResizeSchedule','handleDoubleClickDate','handleDoubleClickSchedule'].map(name => schedule[name]).join('\n')),
+      startField: compile('return (' + schedule.startTimeField + ');') });
     const card = page.locator('[data-schedule-id="original"]');
     await card.waitFor();
     assert.equal(await page.title(), 'Schedule interaction regression');
@@ -109,6 +112,14 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
     assert.equal(await page.evaluate(() => window.writes.length), 0, 'opening any modal never persists a schedule');
     await page.waitForTimeout(350);
     await page.screenshot({ path: path.join(out, 'blank-double-click-time.png'), animations: 'disabled' });
+    await page.locator('#startTime').click();
+    const minuteOptions = page.locator('.ant-picker-dropdown:visible .ant-picker-time-panel-column').nth(1).locator('.ant-picker-time-panel-cell-inner');
+    await minuteOptions.first().waitFor();
+    assert.deepEqual(await minuteOptions.allTextContents(), ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55']);
+    await minuteOptions.filter({ hasText: /^25$/ }).click();
+    await page.getByRole('button', { name: 'OK', exact: true }).click();
+    assert.equal(await page.locator('#startTime').inputValue(), '09:25');
+    assert.equal(await page.locator('#endTime').inputValue(), '11:25', 'choosing a five-minute option updates the end time');
     await page.evaluate(() => window.closeSchedule());
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     const box = await card.boundingBox(), body = await page.locator('[data-date="2026-10-15"] [data-day-body]').boundingBox();
@@ -185,7 +196,7 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
     assert.equal(await page.evaluate(() => window.fixtureClosed), 1);
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(out, 'checks.json'), JSON.stringify({ browser: 'Chrome/Playwright', reason: 'Browser plugin not available', url: 'http://regression.test/', viewport: '1280x900',
-      cardPressStable: true, bodyAndEdgeDoubleClick: true, secondPressJitter: true, blankTime: '09:35', earlyTime: '07:15', scrolledTime: '22:00',
+      cardPressStable: true, bodyAndEdgeDoubleClick: true, secondPressJitter: true, blankTime: '09:35', earlyTime: '07:15', scrolledTime: '22:00', startMinuteStep: 5,
       heldDragWrites: 0, validDropWrites: 1, rejectedCopyWrites: 0, repeatedClicksRequests: 1, errors }, null, 2), 'utf8');
     console.log('rendered calendar click stability, card/blank double-click time filling, held-drag/drop/copy and course single-flight save checks passed; evidence: ' + out);
   } finally { await browser.close(); }
