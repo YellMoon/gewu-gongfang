@@ -150,7 +150,7 @@ interface DailyViewProps {
   flashToggle?: boolean;
   courseColorMap?: Record<string, string>;
   highlightedDate?: Dayjs | null;
-  onDoubleClickDate: (day: Dayjs) => void;
+  onDoubleClickDate: (day: Dayjs, slot?: number) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
   onDropCourse: (course: Course, day: Dayjs, slot: number) => void;
@@ -207,6 +207,7 @@ const DailyView: React.FC<DailyViewProps> = ({
     ghostVisible: boolean;
   } | null>(null);
   const dayBodyRef = useRef<HTMLDivElement>(null);
+  const pendingDragRef = useRef<typeof dragState>(null);
   const dragStartPosRef = useRef<{ x: number, y: number } | null>(null);
   const hasDraggedRef = useRef(false);
 
@@ -340,8 +341,9 @@ const DailyView: React.FC<DailyViewProps> = ({
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    
-    const rect = e.currentTarget.getBoundingClientRect();
+    // The second press belongs to a double click, even with small pointer jitter.
+    if (e.detail > 1) return;
+
     dragStartPosRef.current = { x: e.clientX, y: e.clientY };
     hasDraggedRef.current = false;
     
@@ -352,33 +354,35 @@ const DailyView: React.FC<DailyViewProps> = ({
     
     // 鈶?鍗曞嚮鏃朵笉鏄剧ず铏氬奖锛実hostVisible=false锛岀瓑榧犳爣绉诲姩瓒呰繃闃堝€兼墠鏄剧ず
     if (hitZone === 'top') {
-      setDragState({ type: 'resize-top', schedule, startSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false });
+      pendingDragRef.current = { type: 'resize-top', schedule, startSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false };
     } else if (hitZone === 'bottom') {
-      setDragState({ type: 'resize-bottom', schedule, startSlot: endSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false });
+      pendingDragRef.current = { type: 'resize-bottom', schedule, startSlot: endSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false };
     } else {
-      setDragState({ type: 'move', schedule, startSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false });
+      pendingDragRef.current = { type: 'move', schedule, startSlot, endSlot, startY: e.clientY, currentY: e.clientY, currentX: e.clientX, ctrlKey: e.ctrlKey, ghostVisible: false };
     }
   }, []);
 
   React.useEffect(() => {
-    if (!dragState) return;
-    
     const handleMouseMove = (moveEvent: MouseEvent) => {
+      const pending = pendingDragRef.current;
+      if (!pending) return;
       if (dragStartPosRef.current && !hasDraggedRef.current) {
         const dx = Math.abs(moveEvent.clientX - dragStartPosRef.current.x);
         const dy = Math.abs(moveEvent.clientY - dragStartPosRef.current.y);
-        if (dx > 3 || dy > 3) {
+        if (Math.hypot(dx, dy) >= 6) {
           hasDraggedRef.current = true;
         }
       }
       
-      setDragState(prev => {
-        if (!prev) return null;
-        return { ...prev, currentY: moveEvent.clientY, currentX: moveEvent.clientX, ctrlKey: moveEvent.ctrlKey, ghostVisible: prev.ghostVisible || hasDraggedRef.current };
-      });
+      if (!hasDraggedRef.current) return;
+      const active = { ...pending, currentY: moveEvent.clientY, currentX: moveEvent.clientX, ctrlKey: moveEvent.ctrlKey, ghostVisible: true };
+      pendingDragRef.current = active;
+      setDragState(active);
     };
     
     const handleMouseUp = (upEvent: MouseEvent) => {
+      const dragState = pendingDragRef.current;
+      if (!dragState) return;
       if (hasDraggedRef.current && dragState && dayBodyRef.current) {
         
         // 鈶?妫€娴嬮紶鏍囨墍鍦ㄦ棩鏈熷垪锛堟敮鎸佽法鏃ユ湡銆佽法鍛ㄦ嫋鎷斤級
@@ -444,17 +448,25 @@ const DailyView: React.FC<DailyViewProps> = ({
       }
       
       setDragState(null);
+      pendingDragRef.current = null;
       dragStartPosRef.current = null;
+    };
+    const cancelDrag = () => {
+      pendingDragRef.current = null;
+      dragStartPosRef.current = null;
+      setDragState(null);
     };
     
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('blur', cancelDrag);
     
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('blur', cancelDrag);
     };
-  }, [dragState, day, maxEndSlot, onDragSchedule, onResizeSchedule]);
+  }, [day, minStartSlot, maxEndSlot, onDragSchedule, onResizeSchedule]);
 
   const handleScheduleClick = useCallback((e: React.MouseEvent, schedule: ScheduleEvent) => {
     if (hasDraggedRef.current) {
@@ -549,6 +561,12 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
+        onDoubleClick={(e) => {
+          if ((e.target as HTMLElement).closest('[data-course-card]')) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const slot = Math.max(minStartSlot, Math.min(pointerYToSlot(e.clientY - rect.top), GLOBAL_MAX_SLOT - 1));
+          onDoubleClickDate(day, slot);
+        }}
       >
         {/* 时间格子线：动态最早时间作为表格起点，避免早于 8 点的课程压进日期表头 */}
         {Array.from({ length: Math.ceil((maxEndSlot - minStartSlot) / 12) + 1 }).map((_, slotIdx) => {
@@ -861,7 +879,7 @@ interface TwoWeeksViewProps {
   flashingIds?: string[];
   flashToggle?: boolean;
   highlightedDate?: Dayjs | null;
-  onDoubleClickDate: (day: Dayjs) => void;
+  onDoubleClickDate: (day: Dayjs, slot?: number) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
   onDropCourse: (course: Course, day: Dayjs, slot: number) => void;
@@ -885,7 +903,7 @@ const OneWeekRow: React.FC<{
   flashingIds?: string[];
   flashToggle?: boolean;
   highlightedDate?: Dayjs | null;
-  onDoubleClickDate: (day: Dayjs) => void;
+  onDoubleClickDate: (day: Dayjs, slot?: number) => void;
   onDoubleClickSchedule: (schedule: ScheduleEvent) => void;
   onScheduleStatusChange: (id: string, status: ScheduleStatus) => void;
   onDropCourse: (course: Course, day: Dayjs, slot: number) => void;
@@ -1471,11 +1489,20 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     }
   }, [schedules, rooms, setBatchSchedules, setBatchRooms]);
 
-  function handleDoubleClickDate(day: Dayjs) {
+  function handleDoubleClickDate(day: Dayjs, slot?: number) {
     setEditingSchedule(null);
     form.resetFields();
     setModalTeacherId(undefined);
     form.setFieldValue('date', day);
+    if (slot !== undefined) {
+      const { hour, minute } = slotToTime(slot);
+      const startTime = day.hour(hour).minute(minute).second(0).millisecond(0);
+      form.setFieldsValue({
+        startTime,
+        endTime: startTime.add(DEFAULT_DURATION_HOURS, 'hour'),
+        duration: DEFAULT_DURATION_HOURS,
+      });
+    }
     setBatchDates([day]);
     setModalVisible(true);
   }
