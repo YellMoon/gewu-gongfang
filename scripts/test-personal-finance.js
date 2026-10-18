@@ -6,7 +6,7 @@ const tests = [
   'cloud-business-api/src/personalFinanceRoutes.test.js', 'cloud-business-api/sql/personal-finance.postgres.test.js',
   'cloud-business-api/src/billSourceArchive.test.js', 'cloud-business-api/src/billMailbox.test.js', 'cloud-business-api/src/billImapMailbox.test.js',
   'cloud-business-api/src/personalFinanceIntegration.test.js', 'src/services/personalFinanceClient.test.mjs',
-  'src/components/PersonalFinancePanel.runtime.test.js',
+  'src/components/PersonalFinancePanel.runtime.test.js', 'src/services/billMailboxMonitor.test.mjs', 'src/components/DesktopBillMailbox.browser.test.cjs', 'cloud-business-api/src/wechatBillDownload.test.js',
   'miniapp/src/utils/personalFinanceTransport.test.js', 'miniapp/src/components/PersonalFinanceSummary.runtime.test.js',
   'miniapp/src/components/QuestionBasketOverlay.runtime.test.js',
   'miniapp/src/utils/permissionConcurrentRuntime.test.js', 'miniapp/src/pages/schedule/orientationRuntime.test.js',

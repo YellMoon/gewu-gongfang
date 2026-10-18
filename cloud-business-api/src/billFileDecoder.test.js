@@ -121,3 +121,16 @@ test('Excel numeric money cannot pretend to have cent precision at huge magnitud
   assert.equal(r.records.length,0);
   assert.equal(r.errors[0].code,'BILL_EXCEL_NUMBER_PRECISION');
 });
+
+test('encrypted ZIP accepts per-file passwords for both ZipCrypto and AES without leaking secrets',async()=>{
+ const {ZipWriter,Uint8ArrayWriter,TextReader}=await import('@zip.js/zip.js');
+ for(const zipCrypto of [true,false]){
+  const writer=new ZipWriter(new Uint8ArrayWriter(),{useWebWorkers:false});
+  await writer.add('bill.csv',new TextReader(canonical),{password:'synthetic-zip-password',zipCrypto,useWebWorkers:false});
+  const bytes=await writer.close(),input=file('encrypted.zip',bytes);
+  assert.equal((await parseBillFile(input)).errors[0].code,'BILL_ZIP_ENCRYPTED');
+  const wrong=await parseBillFile({...input,password:'wrong-password'});assert.equal(wrong.errors[0].code,'BILL_ZIP_PASSWORD_INVALID');
+  const valid=await parseBillFile({...input,password:'synthetic-zip-password'});assert.equal(valid.errors.length,0,JSON.stringify(valid.errors));assert.equal(valid.records[0].amountMinor,'125');
+  assert.equal(valid.fileHash,crypto.createHash('sha256').update(bytes).digest('hex'));assert(!JSON.stringify(valid).includes('synthetic-zip-password'));
+ }
+});

@@ -5,10 +5,10 @@ const { describeOperation, safeDetail } = require('./operationAudit');
 const { createCloudBusinessApp } = require('./app');
 test('both finance surfaces participate in durable audit with source and credentials redacted', () => {
   for (const surface of ['personal-finance', 'miniapp-personal-finance']) {
-    const operation = describeOperation({ method: 'POST', path: `/api/business/${surface}/imports`, body: { filename: 'statement.csv', base64: 'private', apiKey: 'secret', financialAccountId: 'a' } });
+    const operation = describeOperation({ method: 'POST', path: `/api/business/${surface}/imports`, body: { filename: 'statement.csv', base64: 'private', apiKey: 'secret', password:'synthetic-archive-password', financialAccountId: 'a' } });
     assert.ok(operation);
     assert.equal(operation.miniapp, surface.startsWith('miniapp'));
-    assert.equal(operation.detail.request.base64, '[redacted]');
+    assert.equal(operation.detail.request.base64, '[redacted]');assert.equal(operation.detail.request.password,'[redacted]');
   }
   assert.equal(safeDetail({ apiKey: 'secret' }).apiKey, '[redacted]');
 });

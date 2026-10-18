@@ -23,7 +23,7 @@ function decodeText(buffer) {
   }
 }
 // Read the central directory before invoking any decompressor, including workbook readers.
-function inspectZip(buffer, maxEntries) {
+function inspectZip(buffer, maxEntries, password) {
   let end = -1;
   for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 65557); offset -= 1) {
     if (buffer.readUInt32LE(offset) === 0x06054b50 && offset + 22 + buffer.readUInt16LE(offset + 20) === buffer.length) { end = offset; break; }
@@ -33,7 +33,7 @@ function inspectZip(buffer, maxEntries) {
   if (buffer.readUInt16LE(end + 4) || buffer.readUInt16LE(end + 6) || count === 65535 || size === 0xffffffff || start === 0xffffffff) fail('BILL_ZIP_UNSUPPORTED','不支持分卷或 ZIP64，请拆分导出');
   if (count > maxEntries) fail('BILL_ZIP_ENTRY_LIMIT',`ZIP 条目超过 ${maxEntries} 个`);
   if (start + size !== end) fail('BILL_ZIP_INVALID','ZIP 中央目录边界无效');
-  let cursor = start, total = 0; const names = new Set();
+  let cursor = start, total = 0, encrypted = false; const names = new Set();
   for (let i = 0; i < count; i += 1) {
     if (cursor + 46 > end || buffer.readUInt32LE(cursor) !== 0x02014b50) fail('BILL_ZIP_INVALID','ZIP 条目无效');
     const flags = buffer.readUInt16LE(cursor + 8), method = buffer.readUInt16LE(cursor + 10), compressed = buffer.readUInt32LE(cursor + 20), expanded = buffer.readUInt32LE(cursor + 24);
@@ -43,13 +43,14 @@ function inspectZip(buffer, maxEntries) {
     const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString('utf8');
     if (!name || /(^\/|^[a-z]:|\\|\x00|(?:^|\/)\.\.(?:\/|$))/i.test(name) || names.has(name)) fail('BILL_ZIP_PATH_INVALID','ZIP 内含不安全或重复路径');
     names.add(name);
-    if (flags & 1) fail('BILL_ZIP_ENCRYPTED','ZIP 已加密，请在本地解密后重新导入并人工核验');
-    if (![0,8].includes(method)) fail('BILL_ZIP_UNSUPPORTED','ZIP 压缩方式不支持，请使用 STORE/DEFLATE');
+    if (flags & 1) { encrypted = true; if (!password) fail('BILL_ZIP_ENCRYPTED','请输入这份账单的解压密码'); }
+    if (![0,8].includes(method) && !(flags & 1 && method === 99)) fail('BILL_ZIP_UNSUPPORTED','ZIP 压缩方式不支持，请使用 STORE/DEFLATE');
     total += expanded;
     if (expanded > LIMITS.entryBytes || total > LIMITS.expandedBytes || (expanded > 1024 * 1024 && expanded / Math.max(compressed,1) > LIMITS.expansionRatio)) fail('BILL_ZIP_EXPANSION_LIMIT','ZIP 解压尺寸或膨胀比例超限，请拆分文件');
     cursor = finish;
   }
   if (cursor !== end) fail('BILL_ZIP_INVALID','ZIP 条目计数与中央目录不一致');
+  return encrypted;
 }
 async function boundedEntry(entry, budget) {
   return new Promise((resolve, reject) => {
@@ -62,8 +63,31 @@ async function boundedEntry(entry, budget) {
     }).on('error', reject).on('end', () => { budget.total += length; resolve(Buffer.concat(chunks)); }).resume();
   });
 }
-async function unpack(buffer, maxEntries, budget) {
-  inspectZip(buffer,maxEntries);
+async function unpack(buffer, maxEntries, budget, password) {
+  const encrypted = inspectZip(buffer,maxEntries,password);
+  if (encrypted) {
+    const { ZipReader, Uint8ArrayReader } = await import('@zip.js/zip.js');
+    const reader = new ZipReader(new Uint8ArrayReader(buffer), { useWebWorkers:false });
+    try {
+      const entries = [], names = new Set();
+      for (const entry of await reader.getEntries()) {
+        if (entry.directory) continue;
+        const name = entry.filename;
+        if (!name || /(^\/|^[a-z]:|\\|\x00|(?:^|\/)\.\.(?:\/|$))/i.test(name) || names.has(name)) fail('BILL_ZIP_PATH_INVALID','ZIP 路径无效');
+        names.add(name); const chunks = []; let length = 0;
+        await entry.getData(new WritableStream({ write(chunk) {
+          length += chunk.length;
+          if (length > LIMITS.entryBytes || budget.total + length > LIMITS.expandedBytes) fail('BILL_ZIP_EXPANSION_LIMIT','ZIP 实际解压尺寸超限');
+          chunks.push(Buffer.from(chunk));
+        } }), { password, checkCrc32:true, useWebWorkers:false });
+        budget.total += length; entries.push({name,buffer:Buffer.concat(chunks,length)});
+      }
+      return entries;
+    } catch (error) {
+      if (/password|signature|crc/i.test(error.message || '') && !error.code) fail('BILL_ZIP_PASSWORD_INVALID','解压密码不正确或文件已损坏，请核对这份文件的密码');
+      throw error;
+    } finally { await reader.close(); }
+  }
   const zip = await require('jszip').loadAsync(buffer);
   const entries = [];
   for (const entry of Object.values(zip.files)) {
@@ -160,12 +184,12 @@ async function pdfTable(buffer,filename,fieldMapping) {
     throw error;
   } finally { await task.destroy(); }
 }
-async function decode(buffer,filename,fieldMapping,budget,depth = 0) {
+async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
   const extension = path.extname(filename).toLowerCase();
   if (!SUPPORTED.has(extension)) fail('BILL_FILE_UNSUPPORTED','支持 CSV/TXT、XLS/XLSX、ZIP、文本 PDF、HTML；请先导出支持的格式');
   if (extension === '.zip') {
     if (depth) fail('BILL_ZIP_NESTED_UNSUPPORTED','不支持嵌套 ZIP，请先在本地展开');
-    const entries = await unpack(buffer,LIMITS.archiveEntries,budget), result = empty();
+    const entries = await unpack(buffer,LIMITS.archiveEntries,budget,password), result = empty();
     for (const entry of entries) {
       if (!SUPPORTED.has(path.extname(entry.name).toLowerCase())) { result.errors.push(issue('BILL_ZIP_ENTRY_UNSUPPORTED',`[${entry.name}] ZIP 内含不支持的文件`)); continue; }
       try { merge(result,await decode(entry.buffer,entry.name,fieldMapping,budget,depth + 1),entry.name); }
@@ -194,9 +218,10 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0) {
   return parseBillCsv(decodeText(buffer),{filename,fieldMapping});
 }
 let activeWorkers = 0;
-async function parseBillFile({filename,base64,buffer,fieldMapping} = {}) {
+async function parseBillFile({filename,base64,buffer,fieldMapping,password} = {}) {
   const result = empty(); let bytes;
   try {
+    if (password !== undefined && (typeof password !== 'string' || password.length > 256)) fail('BILL_PASSWORD_INVALID','解压密码格式无效');
     if (typeof filename !== 'string' || !filename || filename.length > 512) fail('BILL_FILENAME_INVALID','文件名无效');
     if (buffer !== undefined) {
       if (base64 !== undefined || !(Buffer.isBuffer(buffer) || buffer instanceof Uint8Array)) fail('BILL_BUFFER_INVALID','请提供一个 Buffer/Uint8Array 或 base64 来源');
@@ -217,7 +242,7 @@ async function parseBillFile({filename,base64,buffer,fieldMapping} = {}) {
     try {
       const parsed = await new Promise((resolve,reject) => {
         let settled = false;
-        const worker = new Worker(__filename,{workerData:{billDecode:true,bytes,filename,fieldMapping},resourceLimits:{maxOldGenerationSizeMb:256,maxYoungGenerationSizeMb:32}});
+        const worker = new Worker(__filename,{workerData:{billDecode:true,bytes,filename,fieldMapping,password},resourceLimits:{maxOldGenerationSizeMb:256,maxYoungGenerationSizeMb:32}});
         const timer = setTimeout(() => { settled = true; worker.terminate(); reject(Object.assign(new Error('解析超时，请拆分文件或人工核验'),{code:'BILL_DECODE_TIMEOUT'})); },LIMITS.timeoutMs);
         worker.once('message',message => { settled = true; clearTimeout(timer); worker.terminate(); resolve(message); });
         worker.once('error',error => { settled = true; clearTimeout(timer); reject(error); });
@@ -228,7 +253,7 @@ async function parseBillFile({filename,base64,buffer,fieldMapping} = {}) {
   } catch (error) { result.errors.push(issue(error.code || 'BILL_FILE_DECODE_FAILED',error.message || '文件解析失败')); return result; }
 }
 if (!isMainThread && workerData?.billDecode) {
-  decode(Buffer.from(workerData.bytes),workerData.filename,workerData.fieldMapping,{total:0}).then(result => parentPort.postMessage(result)).catch(error => {
+  decode(Buffer.from(workerData.bytes),workerData.filename,workerData.fieldMapping,{total:0},0,workerData.password).then(result => parentPort.postMessage(result)).catch(error => {
     const result = empty(); result.errors.push(issue(error.code || 'BILL_FILE_DECODE_FAILED',error.message || '文件解析失败')); parentPort.postMessage(result);
   });
 }

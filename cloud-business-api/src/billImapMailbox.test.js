@@ -56,3 +56,17 @@ test('late download after the deadline is destroyed and never starts parsing',as
  assert.equal(parsed,0,'a timed-out request must never start a later parser');
  assert.equal(content.destroyed,true,'late returned streams must be discarded');
 });
+
+test('body-only WeChat mails and normal Alipay attachments are both counted and retained',async()=>{
+ const {findWechatBillLinks}=require('./wechatBillDownload');const url='https://tenpay.wechatpay.cn/userroll/userbilldownload/downloadfilefromemail?token=synthetic';
+ const structures={1:{childNodes:[{part:'1',type:'text/html',size:100}]},2:{childNodes:[{part:'2',disposition:'attachment',dispositionParameters:{filename:'alipay.zip'},size:4}]}};
+ const client={mailbox:{uidValidity:123},on(){},connect:async()=>{},getMailboxLock:async()=>({release(){}}),search:async()=>[1,2],async *fetch(range){assert.equal(range,'1,2');for(const uid of [1,2])yield{uid,bodyStructure:structures[uid],envelope:{subject:'synthetic '+uid,from:[{address:'fixture@example.test'}]}};},fetchOne:async(uid,query)=>query.bodyParts?{bodyParts:new Map([['1',Buffer.from('<a href="'+url+'">download</a>')]])}:{uid:Number(uid),bodyStructure:structures[uid]},download:async()=>({content:Readable.from([Buffer.from('csv')])}),close(){}};
+ const mail=createImapBillMailbox({ownerAccountId:'owner',inboxId:'bill@example.test',apiKey:'secret',clientFactory:()=>client,parseBillFile:async source=>({records:[],errors:[{code:'BILL_ZIP_ENCRYPTED'}],warnings:[],fileHash:'synthetic'}),fetch:async()=>new Response(Buffer.from('PK\x03\x04synthetic'))});
+ const r=await mail.check({actor});assert.equal(r.messageCount,2);assert.equal(r.mailboxTotal,2);assert.equal(r.attachments.length,2);const link=r.attachments.find(a=>a.source==='wechat-download-link');assert.equal(link.subject,'synthetic 1');assert.equal(link.attachmentId,findWechatBillLinks(url)[0].id);assert(!JSON.stringify(r).includes('?token='));const source=await mail.getAttachment({actor,messageId:link.messageId,attachmentId:link.attachmentId});assert.match(source.filename,/\.zip$/);await assert.rejects(mail.getAttachment({actor,messageId:link.messageId,attachmentId:'link:'+'0'.repeat(64)}),/NOT_FOUND/);
+});
+
+test('AgentMail unsupported MIME-header fetch falls back to a bounded raw body read',async()=>{
+ const body=Buffer.from('synthetic,bill');const structure={childNodes:[{part:'2',disposition:'attachment',dispositionParameters:{filename:'alipay.csv'},encoding:'base64',size:64}]};let bodyReads=0;
+ const client={mailbox:{uidValidity:123},on(){},connect:async()=>{},getMailboxLock:async()=>({release(){}}),close(){},download:async()=>{throw Object.assign(Error('Command failed'),{responseText:'FETCH: unsupported BODY section: 2.MIME in BODY.PEEK[2.MIME]'});},fetchOne:async(_,query)=>{if(query.bodyParts){bodyReads++;assert(query.bodyParts[0].maxLength<40*1024*1024);return{bodyParts:new Map([['2',Buffer.from(body.toString('base64'))]])};}return{bodyStructure:structure};}};
+ const mail=createImapBillMailbox({ownerAccountId:'owner',inboxId:'bill@example.test',apiKey:'secret',clientFactory:()=>client,parseBillFile:async()=>({})});const r=await mail.getAttachment({actor,messageId:'imap:123:1',attachmentId:'part:2'});assert.equal(bodyReads,1);assert.equal(r.buffer.toString(),body.toString());
+});

@@ -19,13 +19,13 @@ function registerBillMailboxRoutes({ app, mailbox, finance, tenantId, desktopCon
   };
   app.get(prefix, run(async (_, actor) => ({ mailbox: mailbox.status({ actor }) })));
   app.post(prefix + '/check', run(async (req, actor) => ({ mailbox: await mailbox.check({ actor, ...body(req, ['pageToken']) }) })));
-  app.post(prefix + '/preview', run(async (req, actor) => ({ preview: await mailbox.previewAttachment({ actor, ...body(req, ['messageId', 'attachmentId']) }) })));
+  app.post(prefix + '/preview', run(async (req, actor) => ({ preview: await mailbox.previewAttachment({ actor, ...body(req, ['messageId', 'attachmentId', 'password','expectedFileHash']) }) })));
   app.post(prefix + '/import', run(async (req, actor) => {
-    const input = body(req, ['messageId', 'attachmentId', 'financialAccountId', 'expectedRevision', 'fieldMapping']);
+    const input = body(req, ['messageId', 'attachmentId', 'financialAccountId', 'expectedRevision', 'fieldMapping','password','expectedFileHash']);
     const key = req.get('x-idempotency-key');
     if (!key || !input.financialAccountId) throw Object.assign(new Error('BILL_MAIL_INPUT_INVALID'), { code: 'BILL_MAIL_INPUT_INVALID' });
     const source = await mailbox.getAttachment({ actor, messageId: input.messageId, attachmentId: input.attachmentId });
-    return { receipt: await finance.import({ tenantId, actor, filename: source.filename, base64: source.buffer.toString('base64'), financialAccountId: input.financialAccountId, expectedRevision: input.expectedRevision, fieldMapping: input.fieldMapping, idempotencyKey: key }) };
+    return { receipt: await finance.import({ tenantId, actor, filename: source.filename, base64: source.buffer.toString('base64'), financialAccountId: input.financialAccountId, expectedRevision: input.expectedRevision, fieldMapping: input.fieldMapping, password: input.password, expectedFileHash: input.expectedFileHash, idempotencyKey: key }) };
   }));
 }
 module.exports = { registerBillMailboxRoutes };

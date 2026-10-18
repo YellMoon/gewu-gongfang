@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceMailboxUnlock": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "Deploy the cloud addition before desktop startup mailbox detection and per-file password UI. Mailbox reads remain owner-scoped and read-only; WeChat links are resolved only from the authorized message and fetched from the exact official HTTPS host/path without redirects. Optional password and expectedFileHash fields preserve legacy callers; passwords are ephemeral, excluded from audit and persistence, and each batch item binds message, attachment, account and reviewed source hash before explicit confirmation. Miniapp CSV import and NAS storage contracts remain unchanged."
+    },
     "desktopBusinessModuleProjection": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

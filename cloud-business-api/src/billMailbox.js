@@ -1,4 +1,5 @@
 'use strict';
+const {findWechatBillLinks,downloadWechatBill}=require('./wechatBillDownload');
 const fail = code => Object.assign(new Error(code), { code });
 function createBillMailbox({ ownerAccountId, inboxId, apiKey, fetch = globalThis.fetch, parseBillFile, downloadHosts = [], maxBytes = 24 * 1024 * 1024 }) {
   if (!ownerAccountId || !inboxId || !apiKey || typeof parseBillFile !== 'function') throw fail('BILL_MAIL_CONFIGURATION');
@@ -12,6 +13,11 @@ function createBillMailbox({ ownerAccountId, inboxId, apiKey, fetch = globalThis
   }
   async function getAttachment({ actor, messageId, attachmentId }) {
     authorize(actor);
+    if(typeof attachmentId==='string'&&/^link:[a-f0-9]{64}$/.test(attachmentId)){
+      const message=await api(inboxPath+'/messages/'+part(messageId));
+      const link=findWechatBillLinks([message.text,message.html,message.extracted_text,message.extracted_html].filter(v=>typeof v==='string').join('\n')).find(item=>item.id===attachmentId);
+      if(!link)throw fail('BILL_MAIL_ATTACHMENT_NOT_FOUND');return downloadWechatBill({url:link.url,fetch,maxBytes});
+    }
     const meta = await api(inboxPath + '/messages/' + part(messageId) + '/attachments/' + part(attachmentId));
     let url;
     try { url = new URL(meta.download_url); } catch (_) { throw fail('BILL_MAIL_DOWNLOAD_URL_INVALID'); }
@@ -44,13 +50,22 @@ function createBillMailbox({ ownerAccountId, inboxId, apiKey, fetch = globalThis
   return Object.freeze({
     status({ actor }) { authorize(actor); return { address: inboxId, provider: 'AgentMail', mode: 'receive-only', configured: true }; },
     getAttachment,
-    async previewAttachment(input) { const source = await getAttachment(input); return parseBillFile(source); },
+    async previewAttachment(input) { const source = await getAttachment(input); return parseBillFile({...source,password:input.password}); },
     async check({ actor, pageToken }) {
       authorize(actor);
       if (pageToken && (typeof pageToken !== 'string' || pageToken.length > 1000)) throw fail('BILL_MAIL_INPUT_INVALID');
       const page = await api(inboxPath + '/messages?limit=30' + (pageToken ? '&page_token=' + encodeURIComponent(pageToken) : ''));
       const attachments = []; let budget = 5;
       for (const message of (page.messages || []).slice(0, 30)) {
+        if(!(message.attachments||[]).length){
+          const detail=await api(inboxPath+'/messages/'+part(message.message_id));
+          for(const link of findWechatBillLinks([detail.text,detail.html,detail.extracted_text,detail.extracted_html].filter(v=>typeof v==='string').join('\n'))){
+            const item={messageId:message.message_id,attachmentId:link.id,filename:'微信支付账单.zip',source:'wechat-download-link',receivedAt:message.timestamp||null,subject:String(message.subject||detail.subject||'').slice(0,200),sender:String(message.from||detail.from||'').slice(0,200)};
+            if(budget--<=0){attachments.push({...item,code:'BILL_MAIL_PREVIEW_DEFERRED'});continue;}
+            try{const source=await downloadWechatBill({url:link.url,fetch,maxBytes});item.filename=source.filename;item.preview=await parseBillFile(source);}catch(error){item.code=/^BILL_/.test(error.code||'')?error.code:'BILL_MAIL_PARSE_FAILED';}attachments.push(item);
+          }
+        }
+
         for (const file of (message.attachments || []).slice(0, 30)) {
           if (!/\.(csv|txt|xls|xlsx|zip|pdf|html?)$/i.test(file.filename || '')) continue;
           const item = { messageId: message.message_id, attachmentId: file.attachment_id, filename: String(file.filename).slice(0, 180), receivedAt: message.timestamp || null };

@@ -1,3 +1,4 @@
+import DesktopBillMailbox from './DesktopBillMailbox';
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import DesktopAccountMenu from './DesktopAccountMenu';
 import { DesktopAccountContext } from './DesktopAccountContext';
@@ -834,6 +835,7 @@ const DesktopIdentityGate: React.FC = () => {
           </Suspense>
         )}
         {!runtimeSuspended && <DesktopAutoSync key={gateState.partitionKey} />}
+        {!runtimeSuspended && <DesktopBillMailbox key={'bill-mailbox:'+gateState.partitionKey} />}
       </div>
       </DesktopAccountContext.Provider>
     );

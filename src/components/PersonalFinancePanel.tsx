@@ -15,8 +15,9 @@ export default function PersonalFinancePanel() {
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState('');
   const [accountModal, setAccountModal] = useState(false), [form] = Form.useForm();
   const [importAccount, setImportAccount] = useState<string>(), [file, setFile] = useState<any>(), [preview, setPreview] = useState<any>();
-  const [mapping, setMapping] = useState(''), [mail, setMail] = useState<any>(), [mailStatus, setMailStatus] = useState<any>();
+  const [mapping, setMapping] = useState(''), [mailStatus, setMailStatus] = useState<any>();
   const [mailLoading, setMailLoading] = useState(true), [mailFailure, setMailFailure] = useState('');
+  const [passwordModal,setPasswordModal] = useState(false);
   const [linkIds, setLinkIds] = useState<string[]>([]), [linkType, setLinkType] = useState('duplicate');
   const sequence = useRef(0), fileSequence = useRef(0), mounted = useRef(true), fileRef = useRef<HTMLInputElement>(null);
   const scope = () => { try { const s = readDesktopAuthorizationSession(); return JSON.stringify([s.authorization, s.authContext.activeRole]); } catch { return ''; } };
@@ -31,7 +32,7 @@ export default function PersonalFinancePanel() {
     catch (e: any) { if (mounted.current && scope() === owner) setMailFailure(e.code === 'BILL_MAIL_ACCESS_DENIED' ? '当前账号无权使用专用收件邮箱，可选择账单文件导入。' : e.code === 'BILL_MAIL_NOT_CONFIGURED' ? '专用收件邮箱尚未配置，请联系管理员；也可选择账单文件导入。' : '暂时无法读取收件邮箱，请联网后点击“查看邮箱”重试。'); }
     finally { if (mounted.current && scope() === owner) setMailLoading(false); }
   };
-  useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); return () => { mounted.current = false; sequence.current++; }; }, []);
+  useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); const imported = () => void reload(); window.addEventListener('personal-finance-imported', imported); return () => { window.removeEventListener('personal-finance-imported', imported); mounted.current = false; sequence.current++; }; }, []);
   const run = async (work: (current: () => boolean) => Promise<any>) => {
     const owner = scope(); setBusy(true);
     const current = () => mounted.current && scope() === owner;
@@ -55,7 +56,7 @@ export default function PersonalFinancePanel() {
   };
   const doPreview = async () => {
     const owner = scope(), n = ++fileSequence.current; setBusy(true); setPreview(null);
-    try { const input = { filename: file.filename, base64: file.base64, financialAccountId: importAccount, fieldMapping: options() }, key = file.idempotencyKey; const data = await client.previewFile(input); if (mounted.current && scope() === owner && n === fileSequence.current) setPreview({ ...data.preview, reviewedInput: input, reviewedKey: key }); }
+    try { const input = { filename: file.filename, base64: file.base64, financialAccountId: importAccount, fieldMapping: options(), password: file.password || undefined }, key = file.idempotencyKey; const data = await client.previewFile(input); if (mounted.current && scope() === owner && n === fileSequence.current) setPreview({ ...data.preview, reviewedInput: input, reviewedKey: key }); }
     catch (e: any) { if (mounted.current && scope() === owner && n === fileSequence.current) message.error(`无法解析：${e.code || '请检查字段映射'}`); }
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
@@ -69,8 +70,9 @@ export default function PersonalFinancePanel() {
     <Alert type={mailFailure ? 'warning' : 'info'} showIcon style={{ marginBottom: 16 }} message="账单收件邮箱与使用说明" description={<div style={{ lineHeight: 1.8 }}>
       <div>{mailLoading ? '正在读取当前账号可用的收件邮箱…' : mailFailure || (mailStatus?.address ? <>请将账单发送至：<strong style={{ overflowWrap: 'anywhere' }}>{mailStatus.address}</strong></> : '当前未返回可用收件地址，请点击“账单与专用邮箱”中的“查看邮箱”重试。')}</div>
       <div>在银行、支付宝或微信导出账单时，将上方邮箱填为收件地址；已有账单附件也可转发到该邮箱。此邮箱仅用于收集账单，无需在本软件填写个人邮箱密码。</div>
-      <div>收件后打开“账单与专用邮箱”，选择账单所属账户，点击“检查账单附件”，查看附件预览后再“确认导入此附件”。收件不会自动入账。</div>
+      <div>收件后点击下方“检查收件箱 / 逐份输入密码”，在窗口内对照邮件和文件逐份填写密码、选择账户并验证，预览后再确认导入。收件不会自动入账。</div>
     </div>} />
+    <Space wrap style={{ marginBottom: 16 }}><Button type="primary" onClick={() => window.dispatchEvent?.(new Event('bill-mailbox-open'))}>检查收件箱 / 逐份输入密码</Button><span>登录且联网后自动检测一次；可在独立窗口核对每份账单并批量导入。</span></Space>
     <Space wrap style={{ marginBottom: 16 }}>
       <Select mode="multiple" placeholder="全部账户（可多选）" style={{ minWidth: 280 }} options={accounts} value={selected} onChange={setSelected} />
       <DatePicker.RangePicker value={period} onChange={setPeriod} allowClear />
@@ -109,18 +111,18 @@ export default function PersonalFinancePanel() {
         <Table rowKey="id" dataSource={ledger.links.filter((l: any) => l.status !== 'deleted')} columns={[{ title: '关联方式', dataIndex: 'type' }, { title: '记录', dataIndex: 'observationIds', render: (ids: string[]) => ids.join(' / ') }, { title: '操作', render: (_: any, l: any) => <Button onClick={() => void run(() => client.deleteLink(l.id, { expectedRevision: ledger.revision }))}>解除关联</Button> }]} />
       </> },
       { key: 'import', label: '账单与专用邮箱', children: <>
-        <Space wrap><Select placeholder="本次账单所属账户" options={accounts} value={importAccount} onChange={v => { fileSequence.current++; setImportAccount(v); setPreview(null); }} style={{ minWidth: 280 }} /><Button onClick={() => fileRef.current?.click()}>选择账单文件</Button><span>{file?.filename}</span>
+        <Space wrap><Select placeholder="本次账单所属账户" options={accounts} value={importAccount} onChange={v => { fileSequence.current++; setImportAccount(v); setPreview(null); }} style={{ minWidth: 280 }} /><Button onClick={() => fileRef.current?.click()}>选择账单文件</Button><Button disabled={!file} onClick={() => setPasswordModal(true)}>输入此文件解压密码</Button><span>{file?.filename}</span>
           <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls,.zip,.pdf,.html,.htm" hidden onChange={e => void chooseFile(e.target.files?.[0])} /><Button disabled={!file || !importAccount || busy} onClick={() => void doPreview()}>解析预览</Button></Space>
         <Input.TextArea rows={2} placeholder={'可选字段映射 JSON（未知表头时）：{"date":"交易日期","amount":"金额","direction":"借贷方向"}'} value={mapping} onChange={e => { fileSequence.current++; setMapping(e.target.value); setPreview(null); }} style={{ margin: '12px 0' }} />
         {preview && <><Alert type={preview.errors?.length ? 'error' : 'info'} message={`${preview.provider} · ${preview.records?.length || 0} 条；错误 ${preview.errors?.length || 0}，提示 ${preview.warnings?.length || 0}`} description={[...(preview.errors || []), ...(preview.warnings || [])].slice(0, 10).map((e: any) => `第${e.line || '?'}行：${e.message || e.code}`).join('；')} />
           <Table rowKey={(_: any, i?: number) => String(i)} dataSource={preview.records?.slice(0, 100)} columns={[{ title: '日期', dataIndex: 'date' }, { title: '类型', dataIndex: 'kind', render: (v: string) => KINDS[v] }, { title: '币种', dataIndex: 'currency' }, { title: '金额', dataIndex: 'amountMinor', render: formatMinor }, { title: '说明', dataIndex: 'description' }]} />
           <Button type="primary" disabled={busy || !!preview.errors?.length || !preview.records?.length} onClick={() => void run(async current => { await client.importFile(preview.reviewedInput, preview.reviewedKey); if (!current()) return; fileSequence.current++; setFile(null); setPreview(null); })}>确认整批导入</Button></>}
-        <Card title="账单收集邮箱" style={{ marginTop: 16 }}><Space wrap><Button loading={mailLoading} disabled={mailLoading} onClick={() => void loadMailbox()}>查看邮箱</Button><span style={{ overflowWrap: 'anywhere' }}>{mailStatus?.address}</span><Button disabled={busy} onClick={() => void run(async current => { const value = await client.checkMailbox(); if (current()) setMail(value.mailbox); })}>检查账单附件</Button></Space>
-          {mailFailure && <Alert type="warning" showIcon message={mailFailure} style={{ marginTop: 12 }} />}
-          {mail && <><p>已检查 {mail.messageCount} 封邮件，发现 {mail.attachments.length} 个账单附件。附件预览后需确认导入。</p>{mail.attachments.map((a: any) => <div key={a.messageId + a.attachmentId}><span>{a.filename} · {a.preview?.records?.length || 0} 条 {a.code || ''}</span><Button disabled={busy} onClick={() => void run(async current => { const value = await client.previewMailbox({ messageId: a.messageId, attachmentId: a.attachmentId }); if (!current()) return; setMail((old: any) => ({ ...old, attachments: old.attachments.map((item: any) => item.messageId === a.messageId && item.attachmentId === a.attachmentId ? { ...item, preview: value.preview, code: null } : item) })); })}>查看附件预览</Button>{a.preview && <div><p>{[...(a.preview.errors || []), ...(a.preview.warnings || [])].map((e: any) => e.message || e.code).join('；')}</p><Table rowKey={(_: any, i?: number) => String(i)} dataSource={a.preview.records?.slice(0, 50)} columns={[{ title: '日期', dataIndex: 'date' }, { title: '说明', dataIndex: 'description' }, { title: '币种', dataIndex: 'currency' }, { title: '金额', dataIndex: 'amountMinor', render: formatMinor }, { title: '状态', dataIndex: 'status' }]} /></div>}<Button disabled={!importAccount || busy || !a.preview?.records?.length || !!a.preview?.errors?.length} onClick={() => void run(() => client.importMailbox({ messageId: a.messageId, attachmentId: a.attachmentId, financialAccountId: importAccount }, `mail-${a.messageId}-${a.attachmentId}-${importAccount}`))}>确认导入此附件</Button></div>)}{mail.nextPageToken && <Button onClick={() => void run(async current => { const value = await client.checkMailbox({ pageToken: mail.nextPageToken }); if (current()) setMail(value.mailbox); })}>下一页邮件</Button>}</>}
-        </Card>
+        <Card title="账单收集邮箱" style={{ marginTop: 16 }}><Space wrap><Button loading={mailLoading} disabled={mailLoading} onClick={() => { void loadMailbox(); window.dispatchEvent?.(new Event('bill-mailbox-open')); }}>查看邮箱</Button><span style={{ overflowWrap:'anywhere' }}>{mailStatus?.address}</span><Button onClick={() => window.dispatchEvent?.(new Event('bill-mailbox-open'))}>检查账单附件</Button></Space><p>检测结果、邮件计数、逐份密码和批量导入均在独立窗口显示，点击以上任一入口会重新检查收件箱。</p>{mailFailure && <Alert type="warning" showIcon message={mailFailure} />}</Card>
       </> },
     ]} />
+    <Modal title="账单解压密码" open={passwordModal} onCancel={() => setPasswordModal(false)} onOk={() => setPasswordModal(false)}>
+      <p style={{overflowWrap:'anywhere'}}>文件：{file?.filename}</p><p>此密码仅用于上面这份本地账单；输入后重新解析预览。</p><Input.Password aria-label="本地账单解压密码" autoComplete="new-password" maxLength={256} value={file?.password||''} onChange={e => { fileSequence.current++; setPreview(null); setFile((old:any) => old ? {...old,password:e.target.value} : old); }} />
+    </Modal>
     <Modal title="新增金融账户" open={accountModal} confirmLoading={busy} onCancel={() => setAccountModal(false)} onOk={() => void run(async current => { const a = await form.validateFields(); if (!current()) return; await client.createAccount({ account: { ...a, openingBalanceMinor: null, openingDate: null, status: 'active' }, expectedRevision: ledger.revision }); if (!current()) return; setAccountModal(false); form.resetFields(); })}>
       <Form form={form} layout="vertical" initialValues={{ type: 'bank', currency: 'CNY' }}><Form.Item name="label" label="名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="type" label="类别"><Select options={Object.entries(TYPES).map(([value, label]) => ({ value, label }))} /></Form.Item><Form.Item name="provider" label="银行/平台" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="maskedIdentifier" label="标识（只填尾号或脱敏值）"><Input /></Form.Item><Form.Item name="currency" label="币种" rules={[{ pattern: /^[A-Z]{3}$/, message: '请填 CNY、USD 等三字母代码' }]}><Input /></Form.Item></Form>
     </Modal>

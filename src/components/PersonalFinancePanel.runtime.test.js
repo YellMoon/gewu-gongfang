@@ -46,7 +46,7 @@ async function panel() {
   };
   const component=displayName=>Object.assign(function component(){},{displayName});
   const antd=Object.fromEntries(['Alert','Button','Card','DatePicker','Form','Input','Modal','Select','Space','Table','Tabs','Tag'].map(key=>[key,component(key)]));
-  antd.Input.TextArea=component('TextArea');antd.DatePicker.RangePicker=component('RangePicker');antd.Form.Item=component('Form.Item');
+  antd.Input.Password=component('Password');antd.Input.TextArea=component('TextArea');antd.DatePicker.RangePicker=component('RangePicker');antd.Form.Item=component('Form.Item');
   antd.Form.useForm=()=>[{validateFields:async()=>({label:'合成账户',provider:'synthetic',type:'bank',currency:'CNY',maskedIdentifier:'1234'}),resetFields:()=>{}}];
   antd.Modal.confirm=options=>{modals.push(options);return {destroy:()=>{}};};
   antd.message={success:value=>messages.push({type:'success',value,generation}),error:value=>messages.push({type:'error',value,generation}),warning:value=>messages.push({type:'warning',value,generation})};
@@ -105,13 +105,6 @@ test('actual TSX: confirmed import uses precisely the reviewed file/account/mapp
   const reviewed=structuredClone(h.callsFor('previewFile')[0].args[0]);h.click('确认整批导入');await tick();const submitted=h.callsFor('importFile')[0];assert.ok(submitted);
   for(const key of ['filename','base64','financialAccountId','fieldMapping'])assert.deepEqual(submitted.args[0][key],reviewed[key],key+' matches preview');assert.ok(submitted.args[1],'whole-batch import retains a stable idempotency key');h.unmount();
 });
-test('actual TSX: mailbox attachments have independently usable previews and import actions',async()=>{
-  const h=await panel();h.account('A');h.click('检查账单附件');await tick();assert.equal(h.buttons('查看附件预览').length,2);assert.equal(h.buttons('确认导入此附件').every(button=>button.props.disabled),true);
-  h.buttons('查看附件预览')[0].props.onClick();await tick();assert.equal(h.callsFor('previewMailbox')[0].args[0].messageId,'message');assert.equal(h.callsFor('previewMailbox')[0].args[0].attachmentId,'one');
-  assert.equal(h.buttons('确认导入此附件')[0].props.disabled,false);assert.equal(h.buttons('确认导入此附件')[1].props.disabled,true);
-  h.buttons('查看附件预览')[1].props.onClick();await tick();assert.equal(h.callsFor('previewMailbox')[1].args[0].attachmentId,'two');assert.equal(h.buttons('确认导入此附件')[0].props.disabled,false);assert.equal(h.buttons('确认导入此附件')[1].props.disabled,false);
-  h.buttons('确认导入此附件')[0].props.onClick();await tick();const submitted=h.callsFor('importMailbox')[0];assert.equal(submitted.args[0].messageId,'message');assert.equal(submitted.args[0].attachmentId,'one');assert.equal(submitted.args[0].financialAccountId,'A');assert.ok(submitted.args[1]);h.unmount();
-});
 for(const kind of ['balance','classification'])test(`actual TSX: failed ${kind} Modal onOk rejects so the dialog remains retryable`,async()=>{
   const h=await panel();const error=Object.assign(new Error('synthetic cloud rejection'),{code:'FINANCE_REQUEST_FAILED'});
   if(kind==='balance'){
@@ -123,14 +116,14 @@ for(const kind of ['balance','classification'])test(`actual TSX: failed ${kind} 
   }
   assert.equal(h.modals.length,1);await assert.rejects(h.modals[0].onOk());assert.equal(h.callsFor(kind==='balance'?'createBalanceSnapshot':'annotateObservation').length,1);assert.ok(h.messages.some(message=>message.type==='error'));h.unmount();
 });
-for(const boundary of ['session','unmount'])for(const operation of ['reader','preview','import','mailboxStatus','checkMailbox','previewMailbox','reload-error'])test(`actual TSX: ${operation} late callback cannot setState after ${boundary}`,async()=>{
+for(const boundary of ['session','unmount'])for(const operation of ['reader','preview','import','mailboxStatus','reload-error'])test(`actual TSX: ${operation} late callback cannot setState after ${boundary}`,async()=>{
   const h=await panel();const pending=deferred();
   if(operation==='reader')h.choose('late.csv');
   else if(operation==='preview'){await prepare(h);h.responses.set('previewFile',()=>pending.promise);h.click('解析预览');}
   else if(operation==='import'){await prepare(h);h.click('解析预览');await tick();h.responses.set('importFile',()=>pending.promise);h.click('确认整批导入');}
   else if(operation==='mailboxStatus'){h.responses.set('mailboxStatus',()=>pending.promise);h.click('查看邮箱');}
-  else if(operation==='checkMailbox'){h.responses.set('checkMailbox',()=>pending.promise);h.click('检查账单附件');}
-  else if(operation==='previewMailbox'){h.click('检查账单附件');await tick();h.responses.set('previewMailbox',()=>pending.promise);h.buttons('查看附件预览')[0].props.onClick();}
+
+
   else {h.responses.set('getLedger',()=>{h.responses.delete('getLedger');return pending.promise;});h.click('刷新');}
   if(boundary==='unmount')h.unmount();else {h.swap();await tick();}
   const before=h.writes.length,messageCount=h.messages.length;

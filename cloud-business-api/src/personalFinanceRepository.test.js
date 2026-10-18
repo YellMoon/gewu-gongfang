@@ -21,6 +21,10 @@ assert.equal(typeof createPersonalFinanceRepository,'function','repository must 
    const raceRepo=createPersonalFinanceRepository({query:async()=>({rows:[{data:{status:'active',currency:'CNY'}}]}),transaction:async work=>work(raceQuery),parseBillFile:()=>({provider:'generic',templateId:'generic',records:[canonical],errors:[],warnings:[]}),archiveSource:async()=>{archiveCalls++;}});
    await assert.rejects(raceRepo.import({tenantId:'test',actor:{accountId:'alice',roles:['teacher']},filename:'race.csv',base64:'YQ==',financialAccountId:'bank',idempotencyKey:'race'}),/ACCOUNT_ARCHIVED|CURRENCY_MISMATCH/);assert.equal(archiveCalls,0);assert.equal(writes,0);
   }
+  let suppliedPassword,mutated=false;
+  const boundRepo=createPersonalFinanceRepository({query:async()=>({rows:[{data:{status:'active',currency:'CNY'}}]}),transaction:async()=>{mutated=true;},parseBillFile:input=>{suppliedPassword=input.password;return{provider:'generic',templateId:'generic',fileHash:'a'.repeat(64),records:[canonical],errors:[],warnings:[]};}});
+  await assert.rejects(boundRepo.import({tenantId:'test',actor:{accountId:'alice',roles:['teacher']},filename:'bound.zip',base64:'YQ==',financialAccountId:'bank',idempotencyKey:'bound',password:'synthetic-bound-password',expectedFileHash:'b'.repeat(64)}),/IMPORT_SOURCE_CHANGED/);
+  assert.equal(suppliedPassword,'synthetic-bound-password');assert.equal(mutated,false,'changed source must be rejected before any transaction');
   // Every supported non-cash asset account keeps the same fixed schema.
   for(const type of ['investment','insurance','receivable','property','precious_metal','retirement']) {
     let saved;

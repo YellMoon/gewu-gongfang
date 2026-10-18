@@ -75,7 +75,7 @@ const { JSDOM } = require('jsdom');
     '../services/desktopIdentityPartition.mjs': partitionModule,
     '../services/desktopIdentityGateRuntime.mjs': runtimeModule,
     '../services/desktopLoginMemory.mjs': { loadRememberedLogin: () => ({ type: 'account_name', value: 'original' }), saveRememberedLogin() {}, maskPhone: x => x },
-    './DesktopIdentityGate.css': {}, './DesktopAutoSync': () => null,
+    './DesktopIdentityGate.css': {}, './DesktopBillMailbox':()=>null,'./DesktopAutoSync': () => null,
     '../App': () => React.createElement('div', { id: 'business' }, React.useContext(accountContext).controls, 'business'),
   };
   const compiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, 'DesktopIdentityGate.tsx'), 'utf8'), {
