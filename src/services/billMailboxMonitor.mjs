@@ -8,7 +8,7 @@ export function createBillMailboxMonitor({client,readSession,isOnline=()=>true,n
  const emit=patch=>{state={...state,...patch};for(const fn of listeners)fn(state);};
  const synchronize=()=>{const scope=identity();if(scope!==state.scope){epoch++;flight=null;lastAttempt=0;emit({scope,loading:false,result:null,error:null});}return scope;};
  async function check({automatic=false,pageToken}={}){
-  const scope=synchronize();if(!scope||!isOnline())return null;
+  const scope=synchronize();if(!scope)return null;if(!isOnline()){if(!automatic)emit({error:{code:'BILL_MAIL_OFFLINE'}});return null;}
   if(flight)return flight;
   if(automatic&&(completed.has(scope)||(lastAttempt&&now()-lastAttempt<60000)))return state.result;
   const n=epoch;lastAttempt=now();emit({loading:true,error:null});
