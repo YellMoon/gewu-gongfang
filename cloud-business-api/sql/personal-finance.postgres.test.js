@@ -2,6 +2,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const migration=path.join(__dirname,'20261008-personal-finance.sql');
 assert.ok(fs.existsSync(migration),'personal finance migration must exist');
+const migrationRunner=require('node:child_process').spawnSync('python',['-c',"import sys;sys.path.insert(0,'scripts');from apply_cloud_postgres_migrations import read_migrations,atomic_migration_sql;m=next(m for m in read_migrations('cloud-business-api/sql') if m['name']=='20261019-personal-finance-neutral.sql');atomic_migration_sql(m)"],{cwd:path.resolve(__dirname,'../..'),encoding:'utf8'});
+assert.equal(migrationRunner.status,0,'the actual deployment runner must accept the transactional neutral migration: '+migrationRunner.stderr);
 const {createPersonalFinanceRepository}=require('../src/personalFinanceRepository');
 const {createDisposablePg17Runtime,withVNextPg17SyntheticQuery}=require('../../shared/vnext-pg17/disposableRuntime');
 const {createVNextPg17CatalogBoundary}=require('../../shared/vnext-pg17/catalogAssertion');
