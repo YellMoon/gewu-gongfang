@@ -1,6 +1,7 @@
 'use strict';
 
 const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,relationDelta}=require('./accountProducts');
+const {validateInvestmentTrade,latestInvestmentConfirmations}=require('./investmentTrades');
 const fail = code => Object.assign(new Error(code), {code});
 const integer = value => typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
 function validDate(value) { return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value; }
@@ -11,6 +12,7 @@ function validateRecord(r) {
   if(!r.rawFields || typeof r.rawFields!=='object' || Array.isArray(r.rawFields)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   if(r.kind==='debt_payment' && ['principalMinor','interestMinor','feeMinor'].every(k=>r[k]!==null) && ['principalMinor','interestMinor','feeMinor'].reduce((s,k)=>s+BigInt(r[k]),0n)!==BigInt(r.amountMinor)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   if(r.accountRelations!==undefined&&(!Array.isArray(r.accountRelations)||r.accountRelations.length>4||r.accountRelations.some(v=>!v||!Object.hasOwn(ACCOUNT_PRODUCTS,v.product)||!ACCOUNT_RELATION_ACTIVITIES.has(v.activity)||!['target','funding'].includes(v.role)||v.financialAccountId!==undefined&&(typeof v.financialAccountId!=='string'||!v.financialAccountId||v.financialAccountId.length>512))))throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
+  if(r.investmentTrade!==undefined)validateInvestmentTrade(r.investmentTrade,r);
   return r;
 }
 const signed = o => o.direction==='neutral'?0n:BigInt(o.amountMinor)*(o.direction==='credit'?1n:-1n);
@@ -84,6 +86,9 @@ function buildFinanceView(ledger,options={}) {
       }
       if(o.kind==='unknown') unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
     }
+    const investmentConfirmations=latestInvestmentConfirmations(sources);
+    consumption+=investmentConfirmations.reduce((sum,source)=>sum+BigInt(source.investmentTrade.feeMinor),0n);
+    for(const confirmation of investmentConfirmations)if(!confirmation.investmentTrade.fundCode)unresolvedAssociations.push({reason:'unidentified_fund_conversion',observationId:confirmation.id});
     const effects=new Map(), flow=new Map(),effectTimes=new Map();
     const knownFundingAccounts=[...new Set(sources.filter(s=>s.status==='completed'&&accountMap.get(s.financialAccountId)?.type!=='wallet').map(s=>s.financialAccountId))].map(id=>accountMap.get(id)).filter(Boolean);
     const latestEffects=new Map();for(const s of sources)if(s.sourceIdentity&&s.status==='completed'){const key=JSON.stringify([s.financialAccountId,s.sourceIdentity]);if(!latestEffects.has(key)||(s.sourceVersionOrdinal||0)>(latestEffects.get(key).sourceVersionOrdinal||0))latestEffects.set(key,s);}
@@ -96,7 +101,7 @@ function buildFinanceView(ledger,options={}) {
       if(relations.length){
         if(relations.some(r=>r.role==='funding'))continue;
         const target=relations.find(r=>r.role==='target');
-        if(['investment_income','investment_exchange'].includes(target?.activity))continue;
+        if(['investment_income','investment_exchange','investment_confirmation'].includes(target?.activity))continue;
         const incoming=['investment_withdrawal','loan_drawdown'].includes(target?.activity),delta=BigInt(s.amountMinor)*(incoming?1n:-1n);
         const fund=fundingAccount(s,accounts);
         if(fund){
@@ -127,7 +132,7 @@ function buildFinanceView(ledger,options={}) {
     }
     const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys()]);
     const selectedSources=sources.filter(s=>selected.has(s.financialAccountId));
-    all.push({...o,id,observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
+    all.push({...o,id,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
   }
   for(const t of all) {
     const manual=links.find(l=>l.type==='refund'&&l.observationIds.some(id=>t.observationIds.includes(id)));
@@ -174,6 +179,6 @@ function buildFinanceView(ledger,options={}) {
   }
   let comparison=null;
   if(validDate(options.startDate)&&validDate(options.endDate)&&options.startDate<=options.endDate) {const span=(Date.parse(options.endDate)-Date.parse(options.startDate))/86400000+1;const previousEnd=new Date(Date.parse(options.startDate)-86400000).toISOString().slice(0,10),previousStart=new Date(Date.parse(options.startDate)-span*86400000).toISOString().slice(0,10);comparison={current:{startDate:options.startDate,endDate:options.endDate,...summary},previous:{startDate:previousStart,endDate:previousEnd,...summarize(all.filter(t=>t.date>=previousStart&&t.date<=previousEnd))}};}
-  return serial({transactions,accountStats,...summary,comparison,unresolvedAssociations});
+  return serial({transactions,investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),accountStats,...summary,comparison,unresolvedAssociations});
 }
 module.exports={buildFinanceView,validateRecord,validDate};

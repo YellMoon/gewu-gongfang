@@ -3,6 +3,7 @@ const { spawnSync } = require('node:child_process');
 const tests = [
   'shared/personal-finance/billCsv.test.js', 'shared/personal-finance/ledger.test.js', 'shared/personal-finance/accountProducts.test.js',
   'cloud-business-api/src/billAccountResolution.test.js',
+  'shared/personal-finance/investmentTrades.test.js', 'cloud-business-api/src/antFundPdf.test.js',
   'cloud-business-api/src/billFileDecoder.test.js', 'cloud-business-api/src/personalFinanceRepository.test.js',
   'cloud-business-api/src/personalFinanceRoutes.test.js', 'cloud-business-api/sql/personal-finance.postgres.test.js',
   'cloud-business-api/src/billSourceArchive.test.js', 'cloud-business-api/src/billMailbox.test.js', 'cloud-business-api/src/billImapMailbox.test.js',

@@ -151,16 +151,21 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
   if (!result.records.length && !result.errors.length) result.errors.push(issue('BILL_NO_RECORDS','工作簿中没有账单记录'));
   return result;
 }
+const isAntFundCover=text=>text.includes('蚂蚁(杭州)基金销售有限公司')&&text.includes('基金(含资产管理计划)交易明细');
 async function pdfTable(buffer,filename,fieldMapping) {
-  const {getDocument} = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const task = getDocument({data:new Uint8Array(buffer), isEvalSupported:false, useSystemFonts:false, disableFontFace:true, verbosity:0});
+  const {getDocument,OPS} = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const pdfRoot=path.dirname(require.resolve('pdfjs-dist/package.json'));
+  const task = getDocument({data:new Uint8Array(buffer), cMapUrl:path.join(pdfRoot,'cmaps')+'/',cMapPacked:true,standardFontDataUrl:path.join(pdfRoot,'standard_fonts')+'/',isEvalSupported:false, useSystemFonts:false, disableFontFace:true, verbosity:0});
   let document;
   try {
     document = await task.promise;
     if (document.numPages > LIMITS.pdfPages) fail('BILL_PDF_PAGE_LIMIT','PDF 超过100页，请拆分文件');
-    const table = []; let textCount = 0;
+    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false;
     for (let p = 1; p <= document.numPages; p += 1) {
       const page = await document.getPage(p), content = await page.getTextContent();
+      const pageText=content.items.map(item=>item.str||'').join('').normalize('NFKC').replace(/\s/g,'');
+      if(p===1&&isAntFundCover(pageText))fundCandidate=true;
+      if(fundCandidate){const operators=await page.getOperatorList();fundPages.push({number:p,items:content.items.filter(item=>typeof item.str==='string').map(item=>({str:item.str,x:item.transform[4],y:item.transform[5],width:item.width})),bounds:operators.fnArray.flatMap((fn,i)=>fn===OPS.constructPath&&(Array.isArray(operators.argsArray[i]?.[2])||ArrayBuffer.isView(operators.argsArray[i]?.[2]))?[Array.from(operators.argsArray[i][2])]:[])});}
       const lines = [];
       for (const item of content.items) {
         if (!item.str || !item.str.trim()) continue;
@@ -175,6 +180,7 @@ async function pdfTable(buffer,filename,fieldMapping) {
       page.cleanup();
     }
     if (!textCount) fail('BILL_PDF_SCAN_REQUIRES_REVIEW','PDF 无可提取文字，可能是扫描件；请人工核验或导出 CSV/Excel，不能自动入账');
+    if(fundCandidate)return require('./antFundPdf').parseAntFundPdf(fundPages);
     const result = parseBillCsv(csvText(table),{filename,fieldMapping});
     result.warnings.push(issue('BILL_PDF_VERIFY_REQUIRED','PDF 按文本位置重建表格，必须人工核对列对齐、跨页、合计、金额与方向后提交'));
     return result;
