@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceAccountRelations": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "Expand only the observation direction constraint to allow neutral without rewriting existing sources. Deploy migration and cloud automatic source/product account resolution before clients. Preview is read-only; confirmation atomically resolves owner-scoped accounts and records source product associations without duplicate transactions. Optional expected account identities bind reviewed imports. Readers preserve neutral records and use signed net-asset liability balances; existing unsigned debt anchors normalize on read, signed manual calibrations remain explicit, unknown funding and missing balances stay unresolved. NAS byte storage is unchanged."
+    },
     "personalFinanceMailboxUnlock": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],

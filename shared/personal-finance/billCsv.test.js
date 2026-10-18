@@ -109,3 +109,26 @@ test('decorated bank tail identifiers normalize for exact maskedIdentifier match
   const r = parseBillCsv('date,type,amount,paymentChannel\n2026-10-01,expense,1,建设银行(1234)').records[0];
   assert.equal(r.paymentAccountHint,'1234','payment channel tail can identify funding account when explicit hint is absent');
 });
+
+test('platform neutral rows retain investments, repayments, refunds and zero authorizations',()=>{
+ const header='支付宝交易明细\n交易时间,交易分类,交易对方,商品说明,收/支,金额,收/付款方式,交易状态,交易订单号';
+ const rows=[
+ '2026-10-01 12:00:00,投资理财,余利宝,支付宝转入到余利宝,不计收支,100,余额,交易成功,invest',
+ '2026-10-01 13:00:00,信用借还,花呗,自动还款-花呗账单,不计收支,50,余额,还款成功,repay',
+ '2026-10-01 14:00:00,退款,商家,商品退款,不计收支,10,花呗,退款成功,refund',
+ '2026-10-01 15:00:00,其他,平台,预授权,不计收支,0,余额,冻结成功,freeze',
+ '2026-10-01 16:00:00,投资理财,平台,账户结息,不计收支,1,余额,交易成功,interest'];
+ const parsed=parseBillCsv(header+'\n'+rows.join('\n'));assert.deepEqual(parsed.errors,[]);assert.equal(parsed.records.length,5);assert(parsed.records.every(r=>r.direction==='neutral'));
+ assert.deepEqual(parsed.records.map(r=>r.kind),['transfer','debt_payment','refund','unknown','income']);assert.equal(parsed.records[0].accountRelations[0].product,'alipay_yulibao');assert.equal(parsed.records[1].accountRelations[0].product,'alipay_huabei');assert.equal(parsed.records[2].accountRelations[0].activity,'repayment');assert.equal(parsed.warnings.filter(w=>w.code==='BILL_NON_CASH_FLOW').length,1);
+});
+
+test('zero wallet orders retain valid status while generic zero rows still require review',()=>{
+ const parsed=parseBillCsv('支付宝交易明细\n交易时间,交易分类,商品说明,收/支,金额,交易状态\n2026-10-01 10:00:00,购物,已关闭订单,支出,0,交易关闭');assert.deepEqual(parsed.errors,[]);assert.equal(parsed.records[0].amountMinor,'0');assert.equal(parsed.records[0].status,'failed');
+ assert(parseBillCsv('date,type,amount\n2026-10-01,expense,0').errors.some(e=>e.code==='BILL_AMOUNT_ZERO'));
+});
+
+test('observed settled wallet status labels parse without relaxing unknown status handling',()=>{
+ for(const [provider,status] of [['支付宝','赔付成功'],['微信','已收钱']]){
+ const p=parseBillCsv(provider+'账单\n交易时间,交易类型,商品说明,收/支,金额,交易状态\n2026-10-01 10:00:00,转账,转账收款,收入,1,'+status);assert.deepEqual(p.errors,[]);assert.equal(p.records[0].status,'completed');
+ }
+});

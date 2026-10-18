@@ -134,11 +134,10 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
         if (cell && cell.f) { precisionErrors.push(issue('BILL_EXCEL_FORMULA_REQUIRES_REVIEW',`[${name}] 公式单元格必须先导出为核验后的值`,r + 1)); bad = true; }
         if (cell && cell.t === 'n') {
           // Excel guarantees only 15 significant decimal digits. Reserve two for cents.
-          if (!Number.isFinite(value) || Math.abs(value) >= 1e13 || String(value).replace(/[^0-9]/g,'').replace(/^0+/,'').length > 15) { precisionErrors.push(issue('BILL_EXCEL_NUMBER_PRECISION',`[${name}] Excel 数字无法保证原始编号/分精度，请以文本导出交易号和大额金额`,r + 1)); bad = true; }
-          else if (cell.z && XLSX.SSF.is_date(cell.z)) {
+          if (Number.isFinite(value) && cell.z && XLSX.SSF.is_date(cell.z)) {
             const parts = XLSX.SSF.parse_date_code(value,{date1904:!!book.Workbook?.WBProps?.date1904});
             value = parts ? `${parts.y}-${String(parts.m).padStart(2,'0')}-${String(parts.d).padStart(2,'0')} ${String(parts.H).padStart(2,'0')}:${String(parts.M).padStart(2,'0')}:${String(parts.S).padStart(2,'0')}` : '';
-          }
+          } else if (!Number.isFinite(value) || Math.abs(value) >= 1e13 || String(value).replace(/[^0-9]/g,'').replace(/^0+/,'').length > 15) { precisionErrors.push(issue('BILL_EXCEL_NUMBER_PRECISION',`[${name}] Excel 数字无法保证原始编号/分精度，请以文本导出交易号和大额金额`,r + 1)); bad = true; }
         }
         row.push(value);
       }

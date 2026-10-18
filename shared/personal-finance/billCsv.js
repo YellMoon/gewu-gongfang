@@ -1,5 +1,7 @@
 'use strict';
 
+const {inferAccountRelations}=require('./accountProducts');
+
 // Header aliases describe formats, not bank certifications. Unknown layouts require mapping.
 const ALIASES = Object.freeze({
   date: ['date','交易日期','记账日期','入账日期','日期'],
@@ -12,7 +14,7 @@ const ALIASES = Object.freeze({
   sourceTransactionId: ['sourceTransactionId','交易号','交易单号','交易订单号','流水号','交易流水号','银行流水号'],
   description: ['description','note','商品说明','商品','商品名称','摘要','摘要信息','交易摘要','备注','用途'],
   counterparty: ['counterparty','交易对方','对方户名','对方名称','对手名称','对方账户名称','商户名称'],
-  category: ['category','分类','收支分类'],
+  category: ['category','分类','收支分类','交易分类'],
   paymentChannel: ['paymentChannel','支付方式','收/付款方式','支付渠道','交易渠道','渠道'],
   paymentAccountHint: ['paymentAccountHint','付款账户','支付账户','本方账号','账号','卡号','账户'],
   balance: ['balance','余额','账户余额','交易余额','账户余额(元)','余额(元)'],
@@ -97,12 +99,24 @@ function kindOf(value, direction, description) {
   if (/利息|结息/.test(source)) return 'interest';
   return direction === 'credit' ? 'income' : 'expense';
 }
-function statusOf(value) {
+function statusOf(value, provider) {
   const text = clean(value).toLowerCase();
   if (!text || /^(completed|成功|交易成功|支付成功|退款成功|已入账|已完成|对方已收钱|已收款|已转账|已到账)$/.test(text)) return 'completed';
+  if (['wechat','alipay'].includes(provider) && (/^(已存入零钱|已收钱|赔付成功|收款到账|收款成功|转账成功|充值完成|提现已到账|已全额退款|还款成功|转入成功|转出成功|冻结成功|解冻成功|芝麻免押下单成功)$/.test(text) || /^已退款(?:[（(]?[¥￥]?\d+(?:\.\d{1,2})?[）)]?)$/.test(text))) return 'completed';
   if (/失败|关闭|取消|已撤销|已退还/.test(text) || text === 'failed') return 'failed';
   if (/处理中|等待|待付款|待支付|待收款|未支付|退款中/.test(text) || text === 'pending') return 'pending';
   invalid('BILL_STATUS_UNKNOWN', `交易状态“${text}”未识别，请人工核验或映射状态`);
+}
+function walletPosting(provider, direction, semanticType, category, description, status) {
+  if (!['wechat','alipay'].includes(provider) || !/^(?:\/|不计收支|不计收入[\/／]支出)$/.test(direction)) return null;
+  // Preserve the platform's explicit non-cash direction rather than inventing a
+  // debit/credit sign for investments, authorizations or internal movements.
+  if (/冻结|解冻|芝麻免押/.test(status)) return { direction:'neutral', kind:'unknown' };
+  if (/退款/.test(semanticType) || category === '退款' || status === '退款成功') return { direction:'neutral', kind:'refund' };
+  if (category==='投资理财'&&/手续费|申购费|赎回费|销售服务费/.test(description)) return {direction:'neutral',kind:'fee'};
+  if (/还款/.test(`${semanticType} ${description}`) || status === '还款成功') return { direction:'neutral', kind:'debt_payment' };
+  if (/结息|利息|收益发放/.test(description) && category === '投资理财') return { direction:'neutral', kind:'income' };
+  return { direction:'neutral', kind:'transfer' };
 }
 function resolveMapping(headers, supplied) {
   const mapping = {};
@@ -170,11 +184,14 @@ function parseBillCsv(content, { filename = '', fieldMapping = {} } = {}) {
       if (explicitDirection && dualDirection && explicitDirection !== dualDirection) invalid('BILL_DIRECTION_CONFLICT', '收支方向与收入/支出列冲突');
       let amountMinor = dualDirection ? dualDirection === 'credit' ? income : expense : money(get(row,'amount'));
       if (!direction && fieldMapping.amountConvention === 'signed') direction = /^[-(]/.test(get(row,'amount')) ? 'debit' : 'credit';
-      const semanticType = get(row,'kind') || type;
+      const semanticType = get(row,'kind') || type || (['wechat','alipay'].includes(result.provider) ? get(row,'category') : '');
+      const posting = walletPosting(result.provider,get(row,'direction'),semanticType,get(row,'category'),get(row,'description'),get(row,'status'),amountMinor);
+      if (posting) { const warning=result.warnings.find(w=>w.code==='BILL_NON_CASH_FLOW');if(warning)warning.count++;else result.warnings.push({...diagnostic(row.line,'BILL_NON_CASH_FLOW','平台标记不计收支：保留原记录和金额，不推断现金流方向；划转与还款本金不计消费，退款冲减消费。'),count:1}); }
+      if (!direction && posting) direction = posting.direction;
       if (!direction && /^(refund|loan_drawdown|退款|贷款发放|借款到账)$/.test(semanticType)) direction = 'credit';
       if (!direction && /^(debt_payment|fee|还款|手续费)$/.test(semanticType)) direction = 'debit';
-      if (!direction) invalid('BILL_DIRECTION_UNKNOWN', '无法确定借贷方向，请通过 fieldMapping 映射 direction/type，或明确 defaultDirection/amountConvention');
-      if (amountMinor === '0') invalid('BILL_AMOUNT_ZERO', '交易金额为零，请核验是否为说明行');
+      if (!direction) invalid('BILL_DIRECTION_UNKNOWN', `无法确定借贷方向（类型：${semanticType || '未提供'}；原始收支：${get(row,'direction') || '未提供'}），请通过 fieldMapping 映射 direction/type，或明确 defaultDirection/amountConvention`);
+      if (amountMinor === '0' && !posting && !['wechat','alipay'].includes(result.provider)) invalid('BILL_AMOUNT_ZERO', '交易金额为零，请核验是否为说明行');
       const description = maskLongNumbers(get(row,'description'));
       const channelSource = get(row,'paymentChannel');
       const hintSource = get(row,'paymentAccountHint') || (/(?:银行|银行卡|card|bank|尾号|\*|[（(]\d{4}[）)])/i.test(channelSource) ? channelSource : '');
@@ -188,10 +205,11 @@ function parseBillCsv(content, { filename = '', fieldMapping = {} } = {}) {
           : ['description','counterparty','category','paymentChannel'].includes(key) ? maskLongNumbers(value) : value;
       }
       const record = { sourceTransactionId: get(row,'sourceTransactionId'), ...at, amountMinor, currency: 'CNY', direction,
-        kind: kindOf(semanticType, direction, description), description, counterparty: maskLongNumbers(get(row,'counterparty')), category: maskLongNumbers(get(row,'category')),
+        kind: posting?.kind || kindOf(semanticType, direction, description), description, counterparty: maskLongNumbers(get(row,'counterparty')), category: maskLongNumbers(get(row,'category')),
         paymentChannel: maskLongNumbers(channelSource), paymentAccountHint: accountHint, balanceMinor: money(get(row,'balance'), { optional: true, signed: true }),
-        relatedReference: get(row,'relatedReference'), status: statusOf(get(row,'status')), principalMinor: money(get(row,'principal'), { optional: true }),
+        relatedReference: get(row,'relatedReference'), status: statusOf(get(row,'status'),result.provider), principalMinor: money(get(row,'principal'), { optional: true }),
         interestMinor: money(get(row,'interest'), { optional: true }), feeMinor: money(get(row,'fee'), { optional: true }), rawFields };
+      const relations=inferAccountRelations(record,result.provider);if(relations.length)record.accountRelations=relations;
       result.records.push(record);
       if (mapping.status === undefined) result.warnings.push(diagnostic(row.line, 'BILL_STATUS_ASSUMED_COMPLETED', '源文件无状态列，按已入账记录处理；提交前请核验'));
     } catch (error) { result.errors.push(diagnostic(row.line, error.code || 'BILL_ROW_INVALID', error.message || '账单行无效')); }

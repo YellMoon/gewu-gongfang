@@ -65,6 +65,8 @@ async function panel() {
     '../services/personalFinanceClient.mjs':{...actualHelpers,createPersonalFinanceClient:()=>client},
     '../services/desktopAuthorizationSession.mjs':{readDesktopAuthorizationSession:session},
   };
+  const relatedCompiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'BillRelatedAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+  const relatedModule={exports:{}};new Function('require','module','exports',relatedCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},relatedModule,relatedModule.exports);dependencies['./BillRelatedAccounts']=relatedModule.exports;
   const compiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'PersonalFinancePanel.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const loaded={exports:{}};
   new Function('require','module','exports','FileReader','crypto','document','FormData','window','setInterval','clearInterval',compiled)(moduleName=>{
@@ -75,7 +77,7 @@ async function panel() {
     all:()=>nodes(render()),buttons:label=>nodes(render()).filter(node=>name(node)==='Button'&&text(node)===label),
     button:label=>h.buttons(label)[0],
     click:label=>{const button=h.button(label);assert.ok(button,'button exists: '+label);assert.ok(!button.props.disabled,'button enabled: '+label);return button.props.onClick();},
-    account:value=>{const select=nodes(render()).find(node=>name(node)==='Select'&&node.props.placeholder==='本次账单所属账户');assert.ok(select);select.props.onChange(value);render();},
+    account:value=>{const select=nodes(render()).find(node=>name(node)==='Select'&&node.props.placeholder==='自动按来源匹配账户（可更改）');assert.ok(select);select.props.onChange(value);render();},
     mapping:value=>{const input=nodes(render()).find(node=>name(node)==='TextArea');assert.ok(input);input.props.onChange({target:{value}});render();},
     choose:filename=>{const input=nodes(render()).find(node=>node.type==='input'&&node.props.type==='file');assert.ok(input);input.props.onChange({target:{files:[{name:filename,size:4}]}});render();},
     finishRead:(index,base64)=>{const reader=readers[index];assert.ok(reader,'reader exists');reader.result='data:text/csv;base64,'+base64;reader.onload?.({target:reader});},

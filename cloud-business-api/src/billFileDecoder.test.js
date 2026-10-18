@@ -91,6 +91,14 @@ test('buffer contract and Excel original decimals do not use rounded cell displa
   assert.equal(precision.records.length,0);
   assert.equal(precision.errors[0].code,'BILL_AMOUNT_INVALID');
 });
+
+test('Excel date serial fractions are dates, while monetary cents and numeric identifiers retain precision guards', async () => {
+  const book=XLSX.utils.book_new();
+  const sheet=XLSX.utils.aoa_to_sheet([['date','type','amount','sourceTransactionId'],[44927.579872685186,'expense',1.25,'001234567890123456789']]);
+  sheet.A2.z='yyyy-mm-dd hh:mm:ss';XLSX.utils.book_append_sheet(book,sheet,'synthetic');
+  const parsed=await parseBillFile(file('dates.xlsx',XLSX.write(book,{type:'buffer',bookType:'xlsx'})));
+  assert.deepEqual(parsed.errors,[]);assert.equal(parsed.records[0].date,'2023-01-01');assert.equal(parsed.records[0].amountMinor,'125');assert.equal(parsed.records[0].sourceTransactionId,'001234567890123456789');
+});
 test('workbook sheet, row and column limits are explicit', async () => {
   const book = XLSX.utils.book_new(); for (let i = 0; i < 11; i++) XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([['date','type','amount']]),'s' + i);
   assert.equal((await parseBillFile(file('many.xlsx',XLSX.write(book,{type:'buffer',bookType:'xlsx'})))).errors[0].code,'BILL_WORKSHEET_LIMIT');

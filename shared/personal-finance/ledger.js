@@ -1,17 +1,19 @@
 'use strict';
 
+const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,relationDelta}=require('./accountProducts');
 const fail = code => Object.assign(new Error(code), {code});
 const integer = value => typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
 function validDate(value) { return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value; }
 function validateRecord(r) {
-  if(!r || !integer(r.amountMinor) || !validDate(r.date) || typeof r.occurredAt!=='string' || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(r.occurredAt) || Number.isNaN(Date.parse(r.occurredAt)) || !/^[A-Z]{3}$/.test(r.currency||'') || !['debit','credit'].includes(r.direction) || !['expense','income','transfer','refund','loan_drawdown','debt_payment','interest','fee','unknown'].includes(r.kind) || !['completed','pending','failed'].includes(r.status)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
+  if(!r || !integer(r.amountMinor) || !validDate(r.date) || typeof r.occurredAt!=='string' || !/T.*(?:Z|[+-]\d{2}:\d{2})$/.test(r.occurredAt) || Number.isNaN(Date.parse(r.occurredAt)) || !/^[A-Z]{3}$/.test(r.currency||'') || !['debit','credit','neutral'].includes(r.direction) || !['expense','income','transfer','refund','loan_drawdown','debt_payment','interest','fee','unknown'].includes(r.kind) || !['completed','pending','failed'].includes(r.status)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   for(const key of ['balanceMinor','principalMinor','interestMinor','feeMinor']) if(r[key]!==null && !(typeof r[key]==='string' && /^-?(0|[1-9]\d*)$/.test(r[key]) && (key==='balanceMinor'||BigInt(r[key])>=0n))) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   for(const key of ['sourceTransactionId','description','counterparty','category','paymentChannel','paymentAccountHint','relatedReference']) if(typeof r[key]!=='string' || r[key].length>4000) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   if(!r.rawFields || typeof r.rawFields!=='object' || Array.isArray(r.rawFields)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   if(r.kind==='debt_payment' && ['principalMinor','interestMinor','feeMinor'].every(k=>r[k]!==null) && ['principalMinor','interestMinor','feeMinor'].reduce((s,k)=>s+BigInt(r[k]),0n)!==BigInt(r.amountMinor)) throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
+  if(r.accountRelations!==undefined&&(!Array.isArray(r.accountRelations)||r.accountRelations.length>4||r.accountRelations.some(v=>!v||!Object.hasOwn(ACCOUNT_PRODUCTS,v.product)||!ACCOUNT_RELATION_ACTIVITIES.has(v.activity)||!['target','funding'].includes(v.role)||v.financialAccountId!==undefined&&(typeof v.financialAccountId!=='string'||!v.financialAccountId||v.financialAccountId.length>512))))throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');
   return r;
 }
-const signed = o => BigInt(o.amountMinor)*(o.direction==='credit'?1n:-1n);
+const signed = o => o.direction==='neutral'?0n:BigInt(o.amountMinor)*(o.direction==='credit'?1n:-1n);
 const liability = a => ['credit_card','loan'].includes(a?.type);
 const calibrationOnly = a => ['investment','insurance','receivable','property','precious_metal','retirement'].includes(a?.type);
 const money = () => ({consumptionMinor:0n,incomeMinor:0n,cashInMinor:0n,cashOutMinor:0n,netCashFlowMinor:0n});
@@ -89,21 +91,41 @@ function buildFinanceView(ledger,options={}) {
     for(const s of effectSources) {
       if(s.status!=='completed')continue;
       const a=accountMap.get(s.financialAccountId);if(!a)continue;
+      const relations=s.accountRelations||[];
+      for(const relation of relations){const target=accountMap.get(relation.financialAccountId);if(!target||target.currency!==s.currency){unresolvedAssociations.push({reason:'unresolved_product_account',observationId:s.id,product:relation.product});continue;}const delta=relationDelta(relation,BigInt(s.amountMinor),s);effects.set(target.id,delta);effectTimes.set(target.id,s.occurredAt);if(!liability(target))flow.set(target.id,delta);}
+      if(relations.length){
+        if(relations.some(r=>r.role==='funding'))continue;
+        const target=relations.find(r=>r.role==='target');
+        if(['investment_income','investment_exchange'].includes(target?.activity))continue;
+        const incoming=['investment_withdrawal','loan_drawdown'].includes(target?.activity),delta=BigInt(s.amountMinor)*(incoming?1n:-1n);
+        const fund=fundingAccount(s,accounts);
+        if(fund){
+          const possible=(moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,incoming?'credit':'debit',fund.id]))||[]).filter(candidate=>!sources.some(source=>source.id===candidate.id));
+          const distinct=possible.length&&possible.every(candidate=>links.some(l=>l.type==='distinct'&&l.observationIds.includes(s.id)&&l.observationIds.includes(candidate.id)));
+          if(possible.length&&!distinct)unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possible.slice(0,64).map(candidate=>candidate.id),candidateCount:possible.length});
+          else {effects.set(fund.id,delta);effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,delta);}
+        }
+        else if(!s.paymentAccountHint&&/^(余额|账户余额|支付宝余额|零钱)$/.test((s.paymentChannel||'').trim())){effects.set(a.id,delta);effectTimes.set(a.id,s.occurredAt);flow.set(a.id,delta);}
+        else unresolvedAssociations.push({reason:'unresolved_funding_account',observationId:s.id,paymentAccountHint:s.paymentAccountHint});
+        continue;
+      }
+      if(s.direction==='neutral'&&['transfer','debt_payment'].includes(s.kind))unresolvedAssociations.push({reason:'unresolved_account_movement',observationId:s.id});
+
       const fund=fundingAccount(s,accounts)||(a.type==='wallet'&&knownFundingAccounts.length===1?knownFundingAccounts[0]:null);
       if(a.type==='wallet' && (s.paymentAccountHint||fund)) {
         if(!fund) unresolvedAssociations.push({reason:'unresolved_funding_account',observationId:s.id,paymentAccountHint:s.paymentAccountHint});
         const possibleBankSources=fund?(moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,s.direction,fund.id]))||[]).filter(o=>!sources.some(source=>source.id===o.id)):[];
         const confirmedDistinct=possibleBankSources.length&&possibleBankSources.every(o=>links.some(l=>l.type==='distinct'&&l.observationIds.includes(s.id)&&l.observationIds.includes(o.id)));
         if(possibleBankSources.length&&!confirmedDistinct)unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possibleBankSources.slice(0,64).map(o=>o.id),candidateCount:possibleBankSources.length});
-        if(fund && !sources.some(x=>x.financialAccountId===fund.id) && (!possibleBankSources.length||confirmedDistinct)) { effects.set(fund.id,signed(s)*(liability(fund)?-1n:1n));effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,signed(s)); }
+        if(fund && !sources.some(x=>x.financialAccountId===fund.id) && (!possibleBankSources.length||confirmedDistinct)) { effects.set(fund.id,signed(s));effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,signed(s)); }
         continue;
       }
-      const balanceDelta=a.type==='loan'&&s.kind==='debt_payment'?(s.principalMinor===null?0n:-BigInt(s.principalMinor)):a.type==='loan'&&s.kind==='loan_drawdown'?BigInt(s.amountMinor):signed(s)*(liability(a)?-1n:1n);
+      const balanceDelta=a.type==='loan'&&s.kind==='debt_payment'?(s.principalMinor===null?0n:BigInt(s.principalMinor)):a.type==='loan'&&s.kind==='loan_drawdown'?-BigInt(s.amountMinor):signed(s);
       effects.set(a.id,balanceDelta);
       effectTimes.set(a.id,s.occurredAt);
       if(!liability(a))flow.set(a.id,signed(s));
     }
-    const associated=new Set([...sources.map(s=>s.financialAccountId),...effects.keys()]);
+    const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys()]);
     const selectedSources=sources.filter(s=>selected.has(s.financialAccountId));
     all.push({...o,id,observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
   }
@@ -134,8 +156,9 @@ function buildFinanceView(ledger,options={}) {
     for(const t of current) {const delta=t.cashEffects[a.id]||0n;if(delta>0n)stats.cashInMinor+=delta;else stats.cashOutMinor-=delta;stats.consumptionMinor+=t.consumptionMinor;stats.incomeMinor+=t.incomeMinor;}
     stats.netCashFlowMinor=stats.cashInMinor-stats.cashOutMinor;
     const anchors=(ledger.balanceSnapshots||[]).filter(s=>s.financialAccountId===a.id&&s.currency===a.currency&&(!options.endDate||s.asOf.slice(0,10)<=options.endDate)).map(s=>({...s,time:Date.parse(s.asOf)}));
-    if(a.openingBalanceMinor!==null&&a.openingDate && (!options.endDate||a.openingDate<=options.endDate)) anchors.push({id:null,source:'opening_balance',asOf:a.openingDate+'T00:00:00Z',balanceMinor:a.openingBalanceMinor,time:Date.parse(a.openingDate)});
-    for(const o of observations)if(o.financialAccountId===a.id&&o.balanceMinor!==null&&o.status==='completed'&&(!options.endDate||o.date<=options.endDate))anchors.push({id:o.id,source:'statement_observation',asOf:o.occurredAt,balanceMinor:o.balanceMinor,time:Date.parse(o.occurredAt)});
+    if(a.openingBalanceMinor!==null&&a.openingDate && (!options.endDate||a.openingDate<=options.endDate)) anchors.push({id:null,source:'opening_balance',balanceConvention:a.balanceConvention,asOf:a.openingDate+'T00:00:00Z',balanceMinor:a.openingBalanceMinor,time:Date.parse(a.openingDate)});
+    for(const o of observations)if(o.financialAccountId===a.id&&o.balanceMinor!==null&&o.status==='completed'&&(!options.endDate||o.date<=options.endDate))anchors.push({id:o.id,source:'statement_observation',balanceConvention:o.balanceConvention,asOf:o.occurredAt,balanceMinor:o.balanceMinor,time:Date.parse(o.occurredAt)});
+    for(const anchor of anchors)if(liability(a)&&anchor.balanceConvention!=='signed')anchor.balanceMinor=(-BigInt(anchor.balanceMinor)).toString();
     const anchorPriority=s=>s.source==='opening_balance'?0:s.source==='statement_observation'?1:2;
     const createdTime=s=>s.createdAt?Date.parse(s.createdAt):0;
     anchors.sort((x,y)=>y.time-x.time||anchorPriority(y)-anchorPriority(x)||createdTime(y)-createdTime(x));
