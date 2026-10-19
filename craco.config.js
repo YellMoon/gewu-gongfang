@@ -7,6 +7,7 @@ module.exports = {
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/questionDeduplication.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/questionDifficulty.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/ledger.js'));
+      scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/assetRegister.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/courseColors.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/calendarHolidays.js'));
       // ModuleScopePlugin checks the original request before resolving .js.
