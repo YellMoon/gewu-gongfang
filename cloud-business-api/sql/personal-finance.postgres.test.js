@@ -119,6 +119,32 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  await assert.rejects(autoRepo.discoverAccounts({...autoContext,expectedRevision:'0'}),/REVISION_CONFLICT/);
  assert.equal((await autoRepo.import({...autoInput,base64:Buffer.from('bank discovery').toString('base64'),idempotencyKey:'bank-discovery'})).replayed,true);
  assert.equal(discoveredReceipt.insertedCount,1);
+ // One original document can cover several cards. Routing, source archive and
+ // account creation must commit together under the owner's existing lock.
+ const bankIdentities=['1111','2222'].map(maskedIdentifier=>({provider:'\u5efa\u8bbe\u94f6\u884c',type:'credit_card',maskedIdentifier,currency:'CNY'}));
+ bankIdentities.push({...bankIdentities[0],currency:'USD'});
+ const bankRecords=bankIdentities.map((bankAccount,i)=>({...record,currency:bankAccount.currency,sourceTransactionId:'multi-card-'+i,amountMinor:String(100+i),bankAccount,bankStatement:{schema:'bank-credit-v1',statementDate:'2026-10-18',postedDate:'2026-10-08',cardTail:bankAccount.maskedIdentifier,provider:'ccb'}}));
+ const bankParser=()=>({provider:'ccb',templateId:'bank-credit-ccb-v1',accountIdentity:bankIdentities[0],records:bankRecords,errors:[],warnings:[]});
+ const bankArchive=async input=>({id:'synthetic-bank-archive',fileHash:input.fileHash});
+ const bankRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:bankParser,archiveSource:bankArchive});
+ const bankContext={...context,actor:{...context.actor,accountId:'multi-card'}},bankInput={...bankContext,filename:'multi-card.html',base64:Buffer.from('synthetic multi-card source').toString('base64'),idempotencyKey:'multi-card'};
+ const bankPreview=await bankRepo.previewImport(bankInput);assert.equal(bankPreview.bankAccountResolutions.length,3);assert.ok(bankPreview.bankAccountResolutions.every(r=>r.status==='create'));
+ const bankReceipt=await bankRepo.import(bankInput),bankLedger=await bankRepo.getLedger(bankContext);assert.equal(bankReceipt.insertedCount,3);assert.equal(bankLedger.accounts.length,3);
+ for(const observation of bankLedger.observations)assert.equal(bankLedger.accounts.find(a=>a.id===observation.financialAccountId).maskedIdentifier,observation.bankAccount.maskedIdentifier);
+ assert.equal(bankLedger.imports.length,3);assert.equal(Object.keys(bankReceipt.importMemberships).length,3);
+ for(const o of bankLedger.observations)assert.equal(bankLedger.accounts.find(a=>a.id===o.financialAccountId).currency,o.currency);
+ for(const source of bankLedger.imports){assert.equal(source.archiveReference.id,'synthetic-bank-archive');assert.equal(source.recordCount,1);assert.equal(source.observationIds.length,1);const observation=bankLedger.observations.find(o=>o.id===source.observationIds[0]);assert.equal(observation.financialAccountId,source.financialAccountId);assert.equal(observation.importId,source.id);}
+ assert.equal((await bankRepo.import(bankInput)).replayed,true);assert.equal((await bankRepo.getLedger(bankContext)).revision,bankLedger.revision);
+ await assert.rejects(bankRepo.import({...bankInput,idempotencyKey:'wrong-bank-selection',financialAccountId:bankLedger.accounts.find(a=>a.maskedIdentifier==='2222').id}),/BANK_ACCOUNT_MISMATCH/);
+ const enrichedBankRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:()=>({...bankParser(),records:bankRecords.map(r=>({...r,rawFields:{...r.rawFields,sourceFormat:'companion-statement'}}))}),archiveSource:bankArchive});
+ const enrichment=await enrichedBankRepo.import({...bankInput,filename:'companion.pdf',base64:Buffer.from('same bank events from another original').toString('base64'),idempotencyKey:'companion-source'}),enrichedLedger=await bankRepo.getLedger(bankContext);
+ assert.equal(enrichment.insertedCount,3);assert.equal(enrichedLedger.observations.length,6,'both immutable source versions remain');
+ assert.equal(require('../../shared/personal-finance/ledger').buildFinanceView(enrichedLedger).transactions.length,3,'companion formats never count one bank event twice');
+ assert.equal(new Set(enrichedLedger.observations.map(o=>o.sourceIdentity)).size,3);
+ const failingBankRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:bankParser,archiveSource:async()=>{throw Error('synthetic archive failure');}});
+ const failedBankContext={...bankContext,actor:{...bankContext.actor,accountId:'failed-multi-card'}};
+ await assert.rejects(failingBankRepo.import({...bankInput,...failedBankContext,idempotencyKey:'failed-bank'}),/synthetic archive failure/);
+ const failedBankLedger=await bankRepo.getLedger(failedBankContext);assert.equal(failedBankLedger.accounts.length,0);assert.equal(failedBankLedger.observations.length,0);
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);

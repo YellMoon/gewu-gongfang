@@ -2,6 +2,7 @@
 const crypto=require('node:crypto');
 const {validateRecord,validDate}=require('../../shared/personal-finance/ledger');
 const {resolveBillAccount,resolveRelatedBillAccounts}=require('./billAccountResolution');
+const {resolveBankAccount,bankAccountKey}=require('./bankAccountResolution');
 const {ACCOUNT_PRODUCTS}=require('../../shared/personal-finance/accountProducts');
 const {accountProposals}=require('../../shared/personal-finance/assetRegister');
 const failure=code=>Object.assign(new Error('CLOUD_PERSONAL_FINANCE_'+code),{code:'CLOUD_PERSONAL_FINANCE_'+code});
@@ -45,14 +46,16 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
   const selected=input.financialAccountId?await account(q,owner,input.financialAccountId):null;if(selected&&selected.status!=='active')throw failure('ACCOUNT_ARCHIVED');
   const result=await parseBillFile({filename:input.filename,buffer,fieldMapping:input.fieldMapping,password:input.password});
   if(!object(result)||!Array.isArray(result.records)||!Array.isArray(result.errors)||!Array.isArray(result.warnings)||result.records.length>10000)throw failure('IMPORT_INVALID');
-  const errors=[...result.errors];for(let i=0;i<result.records.length;i++)try{validateRecord(result.records[i]);if(selected&&result.records[i].currency!==selected.currency)throw failure('CURRENCY_MISMATCH');}catch(error){errors.push({row:i+1,code:error.code||'CLOUD_PERSONAL_FINANCE_INPUT_INVALID'});}
+  const errors=[...result.errors];for(let i=0;i<result.records.length;i++)try{validateRecord(result.records[i]);if(selected&&!result.records[i].bankAccount&&result.records[i].currency!==selected.currency)throw failure('CURRENCY_MISMATCH');}catch(error){errors.push({row:i+1,code:error.code||'CLOUD_PERSONAL_FINANCE_INPUT_INVALID'});}
   const preview={provider:text(result.provider,128),templateId:result.templateId===null?null:text(result.templateId,128),records:result.records,errors,warnings:result.warnings,fileHash:hash(buffer),...(result.accountIdentity?{accountIdentity:result.accountIdentity}:{})};
   const resolved=await resolution(input,owner,preview,q);
-  return {...preview,accountResolution:selected?{status:'matched',account:selected,explicit:true}:resolved.accountResolution,relatedAccountResolutions:resolved.relatedAccountResolutions};
+  return {...preview,accountResolution:selected?{status:'matched',account:selected,explicit:true}:resolved.accountResolution,relatedAccountResolutions:resolved.relatedAccountResolutions,bankAccountResolutions:resolved.bankAccountResolutions};
  }
  async function resolution(input,owner,preview,q=query){
   const accounts=preview.errors?.length||!preview.records?.length?[]:(await q('SELECT data FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2',owner)).rows.map(row=>row.data);
-  return {accountResolution:resolveBillAccount({preview,accounts,owner,selectedAccountId:input.financialAccountId}),relatedAccountResolutions:resolveRelatedBillAccounts({preview,accounts,owner,selectedRelatedAccountIds:input.relatedFinancialAccountIds})};
+  const identities=[...new Map((preview.errors.length?[]:preview.records).filter(r=>r.bankAccount).map(r=>[bankAccountKey(r.bankAccount),r.bankAccount])).values()];
+  const bankAccountResolutions=identities.map(identity=>({key:bankAccountKey(identity),identity,...resolveBankAccount({identity,accounts,owner})}));
+  return {bankAccountResolutions,accountResolution:resolveBillAccount({preview,accounts,owner,selectedAccountId:input.financialAccountId}),relatedAccountResolutions:resolveRelatedBillAccounts({preview,accounts,owner,selectedRelatedAccountIds:input.relatedFinancialAccountIds})};
  }
  async function discover(q,owner,revision){
    const accounts=(await q('SELECT data FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2',owner)).rows.map(r=>r.data);
@@ -74,7 +77,7 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
    'annotations',COALESCE((SELECT jsonb_agg(data ORDER BY revision,id) FROM business.personal_finance_annotations WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
    'links',COALESCE((SELECT jsonb_agg(data ORDER BY id) FROM business.personal_finance_links WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
    'balanceSnapshots',COALESCE((SELECT jsonb_agg(data ORDER BY data->>'asOf',id) FROM business.personal_finance_balance_snapshots WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'imports',COALESCE((SELECT jsonb_agg(i.data||jsonb_build_object('observationIds',COALESCE((SELECT r.receipt->'observationIds' FROM business.personal_finance_receipts r WHERE r.tenant_id=i.tenant_id AND r.account_id=i.account_id AND r.receipt->>'importId'=i.id),'[]'::jsonb)) ORDER BY i.created_at,i.id) FROM business.personal_finance_imports i WHERE i.tenant_id=$1 AND i.account_id=$2),'[]'::jsonb),
+   'imports',COALESCE((SELECT jsonb_agg(i.data||jsonb_build_object('observationIds',COALESCE((SELECT COALESCE(r.receipt->'importMemberships'->i.id,r.receipt->'observationIds') FROM business.personal_finance_receipts r WHERE r.tenant_id=i.tenant_id AND r.account_id=i.account_id AND (r.receipt->>'importId'=i.id OR r.receipt->'importMemberships' ? i.id)),'[]'::jsonb)) ORDER BY i.created_at,i.id) FROM business.personal_finance_imports i WHERE i.tenant_id=$1 AND i.account_id=$2),'[]'::jsonb),
    'legacyRecords',COALESCE((SELECT jsonb_agg(t.data) FROM (SELECT to_jsonb(r)||jsonb_build_object('legacyType','imported') AS data FROM business.personal_asset_records r WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT to_jsonb(r)||jsonb_build_object('legacyType','manual') FROM business.personal_asset_manual_records r WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) t),'[]'::jsonb)) AS ledger`,owner);if(!result.rows[0])throw failure('UNAVAILABLE');return result.rows[0].ledger;},
   async previewImport(input){const owner=scope(input),buffer=fileInput(input);return parse(input,owner,buffer);},
   async resolveImportAccount(input,preview){return resolution(input,scope(input),preview);},
@@ -87,27 +90,38 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
     const resolutions=await resolution(input,owner,preview,q),related=resolutions.relatedAccountResolutions;
     const resolved=input.financialAccountId?{status:'matched',account:await account(q,owner,input.financialAccountId)}:resolutions.accountResolution;
     if(!['matched','create'].includes(resolved.status))throw failure(resolved.status==='archived'?'ACCOUNT_ARCHIVED':'ACCOUNT_SELECTION_REQUIRED');
+    const bankResolutions=resolutions.bankAccountResolutions||[];if(bankResolutions.some(r=>!['matched','create'].includes(r.status)))throw failure('BANK_ACCOUNT_SELECTION_REQUIRED');
+    const bankAccountIds=Object.fromEntries(bankResolutions.map(r=>[r.key,r.account.id]));
     const currentAccount=resolved.account,financialAccountId=currentAccount.id;if(input.expectedFinancialAccountId!==undefined&&input.expectedFinancialAccountId!==financialAccountId)throw failure('ACCOUNT_RESOLUTION_CHANGED');
     if(related.some(item=>!['matched','create'].includes(item.status)))throw failure('RELATED_ACCOUNT_SELECTION_REQUIRED');
     const relatedFinancialAccountIds=Object.fromEntries(related.map(item=>[item.product,item.account.id]));
     if(input.expectedRelatedFinancialAccountIds!==undefined){if(!object(input.expectedRelatedFinancialAccountIds)||Object.keys(input.expectedRelatedFinancialAccountIds).some(product=>input.expectedRelatedFinancialAccountIds[product]!==relatedFinancialAccountIds[product])||Object.keys(relatedFinancialAccountIds).some(product=>input.expectedRelatedFinancialAccountIds[product]!==relatedFinancialAccountIds[product]))throw failure('ACCOUNT_RESOLUTION_CHANGED');}
-    if(currentAccount.status!=='active')throw failure('ACCOUNT_ARCHIVED');if(preview.records.some(r=>r.currency!==currentAccount.currency))throw failure('CURRENCY_MISMATCH');if(!archiveSource)throw failure('SOURCE_ARCHIVE_UNAVAILABLE');
-    for(const item of [resolved,...related])if(item.status==='create'){const data=accountData(item.account);await q('INSERT INTO business.personal_finance_accounts(id,tenant_id,account_id,data) VALUES($1,$2,$3,$4::jsonb)',[data.id,...owner,JSON.stringify(data)]);await changed(q,owner,'account_auto_create',data);}
+    if(currentAccount.status!=='active')throw failure('ACCOUNT_ARCHIVED');if(preview.records.some(r=>r.bankAccount?r.currency!==r.bankAccount.currency:r.currency!==currentAccount.currency))throw failure('CURRENCY_MISMATCH');if(!archiveSource)throw failure('SOURCE_ARCHIVE_UNAVAILABLE');
+    if(bankResolutions.length&&bankAccountIds[bankAccountKey(preview.accountIdentity)]!==financialAccountId)throw failure('BANK_ACCOUNT_MISMATCH');
+    const accountCreations=[...new Map([resolved,...related,...bankResolutions].map(r=>[r.account.id,r])).values()];
+    for(const item of accountCreations)if(item.status==='create'){const data=accountData(item.account);await q('INSERT INTO business.personal_finance_accounts(id,tenant_id,account_id,data) VALUES($1,$2,$3,$4::jsonb)',[data.id,...owner,JSON.stringify(data)]);await changed(q,owner,'account_auto_create',data);}
     const archiveReference=await archiveSource({tenantId:owner[0],ownerAccountId:owner[1],filename:input.filename,buffer,fileHash:preview.fileHash});if(!object(archiveReference)||archiveReference.fileHash!==preview.fileHash||typeof archiveReference.id!=='string')throw failure('SOURCE_ARCHIVE_UNAVAILABLE');
-    const importId=id('finance_import'),importData={id:importId,financialAccountId:financialAccountId,provider:preview.provider,templateId:preview.templateId,filename:input.filename,fileHash:preview.fileHash,archiveReference,recordCount:preview.records.length,createdAt:new Date().toISOString(),observationIds:[]};
-    await q('INSERT INTO business.personal_finance_imports(id,tenant_id,account_id,financial_account_id,file_hash,data) VALUES($1,$2,$3,$4,$5,$6::jsonb)',[importId,...owner,financialAccountId,preview.fileHash,JSON.stringify(importData)]);
+    const importId=id('finance_import'),importData={id:importId,financialAccountId:financialAccountId,provider:preview.provider,templateId:preview.templateId,filename:input.filename,fileHash:preview.fileHash,archiveReference,...(bankResolutions.length?{bankFinancialAccountIds:bankAccountIds}:{}),recordCount:preview.records.length,createdAt:new Date().toISOString(),observationIds:[]};
+    const importByAccount=new Map([[financialAccountId,importId]]),accountCounts=new Map();
+    for(const record of preview.records){const target=record.bankAccount?bankAccountIds[bankAccountKey(record.bankAccount)]:financialAccountId;accountCounts.set(target,(accountCounts.get(target)||0)+1);if(!importByAccount.has(target))importByAccount.set(target,id('finance_import'));}
+    for(const [target,accountImportId]of importByAccount){const data={...importData,id:accountImportId,financialAccountId:target,recordCount:accountCounts.get(target)||0};await q('INSERT INTO business.personal_finance_imports(id,tenant_id,account_id,financial_account_id,file_hash,data) VALUES($1,$2,$3,$4,$5,$6::jsonb)',[accountImportId,...owner,target,preview.fileHash,JSON.stringify(data)]);}
     let insertedCount=0;const observationIds=[];
     for(let ordinal=0;ordinal<preview.records.length;ordinal++){
-     const original=preview.records[ordinal],r=original.accountRelations?.length?{...original,accountRelations:original.accountRelations.map(relation=>({...relation,financialAccountId:relatedFinancialAccountIds[relation.product]}))}:original,sourceIdentity=transactionIdentity(preview.provider,r,preview.fileHash,ordinal),recordFingerprint=hash(r),sourceKey=hash({sourceIdentity,recordFingerprint});
+     const original=preview.records[ordinal],financialAccountId=original.bankAccount?bankAccountIds[bankAccountKey(original.bankAccount)]:currentAccount.id;
+     if(!financialAccountId)throw failure('BANK_ACCOUNT_SELECTION_REQUIRED');
+     const r=original.accountRelations?.length?{...original,accountRelations:original.accountRelations.map(relation=>({...relation,financialAccountId:relatedFinancialAccountIds[relation.product]}))}:original,sourceIdentity=transactionIdentity(preview.provider,r,preview.fileHash,ordinal),recordFingerprint=hash(r),sourceKey=hash({sourceIdentity,recordFingerprint});
      const priorVersions=(await q('SELECT id,data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND financial_account_id=$3 AND transaction_key=$4',[...owner,financialAccountId,sourceIdentity])).rows;
      const prior=priorVersions.find(p=>p.data.recordFingerprint===recordFingerprint);if(prior){observationIds.push(prior.id);continue;}
      if(priorVersions.some(p=>p.data.status==='completed'&&['amountMinor','currency','direction'].some(k=>p.data[k]!==r[k])))throw failure('SOURCE_TRANSACTION_CONFLICT');
-     const observation={...r,id:id('finance_observation'),financialAccountId:financialAccountId,provider:preview.provider,importId,sourceOrdinal:ordinal+1,recordFingerprint,sourceIdentity,sourceVersionOrdinal:priorVersions.length+1};
-     await q('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[observation.id,...owner,financialAccountId,importId,sourceKey,sourceIdentity,JSON.stringify(observation)]);observationIds.push(observation.id);insertedCount++;
+     const accountImportId=importByAccount.get(financialAccountId);
+     const observation={...r,id:id('finance_observation'),financialAccountId:financialAccountId,provider:preview.provider,importId:accountImportId,sourceOrdinal:ordinal+1,recordFingerprint,sourceIdentity,sourceVersionOrdinal:priorVersions.length+1};
+     await q('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[observation.id,...owner,financialAccountId,accountImportId,sourceKey,sourceIdentity,JSON.stringify(observation)]);observationIds.push(observation.id);insertedCount++;
     }
     await discover(q,owner,currentRevision);
     // Import memberships remain in the receipt; source observations are immutable, including their first import.
-    const revision=await changed(q,owner,'import',{importId,observationIds,archiveReference});const receipt={importId,financialAccountId:financialAccountId,relatedFinancialAccountIds,recordCount:preview.records.length,insertedCount,observationIds,fileHash:preview.fileHash,revision,createdAt:importData.createdAt,replayed:false};
+    const importMemberships=Object.fromEntries([...importByAccount.values()].map(id=>[id,[]]));
+    for(let i=0;i<preview.records.length;i++){const r=preview.records[i],target=r.bankAccount?bankAccountIds[bankAccountKey(r.bankAccount)]:financialAccountId;importMemberships[importByAccount.get(target)].push(observationIds[i]);}
+    const revision=await changed(q,owner,'import',{importId,observationIds,archiveReference});const receipt={...(bankResolutions.length?{importMemberships}:{}),importId,financialAccountId:financialAccountId,relatedFinancialAccountIds,recordCount:preview.records.length,insertedCount,observationIds,fileHash:preview.fileHash,revision,createdAt:importData.createdAt,replayed:false};
     await q('INSERT INTO business.personal_finance_receipts(tenant_id,account_id,idempotency_key,request_hash,receipt) VALUES($1,$2,$3,$4,$5::jsonb)',[...owner,key,requestHash,JSON.stringify(receipt)]);return receipt;
    });},
   async createAccount(input){const owner=scope(input),data=accountData(input.account);return transaction(async q=>{await lock(q,owner,input.expectedRevision);const exists=await q('SELECT id FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,data.id]);if(exists.rows.length)throw failure('ACCOUNT_EXISTS');await q('INSERT INTO business.personal_finance_accounts(id,tenant_id,account_id,data) VALUES($1,$2,$3,$4::jsonb)',[data.id,...owner,JSON.stringify(data)]);return {account:data,revision:await changed(q,owner,'account_create',data)};});},

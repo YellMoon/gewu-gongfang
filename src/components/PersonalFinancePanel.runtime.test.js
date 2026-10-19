@@ -45,7 +45,7 @@ async function panel() {
     useEffect:(fn,deps)=>{const index=slot(null),old=slots[index];if(!old||!deps||deps.length!==old.deps?.length||deps.some((value,i)=>value!==old.deps[i])){slots[index]={deps};pendingEffects.push(()=>{old?.cleanup?.();const cleanup=fn();slots[index].cleanup=cleanup;cleanups.push(cleanup);});}},
   };
   const component=displayName=>Object.assign(function component(){},{displayName});
-  const antd=Object.fromEntries(['Alert','Button','Card','DatePicker','Form','Input','Modal','Select','Space','Table','Tabs','Tag'].map(key=>[key,component(key)]));
+  const antd=Object.fromEntries(['Alert','Button','Card','DatePicker','Drawer','Form','Input','Modal','Select','Space','Table','Tabs','Tag'].map(key=>[key,component(key)]));
   antd.Input.Password=component('Password');antd.Input.TextArea=component('TextArea');antd.DatePicker.RangePicker=component('RangePicker');antd.Form.Item=component('Form.Item');
   antd.Form.useForm=()=>[{validateFields:async()=>({label:'合成账户',provider:'synthetic',type:'bank',currency:'CNY',maskedIdentifier:'1234'}),resetFields:()=>{}}];
   antd.Modal.confirm=options=>{modals.push(options);return {destroy:()=>{}};};
@@ -55,7 +55,7 @@ async function panel() {
     readAsDataURL(file){this.file=file;}
     abort(){this.aborted=true;}
   }
-  const formValues={'finance-balance':{balance:'12.30',asOf:'2026-10-08T12:00'},'finance-annotation':{category:'Food',kind:'expense',principal:'',interest:'',fee:''}};
+  const formValues={'asset-balance-form':{balance:'12.30',asOf:'2026-10-08T12:00',note:'fixture'},'finance-balance':{balance:'12.30',asOf:'2026-10-08T12:00'},'finance-annotation':{category:'Food',kind:'expense',principal:'',interest:'',fee:''}};
   const document={getElementById:id=>({id})};
   class FormDataFake {constructor(form){this.values=formValues[form.id]||{};}get(key){return this.values[key]??null;}}
   const window={addEventListener:(event,fn)=>{if(!listeners.has(event))listeners.set(event,new Set());listeners.get(event).add(fn);},removeEventListener:(event,fn)=>listeners.get(event)?.delete(fn),setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
@@ -69,6 +69,8 @@ async function panel() {
   const relatedCompiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'BillRelatedAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const relatedModule={exports:{}};new Function('require','module','exports',relatedCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},relatedModule,relatedModule.exports);dependencies['./BillRelatedAccounts']=relatedModule.exports;
   dependencies['../../shared/personal-finance/assetRegister.js']=require('../../shared/personal-finance/assetRegister');
+  dependencies['./PersonalFinancePanel.css']={};
+  dependencies['./personalFinancePresentation']=require('./personalFinancePresentation');
   const compiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'PersonalFinancePanel.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const loaded={exports:{}};
   new Function('require','module','exports','FileReader','crypto','document','FormData','window','setInterval','clearInterval',compiled)(moduleName=>{
@@ -79,9 +81,11 @@ async function panel() {
     all:()=>nodes(render()),buttons:label=>nodes(render()).filter(node=>name(node)==='Button'&&text(node)===label),
     button:label=>h.buttons(label)[0],
     click:label=>{const button=h.button(label);assert.ok(button,'button exists: '+label);assert.ok(!button.props.disabled,'button enabled: '+label);return button.props.onClick();},
-    account:value=>{const select=nodes(render()).find(node=>name(node)==='Select'&&node.props.placeholder==='自动按来源匹配账户（可更改）');assert.ok(select);select.props.onChange(value);render();},
+    tab:key=>{nodes(render()).find(node=>name(node)==='Tabs').props.onChange(key);render();},
+    account:value=>{h.tab('import');const select=nodes(render()).find(node=>name(node)==='Select'&&node.props.placeholder==='自动按来源匹配账户（可更改）');assert.ok(select);select.props.onChange(value);render();},
+    source:value=>{h.tab('import');nodes(render()).find(n=>name(n)==='Select'&&n.props['aria-label']==='本地账单来源').props.onChange(value);render();},
     mapping:value=>{const input=nodes(render()).find(node=>name(node)==='TextArea');assert.ok(input);input.props.onChange({target:{value}});render();},
-    choose:filename=>{const input=nodes(render()).find(node=>node.type==='input'&&node.props.type==='file');assert.ok(input);input.props.onChange({target:{files:[{name:filename,size:4}]}});render();},
+    choose:filename=>{h.tab('import');const input=nodes(render()).find(node=>node.type==='input'&&node.props.type==='file');assert.ok(input);input.props.onChange({target:{files:[{name:filename,size:4}]}});render();},
     finishRead:(index,base64)=>{const reader=readers[index];assert.ok(reader,'reader exists');reader.result='data:text/csv;base64,'+base64;reader.onload?.({target:reader});},
     callsFor:method=>calls.filter(call=>call.method===method),
     previewEnabled:()=>{const button=h.button('确认整批导入');return !!button&&!button.props.disabled;},
@@ -112,9 +116,11 @@ test('actual TSX: confirmed import uses precisely the reviewed file/account/mapp
 for(const kind of ['balance','classification'])test(`actual TSX: failed ${kind} Modal onOk rejects so the dialog remains retryable`,async()=>{
   const h=await panel();const error=Object.assign(new Error('synthetic cloud rejection'),{code:'FINANCE_REQUEST_FAILED'});
   if(kind==='balance'){
-    h.responses.set('createBalanceSnapshot',()=>Promise.reject(error));const table=h.table(props=>props.columns?.some(column=>column.title==='校准余额'));assert.ok(table);
-    const cell=table.props.columns.find(column=>column.title==='校准余额').render(null,table.props.dataSource[0]);nodes(cell).find(node=>name(node)==='Button').props.onClick();
+    h.responses.set('createBalanceSnapshot',()=>Promise.reject(error));const table=h.table(props=>props['aria-label']==='账户收支与余额');assert.ok(table);
+    const cell=table.props.columns.find(column=>column.title==='操作').render(null,table.props.dataSource[0]);nodes(cell).find(node=>name(node)==='Button'&&text(node)==='详情 / 核对余额').props.onClick();
+    await h.click('核对余额');
   }else{
+    h.tab('transactions');
     h.responses.set('annotateObservation',()=>Promise.reject(error));const table=h.table(props=>props.expandable?.expandedRowRender);assert.ok(table);
     const row=table.props.expandable.expandedRowRender(table.props.dataSource[0]);nodes(row).find(node=>name(node)==='Button'&&text(node)==='校正统计分类/还款拆分').props.onClick();
   }
@@ -125,7 +131,7 @@ for(const boundary of ['session','unmount'])for(const operation of ['reader','pr
   if(operation==='reader')h.choose('late.csv');
   else if(operation==='preview'){await prepare(h);h.responses.set('previewFile',()=>pending.promise);h.click('解析预览');}
   else if(operation==='import'){await prepare(h);h.click('解析预览');await tick();h.responses.set('importFile',()=>pending.promise);h.click('确认整批导入');}
-  else if(operation==='mailboxStatus'){h.responses.set('mailboxStatus',()=>pending.promise);h.click('查看邮箱');}
+  else if(operation==='mailboxStatus'){h.responses.set('mailboxStatus',()=>pending.promise);h.tab('import');h.click('查看邮箱');}
 
 
   else {h.responses.set('getLedger',()=>{h.responses.delete('getLedger');return pending.promise;});h.click('刷新');}
@@ -137,4 +143,22 @@ for(const boundary of ['session','unmount'])for(const operation of ['reader','pr
   else if(operation==='checkMailbox')pending.resolve({mailbox:{messageCount:1,attachments:[]}});
   else pending.resolve({receipt:{importId:'old-owner-import'}});
   await tick();assert.equal(h.writes.length,before,'late operation must not call a React state setter');assert.equal(h.messages.length,messageCount,'late operation must not notify the replacement session');if(boundary==='unmount')assert.equal(h.lateWrites(),0);else h.unmount();
+});
+
+test('actual TSX: explicit bank source preserves mappings, invalidates preview, and auto removes only source',async()=>{
+  const h=await panel();await prepare(h,'statement.xlsx');h.mapping('{"amount":"value","date":"posted"}');
+  h.source('spdb');h.click('解析预览');await tick();
+  assert.deepEqual(h.callsFor('previewFile')[0].args[0].fieldMapping,{amount:'value',date:'posted',provider:'spdb'});
+  h.source('auto');confirmationAbsent(h);h.click('解析预览');await tick();
+  assert.deepEqual(h.callsFor('previewFile')[1].args[0].fieldMapping,{amount:'value',date:'posted'});
+  h.unmount();
+});
+test('actual TSX: navigation preserves pending file but scopes tables to the active section',async()=>{
+  const h=await panel();await prepare(h,'kept.csv');h.tab('overview');
+  assert.ok(h.table(p=>p['aria-label']==='账户收支与余额'));
+  assert.equal(h.table(p=>p.expandable?.expandedRowRender),undefined);
+  h.tab('transactions');assert.ok(h.table(p=>p.expandable?.expandedRowRender));
+  h.tab('import');h.click('解析预览');await tick();
+  assert.equal(h.callsFor('previewFile')[0].args[0].filename,'kept.csv');
+  h.unmount();
 });

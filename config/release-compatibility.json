@@ -280,6 +280,15 @@
         "miniapp"
       ],
       "rule": "Deploy shared actual-funding-account statistics, statement-owned cash movements, backward balance projection and integer trend series together. Unknown total balances remain unknown; billed credit balances do not calibrate total debt. New Huaxia debit statementFlow and Minsheng bankStatement/balanceEvidence schemas preserve raw originals and declared balance scope. Owner-authorized email HTML body imports and transient per-file Office passwords are parsed in bounded workers. Original encrypted bytes are archived; passwords are never persisted. Unique merchant/card/date/amount evidence links card receipts, ambiguous overlaps remain reviewable and user distinct links prevail. NAS byte storage protocol and core business tables are unchanged."
+    },
+    "personalFinanceBankStatements": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Deploy bounded HTML bank-credit and SPDB/CMB/Hangzhou PDF decoders before readers. Optional bankAccount and bankStatement metadata resolve bank, card type, tail and settlement currency within the verified owner. One source with several cards or currencies creates account-bound import memberships atomically and shares one encrypted original archive; existing owner scope, immutable observation grants, source deduplication and receipt replay remain unchanged. Validate statement totals and debit balance chains before import. Retain installment principal without counting consumption twice, keep foreign settlement currencies separate and classify currency conversion funding as a transfer. Billed debt is evidence only and never a current total debt anchor. Clients show original zero values, neutral movements, pending classification and duplicate evidence explicitly; unknown balances, fund holdings and NAV remain unknown. Existing NAS storage protocol and database schema remain compatible. SPDB detail-only Excel exports require an explicit provider declaration because they omit the bank name; bank-credit-detail-v1 preserves actual trade/posting dates without inventing statement dates, totals or balances. Cross-format PDF/Excel event IDs remain stable and immutable source versions do not count twice."
     }
   },
   "runtimeReceipts": {

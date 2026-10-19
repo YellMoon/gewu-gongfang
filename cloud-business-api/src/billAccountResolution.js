@@ -31,6 +31,7 @@ function resolveBillAccount({ preview, accounts, owner, selectedAccountId } = {}
     const digest=crypto.createHash('sha256').update(JSON.stringify([...owner,preview.provider,identity.maskedIdentifier,'CNY'])).digest('hex').slice(0,32);
     return {status:'create',account:{id:'finance_source_'+digest,label:bank+(type==='credit_card'?'\u4fe1\u7528\u5361\uff08':'\u6d3b\u671f\u5b58\u6b3e\uff08')+identity.maskedIdentifier+'\uff09',provider:bank,type,maskedIdentifier:identity.maskedIdentifier,currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',balanceConvention:'signed'}};
   }
+  if(preview.templateId==='bank-credit-'+preview.provider+'-v1'||preview.templateId==='hangzhou-debit-v1')return require('./bankAccountResolution').resolveBankAccount({identity:preview.accountIdentity,accounts,owner});
   const provider = canonical(preview.provider);
   const currencies = [...new Set(preview.records.map(r => r.currency))];
   if (!provider || currencies.length !== 1 || !/^[A-Z]{3}$/.test(currencies[0])) return { status: 'manual', candidates: accounts.filter(a => a.status === 'active') };

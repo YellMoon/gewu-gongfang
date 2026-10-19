@@ -1,0 +1,28 @@
+.personal-finance-panel .finance-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.personal-finance-panel .finance-mail{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;color:#595959;font-size:13px;overflow-wrap:anywhere}
+.personal-finance-panel .finance-help{margin:8px 0 12px;color:#595959;line-height:1.7}
+.personal-finance-panel .finance-help summary{cursor:pointer;color:#1677ff}
+.personal-finance-panel .finance-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;margin-bottom:12px}
+.personal-finance-panel .finance-scope{margin:8px 0 16px;color:#595959;line-height:1.7}
+.personal-finance-panel .finance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.personal-finance-panel .finance-value{font-size:26px;font-weight:600;line-height:1.5;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.personal-finance-panel .finance-muted{color:#595959;font-size:13px;line-height:1.6}
+.personal-finance-panel .finance-charts{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-bottom:20px}
+.personal-finance-panel .finance-chart{min-width:0;border:1px solid #f0f0f0;border-radius:8px;padding:16px}
+.personal-finance-panel .finance-chart h3,.personal-finance-panel .finance-chart figure{margin:0}
+.personal-finance-panel .finance-section-title{margin:20px 0 12px;font-size:17px}
+.personal-finance-panel .finance-chart figure>svg{display:block;width:100%;height:265px;font-family:inherit;font-variant-numeric:tabular-nums}
+.personal-finance-panel .finance-category-row{display:block;width:100%;text-align:left;border:0;background:transparent;padding:8px 0;cursor:pointer;color:inherit}
+.personal-finance-panel .finance-category-label{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}
+.personal-finance-panel .finance-category-track{display:block;height:7px;background:#f0f0f0;border-radius:4px;overflow:hidden}
+.personal-finance-panel .finance-category-fill{display:block;height:100%;background:#c7511f;border-radius:4px}
+.personal-finance-panel .finance-number{font-variant-numeric:tabular-nums;white-space:nowrap}
+.personal-finance-panel .ant-table-cell{vertical-align:top}
+.personal-finance-panel .finance-stat{max-width:240px;line-height:1.5}
+.personal-finance-panel .finance-zero{background:#fafafa}
+.finance-account-detail{font-variant-numeric:tabular-nums;line-height:1.8}
+.finance-account-detail dt{color:#595959;margin-top:12px}
+.finance-account-detail dd{margin-left:0}
+.finance-account-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;background:#fafafa;padding:12px}
+@media(max-width:1100px){.personal-finance-panel .finance-charts{grid-template-columns:1fr}.personal-finance-panel .finance-chart figure>svg{height:240px}}
+@media(max-width:700px){.personal-finance-panel .finance-summary{grid-template-columns:1fr}.personal-finance-panel .finance-value{font-size:24px}.personal-finance-panel .ant-card-body{padding:16px}.personal-finance-panel .finance-account-select{width:100%!important;min-width:0!important}}
