@@ -6,15 +6,37 @@ import BillRelatedAccounts,{relatedAccountsReady,relatedAccountSnapshot} from '.
 import { buildFinanceView } from '../../shared/personal-finance/ledger.js';
 // @ts-ignore Shared asset register uses immutable statement evidence.
 import { buildAssetRegister } from '../../shared/personal-finance/assetRegister.js';
+// @ts-ignore Shared exact-integer aggregations.
+import { buildTrend } from '../../shared/personal-finance/accountAnalytics.js';
 import { createPersonalFinanceClient, formatMinor, parseMoney } from '../services/personalFinanceClient.mjs';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const TYPES: Record<string, string> = { cash: '现金', bank: '银行账户', savings: '储蓄', debit_card: '借记卡', credit_card: '信用卡', wallet: '电子钱包', loan: '贷款', investment: '证券与基金', insurance: '保险', receivable: '应收款', property: '不动产', precious_metal: '贵金属', retirement: '养老金', other: '其他资产' };
 const KINDS: Record<string, string> = { expense: '消费', income: '收入', transfer: '转账', refund: '退款', loan_drawdown: '借款到账', debt_payment: '还款/月供', interest: '利息', fee: '手续费', unknown: '待分类' };
 const client = createPersonalFinanceClient();
 const empty = { accounts: [], observations: [], links: [], balanceSnapshots: [], imports: [], legacyRecords: [], revision: '0' };
+export function FinanceTrend({rows,currency}:{rows:any[];currency:string}) {
+  if(!rows.length)return null;
+  const values=rows.flatMap(r=>[BigInt(r.values[currency]?.incomeMinor||'0'),BigInt(r.values[currency]?.consumptionMinor||'0')]);
+  const low=values.reduce((a,b)=>a<b?a:b,0n),high=values.reduce((a,b)=>a>b?a:b,0n),range=high-low||1n;
+  // Only the final pixel ratio uses floating point; monetary totals stay exact.
+  const y=(v:string)=>220-Number((BigInt(v)-low)*18000n/range)/100;
+  const x=(i:number)=>90+i*790/Math.max(rows.length-1,1);
+  const series=[{key:'incomeMinor',label:'\u6536\u5165',color:'#1677ff'},{key:'consumptionMinor',label:'\u652f\u51fa\uff08\u6263\u9664\u9000\u6b3e\uff09',color:'#c7511f'}];
+  return <figure style={{margin:'12px 0',padding:12,border:'1px solid #d9d9d9',borderRadius:8}}>
+    <figcaption>{currency} {'\u6536\u652f\u8d8b\u52bf'} <span style={{color:'#1677ff'}}>{'\u2501'} {'\u6536\u5165'}</span> <span style={{color:'#c7511f'}}>{'\u2504'} {'\u652f\u51fa'}</span></figcaption>
+    <svg role="img" aria-label={currency+'\u6536\u5165\u4e0e\u652f\u51fa\u8d8b\u52bf'} viewBox="0 0 920 270" style={{width:'100%',minHeight:190,maxHeight:340,fontFamily:'inherit',fontVariantNumeric:'tabular-nums'}}>
+      {[0,1,2,3,4].map(i=>{const amount=low+range*BigInt(i)/4n;return <g key={i}><line x1="90" x2="880" y1={y(amount.toString())} y2={y(amount.toString())} stroke="#e5e7eb"/><text x="82" y={y(amount.toString())+4} textAnchor="end" fontSize="12">{formatMinor(amount.toString())}</text></g>;})}
+      <line x1="90" x2="880" y1={y('0')} y2={y('0')} stroke="#8c8c8c"/>
+      {series.map(s=><g key={s.key}><polyline fill="none" stroke={s.color} strokeWidth="2.5" strokeDasharray={s.key==='consumptionMinor'?'7 4':undefined} points={rows.map((r,i)=>x(i)+','+y(r.values[currency]?.[s.key]||'0')).join(' ')}/>{rows.map((r,i)=><circle key={r.date} cx={x(i)} cy={y(r.values[currency]?.[s.key]||'0')} r={rows.length>180?1.5:3} fill={s.color}><title>{r.date+' '+s.label+' '+formatMinor(r.values[currency]?.[s.key]||'0')}</title></circle>)}</g>)}
+      {rows.map((r,i)=>i===0||i===rows.length-1||i%Math.max(1,Math.ceil(rows.length/6))===0?<text key={r.date} x={x(i)} y="250" textAnchor="middle" fontSize="12">{r.date}</text>:null)}
+    </svg>
+    <details><summary>{'\u67e5\u770b\u8d8b\u52bf\u6570\u636e'}</summary><Table size="small" rowKey="date" dataSource={rows.map(r=>({date:r.date,...r.values[currency]}))} pagination={{pageSize:12}} columns={[{title:'\u65e5\u671f',dataIndex:'date'},{title:'\u6536\u5165',dataIndex:'incomeMinor',render:formatMinor},{title:'\u652f\u51fa',dataIndex:'consumptionMinor',render:formatMinor}]}/></details>
+  </figure>;
+}
 export default function PersonalFinancePanel() {
   const [ledger, setLedger] = useState<any>(empty), [selected, setSelected] = useState<string[]>([]);
   const [period, setPeriod] = useState<any>([dayjs().startOf('month'), dayjs().endOf('month')]);
+  const [granularity, setGranularity] = useState('month');
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState('');
   const [accountModal, setAccountModal] = useState(false), [form] = Form.useForm();
   const [importAccount, setImportAccount] = useState<string>(), [file, setFile] = useState<any>(), [preview, setPreview] = useState<any>();
@@ -65,6 +87,7 @@ export default function PersonalFinancePanel() {
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
   const accountRows = ledger.accounts.filter((a: any) => !selected.length || selected.includes(a.id)).map((a: any) => ({ ...a, ...view.accountStats[a.id] }));
+  const trend = useMemo(() => buildTrend(view.transactions, {startDate:period?.[0]?.format('YYYY-MM-DD'),endDate:period?.[1]?.format('YYYY-MM-DD'),granularity,currencies:Object.keys(view.currencyTotals)}), [view,period,granularity]);
   const assetRegister = useMemo(() => buildAssetRegister(ledger), [ledger]);
   const verifyBalance = (a: any) => Modal.confirm({
     title: a.label + ' \u00b7 \u4f59\u989d\u6838\u5bf9',
@@ -91,20 +114,38 @@ export default function PersonalFinancePanel() {
     </div>} />
     <Space wrap style={{ marginBottom: 16 }}><Button type="primary" onClick={() => window.dispatchEvent?.(new Event('bill-mailbox-open'))}>检查收件箱 / 逐份输入密码</Button><span>登录且联网后自动检测一次；可在独立窗口核对每份账单并批量导入。</span></Space>
     <Space wrap style={{ marginBottom: 16 }}>
-      <Select mode="multiple" placeholder="全部账户（可多选）" style={{ minWidth: 280 }} options={accounts} value={selected} onChange={setSelected} />
-      <DatePicker.RangePicker value={period} onChange={setPeriod} allowClear />
+      <Select aria-label="统计账户" mode="multiple" showSearch optionFilterProp="label" allowClear placeholder="全部账户（可多选）" style={{ minWidth: 280 }} options={accounts} value={selected} onChange={setSelected} />
+      <Button onClick={() => setSelected([])}>全部账户</Button>
+      <Button onClick={() => setPeriod(null)}>全部日期</Button>
+      <DatePicker.RangePicker placeholder={['开始日期','结束日期']} value={period} onChange={setPeriod} allowClear />
       <Button onClick={() => void reload()} disabled={busy}>刷新</Button><Button onClick={() => setAccountModal(true)}>新增账户</Button>
     </Space>
-    <Alert type="info" message="消费按关联交易统计；账户行展示各自关联消费，渠道与资金账户可关联同一笔，组合合计以去重总览为准。转账、贷款到账、还款本金分别列示。资产余额为正、负债欠款为负；余额需有期初值或账单余额校准，币种分别统计。" />
-    <Tabs items={[
+    <Alert type="info" message="收支归到实际资金账户，转账、申购本金和还款本金不计入收入或支出；退款冲减支出。账户自己的完整账单优先提供资金变动，平台记录保留为来源依据。余额推算使用已记录流水，缺失余额不会按零汇总，币种分别统计。" />
+    {view.transactions.some((t:any)=>t.statisticsExclusions?.length>0)&&<Alert type="warning" showIcon message={"有 "+view.transactions.filter((t:any)=>t.statisticsExclusions?.length>0).length+" 条平台记录可能与信用卡账单重叠"} description="暂按信用卡原账单计入收支，疑似重叠的平台记录未再次计入。请在交易与关联复核中确认重复或标记为不同交易；原始记录全部保留。"/>}
+    <section aria-label="账户收支与余额总览" style={{margin:'20px 0'}}>
+      <h3>{selected.length ? '已选 '+selected.length+' 个账户' : '全部账户'} · 收支与余额</h3>
+      <p>{period ? period[0].format('YYYY-MM-DD')+' 至 '+period[1].format('YYYY-MM-DD') : '全部已导入日期'}。余额{period ? '推算至 '+period[1].format('YYYY-MM-DD')+'（仅含已记录变动）' : '按最近余额依据和已记录变动计算'}。</p>
+      <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>{Object.entries(view.currencyTotals).map(([currency,v]:any)=>{const b=view.portfolioBalances[currency];return <Card key={currency} size="small" title={currency} style={{flex:'1 1 280px'}}>
+        <div style={{display:'flex',gap:28,flexWrap:'wrap',fontVariantNumeric:'tabular-nums'}}>
+          <div>支出（扣除退款）<div style={{fontSize:24,fontWeight:600}} data-testid="expense-total">{formatMinor(v.consumptionMinor)}</div></div>
+          <div>收入<div style={{fontSize:24,fontWeight:600}} data-testid="income-total">{formatMinor(v.incomeMinor)}</div></div>
+          <div>{b?.complete?'账户组合余额':'已知余额小计'}<div style={{fontSize:24,fontWeight:600}} data-testid="balance-total">{formatMinor(b?.knownCount?b.knownBalanceMinor:null)}</div></div>
+        </div>
+        <p>{b?.knownCount||0} 个账户有余额依据；{b?.unknownCount||0} 个待核对；{b?.derivedCount||0} 个由余额依据与流水推算。负数表示负债。</p>
+      </Card>;})}</div>
+      <Space wrap style={{margin:'20px 0 8px'}}><strong>收入与支出趋势</strong><Select aria-label="趋势粒度" value={granularity} onChange={setGranularity} options={[{value:'day',label:'按日'},{value:'week',label:'按周'},{value:'month',label:'按月'}]} /></Space>
+      {Object.keys(view.currencyTotals).map(currency=><FinanceTrend key={currency} currency={currency} rows={trend} />)}
+      {!trend.length&&<p>所选期间暂无账单记录。</p>}
+    </section>
+    <Tabs defaultActiveKey="overview" items={[
       { key:'assets', label:'\u8d44\u4ea7\u7cfb\u7edf\u8868', children:<>
         <Alert type="info" showIcon style={{margin:'16px 0'}} message={'\u6309\u5b9e\u9645\u8d44\u91d1\u8d26\u6237\u6574\u7406\uff0c\u57fa\u91d1\u5728\u7406\u8d22\u8d26\u6237\u5185\u6309\u4ea7\u54c1\u5217\u793a'} description={'\u672c\u8868\u4f7f\u7528\u5168\u90e8\u5df2\u5bfc\u5165\u8d26\u5355\u3002\u6838\u5bf9\u4f59\u989d\u4fdd\u7559\u5bf9\u5e94\u65f6\u70b9\uff1b\u672a\u77e5\u4f59\u989d\u4fdd\u6301\u7a7a\u7f3a\uff0c\u4e0d\u4ee5\u96f6\u4ee3\u66ff\uff0c\u4e0d\u6c47\u603b\u4e3a\u5b8c\u6574\u51c0\u8d44\u4ea7\u3002\u94f6\u884c\u5361\u6309\u94f6\u884c\u3001\u5361\u7c7b\u578b\u548c\u5c3e\u53f7\u533a\u5206\uff0c\u5fae\u4fe1\u4e0e\u652f\u4ed8\u5b9d\u53ea\u6807\u8bb0\u8d26\u5355\u6e20\u9053\u3002'} />
         <Space wrap style={{marginBottom:16}}><Button disabled={busy || !assetRegister.proposals.accounts.length} onClick={() => void run(() => client.discoverAccounts({expectedRevision:ledger.revision}))}>{'\u6839\u636e\u8d26\u5355\u8865\u5efa\u8d26\u6237'}{assetRegister.proposals.accounts.length ? '\uff08'+assetRegister.proposals.accounts.length+'\uff09' : ''}</Button><span>{'\u540e\u7eed\u5bfc\u5165\u7684\u8d26\u5355\u53ef\u7ee7\u7eed\u8865\u5145\u8d26\u6237\uff1b\u4f59\u989d\u548c\u5173\u8054\u53ef\u9010\u6b65\u6838\u5bf9\u3002'}</span></Space>
-        <Table rowKey="id" dataSource={assetRegister.accounts} pagination={{pageSize:15}} scroll={{x:1200}} columns={[
+        <Table rowKey="id" dataSource={assetRegister.accounts.filter((a:any)=>!selected.length||selected.includes(a.id))} pagination={{pageSize:15}} scroll={{x:1200}} columns={[
           {title:'\u8d26\u6237\u7c7b\u522b',dataIndex:'group'},{title:'\u8d26\u6237',dataIndex:'label',render:(v:string,a:any)=>a.type==='wallet'&&v==='\u5fae\u4fe1\u652f\u4ed8'?'\u5fae\u4fe1\u96f6\u94b1':a.type==='wallet'&&v==='\u652f\u4ed8\u5b9d'?'\u652f\u4ed8\u5b9d\u4f59\u989d':v},
           {title:'\u8d26\u5355\u6e20\u9053',dataIndex:'channels',render:(v:string[])=>v.map(x=>({wechat:'\u5fae\u4fe1',alipay:'\u652f\u4ed8\u5b9d',mybank:'\u7f51\u5546\u94f6\u884c'} as Record<string,string>)[x]||x).join(' / ')||'\u2014'},
           {title:'\u6838\u5bf9\u4f59\u989d',render:(_:any,a:any)=>a.verifiedBalance?formatMinor(a.verifiedBalance.balanceMinor):'\u5f85\u6838\u5bf9'},
-          {title:'\u4f59\u989d\u4f9d\u636e',render:(_:any,a:any)=>a.verifiedBalance?({available:'\u53ef\u7528\u4f59\u989d',estimated:'\u94f6\u884c\u8bd5\u7b97\u4f59\u989d',distributor_total:'\u8be5\u4ee3\u9500\u673a\u6784\u8d44\u4ea7'} as Record<string,string>)[a.verifiedBalance.balanceKind]||(a.verifiedBalance.source==='manual'?'\u4eba\u5de5\u6838\u5bf9':'\u8d26\u5355\u4f59\u989d'):a.balanceStatus},
+          {title:'\u4f59\u989d\u4f9d\u636e',render:(_:any,a:any)=>a.verifiedBalance?({billed_debt:'已出账应还款（不含未出账）',available:'\u53ef\u7528\u4f59\u989d',estimated:'\u94f6\u884c\u8bd5\u7b97\u4f59\u989d',distributor_total:'\u8be5\u4ee3\u9500\u673a\u6784\u8d44\u4ea7'} as Record<string,string>)[a.verifiedBalance.balanceKind]||(a.verifiedBalance.source==='manual'?'\u4eba\u5de5\u6838\u5bf9':'\u8d26\u5355\u4f59\u989d'):a.balanceStatus},
           {title:'\u4f59\u989d\u65f6\u70b9',render:(_:any,a:any)=>a.verifiedBalance?dayjs(a.verifiedBalance.asOf).format('YYYY-MM-DD HH:mm'):'\u2014'},
           {title:'\u8d26\u5355\u8bb0\u5f55\u671f\u95f4',render:(_:any,a:any)=>a.firstDate?a.firstDate+' \u81f3 '+a.lastDate:'\u6682\u65e0\u8bb0\u5f55'},
           {title:'\u5173\u8054\u8bb0\u5f55',dataIndex:'evidenceCount'},
@@ -131,7 +172,9 @@ export default function PersonalFinancePanel() {
         <Space wrap style={{ margin: '16px 0' }}>{Object.entries(view.currencyTotals).map(([currency, totals]: any) => <Tag key={currency}>{currency} 消费 {formatMinor(totals.consumptionMinor)} · 收入 {formatMinor(totals.incomeMinor)} · 现金流 {formatMinor(totals.netCashFlowMinor)}</Tag>)}</Space>
         <Table rowKey="id" dataSource={accountRows} pagination={false} scroll={{ x: 750 }} columns={[
           { title: '账户', dataIndex: 'label' }, { title: '类别', dataIndex: 'type', render: (v: string) => TYPES[v] || v }, { title: '币种', dataIndex: 'currency' },
-          { title: '消费', dataIndex: 'consumptionMinor', render: formatMinor }, { title: '收入', dataIndex: 'incomeMinor', render: formatMinor }, { title: '余额', dataIndex: 'balanceMinor', render: formatMinor },
+          { title: '支出（扣除退款）', dataIndex: 'consumptionMinor', render: formatMinor }, { title: '收入', dataIndex: 'incomeMinor', render: formatMinor }, { title: '余额', dataIndex: 'balanceMinor', render: formatMinor },
+          { title: '余额依据', render:(_:any,a:any)=>a.balanceAnchor?<span>{a.balanceStatus==='derived'?'流水推算':'余额校准'} · {dayjs(a.balanceAnchor.asOf).format('YYYY-MM-DD HH:mm')}</span>:'待核对' },
+          { title: '单独查看', render:(_:any,a:any)=><Button size="small" onClick={()=>setSelected([a.id])}>仅看此账户</Button> },
           { title: '校准余额', render: (_: any, a: any) => <Button size="small" onClick={() => Modal.confirm({ title: `${a.label} 余额校准`, content: <Form id="finance-balance" layout="vertical"><Input name="balance" placeholder="余额（可负数，如 -1000.00）" /><Input name="asOf" type="datetime-local" defaultValue={dayjs().format('YYYY-MM-DDTHH:mm')} /></Form>, onOk: async () => {
             const el = document.getElementById('finance-balance') as HTMLFormElement, f = new FormData(el), value = String(f.get('balance') || '');
             if (!/^-?\d+(\.\d{1,2})?$/.test(value)) throw new Error('请输入最多两位小数的金额');
@@ -141,7 +184,7 @@ export default function PersonalFinancePanel() {
         ]} />
         <Table rowKey="id" dataSource={categoryRows} columns={[{ title: '支出类别', dataIndex: 'category' }, { title: '币种', dataIndex: 'currency' }, { title: '本期', dataIndex: 'amount', render: formatMinor }, { title: '上期同长度期间', dataIndex: 'previous', render: formatMinor }]} />
         <Table rowKey="currency" dataSource={Object.entries(view.fundingBreakdown || {}).map(([currency, amounts]: any) => ({ currency, ...amounts }))} scroll={{ x: 850 }} pagination={false} columns={[{ title: '币种', dataIndex: 'currency' }, { title: '现金类消费', dataIndex: 'cashFundedConsumptionMinor', render: formatMinor }, { title: '信用类消费', dataIndex: 'creditFundedConsumptionMinor', render: formatMinor }, { title: '还款本金', dataIndex: 'loanPrincipalPaidMinor', render: formatMinor }, { title: '利息', dataIndex: 'interestPaidMinor', render: formatMinor }, { title: '费用', dataIndex: 'feesPaidMinor', render: formatMinor }, { title: '待拆分还款', dataIndex: 'unsplitDebtPaymentMinor', render: formatMinor }]} />
-        <Table rowKey="id" dataSource={fundingRows} scroll={{ x: 800 }} columns={[{ title: '日期', dataIndex: 'date' }, { title: '用途', dataIndex: 'kind', render: (v: string) => KINDS[v] }, { title: '资金账户类型', dataIndex: 'funding' }, { title: '币种', dataIndex: 'currency' }, { title: '金额', dataIndex: 'amountMinor', render: formatMinor }, { title: '还款本金', dataIndex: 'principalMinor', render: formatMinor }, { title: '利息', dataIndex: 'interestMinor', render: formatMinor }, { title: '费用', dataIndex: 'feeMinor', render: formatMinor }]} />
+        <Table rowKey="id" dataSource={fundingRows} scroll={{ x: 800 }} columns={[{ title: '日期', dataIndex: 'date' }, { title: '用途', dataIndex: 'kind', render: (v: string) => KINDS[v] }, {title:'统计状态',render:(_:any,t:any)=>t.statisticsExclusions?.length?'与信用卡账单疑似重叠，暂不重复计入':'已计入适用统计'}, { title: '资金账户类型', dataIndex: 'funding' }, { title: '币种', dataIndex: 'currency' }, { title: '金额', dataIndex: 'amountMinor', render: formatMinor }, { title: '还款本金', dataIndex: 'principalMinor', render: formatMinor }, { title: '利息', dataIndex: 'interestMinor', render: formatMinor }, { title: '费用', dataIndex: 'feeMinor', render: formatMinor }]} />
       </> },
       { key: 'transactions', label: '交易与关联复核', children: <>
         <Alert type="warning" message={`有 ${view.unresolvedAssociations.length} 项关联或分类待复核；无明确证据的同额交易不会自动合并。`} />

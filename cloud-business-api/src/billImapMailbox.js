@@ -8,6 +8,12 @@ function parts(node,result=[]){
  else if(node.part){const filename=node.dispositionParameters?.filename||node.parameters?.name||'';if(supported(filename)||node.disposition==='attachment'&&!filename)result.push({part:String(node.part),filename:String(filename).slice(0,180),size:node.size,encoding:node.encoding});}
  return result;
 }
+function statementParts(message){
+ const attached=parts(message.bodyStructure);
+ if(!/\u6c11\u751f.*\u4fe1\u7528\u5361.*\u8d26\u5355/.test(message.envelope?.subject||''))return attached;
+ const visit=node=>{if(node?.childNodes?.length)node.childNodes.forEach(visit);else if(node?.part&&node.type==='text/html'&&!attached.some(p=>p.part===String(node.part)))attached.push({part:String(node.part),filename:'minsheng-email-statement.html',size:node.size,encoding:node.encoding,charset:node.parameters?.charset,source:'email-body'});};
+ visit(message.bodyStructure);return attached;
+}
 function identity(value,prefix){
  const match=typeof value==='string'&&value.match(new RegExp('^'+prefix+':([1-9]\\d{0,9}):([1-9]\\d{0,9})$'));
  if(!match||Number(match[1])>4294967295||Number(match[2])>4294967295)throw fail('BILL_MAIL_INPUT_INVALID');
@@ -62,7 +68,7 @@ function createImapBillMailbox({ownerAccountId,inboxId,apiKey,parseBillFile,clie
   });
   const match=typeof attachmentId==='string'&&attachmentId.match(/^part:([1-9]\d?(?:\.[1-9]\d?){0,12})$/);
   if(!match)throw fail('BILL_MAIL_INPUT_INVALID');
-  return withInbox(async(client,validity,guard)=>{validScope(id,validity);const message=await client.fetchOne(String(id.uid),{bodyStructure:true},{uid:true});guard();if(!message)throw fail('BILL_MAIL_MESSAGE_NOT_FOUND');const part=parts(message.bodyStructure).find(item=>item.part===match[1]);if(!part)throw fail('BILL_MAIL_ATTACHMENT_NOT_FOUND');return download(client,id.uid,part,guard);});
+  return withInbox(async(client,validity,guard)=>{validScope(id,validity);const message=await client.fetchOne(String(id.uid),{bodyStructure:true,envelope:true},{uid:true});guard();if(!message)throw fail('BILL_MAIL_MESSAGE_NOT_FOUND');const part=statementParts(message).find(item=>item.part===match[1]);if(!part)throw fail('BILL_MAIL_ATTACHMENT_NOT_FOUND');return download(client,id.uid,part,guard);});
  }
  return Object.freeze({
   status({actor}){authorize(actor);return{address:inboxId,provider:'AgentMail',mode:'receive-only',transport:'imap',configured:true};},
@@ -86,9 +92,9 @@ function createImapBillMailbox({ownerAccountId,inboxId,apiKey,parseBillFile,clie
       try{const source=await downloadWechatBill({url:link.url,filename:item.filename,fetch,maxBytes,guard});guard();item.filename=source.filename;item.preview=await parseBillFile(source);guard();}
       catch(error){guard();if(error.code==='BILL_MAIL_TIMEOUT')throw error;item.code=/^BILL_/.test(error.code||'')?error.code:'BILL_MAIL_PARSE_FAILED';}attachments.push(item);
      }
-     for(const part of parts(message.bodyStructure).slice(0,30)){
+     for(const part of statementParts(message).slice(0,30)){
      guard();
-     const item={messageId:'imap:'+validity+':'+message.uid,attachmentId:'part:'+part.part,filename:part.filename||'未命名附件',receivedAt:message.internalDate?.toISOString?.()||null,...metadata};
+     const item={messageId:'imap:'+validity+':'+message.uid,attachmentId:'part:'+part.part,filename:part.filename||'未命名附件',source:part.source||'attachment',receivedAt:message.internalDate?.toISOString?.()||null,...metadata};
      if(!part.filename){attachments.push({...item,code:'BILL_MAIL_FILENAME_UNAVAILABLE'});continue;}
      if(budget--<=0){attachments.push({...item,code:'BILL_MAIL_PREVIEW_DEFERRED'});continue;}
      try{const source=await download(client,message.uid,part,guard);guard();item.preview=await parseBillFile(source);guard();}catch(error){guard();if(error.code==='BILL_MAIL_TIMEOUT')throw error;item.code=/^BILL_/.test(error.code||'')?error.code:'BILL_MAIL_PARSE_FAILED';}

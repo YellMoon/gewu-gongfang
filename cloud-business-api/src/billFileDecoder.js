@@ -148,7 +148,7 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
       // Preserve line positions but do not pretend already-lost Excel precision can be recovered.
       rows.push(bad ? Array(range.e.c + 1).fill('') : row);
     }
-    const parsed = require('./mybankStatement').parseMybankRows(rows)||parseBillCsv(csvText(rows),{filename,fieldMapping});
+    const parsed = require('./mybankStatement').parseMybankRows(rows)||require('./huaxiaStatement').parseHuaxiaRows(rows)||parseBillCsv(csvText(rows),{filename,fieldMapping});
     if (precisionErrors.length) parsed.errors = [...precisionErrors,...parsed.errors.filter(error => error.code !== 'BILL_NO_RECORDS')];
     merge(result,parsed,name);
   }
@@ -221,13 +221,22 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
   }
   const html = /^\s*(?:<!doctype\s+html|<html|<table)/i.test(buffer.subarray(0,4096).toString('utf8'));
   if (['.html','.htm'].includes(extension) || (extension === '.xls' && html)) {
+    const statement=require('./minshengStatement').parseMinshengHtml(decodeText(buffer));if(statement)return statement;
     if (!html || !/<table[\s>]/i.test(decodeText(buffer))) fail('BILL_HTML_TABLE_MISSING','HTML 中未找到可解析账单表格');
     return spreadsheet(buffer,filename,fieldMapping,budget,true);
   }
   if (['.xls','.xlsx'].includes(extension)) {
     const ole = buffer.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]));
     const zip = buffer[0] === 0x50 && buffer[1] === 0x4b;
-    if (ole && buffer.includes(Buffer.from('EncryptedPackage','utf16le')) && buffer.includes(Buffer.from('EncryptionInfo','utf16le'))) fail('BILL_EXCEL_ENCRYPTED','Excel 已加密，请本地解密并人工核验后重新导入');
+    if (ole && buffer.includes(Buffer.from('EncryptedPackage','utf16le')) && buffer.includes(Buffer.from('EncryptionInfo','utf16le'))) {
+      if(!password)fail('BILL_EXCEL_ENCRYPTED','\u8bf7\u8f93\u5165\u8fd9\u4efd Excel \u8d26\u5355\u7684\u6253\u5f00\u5bc6\u7801');
+      let decrypted;
+      try { decrypted=await require('officecrypto-tool').decrypt(buffer,{password}); }
+      catch { fail('BILL_EXCEL_PASSWORD_INVALID','\u5bc6\u7801\u4e0d\u6b63\u786e\u6216\u52a0\u5bc6\u683c\u5f0f\u4e0d\u652f\u6301\uff0c\u8bf7\u6838\u5bf9\u8fd9\u4efd\u6587\u4ef6\u7684\u6253\u5f00\u5bc6\u7801'); }
+      if(decrypted.length>LIMITS.fileBytes)fail('BILL_FILE_SIZE_LIMIT','Decrypted workbook exceeds the file size limit');
+      if(decrypted[0]!==0x50||decrypted[1]!==0x4b)fail('BILL_FORMAT_MISMATCH','Decrypted file is not an XLSX workbook');
+      return spreadsheet(decrypted,filename.replace(/\.xls$/i,'.xlsx'),fieldMapping,budget);
+    }
     if ((extension === '.xls' && !ole) || (extension === '.xlsx' && !zip)) fail('BILL_FORMAT_MISMATCH','Excel 扩展名与真实文件格式不匹配，请重新导出工作簿');
     return spreadsheet(buffer,filename,fieldMapping,budget);
   }

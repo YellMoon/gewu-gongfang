@@ -125,11 +125,23 @@ test('nested ZIP returns a clear review diagnostic', async () => {
   const outer = new JSZip(); outer.file('nested.zip',await inner.generateAsync({type:'nodebuffer'}));
   assert.equal((await parseBillFile(file('nested.zip',await outer.generateAsync({type:'nodebuffer'})))).errors[0].code,'BILL_ZIP_NESTED_UNSUPPORTED');
 });
-test('encrypted Office container requests local decryption and human review', async () => {
+test('encrypted Office container requests a file-specific password', async () => {
   const encrypted = XLSX.CFB.utils.cfb_new();
   XLSX.CFB.utils.cfb_add(encrypted,'EncryptionInfo',Buffer.alloc(20)); XLSX.CFB.utils.cfb_add(encrypted,'EncryptedPackage',Buffer.alloc(20));
   const r = await parseBillFile(file('encrypted.xls',XLSX.CFB.write(encrypted,{type:'buffer'})));
   assert.equal(r.errors[0].code,'BILL_EXCEL_ENCRYPTED');
+});
+test('encrypted XLSX uses a transient per-file password and retains the original hash',async()=>{
+ const crypto=require('node:crypto'),office=require('officecrypto-tool');
+ for(const type of [undefined,'standard']){
+  const bytes=await office.encrypt(workbook('xlsx'),{password:'synthetic-office-password',...(type?{type}:{})});
+  const input=file('encrypted.xlsx',bytes);
+  assert.equal((await parseBillFile(input)).errors[0].code,'BILL_EXCEL_ENCRYPTED');
+  assert.equal((await parseBillFile({...input,password:'wrong'})).errors[0].code,'BILL_EXCEL_PASSWORD_INVALID');
+  const result=await parseBillFile({...input,password:'synthetic-office-password'});
+  assert.equal(result.errors.length,0,JSON.stringify(result.errors));assert.equal(result.records[0].amountMinor,'125');
+  assert.equal(result.fileHash,crypto.createHash('sha256').update(bytes).digest('hex'));assert(!JSON.stringify(result).includes('synthetic-office-password'));
+ }
 });
 test('Excel numeric money cannot pretend to have cent precision at huge magnitude', async () => {
   const r = await parseBillFile(file('huge-money.xlsx',workbook('xlsx',[['date','type','amount'],['2026-10-01','income',100000000000000]])));

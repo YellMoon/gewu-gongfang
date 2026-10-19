@@ -18,6 +18,7 @@ function page(){
   '@tarojs/taro':{default:{chooseMessageFile:()=>{const d=deferred();choosers.push(d);return d.promise;},getFileSystemManager:()=>({readFile:o=>o.success({data:'ZmFrZQ=='})}),showToast:o=>toasts.push(o),showModal:o=>{modals.push(o);return modalReply?modalReply():Promise.resolve({confirm:true});}},useDidShow:fn=>{show=fn;},useDidHide:fn=>{hide=fn;}},
   '../utils/personalFinanceApi':{personalFinanceApi:{ledger:()=>{ledgerCalls++;return ledgerReply?ledgerReply():Promise.resolve({ledger:ledger()});},preview:input=>{previewCalls.push(input);return previewReply?previewReply():Promise.resolve({preview});},import:(input,key)=>{imports.push({input,key});return importReply?importReply():Promise.resolve({ok:true});}}},
   '../utils/authSession':{authSessionRuntime:{capture:()=>({generation}),isSameSession:s=>s.generation===generation}},'../utils/permission':{assertMiniappWriteAllowed:()=>{}},
+  '../../../shared/personal-finance/accountAnalytics':require(path.resolve(__dirname,'../../../shared/personal-finance/accountAnalytics.js')),
   '../../../shared/personal-finance/ledger':require(path.resolve(__dirname,'../../../shared/personal-finance/ledger.js')),
  };
  const js=ts.transpileModule(fs.readFileSync(path.join(__dirname,'PersonalFinanceSummary.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2020}}).outputText;

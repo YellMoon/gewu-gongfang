@@ -62,6 +62,7 @@ async function panel() {
   const jsx=(type,props)=>({type,props:props||{}});
   const dependencies={react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,dayjs,
     '../../shared/personal-finance/ledger.js':require('../../shared/personal-finance/ledger.js'),
+    '../../shared/personal-finance/accountAnalytics.js':require('../../shared/personal-finance/accountAnalytics.js'),
     '../services/personalFinanceClient.mjs':{...actualHelpers,createPersonalFinanceClient:()=>client},
     '../services/desktopAuthorizationSession.mjs':{readDesktopAuthorizationSession:session},
   };

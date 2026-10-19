@@ -15,6 +15,15 @@ test('IMAP uses verified TLS and read-only owner inbox without HTTP or mutation'
  const options=calls.find(c=>c[0]==='options')[1];assert.equal(options.host,'imap.agentmail.to');assert.equal(options.secure,true);assert.equal(options.tls.rejectUnauthorized,true);assert.equal(options.logger,false);
  assert.deepEqual(calls.find(c=>c[0]==='lock'),['lock','INBOX',{readOnly:true}]);assert.equal(calls.at(-1),'close');assert.equal(JSON.stringify(result).includes('secret'),false);
 });
+test('Minsheng statement HTML in the email body is offered and re-read as an immutable source',async()=>{
+ const {mail,client}=fixture({structure:{part:'2',type:'text/html',encoding:'8bit',size:4}});
+ client.fetch=async function*(){yield {uid:7,envelope:{subject:'\u6c11\u751f\u4fe1\u7528\u5361\u7535\u5b50\u5bf9\u8d26\u5355'},bodyStructure:{part:'2',type:'text/html',encoding:'8bit',size:4}};};
+ client.fetchOne=async()=>({envelope:{subject:'\u6c11\u751f\u4fe1\u7528\u5361\u7535\u5b50\u5bf9\u8d26\u5355'},bodyStructure:{part:'2',type:'text/html',encoding:'8bit',size:4}});
+ const result=await mail.check({actor});assert.equal(result.attachments.length,1);assert.equal(result.attachments[0].source,'email-body');
+ const file=await mail.getAttachment({actor,messageId:'imap:123:7',attachmentId:'part:2'});assert.equal(file.filename,'minsheng-email-statement.html');assert.equal(file.buffer.toString(),'bill');
+ client.fetchOne=async()=>({envelope:{subject:'ordinary email'},bodyStructure:{part:'2',type:'text/html',encoding:'8bit',size:4}});
+ await assert.rejects(mail.getAttachment({actor,messageId:'imap:123:7',attachmentId:'part:2'}),/BILL_MAIL_ATTACHMENT_NOT_FOUND/);
+});
 test('pagination uses stable UID identity and rejects changed UIDVALIDITY',async()=>{
  const {mail,calls}=fixture({uids:Array.from({length:35},(_,i)=>i+1)});const first=await mail.check({actor});assert.equal(first.messageCount,30);assert.equal(first.nextPageToken,'imap:123:6');
  const next=await mail.check({actor,pageToken:first.nextPageToken});assert.equal(next.messageCount,5);assert.equal(next.nextPageToken,null);

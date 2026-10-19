@@ -12,7 +12,7 @@ function balanceAccountId(record,accounts){
 function statementBalances(records,accounts,{includeAvailable=false}={}){
  const latest=new Map();
  for(const o of records){
-  if(o.status!=='completed'||o.balanceMinor==null||['available','estimated','distributor_total'].includes(o.balanceEvidence?.balanceKind||o.statementFlow?.balanceKind)&&!includeAvailable)continue;
+  if(o.status!=='completed'||o.balanceMinor==null||['available','estimated','distributor_total','billed_debt'].includes(o.balanceEvidence?.balanceKind||o.statementFlow?.balanceKind)&&!includeAvailable)continue;
   const key=JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.id]);
   if(!latest.has(key)||(o.sourceVersionOrdinal||0)>(latest.get(key).sourceVersionOrdinal||0))latest.set(key,o);
  }

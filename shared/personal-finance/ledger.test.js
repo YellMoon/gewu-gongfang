@@ -15,7 +15,7 @@ assert.equal(view.transactions.length,1,'one-to-one reference and funding eviden
 assert.equal(view.currencyTotals.CNY.consumptionMinor,'100');
 assert.equal(view.accountStats.bank.balanceMinor,'900');
 assert.equal(view.accountStats.ali.cashOutMinor,'0','card financed wallet does not invent wallet debit');
-assert.equal(view.accountStats.ali.consumptionMinor,'100','wallet channel retains consumption attribution without creating wallet cash flow');
+assert.equal(view.accountStats.ali.consumptionMinor,'0','a payment channel is not the actual spending account');
 assert.equal(view.fundingTotals.bank.CNY,'100');
 view=buildFinanceView(ledger([account('bank'),account('ali','wallet')],[observation('b','bank',{relatedReference:'r'}),observation('c','bank',{relatedReference:'r'}),observation('w','ali',{relatedReference:'r',paymentAccountHint:'bank'})]));
 assert.equal(view.transactions.length,3,'ambiguous candidates never silently merge');
@@ -55,7 +55,7 @@ assert.equal(view.fundingBreakdown.CNY.feesPaidMinor,'10');
 view=buildFinanceView(ledger([account('bank')],[observation('buy','bank',{category:'Food'}),observation('return','bank',{kind:'refund',direction:'credit',category:'Refunds',amountMinor:'20',relatedReference:'buy'})]));
 assert.equal(view.categoryTotals.CNY.Food,'80','linked refunds reduce original purchase category');
 view=buildFinanceView(ledger([account('bank'),account('ali','wallet')],[observation('b','bank',{relatedReference:'r'}),observation('w','ali',{relatedReference:'r',paymentAccountHint:'bank'})]),{accountIds:['ali']});
-assert.equal(view.fundingTotals.bank.CNY,'100','channel selection still exposes the actual funding account');
+assert.equal(view.fundingTotals.bank,undefined,'channel selection does not include an unselected funding account in statistics');
 assert.equal(view.currencyTotals.CNY.cashOutMinor,'0','unselected funding account cash flow is excluded');
 view=buildFinanceView(ledger([account('__proto__')],[observation('safe','__proto__',{category:'constructor'})]));
 assert.equal(view.accountStats['__proto__'].cashOutMinor,'100');

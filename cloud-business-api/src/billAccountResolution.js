@@ -17,18 +17,19 @@ function resolveBillAccount({ preview, accounts, owner, selectedAccountId } = {}
     return { status: 'matched', account, explicit: true };
   }
   if (preview.errors?.length || !preview.records?.length) return { status: 'pending', candidates: [] };
-  if(preview.provider==='mybank'&&['mybank-current-v1','mybank-yulibao-v1'].includes(preview.templateId)){
+  if((preview.provider==='mybank'&&['mybank-current-v1','mybank-yulibao-v1'].includes(preview.templateId)||preview.provider==='huaxia'&&preview.templateId==='huaxia-debit-v1'||preview.provider==='minsheng'&&preview.templateId==='minsheng-credit-v1')){
     const identity=preview.accountIdentity;
     if(!identity||!/^\d{4}$/.test(identity.maskedIdentifier)||identity.currency!=='CNY')return {status:'manual',candidates:[]};
     if(identity.product==='alipay_yulibao')return resolveRelatedBillAccounts({preview:{records:[{currency:'CNY',accountRelations:[{product:'alipay_yulibao'}]}]},accounts,owner})[0];
-    const bank='\u7f51\u5546\u94f6\u884c';
-    const matching=accounts.filter(a=>require('../../shared/personal-finance/assetRegister').sameBankAccount(a,{bank,type:'debit_card',tail:identity.maskedIdentifier},'CNY'));
+    const type=preview.provider==='minsheng'?'credit_card':'debit_card';
+    const bank=preview.provider==='minsheng'?'\u6c11\u751f\u94f6\u884c':preview.provider==='huaxia'?'\u534e\u590f\u94f6\u884c':'\u7f51\u5546\u94f6\u884c';
+    const matching=accounts.filter(a=>require('../../shared/personal-finance/assetRegister').sameBankAccount(a,{bank,type,tail:identity.maskedIdentifier},'CNY'));
     const candidates=matching.filter(a=>a.status==='active');
     if(candidates.length===1)return {status:'matched',account:candidates[0],explicit:false};
     if(candidates.length>1)return {status:'ambiguous',candidates};
     if(matching.length)return {status:'archived',candidates:matching};
-    const digest=crypto.createHash('sha256').update(JSON.stringify([...owner,'mybank',identity.maskedIdentifier,'CNY'])).digest('hex').slice(0,32);
-    return {status:'create',account:{id:'finance_source_'+digest,label:bank+'\u6d3b\u671f\u5b58\u6b3e\uff08'+identity.maskedIdentifier+'\uff09',provider:bank,type:'debit_card',maskedIdentifier:identity.maskedIdentifier,currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',balanceConvention:'signed'}};
+    const digest=crypto.createHash('sha256').update(JSON.stringify([...owner,preview.provider,identity.maskedIdentifier,'CNY'])).digest('hex').slice(0,32);
+    return {status:'create',account:{id:'finance_source_'+digest,label:bank+(type==='credit_card'?'\u4fe1\u7528\u5361\uff08':'\u6d3b\u671f\u5b58\u6b3e\uff08')+identity.maskedIdentifier+'\uff09',provider:bank,type,maskedIdentifier:identity.maskedIdentifier,currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',balanceConvention:'signed'}};
   }
   const provider = canonical(preview.provider);
   const currencies = [...new Set(preview.records.map(r => r.currency))];

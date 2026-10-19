@@ -3,32 +3,51 @@
   "contracts": {
     "personalFinanceAssetRegister": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "Cloud owns automatic bank-account discovery and all imports. Deploy bounded MYbank, balance-flow and asset-certificate parsers before readers. Optional balanceEvidence and statementFlow preserve integer minor units, source scope, chronological sequence and balance checks; evidence-only records never create another cash movement. Available, estimated and distributor-only balances cannot calibrate total assets. MYbank payments remain unclassified pending platform reconciliation; signed negative investment income reduces income. Readers use bank plus card type plus tail, preserve ambiguity, and do not invent fund conversion units or NAV. Existing tables, immutable originals and private byte archives remain unchanged."
     },
     "personalFinanceAccountRelations": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "Expand only the observation direction constraint to allow neutral without rewriting existing sources. Deploy migration and cloud automatic source/product account resolution before clients. Preview is read-only; confirmation atomically resolves owner-scoped accounts and records source product associations without duplicate transactions. Optional expected account identities bind reviewed imports. Readers preserve neutral records and use signed net-asset liability balances; existing unsigned debt anchors normalize on read, signed manual calibrations remain explicit, unknown funding and missing balances stay unresolved. Ant fund confirmation v1 metadata is optional and preserves decimal share strings, explicit fees, unnamed conversions and source pages. Compatible readers count confirmation fees once and never duplicate purchase cash movements; CJK PDF CMaps and grid-based cross-page reconstruction run in the bounded production decoder. NAS byte storage is unchanged."
     },
     "personalFinanceMailboxUnlock": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "Deploy the cloud addition before desktop startup mailbox detection and per-file password UI. Mailbox reads remain owner-scoped and read-only; WeChat links are resolved only from the authorized message and fetched from the exact official HTTPS host/path without redirects. Optional password and expectedFileHash fields preserve legacy callers; passwords are ephemeral, excluded from audit and persistence, and each batch item binds message, attachment, account and reviewed source hash before explicit confirmation. Miniapp CSV import and NAS storage contracts remain unchanged."
     },
     "desktopBusinessModuleProjection": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "deploy optional desktop-projection module=courses|schedules before the desktop consumer; legacy full projections remain unchanged; scoped queries retain tenant/role/tombstone fences and skip unrelated aggregates; clients merge only the requested module collections and retain unrelated caches; existing NAS and miniapp requests remain compatible"
     },
     "desktopOfflinePassword": {
       "version": "1",
-      "participants": ["desktop"],
+      "participants": [
+        "desktop"
+      ],
       "rule": "desktop-only optional encrypted vault verifier and unlock-offline IPC; cache salted scrypt verifier only when cloud password verification completes signed desktop registration; offline cold start and relock require the same login form, matching cached account/password and an unexpired signed v2 lease; missing verifiers require one successful online password login; local password verification never issues cloud tokens or extends a lease; account changes discard unrelated verifiers, known revocation blocks access, and offline drafts still require one batch confirmation; cloud, NAS and miniapp protocols and binaries are unchanged"
     },
     "desktopOfflineLease": {
       "version": "2",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "deploy optional offlineLeaseVersion=2 negotiation before the desktop; cloud signs v2 leases for 14 days independently of unchanged one-hour online tokens; callers omitting the flag retain v1 session-bound leases; desktop validates signature, account/device/role bindings and the 14-day bound, never extends a lease locally; offline access only resumes a previously verified local account and creates drafts requiring batch confirmation after online revalidation; existing miniapp and NAS contracts are unchanged"
     },
     "questionDifficultyCoefficient": {
@@ -42,122 +61,206 @@
     },
     "desktopAccountProfile": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "deploy the additive authenticated GET desktop-identity/profile route before desktop rollout; derive the account exclusively from the current verified desktop session and linked teacher, never client-supplied identities; no schema migration or business write; missing WeChat handle remains null; desktop caches display fields only by userId and activeRole, never permissions or credentials; existing miniapp and storage contracts remain compatible"
     },
     "personalFinanceLedger": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "apply additive owner-scoped personal-finance tables before deploying cloud routes; original observations and annotation revisions remain immutable, amounts use integer minor-unit strings, duplicate evidence and account movements are separate from consumption, and missing balance anchors stay unknown; desktop edits financial accounts and associations under verified permissions, miniapp only reads statistics and confirms permitted imports; deploy cloud and private encrypted source volume before publishing readers; AgentMail credentials and configured inbox owner remain server-side; existing teaching, legacy assets and NAS byte-storage transport remain compatible"
     },
     "desktopQuestionIntake": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "deploy the additive desktop-intake migration and authenticated parsed/media-relay routes before desktop rollout; desktop parses and cleans Word locally before network submission and never falls back to NAS parsing; cloud treats parser hash and candidates as untrusted input, recomputes digests and validation, allocates owner-scoped storage, and requires original plus retained media receipts before preparing drafts; NAS 8.8.4 uses unchanged relay transport and stores bytes only for these tasks; legacy parser-bound imports and existing miniapp contracts remain compatible"
     },
     "cloudOperationAudit": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "apply additive operation audit intent/result tables and least-privilege functions before cloud rollout; cloud records verified actor and immutable request/outcome before returning business responses; missing outcomes stay unknown; desktop reads authenticated tenant/admin or self/teacher audit pages with no local-success fallback; older clients ignore additive audit response metadata; existing miniapp and NAS contracts remain compatible"
     },
     "desktopDisplayMetadata": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "apply additive control-plane M29 and deploy cloud support before publishing the desktop; verified-access deviceNameSupported boolean gates the optional registration deviceName field and its assertion digest; old clients omit names, old clouds receive unchanged requests, exact replay never overwrites newer names; displayName and deviceName are presentation metadata only, never role or trust evidence; NAS and miniapp remain unchanged"
     },
     "questionRichTables": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp",
+        "storage_proxy"
+      ],
       "rule": "version 1 question-documents preserve table/tableRow/tableCell/tableHeader nodes, bounded integer colspan/rowspan, nested cell blocks and native Word formulas; this restores source fidelity without changing teaching workflows; deploy and verify desktop/miniapp readers and cloud exporters before activating the parser revision or repairing cloud content; old readers cannot consume the additive table nodes, so activation remains gated until reader rollout is verified; never silently flatten or clip an unsupported table"
     },
     "desktopQuestionMetadata": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "existing question source/year/grade/semester/exam_type/region/school/subject_id/chapter_id/edit_status/has_image fields persist in existing business.questions columns and round-trip through desktop reads; omitted update fields preserve prior values, explicit clears remain explicit and metadata edits use the existing content-version CAS; absent import source defaults to the verified original filename; cloud-only implementation correction, no new schema or NAS change"
     },
     "desktopQuestionProjection": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "desktop question pages use stable ID cursors and explicit nextCursor null at the end; desktop replaces its derived cache only after every page succeeds; deploy the additive cloud cursor response before the desktop consumer"
     },
     "desktopQuestionMutation": {
       "version": "2",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "question update/delete requires the observed integer content version; taxonomy changes also advance it; legacy drafts without a valid baseline are rejected and must be recreated after refreshing cloud data"
     },
     "cloudBusinessRest": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "cloud_business is the only business-data writer; desktop submits confirmed drafts and miniapp has limited task writes"
     },
     "desktopScheduleRestoration": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "schedule PUT with restoreDeleted true and full lifecycle/pricings requires the confirmed deletion expectedUpdatedAt; restore is atomic, permission-scoped and explicitly confirmed; ordinary PUT/POST never resurrect a tombstone; deploy 20260908-schedule-confirmed-restore.sql and cloud support before desktop; old cloud rejects restoration without a legacy fallback"
     },
     "desktopStudentLedger": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "desktop teacher projection supplies existing payments/consumptions arrays for its authorized students, in the same database snapshot; preserve original student-wide balance calculation and tenant/deleted boundaries; missing arrays fail closed; cloud-only correction using existing schema and client fields, no miniapp or storage_proxy change required"
     },
     "miniappStudentLedger": {
       "version": "1",
-      "participants": ["cloud_business", "miniapp"],
+      "participants": [
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "miniapp projection reads scoped payments/grades and calculates student balances with the original desktop payment-minus-consumption formula in one database statement; no raw consumptions, internal ledger notes or extra write capabilities; missing arrays or balances fail closed; deploy additive cloud support before the miniapp reader; existing schema, desktop and storage_proxy unchanged"
     },
     "studentDeletionReferences": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "20260908-student-delete-original-behavior.sql restores original desktop deletion regardless of course/schedule references; soft-delete only the authorized student, retain actor/version locks and all related records; apply forward migration before cloud deployment; existing REST/client contract is unchanged, no storage_proxy or miniapp update required"
     },
     "courseDeletionHistory": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "apply 20260909-course-delete-original-behavior.sql before cloud deployment; original course deletion retains lessons, rates, attendance and finances; scoped projections retain authorized lessons and original display labels but never resurrect courses in selectors; miniapp retains supplied course_name/course_type; no storage_proxy change required"
     },
     "retainedCourseScheduleWrites": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "apply 20260909-retained-course-schedule-write.sql before cloud deployment; original move/copy/resize/delete and confirmed restoration retain tenant/teacher ownership, original lesson snapshots and version checks even after course deletion; only roster links of the checked course extend schedule permission, not student CRUD; course selectors and attendance editor are unchanged; no new REST fields, miniapp or storage_proxy update required"
     },
     "retainedStudentScheduleWrites": {
       "version": "1",
-      "participants": ["desktop", "cloud_business"],
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
       "rule": "apply 20260909-retained-student-schedule-write.sql before cloud deployment; original move/copy/resize/delete and explicit restoration preserve deleted students already linked to the checked course by enrolment or a retained active lesson; keep original rates, tenant/teacher ownership, version checks and locked reference evidence; student CRUD and selectors remain unchanged; existing REST fields only, no miniapp or storage_proxy update required"
     },
     "questionPaperExport": {
       "version": "3",
-      "participants": ["desktop", "cloud_business", "miniapp", "storage_proxy"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp",
+        "storage_proxy"
+      ],
       "rule": "structured question text is cloud-authoritative; storage_proxy keeps only media and export artifacts"
     },
     "storageAgentTransport": {
       "version": "3",
-      "participants": ["cloud_business", "storage_proxy"],
+      "participants": [
+        "cloud_business",
+        "storage_proxy"
+      ],
       "rule": "storage_proxy never decides identity, permissions, or business transactions; v3 carries an exact parser revision proof with question-import candidates"
     },
     "questionImportParserProof": {
       "version": "1",
-      "participants": ["cloud_business", "storage_proxy"],
+      "participants": [
+        "cloud_business",
+        "storage_proxy"
+      ],
       "rule": "storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates"
     },
     "businessDataSchema": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "desktop offline changes are local drafts until confirmed; miniapp does not directly mutate core teaching data"
     },
     "desktopCloudSession": {
       "version": "2",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "desktop login verifies the cloud account before silently registering the device and installation; an authenticated miniapp session can confirm pairing without a second phone proof; restart challenges and role switching are cloud-authoritative"
     },
     "identityRoleModel": {
       "version": "2",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "formal grants are exactly super_admin, teacher, student, and family_member; visitor has no formal grant; family_member keeps guardian-scoped linked-student data access"
     },
     "questionBankBrowse": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "desktop and miniapp render the same cloud-authoritative question structure, option semantics, filters, basket identities, answers, explanations, and source metadata"
     },
     "questionImportDeduplication": {
@@ -168,12 +271,30 @@
         "miniapp"
       ],
       "rule": "Apply additive metadata_labels, school_ids, organization_type, school kind and member_school_ids migration before cloud and desktop rollout. Cloud import submission serializes tenant imports, compares stem/options/formulas/media/subquestions, retains the original ID and enriches missing answers/analysis while unioning taxonomy and provenance labels; conflicting existing content is preserved and recorded. School/alliance IDs remain tenant-scoped resource references and students may belong only to school resources. Alliances reference multiple school resources and a school may join multiple alliances; membership never infers a paper region. Exam organization type is separate from exam type, and coverage regions are multiple labels with empty coverage allowed. Clients display all merged labels. Default similarity warning is 90 percent and never auto-merges near matches. Existing NAS media transport and miniapp limited-write boundary are unchanged."
+    },
+    "personalFinanceAccountAnalytics": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Deploy shared actual-funding-account statistics, statement-owned cash movements, backward balance projection and integer trend series together. Unknown total balances remain unknown; billed credit balances do not calibrate total debt. New Huaxia debit statementFlow and Minsheng bankStatement/balanceEvidence schemas preserve raw originals and declared balance scope. Owner-authorized email HTML body imports and transient per-file Office passwords are parsed in bounded workers. Original encrypted bytes are archived; passwords are never persisted. Unique merchant/card/date/amount evidence links card receipts, ambiguous overlaps remain reviewable and user distinct links prevail. NAS byte storage protocol and core business tables are unchanged."
     }
   },
   "runtimeReceipts": {
     "storage_proxy": {
-      "approvedRuntimeVersions": ["8.8.2", "8.8.3", "8.8.4", "8.9.1", "8.9.2"],
-      "runtimeFloor": { "sourceVersion": "8.9.2", "runtimeVersion": "8.9.2" },
+      "approvedRuntimeVersions": [
+        "8.8.2",
+        "8.8.3",
+        "8.8.4",
+        "8.9.1",
+        "8.9.2"
+      ],
+      "runtimeFloor": {
+        "sourceVersion": "8.9.2",
+        "runtimeVersion": "8.9.2"
+      },
       "contracts": {
         "questionPaperExport": "3",
         "storageAgentTransport": "3",
