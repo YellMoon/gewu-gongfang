@@ -4,6 +4,8 @@ import dayjs from 'dayjs';
 import BillRelatedAccounts,{relatedAccountsReady,relatedAccountSnapshot} from './BillRelatedAccounts';
 // @ts-ignore Shared integer ledger is used by cloud and both clients.
 import { buildFinanceView } from '../../shared/personal-finance/ledger.js';
+// @ts-ignore Shared asset register uses immutable statement evidence.
+import { buildAssetRegister } from '../../shared/personal-finance/assetRegister.js';
 import { createPersonalFinanceClient, formatMinor, parseMoney } from '../services/personalFinanceClient.mjs';
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const TYPES: Record<string, string> = { cash: '现金', bank: '银行账户', savings: '储蓄', debit_card: '借记卡', credit_card: '信用卡', wallet: '电子钱包', loan: '贷款', investment: '证券与基金', insurance: '保险', receivable: '应收款', property: '不动产', precious_metal: '贵金属', retirement: '养老金', other: '其他资产' };
@@ -63,6 +65,19 @@ export default function PersonalFinancePanel() {
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
   const accountRows = ledger.accounts.filter((a: any) => !selected.length || selected.includes(a.id)).map((a: any) => ({ ...a, ...view.accountStats[a.id] }));
+  const assetRegister = useMemo(() => buildAssetRegister(ledger), [ledger]);
+  const verifyBalance = (a: any) => Modal.confirm({
+    title: a.label + ' \u00b7 \u4f59\u989d\u6838\u5bf9',
+    okText:'\u4fdd\u5b58\u6838\u5bf9',cancelText:'\u53d6\u6d88',
+    content:<Form id="asset-balance-form" layout="vertical"><Form.Item label={'\u4f59\u989d\uff08\u5143\uff09'}><Input name="balance" aria-label={'\u6838\u5bf9\u4f59\u989d'} placeholder={'\u6b20\u6b3e\u586b\u8d1f\u6570\uff1b0 \u8868\u793a\u5df2\u786e\u8ba4\u4e3a\u96f6'}/></Form.Item><Form.Item label={'\u4f59\u989d\u5bf9\u5e94\u65f6\u95f4'}><Input name="asOf" aria-label={'\u4f59\u989d\u5bf9\u5e94\u65f6\u95f4'} type="datetime-local" defaultValue={dayjs().format('YYYY-MM-DDTHH:mm')}/></Form.Item><Form.Item label={'\u6838\u5bf9\u4f9d\u636e\u6216\u5907\u6ce8'}><Input name="note" aria-label={'\u6838\u5bf9\u4f9d\u636e\u6216\u5907\u6ce8'}/></Form.Item></Form>,
+    onOk: async () => {
+      const data = new FormData(document.getElementById('asset-balance-form') as HTMLFormElement);
+      const amount = String(data.get('balance') || ''), asOf = new Date(String(data.get('asOf') || ''));
+      if (!/^-?\d+(?:\.\d{1,2})?$/.test(amount) || Number.isNaN(asOf.getTime())) throw new Error('\u8bf7\u586b\u5199\u6709\u6548\u4f59\u989d\u548c\u5bf9\u5e94\u65f6\u95f4');
+      const result = await run(() => client.createBalanceSnapshot({expectedRevision:ledger.revision,snapshot:{financialAccountId:a.id,currency:a.currency,balanceMinor:parseMoney(amount),asOf:asOf.toISOString(),source:'manual',balanceConvention:'signed',note:String(data.get('note')||'')}}));
+      if (!result) throw new Error('\u4f59\u989d\u6838\u5bf9\u672a\u4fdd\u5b58');
+    },
+  });
   const previousCategories = view.comparison?.previous.categoryTotals || {};
   const categoryRows = [...new Set([...Object.keys(view.categoryTotals), ...Object.keys(previousCategories)])].flatMap(currency => [...new Set([...Object.keys(view.categoryTotals[currency] || {}), ...Object.keys(previousCategories[currency] || {})])].map(category => ({ id: currency + category, currency, category: category || '未分类', amount: view.categoryTotals[currency]?.[category] || '0', previous: previousCategories[currency]?.[category] || '0' })));
   const observationLabel = (o: any) => `${o.date} ${ledger.accounts.find((a: any) => a.id === o.financialAccountId)?.label || o.financialAccountId} ${o.provider} ${o.currency || ''} ${formatMinor(o.amountMinor)} ${o.description} · 交易号 ${o.sourceTransactionId || '无'} · 资金尾号 ${o.paymentAccountHint || '无'}`;
@@ -82,6 +97,36 @@ export default function PersonalFinancePanel() {
     </Space>
     <Alert type="info" message="消费按关联交易统计；账户行展示各自关联消费，渠道与资金账户可关联同一笔，组合合计以去重总览为准。转账、贷款到账、还款本金分别列示。资产余额为正、负债欠款为负；余额需有期初值或账单余额校准，币种分别统计。" />
     <Tabs items={[
+      { key:'assets', label:'\u8d44\u4ea7\u7cfb\u7edf\u8868', children:<>
+        <Alert type="info" showIcon style={{margin:'16px 0'}} message={'\u6309\u5b9e\u9645\u8d44\u91d1\u8d26\u6237\u6574\u7406\uff0c\u57fa\u91d1\u5728\u7406\u8d22\u8d26\u6237\u5185\u6309\u4ea7\u54c1\u5217\u793a'} description={'\u672c\u8868\u4f7f\u7528\u5168\u90e8\u5df2\u5bfc\u5165\u8d26\u5355\u3002\u6838\u5bf9\u4f59\u989d\u4fdd\u7559\u5bf9\u5e94\u65f6\u70b9\uff1b\u672a\u77e5\u4f59\u989d\u4fdd\u6301\u7a7a\u7f3a\uff0c\u4e0d\u4ee5\u96f6\u4ee3\u66ff\uff0c\u4e0d\u6c47\u603b\u4e3a\u5b8c\u6574\u51c0\u8d44\u4ea7\u3002\u94f6\u884c\u5361\u6309\u94f6\u884c\u3001\u5361\u7c7b\u578b\u548c\u5c3e\u53f7\u533a\u5206\uff0c\u5fae\u4fe1\u4e0e\u652f\u4ed8\u5b9d\u53ea\u6807\u8bb0\u8d26\u5355\u6e20\u9053\u3002'} />
+        <Space wrap style={{marginBottom:16}}><Button disabled={busy || !assetRegister.proposals.accounts.length} onClick={() => void run(() => client.discoverAccounts({expectedRevision:ledger.revision}))}>{'\u6839\u636e\u8d26\u5355\u8865\u5efa\u8d26\u6237'}{assetRegister.proposals.accounts.length ? '\uff08'+assetRegister.proposals.accounts.length+'\uff09' : ''}</Button><span>{'\u540e\u7eed\u5bfc\u5165\u7684\u8d26\u5355\u53ef\u7ee7\u7eed\u8865\u5145\u8d26\u6237\uff1b\u4f59\u989d\u548c\u5173\u8054\u53ef\u9010\u6b65\u6838\u5bf9\u3002'}</span></Space>
+        <Table rowKey="id" dataSource={assetRegister.accounts} pagination={{pageSize:15}} scroll={{x:1200}} columns={[
+          {title:'\u8d26\u6237\u7c7b\u522b',dataIndex:'group'},{title:'\u8d26\u6237',dataIndex:'label',render:(v:string,a:any)=>a.type==='wallet'&&v==='\u5fae\u4fe1\u652f\u4ed8'?'\u5fae\u4fe1\u96f6\u94b1':a.type==='wallet'&&v==='\u652f\u4ed8\u5b9d'?'\u652f\u4ed8\u5b9d\u4f59\u989d':v},
+          {title:'\u8d26\u5355\u6e20\u9053',dataIndex:'channels',render:(v:string[])=>v.map(x=>({wechat:'\u5fae\u4fe1',alipay:'\u652f\u4ed8\u5b9d',mybank:'\u7f51\u5546\u94f6\u884c'} as Record<string,string>)[x]||x).join(' / ')||'\u2014'},
+          {title:'\u6838\u5bf9\u4f59\u989d',render:(_:any,a:any)=>a.verifiedBalance?formatMinor(a.verifiedBalance.balanceMinor):'\u5f85\u6838\u5bf9'},
+          {title:'\u4f59\u989d\u4f9d\u636e',render:(_:any,a:any)=>a.verifiedBalance?({available:'\u53ef\u7528\u4f59\u989d',estimated:'\u94f6\u884c\u8bd5\u7b97\u4f59\u989d',distributor_total:'\u8be5\u4ee3\u9500\u673a\u6784\u8d44\u4ea7'} as Record<string,string>)[a.verifiedBalance.balanceKind]||(a.verifiedBalance.source==='manual'?'\u4eba\u5de5\u6838\u5bf9':'\u8d26\u5355\u4f59\u989d'):a.balanceStatus},
+          {title:'\u4f59\u989d\u65f6\u70b9',render:(_:any,a:any)=>a.verifiedBalance?dayjs(a.verifiedBalance.asOf).format('YYYY-MM-DD HH:mm'):'\u2014'},
+          {title:'\u8d26\u5355\u8bb0\u5f55\u671f\u95f4',render:(_:any,a:any)=>a.firstDate?a.firstDate+' \u81f3 '+a.lastDate:'\u6682\u65e0\u8bb0\u5f55'},
+          {title:'\u5173\u8054\u8bb0\u5f55',dataIndex:'evidenceCount'},
+          {title:'\u64cd\u4f5c',render:(_:any,a:any)=><Space><Button size="small" disabled={busy} onClick={()=>verifyBalance(a)}>{'\u6838\u5bf9\u4f59\u989d'}</Button><Button size="small" disabled={busy} onClick={()=>Modal.confirm({title:'\u4fee\u6539\u8d26\u6237\u540d\u79f0',content:<Input id="asset-account-label" defaultValue={a.label} maxLength={128}/>,onOk:async()=>{const label=(document.getElementById('asset-account-label') as HTMLInputElement).value.trim();if(!label)throw new Error('\u8bf7\u586b\u5199\u540d\u79f0');const saved=await run(()=>client.updateAccount(a.id,{expectedRevision:ledger.revision,patch:{label}}));if(!saved)throw new Error('\u540d\u79f0\u672a\u4fdd\u5b58');}})}>{'\u6539\u540d'}</Button></Space>},
+        ]}/>
+        {assetRegister.proposals.unresolved.length>0&&<Alert type="warning" message={'\u6709 '+assetRegister.proposals.unresolved.length+' \u9879\u94f6\u884c\u5361\u8eab\u4efd\u5f85\u6838\u5bf9'} description={assetRegister.proposals.unresolved.map((v:any)=>(v.bank||'\u8d26\u6237')+' '+(v.tail||'')+'\uff1a'+(v.reason==='bank_type_unknown'?'\u8d26\u5355\u672a\u8bf4\u660e\u50a8\u84c4\u5361\u6216\u4fe1\u7528\u5361':'\u5df2\u6709\u8d26\u6237\u5b58\u5728\u6b67\u4e49')).join('\uff1b')}/>}
+        <h3>{'\u57fa\u91d1\u4ea7\u54c1\u660e\u7ec6'}</h3>
+        <Table rowKey="key" dataSource={assetRegister.products} pagination={false} scroll={{x:1150}} columns={[
+          {title:'\u4ee3\u7801',dataIndex:'code'},{title:'\u57fa\u91d1\u4ea7\u54c1',dataIndex:'name'},{title:'\u4e70\u5165\u7b14\u6570',dataIndex:'count'},
+          {title:'\u4e70\u5165\u786e\u8ba4\u91d1\u989d',dataIndex:'grossMinor',render:formatMinor},{title:'\u4e70\u5165\u624b\u7eed\u8d39',dataIndex:'feeMinor',render:formatMinor},{title:'\u7d2f\u8ba1\u4e70\u5165\u786e\u8ba4\u4efd\u989d',dataIndex:'boughtUnits'},
+          {title:'\u8f6c\u6362\u8f6c\u51fa\u7533\u8bf7\u4efd\u989d',dataIndex:'conversionOutAppliedUnits'},{title:'\u8f6c\u6362\u8f6c\u5165\u91d1\u989d',dataIndex:'conversionInMinor',render:formatMinor},
+          {title:'\u6838\u5bf9\u72b6\u6001',dataIndex:'status',render:(v:string)=>v==='conversion_units_pending'?'\u8f6c\u6362\u4efd\u989d\u5f85\u8865\u7b97':'\u4e70\u5165\u4efd\u989d\u5df2\u8bfb\u53d6\uff0c\u51c0\u503c\u5f85\u63a5\u5165'},
+        ]}/>
+        <p>{'\u7d2f\u8ba1\u4e70\u5165\u4efd\u989d\u4fdd\u7559\u539f\u59cb\u7cbe\u5ea6\uff0c\u4e0d\u76f4\u63a5\u5f53\u4f5c\u5f53\u524d\u6301\u4ed3\uff1b\u8f6c\u6362\u3001\u8d4e\u56de\u548c\u4f30\u503c\u7ed3\u679c\u4f1a\u5206\u522b\u6838\u5bf9\u3002'}</p>
+        <Table rowKey="id" dataSource={assetRegister.conversions} pagination={false} scroll={{x:1000}} columns={[
+          {title:'\u7533\u8bf7\u65f6\u95f4',dataIndex:'appliedAt',render:(v:string)=>dayjs(v).format('YYYY-MM-DD HH:mm')},
+          {title:'\u8f6c\u51fa\u4ea7\u54c1',dataIndex:'sourceFundName',render:(v:string)=>v||'\u5f85\u5339\u914d'},{title:'\u8f6c\u5165\u4ea7\u54c1',dataIndex:'targetFundName',render:(v:string)=>v||'\u5f85\u5339\u914d'},
+          {title:'\u8f6c\u6362\u91d1\u989d',dataIndex:'amountMinor',render:formatMinor},{title:'\u7533\u8bf7\u8f6c\u51fa\u4efd\u989d',dataIndex:'appliedUnits'},
+          {title:'\u8d26\u5355\u5217\u793a\u8d39\u7528',dataIndex:'feeMinor',render:formatMinor},{title:'\u6700\u7ec8\u786e\u8ba4\u65e5\u671f',dataIndex:'confirmedAt',render:(v:string)=>v.slice(0,10)},
+          {title:'\u5173\u8054\u4f9d\u636e',dataIndex:'status',render:(v:string)=>v==='products_matched'?'\u8ba2\u5355\u53f7\u3001\u91d1\u989d\u548c\u65e5\u671f\u4e00\u81f4':'\u5f85\u6838\u5bf9'},
+        ]}/>
+      </> },
       { key: 'overview', label: '账户与分类统计', children: <>
         <Space wrap style={{ margin: '16px 0' }}>{Object.entries(view.currencyTotals).map(([currency, totals]: any) => <Tag key={currency}>{currency} 消费 {formatMinor(totals.consumptionMinor)} · 收入 {formatMinor(totals.incomeMinor)} · 现金流 {formatMinor(totals.netCashFlowMinor)}</Tag>)}</Space>
         <Table rowKey="id" dataSource={accountRows} pagination={false} scroll={{ x: 750 }} columns={[

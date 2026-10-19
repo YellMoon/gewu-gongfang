@@ -29,6 +29,7 @@ export function createPersonalFinanceClient({ readSession = readDesktopAuthoriza
   }
   return Object.freeze({
     getLedger: () => request('/ledger'),
+    discoverAccounts: input => request('/accounts/discover', 'POST', input || {}),
     previewFile: input => request('/imports/preview', 'POST', input),
     importFile: (input, key) => request('/imports', 'POST', input, key),
     createAccount: input => request('/accounts', 'POST', input),

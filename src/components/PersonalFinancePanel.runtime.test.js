@@ -67,6 +67,7 @@ async function panel() {
   };
   const relatedCompiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'BillRelatedAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const relatedModule={exports:{}};new Function('require','module','exports',relatedCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},relatedModule,relatedModule.exports);dependencies['./BillRelatedAccounts']=relatedModule.exports;
+  dependencies['../../shared/personal-finance/assetRegister.js']=require('../../shared/personal-finance/assetRegister');
   const compiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'PersonalFinancePanel.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const loaded={exports:{}};
   new Function('require','module','exports','FileReader','crypto','document','FormData','window','setInterval','clearInterval',compiled)(moduleName=>{

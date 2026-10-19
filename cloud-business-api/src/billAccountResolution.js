@@ -17,6 +17,19 @@ function resolveBillAccount({ preview, accounts, owner, selectedAccountId } = {}
     return { status: 'matched', account, explicit: true };
   }
   if (preview.errors?.length || !preview.records?.length) return { status: 'pending', candidates: [] };
+  if(preview.provider==='mybank'&&['mybank-current-v1','mybank-yulibao-v1'].includes(preview.templateId)){
+    const identity=preview.accountIdentity;
+    if(!identity||!/^\d{4}$/.test(identity.maskedIdentifier)||identity.currency!=='CNY')return {status:'manual',candidates:[]};
+    if(identity.product==='alipay_yulibao')return resolveRelatedBillAccounts({preview:{records:[{currency:'CNY',accountRelations:[{product:'alipay_yulibao'}]}]},accounts,owner})[0];
+    const bank='\u7f51\u5546\u94f6\u884c';
+    const matching=accounts.filter(a=>require('../../shared/personal-finance/assetRegister').sameBankAccount(a,{bank,type:'debit_card',tail:identity.maskedIdentifier},'CNY'));
+    const candidates=matching.filter(a=>a.status==='active');
+    if(candidates.length===1)return {status:'matched',account:candidates[0],explicit:false};
+    if(candidates.length>1)return {status:'ambiguous',candidates};
+    if(matching.length)return {status:'archived',candidates:matching};
+    const digest=crypto.createHash('sha256').update(JSON.stringify([...owner,'mybank',identity.maskedIdentifier,'CNY'])).digest('hex').slice(0,32);
+    return {status:'create',account:{id:'finance_source_'+digest,label:bank+'\u6d3b\u671f\u5b58\u6b3e\uff08'+identity.maskedIdentifier+'\uff09',provider:bank,type:'debit_card',maskedIdentifier:identity.maskedIdentifier,currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',balanceConvention:'signed'}};
+  }
   const provider = canonical(preview.provider);
   const currencies = [...new Set(preview.records.map(r => r.currency))];
   if (!provider || currencies.length !== 1 || !/^[A-Z]{3}$/.test(currencies[0])) return { status: 'manual', candidates: accounts.filter(a => a.status === 'active') };

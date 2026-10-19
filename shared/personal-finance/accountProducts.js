@@ -2,7 +2,8 @@
 // These are statement products, never guesses based on a person's identity or
 // a merchant. Product accounts carry no invented opening balance or valuation.
 const ACCOUNT_PRODUCTS=Object.freeze({
- alipay_huabei:{label:'支付宝 · 花呗',provider:'alipay',type:'credit_card',aliases:['花呗','信用购']},
+ alipay_shanghai_credit:{label:'上海银行信用购',provider:'alipay',type:'credit_card',aliases:['上海银行信用购']},
+ alipay_huabei:{label:'支付宝 · 花呗',provider:'alipay',type:'credit_card',aliases:['花呗']},
  alipay_jiebei:{label:'支付宝 · 借呗',provider:'alipay',type:'loan',aliases:['借呗']},
  alipay_yuebao:{label:'支付宝 · 余额宝',provider:'alipay',type:'investment',aliases:['余额宝']},
  alipay_yulibao:{label:'支付宝 · 余利宝',provider:'alipay',type:'investment',aliases:['余利宝']},

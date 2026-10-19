@@ -9,6 +9,7 @@ function registerPersonalFinanceRoutes({app,finance,tenantId,desktopContext,mini
   app.post(prefix+'/imports',run(context,async(req,owner)=>{const body=fields(req.body,['filename','base64','financialAccountId','fieldMapping','password','expectedFileHash','expectedFinancialAccountId','relatedFinancialAccountIds','expectedRelatedFinancialAccountIds','expectedRevision']);const idempotencyKey=req.get('x-idempotency-key');if(typeof idempotencyKey!=='string'||!idempotencyKey.trim())throw invalid();return {receipt:await finance.import({...owner,...body,idempotencyKey})};}));
  }
  const prefix='/api/business/personal-finance';
+ app.post(prefix+'/accounts/discover',run(desktopContext,async(req,owner)=>finance.discoverAccounts({...owner,...fields(req.body||{},['expectedRevision'])})));
  app.post(prefix+'/accounts',run(desktopContext,async(req,owner)=>{const body=fields(req.body,['account','expectedRevision']);return finance.createAccount({...owner,...body});}));
  app.patch(prefix+'/accounts/:id',run(desktopContext,async(req,owner)=>{const body=fields(req.body,['patch','expectedRevision']);return finance.updateAccount({...owner,...body,id:req.params.id});}));
  app.patch(prefix+'/transactions/:observationId',run(desktopContext,async(req,owner)=>{const body=fields(req.body,['patch','expectedRevision']);return finance.annotateObservation({...owner,...body,observationId:req.params.observationId});}));

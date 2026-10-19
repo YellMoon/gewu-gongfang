@@ -11,6 +11,13 @@ const { parseBillFile } = require('./billFileDecoder');
 const csv = '交易日期,收入金额,支出金额,摘要\n2026-10-01,0.00,1.25,消费';
 const canonical = 'date,type,amount,category,note\n2026-10-01,expense,1.25,test,synthetic';
 const file = (filename, buffer) => ({ filename, base64: Buffer.from(buffer).toString('base64') });
+test('all populated cells are read when exporter underreports XLSX dimension',async()=>{
+ const rows=[['date','type','amount','category','note'],...Array.from({length:20},(_,i)=>['2026-10-01','expense','1.25','test','row'+i])];
+ const zip=await JSZip.loadAsync(workbook('xlsx',rows)),xml=await zip.file('xl/worksheets/sheet1.xml').async('string');
+ zip.file('xl/worksheets/sheet1.xml',xml.replace(/<dimension ref="[^"]+"\/>/,'<dimension ref="A1:E4"/>'));
+ const result=await parseBillFile(file('underreported.xlsx',await zip.generateAsync({type:'nodebuffer'})));
+ assert.deepEqual(result.errors,[]);assert.equal(result.records.length,20);assert.equal(result.records.at(-1).description,'row19');
+});
 function workbook(type, rows = [['date','type','amount','category','note'],['2026-10-01','expense','1.25','test','synthetic']]) {
   const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), 'synthetic');
   return XLSX.write(book, { type: 'buffer', bookType: type });

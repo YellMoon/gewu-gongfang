@@ -101,6 +101,7 @@ function merge(target, source, label) {
   if (target.records.length + source.records.length > LIMITS.rows) fail('BILL_ROW_LIMIT','文件合计超过10000行交易，请拆分文件');
   if (target.provider === 'unknown') { target.provider = source.provider; target.templateId = source.templateId; }
   else if (source.provider !== target.provider) { target.provider = 'mixed'; target.templateId = 'mixed-files-v1'; }
+  if(source.accountIdentity){if(target.accountIdentity&&JSON.stringify(target.accountIdentity)!==JSON.stringify(source.accountIdentity))fail('BILL_ACCOUNT_MIXED','Multiple statement accounts in one file');target.accountIdentity=source.accountIdentity;}
   target.records.push(...source.records);
   for (const key of ['errors','warnings']) target[key].push(...source[key].map(item => ({...item,message:label ? `[${label}] ${item.message}` : item.message})));
 }
@@ -125,6 +126,9 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
   for (const name of book.SheetNames) {
     const sheet = book.Sheets[name]; if (!sheet['!ref']) continue;
     const range = XLSX.utils.decode_range(sheet['!fullref'] || sheet['!ref']);
+    // Some bank exports retain a template dimension (row 11) while storing hundreds
+    // of cells below it. Derive the actual range from parsed cells before iterating.
+    for(const address of Object.keys(sheet)){if(address.startsWith('!'))continue;const cell=XLSX.utils.decode_cell(address);range.e.r=Math.max(range.e.r,cell.r);range.e.c=Math.max(range.e.c,cell.c);}
     if (range.e.r >= LIMITS.rows + 100 || range.e.c >= LIMITS.columns) fail('BILL_WORKSHEET_SIZE_LIMIT','工作表行数或列数超限（最多10000条记录、100行说明、128列）');
     const rows = []; const precisionErrors = [];
     for (let r = 0; r <= range.e.r; r += 1) {
@@ -144,7 +148,7 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
       // Preserve line positions but do not pretend already-lost Excel precision can be recovered.
       rows.push(bad ? Array(range.e.c + 1).fill('') : row);
     }
-    const parsed = parseBillCsv(csvText(rows),{filename,fieldMapping});
+    const parsed = require('./mybankStatement').parseMybankRows(rows)||parseBillCsv(csvText(rows),{filename,fieldMapping});
     if (precisionErrors.length) parsed.errors = [...precisionErrors,...parsed.errors.filter(error => error.code !== 'BILL_NO_RECORDS')];
     merge(result,parsed,name);
   }
@@ -160,12 +164,16 @@ async function pdfTable(buffer,filename,fieldMapping) {
   try {
     document = await task.promise;
     if (document.numPages > LIMITS.pdfPages) fail('BILL_PDF_PAGE_LIMIT','PDF 超过100页，请拆分文件');
-    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false;
+    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false,balanceCandidate=false,yuebaoCandidate=false,mybankCandidate=false,certificateCandidate=false;
     for (let p = 1; p <= document.numPages; p += 1) {
       const page = await document.getPage(p), content = await page.getTextContent();
       const pageText=content.items.map(item=>item.str||'').join('').normalize('NFKC').replace(/\s/g,'');
       if(p===1&&isAntFundCover(pageText))fundCandidate=true;
-      if(fundCandidate){const operators=await page.getOperatorList();fundPages.push({number:p,items:content.items.filter(item=>typeof item.str==='string').map(item=>({str:item.str,x:item.transform[4],y:item.transform[5],width:item.width})),bounds:operators.fnArray.flatMap((fn,i)=>fn===OPS.constructPath&&(Array.isArray(operators.argsArray[i]?.[2])||ArrayBuffer.isView(operators.argsArray[i]?.[2]))?[Array.from(operators.argsArray[i][2])]:[])});}
+      if(p===1&&pageText.includes('\u4f59\u5229\u5b9d\u8d44\u91d1\u660e\u7ec6')&&pageText.includes('\u4ea4\u6613\u8d26\u53f7'))mybankCandidate=true;
+      if(p===1&&pageText.includes('\u4f59\u989d\u5b9d\u8d44\u4ea7\u67e5\u8be2\u60c5\u51b5\u544a\u77e5\u4e66'))certificateCandidate=true;
+      if(p===1&&pageText.includes('\u4f59\u989d\u5b9d\u6d41\u6c34\u660e\u7ec6\u67e5\u8be2')&&pageText.includes('\u4f59\u989d\u5b9d\u53ef\u7528\u4f59\u989d'))yuebaoCandidate=true;
+      if(p===1&&pageText.includes('\u652f\u4ed8\u5b9d\u6536\u652f\u660e\u7ec6\u8bc1\u660e')&&pageText.includes('\u8d26\u6237\u4f59\u989d'))balanceCandidate=true;
+      if(fundCandidate||balanceCandidate||yuebaoCandidate||mybankCandidate||certificateCandidate){const operators=await page.getOperatorList();fundPages.push({number:p,items:content.items.filter(item=>typeof item.str==='string').map(item=>({str:item.str,x:item.transform[4],y:item.transform[5],width:item.width})),bounds:operators.fnArray.flatMap((fn,i)=>fn===OPS.constructPath&&(Array.isArray(operators.argsArray[i]?.[2])||ArrayBuffer.isView(operators.argsArray[i]?.[2]))?[Array.from(operators.argsArray[i][2])]:[])});}
       const lines = [];
       for (const item of content.items) {
         if (!item.str || !item.str.trim()) continue;
@@ -180,7 +188,11 @@ async function pdfTable(buffer,filename,fieldMapping) {
       page.cleanup();
     }
     if (!textCount) fail('BILL_PDF_SCAN_REQUIRES_REVIEW','PDF 无可提取文字，可能是扫描件；请人工核验或导出 CSV/Excel，不能自动入账');
+    if(mybankCandidate)return require('./mybankStatement').parseMybankFundPdf(fundPages);
+    if(certificateCandidate)return require('./yuebaoCertificate').parseYuebaoCertificate(fundPages);
     if(fundCandidate)return require('./antFundPdf').parseAntFundPdf(fundPages);
+    if(balanceCandidate)return require('./alipayBalancePdf').parseAlipayBalancePdf(fundPages);
+    if(yuebaoCandidate)return require('./yuebaoBalancePdf').parseYuebaoBalancePdf(fundPages);
     const result = parseBillCsv(csvText(table),{filename,fieldMapping});
     result.warnings.push(issue('BILL_PDF_VERIFY_REQUIRED','PDF 按文本位置重建表格，必须人工核对列对齐、跨页、合计、金额与方向后提交'));
     return result;

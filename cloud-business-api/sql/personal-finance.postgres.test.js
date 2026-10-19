@@ -108,6 +108,17 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  assert.equal(new Set(zeroLedger.observations.map(o=>o.sourceTransactionId)).size,1,'original order number is preserved');
  assert.equal(new Set(zeroLedger.observations.map(o=>o.sourceIdentity)).size,2,'refund and payment are distinct source events');
  parsedRecords=[{...zeroPayment,amountMinor:'1'}];await assert.rejects(autoRepo.import({...autoInput,...zeroContext,base64:Buffer.from('changed zero payment').toString('base64'),idempotencyKey:'changed-zero-payment'}),/SOURCE_TRANSACTION_CONFLICT/);
+ // Automatic discovery shares the owner lock and cannot leak another owner's accounts.
+ parsedRecords=[{...record,sourceTransactionId:'bank-discovery',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361(1234)',paymentAccountHint:'1234'}];
+ const discoveredReceipt=await autoRepo.import({...autoInput,base64:Buffer.from('bank discovery').toString('base64'),idempotencyKey:'bank-discovery'});
+ const discoveredLedger=await autoRepo.getLedger(autoContext);assert.equal(discoveredLedger.accounts.filter(a=>a.maskedIdentifier==='1234').length,1);
+ assert.equal((await autoRepo.discoverAccounts({...autoContext,expectedRevision:discoveredLedger.revision})).accounts.length,0);
+ assert.equal((await autoRepo.getLedger(autoContext)).revision,discoveredLedger.revision);
+ const discoveredId=discoveredLedger.accounts.find(a=>a.maskedIdentifier==='1234').id;
+ assert.equal((await autoRepo.getLedger(context)).accounts.some(a=>a.id===discoveredId),false);
+ await assert.rejects(autoRepo.discoverAccounts({...autoContext,expectedRevision:'0'}),/REVISION_CONFLICT/);
+ assert.equal((await autoRepo.import({...autoInput,base64:Buffer.from('bank discovery').toString('base64'),idempotencyKey:'bank-discovery'})).replayed,true);
+ assert.equal(discoveredReceipt.insertedCount,1);
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);

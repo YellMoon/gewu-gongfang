@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceAssetRegister": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "Cloud owns automatic bank-account discovery and all imports. Deploy bounded MYbank, balance-flow and asset-certificate parsers before readers. Optional balanceEvidence and statementFlow preserve integer minor units, source scope, chronological sequence and balance checks; evidence-only records never create another cash movement. Available, estimated and distributor-only balances cannot calibrate total assets. MYbank payments remain unclassified pending platform reconciliation; signed negative investment income reduces income. Readers use bank plus card type plus tail, preserve ambiguity, and do not invent fund conversion units or NAV. Existing tables, immutable originals and private byte archives remain unchanged."
+    },
     "personalFinanceAccountRelations": {
       "version": "1",
       "participants": ["desktop", "cloud_business", "miniapp"],
