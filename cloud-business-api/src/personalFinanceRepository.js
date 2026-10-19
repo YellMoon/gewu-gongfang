@@ -9,6 +9,14 @@ const text=(v,max=512)=>{if(typeof v!=='string'||!v.trim()||v!==v.trim()||v.leng
 const stable=v=>v===null||typeof v!=='object'?JSON.stringify(v):Array.isArray(v)?'['+v.map(stable).join(',')+']':'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';
 const hash=v=>crypto.createHash('sha256').update(typeof v==='string'||Buffer.isBuffer(v)?v:stable(v)).digest('hex');
 const id=prefix=>prefix+'_'+crypto.randomUUID();
+function transactionIdentity(provider,record,fileHash,ordinal){
+ if(!record.sourceTransactionId)return hash({fileHash,ordinal});
+ // Alipay can reuse a payment order number for a zero-value, non-cash refund.
+ // Keep both events without weakening completed-payment amount/direction checks.
+ const refundEvent=provider==='alipay'&&record.kind==='refund'&&record.amountMinor==='0'&&record.direction==='neutral'
+  ?{event:'zero_non_cash_refund',occurredAt:record.occurredAt}:{};
+ return hash({provider,transaction:record.sourceTransactionId,...refundEvent});
+}
 function scope(input){const a=input?.actor;if(!object(a)||typeof a.accountId!=='string'||!a.accountId.trim()||!Array.isArray(a.roles)||!a.roles.some(r=>['teacher','super_admin'].includes(r)))throw failure('ACCESS_DENIED');return [text(input.tenantId,128),text(a.accountId)];}
 const ACCOUNT_KEYS=['id','label','provider','type','maskedIdentifier','currency','openingBalanceMinor','openingDate','status','sourceProduct','balanceConvention'];
 function accountData(value,accountId){
@@ -77,7 +85,7 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
     await q('INSERT INTO business.personal_finance_imports(id,tenant_id,account_id,financial_account_id,file_hash,data) VALUES($1,$2,$3,$4,$5,$6::jsonb)',[importId,...owner,financialAccountId,preview.fileHash,JSON.stringify(importData)]);
     let insertedCount=0;const observationIds=[];
     for(let ordinal=0;ordinal<preview.records.length;ordinal++){
-     const original=preview.records[ordinal],r=original.accountRelations?.length?{...original,accountRelations:original.accountRelations.map(relation=>({...relation,financialAccountId:relatedFinancialAccountIds[relation.product]}))}:original,sourceIdentity=hash(r.sourceTransactionId?{provider:preview.provider,transaction:r.sourceTransactionId}:{fileHash:preview.fileHash,ordinal}),recordFingerprint=hash(r),sourceKey=hash({sourceIdentity,recordFingerprint});
+     const original=preview.records[ordinal],r=original.accountRelations?.length?{...original,accountRelations:original.accountRelations.map(relation=>({...relation,financialAccountId:relatedFinancialAccountIds[relation.product]}))}:original,sourceIdentity=transactionIdentity(preview.provider,r,preview.fileHash,ordinal),recordFingerprint=hash(r),sourceKey=hash({sourceIdentity,recordFingerprint});
      const priorVersions=(await q('SELECT id,data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND financial_account_id=$3 AND transaction_key=$4',[...owner,financialAccountId,sourceIdentity])).rows;
      const prior=priorVersions.find(p=>p.data.recordFingerprint===recordFingerprint);if(prior){observationIds.push(prior.id);continue;}
      if(priorVersions.some(p=>p.data.status==='completed'&&['amountMinor','currency','direction'].some(k=>p.data[k]!==r[k])))throw failure('SOURCE_TRANSACTION_CONFLICT');

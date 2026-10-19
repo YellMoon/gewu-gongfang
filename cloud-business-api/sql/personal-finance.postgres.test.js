@@ -95,6 +95,19 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  const failedContext={...autoContext,actor:{accountId:'rollback-owner',roles:['teacher']}};
  const failedRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:async()=>({provider:'alipay',templateId:'test',records:parsedRecords,errors:[],warnings:[]}),archiveSource:async()=>{throw Error('SYNTHETIC_ARCHIVE_FAILURE')}});
  await assert.rejects(failedRepo.import({...autoInput,...failedContext}),/SYNTHETIC_ARCHIVE_FAILURE/);assert.equal((await failedRepo.getLedger(failedContext)).accounts.length,0,'failed confirmed import rolls back source and product accounts');
+ const zeroContext={...autoContext,actor:{accountId:'zero-refund-owner',roles:['teacher']}};
+ const zeroPayment={...record,sourceTransactionId:'shared-zero-order',amountMinor:'0',direction:'debit',kind:'expense'};
+ const zeroRefund={...zeroPayment,direction:'neutral',kind:'refund'};
+ for(const [index,rows] of [[zeroRefund,zeroPayment],[zeroPayment,zeroRefund]].entries()){
+  parsedRecords=rows;const zeroInput={...autoInput,...zeroContext,base64:Buffer.from('zero events '+index).toString('base64'),idempotencyKey:'zero-events-'+index};
+  const imported=await autoRepo.import(zeroInput);assert.equal(imported.recordCount,2);assert.equal(imported.insertedCount,index===0?2:0);
+  assert.equal((await autoRepo.import(zeroInput)).replayed,true);
+ }
+ const zeroLedger=await autoRepo.getLedger(zeroContext),zeroView=require('../../shared/personal-finance/ledger').buildFinanceView(zeroLedger);
+ assert.equal(zeroLedger.observations.length,2);assert.equal(zeroView.transactions.length,2);assert.equal(zeroView.currencyTotals.CNY.consumptionMinor,'0');assert.equal(zeroView.currencyTotals.CNY.netCashFlowMinor,'0');
+ assert.equal(new Set(zeroLedger.observations.map(o=>o.sourceTransactionId)).size,1,'original order number is preserved');
+ assert.equal(new Set(zeroLedger.observations.map(o=>o.sourceIdentity)).size,2,'refund and payment are distinct source events');
+ parsedRecords=[{...zeroPayment,amountMinor:'1'}];await assert.rejects(autoRepo.import({...autoInput,...zeroContext,base64:Buffer.from('changed zero payment').toString('base64'),idempotencyKey:'changed-zero-payment'}),/SOURCE_TRANSACTION_CONFLICT/);
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);
