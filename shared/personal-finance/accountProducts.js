@@ -11,6 +11,7 @@ const ACCOUNT_PRODUCTS=Object.freeze({
  wechat_lingqiantong:{label:'微信支付 · 零钱通',provider:'wechat',type:'investment',aliases:['零钱通']},
 });
 const productIn=(text,provider)=>Object.entries(ACCOUNT_PRODUCTS).find(([,p])=>p.provider===provider&&p.aliases.some(alias=>String(text).includes(alias)))?.[0];
+const explicitCardFundingCredit=text=>!/\u9000\u6b3e|\u9000\u8d27|\u9000\u8d39|\u8fd4\u8fd8|\u51b2\u6b63|\u64a4\u9500|refund/i.test(text)&&/\u672c\u884c\u81ea\u52a9\u8f6c\u5165|\u7f51\u8054\u81ea\u52a9\u8f6c\u5165/.test(text);
 const ACTIVITIES=new Set(['repayment','investment_deposit','investment_withdrawal','investment_income','investment_exchange','investment_confirmation','investment_fee','funding_outflow','funding_inflow','credit_charge','loan_drawdown']);
 function inferAccountRelations(record,provider){
  if(!['alipay','wechat'].includes(provider))return [];
@@ -44,4 +45,4 @@ function relationDelta(relation,amount,record) {
  return ['investment_withdrawal','funding_outflow','credit_charge','loan_drawdown'].includes(relation.activity)?-magnitude:magnitude;
 }
 
-module.exports={ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES:ACTIVITIES,inferAccountRelations,relationDelta};
+module.exports={ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES:ACTIVITIES,inferAccountRelations,relationDelta,explicitCardFundingCredit};

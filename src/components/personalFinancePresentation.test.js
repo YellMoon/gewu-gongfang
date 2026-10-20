@@ -8,6 +8,7 @@ test('zero statistics have distinct explanations without changing original money
  assert.equal(original.amountMinor,'0');
  assert.equal(statisticsState(tx({kind:'transfer'})).key,'neutral');
  assert.equal(statisticsState(tx({kind:'unknown'})).key,'review');
+ assert.equal(statisticsState(tx({kind:'unknown',bankStatement:{nonCash:true}})).key,'neutral');
  assert.equal(statisticsState(tx({kind:'debt_payment'}),['unsplit_debt_payment']).label,'\u672c\u606f\u5f85\u62c6\u5206');
  assert.equal(statisticsState(tx({statisticsExclusions:[{}]})).label,'\u7591\u4f3c\u91cd\u590d\uff0c\u5f85\u6838\u5bf9');
  assert.equal(statisticsState(tx({status:'failed'})).key,'incomplete');

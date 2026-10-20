@@ -4,6 +4,11 @@ const {accountProposals,buildAssetRegister}=require('./assetRegister');
 const {buildFinanceView}=require('./ledger');
 const wallet={id:'a',provider:'alipay',type:'wallet',currency:'CNY',status:'active',label:'Alipay',openingBalanceMinor:null};
 const record=(patch={})=>({id:'o',financialAccountId:'a',provider:'alipay',status:'completed',sourceTransactionId:'order',date:'2026-10-01',occurredAt:'2026-10-01T10:00:00+08:00',amountMinor:'100',currency:'CNY',direction:'debit',kind:'expense',paymentAccountHint:'',paymentChannel:'',balanceMinor:null,principalMinor:null,interestMinor:null,feeMinor:null,description:'',counterparty:'',category:'',relatedReference:'',...patch});
+test('an owner-confirmed bank account supplies the missing type in a bare bank-channel label',()=>{
+ const cmb={id:'cmb',provider:'\u62db\u5546\u94f6\u884c',type:'debit_card',maskedIdentifier:'7128',currency:'CNY',status:'active',label:'\u62db\u5546\u94f6\u884c\u50a8\u84c4\u5361\uff087128\uff09'},observations=[record({paymentChannel:'\u4e91\u95ea\u4ed8-\u62db\u5546\u94f6\u884c(7128)'})];
+ const p=accountProposals({accounts:[wallet,cmb],observations});assert.equal(p.accounts.length,0);assert.equal(p.unresolved.length,0);
+ const ambiguous=accountProposals({accounts:[wallet,cmb,{...cmb,id:'credit',type:'credit_card'}],observations});assert.equal(ambiguous.unresolved.length,1);
+});
 test('bank aliases and card types remain distinct across payment platforms',()=>{
  const observations=[record({paymentChannel:'\u4e2d\u56fd\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361(1234)'}),record({id:'w',provider:'wechat',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361\uff081234\uff09'}),record({id:'c',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u4fe1\u7528\u5361(1234)'}),record({id:'n',paymentChannel:'\u62db\u5546\u94f6\u884c\u4fe1\u7528\u5361(1234)&\u7ea2\u5305'}),record({id:'unknown',paymentChannel:'\u4e91\u95ea\u4ed8-\u62db\u5546\u94f6\u884c(7128)'})];
  const proposals=accountProposals({accounts:[wallet],observations});assert.equal(proposals.accounts.length,3);assert.equal(proposals.unresolved.length,1);

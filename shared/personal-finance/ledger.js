@@ -1,11 +1,20 @@
 'use strict';
 
-const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,relationDelta}=require('./accountProducts');
+const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,relationDelta,explicitCardFundingCredit}=require('./accountProducts');
 const {validateInvestmentTrade,latestInvestmentConfirmations}=require('./investmentTrades');
 const {fundingIdentity,sameBankAccount}=require('./assetRegister');
 const {statementBalances}=require('./balanceEvidence');
 const {statementCoverage,incomeExpenseAccounts,portfolioBalances}=require('./accountAnalytics');
+const {buildReviewSummary}=require('./reviewSummary');
+const {buildMortgageModels,matchesMortgage}=require('./mortgages');
 const fail = code => Object.assign(new Error(code), {code});
+function statementClassification(o){
+  if(o.bankStatement&&o.kind==='refund'&&o.direction==='credit'&&explicitCardFundingCredit(o.description))return {...o,kind:'debt_payment'};
+  if(o.provider!=='huaxia'||o.kind!=='unknown'||o.status!=='completed'||o.direction!=='debit')return o;
+  const loan=/\u8d37\u6b3e\u8fd8\u6b3e/.test(o.description)&&/\u4e2a\u4eba\u8d37\u6b3e\u6237/.test(o.counterparty);
+  const provident=/\u516c\u79ef\u91d1\u6263\u6b3e/.test(o.description)&&/\u4f4f\u623f\u516c\u79ef\u91d1\u7ba1\u7406\u4e2d\u5fc3/.test(o.counterparty);
+  return loan||provident?{...o,kind:'debt_payment'}:o;
+}
 const integer = value => typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value);
 function validDate(value) { return typeof value==='string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0,10)===value; }
 function validateRecord(r) {
@@ -24,6 +33,14 @@ function validateRecord(r) {
 }
 const signed = o => o.direction==='neutral'?0n:BigInt(o.amountMinor)*(o.direction==='credit'?1n:-1n);
 const liability = a => ['credit_card','loan'].includes(a?.type);
+function repaymentType(sources,accountMap){
+  const related=sources.flatMap(s=>[accountMap.get(s.financialAccountId),...(s.accountRelations||[]).filter(r=>r.activity==='repayment').map(r=>accountMap.get(r.financialAccountId))]).filter(Boolean);
+  if(related.some(a=>a.type==='loan'))return 'loan';
+  if(related.some(a=>a.type==='credit_card'))return 'credit';
+  const purpose=sources.map(s=>[s.description,s.counterparty,s.category,s.rawFields?.['\u4ea4\u6613\u7c7b\u578b']].join(' ')).join(' ');
+  if(/\u4fe1\u7528\u5361|\u82b1\u5457|\u4fe1\u7528\u8d2d/.test(purpose))return 'credit';
+  return /\u8d37\u6b3e|\u623f\u8d37|\u501f\u5457|\u501f\u6b3e|\u672c\u606f|\u516c\u79ef\u91d1\u6263\u6b3e/.test(purpose)?'loan':'unknown';
+}
 const calibrationOnly = a => ['investment','insurance','receivable','property','precious_metal','retirement'].includes(a?.type)&&!['alipay_yulibao','alipay_yuebao'].includes(a?.sourceProduct);
 const money = () => ({consumptionMinor:0n,incomeMinor:0n,cashInMinor:0n,cashOutMinor:0n,netCashFlowMinor:0n});
 const dictionary = () => Object.create(null);
@@ -40,13 +57,16 @@ function fundingAccount(o,accounts) {
 function buildFinanceView(ledger,options={}) {
   const accounts=ledger.accounts||[], originalObservations=ledger.observations||[],originalById=new Map(originalObservations.map(o=>[o.id,o])),latestAnnotations=new Map();
   for(const a of ledger.annotations||[])if(!latestAnnotations.has(a.observationId)||BigInt(a.revision)>BigInt(latestAnnotations.get(a.observationId).revision))latestAnnotations.set(a.observationId,a);
-  const observations=originalObservations.filter(o=>!o.balanceEvidence).map(o=>latestAnnotations.has(o.id)?{...o,...latestAnnotations.get(o.id).patch}:o),links=(ledger.links||[]).filter(l=>l.status!=='deleted'&&l.observationIds.every(id=>!originalById.get(id)?.balanceEvidence)), accountMap=new Map(accounts.map(a=>[a.id,a]));
+  const classified=originalObservations.filter(o=>!o.balanceEvidence).map(o=>latestAnnotations.has(o.id)?{...o,...latestAnnotations.get(o.id).patch}:statementClassification(o));
+  const mortgageModels=buildMortgageModels(accounts,classified),mortgageBySource=new Map(),mortgageSplit=new Map();
+  for(const model of mortgageModels){for(const o of classified)if(matchesMortgage(o,accounts.find(a=>a.id===model.financialAccountId).mortgage)){if(!mortgageBySource.has(o.id))mortgageBySource.set(o.id,[]);mortgageBySource.get(o.id).push(model.financialAccountId);}for(const p of [...model.periods,...model.prepayments])for(const id of p.observationIds)mortgageSplit.set(id,{...p,financialAccountId:model.financialAccountId});}
+  const observations=classified.map(o=>{const split=mortgageSplit.get(o.id);return split&&split.confidence.startsWith('user_confirmed')&&split.observationIds.length===1&&!latestAnnotations.has(o.id)?{...o,kind:'debt_payment',principalMinor:split.principalMinor,interestMinor:split.interestMinor,feeMinor:'0'}:o;}),links=(ledger.links||[]).filter(l=>l.status!=='deleted'&&l.observationIds.every(id=>!originalById.get(id)?.balanceEvidence)), accountMap=new Map(accounts.map(a=>[a.id,a]));
   const selected=new Set(options.accountIds||accounts.map(a=>a.id));
   const coveredByStatement=statementCoverage(observations);
   const parents=new Map(observations.map(o=>[o.id,o.id]));
   const root=id=>{while(parents.get(id)!==id) id=parents.get(id);return id;};
   const union=(a,b)=>{ if(parents.has(a)&&parents.has(b)) parents.set(root(b),root(a)); };
-  const unresolvedAssociations=[];
+  const unresolvedAssociations=[],information=[];
   const pair=l=>[...l.observationIds].sort().join('|');
   const activePairs=new Set(links.map(pair));
   const blocked=new Set([...(ledger.links||[]).filter(l=>l.status==='deleted'&&l.type==='duplicate'&&!activePairs.has(pair(l))),...links.filter(l=>l.type==='distinct')].map(pair));
@@ -91,6 +111,23 @@ function buildFinanceView(ledger,options={}) {
     if(matches.length===1){statementMatches.set(s.id,matches[0].id);if(!statementReverse.has(matches[0].id))statementReverse.set(matches[0].id,[]);statementReverse.get(matches[0].id).push(s.id);}
   }
   for(const [s,b] of statementMatches)if(statementReverse.get(b).length===1)union(s,b);
+  // A repayment receipt may say neutral (not income/expense), while its bank
+  // statement records a credit. Require the named receiving bank plus payer
+  // card/channel evidence and reciprocal uniqueness, including source versions.
+  const repaymentReceipts=new Map(),repaymentMatches=new Map(),repaymentReverse=new Map();
+  for(const b of observations)if(b.status==='completed'&&b.kind==='debt_payment'&&b.direction==='credit'&&b.bankStatement&&accountMap.get(b.financialAccountId)?.type==='credit_card')add(repaymentReceipts,JSON.stringify([b.date,b.amountMinor,b.currency]),b);
+  for(const s of observations){
+    if(!['alipay','wechat'].includes(s.provider)||s.kind!=='debt_payment'||s.status!=='completed'||!['neutral','debit'].includes(s.direction))continue;
+    const bank=String(s.counterparty||'').normalize('NFKC').replace(/\s/g,''),fund=fundingAccount(s,accounts);
+    if(!/\u94f6\u884c$/.test(bank))continue;
+    const matches=(repaymentReceipts.get(JSON.stringify([s.date,s.amountMinor,s.currency]))||[]).filter(b=>{
+      const a=accountMap.get(b.financialAccountId),text=[b.description,b.counterparty].join(' '),channel=s.provider==='alipay'?/\u652f\u4ed8\u5b9d/:/\u5fae\u4fe1|\u8d22\u4ed8\u901a/;
+      return a.label.normalize('NFKC').replace(/\s/g,'').startsWith(bank)&&!blocked.has([s.id,b.id].sort().join('|'))&&(channel.test(text)||fund?.maskedIdentifier&&text.includes(fund.maskedIdentifier));
+    });
+    const unique=[...new Set(matches.map(b=>root(b.id)))];
+    if(unique.length===1){repaymentMatches.set(root(s.id),unique[0]);if(!repaymentReverse.has(unique[0]))repaymentReverse.set(unique[0],new Set());repaymentReverse.get(unique[0]).add(root(s.id));}
+  }
+  for(const [s,b] of repaymentMatches)if(repaymentReverse.get(b).size===1)union(s,b);
   const groups=new Map();for(const o of observations) {const id=root(o.id);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(o);}
   const all=[];
   for(const [id,sources] of groups) {
@@ -100,6 +137,7 @@ function buildFinanceView(ledger,options={}) {
     const original=groupAnnotations[0]?{...base,...groupAnnotations[0].patch}:base;
     const transfer=links.find(l=>l.type==='transfer'&&l.observationIds.some(id=>sources.some(s=>s.id===id)));
     const o=transfer&&original.kind!=='debt_payment'?{...original,kind:'transfer'}:original, amount=BigInt(o.amountMinor);
+    const repayment=o.kind==='debt_payment'?repaymentType(sources,accountMap):null;
     let consumption=0n,income=0n;
     if(o.status==='completed') {
       if(['expense','interest','fee'].includes(o.kind)) consumption=amount;
@@ -107,9 +145,10 @@ function buildFinanceView(ledger,options={}) {
       if(o.kind==='income') income=o.direction==='debit'?-amount:amount;
       if(o.kind==='debt_payment') {
         if(['principalMinor','interestMinor','feeMinor'].every(k=>o[k]!==null)) consumption=BigInt(o.interestMinor)+BigInt(o.feeMinor);
-        else unresolvedAssociations.push({reason:'unsplit_debt_payment',observationId:o.id});
+        else if(repayment==='loan'&&!mortgageSplit.has(o.id))unresolvedAssociations.push({reason:mortgageBySource.get(o.id)?.length===1?'mortgage_history_model_gap':'unsplit_debt_payment',observationId:o.id});
+        else if(repayment==='unknown')unresolvedAssociations.push({reason:'unresolved_debt_account',observationId:o.id});
       }
-      if(o.kind==='unknown') unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
+      if(o.kind==='unknown'&&!o.bankStatement?.nonCash) unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
     }
     const investmentConfirmations=latestInvestmentConfirmations(sources);
     consumption+=investmentConfirmations.reduce((sum,source)=>sum+BigInt(source.investmentTrade.feeMinor),0n);
@@ -121,6 +160,9 @@ function buildFinanceView(ledger,options={}) {
     for(const s of effectSources) {
       if(s.status!=='completed')continue;
       const a=accountMap.get(s.financialAccountId);if(!a)continue;
+      const mortgageIds=mortgageBySource.get(s.id)||[];
+      if(mortgageIds.length===1){const loanId=mortgageIds[0],principal=s.principalMinor===null?0n:BigInt(s.principalMinor);effects.set(loanId,principal);effectTimes.set(loanId,s.occurredAt);}
+      else if(mortgageIds.length>1)unresolvedAssociations.push({reason:'ambiguous_mortgage_account',observationId:s.id});
       const shanghai=s.provider==='alipay'&&s.paymentChannel.startsWith('\u4e0a\u6d77\u94f6\u884c\u4fe1\u7528\u8d2d')?accounts.filter(a=>a.sourceProduct==='alipay_shanghai_credit'&&a.currency===s.currency):[];
       const relations=(s.accountRelations||[]).map(r=>shanghai.length===1&&r.role==='funding'&&r.product==='alipay_huabei'?{...r,product:'alipay_shanghai_credit',financialAccountId:shanghai[0].id}:r);
       for(const relation of relations){const target=accountMap.get(relation.financialAccountId);if(!target||target.currency!==s.currency){unresolvedAssociations.push({reason:'unresolved_product_account',observationId:s.id,product:relation.product});continue;}const delta=relationDelta(relation,BigInt(s.amountMinor),s);effects.set(target.id,delta);effectTimes.set(target.id,s.occurredAt);if(!liability(target))flow.set(target.id,delta);}
@@ -140,15 +182,17 @@ function buildFinanceView(ledger,options={}) {
         else unresolvedAssociations.push({reason:'unresolved_funding_account',observationId:s.id,paymentAccountHint:s.paymentAccountHint});
         continue;
       }
-      if(s.direction==='neutral'&&['transfer','debt_payment'].includes(s.kind))unresolvedAssociations.push({reason:'unresolved_account_movement',observationId:s.id});
+      const repaymentCredit=s.kind==='debt_payment'&&repayment==='credit';
+      if(s.direction==='neutral'&&['transfer','debt_payment'].includes(s.kind)&&!(repaymentCredit&&sources.some(x=>x.direction==='credit'&&accountMap.get(x.financialAccountId)?.type==='credit_card')))unresolvedAssociations.push({reason:'unresolved_account_movement',observationId:s.id});
 
       const fund=fundingAccount(s,accounts)||(a.type==='wallet'&&knownFundingAccounts.length===1?knownFundingAccounts[0]:null);
       if(a.type==='wallet' && (s.paymentAccountHint||fund)) {
         if(!fund) unresolvedAssociations.push({reason:'unresolved_funding_account',observationId:s.id,paymentAccountHint:s.paymentAccountHint});
-        const possibleBankSources=fund?(moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,s.direction,fund.id]))||[]).filter(o=>!sources.some(source=>source.id===o.id)):[];
+        const direction=repaymentCredit&&s.direction==='neutral'?'debit':s.direction,delta=direction==='debit'?-BigInt(s.amountMinor):signed(s);
+        const possibleBankSources=fund?(moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,direction,fund.id]))||[]).filter(o=>!sources.some(source=>source.id===o.id)):[];
         const confirmedDistinct=possibleBankSources.length&&possibleBankSources.every(o=>links.some(l=>l.type==='distinct'&&l.observationIds.includes(s.id)&&l.observationIds.includes(o.id)));
         if(possibleBankSources.length&&!confirmedDistinct)unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possibleBankSources.slice(0,64).map(o=>o.id),candidateCount:possibleBankSources.length});
-        if(fund && !sources.some(x=>x.financialAccountId===fund.id) && (!possibleBankSources.length||confirmedDistinct)) { effects.set(fund.id,signed(s));effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,signed(s)); }
+        if(fund && !sources.some(x=>x.financialAccountId===fund.id) && (!possibleBankSources.length||confirmedDistinct)) { effects.set(fund.id,delta);effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,delta); }
         continue;
       }
       const balanceDelta=a.type==='loan'&&s.kind==='debt_payment'?(s.principalMinor===null?0n:BigInt(s.principalMinor)):a.type==='loan'&&s.kind==='loan_drawdown'?-BigInt(s.amountMinor):signed(s);
@@ -176,12 +220,12 @@ function buildFinanceView(ledger,options={}) {
     if(!reportingAccountIds.length&&(consumption!==0n||income!==0n))unresolvedAssociations.push({reason:'unallocated_income_expense',observationId:o.id});
     const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys(),...reportingAccountIds]);
     const selectedSources=sources.filter(s=>selected.has(s.financialAccountId));
-    all.push({...o,id,reportingAccountIds,coveredEffects,statisticsExclusions,pendingConsumptionMinor:pendingConsumption,pendingIncomeMinor:pendingIncome,selectedConsumptionMinor:reportSelected?consumption:0n,selectedIncomeMinor:reportSelected?income:0n,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
+    all.push({...o,id,mortgageSplit:mortgageSplit.has(o.id)?{confidence:mortgageSplit.get(o.id).confidence,month:mortgageSplit.get(o.id).month,financialAccountId:mortgageSplit.get(o.id).financialAccountId}:null,repaymentType:repayment,reportingAccountIds,coveredEffects,statisticsExclusions,pendingConsumptionMinor:pendingConsumption,pendingIncomeMinor:pendingIncome,selectedConsumptionMinor:reportSelected?consumption:0n,selectedIncomeMinor:reportSelected?income:0n,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
   }
   for(const t of all) {
     const manual=links.find(l=>l.type==='refund'&&l.observationIds.some(id=>t.observationIds.includes(id)));
     const ref=t.relatedReference;
-    if(t.kind==='refund') { const original=all.filter(x=>x.id!==t.id && x.kind==='expense' && x.currency===t.currency && (manual?manual.observationIds.some(id=>x.observationIds.includes(id)):x.sources.some(o=>o.sourceTransactionId===ref))); if(original.length===1){t.relatedTransactionId=original[0].id;t.category=original[0].category;}else unresolvedAssociations.push({reason:'unresolved_refund',observationId:t.observationIds[0],candidateTransactionIds:original.map(o=>o.id)}); }
+    if(t.kind==='refund') { const original=all.filter(x=>x.id!==t.id && x.kind==='expense' && x.currency===t.currency && (manual?manual.observationIds.some(id=>x.observationIds.includes(id)):ref&&x.sources.some(o=>o.sourceTransactionId===ref))); if(original.length===1){t.relatedTransactionId=original[0].id;t.category=original[0].category;}else (original.length>1||manual?unresolvedAssociations:information).push({reason:original.length>1||manual?'unresolved_refund':'refund_original_unavailable',observationId:t.observationIds[0],candidateTransactionIds:original.map(o=>o.id)}); }
   }
   const summarize=transactions=>{
     const totals=dictionary(),categories=dictionary(),funding=dictionary(),breakdown=dictionary();
@@ -189,7 +233,7 @@ function buildFinanceView(ledger,options={}) {
     for(const t of transactions) {
       const bucket=totals[t.currency]||(totals[t.currency]=money());bucket.consumptionMinor+=t.selectedConsumptionMinor;bucket.incomeMinor+=t.selectedIncomeMinor;
       const details=breakdown[t.currency]||(breakdown[t.currency]={cashFundedConsumptionMinor:0n,creditFundedConsumptionMinor:0n,loanPrincipalPaidMinor:0n,interestPaidMinor:0n,feesPaidMinor:0n,unsplitDebtPaymentMinor:0n});
-      if(t.status==='completed'&&t.kind==='debt_payment'&&t.reportingAccountIds.some(id=>selected.has(id))) { if(['principalMinor','interestMinor','feeMinor'].every(k=>t[k]!==null)){details.loanPrincipalPaidMinor+=BigInt(t.principalMinor);details.interestPaidMinor+=BigInt(t.interestMinor);details.feesPaidMinor+=BigInt(t.feeMinor);}else details.unsplitDebtPaymentMinor+=BigInt(t.amountMinor); }
+      if(t.status==='completed'&&t.kind==='debt_payment'&&t.reportingAccountIds.some(id=>selected.has(id))) { if(['principalMinor','interestMinor','feeMinor'].every(k=>t[k]!==null)){details.loanPrincipalPaidMinor+=BigInt(t.principalMinor);details.interestPaidMinor+=BigInt(t.interestMinor);details.feesPaidMinor+=BigInt(t.feeMinor);}else if(t.repaymentType==='loan'&&!t.mortgageSplit)details.unsplitDebtPaymentMinor+=BigInt(t.amountMinor); }
       const cats=categories[t.currency]||(categories[t.currency]=dictionary());if(t.selectedConsumptionMinor!==0n)cats[t.category||'Uncategorized']=(cats[t.category||'Uncategorized']||0n)+t.selectedConsumptionMinor;
       for(const [id,delta] of Object.entries(t.cashEffects)) if(selected.has(id)) {if(delta>0n)bucket.cashInMinor+=delta;else bucket.cashOutMinor-=delta;}
       bucket.netCashFlowMinor=bucket.cashInMinor-bucket.cashOutMinor;
@@ -224,10 +268,13 @@ function buildFinanceView(ledger,options={}) {
         if(Object.hasOwn(t.balanceEffects,a.id))stats.balanceStatus='derived';
       }}}
     }
+    const mortgage=mortgageModels.find(m=>m.financialAccountId===a.id);
+    if(mortgage){const eligible=(mortgage.balanceEvents||mortgage.periods).filter(p=>!options.endDate||p.date<=options.endDate),last=eligible.at(-1);stats.estimatedBalanceMinor=last===undefined?null:String(-BigInt(last.balanceMinor));stats.estimateAsOf=last?.date||null;stats.estimateStatus=mortgage.status;}
     accountStats[a.id]=stats;
   }
   let comparison=null;
   if(validDate(options.startDate)&&validDate(options.endDate)&&options.startDate<=options.endDate) {const span=(Date.parse(options.endDate)-Date.parse(options.startDate))/86400000+1;const previousEnd=new Date(Date.parse(options.startDate)-86400000).toISOString().slice(0,10),previousStart=new Date(Date.parse(options.startDate)-span*86400000).toISOString().slice(0,10);comparison={current:{startDate:options.startDate,endDate:options.endDate,...summary},previous:{startDate:previousStart,endDate:previousEnd,...summarize(all.filter(t=>t.financialAccountIds.some(id=>selected.has(id))&&t.date>=previousStart&&t.date<=previousEnd))}};}
-  return serial({transactions,investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),accountStats,portfolioBalances:portfolioBalances(accountStats),...summary,comparison,unresolvedAssociations});
+  const review=buildReviewSummary(unresolvedAssociations,transactions,accounts);
+  return serial({transactions,investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),mortgages:mortgageModels.filter(m=>selected.has(m.financialAccountId)||selected.has(m.sourceAccountId)),accountStats,portfolioBalances:portfolioBalances(accountStats),...summary,comparison,unresolvedAssociations,information,review});
 }
 module.exports={buildFinanceView,validateRecord,validDate};

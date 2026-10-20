@@ -1,5 +1,6 @@
 'use strict';
 const {statementBalances}=require('./balanceEvidence');
+const {matchesMortgage}=require('./mortgages');
 const norm=v=>String(v||'').normalize('NFKC').replace(/\s/g,'');
 const bankName=v=>norm(v).replace(/^\u4e2d\u56fd(?=\u5efa\u8bbe|\u5de5\u5546|\u519c\u4e1a|\u6c11\u751f|\u90ae\u653f)/,'').replace('\u90ae\u653f\u50a8\u84c4\u94f6\u884c','\u90ae\u50a8\u94f6\u884c');
 function fundingIdentity(channel){
@@ -16,7 +17,7 @@ function accountProposals(ledger){
  const found=sources.map(o=>({o,f:fundingIdentity(o.paymentChannel)})).filter(x=>x.f);
  for(const {f} of found)if(f.type){const k=f.bank+f.tail;if(!types.has(k))types.set(k,new Set());types.get(k).add(f.type);}
  for(const {o,f} of found){
-  if(!f.type){const t=[...(types.get(f.bank+f.tail)||[])];if(t.length===1)f.type=t[0];}
+  if(!f.type){const t=[...(types.get(f.bank+f.tail)||[])],known=[...new Set(accounts.filter(a=>sameBankAccount(a,f,o.currency)&&['debit_card','credit_card'].includes(a.type)).map(a=>a.type))];if(t.length===1)f.type=t[0];else if(!t.length&&known.length===1)f.type=known[0];}
   const key=[f.bank,f.type||'unknown',f.tail,o.currency].join(':');
   if(!f.type){issues.set(key,{reason:'bank_type_unknown',observationId:o.id,bank:f.bank,tail:f.tail});continue;}
   const matches=accounts.filter(a=>sameBankAccount(a,f,o.currency));
@@ -51,7 +52,7 @@ function buildAssetRegister(ledger){
  });
  const statementAnchors=statementBalances(records,accounts,{includeAvailable:true});
  const accountRows=accounts.map(a=>{
-  const evidence=records.filter(o=>o.financialAccountId===a.id||o.accountRelations?.some(r=>r.financialAccountId===a.id)||(()=>{const f=fundingIdentity(o.paymentChannel);return f&&sameBankAccount(a,f,o.currency);})());
+  const evidence=records.filter(o=>o.financialAccountId===a.id||a.mortgage&&matchesMortgage(o,a.mortgage)||o.accountRelations?.some(r=>r.financialAccountId===a.id)||(()=>{const f=fundingIdentity(o.paymentChannel);return f&&sameBankAccount(a,f,o.currency);})());
   const snapshots=(ledger.balanceSnapshots||[]).filter(s=>s.financialAccountId===a.id);
   snapshots.push(...statementAnchors.filter(s=>s.financialAccountId===a.id));
   for(let i=0;i<snapshots.length;i++)if(['credit_card','loan'].includes(a.type)&&snapshots[i].balanceConvention!=='signed')snapshots[i]={...snapshots[i],balanceMinor:String(-BigInt(snapshots[i].balanceMinor)),balanceConvention:'signed'};
