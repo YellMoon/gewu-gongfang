@@ -39,6 +39,18 @@ test('short periods use daily buckets; long periods are explicit and currency ev
  assert.equal(evidenceLabel({balanceKind:'billed_debt'}),'\u5df2\u51fa\u8d26\u5e94\u8fd8\u6b3e\uff08\u4e0d\u542b\u672a\u51fa\u8d26\uff09');
  assert.equal(accountLabel({type:'wallet',label:'\u5fae\u4fe1\u652f\u4ed8'}),'\u5fae\u4fe1\u96f6\u94b1');
 });
+
+test('unverified mortgage references and total prepayments remain explicitly unresolved',()=>{
+ const reference=tx({kind:'debt_payment',mortgageSplit:{confidence:'estimated_reference',interestMinor:'464473'}});
+ const state=statisticsState(reference,['mortgage_recent_reference_unverified']);
+ assert.equal(state.key,'review');
+ assert.equal(state.label,'\u8fd1\u671f\u672c\u606f\u53c2\u8003\u8bd5\u7b97');
+ assert.ok(state.detail.includes('\u672a\u8ba1\u5165\u5df2\u786e\u8ba4'));
+ const prepayment=tx({kind:'debt_payment',amountMinor:'100000000'});
+ assert.equal(statisticsState(prepayment,['mortgage_prepayment_split_unknown']).label,'\u63d0\u524d\u8fd8\u6b3e\u672c\u606f\u5f85\u62c6');
+ assert.equal(prepayment.amountMinor,'100000000');
+ assert.equal(statisticsState({...reference,mortgageSplit:{confidence:'estimated'}}).key,'neutral');
+});
 test('large original ledgers offer bounded searchable candidates and retain selected items',()=>{
  const originals=Array.from({length:15000},(_,i)=>({id:'o'+i,description:'merchant '+i,date:'2026-10-01'}));
  const initial=boundedObservationOptions(originals,'',['o14999']);

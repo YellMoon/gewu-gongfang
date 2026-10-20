@@ -33,11 +33,12 @@ function validateRecord(r) {
   if(r.bankAccount!==undefined){const a=r.bankAccount;if(!a||typeof a.provider!=='string'||!['credit_card','debit_card'].includes(a.type)||!/^\d{4}$/.test(a.maskedIdentifier)||a.currency!==r.currency||!r.bankStatement&&!r.balanceEvidence&&!r.statementFlow)throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');}
   if(r.bankStatement!==undefined){const e=r.bankStatement;if(!e||!['minsheng-credit-v1','bank-credit-v1','bank-credit-detail-v1'].includes(e.schema)||(e.schema==='bank-credit-detail-v1'?e.statementDate!==undefined:!validDate(e.statementDate))||!validDate(e.postedDate)||!/^\d{4}$/.test(e.cardTail)||e.postedDate<r.date||e.postedDate>e.statementDate||r.balanceMinor!==null||!['expense','refund','debt_payment','interest','fee','unknown','transfer'].includes(r.kind))throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');}
   if(r.balanceEvidence!==undefined){const e=r.balanceEvidence;if(!e||!['alipay-balance-proof-v1','alipay-yuebao-balance-v1','yuebao-asset-certificate-v1','minsheng-credit-balance-v1','bank-credit-balance-v1'].includes(e.schema)||r.amountMinor!=='0'||r.direction!=='neutral'||r.balanceMinor===null||!integer(e.incomeMinor)||!integer(e.expenseMinor)||!Number.isInteger(e.sequence)||e.sequence<1)throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');}
-  if(r.statementFlow!==undefined){const e=r.statementFlow;if(!e||!['mybank-current-v1','mybank-yulibao-v1','huaxia-debit-v1','hangzhou-debit-v1','psbc-debit-v1','jsb-debit-v1'].includes(e.schema)||!integer(e.incomeMinor)||!integer(e.expenseMinor)||!Number.isInteger(e.sequence)||e.sequence<1||!validDate(e.periodStart)||!validDate(e.periodEnd)||r.balanceMinor===null||BigInt(e.incomeMinor)-BigInt(e.expenseMinor)!==BigInt(r.amountMinor)*(r.direction==='credit'?1n:r.direction==='debit'?-1n:0n))throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');}
+  if(r.statementFlow!==undefined){const e=r.statementFlow;if(!e||!['mybank-current-v1','mybank-yulibao-v1','huaxia-debit-v1','hangzhou-debit-v1','psbc-debit-v1','jsb-debit-v1','ccb-debit-v1'].includes(e.schema)||!integer(e.incomeMinor)||!integer(e.expenseMinor)||!Number.isInteger(e.sequence)||e.sequence<1||!validDate(e.periodStart)||!validDate(e.periodEnd)||r.balanceMinor===null||BigInt(e.incomeMinor)-BigInt(e.expenseMinor)!==BigInt(r.amountMinor)*(r.direction==='credit'?1n:r.direction==='debit'?-1n:0n))throw fail('CLOUD_PERSONAL_FINANCE_INPUT_INVALID');}
   return r;
 }
 const signed = o => o.direction==='neutral'?0n:BigInt(o.amountMinor)*(o.direction==='credit'?1n:-1n);
 const liability = a => ['credit_card','loan'].includes(a?.type);
+const mortgageReviewReason = split => split?.confidence==='statement_total_only'?'mortgage_prepayment_split_unknown':split?.confidence==='estimated_reference'?'mortgage_recent_reference_unverified':null;
 function repaymentType(sources,accountMap){
   const related=sources.flatMap(s=>[accountMap.get(s.financialAccountId),s.automaticClassification?.method==='explicit_owned_counter_account'?accountMap.get(s.automaticClassification.financialAccountId):null,...(s.accountRelations||[]).filter(r=>r.activity==='repayment').map(r=>accountMap.get(r.financialAccountId))]).filter(Boolean);
   if(related.some(a=>a.type==='loan'))return 'loan';
@@ -72,6 +73,10 @@ function bankPaymentProvider(record){
 }
 function projectedBankDirection(record){
   if(record.direction!=='neutral')return record.direction;
+  // Alipay's "not income/expense" refund label is not the bank cash direction.
+  // Use credit only to find an existing receipt; do not synthesize a cash leg.
+  if(record.provider==='alipay'&&record.kind==='refund'&&record.status==='completed'&&BigInt(record.amountMinor)>0n)return 'credit';
+
   const target=(record.accountRelations||[]).find(r=>r.role==='target');
   if(['investment_deposit','repayment'].includes(target?.activity))return 'debit';
   if(['investment_withdrawal','loan_drawdown'].includes(target?.activity))return 'credit';
@@ -296,6 +301,7 @@ function buildFinanceView(ledger,options={}) {
       if(o.kind==='income') income=o.direction==='debit'?-amount:amount;
       if(o.kind==='debt_payment') {
         if(['principalMinor','interestMinor','feeMinor'].every(k=>o[k]!==null)) consumption=BigInt(o.interestMinor)+BigInt(o.feeMinor);
+        else if(repayment==='loan'&&mortgageReviewReason(mortgageSplit.get(o.id)))unresolvedAssociations.push({reason:mortgageReviewReason(mortgageSplit.get(o.id)),observationId:o.id});
         else if(repayment==='loan'&&!mortgageSplit.has(o.id))unresolvedAssociations.push({reason:mortgageBySource.get(o.id)?.length===1?'mortgage_history_model_gap':'unsplit_debt_payment',observationId:o.id});
         else if(repayment==='unknown')unresolvedAssociations.push({reason:'unresolved_debt_account',observationId:o.id});
       }
@@ -393,7 +399,7 @@ function buildFinanceView(ledger,options={}) {
     for(const t of transactions) {
       const bucket=totals[t.currency]||(totals[t.currency]=money());bucket.consumptionMinor+=t.selectedConsumptionMinor;bucket.incomeMinor+=t.selectedIncomeMinor;
       const details=breakdown[t.currency]||(breakdown[t.currency]={cashFundedConsumptionMinor:0n,creditFundedConsumptionMinor:0n,loanPrincipalPaidMinor:0n,interestPaidMinor:0n,feesPaidMinor:0n,unsplitDebtPaymentMinor:0n});
-      if(t.status==='completed'&&t.kind==='debt_payment'&&t.reportingAccountIds.some(id=>selected.has(id))) { if(['principalMinor','interestMinor','feeMinor'].every(k=>t[k]!==null)){details.loanPrincipalPaidMinor+=BigInt(t.principalMinor);details.interestPaidMinor+=BigInt(t.interestMinor);details.feesPaidMinor+=BigInt(t.feeMinor);}else if(t.repaymentType==='loan'&&!t.mortgageSplit)details.unsplitDebtPaymentMinor+=BigInt(t.amountMinor); }
+      if(t.status==='completed'&&t.kind==='debt_payment'&&t.reportingAccountIds.some(id=>selected.has(id))) { if(['principalMinor','interestMinor','feeMinor'].every(k=>t[k]!==null)){details.loanPrincipalPaidMinor+=BigInt(t.principalMinor);details.interestPaidMinor+=BigInt(t.interestMinor);details.feesPaidMinor+=BigInt(t.feeMinor);}else if(t.repaymentType==='loan'&&(!t.mortgageSplit||mortgageReviewReason(t.mortgageSplit)))details.unsplitDebtPaymentMinor+=BigInt(t.amountMinor); }
       const cats=categories[t.currency]||(categories[t.currency]=dictionary());if(t.selectedConsumptionMinor!==0n)cats[t.category||'Uncategorized']=(cats[t.category||'Uncategorized']||0n)+t.selectedConsumptionMinor;
       for(const [id,delta] of Object.entries(t.cashEffects)) if(selected.has(id)) {if(delta>0n)bucket.cashInMinor+=delta;else bucket.cashOutMinor-=delta;}
       bucket.netCashFlowMinor=bucket.cashInMinor-bucket.cashOutMinor;

@@ -4,7 +4,7 @@ const {resolveBillAccount,resolveRelatedBillAccounts}=require('./billAccountReso
 const preview={provider:'wechat',records:[{currency:'CNY'}],errors:[]};
 const owner=['tenant','alice'];
 test('validated CIB credit and JSB/PSBC debit statements create and reuse the right physical accounts',()=>{
- for(const [provider,bank,type,tail]of [['cib','\u5174\u4e1a\u94f6\u884c','credit_card','8547'],['psbc','\u90ae\u50a8\u94f6\u884c','debit_card','1641'],['jsb','\u6c5f\u82cf\u94f6\u884c','debit_card','2110']]){
+ for(const [provider,bank,type,tail]of [['cib','\u5174\u4e1a\u94f6\u884c','credit_card','8547'],['psbc','\u90ae\u50a8\u94f6\u884c','debit_card','1641'],['jsb','\u6c5f\u82cf\u94f6\u884c','debit_card','2110'],['ccb','\u5efa\u8bbe\u94f6\u884c','debit_card','6943']]){
   const p={provider,templateId:provider==='cib'?'bank-credit-cib-v1':provider+'-debit-v1',records:[{currency:'CNY'}],errors:[],accountIdentity:{provider:bank,type,maskedIdentifier:tail,currency:'CNY'}},first=resolveBillAccount({preview:p,owner,accounts:[]});
   assert.equal(first.status,'create');assert.equal(first.account.type,type);assert.equal(first.account.maskedIdentifier,tail);
   assert.equal(resolveBillAccount({preview:p,owner,accounts:[first.account]}).account.id,first.account.id);

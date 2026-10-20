@@ -123,6 +123,17 @@ const provident=observation('provident','bank',{provider:'huaxia',kind:'unknown'
 view=buildFinanceView(ledger([account('bank')],[provident]));assert.equal(view.transactions[0].kind,'debt_payment');assert.equal(view.transactions[0].sources[0].kind,'unknown');assert.equal(view.transactions[0].repaymentType,'loan');assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');assert.equal(view.unresolvedAssociations[0].reason,'unsplit_debt_payment');
 view=buildFinanceView(ledger([account('bank')],[provident],{annotations:[{observationId:'provident',revision:'1',patch:{kind:'expense'}}]}));assert.equal(view.transactions[0].kind,'expense','explicit owner classification always wins');
 console.log('repayment one-to-one bank evidence, conflicts and mortgage identification passed');
+// A bank total and a recent reference are different evidence from a dated split.
+const mortgageEvidence={schema:'mortgage-v1',loanType:'commercial',sourceAccountId:'mortgage-bank',statementReference:'1234',originalPrincipalMinor:'200000000',annualRatePpm:'30000',recentSplit:{principalMinor:'100000',interestMinor:'250000',month:'2026-09',monthBasis:'latest_matching_statement'},prepayments:[{date:'2026-09-03',amountMinor:'10000000',amountBasis:'total_payment',mode:'reduce_payment_keep_term'}]};
+const mortgageRows=[['mortgage-pre','2026-09-03','10000000'],['mortgage-reference','2026-09-20','350000']].map(([id,date,amountMinor])=>observation(id,'mortgage-bank',{provider:'huaxia',date,occurredAt:date+'T23:59:59+08:00',amountMinor,kind:id==='mortgage-pre'?'unknown':'debt_payment',description:id==='mortgage-pre'?'\u8d37\u6b3e\u8fd8\u6b3e':'\u67dc\u53f0\u6263\u6536\u8d37\u6b3e\u672c\u606f',counterparty:'\u534e\u590f\u94f6\u884c\u4e2a\u4eba\u8d37\u6b3e\u6237',rawFields:{'\u5bf9\u65b9\u5361/\u8d26\u53f7':'****1234'}}));
+const mortgageFixture=ledger([account('mortgage-bank','bank',{openingBalanceMinor:'20000000',openingDate:'2026-09-01'}),account('mortgage-loan','loan',{mortgage:mortgageEvidence})],mortgageRows),mortgageOriginal=JSON.stringify(mortgageFixture);
+const mortgageView=buildFinanceView(mortgageFixture);assert.equal(JSON.stringify(mortgageFixture),mortgageOriginal);assert.equal(mortgageView.currencyTotals.CNY.cashOutMinor,'10350000');assert.equal(mortgageView.accountStats['mortgage-bank'].balanceMinor,'9650000');assert.equal(mortgageView.accountStats['mortgage-loan'].estimatedBalanceMinor,'-99900000');assert.equal(mortgageView.currencyTotals.CNY.consumptionMinor,'0');assert.equal(mortgageView.fundingBreakdown.CNY.interestPaidMinor,'0');assert.equal(mortgageView.fundingBreakdown.CNY.loanPrincipalPaidMinor,'0');assert.equal(mortgageView.fundingBreakdown.CNY.unsplitDebtPaymentMinor,'10350000');assert.equal(mortgageView.review.transactionCount,2);
+assert.deepEqual(mortgageView.unresolvedAssociations.map(i=>i.reason).sort(),['mortgage_prepayment_split_unknown','mortgage_recent_reference_unverified']);assert.ok(mortgageView.transactions.every(t=>t.principalMinor===null&&t.interestMinor===null));assert.deepEqual(mortgageView.transactions.map(t=>t.mortgageSplit.confidence),['statement_total_only','estimated_reference']);
+const legacyMortgageFixture=JSON.parse(mortgageOriginal);delete legacyMortgageFixture.accounts[1].mortgage.recentSplit.monthBasis;delete legacyMortgageFixture.accounts[1].mortgage.prepayments[0].amountBasis;
+const legacyMortgageView=buildFinanceView(legacyMortgageFixture);assert.equal(legacyMortgageView.currencyTotals.CNY.consumptionMinor,'250000');assert.equal(legacyMortgageView.fundingBreakdown.CNY.loanPrincipalPaidMinor,'10100000');assert.equal(legacyMortgageView.fundingBreakdown.CNY.unsplitDebtPaymentMinor,'0');assert.equal(legacyMortgageView.review.transactionCount,0);assert.equal(legacyMortgageView.accountStats['mortgage-bank'].balanceMinor,mortgageView.accountStats['mortgage-bank'].balanceMinor);assert.equal(legacyMortgageView.accountStats['mortgage-loan'].estimatedBalanceMinor,mortgageView.accountStats['mortgage-loan'].estimatedBalanceMinor);
+const anchoredUnknown=JSON.parse(mortgageOriginal);Object.assign(anchoredUnknown.accounts[1],{openingBalanceMinor:'-150000000',openingDate:'2026-09-01',balanceConvention:'signed'});assert.equal(buildFinanceView(anchoredUnknown).accountStats['mortgage-loan'].balanceMinor,null,'an unknown prepayment split must not project a confirmed loan balance with zero principal');
+const manuallySplit=JSON.parse(mortgageOriginal);manuallySplit.annotations=[{observationId:'mortgage-pre',revision:'1',patch:{kind:'debt_payment',principalMinor:'9950000',interestMinor:'50000',feeMinor:'0'}}];const manualMortgageView=buildFinanceView(manuallySplit);assert.equal(manualMortgageView.currencyTotals.CNY.consumptionMinor,'50000');assert.equal(manualMortgageView.fundingBreakdown.CNY.loanPrincipalPaidMinor,'9950000');assert.equal(manualMortgageView.unresolvedAssociations.some(i=>i.reason==='mortgage_prepayment_split_unknown'),false,'a separately explicit split annotation remains authoritative');assert.equal(manualMortgageView.review.transactionCount,1);
+console.log('mortgage total-only and unverified-reference accounting regressions passed');
 view=buildFinanceView(ledger([account('card','credit_card')],[observation('bank-transfer-in','card',{kind:'refund',direction:'credit',description:'\u672c\u884c\u81ea\u52a9\u8f6c\u5165(****1234)',bankStatement:{nonCash:false}}),observation('real-card-refund','card',{kind:'refund',direction:'credit',description:'\u9000\u6b3e \u672c\u884c\u81ea\u52a9\u8f6c\u5165',bankStatement:{nonCash:false}})]));assert.equal(view.transactions[0].kind,'debt_payment');assert.equal(view.transactions[1].kind,'refund');assert.equal(view.currencyTotals.CNY.consumptionMinor,'-100','an explicit card funding credit is not a second expense refund');
 // The bank's transaction/channel envelope is separate from the merchant name.
 const merchantAccounts=[account('merchant-card','credit_card',{maskedIdentifier:'1234',balanceConvention:'signed',openingBalanceMinor:'-1000',openingDate:'2026-10-01'}),account('merchant-wallet','wallet')];
@@ -303,3 +314,75 @@ for(const decision of [{type:'distinct',status:'active'},{type:'duplicate',statu
 }
 view=buildFinanceView(ledger(repaymentAccounts,[receipt,{...receipt,id:'competing-repayment',sourceTransactionId:'competing-repayment',provider:'wechat'},{...bankReceipt,description:'\u652f\u4ed8\u5b9d \u5fae\u4fe1\u8fd8\u6b3e'},{...bankReceipt,id:'other-credit',sourceTransactionId:'other-credit',description:'\u5fae\u4fe1\u8fd8\u6b3e'}]));assert.equal(view.transactions.length,4,'a reverse repayment candidate remains ambiguous even when its other platform has multiple choices');
 console.log('repayment associations preserve cross-version rejections and the complete reverse candidate graph');
+
+// A platform's neutral refund label still has an incoming bank receipt.
+{
+  const refundAccounts=[
+    account('refund-wallet','wallet',{provider:'alipay'}),
+    account('refund-card','credit_card',{provider:'\u4ea4\u901a\u94f6\u884c',label:'\u4ea4\u901a\u94f6\u884c 6077',maskedIdentifier:'6077',openingBalanceMinor:'1000',openingDate:'2026-10-01'}),
+    account('refund-bank','debit_card',{provider:'\u7f51\u5546\u94f6\u884c',label:'\u7f51\u5546\u94f6\u884c 6342',maskedIdentifier:'6342',openingBalanceMinor:'1000',openingDate:'2026-10-01'})
+  ];
+  const platformRefund=(id,patch={})=>observation(id,'refund-wallet',{provider:'alipay',kind:'refund',direction:'neutral',counterparty:'Order Merchant',description:'Order refund',paymentChannel:'\u4ea4\u901a\u94f6\u884c\u4fe1\u7528\u5361(6077)',rawFields:{'\u4ea4\u6613\u72b6\u6001':'\u9000\u6b3e\u6210\u529f','\u6536/\u652f':'\u4e0d\u8ba1\u6536\u652f'},...patch});
+  const cardRefund=(id,patch={})=>observation(id,'refund-card',{provider:'bocom',kind:'refund',direction:'credit',counterparty:'\u9000\u6b3e \u652f\u4ed8\u5b9d-Receiving Company',description:'Card refund',bankStatement:{nonCash:false},...patch});
+  const runRefund=(rows,extra={})=>buildFinanceView(ledger(refundAccounts,rows,extra));
+  const originalRows=[platformRefund('neutral-refund'),cardRefund('bank-credit')],serialized=JSON.stringify(originalRows);
+  const matched=runRefund(originalRows);
+  assert.equal(matched.transactions.length,1,'a completed neutral refund and its unique bank credit are one refund');
+  assert.equal(matched.currencyTotals.CNY.consumptionMinor,'-100','the refunded amount reduces consumption exactly once');
+  assert.equal(matched.accountStats['refund-card'].balanceMinor,'-900');
+  assert.equal(matched.currencyTotals.CNY.cashInMinor,'0');
+  assert.equal(matched.currencyTotals.CNY.cashOutMinor,'0');
+  assert.equal(matched.transactions[0].direction,'neutral','the original platform direction is preserved');
+  assert.equal(matched.transactions[0].counterparty,'Order Merchant');
+  assert.equal(matched.transactions[0].automaticAssociations[0].method,'unique_channel_funding');
+  assert.equal(matched.transactions[0].automaticAssociations[0].evidence.direction,'credit');
+  assert.equal(JSON.stringify(originalRows),serialized,'the source observations remain unchanged');
+  const debitRefund=platformRefund('neutral-debit-refund',{paymentChannel:'\u7f51\u5546\u94f6\u884c\u50a8\u84c4\u5361(6342)'});
+  const debitReceipt=observation('debit-credit','refund-bank',{provider:'mybank',kind:'unknown',direction:'credit',description:'\u5feb\u6377\u652f\u4ed8\u9000\u6b3e \u652f\u4ed8\u5b9d',counterparty:'Receiving Company',statementFlow:{schema:'mybank-current-v1'}});
+  const debitMatched=runRefund([debitRefund,debitReceipt]);
+  assert.equal(debitMatched.transactions.length,1);
+  assert.equal(debitMatched.unresolvedAssociations.length,0);
+  assert.equal(debitMatched.currencyTotals.CNY.consumptionMinor,'-100');
+  assert.equal(debitMatched.currencyTotals.CNY.cashInMinor,'100','only the existing bank receipt creates cash');
+  assert.equal(debitMatched.accountStats['refund-bank'].balanceMinor,'1100');
+  assert.equal(debitMatched.accountStats['refund-wallet'].cashInMinor,'0');
+  const single=runRefund([debitRefund]);
+  assert.equal(single.currencyTotals.CNY.cashInMinor,'0','a neutral single-leg refund does not invent bank cash');
+  assert.equal(single.accountStats['refund-bank'].balanceMinor,'1000');
+  for(const patch of [
+    {status:'failed',rawFields:{'\u4ea4\u6613\u72b6\u6001':'\u4ea4\u6613\u5173\u95ed'}},
+    {status:'failed',rawFields:{'\u4ea4\u6613\u72b6\u6001':'\u9000\u6b3e\u5931\u8d25'}},
+    {status:'pending',rawFields:{'\u4ea4\u6613\u72b6\u6001':'\u9000\u6b3e\u4e2d'}},
+    {kind:'transfer'},{kind:'expense'},
+    {amountMinor:'99'},{date:'2026-10-07'},
+    {currency:'USD'},{paymentChannel:'\u4ea4\u901a\u94f6\u884c\u4fe1\u7528\u5361(9999)'}
+  ])assert.equal(runRefund([platformRefund('excluded-refund',patch),cardRefund('bank-credit')]).transactions.length,2,'an incompatible or incomplete refund does not match');
+  for(const patch of [
+    {status:'failed'},{status:'pending'},{direction:'debit'},
+    {currency:'USD'},{amountMinor:'99'},{date:'2026-10-07'},
+    {counterparty:'\u9000\u6b3e \u5fae\u4fe1\u652f\u4ed8-Receiving Company'},
+    {counterparty:'Receiving Company'}
+  ])assert.equal(runRefund([platformRefund('neutral-refund'),cardRefund('excluded-bank',patch)]).transactions.length,2,'the receipt requires the same card/date/amount/currency and explicit channel');
+  assert.equal(runRefund([platformRefund('zero-platform',{amountMinor:'0'}),cardRefund('zero-bank',{amountMinor:'0'})]).transactions.length,2,'zero-value events are not inferred cash refunds');
+  assert.equal(runRefund([platformRefund('platform-one'),platformRefund('platform-two'),cardRefund('bank-credit')]).transactions.length,3,'two refund orders cannot share one bank receipt');
+  assert.equal(runRefund([platformRefund('neutral-refund'),cardRefund('bank-one'),cardRefund('bank-two')]).transactions.length,3,'two bank credits remain ambiguous');
+  const versions=[
+    platformRefund('refund-v1',{sourceIdentity:'refund-order',sourceVersionOrdinal:1}),
+    platformRefund('refund-v2',{sourceIdentity:'refund-order',sourceVersionOrdinal:2}),
+    cardRefund('credit-v1',{sourceIdentity:'credit-line',sourceVersionOrdinal:1}),
+    cardRefund('credit-v2',{sourceIdentity:'credit-line',sourceVersionOrdinal:2})
+  ];
+  assert.equal(runRefund(versions).transactions.length,1,'reciprocal uniqueness operates on source roots');
+  for(const [type,status] of [['distinct','active'],['duplicate','deleted']]){
+    const vetoed=runRefund(versions,{links:[{id:'refund-veto',type,status,observationIds:['refund-v1','credit-v1']}]});
+    assert.equal(vetoed.transactions.length,2,'an earlier source version veto blocks every version');
+    assert.ok(vetoed.transactions.every(t=>t.automaticAssociations.length===0));
+  }
+  assert.equal(runRefund(versions,{annotations:[{observationId:'refund-v1',revision:'1',patch:{kind:'refund'}}]}).transactions.length,2,'a manual classification on an old source version is respected');
+  const {parseBillCsv}=require('./billCsv');
+  const parsed=parseBillCsv('\u652f\u4ed8\u5b9d\u4ea4\u6613\u660e\u7ec6\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u5206\u7c7b,\u5546\u54c1\u8bf4\u660e,\u6536/\u652f,\u91d1\u989d,\u4ea4\u6613\u72b6\u6001\n2026-10-08 10:00:00,\u9000\u6b3e,\u5546\u54c1\u9000\u6b3e,\u4e0d\u8ba1\u6536\u652f,1.00,\u9000\u6b3e\u6210\u529f\n2026-10-08 11:00:00,\u8d2d\u7269,\u5df2\u5173\u95ed\u8ba2\u5355,\u652f\u51fa,1.00,\u4ea4\u6613\u5173\u95ed');
+  assert.deepEqual(parsed.errors,[]);
+  assert.equal(parsed.records[0].status,'completed');assert.equal(parsed.records[0].kind,'refund');assert.equal(parsed.records[0].direction,'neutral');
+  assert.equal(parsed.records[1].status,'failed','a closed order does not supply proof of a completed refund');
+  console.log('neutral Alipay refund bank-direction, amount conservation, source-root veto and failed-order tests passed');
+}

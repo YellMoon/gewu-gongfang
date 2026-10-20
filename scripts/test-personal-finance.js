@@ -4,7 +4,7 @@ const tests = [
   'shared/personal-finance/accountAnalytics.test.js',
   'cloud-business-api/src/bankStatements.test.js',
   'cloud-business-api/src/creditBankStatements.test.js',
-  'cloud-business-api/src/cibStatement.test.js', 'cloud-business-api/src/debitBankPdf.test.js',
+  'cloud-business-api/src/cibStatement.test.js', 'cloud-business-api/src/debitBankPdf.test.js', 'cloud-business-api/src/ccbDebitStatement.test.js', 'cloud-business-api/src/cmbHtmlStatement.test.js',
   'shared/personal-finance/assetRegister.test.js', 'cloud-business-api/src/mybankStatement.test.js',
   'shared/personal-finance/billCsv.test.js', 'shared/personal-finance/ledger.test.js', 'shared/personal-finance/withdrawals.test.js', 'shared/personal-finance/accountProducts.test.js',
   'cloud-business-api/src/billAccountResolution.test.js',

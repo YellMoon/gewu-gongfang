@@ -158,6 +158,15 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  await assert.rejects(repo.updateAccount({...mortgageContext,id:loanCreated.account.id,patch:{mortgage:null}}),/INPUT_INVALID/);
  const mortgageAfter=await repo.getLedger(mortgageContext);assert.deepEqual(mortgageAfter.observations,mortgageBefore.observations);assert.equal(mortgageAfter.accounts.length,2);assert.equal(mortgageAfter.revision,loanCreated.revision,'rejected mortgage mutations roll back');
  const mortgageView=require('../../shared/personal-finance/ledger').buildFinanceView(mortgageAfter);assert.equal(mortgageView.accountStats[loanCreated.account.id].estimatedBalanceMinor,'-99900000');assert.equal(mortgageView.accountStats[loanCreated.account.id].balanceMinor,null);
+ assert.equal(loanCreated.account.mortgage.recentSplit.monthBasis,'latest_matching_statement','automatic period alignment is explicitly unverified');
+ const basisMortgage={...loanCreated.account.mortgage,prepayments:[{date:'2026-10-09',amountMinor:'10000000',mode:'reduce_payment_keep_term',amountBasis:'total_payment'}]};
+ const basisSaved=await repo.updateAccount({...mortgageContext,id:loanCreated.account.id,patch:{mortgage:basisMortgage},expectedRevision:mortgageAfter.revision});
+ assert.deepEqual(basisSaved.account.mortgage,basisMortgage,'PostgreSQL round-trips the total-payment and period bases');
+ const basisLedger=await repo.getLedger(mortgageContext);
+ assert.deepEqual(basisLedger.observations,mortgageAfter.observations,'basis correction never changes the bank source');
+ assert.deepEqual(basisLedger.accounts.find(a=>a.id===loanCreated.account.id).mortgage,basisMortgage);
+ await assert.rejects(repo.updateAccount({...mortgageContext,id:loanCreated.account.id,patch:{mortgage:{...basisMortgage,prepayments:[{...basisMortgage.prepayments[0],amountBasis:'guess'}]}},expectedRevision:basisLedger.revision}),/INPUT_INVALID/);
+ assert.equal((await repo.getLedger(mortgageContext)).revision,basisLedger.revision,'invalid basis writes roll back');
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);

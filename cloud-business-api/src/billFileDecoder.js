@@ -148,7 +148,8 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
       // Preserve line positions but do not pretend already-lost Excel precision can be recovered.
       rows.push(bad ? Array(range.e.c + 1).fill('') : row);
     }
-    const parsed = require('./spdbStatement').parseSpdbDetailRows(rows,fieldMapping)||require('./mybankStatement').parseMybankRows(rows)||require('./huaxiaStatement').parseHuaxiaRows(rows)||parseBillCsv(csvText(rows),{filename,fieldMapping});
+    // Add support for validated CCB debit account spreadsheets before generic CSV mapping.
+    const parsed = require('./spdbStatement').parseSpdbDetailRows(rows,fieldMapping)||require('./mybankStatement').parseMybankRows(rows)||require('./huaxiaStatement').parseHuaxiaRows(rows)||require('./ccbDebitStatement').parseCcbDebitRows(rows)||parseBillCsv(csvText(rows),{filename,fieldMapping});
     if (precisionErrors.length) parsed.errors = [...precisionErrors,...parsed.errors.filter(error => error.code !== 'BILL_NO_RECORDS')];
     merge(result,parsed,name);
   }
@@ -226,7 +227,7 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
   }
   const html = /^\s*(?:<!doctype\s+html|<html|<table)/i.test(buffer.subarray(0,4096).toString('utf8'));
   if (['.html','.htm'].includes(extension) || (extension === '.xls' && html)) {
-    const sourceHtml=decodeText(buffer),statement=require('./minshengStatement').parseMinshengHtml(sourceHtml)||require('./creditBankStatements').parseCreditBankHtml(sourceHtml);if(statement)return statement;
+    const sourceHtml=decodeText(buffer),statement=require('./minshengStatement').parseMinshengHtml(sourceHtml)||require('./creditBankStatements').parseCreditBankHtml(sourceHtml)||require('./cmbHtmlStatement').parseCmbHtml(sourceHtml);if(statement)return statement;
     if (!html || !/<table[\s>]/i.test(decodeText(buffer))) fail('BILL_HTML_TABLE_MISSING','HTML 中未找到可解析账单表格');
     return spreadsheet(buffer,filename,fieldMapping,budget,true);
   }

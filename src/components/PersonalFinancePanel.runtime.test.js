@@ -166,6 +166,28 @@ test('actual TSX: navigation preserves pending file but scopes tables to the act
 });
 
 
+test('mortgage editor preserves evidence bases and treats changed references as unverified',async()=>{
+ const actualHelpers=await helpers,slots=[],saved=[],errors=[];let cursor=0,values={};
+ const form={resetFields:()=>{values={};},setFieldsValue:v=>{values=structuredClone(v);},validateFields:async()=>values};
+ const react={useState:initial=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return [slots[i],v=>{slots[i]=v;}];}};
+ const component=displayName=>Object.assign(function(){},{displayName});
+ const antd=Object.fromEntries(['Alert','Button','Card','Drawer','Form','Input','Modal','Select','Space','Table','Tag'].map(n=>[n,component(n)]));
+ antd.Form.Item=component('Form.Item');antd.Form.List=component('Form.List');antd.Form.useForm=()=>[form];antd.Form.useWatch=k=>values[k];antd.message={error:e=>errors.push(e)};
+ const jsx=(type,props)=>({type,props:props||{}}),dependencies={react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,'../services/personalFinanceClient.mjs':actualHelpers};
+ const loaded={exports:{}},compiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'MortgageAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+ new Function('require','module','exports',compiled)(n=>dependencies[n],loaded,loaded.exports);
+ const mortgage={schema:'mortgage-v1',loanType:'commercial',sourceAccountId:'funding',statementReference:'1234',originalPrincipalMinor:'296000000',annualRatePpm:'33000',termMonths:360,firstPaymentDate:'2022-09-20',recentSplit:{month:'2026-09',principalMinor:'364699',interestMinor:'464473',monthBasis:'latest_matching_statement'},prepayments:[{date:'2025-12-03',amountMinor:'100000000',amountBasis:'total_payment',mode:'reduce_payment_keep_term'}]};
+ const account={id:'mortgage',label:'Mortgage',type:'loan',mortgage},models=[{financialAccountId:'mortgage',label:'Mortgage',prepayments:[]}];
+ const render=()=>{cursor=0;return loaded.exports.default({models,accounts:[account],busy:false,onSave:async(a,e)=>{saved.push({a:structuredClone(a),existing:e});return a;}});};
+ const modal=()=>nodes(render()).find(n=>name(n)==='Modal');
+ const edit=()=>{const tree=render(),card=nodes(tree).find(n=>name(n)==='Card'&&n.props.size==='small');nodes(card.props.extra).filter(n=>name(n)==='Button')[1].props.onClick();render();};
+ edit();assert.equal(values.prepayments[0].amountBasis,'total_payment');modal().props.onOk();await tick();assert.deepEqual(errors,[]);
+ assert.deepEqual(saved[0].a.mortgage,mortgage,'editing unrelated fields preserves total-payment and automatic-period evidence');assert.equal(saved[0].existing,account);
+ edit();values.recentPrincipal='3647.00';modal().props.onOk();await tick();
+ assert.deepEqual(saved[1].a.mortgage.recentSplit,{month:null,monthBasis:'latest_matching_statement',principalMinor:'364700',interestMinor:'464473'});
+ assert.equal(saved[1].a.mortgage.prepayments[0].amountBasis,'total_payment');assert.deepEqual(account.mortgage,mortgage);assert.deepEqual(errors,[]);
+});
+
 test('inferred association exposes evidence and submits an owner-scoped distinct decision',async()=>{
   const h=await panel();await tick();h.tab('transactions');
   const table=h.table(p=>p.expandable?.expandedRowRender),transaction={...table.props.dataSource[0],automaticAssociations:[{method:'unique_channel_funding',confidence:'inferred',observationIds:['platform-original','bank-original']}]};
