@@ -65,3 +65,7 @@ test('batch bank evidence explains its zero consumption without being marked unr
  assert.equal(state.key,'neutral');assert.ok(state.detail.includes('\u7ec4\u5185\u5355\u7b14\u5bf9\u5e94\u5173\u7cfb\u672a\u786e\u5b9a'));
 });
 
+test('legacy WeChat refunds disclose the missing settlement without calling them completed or failed',()=>{
+ const s=statisticsState({provider:'wechat',status:'pending',rawFields:{'\u5f53\u524d\u72b6\u6001':'\u5df2\u8f6c\u5165\u9000\u6b3e'}});assert.equal(s.key,'review');assert.ok(s.detail.includes('\u672a\u62ab\u9732\u9000\u6b3e\u5230\u8d26\u91d1\u989d\u548c\u65f6\u95f4'));
+});
+

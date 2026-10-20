@@ -132,3 +132,9 @@ test('observed settled wallet status labels parse without relaxing unknown statu
  const p=parseBillCsv(provider+'账单\n交易时间,交易类型,商品说明,收/支,金额,交易状态\n2026-10-01 10:00:00,转账,转账收款,收入,1,'+status);assert.deepEqual(p.errors,[]);assert.equal(p.records[0].status,'completed');
  }
 });
+
+test('legacy WeChat refund-process labels remain pending rather than disappearing or becoming income',()=>{
+ const p=parseBillCsv('\u5fae\u4fe1\u652f\u4ed8\u8d26\u5355\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u7c7b\u578b,\u5546\u54c1,\u6536/\u652f,\u91d1\u989d,\u5f53\u524d\u72b6\u6001\n2015-04-29 12:00:00,\u5fae\u4fe1\u7ea2\u5305,/,\u652f\u51fa,10,\u5df2\u8f6c\u5165\u9000\u6b3e');
+ assert.deepEqual(p.errors,[]);assert.equal(p.records.length,1);assert.equal(p.records[0].amountMinor,'1000');assert.equal(p.records[0].direction,'debit');assert.equal(p.records[0].status,'pending');assert.equal(p.records[0].rawFields['\u5f53\u524d\u72b6\u6001'],'\u5df2\u8f6c\u5165\u9000\u6b3e');
+ const other=parseBillCsv('date,type,amount,status\n2015-04-29,expense,10,\u5df2\u8f6c\u5165\u9000\u6b3e');assert.equal(other.errors[0].code,'BILL_STATUS_UNKNOWN');
+});

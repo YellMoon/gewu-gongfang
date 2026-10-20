@@ -1,6 +1,8 @@
 'use strict';
+const {ACCOUNT_PRODUCTS,inferAccountRelations}=require('./accountProducts');
 const {statementBalances}=require('./balanceEvidence');
 const {matchesMortgage}=require('./mortgages');
+const {annotatedCounterAccount}=require('./statementAccounts');
 const norm=v=>String(v||'').normalize('NFKC').replace(/\s/g,'');
 const bankName=v=>norm(v).replace(/^\u4e2d\u56fd(?=\u5efa\u8bbe|\u5de5\u5546|\u519c\u4e1a|\u6c11\u751f|\u90ae\u653f)/,'').replace('\u90ae\u653f\u50a8\u84c4\u94f6\u884c','\u90ae\u50a8\u94f6\u884c');
 function fundingIdentity(channel){
@@ -27,12 +29,21 @@ function accountProposals(ledger){
  }
  if(sources.some(o=>norm(o.paymentChannel).startsWith('\u4e0a\u6d77\u94f6\u884c\u4fe1\u7528\u8d2d'))&&!accounts.some(a=>a.sourceProduct==='alipay_shanghai_credit'))
   candidates.set('alipay_shanghai_credit:CNY',{key:'alipay_shanghai_credit:CNY',label:'\u4e0a\u6d77\u94f6\u884c\u4fe1\u7528\u8d2d',provider:'alipay',type:'credit_card',maskedIdentifier:'',currency:'CNY',sourceProduct:'alipay_shanghai_credit',balanceConvention:'signed',openingBalanceMinor:null,openingDate:null,status:'active'});
+ for(const o of sources){
+  if(o.provider!=='wechat'||o.kind!=='transfer'||o.rawFields?.['\u4ea4\u6613\u7c7b\u578b']!=='\u8d2d\u4e70\u7406\u8d22\u901a')continue;
+  for(const relation of inferAccountRelations(o,'wechat')){
+   if(relation.product!=='wechat_licaitong'||accounts.some(a=>a.sourceProduct===relation.product&&a.currency===o.currency))continue;
+   const p=ACCOUNT_PRODUCTS[relation.product],key=relation.product+':'+o.currency;
+   candidates.set(key,{key,label:p.label,provider:p.provider,type:p.type,sourceProduct:relation.product,maskedIdentifier:'',currency:o.currency,balanceConvention:'signed',openingBalanceMinor:null,openingDate:null,status:'active'});
+  }
+ }
  return {accounts:[...candidates.values()],unresolved:[...issues.values()]};
 }
 const unitsMinor=v=>{const[a,b='']=String(v).split('.');return BigInt(a)*1000000000000n+BigInt(b.padEnd(12,'0'));};
 const unitsText=v=>{const a=v<0n?-v:v;return(v<0n?'-':'')+String(a/1000000000000n)+'.'+String(a%1000000000000n).padStart(12,'0').replace(/0+$/,'').padEnd(2,'0');};
 function buildAssetRegister(ledger){
  const accounts=ledger.accounts||[],versions=new Map();
+ const annotations=new Map();for(const annotation of ledger.annotations||[])if(!annotations.has(annotation.observationId)||BigInt(annotation.revision)>BigInt(annotations.get(annotation.observationId).revision))annotations.set(annotation.observationId,annotation);
  for(const o of ledger.observations||[]){if(o.status!=='completed')continue;const key=[o.financialAccountId,o.provider,o.sourceIdentity||o.id].join(':');if(!versions.has(key)||(o.sourceVersionOrdinal||0)>(versions.get(key).sourceVersionOrdinal||0))versions.set(key,o);}
  const records=[...versions.values()].filter(o=>o.status==='completed'),confirmations=records.filter(o=>o.investmentTrade),funds=new Map();
  for(const o of confirmations){
@@ -52,7 +63,7 @@ function buildAssetRegister(ledger){
  });
  const statementAnchors=statementBalances(records,accounts,{includeAvailable:true});
  const accountRows=accounts.map(a=>{
-  const evidence=records.filter(o=>o.financialAccountId===a.id||a.mortgage&&matchesMortgage(o,a.mortgage)||o.accountRelations?.some(r=>r.financialAccountId===a.id)||(()=>{const f=fundingIdentity(o.paymentChannel);return f&&sameBankAccount(a,f,o.currency);})());
+  const evidence=records.filter(o=>o.financialAccountId===a.id||a.mortgage&&matchesMortgage(o,a.mortgage)||o.accountRelations?.some(r=>r.financialAccountId===a.id)||annotatedCounterAccount(o,annotations.get(o.id),accounts)?.id===a.id||(()=>{const f=fundingIdentity(o.paymentChannel);return f&&sameBankAccount(a,f,o.currency);})());
   const snapshots=(ledger.balanceSnapshots||[]).filter(s=>s.financialAccountId===a.id);
   snapshots.push(...statementAnchors.filter(s=>s.financialAccountId===a.id));
   for(let i=0;i<snapshots.length;i++)if(['credit_card','loan'].includes(a.type)&&snapshots[i].balanceConvention!=='signed')snapshots[i]={...snapshots[i],balanceMinor:String(-BigInt(snapshots[i].balanceMinor)),balanceConvention:'signed'};

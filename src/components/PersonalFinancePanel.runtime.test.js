@@ -204,6 +204,8 @@ test('inferred association exposes evidence and submits an owner-scoped distinct
   assert.ok(text(product).includes('\u7406\u8d22\u4ea7\u54c1'));assert.ok(text(product).includes('\u76f8\u90bb\u539f\u59cb\u65f6\u95f4'));
   const payer=component.type({...component.props,transaction:{automaticAssociations:[{method:'statement_payer_card',confidence:'inferred',observationIds:['debit-bank','credit-bank']}]}});
   assert.ok(text(payer).includes('\u4ed8\u6b3e\u5361\u5c3e\u53f7'));assert.ok(!text(payer).includes('\u6e20\u9053\u4e00\u81f4'));
+  const network=component.type({...component.props,transaction:{automaticAssociations:[{method:'unique_card_funding',confidence:'inferred',observationIds:['network-platform','network-bank']}]}});
+  assert.ok(text(network).includes('\u672a\u62ab\u9732\u652f\u4ed8\u5e73\u53f0'));assert.ok(text(network).includes('\u5019\u9009\u53cc\u65b9\u552f\u4e00'));assert.ok(!text(network).includes('\u6e20\u9053\u4e00\u81f4'));assert.ok(nodes(network).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u63a8\u7b97\u5339\u914d'));
   assert.equal(text(component.type({...component.props,transaction:{}})),'');h.unmount();
 });
 
@@ -215,4 +217,8 @@ test('whole-batch reversal submits every original in one scoped decision',async(
  const button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u6574\u7ec4\u6838\u5bf9');assert.ok(button&&!button.props.disabled);assert.equal(h.callsFor('createLink').length,0);
  button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'group_distinct',observationIds:ids}});
  assert.equal(nodes(component.type({...component.props,busy:true})).find(n=>name(n)==='Button').props.disabled,true);h.unmount();
+});
+test('restore automatic classification submits an empty patch for exactly the annotated original',async()=>{
+ const h=await panel();await tick();h.tab('transactions');const table=h.table(p=>p.expandable?.expandedRowRender),t=table.props.dataSource[0],o=t.sources[0],expanded=table.props.expandable.expandedRowRender({...t,appliedAnnotations:[{id:'annotation',observationId:o.id,revision:'2',patch:{kind:'transfer'}}]});
+ const button=nodes(expanded).find(n=>name(n)==='Button'&&text(n)==='\u6062\u590d\u81ea\u52a8\u5206\u7c7b');assert(button);button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('annotateObservation')[0].args,[o.id,{patch:{},expectedRevision:'3'}]);h.unmount();
 });

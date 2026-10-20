@@ -9,6 +9,7 @@ const ACCOUNT_PRODUCTS=Object.freeze({
  alipay_yulibao:{label:'支付宝 · 余利宝',provider:'alipay',type:'investment',aliases:['余利宝']},
  alipay_funds:{label:'支付宝 · 基金',provider:'alipay',type:'investment',aliases:['蚂蚁财富','基金']},
  wechat_lingqiantong:{label:'微信支付 · 零钱通',provider:'wechat',type:'investment',aliases:['零钱通']},
+ wechat_licaitong:{label:'微信支付 · 理财通',provider:'wechat',type:'investment',aliases:['理财通']},
 });
 const productIn=(text,provider)=>Object.entries(ACCOUNT_PRODUCTS).find(([,p])=>p.provider===provider&&p.aliases.some(alias=>String(text).includes(alias)))?.[0];
 const explicitCardFundingCredit=text=>!/\u9000\u6b3e|\u9000\u8d27|\u9000\u8d39|\u8fd4\u8fd8|\u51b2\u6b63|\u64a4\u9500|refund/i.test(text)&&/\u672c\u884c\u81ea\u52a9\u8f6c\u5165|\u7f51\u8054\u81ea\u52a9\u8f6c\u5165/.test(text);
