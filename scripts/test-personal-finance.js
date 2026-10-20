@@ -1,7 +1,7 @@
 'use strict';
 const { spawnSync } = require('node:child_process');
 const tests = [
-  'shared/personal-finance/accountAnalytics.test.js',
+  'shared/personal-finance/accountAnalytics.test.js', 'shared/personal-finance/reconciliationGroups.test.js', 'shared/personal-finance/bankClassification.test.js',
   'cloud-business-api/src/bankStatements.test.js',
   'cloud-business-api/src/creditBankStatements.test.js',
   'cloud-business-api/src/cibStatement.test.js', 'cloud-business-api/src/debitBankPdf.test.js', 'cloud-business-api/src/ccbDebitStatement.test.js', 'cloud-business-api/src/cmbHtmlStatement.test.js',

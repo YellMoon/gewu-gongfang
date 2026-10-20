@@ -60,3 +60,8 @@ test('large original ledgers offer bounded searchable candidates and retain sele
  assert.equal(originals.length,15000);
 });
 
+test('batch bank evidence explains its zero consumption without being marked unresolved',()=>{
+ const state=statisticsState({status:'completed',amountMinor:'690',consumptionMinor:'0',incomeMinor:'0',reconciliationGroup:{role:'bank_evidence'}});
+ assert.equal(state.key,'neutral');assert.ok(state.detail.includes('\u7ec4\u5185\u5355\u7b14\u5bf9\u5e94\u5173\u7cfb\u672a\u786e\u5b9a'));
+});
+

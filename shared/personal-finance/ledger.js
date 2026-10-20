@@ -11,6 +11,7 @@ const {classifyBankPurpose,classifyPlatformPurpose,nonCashAuthorization}=require
 const {findWechatWithdrawalMatches}=require('./withdrawals');
 const {statementCounterAccount}=require('./statementAccounts');
 const {findStatementRepayments}=require('./statementTransfers');
+const {findReconciliationGroups}=require('./reconciliationGroups');
 const fail = code => Object.assign(new Error(code), {code});
 function statementClassification(o){
   o=classifyPlatformPurpose(classifyBankPurpose(o));
@@ -282,6 +283,10 @@ function buildFinanceView(ledger,options={}) {
     for(const source of [match.wallet,match.bank]){withdrawalByObservation.set(source.id,match);automaticByObservation.set(source.id,[...(automaticByObservation.get(source.id)||[]),association]);}
     union(match.wallet.id,match.bank.id);
   }
+  const reconciliationGroups=findReconciliationGroups(observations,accounts,{rootOf:root,fundingAccount,bankPaymentProvider,annotatedIds:new Set(latestAnnotations.keys()),links:ledger.links||[]}),reconciliationByRoot=new Map();
+  const settledBankRoots=new Set(observations.filter(o=>o.bankStatement||o.statementFlow).map(o=>root(o.id))),settledPlatformRoots=new Set(observations.filter(o=>['alipay','wechat'].includes(o.provider)&&settledBankRoots.has(root(o.id))).map(o=>root(o.id)));
+  for(const group of reconciliationGroups)for(const id of [...group.platformRootIds,...group.bankRootIds])reconciliationByRoot.set(id,group);
+  const sameReconciliation=(a,b)=>{const g=reconciliationByRoot.get(root(a));return Boolean(g&&(g===reconciliationByRoot.get(root(b))||settledPlatformRoots.has(root(b))));};
   const groups=new Map();for(const o of observations) {const id=root(o.id);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(o);}
   const all=[];
   for(const [id,sources] of groups) {
@@ -294,6 +299,7 @@ function buildFinanceView(ledger,options={}) {
     const transfer=links.find(l=>l.type==='transfer'&&l.observationIds.some(id=>sources.some(s=>s.id===id)));
     const o=transfer&&original.kind!=='debt_payment'?{...original,kind:'transfer'}:original, amount=BigInt(o.amountMinor);
     const repayment=o.kind==='debt_payment'?repaymentType(sources,accountMap):null;
+    const reconciliation=reconciliationByRoot.get(id),reconciliationRole=reconciliation?.bankRootIds.includes(id)?'bank_evidence':reconciliation?'platform_order':null;
     let consumption=0n,income=0n;
     if(o.status==='completed') {
       if(['expense','interest','fee'].includes(o.kind)) consumption=amount;
@@ -307,6 +313,7 @@ function buildFinanceView(ledger,options={}) {
       }
       if(o.kind==='unknown'&&!o.bankStatement?.nonCash&&!nonCashAuthorization(o)) unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
     }
+    if(reconciliationRole==='bank_evidence')consumption=0n;
     const investmentConfirmations=latestInvestmentConfirmations(sources);
     consumption+=investmentConfirmations.reduce((sum,source)=>sum+BigInt(source.investmentTrade.feeMinor),0n)+(withdrawal?BigInt(withdrawal.feeMinor):0n);
     for(const confirmation of investmentConfirmations)if(!confirmation.investmentTrade.fundCode&&!identifiedConversions.has(confirmation.id))unresolvedAssociations.push({reason:'unidentified_fund_conversion',observationId:confirmation.id});
@@ -356,7 +363,7 @@ function buildFinanceView(ledger,options={}) {
         const direction=repaymentCredit&&s.direction==='neutral'?'debit':s.direction,delta=direction==='debit'?-BigInt(s.amountMinor):signed(s);
         const possibleBankSources=fund?(moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,direction,fund.id]))||[]).filter(o=>!sources.some(source=>source.id===o.id)):[];
         const confirmedDistinct=possibleBankSources.length&&possibleBankSources.every(o=>links.some(l=>l.type==='distinct'&&l.observationIds.includes(s.id)&&l.observationIds.includes(o.id)));
-        if(possibleBankSources.length&&!confirmedDistinct&&!sources.some(source=>source.financialAccountId===fund.id))unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possibleBankSources.slice(0,64).map(o=>o.id),candidateCount:possibleBankSources.length});
+        if(possibleBankSources.length&&!confirmedDistinct&&!sources.some(source=>source.financialAccountId===fund.id)&&!possibleBankSources.every(b=>(sameReconciliation(s.id,b.id)||reconciliation&&bankPaymentProvider(b)&&bankPaymentProvider(b)!==s.provider)))unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possibleBankSources.slice(0,64).map(o=>o.id),candidateCount:possibleBankSources.length});
         if(fund && !sources.some(x=>x.financialAccountId===fund.id) && (!possibleBankSources.length||confirmedDistinct)) { effects.set(fund.id,delta);effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,delta); }
         continue;
       }
@@ -377,16 +384,16 @@ function buildFinanceView(ledger,options={}) {
     // again from a platform's product relationship.
     if(income!==0n&&coveredEffects.some(e=>sources.some(s=>(s.accountRelations||[]).some(r=>r.financialAccountId===e.financialAccountId&&r.activity==='investment_income'))))income=0n;
     const statisticsExclusions=[];
-    for(const s of sources){const overlap=statementOverlaps.get(s.id);if(overlap?.length&&!overlap.some(b=>sources.some(source=>source.id===b.id))){statisticsExclusions.push({observationId:s.id,candidateObservationIds:overlap.map(b=>b.id),reason:'card_statement_overlap_requires_review'});}}
+    for(const s of sources){const overlap=statementOverlaps.get(s.id);if(overlap?.length&&!sources.some(b=>(b.bankStatement||b.statementFlow)&&b.financialAccountId===fundingAccount(s,accounts)?.id)&&!overlap.every(b=>(sameReconciliation(s.id,b.id)||reconciliation&&bankPaymentProvider(b)&&bankPaymentProvider(b)!==s.provider))){statisticsExclusions.push({observationId:s.id,candidateObservationIds:overlap.map(b=>b.id),reason:'card_statement_overlap_requires_review'});}}
     const pendingConsumption=statisticsExclusions.length?consumption:0n,pendingIncome=statisticsExclusions.length?income:0n;
     if(statisticsExclusions.length){consumption=0n;income=0n;unresolvedAssociations.push(...statisticsExclusions);}
     const reportingAccountIds=withdrawal?[withdrawal.wallet.financialAccountId]:incomeExpenseAccounts(effectSources,accounts,fundingAccount,effects);
     const reportSelected=reportingAccountIds.some(id=>selected.has(id))||accounts.every(a=>selected.has(a.id));
     if(!reportingAccountIds.length&&(consumption!==0n||income!==0n))unresolvedAssociations.push({reason:'unallocated_income_expense',observationId:o.id});
-    const automaticAssociations=[...new Set(sources.flatMap(s=>automaticByObservation.get(s.id)||[]))];
+    const automaticAssociations=[...new Set(sources.flatMap(s=>automaticByObservation.get(s.id)||[])),...(reconciliation?[reconciliation]:[])];
     const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys(),...reportingAccountIds]);
     const selectedSources=sources.filter(s=>selected.has(s.financialAccountId));
-    all.push({...o,id,automaticAssociations,mortgageSplit:mortgageSplit.has(o.id)?{confidence:mortgageSplit.get(o.id).confidence,month:mortgageSplit.get(o.id).month,financialAccountId:mortgageSplit.get(o.id).financialAccountId}:null,repaymentType:repayment,reportingAccountIds,coveredEffects,statisticsExclusions,pendingConsumptionMinor:pendingConsumption,pendingIncomeMinor:pendingIncome,selectedConsumptionMinor:reportSelected?consumption:0n,selectedIncomeMinor:reportSelected?income:0n,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
+    all.push({...o,id,automaticAssociations,reconciliationGroup:reconciliation?{id:reconciliation.id,role:reconciliationRole,count:reconciliation.evidence.count,individualIdentity:'undetermined'}:null,mortgageSplit:mortgageSplit.has(o.id)?{confidence:mortgageSplit.get(o.id).confidence,month:mortgageSplit.get(o.id).month,financialAccountId:mortgageSplit.get(o.id).financialAccountId}:null,repaymentType:repayment,reportingAccountIds,coveredEffects,statisticsExclusions,pendingConsumptionMinor:pendingConsumption,pendingIncomeMinor:pendingIncome,selectedConsumptionMinor:reportSelected?consumption:0n,selectedIncomeMinor:reportSelected?income:0n,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
   }
   for(const t of all) {
     const manual=links.find(l=>l.type==='refund'&&l.observationIds.some(id=>t.observationIds.includes(id)));
@@ -441,6 +448,6 @@ function buildFinanceView(ledger,options={}) {
   let comparison=null;
   if(validDate(options.startDate)&&validDate(options.endDate)&&options.startDate<=options.endDate) {const span=(Date.parse(options.endDate)-Date.parse(options.startDate))/86400000+1;const previousEnd=new Date(Date.parse(options.startDate)-86400000).toISOString().slice(0,10),previousStart=new Date(Date.parse(options.startDate)-span*86400000).toISOString().slice(0,10);comparison={current:{startDate:options.startDate,endDate:options.endDate,...summary},previous:{startDate:previousStart,endDate:previousEnd,...summarize(all.filter(t=>t.financialAccountIds.some(id=>selected.has(id))&&t.date>=previousStart&&t.date<=previousEnd))}};}
   const review=buildReviewSummary(unresolvedAssociations,transactions,accounts);
-  return serial({transactions,investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),mortgages:mortgageModels.filter(m=>selected.has(m.financialAccountId)||selected.has(m.sourceAccountId)),accountStats,portfolioBalances:portfolioBalances(accountStats),...summary,comparison,unresolvedAssociations,information,review});
+  return serial({transactions,reconciliationGroups,investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),mortgages:mortgageModels.filter(m=>selected.has(m.financialAccountId)||selected.has(m.sourceAccountId)),accountStats,portfolioBalances:portfolioBalances(accountStats),...summary,comparison,unresolvedAssociations,information,review});
 }
 module.exports={buildFinanceView,validateRecord,validDate};

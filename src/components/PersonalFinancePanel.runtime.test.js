@@ -206,3 +206,13 @@ test('inferred association exposes evidence and submits an owner-scoped distinct
   assert.ok(text(payer).includes('\u4ed8\u6b3e\u5361\u5c3e\u53f7'));assert.ok(!text(payer).includes('\u6e20\u9053\u4e00\u81f4'));
   assert.equal(text(component.type({...component.props,transaction:{}})),'');h.unmount();
 });
+
+test('whole-batch reversal submits every original in one scoped decision',async()=>{
+ const h=await panel();await tick();h.tab('transactions');
+ const table=h.table(p=>p.expandable?.expandedRowRender),ids=['p1','p2','b1','b2'],transaction={...table.props.dataSource[0],automaticAssociations:[{id:'group',method:'balanced_channel_group',confidence:'inferred',observationIds:ids,evidence:{count:2}}]};
+ const component=nodes(table.props.expandable.expandedRowRender(transaction)).find(n=>n.type?.name==='AutomaticFinanceAssociations'),rendered=component.type(component.props);
+ assert.ok(text(rendered).includes('\u7ec4\u5185\u94f6\u884c\u5e8f\u53f7\u5bf9\u5e94\u5173\u7cfb\u672a\u786e\u5b9a'));
+ const button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u6574\u7ec4\u6838\u5bf9');assert.ok(button&&!button.props.disabled);assert.equal(h.callsFor('createLink').length,0);
+ button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'group_distinct',observationIds:ids}});
+ assert.equal(nodes(component.type({...component.props,busy:true})).find(n=>name(n)==='Button').props.disabled,true);h.unmount();
+});

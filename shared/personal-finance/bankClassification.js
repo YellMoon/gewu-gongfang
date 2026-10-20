@@ -6,7 +6,23 @@ function classifyBankPurpose(record){
   if(record.status!=='completed'||record.kind!=='unknown')return record;
   const description=String(record.description||''),counterparty=String(record.counterparty||''),purpose=description+' '+counterparty;
   let kind,method;
-  if(record.statementFlow&&['mybank','huaxia','hangzhou'].includes(record.provider)){
+  if(record.provider==='ccb'&&record.statementFlow?.schema==='ccb-debit-v1'){
+    const summary=String(record.rawFields?.['\u6458\u8981']||''),remark=String(record.rawFields?.['\u4ea4\u6613\u5730\u70b9/\u9644\u8a00']||''),text=summary+' '+remark;
+    if(record.direction==='debit'&&/^(?:ATM\u53d6\u6b3e|\u73b0\u91d1\u652f\u53d6)$/.test(summary)||record.direction==='credit'&&summary==='\u73b0\u91d1\u5b58\u5165'){
+      kind='transfer';method='explicit_cash_movement';
+    }else if(record.direction==='debit'&&/\u94f6\u884c\u8f6c\u8bc1\u5238/.test(text)||record.direction==='credit'&&/\u8bc1\u5238\u8f6c\u94f6\u884c/.test(text)){
+      kind='transfer';method='explicit_securities_movement';
+    }else if(record.direction==='credit'&&/\u652f\u4ed8\u5b9d\u63d0\u73b0|\u4f59\u989d\u5b9d\u63d0\u73b0|\u5fae\u4fe1\u96f6\u94b1\u63d0\u73b0|\u7406\u8d22\u901a\u8d4e\u56de|\u7406\u8d22\u4ea7\u54c1\u8d4e\u56de|\u57fa\u91d1\u8d4e\u56de/.test(text)){
+      kind='transfer';method='explicit_wallet_or_investment_withdrawal';
+    }else if(record.direction==='debit'&&/\u7406\u8d22\u4ea7\u54c1\u7533\u8d2d/.test(text)){
+      kind='transfer';method='explicit_investment_subscription';
+    }else if(record.direction==='debit'&&summary==='\u6570\u5b57\u4eba\u6c11\u5e01\u5151\u51fa'){
+      kind='transfer';method='explicit_digital_cash_exchange';
+    }else if(record.direction==='credit'&&summary==='\u501f\u5457\u653e\u6b3e'){
+      kind='loan_drawdown';method='explicit_loan_drawdown';
+    }
+  }
+  if(!kind&&record.statementFlow&&['mybank','huaxia','hangzhou'].includes(record.provider)){
     if(record.direction==='credit'&&/\u5fae\u4fe1.*\u63d0\u73b0/.test(purpose)&&/\u8d22\u4ed8\u901a/.test(counterparty)){
       kind='transfer';method='explicit_wechat_withdrawal';
     }else if(record.direction==='credit'&&(/\u65e5\u65e5\u76c8.*\u8d4e\u56de/.test(purpose)||record.provider==='mybank'&&/\u8d4e\u56de/.test(counterparty)||/\u57fa\u91d1.*\u8d4e\u56de/.test(purpose))){
