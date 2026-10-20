@@ -73,7 +73,24 @@ function commercialModel(m,rows,prepayments){
  const interest=monthlyInterest(balance,m.annualRatePpm),last=rows.at(-1);if(last&&last.date===result.asOf&&last.amount>interest)result.nextPayment={amountMinor:last.amount,interestMinor:interest,principalMinor:last.amount-interest,status:'forecast_only'};
  return result;
 }
-function providentModel(m,rows){
+function explainProvidentExtra(row,rows,observations,principal,rate,extra){
+ // A date shift alone is not evidence of arrears (weekend collection may be free).
+ // Infer only the one-day case supported by an empty repayment account and an
+ // exact match to the local overdue-principal formula; retain inferred status.
+ if(extra<=0n||row.sources.length!==1||!row.sources.every(o=>o.provider==='huaxia'&&o.counterparty==='\u676d\u5dde\u4f4f\u623f\u516c\u79ef\u91d1\u7ba1\u7406\u4e2d\u5fc3'))return null;
+ const days=new Map();for(const r of rows){const d=Number(r.date.slice(8));days.set(d,(days.get(d)||0)+1);}
+ const ranked=[...days].sort((a,b)=>b[1]-a[1]);
+ if(!ranked.length||ranked[0][1]<3||ranked[0][1]*2<=rows.length||ranked[1]?.[1]===ranked[0][1])return null;
+ const dueDate=row.month+'-'+String(ranked[0][0]).padStart(2,'0');
+ if(Date.parse(row.date)-Date.parse(dueDate)!==86400000)return null;
+ const paid=row.sources[0],seq=paid.statementFlow?.sequence;
+ if(paid.statementFlow?.schema!=='huaxia-debit-v1'||!Number.isSafeInteger(seq)||!paid.importId)return null;
+ const zero=uniqueSources(observations).find(o=>o.financialAccountId===paid.financialAccountId&&o.provider===paid.provider&&o.importId===paid.importId&&o.date===dueDate&&o.status==='completed'&&o.direction==='debit'&&o.balanceMinor==='0'&&o.statementFlow?.schema===paid.statementFlow.schema&&Number.isSafeInteger(o.statementFlow.sequence)&&o.statementFlow.sequence<seq);
+ const calculated=round(principal*BigInt(rate)*3n,720000000n);
+ if(!zero||calculated!==extra)return null;
+ return {reason:'inferred_one_day_overdue_interest',confidence:'estimated',dueDate,paymentDate:row.date,days:1,principalMinor:principal,annualRatePpm:rate,rateMultiplier:'1.5',yearDays:360,calculatedMinor:calculated,evidenceObservationIds:[zero.id,paid.id],source:POLICY_SOURCES[1]};
+}
+function providentModel(m,rows,observations){
  const result={status:'insufficient_history',balanceMinor:null,asOf:null,periods:[],warnings:[],policySources:POLICY_SOURCES,assumptions:['first_home_more_than_five_years','first_observed_payment_is_first_installment','first_payment_extra_is_initial_interest','january_rate_difference_uses_11_old_rate_days']};
  if(rows.length<3||m.prepayments.length)return result;
  const first=rows[0],rate=providentRate(first.date);if(!rate)return result;
@@ -93,8 +110,9 @@ function providentModel(m,rows){
   let extra=row.amount-expected;if(extra< -1n||extra>100n){result.warnings.push({month:row.month,reason:'payment_inconsistent_with_model',expectedMinor:expected,actualMinor:row.amount});break;}
   if(extra>=-1n&&extra<=1n)extra=0n;
   const principal=row.amount-interest-extra;if(principal<0n||principal>balance)break;balance-=principal;
-  result.periods.push({month:row.month,date:row.date,amountMinor:row.amount,principalMinor:principal,interestMinor:interest,extraMinor:extra,balanceMinor:balance,annualRatePpm:r,confidence:'estimated',observationIds:row.sources.map(o=>o.id)});
-  if(extra>0n)result.warnings.push({month:row.month,reason:'extra_amount_not_assumed_principal',amountMinor:extra});
+  const extraExplanation=explainProvidentExtra(row,rows,observations,principal,r,extra);
+  result.periods.push({month:row.month,date:row.date,amountMinor:row.amount,principalMinor:principal,interestMinor:interest,extraMinor:extra,...(extraExplanation?{extraExplanation}:{}),balanceMinor:balance,annualRatePpm:r,confidence:'estimated',observationIds:row.sources.map(o=>o.id)});
+  if(extra>0n&&!extraExplanation)result.warnings.push({month:row.month,reason:'extra_amount_not_assumed_principal',amountMinor:extra});
   previousRate=r;lastMonth=row.month;result.asOf=row.date;
  }
  if(result.periods.length){result.balanceMinor=balance;result.status=result.periods.length===rows.length?'estimated':'partial_estimate';const interest=monthlyInterest(balance,previousRate),last=rows[result.periods.length-1];result.nextPayment={amountMinor:last.amount,interestMinor:interest,principalMinor:last.amount-interest,status:'forecast_only'};}
@@ -103,7 +121,7 @@ function providentModel(m,rows){
 function buildMortgageModels(accounts,observations){
  const result=[];
  for(const a of accounts.filter(a=>a.type==='loan'&&a.mortgage)){
-  const m=a.mortgage;validateMortgage(m);const {monthly,prepayments}=paymentRows(observations,m),model=m.loanType==='commercial'?commercialModel(m,monthly,prepayments):providentModel(m,monthly);
+  const m=a.mortgage;validateMortgage(m);const {monthly,prepayments}=paymentRows(observations,m),model=m.loanType==='commercial'?commercialModel(m,monthly,prepayments):providentModel(m,monthly,observations);
   result.push(serial({...model,financialAccountId:a.id,label:a.label,loanType:m.loanType,sourceAccountId:m.sourceAccountId,originalPrincipalMinor:m.originalPrincipalMinor,repaymentMethod:'equal_payment',prepayments,paymentCount:monthly.length,sourceObservationIds:[...monthly.flatMap(r=>r.sources.map(o=>o.id)),...prepayments.flatMap(r=>r.observationIds)],estimatedBalanceMinor:model.balanceMinor===null?null:-model.balanceMinor}));
  }
  return result;
