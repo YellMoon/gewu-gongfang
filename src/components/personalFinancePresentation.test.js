@@ -7,6 +7,8 @@ test('zero statistics have distinct explanations without changing original money
  assert.deepEqual(statisticsState(original),{key:'zero',label:'\u539f\u8d26\u5355\u96f6\u91d1\u989d',detail:'\u539f\u4ed8\u6b3e\u65b9\u5f0f\uff1a\u5355\u8f66\u9a91\u884c\u5361\u62b5\u6263'});
  assert.equal(original.amountMinor,'0');
  assert.equal(statisticsState(tx({kind:'transfer'})).key,'neutral');
+ assert.equal(statisticsState(tx({kind:'transfer'}),['withdrawal_net_fee_unknown']).key,'review');
+ assert.ok(statisticsState(tx({kind:'transfer'}),['withdrawal_net_fee_unknown']).detail.includes('\u672a\u63a8\u7b97\u624b\u7eed\u8d39'));
  assert.equal(statisticsState(tx({kind:'unknown'})).key,'review');
  assert.equal(statisticsState(tx({kind:'unknown',bankStatement:{nonCash:true}})).key,'neutral');
  assert.equal(statisticsState(tx({kind:'debt_payment'}),['unsplit_debt_payment']).label,'\u672c\u606f\u5f85\u62c6\u5206');
@@ -15,6 +17,20 @@ test('zero statistics have distinct explanations without changing original money
  assert.equal(statisticsState(tx({consumptionMinor:'-300'})).label,'\u9000\u6b3e\u51b2\u51cf\u652f\u51fa');
  assert.equal(statisticsState(tx({consumptionMinor:'500',selectedConsumptionMinor:'0',selectedIncomeMinor:'0',reportingAccountIds:['outside']})).key,'outside');
 });
+test('explicit successful authorizations explain noncash amounts without masking unresolved payments',()=>{
+ const opening=tx({provider:'psbc',status:'completed',kind:'unknown',direction:'neutral',amountMinor:'0',balanceMinor:'0',description:'\u73b0\u91d1\u5f00\u5361',statementFlow:{schema:'psbc-debit-v1'}});
+ assert.equal(statisticsState(opening).label,'\u94f6\u884c\u5f00\u6237\u8bb0\u5f55');
+ assert.equal(statisticsState({...opening,amountMinor:'100'}).key,'review');
+ const authorization=tx({provider:'alipay',kind:'unknown',direction:'neutral',rawFields:{'\u4ea4\u6613\u72b6\u6001':'\u51bb\u7ed3\u6210\u529f'}});
+ assert.equal(statisticsState(authorization).key,'neutral');
+ assert.equal(statisticsState(authorization).label,'\u51bb\u7ed3\u6216\u89e3\u51bb\u8bb0\u5f55');
+ assert.equal(authorization.amountMinor,'10000');
+ assert.equal(statisticsState({...authorization,direction:'debit'}).key,'review');
+ assert.equal(statisticsState({...authorization,rawFields:{}}).key,'review');
+ assert.equal(statisticsState({...authorization,status:'pending'}).key,'incomplete');
+ assert.equal(statisticsState({...authorization,amountMinor:'0'}).key,'zero');
+});
+
 test('short periods use daily buckets; long periods are explicit and currency evidence retains scope',()=>{
  assert.equal(trendGranularity('2026-10-01','2026-10-20'),'day');
  assert.equal(trendGranularity('2026-01-01','2026-04-01'),'week');

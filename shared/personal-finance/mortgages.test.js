@@ -25,7 +25,17 @@ test('provident history fits its initial term and January repricing rather than 
 test('estimates stay out of confirmed balances, original loan amount is never current debt, known user interest is counted once',()=>{
  const m=bindMortgageCalibration(mortgage(),[payment('anchor','2026-09-20','350000')]),bank={id:'bank',label:'Bank',provider:'bank',type:'bank',currency:'CNY',openingBalanceMinor:'1000000',openingDate:'2026-09-01'},l={accounts:[bank,account(m)],observations:[payment('anchor','2026-09-20','350000')],balanceSnapshots:[],annotations:[],links:[]};const raw=JSON.stringify(l),v=buildFinanceView(l);assert.equal(JSON.stringify(l),raw);assert.equal(v.currencyTotals.CNY.consumptionMinor,'250000');assert.equal(v.accountStats.bank.balanceMinor,'650000');assert.equal(v.accountStats.loan.balanceMinor,null);assert.equal(v.accountStats.loan.estimatedBalanceMinor,'-99900000');assert.equal(v.transactions[0].balanceEffects.loan,'100000');assert.equal(v.transactions[0].sources[0].principalMinor,null);
 });
-test('malformed monetary inputs, unsupported fields and invalid rates are rejected',()=>{for(const patch of [{annualRatePpm:'3.3'},{annualRatePpm:'0'},{originalPrincipalMinor:'-1'},{statementReference:'123'},{sourceAccountId:''},{prepayments:[{date:'2026-02-30',amountMinor:'1',mode:'reduce_payment_keep_term'}]},{untrusted:'value'}])assert.throws(()=>validateMortgage(mortgage(patch)),/INPUT_INVALID/);});
+test('malformed monetary inputs, unsupported fields and invalid rates are rejected',()=>{for(const patch of [{annualRatePpm:'3.3'},{annualRatePpm:'0'},{originalPrincipalMinor:'-1'},{statementReference:'123'},{sourceAccountId:''},{termMonths:0},{termMonths:601},{termMonths:'360'},{termMonths:359.5},{firstPaymentDate:'2022-02-30'},{prepayments:[{date:'2026-02-30',amountMinor:'1',mode:'reduce_payment_keep_term'}]},{untrusted:'value'}])assert.throws(()=>validateMortgage(mortgage(patch)),/INPUT_INVALID/);});
+
+test('confirmed original term and first payment date are preserved separately from inferred periods',()=>{
+ const m=bindMortgageCalibration(mortgage({termMonths:360,firstPaymentDate:'2022-09-20'}),[payment('anchor','2026-09-20','350000')]),model=buildMortgageModels([account(m)],[payment('anchor','2026-09-20','350000')])[0];
+ assert.equal(model.contractTermMonths,360);assert.equal(model.firstPaymentDate,'2022-09-20');assert.equal(model.balanceMinor,'99900000');assert.equal(model.calibrationMonth,'2026-09');
+ assert.equal(model.contractComparison.remainingPeriods,311);
+ assert.equal(model.contractComparison.observedPaymentMinor,'350000');
+ assert.equal(model.contractComparison.status,'payment_differs');
+ assert.equal(model.contractComparison.expectedPaymentMinor,String(monthlyPayment('99900000','30000',311)));
+ assert.equal(model.periods[0].interestMinor,'250000','term comparison never silently changes the user reference or loan balance');
+});
 
 test('one-day extra is explained only with same-statement empty-balance evidence and an exact local penalty match',()=>{
  const m=mortgage({loanType:'provident',originalPrincipalMinor:'120000000',annualRatePpm:null,recentSplit:null});

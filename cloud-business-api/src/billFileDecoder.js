@@ -164,17 +164,18 @@ async function pdfTable(buffer,filename,fieldMapping) {
   try {
     document = await task.promise;
     if (document.numPages > LIMITS.pdfPages) fail('BILL_PDF_PAGE_LIMIT','PDF 超过100页，请拆分文件');
-    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false,balanceCandidate=false,yuebaoCandidate=false,mybankCandidate=false,certificateCandidate=false,hangzhouCandidate=false;
+    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false,balanceCandidate=false,yuebaoCandidate=false,mybankCandidate=false,certificateCandidate=false,hangzhouCandidate=false,debitBankCandidate=false;
     for (let p = 1; p <= document.numPages; p += 1) {
       const page = await document.getPage(p), content = await page.getTextContent();
       const pageText=content.items.map(item=>item.str||'').join('').normalize('NFKC').replace(/\s/g,'');
+      if(p===1&&(/\u6c5f\u82cf\u94f6\u884c\u4ea4\u6613\u660e\u7ec6|\u4e2d\u56fd\u90ae\u653f\u50a8\u84c4\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6/.test(pageText)))debitBankCandidate=true;
       if(p===1&&pageText.includes('\u676d\u5dde\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6'))hangzhouCandidate=true;
       if(p===1&&isAntFundCover(pageText))fundCandidate=true;
       if(p===1&&pageText.includes('\u4f59\u5229\u5b9d\u8d44\u91d1\u660e\u7ec6')&&pageText.includes('\u4ea4\u6613\u8d26\u53f7'))mybankCandidate=true;
       if(p===1&&pageText.includes('\u4f59\u989d\u5b9d\u8d44\u4ea7\u67e5\u8be2\u60c5\u51b5\u544a\u77e5\u4e66'))certificateCandidate=true;
       if(p===1&&pageText.includes('\u4f59\u989d\u5b9d\u6d41\u6c34\u660e\u7ec6\u67e5\u8be2')&&pageText.includes('\u4f59\u989d\u5b9d\u53ef\u7528\u4f59\u989d'))yuebaoCandidate=true;
       if(p===1&&pageText.includes('\u652f\u4ed8\u5b9d\u6536\u652f\u660e\u7ec6\u8bc1\u660e')&&pageText.includes('\u8d26\u6237\u4f59\u989d'))balanceCandidate=true;
-      if(fundCandidate||balanceCandidate||yuebaoCandidate||mybankCandidate||certificateCandidate||hangzhouCandidate){const operators=await page.getOperatorList();fundPages.push({number:p,items:content.items.filter(item=>typeof item.str==='string').map(item=>({str:item.str,x:item.transform[4],y:item.transform[5],width:item.width})),bounds:operators.fnArray.flatMap((fn,i)=>fn===OPS.constructPath&&(Array.isArray(operators.argsArray[i]?.[2])||ArrayBuffer.isView(operators.argsArray[i]?.[2]))?[Array.from(operators.argsArray[i][2])]:[])});}
+      if(fundCandidate||balanceCandidate||yuebaoCandidate||mybankCandidate||certificateCandidate||hangzhouCandidate||debitBankCandidate){const operators=await page.getOperatorList();fundPages.push({number:p,items:content.items.filter(item=>typeof item.str==='string').map(item=>({str:item.str,x:item.transform[4],y:item.transform[5],width:item.width})),bounds:operators.fnArray.flatMap((fn,i)=>fn===OPS.constructPath&&(Array.isArray(operators.argsArray[i]?.[2])||ArrayBuffer.isView(operators.argsArray[i]?.[2]))?[Array.from(operators.argsArray[i][2])]:[])});}
       const lines = [];
       for (const item of content.items) {
         if (!item.str || !item.str.trim()) continue;
@@ -189,13 +190,14 @@ async function pdfTable(buffer,filename,fieldMapping) {
       page.cleanup();
     }
     if (!textCount) fail('BILL_PDF_SCAN_REQUIRES_REVIEW','PDF 无可提取文字，可能是扫描件；请人工核验或导出 CSV/Excel，不能自动入账');
+    if(debitBankCandidate)return require('./debitBankPdf').parseDebitBankPdf(fundPages);
     if(hangzhouCandidate)return require('./hangzhouStatement').parseHangzhouPdf(fundPages);
     if(mybankCandidate)return require('./mybankStatement').parseMybankFundPdf(fundPages);
     if(certificateCandidate)return require('./yuebaoCertificate').parseYuebaoCertificate(fundPages);
     if(fundCandidate)return require('./antFundPdf').parseAntFundPdf(fundPages);
     if(balanceCandidate)return require('./alipayBalancePdf').parseAlipayBalancePdf(fundPages);
     if(yuebaoCandidate)return require('./yuebaoBalancePdf').parseYuebaoBalancePdf(fundPages);
-    const creditStatement=require('./spdbStatement').parseSpdbPdfRows(table)||require('./cmbStatement').parseCmbPdfRows(table);if(creditStatement)return creditStatement;
+    const creditStatement=require('./cibStatement').parseCibPdfRows(table)||require('./spdbStatement').parseSpdbPdfRows(table)||require('./cmbStatement').parseCmbPdfRows(table);if(creditStatement)return creditStatement;
     const result = parseBillCsv(csvText(table),{filename,fieldMapping});
     result.warnings.push(issue('BILL_PDF_VERIFY_REQUIRED','PDF 按文本位置重建表格，必须人工核对列对齐、跨页、合计、金额与方向后提交'));
     return result;

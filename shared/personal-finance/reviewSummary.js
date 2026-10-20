@@ -1,6 +1,8 @@
 'use strict';
 // Count a transaction once even when it has several diagnostic labels.
-const SOFTWARE=new Set(['insufficient_reference','card_statement_overlap_requires_review','ambiguous_reference','mortgage_history_model_gap']);
+// An unrecognized statement purpose needs software analysis before asking the
+// owner for evidence. Responsibility does not remove the unresolved transaction.
+const SOFTWARE=new Set(['insufficient_reference','card_statement_overlap_requires_review','ambiguous_reference','mortgage_history_model_gap','unknown_kind']);
 function buildReviewSummary(issues,transactions,accounts){
   const bySource=new Map(),accountIds=new Set(accounts.map(a=>a.id));
   for(const t of transactions)for(const id of t.observationIds)bySource.set(id,t);

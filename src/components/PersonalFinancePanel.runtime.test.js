@@ -164,3 +164,23 @@ test('actual TSX: navigation preserves pending file but scopes tables to the act
   assert.equal(h.callsFor('previewFile')[0].args[0].filename,'kept.csv');
   h.unmount();
 });
+
+
+test('inferred association exposes evidence and submits an owner-scoped distinct decision',async()=>{
+  const h=await panel();await tick();h.tab('transactions');
+  const table=h.table(p=>p.expandable?.expandedRowRender),transaction={...table.props.dataSource[0],automaticAssociations:[{method:'unique_channel_funding',confidence:'inferred',observationIds:['platform-original','bank-original']}]};
+  const expanded=table.props.expandable.expandedRowRender(transaction),component=nodes(expanded).find(n=>n.type?.name==='AutomaticFinanceAssociations');assert.ok(component);
+  const rendered=component.type(component.props),button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='撤销推算匹配');
+  assert.ok(text(rendered).includes('推算匹配'));assert.ok(text(rendered).includes('候选双方唯一'));assert.ok(button&&!button.props.disabled);assert.equal(h.callsFor('createLink').length,0);
+  button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'distinct',observationIds:['platform-original','bank-original']}});
+  const disabled=nodes(component.type({...component.props,busy:true})).find(n=>name(n)==='Button');assert.equal(disabled.props.disabled,true);
+  const withdrawal=component.type({...component.props,transaction:{automaticAssociations:[{method:'wechat_withdrawal_net_receipt',confidence:'inferred',observationIds:['withdrawal','net-receipt']}]}});
+  assert.ok(text(withdrawal).includes('\u51c0\u5230\u8d26\u989d'));assert.ok(text(withdrawal).includes('\u624b\u7eed\u8d39'));
+  const precise=component.type({...component.props,transaction:{automaticAssociations:[{method:'wechat_withdrawal_net_receipt',confidence:'inferred',observationIds:['withdrawal','net-receipt'],evidence:{matchBasis:'precise_bank_receipt_time',bankReceiptDelaySeconds:1}}]}});
+  assert.ok(text(precise).includes('2 \u79d2\u5185'));assert.ok(!text(precise).includes('\u6e20\u9053\u4e00\u81f4'));
+  const product=component.type({...component.props,transaction:{automaticAssociations:[{method:'product_statement_time',confidence:'inferred',observationIds:['platform-product','bank-product']}]}});
+  assert.ok(text(product).includes('\u7406\u8d22\u4ea7\u54c1'));assert.ok(text(product).includes('\u76f8\u90bb\u539f\u59cb\u65f6\u95f4'));
+  const payer=component.type({...component.props,transaction:{automaticAssociations:[{method:'statement_payer_card',confidence:'inferred',observationIds:['debit-bank','credit-bank']}]}});
+  assert.ok(text(payer).includes('\u4ed8\u6b3e\u5361\u5c3e\u53f7'));assert.ok(!text(payer).includes('\u6e20\u9053\u4e00\u81f4'));
+  assert.equal(text(component.type({...component.props,transaction:{}})),'');h.unmount();
+});

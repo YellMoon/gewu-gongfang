@@ -12,7 +12,8 @@ const object=v=>v&&typeof v==='object'&&!Array.isArray(v);
 const only=(v,keys)=>object(v)&&Object.keys(v).every(k=>keys.includes(k));
 const invalid=()=>{throw Object.assign(new Error('CLOUD_PERSONAL_FINANCE_INPUT_INVALID'),{code:'CLOUD_PERSONAL_FINANCE_INPUT_INVALID'});};
 function validateMortgage(m){
- if(!only(m,['schema','loanType','originalPrincipalMinor','sourceAccountId','statementReference','annualRatePpm','recentSplit','prepayments'])||m.schema!=='mortgage-v1'||!['commercial','provident'].includes(m.loanType)||!amount(m.originalPrincipalMinor)||BigInt(m.originalPrincipalMinor)<=0n||typeof m.sourceAccountId!=='string'||!m.sourceAccountId.trim()||m.sourceAccountId.length>512||!/^\d{4}$/.test(m.statementReference))invalid();
+ if(!only(m,['schema','loanType','originalPrincipalMinor','sourceAccountId','statementReference','annualRatePpm','recentSplit','prepayments','termMonths','firstPaymentDate'])||m.schema!=='mortgage-v1'||!['commercial','provident'].includes(m.loanType)||!amount(m.originalPrincipalMinor)||BigInt(m.originalPrincipalMinor)<=0n||typeof m.sourceAccountId!=='string'||!m.sourceAccountId.trim()||m.sourceAccountId.length>512||!/^\d{4}$/.test(m.statementReference))invalid();
+ if(m.termMonths!==undefined&&(!Number.isInteger(m.termMonths)||m.termMonths<1||m.termMonths>600)||m.firstPaymentDate!==undefined&&!date(m.firstPaymentDate))invalid();
  if(m.annualRatePpm!==null&&(!amount(m.annualRatePpm)||BigInt(m.annualRatePpm)<=0n||BigInt(m.annualRatePpm)>1000000n))invalid();
  if(m.recentSplit!==null&&(!only(m.recentSplit,['principalMinor','interestMinor','month'])||!amount(m.recentSplit.principalMinor)||!amount(m.recentSplit.interestMinor)||BigInt(m.recentSplit.interestMinor)<=0n||m.recentSplit.month!==null&&!/^\d{4}-(0[1-9]|1[0-2])$/.test(m.recentSplit.month)))invalid();
  if(!Array.isArray(m.prepayments)||m.prepayments.length>100||m.prepayments.some(p=>!only(p,['date','amountMinor','mode'])||!date(p.date)||!amount(p.amountMinor)||BigInt(p.amountMinor)<=0n||p.mode!=='reduce_payment_keep_term')||new Set(m.prepayments.map(p=>p.date+':'+p.amountMinor)).size!==m.prepayments.length)invalid();
@@ -122,7 +123,15 @@ function buildMortgageModels(accounts,observations){
  const result=[];
  for(const a of accounts.filter(a=>a.type==='loan'&&a.mortgage)){
   const m=a.mortgage;validateMortgage(m);const {monthly,prepayments}=paymentRows(observations,m),model=m.loanType==='commercial'?commercialModel(m,monthly,prepayments):providentModel(m,monthly,observations);
-  result.push(serial({...model,financialAccountId:a.id,label:a.label,loanType:m.loanType,sourceAccountId:m.sourceAccountId,originalPrincipalMinor:m.originalPrincipalMinor,repaymentMethod:'equal_payment',prepayments,paymentCount:monthly.length,sourceObservationIds:[...monthly.flatMap(r=>r.sources.map(o=>o.id)),...prepayments.flatMap(r=>r.observationIds)],estimatedBalanceMinor:model.balanceMinor===null?null:-model.balanceMinor}));
+  let contractComparison=null;
+  if(m.loanType==='commercial'&&m.termMonths&&m.firstPaymentDate&&model.asOf&&model.balanceMinor!==null){
+   const monthIndex=d=>Number(d.slice(0,4))*12+Number(d.slice(5,7)),paidPeriods=monthIndex(model.asOf)-monthIndex(m.firstPaymentDate)+1,remainingPeriods=m.termMonths-paidPeriods,last=monthly.find(r=>r.date===model.asOf);
+   if(paidPeriods>0&&remainingPeriods>0&&last){
+    const expected=monthlyPayment(model.balanceMinor,m.annualRatePpm,remainingPeriods),difference=last.amount-expected;
+    contractComparison={status:difference>=-1n&&difference<=1n?'consistent':'payment_differs',paidPeriods,remainingPeriods,expectedPaymentMinor:expected,observedPaymentMinor:last.amount,differenceMinor:difference,basis:'contract_term_and_monthly_equal_payment_assumption'};
+   }
+  }
+  result.push(serial({...model,financialAccountId:a.id,label:a.label,loanType:m.loanType,sourceAccountId:m.sourceAccountId,originalPrincipalMinor:m.originalPrincipalMinor,contractTermMonths:m.termMonths??null,firstPaymentDate:m.firstPaymentDate??null,contractComparison,repaymentMethod:'equal_payment',prepayments,paymentCount:monthly.length,sourceObservationIds:[...monthly.flatMap(r=>r.sources.map(o=>o.id)),...prepayments.flatMap(r=>r.observationIds)],estimatedBalanceMinor:model.balanceMinor===null?null:-model.balanceMinor}));
  }
  return result;
 }

@@ -24,3 +24,13 @@ test('exact decimal shares, fee amounts and known schema are validated before im
  for(const patch of [{confirmedUnits:'1e3'},{confirmedUnits:'1.1234567890123'},{feeMinor:'1.49'},{fundCode:null},{sourcePages:[3,2]},{schema:'untrusted'}])assert.throws(()=>validateInvestmentTrade({...meta,...patch}),/INVESTMENT_INVALID/);
  assert.throws(()=>validateInvestmentTrade(meta,{...base,feeMinor:'0'}),/INVESTMENT_INVALID/);
 });
+test('cross-source conversion products remove only the obsolete product-identity gap',()=>{
+ const investmentTrade={...meta,tradeType:'conversion',sourceTradeType:'conversion',fundCode:null,fundName:null,confirmedAmountMinor:null,confirmedUnits:null,appliedUnits:'12.345600',feeMinor:'0'};
+ const conversion={...base,id:'conversion',investmentTrade,feeMinor:'0'};
+ const from={...base,id:'from-fund',sourceTransactionId:'from-order',investmentTrade:{...meta,fundName:'From fund'}};
+ const to={...base,id:'to-fund',sourceTransactionId:'to-order',investmentTrade:{...meta,fundCode:'000002',fundName:'To fund'}};
+ const receipt={...base,id:'conversion-receipt',sourceTransactionId:meta.orderId,date:'2026-10-03',occurredAt:'2026-10-03T10:00:00+08:00',investmentTrade:undefined,feeMinor:null,description:'\u8682\u8681\u8d22\u5bcc-From fund-\u300c\u8f6c\u6362\u81f3\u300d-To fund-\u8f6c\u5165\u6210\u529f',accountRelations:[{product:'alipay_funds',role:'target',activity:'investment_exchange',financialAccountId:'funds'}]};
+ const view=buildFinanceView({accounts,observations:[conversion,from,to,receipt]});
+ assert(!view.unresolvedAssociations.some(x=>x.reason==='unidentified_fund_conversion'));
+ assert.equal(view.investmentTrades.find(t=>t.tradeType==='conversion').confirmedUnits,null,'matched products do not invent confirmed incoming shares');
+});

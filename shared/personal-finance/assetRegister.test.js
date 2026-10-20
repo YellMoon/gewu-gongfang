@@ -46,3 +46,11 @@ test('negative investment income reduces income, rather than inventing a positiv
  const view=buildFinanceView({accounts:[wallet],observations:[record({kind:'income',direction:'debit',amountMinor:'1'})]});
  assert.equal(view.currencyTotals.CNY.incomeMinor,'-1');
 });
+
+test('bank detail coverage stays separate from platform funding evidence and source versions',()=>{
+ const credit={...wallet,id:'credit',provider:'\u5efa\u8bbe\u94f6\u884c',type:'credit_card',maskedIdentifier:'1234',label:'\u5efa\u8bbe\u94f6\u884c\u4fe1\u7528\u5361(1234)'};
+ const platform=record({id:'platform',date:'2023-01-01',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u4fe1\u7528\u5361(1234)'}),bank=record({id:'bank1',provider:'ccb',financialAccountId:'credit',date:'2024-09-15',sourceIdentity:'bank-order',sourceVersionOrdinal:1,bankStatement:{statementDate:'2024-09-18'}}),updated={...bank,id:'bank2',sourceVersionOrdinal:2};
+ const input={accounts:[wallet,credit],observations:[platform,bank,updated]},before=JSON.stringify(input),r=buildAssetRegister(input).accounts.find(a=>a.id==='credit');
+ assert.equal(r.firstDate,'2023-01-01');assert.deepEqual(r.bankStatementCoverage,{recordCount:1,firstTransactionDate:'2024-09-15',lastTransactionDate:'2024-09-15',statementMonths:['2024-09']});assert.equal(JSON.stringify(input),before);
+ const platformOnly=buildAssetRegister({...input,observations:[platform]}).accounts.find(a=>a.id==='credit');assert.equal(platformOnly.evidenceCount,1);assert.equal(platformOnly.bankStatementCoverage.recordCount,0);assert.equal(platformOnly.bankStatementCoverage.firstTransactionDate,null);
+});
