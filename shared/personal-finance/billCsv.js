@@ -101,6 +101,9 @@ function kindOf(value, direction, description) {
 }
 function statusOf(value, provider) {
   const text = clean(value).toLowerCase();
+  // The legacy label names entry into a refund process, not a settled receipt.
+  // Preserve it for reconciliation instead of dropping the original or guessing.
+  if(provider==='wechat'&&text==='\u5df2\u8f6c\u5165\u9000\u6b3e')return 'pending';
   if (!text || /^(completed|成功|交易成功|支付成功|退款成功|已入账|已完成|对方已收钱|已收款|已转账|已到账)$/.test(text)) return 'completed';
   if (['wechat','alipay'].includes(provider) && (/^(已存入零钱|已收钱|赔付成功|收款到账|收款成功|转账成功|充值完成|提现已到账|已全额退款|还款成功|转入成功|转出成功|冻结成功|解冻成功|芝麻免押下单成功)$/.test(text) || /^已退款(?:[（(]?[¥￥]?\d+(?:\.\d{1,2})?[）)]?)$/.test(text))) return 'completed';
   if (/失败|关闭|取消|已撤销|已退还/.test(text) || text === 'failed') return 'failed';

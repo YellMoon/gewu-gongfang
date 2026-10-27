@@ -139,16 +139,17 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
   async updateAccount(input){const owner=scope(input);if(!object(input.patch)||Object.keys(input.patch).some(k=>!ACCOUNT_KEYS.includes(k)||k==='id'))throw failure('INPUT_INVALID');return transaction(async q=>{await lock(q,owner,input.expectedRevision);const prior=await account(q,owner,input.id),data=accountData({...prior,...input.patch},input.id);if(data.balanceConvention!==prior.balanceConvention)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');if(data.currency!==prior.currency||data.type!==prior.type||data.provider!==prior.provider||data.maskedIdentifier!==prior.maskedIdentifier||data.sourceProduct!==prior.sourceProduct||data.balanceConvention!==prior.balanceConvention) {const existing=await q("SELECT id FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND (financial_account_id=$3 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(data->'accountRelations','[]'::jsonb)) relation WHERE relation->>'financialAccountId'=$3)) LIMIT 1",[...owner,input.id]);if(existing.rows.length)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');}await bindMortgage(q,owner,data);await q('UPDATE business.personal_finance_accounts SET data=$4::jsonb WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,input.id,JSON.stringify(data)]);return {account:data,revision:await changed(q,owner,'account_update',{before:prior,after:data})};});},
   async annotateObservation(input){
    const owner=scope(input),allowed=['category','kind','principalMinor','interestMinor','feeMinor'];text(input.observationId);
-   if(!object(input.patch)||!Object.keys(input.patch).length||Object.keys(input.patch).some(k=>!allowed.includes(k)))throw failure('INPUT_INVALID');
+   if(!object(input.patch)||Object.keys(input.patch).some(k=>!allowed.includes(k)))throw failure('INPUT_INVALID');
+   const reset=Object.keys(input.patch).length===0;
    return transaction(async q=>{
     await lock(q,owner,input.expectedRevision);
     const source=(await q('SELECT data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,input.observationId])).rows[0];if(!source)throw failure('OBSERVATION_NOT_FOUND');
     const previous=(await q('SELECT data FROM business.personal_finance_annotations WHERE tenant_id=$1 AND account_id=$2 AND observation_id=$3 ORDER BY revision DESC LIMIT 1',[...owner,input.observationId])).rows[0];
-    const patch={...(previous?.data.patch||{}),...input.patch},effective={...source.data,...patch};validateRecord(effective);
+    const patch=reset?{}:{...(previous?.data.patch||{}),...input.patch},effective={...source.data,...patch};validateRecord(effective);
     const financialAccount=await account(q,owner,source.data.financialAccountId);
-    if(['income','refund','loan_drawdown'].includes(effective.kind)&&effective.direction!=='credit'||['expense','interest','fee'].includes(effective.kind)&&effective.direction!=='debit'||effective.kind==='debt_payment'&&effective.direction!=='debit'&&!['loan','credit_card'].includes(financialAccount.type))throw failure('INPUT_INVALID');
-    const revision=await changed(q,owner,'transaction_annotation',{observationId:input.observationId,before:previous?.data.patch||{},after:patch});
-    const annotation={id:id('finance_annotation'),observationId:input.observationId,patch,revision,createdAt:new Date().toISOString()};
+    if(!reset&&(['income','refund','loan_drawdown'].includes(effective.kind)&&effective.direction!=='credit'||['expense','interest','fee'].includes(effective.kind)&&effective.direction!=='debit'||effective.kind==='debt_payment'&&effective.direction!=='debit'&&!['loan','credit_card'].includes(financialAccount.type)))throw failure('INPUT_INVALID');
+    const revision=await changed(q,owner,reset?'transaction_annotation_reset':'transaction_annotation',{observationId:input.observationId,before:previous?.data.patch||{},after:patch});
+    const annotation={id:id('finance_annotation'),observationId:input.observationId,patch,...(reset?{reset:true}:{}),revision,createdAt:new Date().toISOString()};
     await q('INSERT INTO business.personal_finance_annotations(id,tenant_id,account_id,observation_id,revision,data) VALUES($1,$2,$3,$4,$5,$6::jsonb)',[annotation.id,...owner,input.observationId,revision,JSON.stringify(annotation)]);
     return {annotation,revision};
    });

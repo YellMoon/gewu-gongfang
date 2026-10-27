@@ -6,6 +6,19 @@ assert.equal(typeof buildFinanceView,'function','finance engine must exist');
 const account=(id,type='bank',extra={})=>({id,label:id,provider:id,type,maskedIdentifier:id,currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',...extra});
 const observation=(id,financialAccountId,extra={})=>({id,financialAccountId,provider:financialAccountId,sourceTransactionId:id,occurredAt:'2026-10-08T10:00:00+08:00',date:'2026-10-08',amountMinor:'100',currency:'CNY',direction:'debit',kind:'expense',description:'Books',counterparty:'Shop',category:'Books',paymentChannel:'',paymentAccountHint:'',balanceMinor:null,relatedReference:'',status:'completed',principalMinor:null,interestMinor:null,feeMinor:null,rawFields:{},...extra});
 const ledger=(accounts,observations,extra={})=>({accounts,observations,links:[],balanceSnapshots:[],imports:[],legacyRecords:[],revision:0,...extra});
+{
+ const wallet=account('wallet','wallet',{provider:'wechat'}),product=account('lqt','investment',{provider:'wechat',sourceProduct:'wechat_lingqiantong'}),bank=account('ccb','debit_card',{label:'\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361\uff086943\uff09',provider:'\u5efa\u8bbe\u94f6\u884c',maskedIdentifier:'6943'});
+ const type='\u4ea4\u6613\u7c7b\u578b',base=observation('withdraw','wallet',{provider:'wechat',direction:'neutral',kind:'transfer',paymentChannel:'\u96f6\u94b1\u901a',accountRelations:[{product:'wechat_lingqiantong',activity:'investment_withdrawal',role:'target',financialAccountId:'lqt'}],rawFields:{[type]:'\u96f6\u94b1\u901a\u8f6c\u51fa-\u5230\u96f6\u94b1'}});
+ let actual=buildFinanceView(ledger([wallet,product,bank],[base]));
+ assert.equal(actual.review.transactionCount,0);assert.equal(actual.transactions[0].balanceEffects.wallet,'100');assert.equal(actual.transactions[0].balanceEffects.lqt,'-100');assert.equal(actual.currencyTotals.CNY.netCashFlowMinor,'0');
+ actual=buildFinanceView(ledger([wallet,product,bank],[{...base,rawFields:{[type]:'\u96f6\u94b1\u901a\u8f6c\u51fa-\u5230\u5efa\u8bbe\u94f6\u884c(6943)'}}]));
+ assert.equal(actual.review.transactionCount,0);assert.equal(actual.transactions[0].balanceEffects.ccb,'100');assert.equal(actual.transactions[0].balanceEffects.wallet,undefined);assert.equal(actual.transactions[0].balanceEffects.lqt,'-100');
+ actual=buildFinanceView(ledger([wallet,product,bank],[{...base,rawFields:{[type]:'\u96f6\u94b1\u901a\u8f6c\u51fa-\u5230\u672a\u77e5\u8d26\u6237'}}]));assert(actual.unresolvedAssociations.some(x=>x.reason==='unresolved_funding_account'));
+ const repay=observation('repay','wallet',{provider:'wechat',direction:'neutral',kind:'debt_payment',paymentChannel:'\u96f6\u94b1',counterparty:'\u4ea4\u901a\u94f6\u884c\u4fe1\u7528\u5361\u8fd8\u6b3e',rawFields:{[type]:'\u4fe1\u7528\u5361\u8fd8\u6b3e','\u6536/\u652f':'/'}});
+ actual=buildFinanceView(ledger([wallet],[repay]));assert.equal(actual.review.transactionCount,0);assert.equal(actual.transactions[0].balanceEffects.wallet,'-100');assert.equal(actual.currencyTotals.CNY.consumptionMinor,'0');assert.equal(actual.currencyTotals.CNY.cashOutMinor,'100');assert.equal(repay.direction,'neutral');assert.equal(actual.transactions[0].sources[0].rawFields['\u6536/\u652f'],'/');
+ const topup=observation('topup','wallet',{provider:'wechat',direction:'neutral',kind:'transfer',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361(6943)',paymentAccountHint:'6943',rawFields:{[type]:'\u96f6\u94b1\u5145\u503c'}});
+ actual=buildFinanceView(ledger([wallet,bank],[topup]));assert.equal(actual.review.transactionCount,0);assert.equal(actual.transactions[0].balanceEffects.wallet,'100');assert.equal(actual.transactions[0].balanceEffects.ccb,'-100');assert.equal(actual.currencyTotals.CNY.netCashFlowMinor,'0');
+}
 let view=buildFinanceView(ledger([account('bank')],[observation('a','bank'),observation('b','bank')]));
 assert.equal(view.transactions.length,2,'same date and amount are independent');
 assert.equal(view.currencyTotals.CNY.consumptionMinor,'200');
@@ -161,7 +174,8 @@ for(const [label,bankPatch,platformPatch] of [
   ['unproven funding account',{}, {paymentAccountHint:'9999'}]
 ]){
   view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('negative-platform',platformPatch),statementPurchase('negative-bank',bankPatch)]));
-  assert.equal(view.transactions.length,2,label+' must not identify the same purchase');
+  if(label==='merchant containing operation word'){assert.equal(view.transactions.length,1);assert.equal(view.transactions[0].automaticAssociations[0].method,'unique_card_funding','approved reciprocal card inference is disclosed instead of claiming an exact merchant identity');}
+  else assert.equal(view.transactions.length,2,label+' must not identify the same purchase');
 }
 const versionedPurchases=[platformPurchase('platform-v1',{sourceIdentity:'platform-order',sourceVersionOrdinal:1}),platformPurchase('platform-v2',{sourceIdentity:'platform-order',sourceVersionOrdinal:2}),statementPurchase('bank-v1',{sourceIdentity:'bank-line',sourceVersionOrdinal:1}),statementPurchase('bank-v2',{sourceIdentity:'bank-line',sourceVersionOrdinal:2})];
 view=buildFinanceView(ledger(merchantAccounts,versionedPurchases));
@@ -224,6 +238,14 @@ view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('matched-order')
 assert.equal(view.transactions.length,2,'an already merchant-matched bank record cannot fund a second inferred order');
 assert.ok(view.transactions.every(t=>t.automaticAssociations.length===0));
 console.log('approved reversible channel inference retains explicit evidence, uniqueness and user vetoes');
+{
+ const p=platformPurchase('network-platform'),b=statementPurchase('network-bank',{counterparty:'\u6d88\u8d39 - \u7f51\u8054 Clearing Institution',description:'\u6d88\u8d39 - \u7f51\u8054 Clearing Institution'});
+ let actual=buildFinanceView(ledger(merchantAccounts,[p,b]));assert.equal(actual.transactions.length,1);assert.equal(actual.transactions[0].automaticAssociations[0].method,'unique_card_funding');assert.equal(actual.transactions[0].automaticAssociations[0].evidence.bankPlatformDisclosed,false);assert.equal(actual.currencyTotals.CNY.consumptionMinor,'100');assert.equal(actual.accountStats['merchant-card'].balanceMinor,'-1100');
+ for(const extra of [[{...p,id:'other-provider',provider:'wechat',sourceTransactionId:'other-provider'}],[{...b,id:'other-bank',sourceTransactionId:'other-bank'}]]){actual=buildFinanceView(ledger(merchantAccounts,[p,b,...extra]));assert.equal(actual.transactions.length,3,'unknown channel must include candidates from both payment platforms and every bank root');}
+ actual=buildFinanceView(ledger(merchantAccounts,[p,b],{links:[{id:'network-veto',type:'distinct',observationIds:[p.id,b.id]}]}));assert.equal(actual.transactions.length,2);
+ actual=buildFinanceView(ledger(merchantAccounts,[p,{...b,description:'Clearing Institution',counterparty:'Clearing Institution'}]));assert.equal(actual.transactions.length,1,'approved unique card identity also handles a bank omitting its platform name');
+ actual=buildFinanceView(ledger(merchantAccounts,[p,{...b,bankStatement:undefined,statementFlow:{schema:'ccb-debit-v1'},kind:'unknown'}]));assert.equal(actual.transactions.length,2,'a generic unknown-purpose debit is not an established card purchase');
+}
 view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('proven-platform'),statementPurchase('proven-bank'),statementPurchase('separate-wechat-bank',{counterparty:'\u6d88\u8d39 \u5fae\u4fe1\u652f\u4ed8-Other Store'})]));
 assert.equal(view.transactions.length,2);assert.equal(view.currencyTotals.CNY.consumptionMinor,'200');
 assert.equal(view.unresolvedAssociations.length,0,'an already proven funding-bank receipt does not require another association to an unrelated same-amount transaction');
@@ -267,6 +289,10 @@ const withdrawalAccounts=[account('withdraw-wallet','wallet'),{...account('withd
 const withdrawalRows=[observation('withdraw-wallet-source','withdraw-wallet',{provider:'wechat',kind:'transfer',direction:'neutral',amountMinor:'100100',paymentChannel:'\u534e\u590f\u94f6\u884c\u50a8\u84c4\u5361(1234)',rawFields:{'\u4ea4\u6613\u7c7b\u578b':'\u96f6\u94b1\u63d0\u73b0'}}),observation('withdraw-bank-source','withdraw-bank',{provider:'huaxia',kind:'unknown',direction:'credit',amountMinor:'100000',description:'\u5fae\u4fe1\u96f6\u94b1\u63d0\u73b0',statementFlow:{schema:'huaxia-debit-v1'}})];
 const withdrawalInput=ledger(withdrawalAccounts,withdrawalRows),withdrawalOriginal=JSON.stringify(withdrawalInput);view=buildFinanceView(withdrawalInput);
 assert.equal(view.transactions.length,1);assert.equal(view.unresolvedAssociations.length,0);assert.equal(view.currencyTotals.CNY.consumptionMinor,'100');assert.equal(view.currencyTotals.CNY.cashOutMinor,'100100');assert.equal(view.currencyTotals.CNY.cashInMinor,'100000');assert.equal(view.currencyTotals.CNY.netCashFlowMinor,'-100');assert.equal(view.accountStats['withdraw-wallet'].consumptionMinor,'100');assert.equal(view.accountStats['withdraw-bank'].consumptionMinor,'0');assert.equal(view.transactions[0].automaticAssociations[0].evidence.feeMinor,'100');assert.equal(JSON.stringify(withdrawalInput),withdrawalOriginal);
+const withdrawalAnnotation={id:'classified-withdrawal',observationId:withdrawalRows[1].id,revision:'1',patch:{kind:'transfer',category:'Owner choice'}};
+view=buildFinanceView({...withdrawalInput,annotations:[withdrawalAnnotation]});assert.equal(view.transactions.length,2);assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');
+const withdrawalReset={id:'restore-automatic',observationId:withdrawalRows[1].id,revision:'2',patch:{},reset:true};
+view=buildFinanceView({...withdrawalInput,annotations:[withdrawalReset,withdrawalAnnotation]});assert.equal(view.transactions.length,1);assert.equal(view.currencyTotals.CNY.consumptionMinor,'100');assert.equal(view.transactions[0].appliedAnnotations.length,0);assert.equal(withdrawalAnnotation.patch.kind,'transfer','the original annotation remains immutable audit history');
 view=buildFinanceView(ledger(withdrawalAccounts,[withdrawalRows[0]]));assert.ok(view.unresolvedAssociations.some(i=>i.reason==='withdrawal_net_fee_unknown'));assert.equal(view.currencyTotals.CNY.consumptionMinor,'0','no bank net receipt means no invented fee');assert.equal(view.currencyTotals.CNY.cashOutMinor,'100100','the completed withdrawal still proves its gross wallet debit');assert.equal(view.currencyTotals.CNY.cashInMinor,'0','no synthetic bank net receipt');
 view=buildFinanceView(ledger(withdrawalAccounts,withdrawalRows,{links:[{id:'withdraw-veto',type:'distinct',status:'active',observationIds:withdrawalRows.map(r=>r.id)}]}));assert.equal(view.transactions.length,2);assert.ok(view.unresolvedAssociations.length>0);assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');
 console.log('withdrawal gross debit, actual bank net and fee reconcile without fabricating missing receipt amounts');
@@ -290,7 +316,7 @@ for(const counterparty of ['(\u6d88\u8d39)\u652f\u4ed8\u5b9d-Receiving Company',
  view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('operation-platform'),statementPurchase('operation-bank',{counterparty})]));assert.equal(view.transactions.length,1);
 }
 view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('operation-conflict'),statementPurchase('operation-bank',{counterparty:'(\u6d88\u8d39)\u5fae\u4fe1\u652f\u4ed8-Example Store'})]));assert.equal(view.transactions.length,2);
-view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('operation-specific'),statementPurchase('operation-bank',{counterparty:'\u6d88\u8d39 Example Store Outlet'})]));assert.equal(view.transactions.length,2,'removing a bank operation label does not permit merchant prefix aliases');
+view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('operation-specific'),statementPurchase('operation-bank',{counterparty:'\u6d88\u8d39 Example Store Outlet'})],{annotations:[{observationId:'operation-specific',revision:'1',patch:{category:'Explicit owner classification'}}]}));assert.equal(view.transactions.length,2,'removing a bank operation label does not permit merchant prefix aliases when the separate inference path is disabled by an owner decision');
 console.log('parenthesized bank operation labels preserve exact merchant and explicit channel boundaries');
 const installmentOriginal=statementPurchase('installment-original',{provider:'bocom',counterparty:'\u6d88\u8d39 \u5546\u6237\u5206\u671f-\u652f\u4ed8\u5b9d-Receiving Company-\u52063\u671f',rawFields:{excludedFromBilledTotal:true}});
 const installmentPrincipal=statementPurchase('installment-principal',{provider:'bocom',kind:'unknown',direction:'neutral',amountMinor:'33',counterparty:'\u5206\u671f\u6263\u6b3e1/3',bankStatement:{schema:'bank-credit-v1',nonCash:true}});
@@ -306,7 +332,7 @@ for(const [provider,prefix] of [['alipay','\u652f\u4ed8\u5b9d\u5feb\u6377--'],['
  view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('quick-platform',{provider}),statementPurchase('quick-bank',{provider:'cib',counterparty:prefix+'Receiving Company'})]));assert.equal(view.transactions.length,1);assert.equal(view.transactions[0].automaticAssociations[0].method,'unique_channel_funding');
  view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('quick-platform',{provider:provider==='alipay'?'wechat':'alipay'}),statementPurchase('quick-bank',{provider:'cib',counterparty:prefix+'Example Store'})]));assert.equal(view.transactions.length,2,'explicit quick-payment channel conflicts cannot be bypassed by merchant names');
 }
-view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('quick-platform'),statementPurchase('quick-bank',{provider:'cib',counterparty:'\u652f\u4ed8\u5b9d\u5feb\u6377\u5546\u6237 Receiving Company'})]));assert.equal(view.transactions.length,2,'a merchant containing a channel word is not the controlled quick-payment envelope');
+view=buildFinanceView(ledger(merchantAccounts,[platformPurchase('quick-platform'),statementPurchase('quick-bank',{provider:'cib',counterparty:'\u652f\u4ed8\u5b9d\u5feb\u6377\u5546\u6237 Receiving Company'})],{annotations:[{observationId:'quick-platform',revision:'1',patch:{category:'Explicit owner classification'}}]}));assert.equal(view.transactions.length,2,'a merchant containing a channel word is not the controlled quick-payment envelope; owner decisions disable the separate inferred association path');
 console.log('explicit bank quick-payment envelopes preserve merchant identity and channel conflicts');
 const versionedRepayment=[{...receipt,sourceIdentity:'repayment-version',sourceVersionOrdinal:1},{...receipt,id:'wallet-repay-v2',sourceIdentity:'repayment-version',sourceVersionOrdinal:2},bankReceipt];
 for(const decision of [{type:'distinct',status:'active'},{type:'duplicate',status:'deleted'}]){
@@ -360,9 +386,9 @@ console.log('repayment associations preserve cross-version rejections and the co
   for(const patch of [
     {status:'failed'},{status:'pending'},{direction:'debit'},
     {currency:'USD'},{amountMinor:'99'},{date:'2026-10-07'},
-    {counterparty:'\u9000\u6b3e \u5fae\u4fe1\u652f\u4ed8-Receiving Company'},
-    {counterparty:'Receiving Company'}
+    {counterparty:'\u9000\u6b3e \u5fae\u4fe1\u652f\u4ed8-Receiving Company'}
   ])assert.equal(runRefund([platformRefund('neutral-refund'),cardRefund('excluded-bank',patch)]).transactions.length,2,'the receipt requires the same card/date/amount/currency and explicit channel');
+  const undisclosedRefund=runRefund([platformRefund('neutral-refund'),cardRefund('undisclosed-bank',{counterparty:'Receiving Company'})]);assert.equal(undisclosedRefund.transactions.length,1);assert.equal(undisclosedRefund.transactions[0].automaticAssociations[0].method,'unique_card_funding','user-approved reciprocal card evidence can infer an otherwise compatible refund when the bank omits the channel');
   assert.equal(runRefund([platformRefund('zero-platform',{amountMinor:'0'}),cardRefund('zero-bank',{amountMinor:'0'})]).transactions.length,2,'zero-value events are not inferred cash refunds');
   assert.equal(runRefund([platformRefund('platform-one'),platformRefund('platform-two'),cardRefund('bank-credit')]).transactions.length,3,'two refund orders cannot share one bank receipt');
   assert.equal(runRefund([platformRefund('neutral-refund'),cardRefund('bank-one'),cardRefund('bank-two')]).transactions.length,3,'two bank credits remain ambiguous');
@@ -385,4 +411,21 @@ console.log('repayment associations preserve cross-version rejections and the co
   assert.equal(parsed.records[0].status,'completed');assert.equal(parsed.records[0].kind,'refund');assert.equal(parsed.records[0].direction,'neutral');
   assert.equal(parsed.records[1].status,'failed','a closed order does not supply proof of a completed refund');
   console.log('neutral Alipay refund bank-direction, amount conservation, source-root veto and failed-order tests passed');
+
+const legacyPending=observation('legacy-refund-pending','legacy-wallet',{provider:'wechat',status:'pending',rawFields:{'\u5f53\u524d\u72b6\u6001':'\u5df2\u8f6c\u5165\u9000\u6b3e'}});
+view=buildFinanceView(ledger([account('legacy-wallet','wallet')],[legacyPending]));assert.equal(view.transactions.length,1);assert.equal(view.review.transactionCount,1);assert.equal(view.review.groups[0].reason,'legacy_refund_settlement_unknown');assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');assert.equal(view.currencyTotals.CNY.incomeMinor,'0');assert.deepEqual(view.transactions[0].sources,[legacyPending]);assert.deepEqual(view.transactions[0].balanceEffects,{});
+
+for(const operation of ['\u6d88\u8d39','\u9000\u6b3e']){
+ const refund=operation==='\u9000\u6b3e',wallet=platformPurchase('nets-wallet',{provider:'wechat',counterparty:'Example Store',kind:refund?'refund':'expense',direction:refund?'credit':'debit'}),bank=statementPurchase('nets-bank',{counterparty:operation+' - \u7f51\u8054 Example Store',kind:wallet.kind,direction:wallet.direction});
+ view=buildFinanceView(ledger(merchantAccounts,[wallet,bank]));assert.equal(view.transactions.length,1);assert.equal(view.currencyTotals.CNY.consumptionMinor,refund?'-100':'100');
+ const vetoed=buildFinanceView(ledger(merchantAccounts,[wallet,bank],{links:[{type:'distinct',status:'active',observationIds:[wallet.id,bank.id]}]}));assert.equal(vetoed.transactions.length,2);
+ const ambiguous=buildFinanceView(ledger(merchantAccounts,[wallet,bank,{...bank,id:'nets-bank-two',sourceTransactionId:'different'}]));assert.equal(ambiguous.transactions.length,3);
+}
+const fundedTransfer=platformPurchase('explicit-wechat-transfer',{provider:'wechat',kind:'transfer',rawFields:{'\u4ea4\u6613\u7c7b\u578b':'\u8f6c\u8d26'}}),bankTransfer=statementPurchase('explicit-bank-transfer',{provider:'ccb',description:'\u6d88\u8d39 \u8d22\u4ed8\u901a-\u5fae\u4fe1\u652f\u4ed8:\u5fae\u4fe1\u8f6c\u8d26',counterparty:'***\u8f6c\u8d26',statementFlow:{schema:'ccb-debit-v1'}});
+view=buildFinanceView(ledger(merchantAccounts,[fundedTransfer,bankTransfer]));assert.equal(view.transactions.length,1);assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');assert.equal(view.accountStats['merchant-card'].balanceMinor,'-1100');
+for(const kind of ['transfer','debt_payment']){
+ const platform=platformPurchase('operation-purpose-platform',{kind,description:kind==='debt_payment'?'\u4fe1\u7528\u5361\u8fd8\u6b3e':'Transfer'}),bank=statementPurchase('operation-purpose-bank',{description:'\u6d88\u8d39 \u652f\u4ed8\u5b9d-Receiving Company',counterparty:'\u6d88\u8d39 \u652f\u4ed8\u5b9d-Receiving Company'});
+ view=buildFinanceView(ledger(merchantAccounts,[platform,bank]));assert.equal(view.transactions.length,1);assert.equal(view.transactions[0].kind,kind);assert.equal(view.currencyTotals.CNY.consumptionMinor,'0');assert.equal(view.accountStats['merchant-card'].balanceMinor,'-1100');assert.equal(view.transactions[0].sources.find(s=>s.id===bank.id).kind,'expense');
+ const fee=buildFinanceView(ledger(merchantAccounts,[platform,{...bank,kind:'fee'}]));assert.equal(fee.transactions.length,2,'a bank fee is not an operation label and cannot be absorbed by a platform transfer');
+}
 }

@@ -1,15 +1,15 @@
 'use strict';
 
-const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,relationDelta,explicitCardFundingCredit}=require('./accountProducts');
+const {ACCOUNT_PRODUCTS,ACCOUNT_RELATION_ACTIVITIES,inferAccountRelations,relationDelta,explicitCardFundingCredit}=require('./accountProducts');
 const {validateInvestmentTrade,latestInvestmentConfirmations}=require('./investmentTrades');
 const {fundingIdentity,sameBankAccount,buildAssetRegister}=require('./assetRegister');
 const {statementBalances}=require('./balanceEvidence');
 const {statementCoverage,incomeExpenseAccounts,portfolioBalances}=require('./accountAnalytics');
 const {buildReviewSummary}=require('./reviewSummary');
 const {buildMortgageModels,matchesMortgage}=require('./mortgages');
-const {classifyBankPurpose,classifyPlatformPurpose,nonCashAuthorization}=require('./bankClassification');
+const {classifyBankPurpose,classifyPlatformPurpose,nonCashAuthorization,legacyRefundPending}=require('./bankClassification');
 const {findWechatWithdrawalMatches}=require('./withdrawals');
-const {statementCounterAccount}=require('./statementAccounts');
+const {statementCounterAccount,annotatedCounterAccount}=require('./statementAccounts');
 const {findStatementRepayments}=require('./statementTransfers');
 const {findReconciliationGroups}=require('./reconciliationGroups');
 const fail = code => Object.assign(new Error(code), {code});
@@ -41,6 +41,7 @@ const signed = o => o.direction==='neutral'?0n:BigInt(o.amountMinor)*(o.directio
 const liability = a => ['credit_card','loan'].includes(a?.type);
 const mortgageReviewReason = split => split?.confidence==='statement_total_only'?'mortgage_prepayment_split_unknown':split?.confidence==='estimated_reference'?'mortgage_recent_reference_unverified':null;
 function repaymentType(sources,accountMap){
+  if(sources.some(s=>s.automaticClassification?.method==='explicit_credit_card_repayment'))return 'credit';
   const related=sources.flatMap(s=>[accountMap.get(s.financialAccountId),s.automaticClassification?.method==='explicit_owned_counter_account'?accountMap.get(s.automaticClassification.financialAccountId):null,...(s.accountRelations||[]).filter(r=>r.activity==='repayment').map(r=>accountMap.get(r.financialAccountId))]).filter(Boolean);
   if(related.some(a=>a.type==='loan'))return 'loan';
   if(related.some(a=>a.type==='credit_card'))return 'credit';
@@ -54,11 +55,11 @@ const dictionary = () => Object.create(null);
 const serial = value => typeof value==='bigint'?value.toString():Array.isArray(value)?value.map(serial):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,serial(v)])):value;
 // Remove only a bank statement's known operation/channel envelope. The remaining
 // merchant must match in full; a legal-entity alias is not identity evidence.
-const statementOperation=/^(?:\u6d88\u8d39\s+|\(\u6d88\u8d39\)|\u9000\u6b3e\s+|\(\u9000\u6b3e\)|\u9000\u8d27\s+|\(\u9000\u8d27\))/;
+const statementOperation=/^(?:(?:\u6d88\u8d39|\u9000\u6b3e|\u9000\u8d27)\s+-\s*\u7f51\u8054\s+|\u6d88\u8d39\s+|\(\u6d88\u8d39\)|\u9000\u6b3e\s+|\(\u9000\u6b3e\)|\u9000\u8d27\s+|\(\u9000\u8d27\))/;
 const statementMerchantText=value=>String(value||'').normalize('NFKC').replace(statementOperation,'');
 function statementPaymentProvider(value){
   const text=statementMerchantText(value);
-  return /^(?:\u652f\u4ed8\u5b9d\u5feb\u6377--|\u652f\u4ed8\u5b9d(?=[-\s:(]|$))/.test(text)?'alipay':/^(?:\u8d22\u4ed8\u901a\u5feb\u6377--|(?:\u5fae\u4fe1\u652f\u4ed8(?:\(\u8d22\u4ed8\u901a\))?|\u8d22\u4ed8\u901a)(?=[-\s:(]|$))/.test(text)?'wechat':null;
+  return /^(?:\u652f\u4ed8\u5b9d\u5feb\u6377--|\u652f\u4ed8\u5b9d(?=[-\s:(]|$))/.test(text)?'alipay':/^(?:\u8d22\u4ed8\u901a\u5feb\u6377--|(?:\u5fae\u4fe1\u652f\u4ed8(?:\(\u8d22\u4ed8\u901a\))?|\u8d22\u4ed8\u901a(?:\u516c\u53f8)?)(?=[-\s:(]|$))/.test(text)?'wechat':null;
 }
 function bankPaymentProvider(record){
   const text=String(record.description||'').normalize('NFKC').replace(/^\u5feb\u6377\u652f\u4ed8(?:\u9000\u6b3e)?[-\s:]*/,'');
@@ -86,11 +87,14 @@ function projectedBankDirection(record){
 }
 function statementMerchant(value,provider){
   const text=statementMerchantText(value);
-  const prefix=provider==='alipay'?/^(?:\u652f\u4ed8\u5b9d\u5feb\u6377--|\u652f\u4ed8\u5b9d[-\s:]+)/:/^(?:\u8d22\u4ed8\u901a\u5feb\u6377--|(?:\u5fae\u4fe1\u652f\u4ed8(?:\(\u8d22\u4ed8\u901a\))?|\u8d22\u4ed8\u901a)[-\s:]+)/;
+  const prefix=provider==='alipay'?/^(?:\u652f\u4ed8\u5b9d\u5feb\u6377--|\u652f\u4ed8\u5b9d[-\s:]+)/:/^(?:\u8d22\u4ed8\u901a\u5feb\u6377--|(?:\u5fae\u4fe1\u652f\u4ed8(?:\(\u8d22\u4ed8\u901a\))?|\u8d22\u4ed8\u901a(?:\u516c\u53f8)?)[-\s:]+)/;
   return prefix.test(text)?text.replace(prefix,'').replace(/[\s\p{P}]/gu,''):null;
 }
 function fundingAccount(o,accounts) {
-  const identity=fundingIdentity(o.paymentChannel);
+  // A product's payment-channel column names the source product. The explicit
+  // withdrawal destination, when present, identifies its receiving bank instead.
+  const destination=o.provider==='wechat'&&o.status==='completed'&&o.kind==='transfer'&&String(o.rawFields?.['交易类型']||'').match(/^零钱通转出-到(.+银行\(\d{4}\))$/);
+  const identity=fundingIdentity(destination?.[1]||o.paymentChannel);
   if(identity){const matches=accounts.filter(a=>a.id!==o.financialAccountId&&sameBankAccount(a,identity,o.currency));return matches.length===1?matches[0]:null;}
   if(!o.paymentAccountHint) return null;
   const normalized=value=>{const v=String(value||'').normalize('NFKC').replace(/\s/g,'');const tail=v.match(/(\d{4})[)）]?$/);return tail?'tail:'+tail[1]:v;};
@@ -102,9 +106,21 @@ function buildFinanceView(ledger,options={}) {
   const accounts=ledger.accounts||[], originalObservations=ledger.observations||[],originalById=new Map(originalObservations.map(o=>[o.id,o])),latestAnnotations=new Map();
   const identifiedConversions=new Set(originalObservations.some(o=>o.investmentTrade?.tradeType==='conversion')?buildAssetRegister(ledger).conversions.filter(c=>c.status==='products_matched').map(c=>c.id):[]);
   for(const a of ledger.annotations||[])if(!latestAnnotations.has(a.observationId)||BigInt(a.revision)>BigInt(latestAnnotations.get(a.observationId).revision))latestAnnotations.set(a.observationId,a);
+  // A reset is a new audit entry, not deletion of the original owner decision.
+  for(const [id,annotation] of latestAnnotations)if(annotation.reset===true)latestAnnotations.delete(id);
   const classified=originalObservations.filter(o=>!o.balanceEvidence).map(o=>{
-    if(latestAnnotations.has(o.id))return {...o,...latestAnnotations.get(o.id).patch};
-    const value=statementClassification(o),counter=value.status==='completed'&&['debit','credit'].includes(value.direction)&&value.statementFlow&&value.kind==='unknown'?statementCounterAccount(value,accounts):null;
+    if(latestAnnotations.has(o.id)){
+      const annotation=latestAnnotations.get(o.id),counter=annotatedCounterAccount(o,annotation,accounts);
+      return {...o,...annotation.patch,...(counter?{automaticClassification:{method:'explicit_owned_counter_account',confidence:'owner_confirmed',evidenceObservationIds:[o.id],financialAccountId:counter.id}}:{})};
+    }
+    let value=statementClassification(o);
+    // Refresh only this newly supported source format. Resolve through a real
+    // product account; never manufacture confirmed fund units or a valuation.
+    if(value.provider==='wechat'&&value.status==='completed'&&value.kind==='transfer'&&value.rawFields?.['交易类型']==='购买理财通'&&!(value.accountRelations||[]).some(r=>r.product==='wechat_licaitong')){
+      const relations=inferAccountRelations(value,'wechat').map(r=>{const matches=accounts.filter(a=>a.status!=='archived'&&a.sourceProduct===r.product&&a.currency===value.currency);return matches.length===1?{...r,financialAccountId:matches[0].id}:r;});
+      value={...value,accountRelations:relations};
+    }
+    const counter=value.status==='completed'&&['debit','credit'].includes(value.direction)&&value.statementFlow&&value.kind==='unknown'?statementCounterAccount(value,accounts):null;
     return counter?{...value,kind:counter.type==='credit_card'&&value.direction==='debit'?'debt_payment':'transfer',automaticClassification:{method:'explicit_owned_counter_account',confidence:'explicit_statement_purpose',evidenceObservationIds:[o.id],financialAccountId:counter.id}}:value;
   });
   const mortgageModels=buildMortgageModels(accounts,classified),mortgageBySource=new Map(),mortgageSplit=new Map();
@@ -188,8 +204,10 @@ function buildFinanceView(ledger,options={}) {
     const direction=projectedBankDirection(s);
     for(const b of moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,direction,fund.id]))||[]){
       const br=root(b.id);
-      const compatibleKind=b.kind===s.kind||b.statementFlow&&b.kind==='unknown'&&!latestAnnotations.has(b.id)&&['expense','income','refund','transfer','debt_payment'].includes(s.kind);
-      if(!(b.bankStatement||b.statementFlow)||!compatibleKind||occupiedStatementRoots.has(br)||channelAnnotatedRoots.has(br)||bankPaymentProvider(b)!==s.provider||channelBlocked.has(JSON.stringify([sr,br].sort())))continue;
+      const explicitPaymentPurpose=b.kind==='expense'&&['transfer','debt_payment'].includes(s.kind)&&bankPaymentProvider(b)===s.provider&&/^(?:消费\s+|快捷支付[-\s])/.test(String(b.description||b.counterparty||'').normalize('NFKC'));
+      const compatibleKind=b.kind===s.kind||explicitPaymentPurpose||b.statementFlow&&b.kind==='unknown'&&!latestAnnotations.has(b.id)&&['expense','income','refund','transfer','debt_payment'].includes(s.kind);
+      const bankChannel=bankPaymentProvider(b),undisclosedCardChannel=bankChannel===null&&b.bankStatement&&['expense','refund','income','interest','fee'].includes(b.kind);
+      if(!(b.bankStatement||b.statementFlow)||!compatibleKind||occupiedStatementRoots.has(br)||channelAnnotatedRoots.has(br)||bankChannel!==s.provider&&!undisclosedCardChannel||channelBlocked.has(JSON.stringify([sr,br].sort())))continue;
       if(!channelMatches.has(sr))channelMatches.set(sr,new Set());if(!channelReverse.has(br))channelReverse.set(br,new Set());
       channelMatches.get(sr).add(br);channelReverse.get(br).add(sr);
       const key=JSON.stringify([sr,br]),previous=channelEvidence.get(key);
@@ -199,7 +217,7 @@ function buildFinanceView(ledger,options={}) {
   for(const [sr,bankRoots] of channelMatches)if(bankRoots.size===1){
     const br=[...bankRoots][0];if(channelReverse.get(br).size!==1)continue;
     const {s,b,fund}=channelEvidence.get(JSON.stringify([sr,br]));
-    const association={method:'unique_channel_funding',confidence:'inferred',observationIds:[s.id,b.id],evidence:{financialAccountId:fund.id,date:s.date,amountMinor:s.amountMinor,currency:s.currency,direction:projectedBankDirection(s),platform:s.provider,reciprocalUnique:true}};
+    const association={method:bankPaymentProvider(b)===s.provider?'unique_channel_funding':'unique_card_funding',confidence:'inferred',observationIds:[s.id,b.id],evidence:{financialAccountId:fund.id,date:s.date,amountMinor:s.amountMinor,currency:s.currency,direction:projectedBankDirection(s),platform:s.provider,bankPlatformDisclosed:bankPaymentProvider(b)===s.provider,reciprocalUnique:true}};
     automaticByObservation.set(s.id,[association]);automaticByObservation.set(b.id,[association]);union(sr,br);
   }
   // A repayment receipt may say neutral (not income/expense), while its bank
@@ -210,7 +228,7 @@ function buildFinanceView(ledger,options={}) {
   for(const b of observations)if(b.status==='completed'&&b.kind==='debt_payment'&&b.direction==='credit'&&b.bankStatement&&accountMap.get(b.financialAccountId)?.type==='credit_card')add(repaymentReceipts,JSON.stringify([b.date,b.amountMinor,b.currency]),b);
   for(const s of observations){
     if(!['alipay','wechat'].includes(s.provider)||s.kind!=='debt_payment'||s.status!=='completed'||!['neutral','debit'].includes(s.direction)||repaymentAnnotatedRoots.has(root(s.id)))continue;
-    const bank=String(s.counterparty||'').normalize('NFKC').replace(/\s/g,''),fund=fundingAccount(s,accounts);
+    const bank=String(s.counterparty||'').normalize('NFKC').replace(/\s/g,'').replace(/信用卡还款$/,''),fund=fundingAccount(s,accounts);
     if(!/\u94f6\u884c$/.test(bank))continue;
     const matches=(repaymentReceipts.get(JSON.stringify([s.date,s.amountMinor,s.currency]))||[]).filter(b=>{
       const a=accountMap.get(b.financialAccountId),text=[b.description,b.counterparty].join(' '),channel=s.provider==='alipay'?/\u652f\u4ed8\u5b9d/:/\u5fae\u4fe1|\u8d22\u4ed8\u901a/;
@@ -292,7 +310,7 @@ function buildFinanceView(ledger,options={}) {
   for(const [id,sources] of groups) {
     const finalSources=sources.filter(s=>s.status==='completed'),eligible=finalSources.length?finalSources:sources;
     const ordered=[...eligible].sort((a,b)=>(b.sourceVersionOrdinal||0)-(a.sourceVersionOrdinal||0));
-    const base=ordered.find(s=>(automaticByObservation.get(s.id)||[]).some(a=>['unique_channel_funding','wechat_withdrawal_net_receipt','statement_payer_card'].includes(a.method)&&a.observationIds[0]===s.id))||ordered.find(s=>s.paymentChannel)||ordered[0];
+    const base=ordered.find(s=>(automaticByObservation.get(s.id)||[]).some(a=>['unique_channel_funding','unique_card_funding','wechat_withdrawal_net_receipt','statement_payer_card'].includes(a.method)&&a.observationIds[0]===s.id))||ordered.find(s=>s.paymentChannel)||ordered[0];
     const withdrawal=sources.map(s=>withdrawalByObservation.get(s.id)).find(Boolean);
     const groupAnnotations=sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)).sort((a,b)=>BigInt(a.revision)>BigInt(b.revision)?-1:1);
     const original=groupAnnotations[0]?{...base,...groupAnnotations[0].patch}:base;
@@ -311,8 +329,9 @@ function buildFinanceView(ledger,options={}) {
         else if(repayment==='loan'&&!mortgageSplit.has(o.id))unresolvedAssociations.push({reason:mortgageBySource.get(o.id)?.length===1?'mortgage_history_model_gap':'unsplit_debt_payment',observationId:o.id});
         else if(repayment==='unknown')unresolvedAssociations.push({reason:'unresolved_debt_account',observationId:o.id});
       }
-      if(o.kind==='unknown'&&!o.bankStatement?.nonCash&&!nonCashAuthorization(o)) unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
+      if(o.kind==='unknown'&&reconciliationRole!=='bank_evidence'&&!o.bankStatement?.nonCash&&!nonCashAuthorization(o)) unresolvedAssociations.push({reason:'unknown_kind',observationId:o.id});
     }
+    if(legacyRefundPending(o))unresolvedAssociations.push({reason:'legacy_refund_settlement_unknown',observationId:o.id});
     if(reconciliationRole==='bank_evidence')consumption=0n;
     const investmentConfirmations=latestInvestmentConfirmations(sources);
     consumption+=investmentConfirmations.reduce((sum,source)=>sum+BigInt(source.investmentTrade.feeMinor),0n)+(withdrawal?BigInt(withdrawal.feeMinor):0n);
@@ -349,9 +368,12 @@ function buildFinanceView(ledger,options={}) {
           if(possible.length&&!distinct&&!represented)unresolvedAssociations.push({reason:'insufficient_reference',observationId:s.id,candidateObservationIds:possible.slice(0,64).map(candidate=>candidate.id),candidateCount:possible.length});
           else if(!represented){effects.set(fund.id,delta);effectTimes.set(fund.id,s.occurredAt);if(!liability(fund))flow.set(fund.id,delta);}
         }
-        else if(!s.paymentAccountHint&&/^(余额|账户余额|支付宝余额|零钱)$/.test((s.paymentChannel||'').trim())){effects.set(a.id,delta);effectTimes.set(a.id,s.occurredAt);flow.set(a.id,delta);}
+        else if(!s.paymentAccountHint&&(/^(余额|账户余额|支付宝余额|零钱)$/.test((s.paymentChannel||'').trim())||s.provider==='wechat'&&s.kind==='transfer'&&s.rawFields?.['交易类型']==='零钱通转出-到零钱'&&target?.product==='wechat_lingqiantong'&&incoming)){effects.set(a.id,delta);effectTimes.set(a.id,s.occurredAt);flow.set(a.id,delta);}
         else unresolvedAssociations.push({reason:'unresolved_funding_account',observationId:s.id,paymentAccountHint:s.paymentAccountHint});
         continue;
+      }
+      if(s.automaticClassification?.method==='explicit_wallet_top_up'&&a.type==='wallet'){
+        const delta=BigInt(s.amountMinor);effects.set(a.id,delta);effectTimes.set(a.id,s.occurredAt);flow.set(a.id,delta);
       }
       const repaymentCredit=s.kind==='debt_payment'&&repayment==='credit';
       const provenRepaymentFunding=repaymentCredit&&sources.some(x=>x.direction==='debit'&&x.financialAccountId===fundingAccount(s,accounts)?.id&&(x.bankStatement||x.statementFlow));
@@ -391,7 +413,7 @@ function buildFinanceView(ledger,options={}) {
     const reportSelected=reportingAccountIds.some(id=>selected.has(id))||accounts.every(a=>selected.has(a.id));
     if(!reportingAccountIds.length&&(consumption!==0n||income!==0n))unresolvedAssociations.push({reason:'unallocated_income_expense',observationId:o.id});
     const automaticAssociations=[...new Set(sources.flatMap(s=>automaticByObservation.get(s.id)||[])),...(reconciliation?[reconciliation]:[])];
-    const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys(),...reportingAccountIds]);
+    const associated=new Set([...sources.map(s=>s.financialAccountId),...sources.filter(s=>s.automaticClassification?.method==='explicit_owned_counter_account').map(s=>s.automaticClassification.financialAccountId),...sources.flatMap(s=>(s.accountRelations||[]).map(r=>r.financialAccountId).filter(Boolean)),...effects.keys(),...reportingAccountIds]);
     const selectedSources=sources.filter(s=>selected.has(s.financialAccountId));
     all.push({...o,id,automaticAssociations,reconciliationGroup:reconciliation?{id:reconciliation.id,role:reconciliationRole,count:reconciliation.evidence.count,individualIdentity:'undetermined'}:null,mortgageSplit:mortgageSplit.has(o.id)?{confidence:mortgageSplit.get(o.id).confidence,month:mortgageSplit.get(o.id).month,financialAccountId:mortgageSplit.get(o.id).financialAccountId}:null,repaymentType:repayment,reportingAccountIds,coveredEffects,statisticsExclusions,pendingConsumptionMinor:pendingConsumption,pendingIncomeMinor:pendingIncome,selectedConsumptionMinor:reportSelected?consumption:0n,selectedIncomeMinor:reportSelected?income:0n,investmentConfirmations:investmentConfirmations.map(source=>({id:source.id,date:source.date,...source.investmentTrade})),observationIds:sources.map(s=>s.id),financialAccountIds:[...associated],sources:sources.map(s=>originalById.get(s.id)),appliedAnnotations:sources.filter(s=>latestAnnotations.has(s.id)).map(s=>latestAnnotations.get(s.id)),consumptionMinor:consumption,incomeMinor:income,balanceEffects:Object.fromEntries(effects),balanceEffectTimes:Object.fromEntries(effectTimes),cashEffects:Object.fromEntries(flow),selectedObservationIds:selectedSources.map(s=>s.id),relatedTransactionId:null});
   }
