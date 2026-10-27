@@ -141,6 +141,13 @@ async function main() {
   await assert.rejects(() => tamperedWorker.runOnce(), /RELAY_ENVELOPE_AUTH_FAILED/);
   assert.deepStrictEqual(rejectedEvents, ['lease', 'download'], 'a rejected relay must not write NAS bytes or submit a receipt');
   assert.throws(() => createStorageWorker({ client: {} }), /STORAGE_WORKER_CONFIG_INVALID/);
+  let questionLeaseCalls=0,financeErrors=0;
+  const isolatedWorker=createStorageWorker({agentPrivateKey,questionImportParser:{parse:async()=>{}},
+    objectStore:{putVerified:async()=>{},readVerified:async()=>Buffer.alloc(0)},
+    client:{lease:async()=>{questionLeaseCalls++;return null;},download:async()=>{},complete:async()=>{},reportSourceCandidates:async()=>{}},
+    financeArchiveWorker:{runOnce:async()=>{throw Object.assign(Error('NAS unavailable'),{code:'STORAGE_BILL_UNAVAILABLE'});}},
+    onFinanceArchiveError:()=>{financeErrors++;}});
+  assert.equal((await isolatedWorker.runOnce()).state,'idle');assert.equal(questionLeaseCalls,1);assert.equal(financeErrors,1,'finance errors do not stop existing question storage');
 }
 
 main().then(() => console.log('storage agent worker checks passed')).catch(error => {

@@ -33,8 +33,6 @@ PROMOTION_GUARD_LOCK_PATH = "/tmp/gewu-cloud-business-api-promotion-guard.lock"
 TAG_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}-[0-9a-f]{7,40}$")
 OPERATION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 PROMOTION_LOCK_STALE_SECONDS = 900
-FINANCE_SOURCE_HOST_ROOT = '/root/scheduling-data/finance-sources'
-FINANCE_SOURCE_CONTAINER_ROOT = '/var/lib/gewu/finance-sources'
 CANDIDATE_OPERATION_LABEL = "gewu.candidate-operation"
 DESKTOP_IDENTITY_VAULT_PATH = ROOT / "public" / "desktopIdentityVault.js"
 ED25519_SPKI_DER_PREFIX = bytes.fromhex("302a300506032b6570032100")
@@ -261,8 +259,7 @@ def candidate_command(tag, operation_id):
         "printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=0' >> \"$env_path\"; cat \"$override_path\" >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
-        f"test ! -L {FINANCE_SOURCE_HOST_ROOT}; install -d -m 700 -o 1000 -g 1000 {FINANCE_SOURCE_HOST_ROOT}; "
-        f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --memory 256m --memory-swap 384m --cpus 0.5 --pids-limit 128 --env-file \"$env_path\" -v {FINANCE_SOURCE_HOST_ROOT}:{FINANCE_SOURCE_CONTAINER_ROOT} -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
+        f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --memory 256m --memory-swap 384m --cpus 0.5 --pids-limit 128 --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
         + runtime_budget_guard('"$candidate"', False) + " || { printf '%s\\n' 'CLOUD_DOCKER_RUNTIME_BUDGET_INVALID' >&2; exit 4; }; "
         f"actual_lease_key_fingerprint=$(docker exec \"$candidate\" node -e \"eval(Buffer.from('{lease_key_script}','base64').toString('utf8'))\"); "
         f"case ' {trusted_lease_key_fingerprints} ' in *\" $actual_lease_key_fingerprint \"*) : ;; *) printf '%s\\n' 'CLOUD_DOCKER_OFFLINE_LEASE_KEY_UNTRUSTED' >&2; exit 3 ;; esac; "
@@ -375,10 +372,9 @@ def switch_command(tag, operation_id):
         "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d' \"$env_path\"; printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$rollback\" >/dev/null 2>&1; then exit 2; fi; "
-        f"test ! -L {FINANCE_SOURCE_HOST_ROOT}; install -d -m 700 -o 1000 -g 1000 {FINANCE_SOURCE_HOST_ROOT}; "
         "docker rm -f \"$candidate\"; "
         "docker rename \"$current\" \"$rollback\"; docker stop \"$rollback\"; "
-        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --memory 768m --memory-swap 1g --cpus 1.5 --pids-limit 192 --env-file \"$env_path\" -v {FINANCE_SOURCE_HOST_ROOT}:{FINANCE_SOURCE_CONTAINER_ROOT} -p 127.0.0.1:3002:3002 '{image}' && "
+        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --memory 768m --memory-swap 1g --cpus 1.5 --pids-limit 192 --env-file \"$env_path\" -p 127.0.0.1:3002:3002 '{image}' && "
         + runtime_budget_guard('"$current"', True) + "; then "
         "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
         "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && rm -f -- \"$env_path\" && exit 0; sleep 1; done; fi; "

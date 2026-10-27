@@ -9,6 +9,8 @@ const { createQuestionImportParser } = require('./questionImportParser');
 const { createStorageAgentRuntime } = require('./runtime');
 const { runStorageAgentHealthCheck } = require('./health');
 const { createStorageAgentRuntimeManifest, createStorageAgentRuntimeReporter } = require('./runtimeManifest');
+const { createFinanceArchiveClient } = require('./financeArchiveClient');
+const { createFinanceArchiveWorker } = require('./financeArchiveWorker');
 
 async function main() {
   const config = loadStorageAgentConfig(process.env);
@@ -28,6 +30,11 @@ async function main() {
     client,
     objectStore: createObjectStore({ nasRoot: config.nasRoot }),
     questionImportParser,
+    financeArchiveWorker: createFinanceArchiveWorker({
+      client: createFinanceArchiveClient({ cloudBaseUrl: config.cloudBaseUrl, agentId: config.agentId, token: config.token }),
+      objectStore: createObjectStore({ nasRoot: config.nasRoot }),
+    }),
+    onFinanceArchiveError: error => process.stderr.write(`finance archive retrying: ${error.code || 'STORAGE_BILL_FAILED'}\n`),
   });
   const runtime = createStorageAgentRuntime({
     worker,

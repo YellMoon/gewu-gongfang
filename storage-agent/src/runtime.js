@@ -36,7 +36,7 @@ function createStorageAgentRuntime({
         }
         await onResult(result);
         // Drain completed work without adding 10 seconds to every queued image.
-        const progressed = ['verified', 'candidates_ready', 'delivery_uploaded', 'question_asset_delivery_uploaded'].includes(result?.state);
+        const progressed = ['verified', 'candidates_ready', 'delivery_uploaded', 'question_asset_delivery_uploaded', 'bill_archive_stored', 'bill_archive_delivered'].includes(result?.state);
         if (shouldContinue() && !progressed) await sleep(pollSeconds * 1000);
       }
     },

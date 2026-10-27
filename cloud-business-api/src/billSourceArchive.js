@@ -4,8 +4,9 @@ const path = require('node:path');
 const { createHash, randomBytes, createCipheriv, createDecipheriv } = require('node:crypto');
 const fail = code => Object.assign(new Error(code), { code });
 const hash = data => createHash('sha256').update(data).digest('hex');
-function createBillSourceArchive({ root, key, maxBytes = 24 * 1024 * 1024 }) {
-  if (!path.isAbsolute(root || '') || !Buffer.isBuffer(key) || key.length !== 32) throw fail('BILL_ARCHIVE_CONFIGURATION');
+function createBillSourceArchive({ root, key, maxBytes = 24 * 1024 * 1024, storage = null }) {
+  if ((!storage && !path.isAbsolute(root || '')) || !Buffer.isBuffer(key) || key.length !== 32
+    || (storage && (typeof storage.put !== 'function' || typeof storage.read !== 'function'))) throw fail('BILL_ARCHIVE_CONFIGURATION');
   const scope = input => {
     if (!input.tenantId || !input.ownerAccountId) throw fail('BILL_ARCHIVE_SCOPE');
     return hash(JSON.stringify([input.tenantId, input.ownerAccountId]));
@@ -15,14 +16,18 @@ function createBillSourceArchive({ root, key, maxBytes = 24 * 1024 * 1024 }) {
     const fileHash = hash(input.buffer);
     if (input.fileHash && input.fileHash !== fileHash) throw fail('BILL_ARCHIVE_HASH');
     const owner = scope(input), id = owner + '-' + fileHash;
-    const target = path.join(root, id + '.enc');
-    await fs.mkdir(root, { recursive: true, mode: 0o700 });
-    if ((await fs.lstat(root)).isSymbolicLink()) throw fail('BILL_ARCHIVE_PATH');
     const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(Buffer.from(id));
     const encrypted = Buffer.concat([cipher.update(input.buffer), cipher.final()]);
     const envelope = Buffer.concat([Buffer.from('GWB1'), iv, cipher.getAuthTag(), encrypted]);
     const reference = { id, fileHash, byteLength: input.buffer.length, filename: path.basename(String(input.filename || 'bill').replace(/\\/g, '/')).slice(0, 180), storage: 'controlled-private', encrypted: true };
+    if (storage) {
+      await storage.put({ reference, bytes: envelope });
+      return reference;
+    }
+    const target = path.join(root, id + '.enc');
+    await fs.mkdir(root, { recursive: true, mode: 0o700 });
+    if ((await fs.lstat(root)).isSymbolicLink()) throw fail('BILL_ARCHIVE_PATH');
     const temporary = path.join(root, id + '-' + randomBytes(12).toString('hex') + '.tmp');
     try {
       const handle = await fs.open(temporary, 'wx', 0o600);
@@ -39,9 +44,14 @@ function createBillSourceArchive({ root, key, maxBytes = 24 * 1024 * 1024 }) {
   archive.read = async input => {
     const ref = input.reference || {}, owner = scope(input);
     if (!/^[a-f0-9]{64}-[a-f0-9]{64}$/.test(ref.id || '') || ref.id !== owner + '-' + ref.fileHash) throw fail('BILL_ARCHIVE_SCOPE');
-    const target = path.join(root, ref.id + '.enc'), stat = await fs.lstat(target);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes + 32) throw fail('BILL_ARCHIVE_PATH');
-    const raw = await fs.readFile(target);
+    let raw;
+    if (storage) raw = await storage.read({ reference: ref });
+    else {
+      const target = path.join(root, ref.id + '.enc'), stat = await fs.lstat(target);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes + 32) throw fail('BILL_ARCHIVE_PATH');
+      raw = await fs.readFile(target);
+    }
+    if (!Buffer.isBuffer(raw) || raw.length > maxBytes + 32) throw fail('BILL_ARCHIVE_SIZE');
     if (raw.length < 32 || raw.subarray(0, 4).toString() !== 'GWB1') throw fail('BILL_ARCHIVE_FORMAT');
     const cipher = createDecipheriv('aes-256-gcm', key, raw.subarray(4, 16));
     cipher.setAAD(Buffer.from(ref.id)); cipher.setAuthTag(raw.subarray(16, 32));

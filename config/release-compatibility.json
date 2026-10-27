@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceNasArchive": {
+      "version": "1",
+      "participants": ["cloud_business", "storage_proxy"],
+      "rule": "GWB1 encrypted bill originals live only on NAS. Preserve existing owner-bound archive references and cloud-authoritative structured financial data. Cloud transfer bytes are bounded request-scoped memory only; metadata receipts contain no file payload, and Nginx does not spool finance bodies to disk. A new import commits only after NAS write/read/hash acknowledgement. Missing NAS, expired leases and invalid receipts fail closed without a cloud-file fallback. Deploy the backward-compatible NAS client, import and verify legacy encrypted objects, apply the additive metadata-only migration, then switch cloud source archiving and verify live store/read before removing cloud originals. Existing desktop and miniapp import APIs and question storage protocols remain compatible."
+    },
     "personalFinanceAssetRegister": {
       "version": "1",
       "participants": [
@@ -298,11 +303,12 @@
         "8.8.3",
         "8.8.4",
         "8.9.1",
-        "8.9.2"
+        "8.9.2",
+        "8.10.0"
       ],
       "runtimeFloor": {
-        "sourceVersion": "8.9.2",
-        "runtimeVersion": "8.9.2"
+        "sourceVersion": "8.10.0",
+        "runtimeVersion": "8.10.0"
       },
       "contracts": {
         "questionPaperExport": "3",

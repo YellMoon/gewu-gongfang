@@ -42,10 +42,10 @@ VERIFIED_PERMISSION_CONTRACT = {"contract": "live-authority-result"}
 
 
 class CloudBusinessDockerDeployTests(unittest.TestCase):
-    def test_finance_sources_survive_candidate_promotion(self):
+    def test_finance_sources_are_not_mounted_or_created_on_cloud_candidates_or_production(self):
         for command in (candidate_command('8.16.0-abcdef0', 'a' * 32), switch_command('8.16.0-abcdef0', 'a' * 32)):
-            self.assertIn('/root/scheduling-data/finance-sources:/var/lib/gewu/finance-sources', command)
-            self.assertIn('test ! -L /root/scheduling-data/finance-sources', command)
+            self.assertNotIn('/root/scheduling-data/finance-sources:/var/lib/gewu/finance-sources', command)
+            self.assertNotIn('install -d -m 700 -o 1000 -g 1000 /root/scheduling-data/finance-sources', command)
 
     def setUp(self):
         self.source_guard = mock.patch.object(module, 'frozen_cloud_inputs', create=True,
