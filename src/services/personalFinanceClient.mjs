@@ -28,7 +28,16 @@ export function createPersonalFinanceClient({ readSession = readDesktopAuthoriza
     return data;
   }
   return Object.freeze({
-    getLedger: () => request('/ledger'),
+    getLedger: async () => {
+      const result = await request('/ledger');
+      // The compatibility field omits reset decisions for older clients. Current
+      // readers need the complete immutable sequence used by cloud projections.
+      if (Array.isArray(result.ledger?.annotationHistory)) {
+        const { annotationHistory, ...ledger } = result.ledger;
+        return { ...result, ledger: { ...ledger, annotations: annotationHistory } };
+      }
+      return result;
+    },
     discoverAccounts: input => request('/accounts/discover', 'POST', input || {}),
     previewFile: input => request('/imports/preview', 'POST', input),
     importFile: (input, key) => request('/imports', 'POST', input, key),

@@ -6,9 +6,13 @@ assert.equal(typeof registerPersonalFinanceRoutes,'function','finance routes mus
  const routes=new Map(),app=Object.fromEntries(['get','post','patch','delete'].map(method=>[method,(path,handler)=>routes.set(method+' '+path,handler)]));
  const actor={accountId:'alice',roles:['teacher']};let received;
  const finance={getLedger:async input=>{received=input;return {revision:'0',accounts:[]};},previewImport:async input=>{received=input;return {records:[]};},import:async input=>{received=input;return {importId:'i'};},createAccount:async()=>({}),updateAccount:async()=>({}),createLink:async()=>({}),deleteLink:async()=>({}),createBalanceSnapshot:async()=>({}),annotateObservation:async input=>{received=input;return {annotation:{id:'annotation'}};}};
- registerPersonalFinanceRoutes({app,finance,tenantId:'tenant',desktopContext:async()=>actor,miniappContext:async()=>actor});
- const res={statusCode:200,status(n){this.statusCode=n;return this;},json(body){this.body=body;return this;}};
+ let heavyCalls=0;const projectionService={exclusive:async(work)=>{heavyCalls++;return work();},request:async(owner,input)=>{received={...owner,input};return{status:'preparing'};}};
+ registerPersonalFinanceRoutes({app,finance,projectionService,tenantId:'tenant',desktopContext:async()=>actor,miniappContext:async()=>actor});
+ const res={statusCode:200,status(n){this.statusCode=n;return this;},set(){return this;},vary(){return this;},json(body){this.body=body;return this;}};
  await routes.get('get /api/business/personal-finance/ledger')({},res);assert.equal(res.body.ok,true);assert.deepEqual(received,{tenantId:'tenant',actor});
+ await routes.get('post /api/business/miniapp-personal-finance/projection')({body:{accountIds:['owned'],granularity:'month'}},res);assert.deepEqual(received,{tenantId:'tenant',actor,input:{accountIds:['owned'],granularity:'month'}});assert.equal(res.body.projection.status,'preparing');
+ assert.equal(heavyCalls,1,'source read is serialized but compact projection must not suspend itself');
+ await routes.get('post /api/business/miniapp-personal-finance/projection')({body:{owner:'other'}},res);assert.equal(res.statusCode,400);res.statusCode=200;
  const originalGet=finance.getLedger,history=[{observationId:'cleared',revision:'1',patch:{kind:'transfer'}},{observationId:'cleared',revision:'2',patch:{},reset:true},{observationId:'active',revision:'3',patch:{category:'Food'}}],originalHistory=JSON.stringify(history);finance.getLedger=async()=>({revision:'3',accounts:[],annotations:history});
  for(const route of ['get /api/business/personal-finance/ledger','get /api/business/miniapp-personal-finance/ledger']){await routes.get(route)({},res);assert.deepEqual(res.body.ledger.annotations,[history[2]],'legacy and current readers receive the same active decisions after reset');assert.deepEqual(res.body.ledger.annotationHistory,history);}
  assert.equal(JSON.stringify(history),originalHistory);finance.getLedger=originalGet;

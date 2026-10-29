@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceAcceptedReconciliation": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business", "miniapp"],
+      "rule": "Apply the owner-scoped multi-account-source and nullable ledger-order migration before deploying readers. Accepted administrative reconciliation is hash/revision guarded, append-only for original observations, audited, transactional and read back before commit; original source JSON and evidence precedence remain intact. Unknown annotation times and unavailable archived bytes remain explicitly unknown. Closed-activity and merchant-settlement policies validate references against the authenticated owner's original sources. Deploy the additive read-only miniapp projection endpoint before its consumer; bounded background computation uses the same integer rules, keeps global review independent of scope filters, and sends compact summaries instead of original documents or the full source ledger. Existing import APIs, teaching data and NAS byte-storage protocols remain compatible."
+    },
     "personalFinanceNasArchive": {
       "version": "1",
       "participants": ["cloud_business", "storage_proxy"],

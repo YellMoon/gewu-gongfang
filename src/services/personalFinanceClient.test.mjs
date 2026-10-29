@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonalFinanceClient } from './personalFinanceClient.mjs';
+test('current readers restore complete reset history without mutating legacy transport data', async () => {
+  const annotations = [{ observationId: 'x', revision: '1', patch: { kind: 'transfer' } }, { observationId: 'x', revision: '2', patch: {}, reset: true }];
+  const original = { ok: true, ledger: { revision: '2', annotations: [], annotationHistory: annotations } };
+  const client = createPersonalFinanceClient({ readSession: () => ({ authorization: 'Bearer owner', authContext: { userId: 'owner', activeRole: 'teacher' } }), fetch: async () => ({ ok: true, json: async () => original }) });
+  const { ledger } = await client.getLedger();
+  assert.deepEqual(ledger.annotations, annotations);
+  assert.equal(ledger.annotationHistory, undefined);
+  assert.deepEqual(original.ledger.annotations, []);
+  assert.equal(original.ledger.annotationHistory, annotations);
+});
 test('finance transport authenticates, carries idempotency, and rejects switched sessions', async () => {
   let token = 'Bearer one'; let call;
   const session = () => ({ authorization: token, authContext: { userId: 'owner', activeRole: 'teacher' } });

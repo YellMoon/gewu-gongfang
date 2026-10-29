@@ -17,8 +17,8 @@ assert.deepStrictEqual(compatibility.contracts.questionImportParserProof, {
   rule: 'storage_proxy reports the exact parser SHA-256 and cloud_business matches it to the import task before accepting candidates',
 });
 assert.deepStrictEqual(compatibility.runtimeReceipts.storage_proxy, {
-  approvedRuntimeVersions: ['8.8.2', '8.8.3', '8.8.4', '8.9.1', '8.9.2'],
-  runtimeFloor: { sourceVersion: '8.9.2', runtimeVersion: '8.9.2' },
+  approvedRuntimeVersions: ['8.8.2', '8.8.3', '8.8.4', '8.9.1', '8.9.2', '8.10.0'],
+  runtimeFloor: { sourceVersion: '8.10.0', runtimeVersion: '8.10.0' },
   contracts: { questionPaperExport: '3', storageAgentTransport: '3', questionImportParserProof: '1' },
 });
 
@@ -58,6 +58,16 @@ const currentRuntimeEvidence = {
 };
 assert.deepStrictEqual(verifyImportRelease(currentRuntimeEvidence), currentRuntimeEvidence,
   'the explicitly approved current NAS runtime must retain the parser proof gate');
+const financeNasRuntimeEvidence = {
+  ...evidence, expectedStorageRuntimeVersion: '8.10.0',
+  storageHealth: { ...evidence.storageHealth, version: '8.10.0' },
+  storageRuntimeReceipt: { ...evidence.storageRuntimeReceipt, agentVersion: '8.10.0' },
+};
+assert.deepStrictEqual(verifyImportRelease(financeNasRuntimeEvidence), financeNasRuntimeEvidence,
+  'NAS finance support retains the same verified question parser and storage contracts');
+assert.throws(() => verifyImportRelease({ ...financeNasRuntimeEvidence,
+  storageRuntimeReceipt: { ...financeNasRuntimeEvidence.storageRuntimeReceipt, parserSha256: 'e'.repeat(64) },
+}), /QUESTION_IMPORT_RELEASE_INVALID/, 'the newly approved NAS version does not relax parser identity');
 assert.throws(
   () => verifyImportRelease({ ...retainedRuntimeEvidence, storageRuntimeReceipt: { ...retainedRuntimeEvidence.storageRuntimeReceipt, parserSha256: 'e'.repeat(64) } }),
   /QUESTION_IMPORT_RELEASE_INVALID/,

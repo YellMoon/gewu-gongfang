@@ -12,11 +12,12 @@ function page(){
  let ledgerReply=null,previewReply=null,modalReply=null,importReply=null;
  const jsx=(type,props)=>({type,props:props||{}}),slot=v=>{const i=cursor++;if(!(i in state))state[i]=v;return i;};
  const ledger=()=>({accounts:accountId?[{id:accountId,label:accountId,currency:'CNY',type:'bank'}]:[],observations:[],links:[],balanceAnchors:[]});
+ const projection=scope=>{ledgerCalls++;return Promise.resolve(ledgerReply?ledgerReply():{ledger:ledger()}).then(response=>{if(response.projection)return response;const value=response.ledger,view=require(path.resolve(__dirname,'../../../shared/personal-finance/ledger.js')).buildFinanceView(value,scope);return{projection:{status:'ready',accounts:value.accounts,view,trend:[]}};});};
  const deps={
   react:{useState:initial=>{const i=slot(typeof initial==='function'?initial():initial);return[state[i],next=>{if(unmounted)lateWrites++;state[i]=typeof next==='function'?next(state[i]):next;}];},useRef:initial=>state[slot({current:initial})],useEffect:fn=>{const i=slot(false);if(!state[i]){state[i]=true;effects.push(fn);}}},
   'react/jsx-runtime':{jsx,jsxs:jsx},'@tarojs/components':Object.fromEntries(['Button','Checkbox','Input','Text','View'].map(n=>[n,n])),
   '@tarojs/taro':{default:{chooseMessageFile:()=>{const d=deferred();choosers.push(d);return d.promise;},getFileSystemManager:()=>({readFile:o=>o.success({data:'ZmFrZQ=='})}),showToast:o=>toasts.push(o),showModal:o=>{modals.push(o);return modalReply?modalReply():Promise.resolve({confirm:true});}},useDidShow:fn=>{show=fn;},useDidHide:fn=>{hide=fn;}},
-  '../utils/personalFinanceApi':{personalFinanceApi:{ledger:()=>{ledgerCalls++;return ledgerReply?ledgerReply():Promise.resolve({ledger:ledger()});},preview:input=>{previewCalls.push(input);return previewReply?previewReply():Promise.resolve({preview});},import:(input,key)=>{imports.push({input,key});return importReply?importReply():Promise.resolve({ok:true});}}},
+  '../utils/personalFinanceApi':{personalFinanceApi:{projection,ledger:()=>{throw Error('MINIAPP_MUST_NOT_DOWNLOAD_RAW_LEDGER');},preview:input=>{previewCalls.push(input);return previewReply?previewReply():Promise.resolve({preview});},import:(input,key)=>{imports.push({input,key});return importReply?importReply():Promise.resolve({ok:true});}}},
   '../utils/authSession':{authSessionRuntime:{capture:()=>({generation}),isSameSession:s=>s.generation===generation}},'../utils/permission':{assertMiniappWriteAllowed:()=>{}},
   '../../../shared/personal-finance/accountAnalytics':require(path.resolve(__dirname,'../../../shared/personal-finance/accountAnalytics.js')),
   '../../../shared/personal-finance/ledger':require(path.resolve(__dirname,'../../../shared/personal-finance/ledger.js')),
@@ -59,6 +60,11 @@ function page(){
  assert.doesNotMatch(text(staleError.render()),/FINANCE_SESSION_CHANGED|云端财务暂不可用/,'previous session errors must not replace the new ledger');assert.match(text(staleError.render()),/new-account/);
 
  const empty=page();empty.empty();await empty.mount();assert.match(text(empty.render()),/暂无金融账户/);assert.equal(empty.chooseButton().props.disabled,true);
+ const dates=page();await dates.mount();const dateInputs=()=>nodes(dates.render()).filter(n=>n.type==='Input'),beforeDates=dates.ledgerCalls();
+ dateInputs()[0].props.onInput({detail:{value:'2026-02-30'}});await tick();assert.equal(dates.ledgerCalls(),beforeDates,'impossible dates must remain editable without submitting a failing request');assert.equal(dateInputs().length,2);assert.match(text(dates.render()),/\u6709\u6548\u65e5\u671f/);
+ dateInputs()[0].props.onInput({detail:{value:'2026-03-01'}});await tick();const afterStart=dates.ledgerCalls();assert.equal(afterStart,beforeDates+1);
+ dateInputs()[1].props.onInput({detail:{value:'2026-02-28'}});await tick();assert.equal(dates.ledgerCalls(),afterStart,'reversed date ranges must remain editable');assert.match(text(dates.render()),/\u5f00\u59cb\u65e5\u671f\u4e0d\u80fd\u665a\u4e8e\u7ed3\u675f\u65e5\u671f/);assert.equal(dateInputs().length,2);
+ dateInputs()[1].props.onInput({detail:{value:'2026-03-31'}});await tick();assert.equal(dates.ledgerCalls(),afterStart+1);assert.doesNotMatch(text(dates.render()),/\u6709\u6548\u65e5\u671f|\u5f00\u59cb\u65e5\u671f\u4e0d\u80fd\u665a\u4e8e\u7ed3\u675f\u65e5\u671f|\u4e91\u7aef\u8d22\u52a1\u6682\u4e0d\u53ef\u7528/);dates.unmount();
  const offline=page();offline.setLedgerReply(()=>Promise.reject(Object.assign(new Error('offline'),{code:'FINANCE_REQUEST_FAILED'})));await offline.mount();assert.match(text(offline.render()),/云端财务暂不可用/);assert.equal(offline.chooseButton(),undefined);
  console.log('personal finance actual component replacement session/late callback/unmount/chooser hide-show/error/empty/duplicate-tap/whole-batch import checks passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

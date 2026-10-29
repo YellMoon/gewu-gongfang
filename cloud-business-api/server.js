@@ -577,6 +577,7 @@ const server = app.listen(port, '0.0.0.0', () => console.log(`cloud business API
 paperExportWorker?.start();
 
 async function shutdown() {
+  app.locals.financeProjectionService?.dispose();
   paperExportWorker?.stop();
   server.close(async () => {
     await pool.end();

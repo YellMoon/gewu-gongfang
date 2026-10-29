@@ -69,13 +69,20 @@ function prepareNetworkFinanceView(ledger,prepareCore){
  // Association decisions use the complete history and must not change when the
  // user changes account/date filters. Existing financial calculations run once
  // for an unfiltered view and are never replayed from supplemental network rows.
- const initialCore=prepareCore(baseLedger),initialFull=initialCore({}),initialPlan=planUnionpayNetworkEvidence({records,accounts:ledger.accounts||[],transactions:initialFull.transactions,annotations:ledger.annotations,links:ledger.links});
+ let initialCore=prepareCore(baseLedger),initialFull=initialCore({}),initialPlan=planUnionpayNetworkEvidence({records,accounts:ledger.accounts||[],transactions:initialFull.transactions,annotations:ledger.annotations,links:ledger.links});
  const postingRuntime=require('./nativeNetworkPostings'),postings=postingRuntime.findNativeNetworkPostings(ledger,initialFull,initialPlan),postedIds=new Set(postings.map(p=>p.sourceObservationId)),postingMap=new Map(postings.map(p=>[p.sourceObservationId,p])),pairs=postingRuntime.findNativeRepaymentPostingPairs(records,postings,ledger.accounts||[],ledger.links||[],initialFull.transactions),participatingIds=new Set([...economicIds,...postedIds]);
  const financialLedger=postings.length?{...baseLedger,observations:[...economic,...records.filter(r=>postedIds.has(r.id)).map(r=>postingRuntime.materializeNativeNetworkPosting(r,postingMap.get(r.id)))],annotations:(ledger.annotations||[]).filter(a=>participatingIds.has(a.observationId)),links:[...(ledger.links||[]).filter(l=>(l.observationIds||[]).every(id=>participatingIds.has(id))),...pairs.map((p,i)=>({id:'native_repayment_projection_'+i,type:'transfer',observationIds:p.observationIds}))]}:baseLedger;
- const projectCore=postings.length?prepareCore(financialLedger):initialCore,full=postings.length?projectCore({}):initialFull;
+ // Release the first reconciliation graph before preparing posted movements.
+ // Keeping both graphs and their serialized originals doubles peak memory.
+ if(postings.length){initialCore=null;initialFull=null;initialPlan=null;}
+ const projectCore=postings.length?prepareCore(financialLedger):initialCore;
+ let full=postings.length?projectCore({}):initialFull;
  const savedPlan=planUnionpayNetworkEvidence({records:records.filter(r=>!postedIds.has(r.id)),accounts:ledger.accounts||[],transactions:full.transactions,annotations:ledger.annotations,links:ledger.links});
  if(postings.length){savedPlan.summary.sourceRows=records.length;savedPlan.summary.postedRows=postings.length;savedPlan.postings=postings;savedPlan.postingAssociations=pairs;}
  if(savedPlan.identities.length)fail();
+ // Future scopes need only these immutable peer facts from the global view.
+ const mixedBankPeers=full.transactions.filter(x=>x.status==='completed'&&x.kind==='transfer').map(({observationIds,currency,balanceEffects})=>({observationIds,currency,balanceEffects}));
+ full=null;initialCore=null;initialFull=null;initialPlan=null;
  return function projectNetwork(options={}){
  const view=projectCore(options),plan=require('./preparedScopeSelection').clonePreparedValue(savedPlan);
  const sourceById=new Map(records.map(r=>[r.id,r])),transactions=view.transactions.map(t=>({...t,observationIds:[...t.observationIds],sources:[...t.sources],automaticAssociations:[...t.automaticAssociations],selectedObservationIds:[...t.selectedObservationIds]})),byId=new Map(transactions.map(t=>[t.id,t]));
@@ -100,7 +107,7 @@ function prepareNetworkFinanceView(ledger,prepareCore){
   const link=(ledger.links||[]).find(l=>l.id===e.linkId&&l.type==='transfer'&&l.status!=='deleted'&&!l.deletedAt&&l.deleted!==true&&l.observationIds?.length===2&&l.observationIds.includes(e.nativeObservationId)&&l.observationIds.includes(e.bankObservationId));if(!link)return false;
   // Ordinary transfers retain one statement row per side. Check the full
   // financial view so selecting only one account does not revoke its pairing.
-  const peers=full.transactions.filter(x=>x.observationIds.includes(e.bankObservationId)&&x.status==='completed'&&x.kind==='transfer'&&x.currency===t.currency&&x.balanceEffects[e.receivingAccountId]===e.amountMinor);
+  const peers=mixedBankPeers.filter(x=>x.observationIds.includes(e.bankObservationId)&&x.currency===t.currency&&x.balanceEffects[e.receivingAccountId]===e.amountMinor);
   return peers.length===1;
  };
  for(const t of transactions)if(t.nativeNetworkPostingProofs?.some(p=>p.kind==='transfer')&&Object.values(t.balanceEffects).filter(v=>BigInt(v)!==0n).length<2&&!t.nativeNetworkPostingProofs.some(p=>p.kind==='transfer'&&hasActualMixedBankPeer(t,p)))issues.push({reason:'unresolved_account_movement',observationId:t.nativeNetworkPostingProofs.find(p=>p.kind==='transfer').sourceObservationId,basis:'native_owner_transfer_requires_counter_account'});

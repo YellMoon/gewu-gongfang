@@ -2294,8 +2294,11 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       pairingFailure(response, error);
     }
   });
-  registerPersonalFinanceRoutes({ app, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext });
-  registerBillMailboxRoutes({ app, mailbox: billMailbox, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext });
+  const financeProjectionService = personalFinance && typeof personalFinance.getRevision === 'function'
+    ? require('./financeProjectionService').createFinanceProjectionService({ finance: personalFinance, loadInWorker: true }) : null;
+  app.locals.financeProjectionService = financeProjectionService;
+  registerPersonalFinanceRoutes({ app, finance: personalFinance, projectionService: financeProjectionService, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext });
+  registerBillMailboxRoutes({ app, mailbox: billMailbox, finance: personalFinance, projectionService: financeProjectionService, tenantId: businessTenantId, desktopContext: desktopQuestionContext });
   registerBillNasArchiveRoutes({ app, transfers: billArchiveTransfers, storageAgent });
   return app;
 }

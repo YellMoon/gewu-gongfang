@@ -4,37 +4,51 @@ import { Button, Checkbox, Input, Text, View } from '@tarojs/components';
 import { personalFinanceApi } from '../utils/personalFinanceApi';
 import { authSessionRuntime } from '../utils/authSession';
 import { assertMiniappWriteAllowed } from '../utils/permission';
-// @ts-ignore Integer ledger is identical to cloud and desktop.
-import { buildFinanceView } from '../../../shared/personal-finance/ledger';
-// @ts-ignore Shared integer series.
-import { buildTrend } from '../../../shared/personal-finance/accountAnalytics';
 const money = (v: any) => { if (v == null) return '未校准'; const s = String(v), negative = s.startsWith('-'), digits = s.replace('-', '').padStart(3, '0'); return `${negative ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`; };
 export default function PersonalFinanceSummary() {
   const [ledger, setLedger] = useState<any>(), [selected, setSelected] = useState<string[]>([]), [error, setError] = useState('');
   const [start, setStart] = useState(''), [end, setEnd] = useState(''), [importAccount, setImportAccount] = useState('');
   const [preview, setPreview] = useState<any>(), [file, setFile] = useState<any>(), [busy, setBusy] = useState(false);
   const [granularity,setGranularity] = useState('month');
+  const [calculating,setCalculating] = useState(false), [calculationStatus,setCalculationStatus] = useState('');
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const visible = useRef(true), mounted = useRef(true), sequence = useRef(0), lock = useRef(false), operation = useRef(0), previousSession = useRef<any>(null);
   useEffect(() => {
     // UTF-8: The parent may mount this child after its page did-show has fired.
     mounted.current = true;
     void refresh();
-    return () => { mounted.current = false; visible.current = false; sequence.current++; operation.current++; lock.current = false; };
+    return () => { mounted.current = false; visible.current = false; sequence.current++; operation.current++; lock.current = false; clearTimeout(pollTimer.current); };
   }, []);
   const refresh = async () => {
     const n = ++sequence.current, session = authSessionRuntime.capture();
-    if (!previousSession.current || !authSessionRuntime.isSameSession(previousSession.current)) {
+    const sessionChanged = !previousSession.current || !authSessionRuntime.isSameSession(previousSession.current);
+    if (sessionChanged) {
       operation.current++; lock.current = false;
-      setSelected([]); setPreview(undefined); setFile(undefined); setImportAccount(''); setBusy(false); setStart(''); setEnd('');
+      setSelected([]); setPreview(undefined); setFile(undefined); setImportAccount(''); setBusy(false); setStart(''); setEnd(''); setGranularity('month');
     }
     previousSession.current = session; setLedger(undefined); setError('');
-    try { const response = await personalFinanceApi.ledger(); if (visible.current && n === sequence.current && authSessionRuntime.isSameSession(session)) setLedger(response.ledger); }
-    catch (e: any) { if (visible.current && n === sequence.current && authSessionRuntime.isSameSession(session)) setError(e.code || 'FINANCE_REQUEST_FAILED'); }
+    await loadProjection(sessionChanged ? {} : {accountIds:selected,startDate:start,endDate:end,granularity}, n, session);
+  };
+  const loadProjection = async (scope: any, n: number, session: any) => {
+    clearTimeout(pollTimer.current); setCalculating(true); setCalculationStatus('正在读取云端统计…');
+    const current = () => mounted.current && visible.current && n === sequence.current && authSessionRuntime.isSameSession(session);
+    try { const response = await personalFinanceApi.projection(scope); if (!current()) return;
+      if (response.projection.status !== 'ready') { setCalculationStatus(response.projection.status === 'busy' ? '云端计算繁忙，稍后自动重试…' : '正在云端核对历史账本，完成后自动显示…'); pollTimer.current = setTimeout(() => { if (current()) void loadProjection(scope, n, session); }, Math.max(1000, Math.min(5000, response.projection.retryAfterMs || 2000))); return; }
+      setLedger(response.projection); setCalculating(false); setCalculationStatus(''); setError('');
+    } catch (e: any) { if (current()) { setError(e.code || 'FINANCE_REQUEST_FAILED'); setCalculating(false); } }
+  };
+  const changeScope = (patch: any) => {
+    const next = {accountIds:selected,startDate:start,endDate:end,granularity,...patch};
+    if (patch.accountIds) setSelected(patch.accountIds); if (patch.startDate !== undefined) setStart(patch.startDate); if (patch.endDate !== undefined) setEnd(patch.endDate); if (patch.granularity) setGranularity(patch.granularity);
+    const validDay = (day: string) => !day || (/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(Date.parse(day + 'T00:00:00Z')) && new Date(day + 'T00:00:00Z').toISOString().slice(0,10) === day);
+    const dateIssue = !validDay(next.startDate) || !validDay(next.endDate) ? "请填写有效日期 YYYY-MM-DD" : next.startDate && next.endDate && next.startDate > next.endDate ? "开始日期不能晚于结束日期" : '';
+    if (dateIssue) { sequence.current++; clearTimeout(pollTimer.current); setCalculating(true); setCalculationStatus(dateIssue); return; }
+    setError(''); void loadProjection(next, ++sequence.current, authSessionRuntime.capture());
   };
   useDidShow(() => { visible.current = true; void refresh(); });
-  useDidHide(() => { visible.current = false; sequence.current++; setLedger(undefined); });
-  const view = ledger ? buildFinanceView(ledger, { ...(selected.length ? { accountIds: selected } : {}), ...(/^\d{4}-\d{2}-\d{2}$/.test(start) ? { startDate: start } : {}), ...(/^\d{4}-\d{2}-\d{2}$/.test(end) ? { endDate: end } : {}) }) : null;
-  const trend = view ? buildTrend(view.transactions,{startDate:start||undefined,endDate:end||undefined,granularity,currencies:Object.keys(view.currencyTotals)}) : [];
+  useDidHide(() => { visible.current = false; sequence.current++; clearTimeout(pollTimer.current); setLedger(undefined); });
+  const view = !calculating ? ledger?.view : null;
+  const trend = !calculating ? ledger?.trend || [] : [];
   const readFile = async () => {
     if (lock.current || !importAccount) return;
     const session = authSessionRuntime.capture(), op = ++operation.current, accountId = importAccount;
@@ -71,23 +85,26 @@ export default function PersonalFinanceSummary() {
   };
   return <View className='finance-ledger'>
     <Text className='finance-title'>金融账户与关联账单</Text>
-    {error ? <Text>云端财务暂不可用：{error}</Text> : !ledger ? <Text>正在读取账户…</Text> : <>
-      <Text>未勾选时统计全部账户；可勾选任意组合。收支归到实际资金账户，转账和还款本金不计收支。</Text><Button size="mini" onClick={()=>setSelected([])}>全部账户</Button>
-      {ledger.accounts.map((a: any) => <View key={a.id} className='finance-account'><Checkbox value={a.id} checked={selected.includes(a.id)} onClick={() => setSelected(selected.includes(a.id) ? selected.filter(id => id !== a.id) : [...selected, a.id])} /><Text>{a.label} · {a.currency}　{!selected.length || selected.includes(a.id) ? '余额 '+money(view.accountStats[a.id]?.balanceMinor)+'　支出 '+money(view.accountStats[a.id]?.consumptionMinor)+'　收入 '+money(view.accountStats[a.id]?.incomeMinor) : '未选入统计'}</Text><Button size='mini' onClick={() => { setImportAccount(a.id); setPreview(undefined); setFile(undefined); }}>导入到账户</Button></View>)}
+    {error ? <Text>云端财务暂不可用：{error}</Text> : !ledger ? <Text>{calculationStatus || '正在读取账户…'}</Text> : <>
+      <Text>未勾选时统计全部账户；可勾选任意组合。收支归到实际资金账户，转账和还款本金不计收支。</Text><Button size="mini" onClick={()=>changeScope({accountIds:[]})}>全部账户</Button>
+      {ledger.accounts.map((a: any) => <View key={a.id} className='finance-account'><Checkbox value={a.id} checked={selected.includes(a.id)} onClick={() => changeScope({accountIds:selected.includes(a.id) ? selected.filter(id => id !== a.id) : [...selected, a.id]})} /><Text>{a.label} · {a.currency}　{!selected.length || selected.includes(a.id) ? calculating ? '正在计算…' : '余额 '+money(view?.accountStats[a.id]?.balanceMinor)+'　支出 '+money(view?.accountStats[a.id]?.consumptionMinor)+'　收入 '+money(view?.accountStats[a.id]?.incomeMinor) : '未选入统计'}</Text><Button size='mini' onClick={() => { setImportAccount(a.id); setPreview(undefined); setFile(undefined); }}>导入到账户</Button></View>)}
       {!ledger.accounts.length && <Text>暂无金融账户，请先在桌面端新增账户。</Text>}
-      <View className='finance-dates'><Input type='text' placeholder='开始日期 YYYY-MM-DD' value={start} onInput={e => setStart(e.detail.value)} /><Input type='text' placeholder='结束日期 YYYY-MM-DD' value={end} onInput={e => setEnd(e.detail.value)} /></View>
+      <View className='finance-dates'><Input type='text' placeholder='开始日期 YYYY-MM-DD' value={start} onInput={e => changeScope({startDate:e.detail.value})} /><Input type='text' placeholder='结束日期 YYYY-MM-DD' value={end} onInput={e => changeScope({endDate:e.detail.value})} /></View>
+      {calculating && <Text>{calculationStatus}</Text>}
+      {view && <>
       {Object.entries(view.currencyTotals).map(([currency, v]: any) => <View key={currency} className='finance-row'><Text>{currency} 消费 {money(v.consumptionMinor)}　收入 {money(v.incomeMinor)}　现金流 {money(v.netCashFlowMinor)}</Text></View>)}
-      {view.transactions.some((t:any)=>t.statisticsExclusions?.length>0)&&<View><Text>{'部分平台记录可能与信用卡账单重叠，暂按银行账单计入收支。软件识别待完善仍有证据缺口，可在桌面端按分组查看；原始记录全部保留。'}</Text></View>}
-      {Object.entries(view.portfolioBalances).map(([currency,b]:any)=><View key={currency}><Text>{currency} {b.complete?'组合余额':'已知余额小计'} {money(b.knownCount?b.knownBalanceMinor:null)}；{b.unknownCount} 个账户待核对，{b.derivedCount} 个余额由已记录流水推算。</Text></View>)}
-      {(view.mortgages||[]).map((m:any)=><View key={m.financialAccountId}><Text>{m.label} 原贷款 {money(m.originalPrincipalMinor)}；剩余本金估算 {money(m.balanceMinor)}；最后已导入扣款 {m.asOf||'未知'}。估算与银行确认余额分开显示，完整本息依据可在桌面端查看。</Text></View>)}
-      <Text>收入与支出趋势</Text><View>{[['day','按日'],['week','按周'],['month','按月']].map(([key,label])=><Button key={key} size="mini" type={granularity===key?'primary':'default'} onClick={()=>setGranularity(key)}>{label}</Button>)}</View>
+      {view.hasStatisticsExclusions&&<View><Text>{'部分平台记录可能与信用卡账单重叠，暂按银行账单计入收支。软件识别待完善仍有证据缺口，可在桌面端按分组查看；原始记录全部保留。'}</Text></View>}
+      {Object.entries(view.portfolioBalances).map(([currency,b]:any)=><View key={currency}><Text>{currency} {b.complete?'组合余额':'已知余额小计'} {money(b.knownCount?b.knownBalanceMinor:null)}；{b.unknownCount} 个账户余额未知，{b.derivedCount} 个余额由已记录流水推算。</Text></View>)}
+      {(view.mortgages||[]).map((m:any)=><View key={m.financialAccountId}><Text>{m.label} 原贷款 {money(m.originalPrincipalMinor)}；{m.status==='actual_bank_statement'&&m.confidence==='actual_bank_statement'?'银行记录剩余本金':'剩余本金估算'} {money(m.balanceMinor)}；最后已导入扣款 {m.asOf||'未知'}。完整本息依据可在桌面端查看。</Text></View>)}
+      <Text>收入与支出趋势</Text><View>{[['day','按日'],['week','按周'],['month','按月']].map(([key,label])=><Button key={key} size="mini" type={granularity===key?'primary':'default'} onClick={()=>changeScope({granularity:key})}>{label}</Button>)}</View>
       {Object.keys(view.currencyTotals).map(currency=>{
-        const maximum=trend.reduce((m:any,r:any)=>['incomeMinor','consumptionMinor'].reduce((a,k)=>{const v=BigInt(r.values[currency]?.[k]||'0'),abs=v<0n?-v:v;return abs>a?abs:a;},m),1n);
-        return <View key={currency} style={{maxHeight:'420px',overflowY:'auto'}}><Text>{currency}（蓝色为收入，橙色为支出；负支出表示退款）</Text>{trend.map((r:any)=><View key={r.date} style={{margin:'12px 0'}}><Text>{r.date}</Text>{[['incomeMinor','收入','#1677ff'],['consumptionMinor','支出','#c7511f']].map(([key,label,color])=>{const v=BigInt(r.values[currency]?.[key]||'0'),width=Number((v<0n?-v:v)*10000n/maximum)/100;return <View key={key}><Text>{label} {money(v)}</Text><View style={{height:'8px',background:color,width:width+'%',minWidth:v===0n?'0':'2px'}} /></View>;})}</View>)}</View>;
+        const maximum=trend.reduce((m:any,r:any)=>['incomeMinor','consumptionMinor'].reduce((a,k)=>{const v=BigInt(r.values[currency]?.[k]||'0'),abs=v<BigInt(0)?-v:v;return abs>a?abs:a;},m),BigInt(1));
+        return <View key={currency} style={{maxHeight:'420px',overflowY:'auto'}}><Text>{currency}（蓝色为收入，橙色为支出；负支出表示退款）</Text>{trend.map((r:any)=><View key={r.date} style={{margin:'12px 0'}}><Text>{r.date}</Text>{[['incomeMinor','收入','#1677ff'],['consumptionMinor','支出','#c7511f']].map(([key,label,color])=>{const v=BigInt(r.values[currency]?.[key]||'0'),width=Number((v<BigInt(0)?-v:v)*BigInt(10000)/maximum)/100;return <View key={key}><Text>{label} {money(v)}</Text><View style={{height:'8px',background:color,width:width+'%',minWidth:v===BigInt(0)?'0':'2px'}} /></View>;})}</View>)}</View>;
       })}
       {Object.entries(view.categoryTotals).flatMap(([currency, rows]: any) => Object.entries(rows).map(([category, amount]: any) => <View className='finance-row' key={currency + category}><Text>{category || '未分类'} {currency} {money(amount)}　上期 {money(view.comparison?.previous.categoryTotals?.[currency]?.[category] || '0')}</Text></View>))}
       {Object.entries(view.fundingBreakdown || {}).map(([currency, v]: any) => <View className='finance-row' key={currency}><Text>{currency} 现金类消费 {money(v.cashFundedConsumptionMinor)}　信用类消费 {money(v.creditFundedConsumptionMinor)}　还款本金 {money(v.loanPrincipalPaidMinor)}　利息 {money(v.interestPaidMinor)}　费用 {money(v.feesPaidMinor)}　待拆分还款 {money(v.unsplitDebtPaymentMinor)}</Text></View>)}
       <Text>按账户与原因归并：{view.review.evidenceGroupCount} 组归属依据待确认，{view.review.softwareGroupCount} 组软件识别待完善，未知分类不直接判定为你的资料缺失；未解决的统计风险和原始记录继续保留。余额依据与已记录流水可用于正推或反推；未知余额保持空缺，不同币种分别统计。</Text>
+      </>}
       <Button disabled={!importAccount || busy} onClick={() => void readFile()}>{busy ? '正在处理…' : `选择账单${importAccount ? '（' + ledger.accounts.find((a: any) => a.id === importAccount)?.label + '）' : ''}`}</Button>
       {preview && <View><Text>{preview.provider} · {preview.records?.length || 0} 条 · 错误 {preview.errors?.length || 0}</Text>{[...(preview.errors || []), ...(preview.warnings || [])].map((w: any, i: number) => <View key={i}><Text>{w.message || w.code}</Text></View>)}{preview.records?.slice(0, 12).map((r: any, i: number) => <View key={i}><Text>{r.date} {r.description} {r.currency} {money(r.amountMinor)} {r.status}</Text></View>)}<Button disabled={busy || !!preview.errors?.length || !preview.records?.length} onClick={() => void submit()}>确认整批导入</Button></View>}
     </>}
