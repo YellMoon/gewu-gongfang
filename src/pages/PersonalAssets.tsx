@@ -187,6 +187,10 @@ const PersonalAssets: React.FC = () => {
 
   return (
     <div>
+      <PersonalFinancePanel />
+      <details style={{ marginTop: 24 }}>
+        <summary style={{ cursor: 'pointer', padding: '12px 0', fontSize: 16 }}>手工及历史记录</summary>
+        <p style={{ color: '#595959' }}>以下保留手工及旧版记录的查询、编辑和导出，统计范围与上方资产账本分别展示。</p>
       {/* ===== Summary Cards ===== */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}>
@@ -249,11 +253,7 @@ const PersonalAssets: React.FC = () => {
             </Space>
           </Col>
           <Col flex="auto">
-            <Tabs activeKey={tabKey} onChange={setTabKey} size="small">
-              <Tabs.TabPane tab="全部" key="all" />
-              <Tabs.TabPane tab="收入" key="income" />
-              <Tabs.TabPane tab="支出" key="expense" />
-            </Tabs>
+            <Tabs activeKey={tabKey} onChange={setTabKey} size="small" items={[{key:'all',label:'全部'},{key:'income',label:'收入'},{key:'expense',label:'支出'}]}/>
           </Col>
           <Col>
             <Space>
@@ -335,7 +335,7 @@ const PersonalAssets: React.FC = () => {
         open={modalVisible}
         onOk={handleSaveRecord}
         onCancel={() => { setModalVisible(false); setEditingRecord(null); form.resetFields(); }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical">
           <Form.Item name="date" label="日期" rules={[{ required: true }]}>
@@ -372,8 +372,7 @@ const PersonalAssets: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* ===== Auto Import Section ===== */}
-      <PersonalFinancePanel />
+      </details>
 
       {/* ===== Category Management Modal ===== */}
       <Modal
@@ -382,10 +381,9 @@ const PersonalAssets: React.FC = () => {
         onCancel={() => { setCatModalVisible(false); catForm.resetFields(); }}
         footer={null}
         width={500}
-        destroyOnClose
+        destroyOnHidden
       >
-        <Tabs>
-          <Tabs.TabPane tab="收入分类" key="income">
+        <Tabs items={[{key:'income',label:'收入分类',children:<>
             {incomeCat.map((c, index) => (
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
                 <span>{index + 1}. <Tag color={c.color || '#1890ff'}>{c.name}</Tag></span>
@@ -396,8 +394,7 @@ const PersonalAssets: React.FC = () => {
                 )}
               </div>
             ))}
-          </Tabs.TabPane>
-          <Tabs.TabPane tab="支出分类" key="expense">
+          </>},{key:'expense',label:'支出分类',children:<>
             {expenseCat.map((c, index) => (
               <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #f0f0f0' }}>
                 <span>{index + 1}. <Tag color={c.color || '#cf1322'}>{c.name}</Tag></span>
@@ -408,8 +405,7 @@ const PersonalAssets: React.FC = () => {
                 )}
               </div>
             ))}
-          </Tabs.TabPane>
-        </Tabs>
+          </>}]} />
         <Divider />
         <Form form={catForm} layout="inline" onFinish={handleSaveCategory}>
           <Form.Item name="name" rules={[{ required: true, message: '请输入分类名称' }]}>

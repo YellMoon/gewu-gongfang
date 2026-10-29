@@ -1,0 +1,22 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),{parseJiebeiLoanProof}=require('./jiebeiLoanProof'),{validateRecord}=require('../../shared/personal-finance/ledger');
+function fixture(){return [
+ ['\u4e1a\u52a1\u8bc1\u660e\uff08\u501f\u8fd8\u6b3e\u8bb0\u5f55\uff09'],['\u5ba2\u6237\u4fe1\u606f'],['\u501f\u6b3e\u59d3\u540d','\u6d4b\u8bd5\u7528\u6237','\u8eab\u4efd\u8bc1\u53f7','110101199001010011'],['\u501f\u6b3e\u91d1\u989d','10000.00','\u501f\u6b3e\u65f6\u95f4','2018-01-01 12:00:00'],['\u653e\u6b3e\u673a\u6784','Synthetic Lender'],['\u4fe1\u606f\u83b7\u53d6\u65f6\u95f4','2026-10-22 01:00:00'],['\u6d41\u6c34\u4fe1\u606f'],['\u672c\u91d1\u4f59\u989d','\u4ea4\u6613\u603b\u91d1\u989d','\u4ea4\u6613\u65f6\u95f4','\u5907\u6ce8'],['10000.00','10000.00','2018-01-01 12:00:00','\u653e\u6b3e\u6210\u529f'],['6000.00','4010.00','2018-01-02 12:00:00','\u8fd8\u6b3e\u6210\u529f'],['0.00','6020.00','2018-01-03 12:00:00','\u8fd8\u6b3e\u6210\u529f'],['\u672c\u8bc1\u660e\u4ec5\u4f9b\u6d4b\u8bd5'],['\u8682\u8681\u667a\u4fe1\uff08\u676d\u5dde\uff09\u4fe1\u606f\u6280\u672f\u6709\u9650\u516c\u53f8']];}
+test('original balances yield exact principal reductions and combined costs without storing identity numbers',()=>{
+ const p=parseJiebeiLoanProof(fixture());assert.deepEqual(p.errors,[]);assert.equal(p.records.length,3);p.records.forEach(validateRecord);assert.deepEqual(p.records.map(r=>r.loanProof.principalMinor),['1000000','400000','600000']);assert.deepEqual(p.records.map(r=>r.loanProof.financingCostMinor),['0','1000','2000']);assert(!JSON.stringify(p).includes('110101199001010011'));assert.equal(p.records[1].interestMinor,null,'proof does not separately identify interest and fees');
+ const other=fixture();other[4][1]='Other Lender';assert.equal(parseJiebeiLoanProof(other).records[0].loanProof.loanKey,p.records[0].loanProof.loanKey,'same borrower, amount and exact draw time identify the economic loan; issuer remains evidence');
+});
+test('missing rows, increasing principal and malformed time reject the entire proof',()=>{
+ for(const mutate of [r=>r.splice(8,1),r=>r[9][0]='11000.00',r=>r[9][1]='3999.00',r=>r[9][2]='2018-02-30 12:00:00',r=>r[9][3]='unknown']){const rows=fixture();mutate(rows);const p=parseJiebeiLoanProof(rows);assert(p.errors.length);assert.equal(p.records.length,0);}
+});
+test('encrypted PDF decoder accepts a supplied password and distinguishes a wrong password',async()=>{
+ const PDF=require('pdfkit'),{parseBillFile}=require('./billFileDecoder'),doc=new PDF({userPassword:'synthetic-secret',ownerPassword:'synthetic-owner',margin:0}),chunks=[],done=new Promise(resolve=>{doc.on('data',c=>chunks.push(c));doc.on('end',()=>resolve(Buffer.concat(chunks)));});
+ [['date','type','amount','category','note'],['2026-10-01','expense','1.25','test','synthetic']].forEach((r,i)=>r.forEach((s,j)=>doc.fontSize(10).text(s,20+j*110,40+i*22,{lineBreak:false})));doc.end();const buffer=await done;
+ const valid=await parseBillFile({filename:'synthetic.pdf',buffer,password:'synthetic-secret'});assert.deepEqual(valid.errors,[]);assert.equal(valid.records[0].amountMinor,'125');const bad=await parseBillFile({filename:'synthetic.pdf',buffer,password:'wrong'});assert.equal(bad.errors[0].code,'BILL_PDF_PASSWORD_INVALID');
+});
+module.exports={fixture};
+test('wrapped lender text around a vertically centered label retains the complete source name without changing monetary evidence',()=>{
+ const rows=fixture(),name='\u91cd\u5e86\u5e02\u8682\u8681\u5546\u8bda\u4fe1\u606f\u6280\u672f\u6709\u9650\u516c\u53f8(\u539f\u91cd\u5e86\u5e02\u8682\u8681\u5546\u8bda\u5c0f\u989d\u8d37\u6b3e\u6709\u9650\u516c\u53f8)';
+ rows.splice(4,1,[name.slice(0,-2)],['\u653e\u6b3e\u673a\u6784'],['\u53f8\uff09']);const parsed=parseJiebeiLoanProof(rows),normal=parseJiebeiLoanProof(fixture());assert.deepEqual(parsed.errors,[]);assert.equal(parsed.records[0].loanProof.lender,name);assert(parsed.records.every(r=>r.counterparty===name));assert.deepEqual(parsed.records.map(r=>[r.sourceTransactionId,r.amountMinor,r.loanProof.loanKey,r.loanProof.principalMinor,r.loanProof.financingCostMinor]),normal.records.map(r=>[r.sourceTransactionId,r.amountMinor,r.loanProof.loanKey,r.loanProof.principalMinor,r.loanProof.financingCostMinor]));
+ rows[4]=['Unrelated text'];const rejected=parseJiebeiLoanProof(rows);assert.equal(rejected.records.length,0);assert.equal(rejected.errors[0].code,'BILL_LOAN_PROOF_LENDER_INCOMPLETE');
+});

@@ -7,6 +7,9 @@ const {parseHangzhouPdf}=require('./hangzhouStatement');
 const {validateRecord}=require('../../shared/personal-finance/ledger');
 const {resolveBankAccount}=require('./bankAccountResolution');
 const html=(bank,rows)=>'<html><body>'+bank+'<table>'+rows.map(r=>'<tr>'+r.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table></body></html>';
+test('an ambiguous credit receipt remains actual card cash rather than a refund or noncash authorization',()=>{
+ for(const description of ['\u4ee3\u53d1\u6b3e\u9879','\u652f\u4ed8\u5b9d']){const p=require('./creditBankStatements').assemble({provider:'bocom',detailOnly:true,balances:[],transactions:[{tail:'1234',trade:'2015-01-01',posted:'2015-01-01',description,amount:-1000n,credit:true}]});assert.equal(p.records[0].kind,'unknown');assert.equal(p.records[0].direction,'credit');assert.equal(p.records[0].bankStatement.nonCash,false);validateRecord(p.records[0]);}
+});
 const cz=html('95527@message.czbank.com',[
  ['\u4fe1\u7528\u989d\u5ea6','\u6700\u4f4e\u8fd8\u6b3e\u989d','\u8d26\u5355\u65e5','\u5230\u671f\u8fd8\u6b3e\u65e5'],['Credit Limit','Min.Payment','Statement Date','Payment Due Date'],['1000','1.00','20261010','20261027'],
  ['\uffe580.00','=','\uffe5100.00','-','\uffe550.00','+','\uffe530.00','+','\uffe50.00','+','\uffe50.00'],
@@ -73,10 +76,25 @@ test('Hangzhou PDF validates high-page-position rows, trimmed dates, sequence an
  const items=[{x:10,y:820,str:'\u676d\u5dde\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6 \u8d77\u6b62\u65f6\u95f4:2026.10.01-2026.10.19 \u8d26\u53f7:6220000000001234 \u6237\u540d:Test\u5e01\u79cd:CNY'}];
  for(const [i,day,amount,balance,description]of [[1,'2026-10-02 ','-10.00','90.00','\u6d88\u8d39'],[2,'2026-10-03','5.00','95.00','\u5229\u606f']])for(const[x,str]of [[20,String(i)],[60,day],[120,amount],[180,balance],[245,description],[355,'6220000000005678'],[470,'Bank']])items.push({x,y:790-i*25,str});
  items.push({x:10,y:20,str:'\u6536\u5165\u5408\u8ba1:5.00 \u652f\u51fa\u5408\u8ba1:10.00'});
- const r=parseHangzhouPdf([{number:1,items}]);assert.deepEqual(r.errors,[]);assert.equal(r.records.length,2);r.records.forEach(validateRecord);assert.equal(r.records[0].date,'2026-10-02');assert.equal(r.records[0].kind,'expense');assert.equal(r.records[1].kind,'income');assert.equal(r.records[1].statementFlow.periodEnd,'2026-10-20');
+ const r=parseHangzhouPdf([{number:1,items}]);assert.deepEqual(r.errors,[]);assert.deepEqual(r.statementOwner,{schema:'bank-statement-owner-v1',fullName:'Test'});assert.equal(r.records.length,2);r.records.forEach(validateRecord);assert.equal(r.records[0].date,'2026-10-02');assert.equal(r.records[0].kind,'expense');assert.equal(r.records[1].kind,'income');assert.equal(r.records[1].statementFlow.periodEnd,'2026-10-20');
  const changed=items.map(x=>x.str==='95.00'?{...x,str:'94.00'}:x);assert.equal(parseHangzhouPdf([{number:1,items:changed}]).errors[0].code,'BILL_BANK_BALANCE_CHAIN_INVALID');
 });
 
+test('Hangzhou first data row close to the header excludes column labels and still validates totals',()=>{
+ const items=[{x:10,y:800,str:'\u676d\u5dde\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6 \u8d77\u6b62\u65f6\u95f4:2014.02.01-2014.02.28 \u8d26\u53f7:6220000000001234 \u6237\u540d:Test\u5e01\u79cd:CNY'}];
+ for(const[x,str]of [[25,'\u5e8f\u53f7'],[58,'\u8bb0\u8d26\u65e5\u671f'],[127,'\u53d1\u751f\u989d'],[198,'\u4f59\u989d'],[250,'\u6458\u8981/\u5907\u6ce8']])items.push({x,y:697.44,str});
+ for(const[x,str]of [[35,'1'],[62,'2014-02-08'],[133,'500.00'],[198,'500.00'],[250,'\u73b0\u91d1'],[355,'6220000000001234'],[470,'Bank']])items.push({x,y:684.52,str});
+ items.push({x:10,y:20,str:'\u6536\u5165\u5408\u8ba1:500.00 \u652f\u51fa\u5408\u8ba1:0.00'});
+ const r=parseHangzhouPdf([{number:1,items}]);assert.deepEqual(r.errors,[]);assert.equal(r.records[0].amountMinor,'50000');assert.equal(r.records[0].balanceMinor,'50000');assert.equal(r.records[0].description,'\u73b0\u91d1');
+ const broken=items.map(i=>i.str==='\u6536\u5165\u5408\u8ba1:500.00 \u652f\u51fa\u5408\u8ba1:0.00'?{...i,str:'\u6536\u5165\u5408\u8ba1:499.00 \u652f\u51fa\u5408\u8ba1:0.00'}:i);assert.equal(parseHangzhouPdf([{number:1,items:broken}]).errors[0].code,'BILL_BANK_TOTAL_INVALID');
+});
+test('Hangzhou net totals require an adjacent explicitly referenced reversal pair, preserving its cash and later retry',()=>{
+ const items=[{x:10,y:820,str:'\u676d\u5dde\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6 \u8d77\u6b62\u65f6\u95f4:2017.07.01-2017.07.31 \u8d26\u53f7:6220000000001234 \u6237\u540d:Test\u5e01\u79cd:CNY'}];
+ for(const [i,amount,balance,description]of [[1,'-50.00','50.00','\u6c47\u5151/\u5b66\u8d39'],[2,'50.00','100.00','\u6c47\u5151\u53cd/\u51b2\u8d26,\u539f\u6d41\u6c34\u53f72017070312345678'],[3,'-50.00','50.00','\u6c47\u5151/\u5b66\u8d39']])for(const[x,str]of [[20,String(i)],[60,'2017-07-03'],[120,amount],[180,balance],[245,description],[355,'6220000000005678'],[470,'Merchant']])items.push({x,y:790-i*25,str});
+ items.push({x:24,y:700,str:'\u652f\u51fa\u5408\u8ba1:50.00'},{x:250,y:700,str:'\u6536\u5165\u5408\u8ba1:0.00'});
+ const r=parseHangzhouPdf([{number:1,items}]);assert.deepEqual(r.errors,[]);assert.equal(r.records.length,3);assert.equal(r.records[0].kind,'transfer');assert.equal(r.records[1].kind,'transfer');assert.equal(r.records[0].rawFields.reversalPairSourceTransactionId,r.records[1].sourceTransactionId);assert.equal(r.records[2].description,'\u6c47\u5151/\u5b66\u8d39');assert.equal(r.records[2].rawFields.reversalPairSourceTransactionId,undefined);assert.equal(r.records.reduce((n,o)=>n+BigInt(o.statementFlow.incomeMinor)-BigInt(o.statementFlow.expenseMinor),0n),-5000n);
+ for(const change of [xs=>xs.find(i=>i.str.includes('\u539f\u6d41\u6c34')).str='Unexplained credit',xs=>xs.find(i=>i.str.includes('\u539f\u6d41\u6c34')).str='\u6c47\u5151\u53cd/\u51b2\u8d26,\u539f\u6d41\u6c34\u53f72017070412345678',xs=>xs.find(i=>i.str==='6220000000005678'&&i.y===740).str='6220000000009999']){const bad=structuredClone(items);change(bad);assert.equal(parseHangzhouPdf([{number:1,items:bad}]).errors[0].code,'BILL_BANK_TOTAL_INVALID');}
+});
 test('CITIC layout spacer cells cannot turn the card tail into the transaction description',()=>{
  const r=parseCreditBankHtml(html('\u4e2d\u4fe1\u94f6\u884c\u4fe1\u7528\u5361 2026\u5e7410\u670818\u65e5\u8d26\u6237\u53d8\u52a8\u4fe1\u606f',[
  ['','621000****1234','RMB','100.00','50.00','20.00','70.00','3.50'],['','2026-10-08','2026-10-08','1234','\u652f\u4ed8\u5b9d\u8fd8\u6b3e','RMB','-50.00','RMB','-50.00'],['','2026-10-09','2026-10-09','1234','Books','RMB','20.00','RMB','20.00']]));

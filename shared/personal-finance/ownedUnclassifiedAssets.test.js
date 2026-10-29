@@ -1,0 +1,14 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),{buildFinanceView}=require('./ledger');
+const account=(id,type,extra={})=>({id,label:id,provider:'bank',type,currency:'CNY',status:'active',openingBalanceMinor:null,openingDate:null,...extra});
+const row=(id,extra={})=>({id,financialAccountId:'bank',sourceTransactionId:id,provider:'ccb',date:'2019-01-21',occurredAt:'2019-01-21T23:59:59+08:00',amountMinor:'5000000',currency:'CNY',status:'completed',direction:'debit',kind:'unknown',description:'Direct banking',counterparty:'Direct bank',category:'',paymentChannel:'',paymentAccountHint:'',balanceMinor:null,principalMinor:null,interestMinor:null,feeMinor:null,relatedReference:'',rawFields:{},...extra});
+const fixture=()=>({accounts:[account('bank','debit_card'),account('direct','other')],observations:[row('one'),row('two'),row('three'),row('four')],annotations:['one','two','three','four'].map((id,i)=>({id:'annotation-'+id,observationId:id,revision:String(i+1),patch:{kind:'transfer',category:'\u672c\u4eba\u8d26\u6237\u5212\u8f6c\uff1adirect'}})),links:[],imports:[],balanceSnapshots:[]});
+test('explicit owned unclassified assets receive all distinct transfers without invented cash, consumption or opening balances',()=>{
+ const l=fixture(),original=JSON.stringify(l),v=buildFinanceView(l);assert.equal(v.transactions.length,4);assert.equal(v.review.transactionCount,0);assert.equal(v.accountStats.direct.balanceMinor,null);assert.equal(v.accountStats.direct.cashInMinor,'0');assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');for(const t of v.transactions){assert.equal(t.balanceEffects.bank,'-5000000');assert.equal(t.balanceEffects.direct,'5000000');assert(t.financialAccountIds.includes('direct'));}assert.equal(JSON.stringify(l),original);
+});
+test('missing ownership, ambiguous labels, currency mismatch and unsupported investment targets cannot generate balance legs',()=>{
+ for(const change of [l=>l.annotations=[],l=>l.accounts.push(account('duplicate','other',{label:'direct'})),l=>l.accounts[1].currency='USD',l=>l.accounts[1].type='investment',l=>l.accounts[1].status='archived']){const l=fixture();change(l);for(const t of buildFinanceView(l).transactions)assert.equal(t.balanceEffects.direct,undefined);}
+});
+test('an existing actual counter receipt prevents a second derived balance leg',()=>{
+ const l=fixture();l.observations=[l.observations[0],row('receipt',{financialAccountId:'direct',provider:'bank',direction:'credit',kind:'transfer'})];l.annotations=l.annotations.slice(0,1);const v=buildFinanceView(l);assert.equal(v.transactions.find(t=>t.observationIds.includes('one')).balanceEffects.direct,undefined);assert.equal(v.transactions.find(t=>t.observationIds.includes('receipt')).balanceEffects.direct,'5000000');
+});

@@ -1,0 +1,14 @@
+'use strict';
+const PURPOSE='\u4fe1\u7528\u5361\u5468\u8f6c\u5230\u8d26\uff08\u7528\u6237\u786e\u8ba4\uff0c\u6263\u6b3e\u5361\u53ca\u624b\u7eed\u8d39\u5f85\u6838\u5bf9\uff09';
+const KNOWN_FEE_PURPOSE='\u4fe1\u7528\u5361\u5468\u8f6c\u5230\u8d26\uff08\u7528\u6237\u786e\u8ba4\uff0c\u6263\u6b3e\u5361\u5f85\u6838\u5bf9\uff0c\u624b\u7eed\u8d39\u89c1\u539f\u4ef6\uff09';
+const isConfirmedPosCashAdvanceAnnotation=a=>a.patch?.kind==='loan_drawdown'&&[PURPOSE,KNOWN_FEE_PURPOSE].includes(a.patch.category);
+function explicitPosSettlementFee(record,sources,annotations,accounts,observations=[]){
+ if(record.kind!=='loan_drawdown'||record.status!=='completed'||record.direction!=='credit'||record.currency!=='CNY'||!annotations.some(isConfirmedPosCashAdvanceAnnotation))return null;
+ const latest=new Map();for(const s of sources){const key=JSON.stringify([s.financialAccountId,s.provider,s.sourceIdentity||s.id]);if(!latest.has(key)||(s.sourceVersionOrdinal||0)>(latest.get(key).sourceVersionOrdinal||0))latest.set(key,s);}if(latest.size!==1)return null;const source=[...latest.values()][0],bank=accounts.find(a=>a.id===source.financialAccountId);
+ if(source.provider!=='hangzhou'||source.status!=='completed'||source.direction!=='credit'||source.statementFlow?.schema!=='hangzhou-debit-v1'||source.amountMinor!==record.amountMinor||bank?.status!=='active'||bank.type!=='debit_card'||bank.currency!=='CNY'||source.counterparty!=='\u6613\u751f\u652f\u4ed8\u6709\u9650\u516c\u53f8'||source.rawFields?.description!==source.description||source.rawFields?.counterparty!==source.counterparty||source.statementFlow.incomeMinor!==source.amountMinor||source.statementFlow.expenseMinor!=='0')return null;
+ const matches=[...source.description.matchAll(/pos\u624b\u7eed\u8d39(\d+\.\d{2})\u5143/gi)];if(matches.length!==1||!source.description.startsWith('\u94f6\u8054\u5165\u8d26/'))return null;
+ const fee=BigInt(matches[0][1].replace('.','')),net=BigInt(source.amountMinor);if(fee<=0n||net<=0n||fee>net||source.feeMinor!=null&&source.feeMinor!=='0'&&BigInt(source.feeMinor)!==fee)return null;
+ const sourceIds=new Set(sources.map(s=>s.id));if(observations.some(o=>!sourceIds.has(o.id)&&o.status==='completed'&&o.direction==='debit'&&o.financialAccountId===bank.id&&o.date===source.date&&o.currency==='CNY'&&o.amountMinor===String(fee)&&o.kind==='fee'))return null;
+ return{method:'explicit_pos_statement_fee',confidence:'explicit_bank_statement',sourceObservationId:source.id,date:source.date,receivingAccountId:bank.id,netMinor:String(net),feeMinor:String(fee),computedGrossMinor:String(net+fee),grossBasis:'net_plus_explicit_statement_fee',cardChargeIndependentlyVerified:false,feeFundingAccountStatus:'unidentified_credit_card',fundingAccountId:null,originalFeeText:matches[0][0]};
+}
+module.exports={explicitPosSettlementFee,isConfirmedPosCashAdvanceAnnotation};

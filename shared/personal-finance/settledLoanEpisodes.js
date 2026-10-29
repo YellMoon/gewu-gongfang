@@ -1,0 +1,38 @@
+'use strict';
+const invalid=()=>{throw Object.assign(new Error('CLOUD_PERSONAL_FINANCE_SETTLED_LOAN_EPISODES_INVALID'),{code:'CLOUD_PERSONAL_FINANCE_SETTLED_LOAN_EPISODES_INVALID'});};
+const id=v=>typeof v==='string'&&v.length>0&&v.length<=512;
+function validateSettledLoanEpisodes(v){
+ if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).some(k=>!['schema','sourceAccountId','ownerConfirmedSettledAt','episodes'].includes(k))||v.schema!=='settled-loan-episodes-v1'||!id(v.sourceAccountId)||typeof v.ownerConfirmedSettledAt!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(v.ownerConfirmedSettledAt)||Number.isNaN(Date.parse(v.ownerConfirmedSettledAt))||!Array.isArray(v.episodes)||!v.episodes.length||v.episodes.length>128)invalid();
+ const used=new Set();for(const e of v.episodes){if(!e||typeof e!=='object'||Array.isArray(e)||Object.keys(e).some(k=>!['drawdownObservationId','repaymentObservationId'].includes(k))||!id(e.drawdownObservationId)||!id(e.repaymentObservationId)||e.drawdownObservationId===e.repaymentObservationId||used.has(e.drawdownObservationId)||used.has(e.repaymentObservationId))invalid();used.add(e.drawdownObservationId);used.add(e.repaymentObservationId);}return v;
+}
+function buildSettledLoanEpisodes(accounts,observations,{annotatedIds=new Set(),links=[],balanceSnapshots=[]}={}){
+ const byId=new Map(observations.map(o=>[o.id,o])),identity=o=>JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.id]),latest=new Map(),claimed=new Map();
+ for(const o of observations){const k=identity(o);if(!latest.has(k)||(o.sourceVersionOrdinal||0)>(latest.get(k).sourceVersionOrdinal||0))latest.set(k,o);}
+ for(const a of accounts)if(a.settledLoanEpisodes){validateSettledLoanEpisodes(a.settledLoanEpisodes);for(const e of a.settledLoanEpisodes.episodes)for(const key of ['drawdownObservationId','repaymentObservationId']){const o=byId.get(e[key]);if(!o)continue;const k=identity(o);if(!claimed.has(k))claimed.set(k,new Set());claimed.get(k).add(a.id);}}
+ const active=links.filter(l=>l.status!=='deleted'),activePairs=new Set(active.map(l=>[...l.observationIds].sort().join('|'))),veto=links.filter(l=>l.status!=='deleted'&&['distinct','group_distinct'].includes(l.type)||l.status==='deleted'&&l.type==='duplicate'&&!activePairs.has([...l.observationIds].sort().join('|')));
+ const annotated=new Set([...annotatedIds].map(id=>byId.get(id)).filter(Boolean).map(identity)),results=[];
+ for(const a of accounts){if(!a.settledLoanEpisodes||a.sourceProduct==='alipay_jiebei')continue;const config=a.settledLoanEpisodes,source=accounts.find(s=>s.id===config.sourceAccountId),model={financialAccountId:a.id,sourceAccountId:config.sourceAccountId,loanType:'settled_short_loan_episodes',status:'requires_review',periods:[],drawdowns:[],balanceEvents:[],originalPrincipalMinor:'0',financingCostMinor:'0',remainingPrincipalMinor:null,ownerConfirmedSettledAt:config.ownerConfirmedSettledAt,confidence:'inferred_source_history',issues:[]};results.push(model);
+  if(a.type!=='loan'||a.sourceProduct!=='webank_weilidai'||a.currency!=='CNY'||source?.status!=='active'||source.type!=='debit_card'||source.currency!==a.currency||a.id===source.id){model.issues.push({reason:'source_account_invalid'});continue;}
+  let calibration=null;const episodes=[];
+  for(const e of config.episodes){const originalDraw=byId.get(e.drawdownObservationId),originalPay=byId.get(e.repaymentObservationId),d=originalDraw&&latest.get(identity(originalDraw)),p=originalPay&&latest.get(identity(originalPay));
+   if(!d||!p||[d,p].some(o=>o.financialAccountId!==source.id||o.currency!==a.currency||o.status!=='completed'||!o.statementFlow||annotated.has(identity(o))||claimed.get(identity(o))?.size!==1)||d.direction!=='credit'||p.direction!=='debit'||Date.parse(p.occurredAt)>Date.parse(config.ownerConfirmedSettledAt)){model.issues.push({reason:'source_or_owner_conflict'});continue;}
+   const keys=new Set([identity(d),identity(p)]);if(veto.some(l=>{const ids=l.observationIds.map(id=>byId.get(id)).filter(Boolean).map(identity);return l.type==='group_distinct'?ids.some(k=>keys.has(k)):ids.length===l.observationIds.length&&ids.every(k=>keys.has(k));})){model.issues.push({reason:'owner_rejected_pair'});continue;}
+   const purpose=[d.description,d.counterparty].join(' '),repayment=[p.description,p.counterparty].join(' '),explicit=/\u5fae\u7c92\u8d37/.test(purpose),clearing=/\u5fae\u4f17\u94f6\u884c\(\u8d44\u91d1\u6e05\u7b97\)/.test(purpose),days=(Date.parse(p.date)-Date.parse(d.date))/86400000,principal=BigInt(d.amountMinor),paid=BigInt(p.amountMinor),cost=paid-principal;
+   if(!/\u5fae\u7c92\u8d37/.test(repayment)||!explicit&&!clearing||!Number.isInteger(days)||days<=0||days>366||principal<=0n||cost<0n){model.issues.push({reason:'loan_purpose_or_amount_conflict'});continue;}
+   if([...latest.values()].some(o=>o.id!==d.id&&o.financialAccountId===source.id&&o.status==='completed'&&o.direction==='credit'&&o.date===d.date&&o.amountMinor===d.amountMinor&&/\u5fae\u4f17|\u5fae\u7c92\u8d37/.test(o.description+' '+o.counterparty))){model.issues.push({reason:'ambiguous_drawdown'});continue;}
+   const episode={d,p,days,principal,cost,explicit};episodes.push(episode);if(explicit){if(!calibration)calibration=episode;else if(cost*calibration.principal*BigInt(calibration.days)!==calibration.cost*principal*BigInt(days))model.issues.push({reason:'daily_financing_rate_conflict'});}
+  }
+  if(episodes.length!==config.episodes.length||!calibration||model.issues.length)continue;
+  for(const e of episodes)if(!e.explicit&&e.cost*calibration.principal*BigInt(calibration.days)!==calibration.cost*e.principal*BigInt(e.days))model.issues.push({reason:'clearing_origin_not_calibrated'});
+  if(model.issues.length)continue;
+  episodes.sort((a,b)=>a.d.date.localeCompare(b.d.date));
+  model.drawdowns=episodes.map(e=>({observationId:e.d.id,principalMinor:String(e.principal),date:e.d.date,purposeConfidence:e.explicit?'explicit_loan_name':'inferred_origin_and_calibrated_cost'}));
+  model.periods=episodes.map(e=>({date:e.p.date,amountMinor:e.p.amountMinor,principalMinor:String(e.principal),financingCostMinor:String(e.cost),observationIds:[e.p.id],drawdownObservationId:e.d.id,days:e.days,purposeConfidence:e.explicit?'explicit_loan_name':'inferred_origin_and_calibrated_cost'}));
+  model.balanceEvents=episodes.flatMap(e=>[{date:e.d.date,deltaMinor:String(e.principal)},{date:e.p.date,deltaMinor:String(-e.principal)}]).sort((a,b)=>a.date.localeCompare(b.date));let balance=0n;for(const event of model.balanceEvents){balance+=BigInt(event.deltaMinor);event.balanceMinor=String(balance);}
+  model.originalPrincipalMinor=String(episodes.reduce((s,e)=>s+e.principal,0n));model.financingCostMinor=String(episodes.reduce((s,e)=>s+e.cost,0n));model.remainingPrincipalMinor='0';model.balanceMinor='0';model.status='reconciled_settled';model.derivedDailyRate={numerator:String(calibration.cost),denominator:String(calibration.principal*BigInt(calibration.days)),basis:'observed_total_financing_cost_not_bank_interest_field'};
+  model.lifetimeFinancingCostMinor=model.financingCostMinor;model.totalPaidMinor=String(BigInt(model.originalPrincipalMinor)+BigInt(model.financingCostMinor));model.asOf=model.balanceEvents.at(-1).date;model.costClassification='interest_or_financing_fee';model.userConfirmedFacts=['settled'];model.sourceObservationIds=episodes.flatMap(e=>[e.d.id,e.p.id]);
+ }
+ results.push(...require('./jiebeiCashflowPairs').buildJiebeiCashflowPairs(accounts,observations,{annotatedIds,links,balanceSnapshots}));
+ return results;
+}
+module.exports={validateSettledLoanEpisodes,buildSettledLoanEpisodes};

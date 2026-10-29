@@ -24,6 +24,7 @@ test('CCB debit rows validate signed cash, totals, running balances, explicit pu
  assert.deepEqual(result.errors,[]);assert.equal(result.records.length,6);
  assert.deepEqual(result.records.map(o=>o.kind),['unknown','expense','expense','income','refund','fee']);
  assert.deepEqual(result.accountIdentity,{provider:'\u5efa\u8bbe\u94f6\u884c',type:'debit_card',maskedIdentifier:'6943',currency:'CNY'});
+ assert.deepEqual(result.statementOwner,{schema:'bank-statement-owner-v1',fullName:'\u6d4b\u8bd5\u7528\u6237'});
  assert.equal(result.records[0].statementFlow.openingBeforeFirstMinor,'100000');
  assert.equal(result.records.at(-1).balanceMinor,'100920');
  assert.equal(result.records[1].amountMinor,'10000');assert.equal(result.records[1].direction,'debit');

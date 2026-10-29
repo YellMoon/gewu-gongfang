@@ -2,6 +2,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {statisticsState,trendGranularity,boundedObservationOptions,accountLabel,evidenceLabel}=require('./personalFinancePresentation');
 const tx=(patch={})=>({status:'completed',kind:'expense',amountMinor:'10000',incomeMinor:'0',consumptionMinor:'0',sources:[],...patch});
+
+test('zero-valued investment evidence remains a confirmation instead of a zero cash transaction',()=>{
+ const t=tx({amountMinor:'0',investmentConfirmations:[{id:'confirmation'}]}),before=JSON.stringify(t);
+ assert.equal(statisticsState(t).key,'neutral');
+ assert.equal(statisticsState(t).label,'\u786e\u8ba4\u51ed\u8bc1');
+ assert.equal(statisticsState({...t,consumptionMinor:'123'}).key,'counted');
+ assert.equal(JSON.stringify(t),before);
+});
 test('zero statistics have distinct explanations without changing original money',()=>{
  const original=tx({amountMinor:'0',sources:[{paymentChannel:'\u5355\u8f66\u9a91\u884c\u5361\u62b5\u6263'}]});
  assert.deepEqual(statisticsState(original),{key:'zero',label:'\u539f\u8d26\u5355\u96f6\u91d1\u989d',detail:'\u539f\u4ed8\u6b3e\u65b9\u5f0f\uff1a\u5355\u8f66\u9a91\u884c\u5361\u62b5\u6263'});
@@ -66,6 +74,15 @@ test('batch bank evidence explains its zero consumption without being marked unr
 });
 
 test('legacy WeChat refunds disclose the missing settlement without calling them completed or failed',()=>{
- const s=statisticsState({provider:'wechat',status:'pending',rawFields:{'\u5f53\u524d\u72b6\u6001':'\u5df2\u8f6c\u5165\u9000\u6b3e'}});assert.equal(s.key,'review');assert.ok(s.detail.includes('\u672a\u62ab\u9732\u9000\u6b3e\u5230\u8d26\u91d1\u989d\u548c\u65f6\u95f4'));
+ const s=statisticsState({provider:'wechat',status:'pending',rawFields:{'\u5f53\u524d\u72b6\u6001':'\u5df2\u8f6c\u5165\u9000\u6b3e'}});assert.equal(s.key,'review');assert.ok(s.detail.includes('\u5c1a\u7f3a\u9000\u6b3e\u5230\u8d26\u51ed\u8bc1'));
 });
 
+
+test('a completed fully refunded transfer uses ledger review evidence rather than an isolated final-state label',()=>{
+ const t=tx({provider:'wechat',kind:'transfer',direction:'debit',paymentChannel:'\u96f6\u94b1',rawFields:{'\u5f53\u524d\u72b6\u6001':'\u5df2\u5168\u989d\u9000\u6b3e'}});
+ assert.equal(statisticsState(t).key,'neutral');const state=statisticsState(t,['legacy_refund_settlement_unknown']);assert.equal(state.key,'review');assert.equal(state.label,'\u5386\u53f2\u9000\u6b3e\u5f85\u6838\u5b9e');
+});
+
+test('known repayment card with an unknown gross receipt explains the remaining uncertainty while keeping cash statistics',()=>{
+ const state=statisticsState(tx({kind:'debt_payment'}),['credit_repayment_received_amount_unknown']);assert.equal(state.key,'review');assert.equal(state.label,'\u8fd8\u6b3e\u5230\u8d26\u989d\u4e0e\u4f18\u60e0\u5dee\u989d\u5f85\u6838\u5bf9');assert(state.detail.includes('\u5b9e\u4ed8\u5df2\u8bb0\u5f55'));assert(state.detail.includes('\u6536\u6b3e\u5361\u5df2\u786e\u8ba4'));
+});

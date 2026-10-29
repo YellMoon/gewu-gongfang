@@ -29,3 +29,23 @@
 
 .personal-finance-panel .finance-group-evidence{width:min(100%,calc(100vw - 120px));white-space:normal;text-align:left;line-height:1.8;overflow-wrap:anywhere;margin-bottom:12px}
 .personal-finance-panel .finance-group-evidence>button{display:block;margin-top:8px}
+.personal-finance-panel .finance-review-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;padding:8px 12px;margin-bottom:20px}
+.personal-finance-panel .finance-account-group{border-top:1px solid #e8e8e8;padding-top:12px;margin-top:16px}
+.personal-finance-panel .finance-account-group h4{font-size:16px;margin:0 0 12px}
+.personal-finance-panel .finance-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.personal-finance-panel .finance-account-card{min-width:0;border:1px solid #e8e8e8;border-radius:8px;padding:16px;background:#fff}
+.personal-finance-panel .finance-account-card.is-included{border-color:#adc6ff}
+.personal-finance-panel .finance-account-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.personal-finance-panel .finance-account-card-head>.ant-btn{height:auto;padding:0;white-space:normal;text-align:left;font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.personal-finance-panel .finance-combine{flex:none;display:flex;align-items:center;gap:4px;color:#595959;font-size:13px;cursor:pointer}
+.personal-finance-panel .finance-combine input{width:16px;height:16px;accent-color:#1677ff}
+.personal-finance-panel .finance-account-balance{display:flex;flex-direction:column;gap:4px;margin-top:16px}
+.personal-finance-panel .finance-account-balance strong{font-size:23px;line-height:1.5;font-weight:600;white-space:normal;overflow-wrap:anywhere;font-style:normal}
+.personal-finance-panel .finance-account-evidence{font-size:13px;color:#595959;line-height:1.6;min-height:42px;margin:6px 0 12px}
+.personal-finance-panel .finance-account-period{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 16px;font-variant-numeric:tabular-nums}
+.personal-finance-panel .finance-account-period dt{font-size:13px;color:#595959}
+.personal-finance-panel .finance-account-period dd{margin:4px 0 0;font-size:16px;font-style:normal;overflow-wrap:anywhere}
+.personal-finance-panel .finance-return-period{margin-bottom:12px}
+@media(max-width:1050px){.personal-finance-panel .finance-account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){.personal-finance-panel .finance-account-grid{grid-template-columns:1fr}.personal-finance-panel .finance-filters>.ant-picker{max-width:100%}.personal-finance-panel .finance-toolbar>.ant-space{max-width:100%}.personal-finance-panel .finance-account-balance strong{font-size:23px}}
+@media(max-width:700px){.personal-finance-panel .finance-account-grid:not(.is-expanded)>.finance-account-card:nth-child(n+2){display:none}.personal-finance-panel .finance-chart figure{overflow-x:auto}.personal-finance-panel .finance-chart figure>svg{min-width:720px}}

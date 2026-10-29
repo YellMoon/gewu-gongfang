@@ -42,7 +42,7 @@ function parseCcbDebitRows(rows){
   if(totals.length!==1)fail('BILL_BANK_TOTAL_INVALID');
   const expectedOut=money(totals[0][1]),expectedIn=money(totals[0][2]);
   let previousBalance=null,previousDate='',income=0n,expense=0n,sequence=0;
-  const seen=new Map();
+  const seen=new Map(),counterpartFingerprints=[];
   for(const row of rows.slice(header+1)){
    if(row.every(cell=>text(cell)===''))continue;
    if(row.length!==COLUMNS.length||!/^[1-9]\d*$/.test(compact(row[0]))||Number(row[0])!==++sequence)fail('BILL_BANK_COUNT_INVALID');
@@ -62,12 +62,16 @@ function parseCcbDebitRows(rows){
    const key=JSON.stringify([tail,stamp,String(delta),String(balance),summary,cells[7],cells[8]]);
    const ordinal=(seen.get(key)||0)+1;seen.set(key,ordinal);
    result.records.push({sourceTransactionId:'ccb-debit:'+createHash('sha256').update(key+':'+ordinal,'utf8').digest('hex'),date:stamp,occurredAt:stamp+'T23:59:59+08:00',amountMinor:String(delta<0n?-delta:delta),currency:'CNY',direction:delta<0n?'debit':'credit',kind,status:'completed',description:mask(summary+(cells[7]&&cells[7]!==summary?' '+cells[7]:'')),counterparty:mask(counterparty),category:kind==='income'?'\u5229\u606f\u6536\u5165':kind==='refund'?'\u9000\u6b3e':kind==='fee'?'\u624b\u7eed\u8d39':kind==='expense'?'\u6d88\u8d39':'\u5f85\u6838\u5bf9',paymentChannel:'\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361('+tail+')',paymentAccountHint:'',balanceMinor:String(balance),relatedReference:'',principalMinor:null,interestMinor:null,feeMinor:null,rawFields,statementFlow:{schema:'ccb-debit-v1',sequence,incomeMinor:String(delta>0n?delta:0n),expenseMinor:String(delta<0n?-delta:0n),balanceKind:'total',periodStart:start,periodEnd:end,timePrecision:'day',openingBeforeFirstMinor:sequence===1?String(balance-delta):null}});
+   if(other&&/^\d{12,24}$/.test(other[1]))counterpartFingerprints.push({sourceTransactionId:result.records.at(-1).sourceTransactionId,fingerprint:createHash('sha256').update('bank-account-number-v1:'+other[1],'utf8').digest('hex'),maskedIdentifier:other[1].slice(-4)});
   }
   if(!sequence)fail('BILL_BANK_DETAIL_UNAVAILABLE');
   if(income!==expectedIn||expense!==expectedOut)fail('BILL_BANK_TOTAL_INVALID');
   result.accountIdentity={provider:'\u5efa\u8bbe\u94f6\u884c',type:'debit_card',maskedIdentifier:tail,currency:'CNY'};
+  result.statementAccountIdentities={schema:'bank-account-identities-v1',ownAccountFingerprint:createHash('sha256').update('bank-account-number-v1:'+cards[0],'utf8').digest('hex'),ownMaskedIdentifier:tail,counterpartFingerprints};
+  const ownerNames=rows.slice(0,header).flat().map(compact).filter(v=>/^\u5ba2\u6237\u540d\u79f0:[^:]+$/.test(v)).map(v=>v.slice(v.indexOf(':')+1));
+  if(ownerNames.length===1){const metadata={schema:'bank-statement-owner-v1',fullName:ownerNames[0]};try{require('../../shared/personal-finance/statementOwnership').validateStatementOwner(metadata);result.statementOwner=metadata;}catch{}}
  }catch(error){
-  result.records=[];delete result.accountIdentity;
+  result.records=[];delete result.accountIdentity;delete result.statementAccountIdentities;
   result.errors.push({line:1,code:error.code||'BILL_BANK_INVALID',message:'CCB debit statement columns, dates, totals or running balances failed validation'});
  }
  return result;

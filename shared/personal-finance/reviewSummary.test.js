@@ -1,0 +1,13 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),{buildReviewSummary}=require('./reviewSummary');
+test('review record and account counts are disjoint and deduplicated without suppressing reasons or changing the combined total',()=>{
+ const accounts=[{id:'bank'},{id:'loan'}],transactions=[{id:'a',financialAccountId:'bank',date:'2026-01-01',observationIds:['a1','a2']},{id:'b',financialAccountId:'bank',date:'2026-01-02',observationIds:['b']}],issues=[{reason:'unknown_kind',observationId:'a1'},{reason:'insufficient_reference',observationId:'a2'},{reason:'unresolved_funding_account',observationId:'a1'},{reason:'unresolved_funding_account',observationId:'b'},{reason:'account_balance_difference',financialAccountId:'bank'},{reason:'account_balance_conflict',financialAccountId:'bank'},{reason:'mortgage_calibration_conflict',financialAccountId:'loan'},{reason:'mortgage_history_model_gap',financialAccountId:'loan'}],before=JSON.stringify({accounts,transactions,issues}),r=buildReviewSummary(issues,transactions,accounts);
+ assert.equal(r.transactionCount,4);assert.equal(r.pendingTransactionCount,2);assert.equal(r.pendingAccountIssueCount,2);assert.equal(r.transactionCount,r.pendingTransactionCount+r.pendingAccountIssueCount);assert.equal(r.groups.reduce((n,g)=>n+g.issues.length,0),issues.length);assert.equal(r.softwareTransactionCount,3);assert.equal(r.evidenceTransactionCount,3);assert.equal(JSON.stringify({accounts,transactions,issues}),before);
+});
+test('a known transaction with an account-specific diagnostic remains one transaction, while out-of-scope issues stay excluded',()=>{
+ const r=buildReviewSummary([{reason:'account_balance_difference',observationId:'source',financialAccountId:'bank'},{reason:'unknown_kind',observationId:'missing'},{reason:'account_balance_difference',financialAccountId:'missing-account'}],[{id:'row',financialAccountId:'bank',observationIds:['source'],date:'2026-01-01'}],[{id:'bank'}]);assert.equal(r.transactionCount,1);assert.equal(r.pendingTransactionCount,1);assert.equal(r.pendingAccountIssueCount,0);assert.equal(r.groups.length,1);
+});
+test('empty review counts and an account-only review are explicit for report generation',()=>{
+ const empty=buildReviewSummary([],[],[]);assert.equal(empty.transactionCount,0);assert.equal(empty.pendingTransactionCount,0);assert.equal(empty.pendingAccountIssueCount,0);
+ const r=buildReviewSummary([{reason:'account_balance_difference',financialAccountId:'bank'},{reason:'account_balance_conflict',financialAccountId:'bank'}],[],[{id:'bank'}]);assert.equal(r.transactionCount,1);assert.equal(r.pendingTransactionCount,0);assert.equal(r.pendingAccountIssueCount,1);assert.equal(r.groups.length,2);
+});

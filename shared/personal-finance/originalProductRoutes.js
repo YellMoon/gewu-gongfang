@@ -1,0 +1,36 @@
+'use strict';
+const {fundingIdentity,sameBankAccount}=require('./assetRegister');
+const {actualSecond}=require('./mixedPayments');
+const norm=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').replace(/^\u6d59\u6c5f(?=\u7f51\u5546\u94f6\u884c)/,'');
+// Preserve the source labels. These routes require an explicit product receipt
+// or an independent product original naming the actual cash account.
+function findOriginalProductRoutes(observations,accounts,{annotatedIds=new Set(),links=[],statementOwners=new Map()}={}){
+ const identity=o=>JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.id]),byId=new Map(observations.map(o=>[o.id,o])),latest=new Map(),blocked=new Set([...annotatedIds].map(id=>byId.get(id)).filter(Boolean).map(identity)),byAccount=new Map(accounts.map(a=>[a.id,a]));
+ for(const o of observations){const k=identity(o);if(!latest.has(k)||(o.sourceVersionOrdinal||0)>(latest.get(k).sourceVersionOrdinal||0))latest.set(k,o);}
+ const rows=[...latest.values()].filter(o=>o.status==='completed'&&!blocked.has(identity(o))),banks=rows.filter(o=>o.statementFlow&&byAccount.get(o.financialAccountId)?.type==='debit_card'&&byAccount.get(o.financialAccountId)?.status==='active'),products=rows.filter(o=>o.statementFlow?.schema==='mybank-yulibao-v1'&&o.kind==='transfer'&&actualSecond(o)),proposals=[];
+ const cashKey=o=>JSON.stringify([o.date,o.amountMinor,o.currency]),cashIndex=new Map();for(const b of banks){const k=cashKey(b);if(!cashIndex.has(k))cashIndex.set(k,[]);cashIndex.get(k).push(b);}
+ const active=new Set(links.filter(l=>l.status!=='deleted').map(l=>[...l.observationIds].sort().join('|'))),vetoes=links.filter(l=>l.status!=='deleted'&&['distinct','group_distinct'].includes(l.type)||l.status==='deleted'&&l.type==='duplicate'&&!active.has([...l.observationIds].sort().join('|')));
+ const rejects=members=>{const ids=new Set(members.map(identity));return vetoes.some(l=>{const keys=l.observationIds.map(id=>byId.get(id)).filter(Boolean).map(identity);return l.type==='group_distinct'?keys.some(k=>ids.has(k)):keys.length===l.observationIds.length&&keys.every(k=>ids.has(k));});};
+ for(const p of rows){
+  if(p.provider!=='alipay'||byAccount.get(p.financialAccountId)?.type!=='wallet'||p.kind!=='transfer'||p.direction!=='neutral'||!actualSecond(p)||BigInt(p.amountMinor)<=0n)continue;
+  const generic=p.description==='\u8f6c\u51fa\u5230\u94f6\u884c\u5361'&&!p.accountRelations?.length&&p.rawFields?.['\u5546\u54c1\u8bf4\u660e']===p.description&&p.rawFields?.['\u6536/\u652f']==='\u4e0d\u8ba1\u6536\u652f'&&p.rawFields?.['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']===p.paymentChannel,card=generic?fundingIdentity(p.paymentChannel):null,relation=p.accountRelations?.length===1?p.accountRelations[0]:null;
+  const switchIn=!p.paymentChannel&&!p.paymentAccountHint&&p.description==='\u4f59\u5229\u5b9d-\u94f6\u884c\u5361\u8f6c\u5165'&&p.counterparty==='\u7f51\u5546\u94f6\u884c'&&relation?.product==='alipay_yulibao'&&relation.role==='target'&&relation.activity==='investment_deposit';
+  const redeem=!p.paymentChannel&&!p.paymentAccountHint&&p.description==='\u4f59\u5229\u5b9d-\u8f6c\u51fa\u5230\u94f6\u884c\u5361'&&p.counterparty==='\u676d\u5dde\u94f6\u884c'&&relation?.product==='alipay_yulibao'&&relation.role==='target'&&relation.activity==='investment_withdrawal';
+  if(!generic&&!switchIn&&!redeem||generic&&!card)continue;
+  const funds=generic?accounts.filter(a=>a.status==='active'&&a.sourceProduct==='alipay_yuebao'&&a.currency===p.currency):accounts.filter(a=>a.id===relation.financialAccountId&&a.status==='active'&&a.sourceProduct==='alipay_yulibao'&&a.currency===p.currency);if(funds.length!==1)continue;const fund=funds[0];
+  for(const b of cashIndex.get(cashKey(p))||[]){
+   const bank=byAccount.get(b.financialAccountId);if(b.date!==p.date||b.amountMinor!==p.amountMinor||b.currency!==p.currency||bank.currency!==p.currency||!['unknown','transfer'].includes(b.kind))continue;
+   if((cashIndex.get(cashKey(b))||[]).filter(other=>other.financialAccountId===b.financialAccountId&&other.direction===b.direction&&other.description===b.description).length!==1)continue;
+   if(generic){
+    if(!sameBankAccount(bank,card,p.currency)||b.provider!=='ccb'||b.statementFlow.schema!=='ccb-debit-v1'||b.direction!=='credit'||b.description!=='\u4f59\u989d\u5b9d\u63d0\u73b0'||!/^\*+\d{4}\/\u652f\u4ed8\u5b9d\u4ee3\u53d1\u8fc7\u6e21\u6237$/.test(b.counterparty)||b.rawFields?.dateBasis!=='transaction_date'||b.rawFields?.['\u4ea4\u6613\u65e5\u671f']!==b.date.replace(/-/g,'')||b.rawFields?.['\u6458\u8981']!==b.description||b.rawFields?.['\u4ea4\u6613\u5730\u70b9/\u9644\u8a00']!==b.description)continue;
+    proposals.push({p,b,fund,members:[p,b],inferredProduct:true});continue;
+   }
+   const bankEnvelope=switchIn?b.provider==='mybank'&&b.statementFlow.schema==='mybank-current-v1'&&b.direction==='debit'&&b.description==='\u7533\u8d2d\u5e76\u5207\u6362'&&b.rawFields?.['\u4ea4\u6613\u540d\u79f0']===b.description&&b.rawFields?.['\u5bf9\u65b9\u6237\u540d']===b.counterparty&&bank.provider==='\u7f51\u5546\u94f6\u884c'&&actualSecond(b):b.provider==='hangzhou'&&b.statementFlow.schema==='hangzhou-debit-v1'&&b.direction==='credit'&&b.description==='\u6c47\u5151/\u57fa\u91d1\u8d4e\u56de'&&b.rawFields?.description===b.description&&b.rawFields?.counterparty===b.counterparty&&bank.provider==='\u676d\u5dde\u94f6\u884c'&&Boolean(statementOwners.get(b.id))&&b.counterparty===statementOwners.get(b.id);
+   if(!bankEnvelope||!/^\d{4}$/.test(bank.maskedIdentifier||''))continue;
+   for(const q of products){const raw=q.rawFields,seconds=(Date.parse(q.occurredAt)-Date.parse(p.occurredAt))/1000;if(q.financialAccountId!==fund.id||q.date!==p.date||q.amountMinor!==p.amountMinor||q.currency!==p.currency||!Number.isInteger(seconds)||seconds<0||seconds>5||q.direction!==(switchIn?'credit':'debit')||q.description!==(switchIn?'(\u5176\u5b83)\u7533\u8d2d\u5e76\u5207\u6362':'(\u5176\u5b83)\u57fa\u91d1\u8d4e\u56de')||raw['\u5907\u6ce8']!==q.description||raw['\u4ea4\u6613\u7c7b\u578b']!==(switchIn?'\u6b63\u5e38\u7533\u8d2d':'\u6b63\u5e38\u8d4e\u56de')||norm(raw['\u5bf9\u65b9\u673a\u6784\u540d\u79f0'])!==norm(bank.provider)||!/^\*{4,}\d{4}$/.test(raw['\u5bf9\u65b9\u8d26\u53f7']||'')||raw['\u5bf9\u65b9\u8d26\u53f7'].slice(-4)!==bank.maskedIdentifier||switchIn&&(q.occurredAt!==b.occurredAt||q.counterparty!==b.counterparty||raw['\u5bf9\u65b9\u6237\u540d']!==q.counterparty))continue;proposals.push({p,b,q,fund,members:[p,b,q],inferredProduct:false});}
+  }
+ }
+ const uses=new Map();for(const m of proposals)for(const o of m.members)uses.set(identity(o),(uses.get(identity(o))||0)+1);
+ return new Map(proposals.filter(m=>m.members.every(o=>uses.get(identity(o))===1)&&!rejects(m.members)).map(m=>[m.p.id,{financialAccountId:m.b.financialAccountId,method:'source_statement_legacy_product',confidence:'inferred',evidenceObservationIds:[m.b.id,...(m.q?[m.q.id]:[])],date:m.p.date,bankDate:m.b.date,amountMinor:m.p.amountMinor,currency:m.p.currency,bankDirection:m.b.direction,reciprocalUnique:true,productAccountId:m.fund.id,product:m.fund.sourceProduct,inferredProduct:m.inferredProduct,basis:m.q?'three_independent_originals':'bank_original_explicit_product'}]));
+}
+module.exports={findOriginalProductRoutes};

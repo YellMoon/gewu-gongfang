@@ -1,0 +1,11 @@
+'use strict';
+function expenseAssetAllocation(record,annotation,accounts){
+ const patch=annotation?.reset?null:annotation?.patch,value=patch?.assetAllocation;if(value===undefined||value===null)return null;
+ const invalid=()=>{throw Object.assign(new Error('EXPENSE_ASSET_ALLOCATION_INVALID'),{code:'EXPENSE_ASSET_ALLOCATION_INVALID'});};
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['schema','financialAccountId','amountMinor'].includes(k))||value.schema!=='expense-asset-allocation-v1'||typeof value.financialAccountId!=='string'||!value.financialAccountId||typeof value.amountMinor!=='string'||!/^[1-9]\d*$/.test(value.amountMinor)||patch.kind!=='expense'||record.status!=='completed'||record.direction!=='debit'||record.accountRelations?.length||record.investmentTrade||record.brokerage||BigInt(value.amountMinor)>=BigInt(record.amountMinor))invalid();
+ const target=accounts.find(a=>a.id===value.financialAccountId);if(!target||!['active','archived'].includes(target.status)||!['receivable','other'].includes(target.type)||target.sourceProduct||target.counterpartySettlement||target.currency!==record.currency||target.id===record.financialAccountId)invalid();
+ const expenseMinor=String(BigInt(record.amountMinor)-BigInt(value.amountMinor)),memo=String(record.rawFields?.['\u9644\u8a00']||''),explicit=memo.match(/^\u8f66\u4f4d\u79df\u91d1(\d+(?:\.\d{1,2})?)\u548c\u62bc\u91d1(\d+(?:\.\d{1,2})?)$/),minor=v=>{const [whole,fraction='']=v.split('.');return String(BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0')));};
+ const sourceAmounts=record.provider==='huaxia'&&record.statementFlow?.schema==='huaxia-debit-v1'&&record.currency==='CNY'&&record.rawFields?.['\u8bb0\u8d26\u65e5\u671f']===record.date&&record.rawFields?.['\u5bf9\u65b9\u59d3\u540d']===record.counterparty&&record.description===record.rawFields?.['\u6458\u8981']+' '+memo&&explicit&&minor(explicit[1])===expenseMinor&&minor(explicit[2])===value.amountMinor;
+ return {...value,expenseMinor,sourceObservationId:record.id,confidence:sourceAmounts?'explicit_statement_amounts':'owner_confirmed',...(sourceAmounts?{evidence:{method:'literal_rent_and_deposit_amounts',sourceObservationIds:[record.id],expenseMinor,depositMinor:value.amountMinor}}:{})};
+}
+module.exports={expenseAssetAllocation};

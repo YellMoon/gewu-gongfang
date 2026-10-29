@@ -1,0 +1,217 @@
+{
+  "synthetic": true,
+  "independentEngine": "Python Decimal precision 60, half-up interest, truncated annuity",
+  "originalPrincipalMinor": "200000000",
+  "termMonths": 360,
+  "firstPaymentDate": "2022-09-20",
+  "rows": [
+    {
+      "month": "2022-09",
+      "amountMinor": "1107667"
+    },
+    {
+      "month": "2022-10",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2022-11",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2022-12",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-01",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-02",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-03",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-04",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-05",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-06",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-07",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-08",
+      "amountMinor": "1008778"
+    },
+    {
+      "month": "2023-09",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2023-10",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2023-11",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2023-12",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-01",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-02",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-03",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-04",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-05",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-06",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-07",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-08",
+      "amountMinor": "980125"
+    },
+    {
+      "month": "2024-09",
+      "amountMinor": "941771"
+    },
+    {
+      "month": "2024-10",
+      "amountMinor": "941771"
+    },
+    {
+      "month": "2024-11",
+      "amountMinor": "909695"
+    },
+    {
+      "month": "2024-12",
+      "amountMinor": "909695"
+    },
+    {
+      "month": "2025-01",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-02",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-03",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-04",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-05",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-06",
+      "amountMinor": "883590"
+    },
+    {
+      "month": "2025-07",
+      "amountMinor": "873405"
+    },
+    {
+      "month": "2025-08",
+      "amountMinor": "873405"
+    },
+    {
+      "month": "2025-09",
+      "amountMinor": "873405"
+    },
+    {
+      "month": "2025-10",
+      "amountMinor": "873405"
+    },
+    {
+      "month": "2025-11",
+      "amountMinor": "873405"
+    },
+    {
+      "month": "2025-12",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-01",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-02",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-03",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-04",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-05",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-06",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-07",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-08",
+      "amountMinor": "548941"
+    },
+    {
+      "month": "2026-09",
+      "amountMinor": "548941"
+    }
+  ],
+  "prepayment": {
+    "date": "2025-12-03",
+    "amountMinor": "70000000",
+    "principalMinor": "69782935",
+    "interestMinor": "217065"
+  },
+  "reference": {
+    "principalMinor": "241443",
+    "interestMinor": "307498",
+    "balanceMinor": "115070196"
+  },
+  "sourceBalanceAfter49Minor": "115552440"
+}

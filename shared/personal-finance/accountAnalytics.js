@@ -14,6 +14,8 @@ function statementCoverage(observations) {
   for (const rows of groups.values()) {
     rows.sort((a,b) => a.statementFlow.sequence-b.statementFlow.sequence);
     const first=rows[0], e=first.statementFlow;
+    // A missing closing balance cannot prove complete native cash coverage.
+    if(rows.some(o=>o.balanceMinor==null))continue;
     if (rows.some((o,i) => o.statementFlow.sequence!==i+1 || o.statementFlow.periodStart!==e.periodStart || o.statementFlow.periodEnd!==e.periodEnd || (i && BigInt(o.balanceMinor)-BigInt(rows[i-1].balanceMinor)!==BigInt(o.statementFlow.incomeMinor)-BigInt(o.statementFlow.expenseMinor)))) continue;
     const key=JSON.stringify([first.financialAccountId,first.currency]);
     if (!coverage.has(key)) coverage.set(key,[]);
@@ -35,7 +37,8 @@ function incomeExpenseAccounts(sources, accounts, fundingAccount, effects) {
     if(target?.activity==='investment_income'){ids.add(target.financialAccountId);continue;}
     const fund=fundingAccount(s,accounts);
     if(fund){ids.add(fund.id);continue;}
-    if(a.type==='wallet' && s.paymentAccountHint)continue;
+    if(a.type==='wallet' && (s.paymentAccountHint||s.provider==='jd'||['alipay','wechat'].includes(s.provider)&&/\u94f6\u884c/.test(s.paymentChannel)))continue;
+    if(target?.activity==='repayment'&&s.kind==='debt_payment'&&a.type==='wallet'&&/^(?:\u4f59\u989d|\u8d26\u6237\u4f59\u989d|\u652f\u4ed8\u5b9d\u4f59\u989d|\u96f6\u94b1)$/.test(s.paymentChannel||'')&&(effects.get(a.id)||0n)<0n){ids.add(a.id);continue;}
     if(target && s.investmentTrade) {
       // Subscription fees come from the payment account; redemption/conversion
       // fees are deducted from the investment. Never allocate one fee twice.
@@ -54,6 +57,7 @@ function portfolioBalances(accountStats) {
   const result=Object.create(null);
   for(const s of Object.values(accountStats)) {
     const b=result[s.currency]||(result[s.currency]={knownBalanceMinor:0n,knownCount:0,unknownCount:0,derivedCount:0});
+    if(s.balanceExcludedReason==='superseded_provisional_identity'&&s.identityResolution?.allOriginalChannelTransactionsIndividuallyEvidenced){b.excludedSupersededCount=(b.excludedSupersededCount||0)+1;continue;}
     if(s.balanceMinor==null)b.unknownCount++;
     else {b.knownBalanceMinor+=BigInt(s.balanceMinor);b.knownCount++;if(s.balanceStatus==='derived')b.derivedCount++;}
   }

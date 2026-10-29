@@ -32,6 +32,7 @@ function parseHuaxiaRows(rows){
   }
   if(income!==minor(field('\u6536\u5165\u5408\u8ba1\u91d1\u989d'))||expense!==minor(field('\u652f\u51fa\u5408\u8ba1\u91d1\u989d')))fail('BILL_BANK_TOTAL_INVALID');
   result.accountIdentity={provider:'\u534e\u590f\u94f6\u884c',type:'debit_card',maskedIdentifier:card.slice(-4),currency:'CNY'};
+  if(owner){const metadata={schema:'bank-statement-owner-v1',fullName:owner};try{require('../../shared/personal-finance/statementOwnership').validateStatementOwner(metadata);result.statementOwner=metadata;}catch{}}
   result.warnings.push({line:1,code:'BILL_BANK_DAY_PRECISION',message:'\u8d26\u5355\u4ec5\u63d0\u4f9b\u8bb0\u8d26\u65e5\u671f\uff1b\u540c\u65e5\u6309\u539f\u8868\u987a\u5e8f\u6838\u5bf9\u65e5\u7ec8\u4f59\u989d\u3002\u8d37\u6b3e\u8fd8\u6b3e\u672a\u62c6\u5206\u672c\u606f\uff0c\u5176\u4ed6\u6536\u652f\u7528\u9014\u9700\u7ed3\u5408\u5e73\u53f0\u8d26\u5355\u6838\u5bf9\u3002'});
  }catch(error){result.records=[];result.errors.push({line:1,code:error.code||'BILL_BANK_INVALID',message:'Huaxia statement account, count, totals or running balance validation failed'});}
  return result;

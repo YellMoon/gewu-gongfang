@@ -2,7 +2,7 @@
 const {createHash}=require('node:crypto');
 const {parseDocument}=require('htmlparser2');
 const {validDate}=require('../../shared/personal-finance/ledger');
-const {explicitCardFundingCredit}=require('../../shared/personal-finance/accountProducts');
+const {explicitCardFundingCredit,ambiguousCardCredit}=require('../../shared/personal-finance/accountProducts');
 const compact=v=>String(v||'').normalize('NFKC').replace(/\s/g,'');
 const bankNames={cib:'\u5174\u4e1a\u94f6\u884c',spdb:'\u6d66\u53d1\u94f6\u884c',bocom:'\u4ea4\u901a\u94f6\u884c',ccb:'\u5efa\u8bbe\u94f6\u884c',cgb:'\u5e7f\u53d1\u94f6\u884c',citic:'\u4e2d\u4fe1\u94f6\u884c',czbank:'\u6d59\u5546\u94f6\u884c',cmb:'\u62db\u5546\u94f6\u884c'};
 const fail=code=>{throw Object.assign(new Error(code),{code});};
@@ -16,6 +16,7 @@ function htmlRows(html){
  visit(dom);return{rows,text:text(dom)};
 }
 function kindFor(s,credit){
+ if(credit&&ambiguousCardCredit(s))return 'unknown';
  if(credit&&explicitCardFundingCredit(s))return 'debt_payment';
  if(/\u81ea\u52a8\u8fd8\u6b3e\u5931\u8d25|\u8fd8\u6b3e\u5931\u8d25/.test(s))return'unknown';
  if(credit)return /\u8fd8\u6b3e|\u8fd8\u8d37|\u94f6\u8054\u5165\u8d26|\u94f6\u8054\u5165\u5e10|\u8f6c\u5e10\u8fd8\u6b3e|\u8f6c\u8d26\u8fd8\u6b3e|\u81ea\u52a8\u6263\u6b3e|\u5b58\u6b3e|\u7f34\u6b3e|Payment/i.test(s)?'debt_payment':'refund';
@@ -32,7 +33,7 @@ function assemble({provider,statementDate,transactions,balances,check,detailOnly
  for(const t of transactions){
   const statementDate=t.statementDate||defaultStatementDate;
   if(!validDate(t.trade)||!validDate(t.posted)||t.posted<t.trade||!detailOnly&&(t.posted>statementDate||(Date.parse(statementDate)-Date.parse(t.trade))/86400000>370))fail('BILL_BANK_ROW_INVALID');
-  const bankAccount=identity(t.tail,t.currency),amount=t.amount<0n?-t.amount:t.amount,description=t.description.normalize('NFKC').replace(/\d{12,}/g,s=>'****'+s.slice(-4)).replace(/\s+/g,' ').trim(),kind=t.kind||kindFor(description,t.credit),nonCash=t.nonCash??(kind==='unknown');
+  const bankAccount=identity(t.tail,t.currency),amount=t.amount<0n?-t.amount:t.amount,description=t.description.normalize('NFKC').replace(/\d{12,}/g,s=>'****'+s.slice(-4)).replace(/\s+/g,' ').trim(),kind=t.kind||kindFor(description,t.credit),nonCash=t.nonCash??(kind==='unknown'&&!(t.credit&&ambiguousCardCredit(description)));
   const key=JSON.stringify([provider,t.tail,t.trade,t.posted,compact(description),t.amount.toString(),t.credit,...(t.currency&&t.currency!=='CNY'?[t.currency]:[])]),ordinal=(seen.get(key)||0)+1;seen.set(key,ordinal);
   records.push({...base,currency:bankAccount.currency,sourceTransactionId:provider+':'+createHash('sha256').update(key+':'+ordinal).digest('hex'),date:t.trade,occurredAt:t.posted+'T23:59:59+08:00',amountMinor:amount.toString(),direction:nonCash?'neutral':t.credit?'credit':'debit',kind,description,counterparty:description,category:kind==='unknown'&&!nonCash?'\u5f85\u6838\u5bf9':nonCash?'\u5206\u671f\u672c\u91d1\u6216\u975e\u73b0\u91d1\u8bb0\u5f55':kind==='expense'?'\u5f85\u5206\u7c7b':kind==='interest'?'\u501f\u8d37\u5229\u606f':kind==='fee'?'\u624b\u7eed\u8d39':'\u4fe1\u7528\u5361\u8fd8\u6b3e\u4e0e\u9000\u6b3e',balanceMinor:null,rawFields:{...(t.sourceTradeDateTime?{sourceTradeDateTime:t.sourceTradeDateTime}:{}),dateBasis:t.dateBasis||'transaction_date',tradeDate:t.trade,postedDate:t.posted,cardTail:t.tail,statementDate,statementAmountMinor:t.amount.toString(),statementCredit:t.credit,excludedFromBilledTotal:!!t.excludedFromBilledTotal},bankStatement:{schema:detailOnly?'bank-credit-detail-v1':'bank-credit-v1',...(detailOnly?{}:{statementDate}),postedDate:t.posted,cardTail:t.tail,provider,nonCash},bankAccount});
  }

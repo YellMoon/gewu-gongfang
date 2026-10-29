@@ -2,6 +2,11 @@
 const assert=require('node:assert/strict');
 const {buildFinanceView}=require('./ledger');
 const {buildTrend}=require('./accountAnalytics');
+const {statementCoverage}=require('./accountAnalytics');
+assert.equal(statementCoverage([
+ {financialAccountId:'nullable',currency:'CNY',importId:'cash',status:'completed',balanceMinor:null,statementFlow:{sequence:1,periodStart:'2026-01-01',periodEnd:'2026-01-31',incomeMinor:'0',expenseMinor:'100'}},
+ {financialAccountId:'nullable',currency:'CNY',importId:'cash',status:'completed',balanceMinor:'0',statementFlow:{sequence:2,periodStart:'2026-01-01',periodEnd:'2026-01-31',incomeMinor:'0',expenseMinor:'100'}}
+])('nullable','CNY',Date.parse('2026-01-10T10:00:00+08:00')),undefined,'missing native balances neither crash nor establish authoritative coverage');
 const account=(id,extra={})=>({id,type:'bank',currency:'CNY',openingDate:null,openingBalanceMinor:null,...extra});
 const row=(id,accountId,date,amount,direction='debit',kind='expense',extra={})=>({id,financialAccountId:accountId,provider:'test',sourceTransactionId:id,date,occurredAt:date+'T10:00:00+08:00',amountMinor:amount,currency:'CNY',direction,kind,status:'completed',paymentChannel:'',paymentAccountHint:'',principalMinor:null,interestMinor:null,feeMinor:null,relatedReference:'',...extra});
 const accounts=[account('y',{type:'investment',sourceProduct:'alipay_yulibao'}),account('ali',{type:'wallet'}),account('b'),account('missing'),account('usd',{currency:'USD'})];

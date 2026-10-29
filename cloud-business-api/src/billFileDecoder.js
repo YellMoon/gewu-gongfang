@@ -6,7 +6,7 @@ const { parseBillCsv } = require('../../shared/personal-finance/billCsv');
 
 const LIMITS = Object.freeze({ fileBytes: 10 * 1024 * 1024, expandedBytes: 32 * 1024 * 1024, entryBytes: 20 * 1024 * 1024,
   archiveEntries: 32, workbookEntries: 256, expansionRatio: 200, sheets: 10, rows: 10000, columns: 128, pdfPages: 100, timeoutMs: 20000 });
-const SUPPORTED = new Set(['.csv','.txt','.xls','.xlsx','.zip','.pdf','.html','.htm']);
+const SUPPORTED = new Set(['.csv','.txt','.xls','.xlsx','.xlsm','.zip','.pdf','.html','.htm','.json']);
 function issue(code, message, line = 1) { return { line, code, message }; }
 function fail(code, message) { throw Object.assign(new Error(message), { code }); }
 function empty(fileHash = null) { return { provider:'unknown', templateId:null, records:[], errors:[], warnings:[], fileHash }; }
@@ -102,26 +102,32 @@ function merge(target, source, label) {
   if (target.provider === 'unknown') { target.provider = source.provider; target.templateId = source.templateId; }
   else if (source.provider !== target.provider) { target.provider = 'mixed'; target.templateId = 'mixed-files-v1'; }
   if(source.accountIdentity){if(target.accountIdentity&&JSON.stringify(target.accountIdentity)!==JSON.stringify(source.accountIdentity))fail('BILL_ACCOUNT_MIXED','Multiple statement accounts in one file');target.accountIdentity=source.accountIdentity;}
+  if(source.statementOwner){if(target.statementOwner&&JSON.stringify(target.statementOwner)!==JSON.stringify(source.statementOwner)){delete target.statementOwner;fail('BILL_STATEMENT_OWNER_CONFLICT','Statement owner headers conflict');}if(!target.records.length||target.statementOwner)target.statementOwner=source.statementOwner;}else if(source.records.length)delete target.statementOwner;
+  if(source.statementAccountIdentities){const value=require('../../shared/personal-finance/statementAccountIdentities').validateStatementAccountIdentities(source.statementAccountIdentities);if(target.statementAccountIdentities){const prior=target.statementAccountIdentities;if(prior.ownAccountFingerprint!==value.ownAccountFingerprint||prior.ownMaskedIdentifier!==value.ownMaskedIdentifier)fail('BILL_ACCOUNT_MIXED','Statement account fingerprints conflict');const entries=new Map(prior.counterpartFingerprints.map(e=>[e.sourceTransactionId,e]));for(const e of value.counterpartFingerprints){if(entries.has(e.sourceTransactionId)&&entries.get(e.sourceTransactionId).fingerprint!==e.fingerprint)fail('BILL_ACCOUNT_MIXED','Counter-account fingerprints conflict');entries.set(e.sourceTransactionId,e);}prior.counterpartFingerprints=[...entries.values()];}else if(!target.records.length)target.statementAccountIdentities={...value,counterpartFingerprints:[...value.counterpartFingerprints]};}else if(source.records.length)delete target.statementAccountIdentities;
   target.records.push(...source.records);
   for (const key of ['errors','warnings']) target[key].push(...source[key].map(item => ({...item,message:label ? `[${label}] ${item.message}` : item.message})));
 }
 async function spreadsheet(buffer, filename, fieldMapping, budget, html = false) {
   const XLSX = require('xlsx');
+  const feeEvidence=['wechat_withdrawal_fees','alipay_withdrawal_fees'].includes(fieldMapping?.evidenceRole);
+  if(feeEvidence&&fieldMapping.ownerConfirmedActualFees!==true)fail('BILL_WITHDRAWAL_FEE_CONFIRMATION_REQUIRED','Actual workbook fees require owner confirmation');
+  if(/\.xlsm$/i.test(filename)&&!feeEvidence)fail('BILL_WITHDRAWAL_FEE_ROLE_REQUIRED','Select the supported withdrawal-fee evidence role for this macro workbook');
   let data = buffer;
   if (!html && buffer[0] === 0x50 && buffer[1] === 0x4b) {
-    const entries = await unpack(buffer,LIMITS.workbookEntries,budget);
+    const entries = await unpack(buffer,feeEvidence?512:LIMITS.workbookEntries,budget);
     if (!entries.some(entry => entry.name === 'xl/workbook.xml')) fail('BILL_FORMAT_MISMATCH','文件不是 XLSX 工作簿');
     // Rebuild a STORE archive after bounded inflation, preventing forged ZIP lengths from reaching SheetJS.
     const safe = new (require('jszip'))(); for (const entry of entries) safe.file(entry.name,entry.buffer);
     data = await safe.generateAsync({type:'nodebuffer',compression:'STORE'});
   }
   let book;
-  try { book = XLSX.read(html ? decodeText(data) : data, { type:html ? 'string' : 'buffer', raw:true, cellDates:false, cellNF:true, cellHTML:false, sheetRows:LIMITS.rows + 102, WTF:false }); }
+  try { book = XLSX.read(html ? decodeText(data) : data, { type:html ? 'string' : 'buffer', raw:true, cellDates:false, cellNF:true, cellHTML:false, bookVBA:false, ...(feeEvidence?{sheets:['\u5b66\u8d39\u6536\u5165']}:{}), sheetRows:LIMITS.rows + 102, WTF:false }); }
   catch (error) {
     if (/password|encrypt|FilePass/i.test(error.message)) fail('BILL_EXCEL_ENCRYPTED','Excel 已加密，请本地解密并人工核验后重新导入');
     throw error;
   }
-  if (book.SheetNames.length > LIMITS.sheets) fail('BILL_WORKSHEET_LIMIT','工作表超过10个，请拆分文件');
+  if (!feeEvidence && book.SheetNames.length > LIMITS.sheets) fail('BILL_WORKSHEET_LIMIT','工作表超过10个，请拆分文件');
+  if(feeEvidence){if(book.SheetNames.length>64)fail('BILL_WORKSHEET_LIMIT','Workbook contains too many sheets');return require('./workbookWithdrawalFees').parseWorkbookWithdrawalFees(book,XLSX,{provider:fieldMapping.evidenceRole==='alipay_withdrawal_fees'?'alipay':'wechat',ownerConfirmedBlankFeesZero:fieldMapping.ownerConfirmedBlankFeesZero===true});}
   const result = empty();
   for (const name of book.SheetNames) {
     const sheet = book.Sheets[name]; if (!sheet['!ref']) continue;
@@ -157,18 +163,22 @@ async function spreadsheet(buffer, filename, fieldMapping, budget, html = false)
   return result;
 }
 const isAntFundCover=text=>text.includes('蚂蚁(杭州)基金销售有限公司')&&text.includes('基金(含资产管理计划)交易明细');
-async function pdfTable(buffer,filename,fieldMapping) {
+async function pdfTable(buffer,filename,fieldMapping,password) {
   const {getDocument,OPS} = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const pdfRoot=path.dirname(require.resolve('pdfjs-dist/package.json'));
-  const task = getDocument({data:new Uint8Array(buffer), cMapUrl:path.join(pdfRoot,'cmaps')+'/',cMapPacked:true,standardFontDataUrl:path.join(pdfRoot,'standard_fonts')+'/',isEvalSupported:false, useSystemFonts:false, disableFontFace:true, verbosity:0});
+  const task = getDocument({data:new Uint8Array(buffer),password, cMapUrl:path.join(pdfRoot,'cmaps')+'/',cMapPacked:true,standardFontDataUrl:path.join(pdfRoot,'standard_fonts')+'/',isEvalSupported:false, useSystemFonts:false, disableFontFace:true, verbosity:0});
   let document;
   try {
     document = await task.promise;
     if (document.numPages > LIMITS.pdfPages) fail('BILL_PDF_PAGE_LIMIT','PDF 超过100页，请拆分文件');
-    const table = [],fundPages=[]; let textCount = 0,fundCandidate=false,balanceCandidate=false,yuebaoCandidate=false,mybankCandidate=false,certificateCandidate=false,hangzhouCandidate=false,debitBankCandidate=false;
+    const table = [],fundPages=[],brokeragePages=[]; let textCount = 0,fundCandidate=false,balanceCandidate=false,yuebaoCandidate=false,mybankCandidate=false,certificateCandidate=false,hangzhouCandidate=false,debitBankCandidate=false,brokerageCandidate=false;
     for (let p = 1; p <= document.numPages; p += 1) {
       const page = await document.getPage(p), content = await page.getTextContent();
       const pageText=content.items.map(item=>item.str||'').join('').normalize('NFKC').replace(/\s/g,'');
+      if(p===1&&pageText.includes('\u6df1\u5733\u524d\u6d77\u5fae\u4f17\u94f6\u884c\u5ba2\u6237\u4ea4\u6613\u660e\u7ec6\u8868'))debitBankCandidate=true;
+      if(p===1&&pageText.includes('上海浦东发展银行个人客户交易流水专用回单'))debitBankCandidate=true;
+      if(p===1&&/\u56fd\u6cf0(?:\u6d77\u901a|\u541b\u5b89)\u8bc1\u5238\u5ba2\u6237\u8d26\u6237\u5bf9\u8d26\u5355/.test(pageText))brokerageCandidate=true;
+      if(brokerageCandidate){const operators=await page.getOperatorList(),viewport=page.getViewport({scale:1});brokeragePages.push({number:p,width:viewport.width,items:require('../../shared/personal-finance/brokerageStatement').operatorItems(operators,viewport,OPS)});}
       if(p===1&&(/\u6c5f\u82cf\u94f6\u884c\u4ea4\u6613\u660e\u7ec6|\u4e2d\u56fd\u90ae\u653f\u50a8\u84c4\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6/.test(pageText)))debitBankCandidate=true;
       if(p===1&&pageText.includes('\u676d\u5dde\u94f6\u884c\u501f\u8bb0\u8d26\u6237\u5386\u53f2\u660e\u7ec6'))hangzhouCandidate=true;
       if(p===1&&isAntFundCover(pageText))fundCandidate=true;
@@ -191,19 +201,23 @@ async function pdfTable(buffer,filename,fieldMapping) {
       page.cleanup();
     }
     if (!textCount) fail('BILL_PDF_SCAN_REQUIRES_REVIEW','PDF 无可提取文字，可能是扫描件；请人工核验或导出 CSV/Excel，不能自动入账');
-    if(debitBankCandidate)return require('./debitBankPdf').parseDebitBankPdf(fundPages);
+    const mortgageStatement=require('./huaxiaMortgageStatement').parseHuaxiaMortgageRows(table);if(mortgageStatement)return mortgageStatement;
+    if(brokerageCandidate)return require('../../shared/personal-finance/brokerageStatement').parseGuotaiPdf(brokeragePages);
+    if(debitBankCandidate)return require('./spdbDebitStatement').parseSpdbDebitPdf(fundPages)||require('./webankStatement').parseWebankPdf(fundPages)||require('./debitBankPdf').parseDebitBankPdf(fundPages);
     if(hangzhouCandidate)return require('./hangzhouStatement').parseHangzhouPdf(fundPages);
     if(mybankCandidate)return require('./mybankStatement').parseMybankFundPdf(fundPages);
     if(certificateCandidate)return require('./yuebaoCertificate').parseYuebaoCertificate(fundPages);
     if(fundCandidate)return require('./antFundPdf').parseAntFundPdf(fundPages);
     if(balanceCandidate)return require('./alipayBalancePdf').parseAlipayBalancePdf(fundPages);
     if(yuebaoCandidate)return require('./yuebaoBalancePdf').parseYuebaoBalancePdf(fundPages);
-    const creditStatement=require('./cibStatement').parseCibPdfRows(table)||require('./spdbStatement').parseSpdbPdfRows(table)||require('./cmbStatement').parseCmbPdfRows(table);if(creditStatement)return creditStatement;
+    const loanProof=require('./jiebeiLoanProof').parseJiebeiLoanProof(table);if(loanProof)return loanProof;
+    const creditStatement=require('./cibStatement').parseCibPdfRows(table)||require('./spdbStatement').parseSpdbPdfRows(table)||require('./cmbStatement').parseCmbPdfRows(table)||require('./cgbStatement').parseCgbPdfRows(table);if(creditStatement)return creditStatement;
     const result = parseBillCsv(csvText(table),{filename,fieldMapping});
     result.warnings.push(issue('BILL_PDF_VERIFY_REQUIRED','PDF 按文本位置重建表格，必须人工核对列对齐、跨页、合计、金额与方向后提交'));
     return result;
   } catch (error) {
-    if (error.name === 'PasswordException') fail('BILL_PDF_ENCRYPTED','PDF 已加密，请本地解密并人工核验后重新导入');
+    if (error.name === 'PasswordException' && password) fail('BILL_PDF_PASSWORD_INVALID','PDF 打开密码不正确，请核对这份文件的密码');
+    if (error.name === 'PasswordException') fail('BILL_PDF_ENCRYPTED','请输入这份 PDF 文件的打开密码');
     throw error;
   } finally { await task.destroy(); }
 }
@@ -221,9 +235,14 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
     if (!entries.length) result.errors.push(issue('BILL_ZIP_EMPTY','ZIP 内没有文件'));
     return result;
   }
+  if(extension==='.json'){
+    if(buffer.includes(0))fail('BILL_FORMAT_MISMATCH','Invalid JSON text encoding');
+    let capture;try{capture=JSON.parse(decodeText(buffer));}catch{fail('BILL_JSON_INVALID','\u91c7\u96c6\u6587\u4ef6\u4e0d\u662f\u6709\u6548\u7684 JSON \u6587\u4ef6\u3002');}
+    return require('../../shared/personal-finance/unionpayNetworkStatement').parseUnionpayNetworkCapture(capture);
+  }
   if (extension === '.pdf') {
     if (!buffer.subarray(0,5).equals(Buffer.from('%PDF-'))) fail('BILL_FORMAT_MISMATCH','文件不是有效 PDF');
-    return pdfTable(buffer,filename,fieldMapping);
+    return pdfTable(buffer,filename,fieldMapping,password);
   }
   const html = /^\s*(?:<!doctype\s+html|<html|<table)/i.test(buffer.subarray(0,4096).toString('utf8'));
   if (['.html','.htm'].includes(extension) || (extension === '.xls' && html)) {
@@ -231,7 +250,7 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
     if (!html || !/<table[\s>]/i.test(decodeText(buffer))) fail('BILL_HTML_TABLE_MISSING','HTML 中未找到可解析账单表格');
     return spreadsheet(buffer,filename,fieldMapping,budget,true);
   }
-  if (['.xls','.xlsx'].includes(extension)) {
+  if (['.xls','.xlsx','.xlsm'].includes(extension)) {
     const ole = buffer.subarray(0,8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]));
     const zip = buffer[0] === 0x50 && buffer[1] === 0x4b;
     if (ole && buffer.includes(Buffer.from('EncryptedPackage','utf16le')) && buffer.includes(Buffer.from('EncryptionInfo','utf16le'))) {
@@ -243,7 +262,7 @@ async function decode(buffer,filename,fieldMapping,budget,depth = 0,password) {
       if(decrypted[0]!==0x50||decrypted[1]!==0x4b)fail('BILL_FORMAT_MISMATCH','Decrypted file is not an XLSX workbook');
       return spreadsheet(decrypted,filename.replace(/\.xls$/i,'.xlsx'),fieldMapping,budget);
     }
-    if ((extension === '.xls' && !ole) || (extension === '.xlsx' && !zip)) fail('BILL_FORMAT_MISMATCH','Excel 扩展名与真实文件格式不匹配，请重新导出工作簿');
+    if ((extension === '.xls' && !ole) || (['.xlsx','.xlsm'].includes(extension) && !zip)) fail('BILL_FORMAT_MISMATCH','Excel 扩展名与真实文件格式不匹配，请重新导出工作簿');
     return spreadsheet(buffer,filename,fieldMapping,budget);
   }
   if (buffer.includes(0)) fail('BILL_FORMAT_MISMATCH','文本文件包含二进制内容，请选择真实格式');

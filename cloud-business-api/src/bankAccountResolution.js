@@ -1,7 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 const {sameBankAccount}=require('../../shared/personal-finance/assetRegister');
-const banks=new Set(['\u5174\u4e1a\u94f6\u884c','\u90ae\u50a8\u94f6\u884c','\u6c5f\u82cf\u94f6\u884c','\u6d66\u53d1\u94f6\u884c','\u4ea4\u901a\u94f6\u884c','\u5efa\u8bbe\u94f6\u884c','\u5e7f\u53d1\u94f6\u884c','\u4e2d\u4fe1\u94f6\u884c','\u6d59\u5546\u94f6\u884c','\u62db\u5546\u94f6\u884c','\u676d\u5dde\u94f6\u884c']);
+const banks=new Set(['\u5fae\u4f17\u94f6\u884c','\u5174\u4e1a\u94f6\u884c','\u90ae\u50a8\u94f6\u884c','\u6c5f\u82cf\u94f6\u884c','\u6d66\u53d1\u94f6\u884c','\u4ea4\u901a\u94f6\u884c','\u5efa\u8bbe\u94f6\u884c','\u5e7f\u53d1\u94f6\u884c','\u4e2d\u4fe1\u94f6\u884c','\u6d59\u5546\u94f6\u884c','\u62db\u5546\u94f6\u884c','\u676d\u5dde\u94f6\u884c']);
 const bankAccountKey=a=>JSON.stringify([a.provider,a.type,a.maskedIdentifier,a.currency]);
 function resolveBankAccount({identity,accounts,owner}){
  if(!identity||!banks.has(identity.provider)||!['credit_card','debit_card'].includes(identity.type)||!/^\d{4}$/.test(identity.maskedIdentifier)||!['CNY','USD'].includes(identity.currency))return{status:'manual',candidates:[]};

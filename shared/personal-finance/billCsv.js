@@ -91,7 +91,9 @@ function kindOf(value, direction, description) {
   const text = clean(value).toLowerCase();
   if (KINDS.has(text)) return text;
   const source = `${text} ${description}`;
+  if(direction==='debit'&&!/退款|refund/.test(text)&&/^淘宝退货[-－]寄件费(?:[_\s-]|$)/.test(description))return 'expense';
   if (/退款|退货|refund/.test(source)) return 'refund';
+  if(direction==='debit'&&require('./telecomTopups').isTelecomServicePurchase(description))return 'expense';
   if (/转账|转入|转出|提现|充值|transfer/.test(source)) return 'transfer';
   if (/借款到账|贷款发放|贷款放款|loan_drawdown/.test(source)) return 'loan_drawdown';
   if (/还款|偿还|debt_payment/.test(source)) return 'debt_payment';
@@ -101,6 +103,7 @@ function kindOf(value, direction, description) {
 }
 function statusOf(value, provider) {
   const text = clean(value).toLowerCase();
+  if(provider==='alipay'&&/^(?:\u4ee3\u4ed8\u6210\u529f|\u653e\u6b3e\u6210\u529f|\u5145\u503c\u6210\u529f)$/.test(text))return 'completed';
   // The legacy label names entry into a refund process, not a settled receipt.
   // Preserve it for reconciliation instead of dropping the original or guessing.
   if(provider==='wechat'&&text==='\u5df2\u8f6c\u5165\u9000\u6b3e')return 'pending';
@@ -115,6 +118,7 @@ function walletPosting(provider, direction, semanticType, category, description,
   // Preserve the platform's explicit non-cash direction rather than inventing a
   // debit/credit sign for investments, authorizations or internal movements.
   if (/冻结|解冻|芝麻免押/.test(status)) return { direction:'neutral', kind:'unknown' };
+  if(provider==='alipay'&&status==='\u653e\u6b3e\u6210\u529f'&&/\u501f\u5457\u653e\u6b3e\u81f3(?:\u4f59\u989d|\u94f6\u884c\u5361)/.test(description))return {direction:'neutral',kind:'loan_drawdown'};
   if (/退款/.test(semanticType) || category === '退款' || status === '退款成功') return { direction:'neutral', kind:'refund' };
   if (category==='投资理财'&&/手续费|申购费|赎回费|销售服务费/.test(description)) return {direction:'neutral',kind:'fee'};
   if (/还款/.test(`${semanticType} ${description}`) || status === '还款成功') return { direction:'neutral', kind:'debt_payment' };
@@ -150,6 +154,12 @@ function parseBillCsv(content, { filename = '', fieldMapping = {} } = {}) {
     result.errors.push(diagnostic(1, 'BILL_MAPPING_INVALID', 'fieldMapping 含未知字段或格式无效')); return result;
   }
   const rows = tokenize(content.replace(/^\uFEFF/, ''));
+  const walletBalances = require('./alipayWalletStatement').parseAlipayWalletCsvRows(rows, { providerHint: fieldMapping.provider || filename });
+  if (walletBalances) return walletBalances;
+  const jd = require('./jdStatement').parseJdCsvRows(rows);
+  if (jd) return jd;
+  const brokerage = require('./brokerageStatement').parseGuotaiCsvRows(rows);
+  if (brokerage) return brokerage;
   let headerIndex = -1, headers, mapping;
   for (let i = 0; i < Math.min(rows.length, 100); i += 1) {
     const candidate = rows[i].cells.map(clean);
@@ -212,6 +222,14 @@ function parseBillCsv(content, { filename = '', fieldMapping = {} } = {}) {
         paymentChannel: maskLongNumbers(channelSource), paymentAccountHint: accountHint, balanceMinor: money(get(row,'balance'), { optional: true, signed: true }),
         relatedReference: get(row,'relatedReference'), status: statusOf(get(row,'status'),result.provider), principalMinor: money(get(row,'principal'), { optional: true }),
         interestMinor: money(get(row,'interest'), { optional: true }), feeMinor: money(get(row,'fee'), { optional: true }), rawFields };
+      if(result.provider==='wechat'&&semanticType==='\u96f6\u94b1\u63d0\u73b0'&&headers.includes('\u5907\u6ce8')){
+        const remark=clean(row.cells[headers.indexOf('\u5907\u6ce8')]),fee=require('./wechatStatementFees').parseWechatServiceFeeRemark(remark);
+        if(fee!==null){
+          if(BigInt(fee)>=BigInt(record.amountMinor)||record.feeMinor!==null&&record.feeMinor!==fee)invalid('BILL_WECHAT_FEE_CONFLICT','\u5fae\u4fe1\u63d0\u73b0\u5907\u6ce8\u670d\u52a1\u8d39\u4e0e\u4ea4\u6613\u91d1\u989d\u6216\u624b\u7eed\u8d39\u5217\u4e0d\u4e00\u81f4');
+          record.feeMinor=fee;rawFields['\u5907\u6ce8']=remark;
+        }else if(/^\u670d\u52a1\u8d39[\u00a5\uffe5]/.test(remark))invalid('BILL_WECHAT_FEE_INVALID','\u5fae\u4fe1\u63d0\u73b0\u5907\u6ce8\u670d\u52a1\u8d39\u5fc5\u987b\u4e3a\u975e\u8d1f\u3001\u6700\u591a\u4e24\u4f4d\u5c0f\u6570\u7684\u91d1\u989d');
+      }
+      if(require('./legacyAlipayPurchases').isLegacyAlipayPurchase({...record,provider:result.provider}))record.kind='expense';
       const relations=inferAccountRelations(record,result.provider);if(relations.length)record.accountRelations=relations;
       result.records.push(record);
       if (mapping.status === undefined) result.warnings.push(diagnostic(row.line, 'BILL_STATUS_ASSUMED_COMPLETED', '源文件无状态列，按已入账记录处理；提交前请核验'));

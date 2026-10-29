@@ -1,8 +1,32 @@
 'use strict';
+// UTF-8 source; retain historical Alipay settled loans and payer records.
 // All fixtures below are synthetic; they are not verified bank exports.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseBillCsv } = require('./billCsv');
+function nativeWithdrawalCsv(remark,feeColumn=null,type='\u96f6\u94b1\u63d0\u73b0'){
+ const header='\u5fae\u4fe1\u652f\u4ed8\u8d26\u5355\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u7c7b\u578b,\u4ea4\u6613\u5bf9\u65b9,\u5546\u54c1,\u6536/\u652f,\u91d1\u989d(\u5143),\u652f\u4ed8\u65b9\u5f0f,\u5f53\u524d\u72b6\u6001,\u4ea4\u6613\u5355\u53f7,\u5907\u6ce8';
+ return header+(feeColumn===null?'':',\u624b\u7eed\u8d39')+'\n2022-01-06 08:33:29,'+type+',Bank,/,/,17632.51,\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361(6943),\u63d0\u73b0\u5df2\u5230\u8d26,207220106100054323603358514348,'+remark+(feeColumn===null?'':','+feeColumn);
+}
+test('the original WeChat withdrawal remark retains its actual fee without changing gross cash',()=>{
+ const result=parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.61'));assert.deepEqual(result.errors,[]);const r=result.records[0];assert.equal(r.amountMinor,'1763251');assert.equal(r.feeMinor,'1761');assert.equal(r.rawFields['\u5907\u6ce8'],'\u670d\u52a1\u8d39\u00a517.61');const proof=require('./wechatStatementFees').wechatStatementFee({...r,provider:'wechat'});assert.equal(proof.netMinor,'1761490');assert.equal(proof.confidence,'explicit_original_statement');
+});
+test('an explicit zero service fee is retained while a blank or unrelated remark does not imply zero',()=>{
+ for(const mark of ['\u00a5','\uffe5'])assert.equal(parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39'+mark+'0.00')).records[0].feeMinor,'0');
+ for(const text of ['/','','Other note']){const r=parseBillCsv(nativeWithdrawalCsv(text)).records[0];assert.equal(r.feeMinor,null);assert.equal(r.rawFields['\u5907\u6ce8'],undefined);}
+});
+test('inconsistent or over-precision native fees require review rather than rounding or overriding a fee column',()=>{
+ assert.equal(parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.61','17.60')).errors[0].code,'BILL_WECHAT_FEE_CONFLICT');assert.equal(parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.611')).errors[0].code,'BILL_WECHAT_FEE_INVALID');assert.equal(parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517632.51')).errors[0].code,'BILL_WECHAT_FEE_CONFLICT');assert.equal(parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.61','17.61')).errors.length,0);
+});
+test('a service-fee-looking note on another business does not become a withdrawal fee',()=>{
+ const r=parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.61',null,'\u8f6c\u8d26')).records[0];assert.equal(r.feeMinor,null);assert.equal(r.rawFields['\u5907\u6ce8'],undefined);
+});
+test('native fee evidence is scoped to the exact amount, order, time, kind and settled withdrawal status',()=>{
+ const r={...parseBillCsv(nativeWithdrawalCsv('\u670d\u52a1\u8d39\u00a517.61')).records[0],provider:'wechat'},helper=require('./wechatStatementFees');for(const patch of [{amountMinor:'1763252'},{sourceTransactionId:'other'},{occurredAt:'2022-01-06T08:33:30+08:00'},{kind:'expense'},{status:'pending'},{feeMinor:'1760'}])assert.equal(helper.wechatStatementFee({...r,...patch}),null);
+});
+test('return-shipping payments are expenses while actual shipping refunds remain refunds',()=>{
+ const r=parseBillCsv('\u652f\u4ed8\u5b9d\u8d26\u5355\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u5206\u7c7b,\u4ea4\u6613\u5bf9\u65b9,\u5546\u54c1\u8bf4\u660e,\u6536/\u652f,\u91d1\u989d,\u4ea4\u6613\u72b6\u6001,\u4ea4\u6613\u8ba2\u5355\u53f7\n2025-06-20 12:22:31,\u751f\u6d3b\u670d\u52a1,Logistics,\u6dd8\u5b9d\u9000\u8d27-\u5bc4\u4ef6\u8d39_123,\u652f\u51fa,3.81,\u4ea4\u6613\u6210\u529f,shipping\n2025-06-20 21:28:17,\u9000\u6b3e,Logistics,\u9000\u6b3e-\u6dd8\u5b9d\u9000\u8d27-\u5bc4\u4ef6\u8d39_123,\u4e0d\u8ba1\u6536\u652f,2.60,\u9000\u6b3e\u6210\u529f,shipping-refund');assert.deepEqual(r.errors,[]);assert.equal(r.records[0].kind,'expense');assert.equal(r.records[0].direction,'debit');assert.equal(r.records[1].kind,'refund');
+});
 
 test('zero income column cannot hide a bank debit; decimal precision is exact', () => {
   const result = parseBillCsv('交易日期,收入金额,支出金额,余额,摘要\n2026-10-01,0.00,"1,234.56","9,876.54",消费');
@@ -133,6 +157,11 @@ test('observed settled wallet status labels parse without relaxing unknown statu
  }
 });
 
+test('historical Alipay loan disbursement is debt funding and settled payer labels are retained',()=>{
+ const header='\u652f\u4ed8\u5b9d\u4ea4\u6613\u660e\u7ec6\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u5206\u7c7b,\u4ea4\u6613\u5bf9\u65b9,\u5546\u54c1\u8bf4\u660e,\u6536/\u652f,\u91d1\u989d,\u6536/\u4ed8\u6b3e\u65b9\u5f0f,\u4ea4\u6613\u72b6\u6001,\u4ea4\u6613\u8ba2\u5355\u53f7\n';
+ const p=parseBillCsv(header+'2018-01-01 12:00:00,\u4fe1\u7528\u501f\u8fd8,\u8682\u8681\u501f\u5457,\u8682\u8681\u501f\u5457\u653e\u6b3e\u81f3\u4f59\u989d,\u4e0d\u8ba1\u6536\u652f,1000,\u4f59\u989d,\u653e\u6b3e\u6210\u529f,loan1\n2018-01-02 12:00:00,\u4eb2\u53cb\u4ee3\u4ed8,\u5bb6\u4eba,\u4ee3\u4ed8,\u652f\u51fa,100,\u5efa\u8bbe\u94f6\u884c\u50a8\u84c4\u5361(1234),\u4ee3\u4ed8\u6210\u529f,pay1');assert.deepEqual(p.errors,[]);assert.equal(p.records[0].kind,'loan_drawdown');assert.equal(p.records[0].accountRelations[0].product,'alipay_jiebei');assert.equal(p.records[0].accountRelations[0].activity,'loan_drawdown');assert.equal(p.records[1].kind,'expense');
+ assert(parseBillCsv('date,type,amount,status\n2018-01-01,income,1000,\u653e\u6b3e\u6210\u529f').errors.some(e=>e.code==='BILL_STATUS_UNKNOWN'));
+});
 test('legacy WeChat refund-process labels remain pending rather than disappearing or becoming income',()=>{
  const p=parseBillCsv('\u5fae\u4fe1\u652f\u4ed8\u8d26\u5355\n\u4ea4\u6613\u65f6\u95f4,\u4ea4\u6613\u7c7b\u578b,\u5546\u54c1,\u6536/\u652f,\u91d1\u989d,\u5f53\u524d\u72b6\u6001\n2015-04-29 12:00:00,\u5fae\u4fe1\u7ea2\u5305,/,\u652f\u51fa,10,\u5df2\u8f6c\u5165\u9000\u6b3e');
  assert.deepEqual(p.errors,[]);assert.equal(p.records.length,1);assert.equal(p.records[0].amountMinor,'1000');assert.equal(p.records[0].direction,'debit');assert.equal(p.records[0].status,'pending');assert.equal(p.records[0].rawFields['\u5f53\u524d\u72b6\u6001'],'\u5df2\u8f6c\u5165\u9000\u6b3e');

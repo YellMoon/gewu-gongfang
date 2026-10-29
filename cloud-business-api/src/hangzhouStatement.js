@@ -15,14 +15,23 @@ function parseHangzhouPdf(pages){
    const items=page.items.filter(i=>i.y>40);
    const starts=items.filter(i=>i.x<50&&/^\d+$/.test(i.str)&&items.some(j=>j.x>=50&&j.x<113&&Math.abs(j.y-i.y)<1&&date(j.str))).sort((a,b)=>b.y-a.y);
    for(let i=0;i<starts.length;i++){
-    const at=starts[i],top=i?(starts[i-1].y+at.y)/2:at.y+15,bottom=i+1<starts.length?(at.y+starts[i+1].y)/2:40;
+    const at=starts[i],header=items.filter(j=>j.x<50&&j.str.trim()==='\u5e8f\u53f7'&&j.y>at.y).sort((a,b)=>a.y-b.y)[0];
+    const footer=items.filter(j=>/^(?:\u6536\u5165|\u652f\u51fa)\u5408\u8ba1[:\uff1a]/.test(j.str)&&j.y<at.y).sort((a,b)=>b.y-a.y)[0];
+    const top=i?(starts[i-1].y+at.y)/2:Math.min(at.y+15,header?(header.y+at.y)/2:Infinity),bottom=i+1<starts.length?(at.y+starts[i+1].y)/2:Math.max(40,footer?(footer.y+at.y)/2:40);
     const band=items.filter(j=>j.y<=top&&j.y>bottom).sort((a,b)=>b.y-a.y||a.x-b.x),column=(left,right)=>band.filter(j=>j.x>=left&&j.x<right).map(j=>j.str).join('').trim();
     raw.push({sequence:Number(at.str),date:date(column(50,113)),amount:money(column(113,175)),balance:money(column(175,240)),description:column(240,350),counterAccount:column(350,455),counterparty:column(455,610)});
    }
   }
   raw.sort((a,b)=>a.sequence-b.sequence);if(!raw.length||raw.some((r,i)=>r.sequence!==i+1||!date(r.date)||r.date<periodStart||r.date>lastDate||i&&r.balance-raw[i-1].balance!==r.amount))throw Error('BILL_BANK_BALANCE_CHAIN_INVALID');
   const income=raw.filter(r=>r.amount>0n).reduce((s,r)=>s+r.amount,0n),expense=raw.filter(r=>r.amount<0n).reduce((s,r)=>s-r.amount,0n),totalIn=all.match(/\u6536\u5165\u5408\u8ba1[:\uff1a]([\d,.]+)/),totalOut=all.match(/\u652f\u51fa\u5408\u8ba1[:\uff1a]([\d,.]+)/);
-  if(!totalIn||!totalOut||money(totalIn[1])!==income||money(totalOut[1])!==expense)throw Error('BILL_BANK_TOTAL_INVALID');
+  const reversalPairs=new Map();let reversed=0n;
+  for(let i=1;i<raw.length;i++){
+   const r=raw[i],previous=raw[i-1],reference=r.description.match(/^\u6c47\u5151\u53cd\/\u51b2\u8d26[,\uff0c]\u539f\u6d41\u6c34\u53f7(\d{8})\d+$/);
+   if(!reference||reference[1]!==r.date.replace(/-/g,'')||previous.date!==r.date||previous.amount>=0n||r.amount!==-previous.amount||r.counterAccount!==previous.counterAccount||r.counterparty!==previous.counterparty||reversalPairs.has(previous.sequence))continue;
+   reversalPairs.set(r.sequence,previous.sequence);reversalPairs.set(previous.sequence,r.sequence);reversed+=r.amount;
+  }
+  const totalsAgree=totalIn&&totalOut&&((money(totalIn[1])===income&&money(totalOut[1])===expense)||(reversed>0n&&money(totalIn[1])===income-reversed&&money(totalOut[1])===expense-reversed));
+  if(!totalsAgree)throw Error('BILL_BANK_TOTAL_INVALID');
   const seen=new Map();
   for(const r of raw){
    const credit=r.amount>=0n,amount=credit?r.amount:-r.amount,description=r.description.normalize('NFKC'),ownerTransfer=r.counterparty===name[1]||r.counterparty==='\u652f\u4ed8\u5b9d-'+name[1],investment=/\u7406\u8d22\u7533\u8d2d|\u7406\u8d22\u8d4e\u56de|\u57fa\u91d1\u8d4e\u56de|\u6295\u8d44\u8d4e\u56de/.test(description);
@@ -31,6 +40,8 @@ function parseHangzhouPdf(pages){
    result.records.push({sourceTransactionId:'hangzhou:'+createHash('sha256').update(key+':'+ordinal).digest('hex'),date:r.date,occurredAt:r.date+'T23:59:59+08:00',currency:'CNY',amountMinor:amount.toString(),direction:credit?'credit':'debit',kind,status:'completed',description,counterparty:r.counterparty,paymentChannel:'',paymentAccountHint:'',relatedReference:'',category:kind==='unknown'?'\u5f85\u5206\u7c7b':'',balanceMinor:r.balance.toString(),balanceConvention:'signed',principalMinor:null,interestMinor:null,feeMinor:null,rawFields:{sequence:r.sequence,periodStart,periodLastDate:lastDate,description,counterAccount:'****'+r.counterAccount.replace(/\D/g,'').slice(-4),counterparty:r.counterparty},bankAccount,statementFlow:{schema:'hangzhou-debit-v1',sequence:r.sequence,periodStart,periodEnd,incomeMinor:(credit?amount:0n).toString(),expenseMinor:(credit?0n:amount).toString(),balanceKind:'total'}});
   }
   result.accountIdentity=bankAccount;
+  result.statementOwner=require('../../shared/personal-finance/statementOwnership').validateStatementOwner({schema:'bank-statement-owner-v1',fullName:name[1].normalize('NFKC').trim()});
+  for(const r of raw)if(reversalPairs.has(r.sequence)){const record=result.records[r.sequence-1],other=result.records[reversalPairs.get(r.sequence)-1];record.kind='transfer';record.rawFields.reversalPairSourceTransactionId=other.sourceTransactionId;}
   result.warnings.push({line:1,code:'BILL_BANK_TRANSFERS_RETAINED',message:'\u5df2\u6821\u9a8c\u9010\u884c\u4f59\u989d\u548c\u6536\u5165\u3001\u652f\u51fa\u5408\u8ba1\uff1b\u672a\u6ce8\u660e\u7528\u9014\u7684\u6c47\u5151\u4fdd\u7559\u4e3a\u8f6c\u8d26\uff0c\u7406\u8d22\u7533\u8d2d\u8d4e\u56de\u4fdd\u7559\u8d44\u91d1\u5212\u8f6c\u8bb0\u5f55\u3002'});
  }catch(e){result.records=[];result.errors.push({line:1,code:e.code||e.message||'BILL_BANK_INVALID',message:'Hangzhou statement rows, totals or balance chain failed validation'});}
  return result;

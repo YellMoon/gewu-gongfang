@@ -27,9 +27,11 @@ test('CCB debit XLS and XLSX use the bounded production parser and preserve sign
   assert.deepEqual(parsed.errors,[]);assert.equal(parsed.provider,'ccb');assert.equal(parsed.templateId,'ccb-debit-v1');assert.equal(parsed.records.length,2);
   parsed.records.forEach(require('../../shared/personal-finance/ledger').validateRecord);
   assert.equal(parsed.accountIdentity.type,'debit_card');assert.equal(parsed.accountIdentity.maskedIdentifier,'6943');
+  assert.deepEqual(parsed.statementOwner,{schema:'bank-statement-owner-v1',fullName:'\u6d4b\u8bd5\u7528\u6237'});
   assert.equal(parsed.records[0].statementFlow.openingBeforeFirstMinor,'10000');assert.equal(parsed.records[1].balanceMinor,'18000');
   if(expected)assert.deepEqual(parsed.records,expected);else expected=parsed.records;
  }
+ const conflict=structuredClone(rows);conflict[1][3]='\u5ba2\u6237\u540d\u79f0:\u5176\u4ed6\u7528\u6237';const mixedOwners=new JSZip();mixedOwners.file('first.xlsx',workbook('xlsx',rows));mixedOwners.file('second.xlsx',workbook('xlsx',conflict));const rejected=await parseBillFile(file('owners.zip',await mixedOwners.generateAsync({type:'nodebuffer'})));assert(rejected.errors.some(e=>e.code==='BILL_STATEMENT_OWNER_CONFLICT'));assert.equal(rejected.statementOwner,undefined,'conflicting headers cannot assign ownership to the retained diagnostic rows');
  const bad=structuredClone(rows);bad[5][6]='181.00';const invalid=await parseBillFile(file('bad-ccb.xls',workbook('xls',bad)));
  assert.equal(invalid.records.length,0);assert.equal(invalid.errors[0].code,'BILL_BANK_RECONCILIATION_FAILED');
 });

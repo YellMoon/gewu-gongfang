@@ -1,0 +1,99 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),{buildFinanceView}=require('./ledger'),{planClosedFundedTransfers}=require('./closedFundedTransfers'),{parseAlipayWalletBalanceRows}=require('./alipayWalletStatement');
+function fixture(){
+ const date='2016-04-14',parentReference='20160414200040011100250047006722',description='\u8f6c\u8d26\u5230\u94f6\u884c\u5361-\u8bfe\u916c',base={provider:'alipay',financialAccountId:'wallet',currency:'CNY',date,amountMinor:'72000',paymentChannel:'\u4f59\u989d\u5b9d',paymentAccountHint:'',counterparty:'Test Person',category:'\u8f6c\u8d26\u7ea2\u5305',balanceMinor:null,feeMinor:null,interestMinor:null,principalMinor:null,relatedReference:'',sourceVersionOrdinal:1};
+ const parent={...base,id:'parent',sourceIdentity:'parent',sourceTransactionId:parentReference,kind:'transfer',direction:'debit',status:'failed',occurredAt:date+'T14:36:50+08:00',description,accountRelations:[{product:'alipay_yuebao',role:'funding',activity:'funding_outflow',financialAccountId:'fund'}]},refund={...base,id:'refund',sourceIdentity:'refund',sourceTransactionId:'2016041430000200250220171845',kind:'refund',direction:'neutral',status:'completed',occurredAt:date+'T14:38:14+08:00',description:description.replace('\u8f6c\u8d26\u5230\u94f6\u884c\u5361-','\u8f6c\u8d26\u5230\u94f6\u884c\u5361-\u9000\u6b3e-'),accountRelations:[{product:'alipay_yuebao',role:'funding',activity:'funding_inflow',financialAccountId:'fund'}]};
+ for(const o of[parent,refund])o.rawFields={'\u4ea4\u6613\u65f6\u95f4':o.occurredAt.slice(0,19).replace('T',' '),'\u4ea4\u6613\u8ba2\u5355\u53f7':o.sourceTransactionId,'\u5546\u54c1\u8bf4\u660e':o.description,'\u4ea4\u6613\u5bf9\u65b9':o.counterparty,'\u6536/\u4ed8\u6b3e\u65b9\u5f0f':o.paymentChannel,'\u4ea4\u6613\u5206\u7c7b':o.category,'\u5546\u5bb6\u8ba2\u5355\u53f7':'','\u91d1\u989d':'720.00','\u6536/\u652f':o.id==='parent'?'\u652f\u51fa':'\u4e0d\u8ba1\u6536\u652f','\u4ea4\u6613\u72b6\u6001':o.id==='parent'?'\u8f6c\u8d26\u5931\u8d25':'\u9000\u6b3e\u6210\u529f'};
+ const parsed=parseAlipayWalletBalanceRows([
+  ['20160414110500126000250061235488',date+' 14:38:20','\u8d2d\u4e70\u7406\u8d22\u4ea7\u54c1\u8f6c\u51fa(\u4f59\u989d\u5b9d\u3001\u6dd8\u5b9d\u57fa\u91d1\u3001\u62db\u8d22\u5b9d\u7b49)\u4f59\u989d\u5b9d-\u9000\u6b3e\u8f6c\u5165','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],
+  [parentReference,date+' 14:38:14','\u8f6c\u8d26','720.00','','720.00','\u652f\u4ed8\u5b9d',''],
+  [parentReference,date+' 14:36:57','\u8f6c\u8d26','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],
+  ['20160414000251052500006***15',date+' 14:36:57','\u7406\u8d22\u8d4e\u56de\u8d44\u91d1\u8f6c\u5165\u652f\u4ed8\u5b9d\u8d26\u6237\u4f59\u989d\u5b9d\u652f\u4ed8','720.00','','720.00','\u5929\u5f18\u57fa\u91d1','']
+ ]);assert.deepEqual(parsed.errors,[]);
+ return{accounts:[{id:'wallet',label:'Wallet',provider:'alipay',type:'wallet',currency:'CNY',status:'active',openingBalanceMinor:'0',openingDate:date},{id:'fund',label:'Yuebao',provider:'alipay',type:'investment',sourceProduct:'alipay_yuebao',currency:'CNY',status:'active',openingBalanceMinor:'100000',openingDate:date}],observations:[parent,refund,...parsed.records.map((o,i)=>({...o,id:'cash'+i,sourceIdentity:'cash'+i,sourceVersionOrdinal:1,provider:'alipay',financialAccountId:'wallet',importId:'native'}))],annotations:[],links:[],imports:[],balanceSnapshots:[]};
+}
+function baseline(l){const p=l.observations.find(o=>o.id==='parent'),r=l.observations.find(o=>o.id==='refund');return[{...p,observationIds:[p.id],sources:[p],balanceEffects:{},cashEffects:{},consumptionMinor:0n,incomeMinor:0n},{...r,observationIds:[r.id],sources:[r],balanceEffects:{fund:72000n},cashEffects:{fund:72000n},consumptionMinor:-72000n,selectedConsumptionMinor:-72000n,incomeMinor:0n,selectedIncomeMinor:0n}];}
+function closedMerchantFixture(){const l=fixture(),p=l.observations[0],r=l.observations[1],date='2016-05-16',merchant='T200P1234567890';p.description='Closed merchant order';p.relatedReference=merchant;p.rawFields['\u5546\u54c1\u8bf4\u660e']=p.description;p.rawFields['\u4ea4\u6613\u72b6\u6001']='\u4ea4\u6613\u5173\u95ed';p.rawFields['\u5546\u5bb6\u8ba2\u5355\u53f7']=merchant;r.sourceTransactionId=p.sourceTransactionId+'_1234567890';r.description='\u9000\u6b3e-'+p.description;r.relatedReference=merchant;r.date=date;r.occurredAt=date+'T14:38:14+08:00';Object.assign(r.rawFields,{'\u4ea4\u6613\u8ba2\u5355\u53f7':r.sourceTransactionId,'\u5546\u54c1\u8bf4\u660e':r.description,'\u4ea4\u6613\u65f6\u95f4':date+' 14:38:14','\u5546\u5bb6\u8ba2\u5355\u53f7':merchant});const parsed=parseAlipayWalletBalanceRows([['20160516110500126000250079193819',date+' 14:38:15','\u8d2d\u4e70\u7406\u8d22\u4ea7\u54c1\u8f6c\u51fa(\u4f59\u989d\u5b9d\u3001\u6dd8\u5b9d\u57fa\u91d1\u3001\u62db\u8d22\u5b9d\u7b49)\u4f59\u989d\u5b9d\u8f6c\u5165','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],[p.sourceTransactionId,date+' 14:38:14','\u4ea4\u6613\u9000\u6b3e','720.00','','720.00','\u652f\u4ed8\u5b9d',''],[p.sourceTransactionId,p.date+' 14:36:57','\u5728\u7ebf\u652f\u4ed8','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],['20160414000251052500006***15',p.date+' 14:36:57','\u7406\u8d22\u8d4e\u56de\u8d44\u91d1\u8f6c\u5165\u652f\u4ed8\u5b9d\u8d26\u6237\u4f59\u989d\u5b9d\u652f\u4ed8','720.00','','720.00','\u5929\u5f18\u57fa\u91d1','']]);assert.deepEqual(parsed.errors,[]);l.observations=[p,r,...parsed.records.map((o,i)=>({...o,id:'cash'+i,sourceIdentity:'cash'+i,sourceVersionOrdinal:1,provider:'alipay',financialAccountId:'wallet',importId:'native'}))];return l;}
+test('a closed merchant order and exact original later refund restore fund principal without a negative-consumption windfall',()=>{const l=closedMerchantFixture(),raw=JSON.stringify(l),v=buildFinanceView(l),p=v.transactions.find(t=>t.id==='parent'),r=v.transactions.find(t=>t.id==='refund');assert.equal(v.transactions.length,4);assert.equal(p.status,'failed');assert.equal(p.consumptionMinor,'0');assert.equal(r.kind,'transfer');assert.equal(r.consumptionMinor,'0');assert.equal(r.sources[0].kind,'refund');assert.equal(r.sources[0].date,'2016-05-16');assert.equal(r.nativeClosedFundedTransfer.closedMerchantCashCycle,true);assert.equal(r.nativeClosedFundedTransfer.originalFinalRawStatus,'\u4ea4\u6613\u5173\u95ed');assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');assert.equal(v.accountStats.fund.balanceMinor,'100000');assert.equal(v.accountStats.wallet.balanceMinor,'0');assert.equal(v.balanceReconciliation.summary.differenceIntervalCount,0);assert.deepEqual(r.balanceEffectEvents.wallet.map(e=>e.deltaMinor),['72000','-72000']);assert.equal(JSON.stringify(l),raw);});
+test('closed merchant cash requires the full parent and refund references, merchant identity, fund, every native leg and owner consent',()=>{const plan=require('./closedFundedTransfers').planClosedFundedMerchantOrders;for(const change of[l=>l.observations[1].sourceTransactionId=l.observations[0].sourceTransactionId+'_not-digits',l=>l.observations[1].relatedReference='T200P9999999999',l=>l.observations[1].rawFields['\u5546\u5bb6\u8ba2\u5355\u53f7']='Other',l=>l.observations[1].counterparty='Other merchant',l=>l.observations[0].rawFields['\u4ea4\u6613\u72b6\u6001']='\u4ea4\u6613\u6210\u529f',l=>l.observations[0].kind='expense',l=>l.observations[1].accountRelations[0].financialAccountId='missing',l=>l.observations.find(o=>o.id==='cash2').relatedReference='2016041499999999999999999999',l=>l.observations.find(o=>o.id==='cash3').description='Other investment deposit',l=>l.observations.push({id:'ordinary-deposit',sourceIdentity:'ordinary-deposit',sourceVersionOrdinal:1,provider:'alipay',financialAccountId:'wallet',sourceTransactionId:'20160516110500126000250079193819',kind:'transfer',status:'completed',date:'2016-05-16',amountMinor:'72000',currency:'CNY'}),l=>l.observations.push({id:'fund-statement',sourceIdentity:'fund-statement',sourceVersionOrdinal:1,provider:'alipay',financialAccountId:'fund',status:'completed',date:'2016-04-14',amountMinor:'72000',currency:'CNY'}),l=>l.annotations.push({observationId:'parent',revision:'1',patch:{category:'Owner choice'}}),l=>l.annotations.push({observationId:'refund',revision:'1',patch:{category:'Owner choice'}}),l=>l.annotations.push({observationId:'cash0',revision:'1',patch:{category:'Owner choice'}}),l=>l.links.push({type:'distinct',observationIds:['parent','refund']})]){const l=closedMerchantFixture();change(l);assert.equal(plan(l,baseline(l)).length,0,change.toString());}});
+test('a completed closed merchant cash cycle is idempotent and retains ambiguity between two plausible original refund rows',()=>{const plan=require('./closedFundedTransfers').planClosedFundedMerchantOrders,l=closedMerchantFixture(),v=buildFinanceView(l);assert.equal(plan(l,v.transactions).length,0);const x=closedMerchantFixture(),r=x.observations[1];x.observations.push({...r,id:'other-refund',sourceIdentity:'other-refund',sourceTransactionId:x.observations[0].sourceTransactionId+'_1234567891',rawFields:{...r.rawFields,'\u4ea4\u6613\u8ba2\u5355\u53f7':x.observations[0].sourceTransactionId+'_1234567891'}});assert.equal(plan(x,baseline(x)).length,0);});
+test('a failed Yuebao-funded transfer retains its full temporary cash and refund without inflating fund assets or reducing consumption',()=>{
+ const l=fixture(),before=JSON.stringify(l),v=buildFinanceView(l),parent=v.transactions.find(t=>t.id==='parent'),refund=v.transactions.find(t=>t.id==='refund');assert.equal(v.transactions.length,4);assert.equal(parent.status,'failed');assert.deepEqual(parent.balanceEffects,{});assert.equal(refund.kind,'transfer');assert.equal(refund.consumptionMinor,'0');assert.equal(refund.sources[0].kind,'refund');assert.equal(refund.rawFields['\u4ea4\u6613\u72b6\u6001'],'\u9000\u6b3e\u6210\u529f');assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');assert.equal(v.currencyTotals.CNY.netCashFlowMinor,'0');assert.equal(v.accountStats.fund.balanceMinor,'100000');assert.equal(v.accountStats.wallet.balanceMinor,'0');assert.equal(v.review.transactionCount,0);assert.equal(v.balanceReconciliation.summary.differenceIntervalCount,0);
+ const initial=v.transactions.find(t=>t.id==='cash0'),payment=v.transactions.find(t=>t.id==='cash1');assert.deepEqual(initial.balanceEffects,{wallet:'72000',fund:'-72000'});assert.deepEqual(initial.cashEffects,initial.balanceEffects);assert.deepEqual(payment.balanceEffects,{wallet:'-72000'});assert.equal(initial.sources[0].amountMinor,'0');assert.equal(initial.nativeClosedFundedTransfer.fullFundRedemptionReferenceVerified,false);assert.equal(initial.nativeClosedFundedTransfer.originalFailedOrderReference,l.observations[0].sourceTransactionId);assert.deepEqual(refund.balanceEffectEvents.wallet.map(e=>e.deltaMinor),['72000','-72000']);assert.equal(JSON.stringify(l),before);
+ assert.equal(planClosedFundedTransfers(l,v.transactions).length,0,'already claimed native cash is not posted again');
+});
+test('cash plans preserve source versions and refuse a missing leg, false product, different order or owner decision',()=>{
+ const changes=[
+  l=>l.observations.pop(),
+  l=>l.observations.find(o=>o.id==='cash0').balanceMinor='1',
+  l=>l.observations[0].accountRelations[0].financialAccountId='other',
+  l=>l.observations[1].accountRelations[0].activity='funding_outflow',
+  l=>l.observations[0].rawFields['\u4ea4\u6613\u72b6\u6001']='\u4ea4\u6613\u5173\u95ed',
+  l=>l.observations[1].rawFields['\u91d1\u989d']='719.00',
+  l=>l.observations.find(o=>o.id==='cash2').relatedReference='different-order',
+  l=>l.annotations.push({id:'owner-parent',observationId:'parent',revision:'1',patch:{category:'Owner choice'}}),
+  l=>l.annotations.push({id:'owner-proof',observationId:'cash0',revision:'1',patch:{category:'Owner choice'}}),
+  l=>l.links.push({type:'distinct',observationIds:['parent','refund']}),
+  l=>l.links.push({type:'duplicate',status:'deleted',observationIds:['parent','cash1']}),
+  l=>l.observations.push({...l.observations[1],id:'other-refund',sourceIdentity:'other-refund',sourceTransactionId:'2016041430000200250220171846',rawFields:{...l.observations[1].rawFields,'\u4ea4\u6613\u8ba2\u5355\u53f7':'2016041430000200250220171846'}})
+ ];
+ for(const change of changes){const l=fixture();change(l);assert.equal(planClosedFundedTransfers(l,baseline(l)).length,0,change.toString());}
+ const l=fixture();l.observations.push({...l.observations[0],id:'old-parent',sourceVersionOrdinal:0});l.annotations.push({id:'old-choice',observationId:'old-parent',revision:'1',patch:{category:'Old owner choice'}});assert.equal(planClosedFundedTransfers(l,baseline(l)).length,0);
+});
+test('filtered accounts and date ranges retain a zero-net closed cycle and do not fabricate income',()=>{
+ const l=fixture();for(const accountId of['wallet','fund']){const v=buildFinanceView(l,{accountIds:[accountId]});assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');assert.equal(v.currencyTotals.CNY.netCashFlowMinor,'0');}
+ const v=buildFinanceView(l,{dateFrom:'2016-04-15',dateTo:'2016-04-15'});assert.equal(v.currencyTotals.CNY?.consumptionMinor||'0','0');assert.equal(v.currencyTotals.CNY?.incomeMinor||'0','0');
+});
+
+function returnedRedpacketFixture(){
+ const l=fixture();l.observations=l.observations.slice(0,2);const[p,r]=l.observations,merchant='201604140106302233663148250015167456';
+ p.status='completed';p.description='\u53d1\u666e\u901a\u7ea2\u5305';r.description='\u9000\u6b3e-\u53d1\u666e\u901a\u7ea2\u5305';
+ for(const o of[p,r]){o.counterparty='\u652f\u4ed8\u5b9d\u7ea2\u5305';o.relatedReference=merchant;Object.assign(o.rawFields,{'\u5546\u5bb6\u8ba2\u5355\u53f7':merchant,'\u4ea4\u6613\u5bf9\u65b9':o.counterparty,'\u5546\u54c1\u8bf4\u660e':o.description,'\u4ea4\u6613\u72b6\u6001':o===p?'\u4ea4\u6613\u6210\u529f':'\u9000\u6b3e\u6210\u529f'});}
+ return l;
+}
+function returnedRedpacketCashFixture(){
+ const l=returnedRedpacketFixture(),date='2016-04-14',nativeRef='20160414200040011100250047006721';
+ const parsed=parseAlipayWalletBalanceRows([
+  ['20160414310500126000250063026350',date+' 14:38:16','\u8f6c\u8d26\u4f59\u989d\u5b9d-\u9000\u6b3e\u8f6c\u5165','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],
+  [nativeRef,date+' 14:38:14','\u53d1\u7ea2\u5305-\u9000\u6b3e','720.00','','720.00','\u652f\u4ed8\u5b9d',''],
+  [nativeRef,date+' 14:36:55','\u53d1\u7ea2\u5305','','-720.00','0.00','\u652f\u4ed8\u5b9d',''],
+  [nativeRef,date+' 14:36:55','\u8f6c\u8d26','720.00','','720.00','\u652f\u4ed8\u5b9d','']
+ ]);assert.deepEqual(parsed.errors,[]);
+ l.observations.push(...parsed.records.map((o,i)=>({...o,id:'redpacket-cash'+i,sourceIdentity:'redpacket-cash'+i,sourceVersionOrdinal:1,provider:'alipay',financialAccountId:'wallet',importId:'native'})));
+ return l;
+}
+test('a complete merchant-linked returned red packet restores both zero-net original wallet pairs without duplicating fund cash',()=>{
+ const l=returnedRedpacketCashFixture(),raw=JSON.stringify(l),v=buildFinanceView(l),p=v.transactions.find(t=>t.id==='parent'),r=v.transactions.find(t=>t.id==='refund');
+ assert.equal(v.transactions.length,2);assert.deepEqual(p.cashEffects,{fund:'-72000',wallet:'0'});assert.deepEqual(r.cashEffects,{fund:'72000',wallet:'0'});assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');assert.equal(v.currencyTotals.CNY.netCashFlowMinor,'0');assert.equal(v.balanceReconciliation.summary.differenceIntervalCount,0);assert.equal(v.accountStats.fund.balanceMinor,'100000');assert.equal(v.accountStats.wallet.balanceMinor,'0');assert.equal(r.walletIntermediaryPostings[0].returnedRedpacketCashCycle.platformOrderReferenceMatchedToNativeCash,false);assert.notEqual(p.walletIntermediaryPostings[0].returnedRedpacketCashCycle.nativeCashOrderReference,l.observations[0].sourceTransactionId);assert.deepEqual(p.balanceEffectEvents.wallet.map(e=>e.deltaMinor),['72000','-72000']);assert.deepEqual(r.balanceEffectEvents.wallet.map(e=>e.deltaMinor),['72000','-72000']);assert.equal(p.sources[0].amountMinor,'72000');assert.equal(l.observations[2].amountMinor,'0');assert.equal(JSON.stringify(l),raw);
+});
+test('red-packet cash cycles reject partial evidence, invalid balances, unrelated native references and owner-edited cash proofs',()=>{
+ for(const change of[
+  l=>l.observations.pop(),
+  l=>l.observations[2].balanceMinor='1',
+  l=>{const p=l.observations.find(o=>o.description==='\u53d1\u7ea2\u5305-\u9000\u6b3e');p.relatedReference='20160414200040011100250047006720';p.rawFields['\u6d41\u6c34\u53f7']=p.relatedReference;},
+  l=>l.annotations.push({id:'cash-choice',observationId:'redpacket-cash0',revision:'1',patch:{category:'Owner choice'}}),
+  l=>l.links.push({type:'distinct',observationIds:['parent','redpacket-cash0']}),
+  l=>l.observations.push({...l.observations[2],id:'same-version-cash-rival'}),
+  l=>l.observations.push({...l.observations[0],id:'source-rival',sourceIdentity:'source-rival',relatedReference:'201604140106302233663148250015167457'}),
+ ]){const l=returnedRedpacketCashFixture();change(l);const v=buildFinanceView(l);assert(!v.transactions.find(t=>t.id==='refund').walletIntermediaryPostings,change.toString());}
+});
+test('a fully returned original transfer restores principal without reducing consumption or changing any cash',()=>{
+ const l=returnedRedpacketFixture(),raw=JSON.stringify(l),v=buildFinanceView(l),p=v.transactions.find(t=>t.id==='parent'),r=v.transactions.find(t=>t.id==='refund');
+ assert.equal(p.kind,'transfer');assert.equal(r.kind,'transfer');assert.equal(r.consumptionMinor,'0');assert.equal(r.selectedConsumptionMinor,'0');assert.equal(v.currencyTotals.CNY.consumptionMinor,'0');assert.equal(v.currencyTotals.CNY.incomeMinor,'0');assert.equal(v.accountStats.fund.balanceMinor,'100000');assert.deepEqual(r.cashEffects,{fund:'72000'});assert.deepEqual(p.cashEffects,{fund:'-72000'});assert.equal(r.sources[0].kind,'refund');assert.equal(r.relatedTransactionId,'parent');assert.equal(r.automaticClassification.merchantOrderReferenceMatched,true);assert.equal(r.automaticClassification.nativeWalletReferenceEquatedToPlatformOrder,false);assert.equal(JSON.stringify(l),raw);
+ for(const accountId of['wallet','fund'])assert.equal(buildFinanceView(l,{accountIds:[accountId]}).currencyTotals.CNY.consumptionMinor,'0');
+});
+test('a normal expense refund, partial return, mismatched merchant reference or owner choice cannot inherit transfer purpose',()=>{
+ for(const change of[
+  l=>l.observations[0].kind='expense',
+  l=>{l.observations[1].amountMinor='71900';l.observations[1].rawFields['\u91d1\u989d']='719.00';},
+  l=>l.observations[1].relatedReference='201604140106302233663148250015167457',
+  l=>l.observations[1].rawFields['\u5546\u5bb6\u8ba2\u5355\u53f7']='different',
+  l=>l.observations[1].rawFields['\u4ea4\u6613\u72b6\u6001']='\u9000\u6b3e\u5904\u7406\u4e2d',
+  l=>l.observations[1].accountRelations[0].financialAccountId='different',
+  l=>l.annotations.push({id:'owner',observationId:'refund',revision:'1',patch:{category:'Owner refund'}}),
+  l=>l.annotations.push({id:'owner',observationId:'parent',revision:'1',patch:{category:'Owner transfer'}}),
+  l=>l.links.push({type:'distinct',observationIds:['parent','refund']}),
+  l=>l.observations.push({...l.observations[1],id:'rival',sourceIdentity:'rival'}),
+ ]){const l=returnedRedpacketFixture();change(l);const v=buildFinanceView(l),r=v.transactions.find(t=>t.id==='refund');assert.notEqual(r?.automaticClassification?.method,'exact_merchant_reference_returned_transfer_principal',change.toString());}
+ const l=returnedRedpacketFixture();l.observations[0].kind='expense';const v=buildFinanceView(l);assert.equal(v.transactions.find(t=>t.id==='refund').consumptionMinor,'-72000','normal purchase refunds still reduce expense');
+});
