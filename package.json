@@ -30,7 +30,7 @@
     "test:vnext-pg17": "node shared/vnext-pg17/runPg17IntegrationTests.js",
     "test:vnext-control-plane-target": "npm run test:vnext-migration && npm run test:vnext-pg17",
     "test:vnext-migration": "node shared/migrationBundleProtocol.test.js && node shared/controlPlaneMigrationCatalog.test.js && node migration/vnext/sourceTableCatalog.test.js && node shared/vnext-pg17/coreSchedulingSourceContract.test.js && node shared/vnext-pg17/productionBusinessLedgerReceipt.test.js && node scripts/vnext-migration/coreSchedulingReadOnlySource.test.js && node scripts/vnext-migration/cloudBusinessImport.test.js && node scripts/vnext-migration/cloudControlPlaneBootstrap.test.js && node scripts/vnext-migration/cloudControlPlaneM16Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM17Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM18Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM19Upgrade.test.js && node scripts/vnext-migration/cloudControlPlaneM20Upgrade.test.js && node scripts/vnext-migration/cloudOperatorIdentitySeed.test.js && node shared/vnext-pg17/coreSchedulingLegacyExceptionManifest.test.js && node shared/vNextControlPlaneReferenceKernel.test.js && node shared/vNextAuthorizationPolicyReference.test.js && node shared/vNextTrustedSessionVerifierBoundaryReference.test.js && node shared/vNextTrustRootVerifierBoundaryReference.test.js && node shared/vNextFirstAuthorityBootstrapReference.test.js && node shared/vNextEmergencyRecoveryReference.test.js && node shared/vNextAccessContextResolverReference.test.js && node shared/vNextAccountDeviceLinkRevocationMutationReference.test.js && node shared/vNextUnifiedDesktopRegistrationReference.test.js && node shared/vNextFileObjectLifecycleReference.test.js && node shared/vNextPolicyPublicationMutationReference.test.js && node shared/vNextRoleGrantMutationReference.test.js && node scripts/vnext-migration/pathSafety.test.js && node scripts/vnext-migration/sqliteInventory.test.js && node scripts/vnext-migration/sqliteSnapshot.test.js && node scripts/vnext-migration/fileInventory.test.js && node scripts/vnext-migration/sourceDiscovery.test.js && node scripts/vnext-migration/bundleWriter.test.js && node scripts/vnext-migration/sealedMigrationBundle.test.js && node scripts/vnext-migration/migrationKeyMaterial.test.js && node scripts/vnext-migration/sourceRecoveryPackage.test.js && node scripts/vnext-migration/cli.test.js",
-    "test:desktop-build-flavor": "node public/desktopBuildFlavor.test.js && node scripts/unified-desktop-package-boundary.test.js && node scripts/check_deploy_readiness.unifiedDesktopBoundary.test.js && node public/electronDevelopmentFixture.test.js && node public/electronRuntimeContracts.test.js && node public/electronSingleInstance.test.js && node public/electronCrossInstallLock.test.js && node scripts/verify-packaged-electron-native-abi.test.js && node scripts/cleanup-disposable-desktop-profiles.test.js && node scripts/desktop-architecture-cutover.test.js && node public/contentSecurityPolicy.test.js && node public/electronLocalIdentityDiagnostics.test.js && node public/localSessionSigningSecret.test.js && node src/pages/SystemSettings.test.js && node scripts/packaged-smoke-check.test.js",
+    "test:desktop-build-flavor": "node public/desktopBuildFlavor.test.js && node scripts/unified-desktop-package-boundary.test.js && node scripts/check_deploy_readiness.unifiedDesktopBoundary.test.js && node public/electronDevelopmentFixture.test.js && node public/electronRuntimeContracts.test.js && node public/electronSingleInstance.test.js && node public/electronCrossInstallLock.test.js && node scripts/verify-packaged-electron-native-abi.test.js && node scripts/cleanup-disposable-desktop-profiles.test.js && node scripts/desktop-architecture-cutover.test.js && node public/contentSecurityPolicy.test.js && node public/electronLocalIdentityDiagnostics.test.js && node public/localSessionSigningSecret.test.js && node src/pages/SystemSettings.test.js && node scripts/packaged-smoke-check.test.js && node scripts/verify-packaged-runtimes.test.js && node scripts/packaged-runtime-copy.test.js",
     "test:taxonomy": "node scripts/import-zujuan-taxonomies.test.js && node src/components/taxonomyTreeOperations.test.js && node src/components/TaxonomyManager.drag.browser.test.cjs && node src/services/questionTaxonomyEditing.test.js && node src/services/taxonomyFilter.test.js && node src/components/TaxonomyManager.test.js && node backend/src/services/questionBankService.test.js && npm run test:question-filters",
     "test:today-workbench": "node src/utils/todayWorkbenchRoom.test.js",
     "pretest:authority-architecture": "node scripts/check_cloud_business_authority_contract.test.js && node backend/src/routes/authorityProtocolApp.http.test.js && node backend/serverRuntimeWorker.test.js && node backend/src/routes/miniappCloudOnlyRoutes.test.js && node cloud-business-api/src/app.test.js && node cloud-business-api/src/desktopActiveRoleAuthorization.test.js && node miniapp/src/utils/miniappAuthorizationRuntime.test.js && node miniapp/src/utils/miniappRouteAccess.test.js",
@@ -46,7 +46,7 @@
     "rebuild:node": "node scripts/rebuild-node-native.js",
     "rebuild:electron": "electron-builder install-app-deps && node scripts/rebuild-backend-electron-deps.js",
     "verify:electron-native-abi": "set ELECTRON_RUN_AS_NODE=1&& node_modules\\electron\\dist\\electron.exe scripts\\verify-electron-native-abi.js",
-    "verify:packaged-electron-native-abi": "node scripts/verify-packaged-electron-native-abi.js",
+    "verify:packaged-electron-native-abi": "node scripts/verify-packaged-electron-native-abi.js && node scripts/verify-packaged-runtimes.js",
     "dist": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder && set PACKAGED_APP_ROOT=%CD%\\dist\\win-unpacked\\resources\\app&& npm run verify:packaged-electron-native-abi && npm run rebuild:node",
     "pack": "npm run build && npm run prepare:python && npm run rebuild:electron && electron-builder --dir && set PACKAGED_APP_ROOT=%CD%\\dist\\win-unpacked\\resources\\app&& npm run verify:packaged-electron-native-abi && npm run rebuild:node",
     "dist:win": "node scripts/release-matrix.js assert --target desktop && node scripts/dist-win-restore.js",
@@ -245,8 +245,20 @@
       "src/services/desktopAuthorizationSession.mjs",
       "src/services/desktopCloudBusinessDraft.mjs",
       "modules/question-bank/**/*",
-      "runtime/python/**/*",
-      "runtime/ruby/**/*",
+      {
+        "from": "runtime/python",
+        "to": "runtime/python",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "runtime/ruby",
+        "to": "runtime/ruby",
+        "filter": [
+          "**/*"
+        ]
+      },
       "!node_modules/better-sqlite3/build/*.vcxproj",
       "!node_modules/better-sqlite3/build/*.vcxproj.filters",
       "!node_modules/better-sqlite3/build/deps{,/**/*}",
