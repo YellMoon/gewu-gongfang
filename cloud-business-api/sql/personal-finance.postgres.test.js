@@ -223,6 +223,16 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);
+ await db.query(fs.readFileSync(path.join(__dirname,'20261027-finance-source-nas.sql'),'utf8'));
+ const nasMetadata=require('../src/billNasMetadataRepository').createBillNasMetadataRepository({query:(s,v)=>db.query(s,v)});
+ const nasTransfers=require('../src/billNasArchive').createBillNasArchive({metadata:nasMetadata,waitMs:25});
+ const nasSource=require('../src/billSourceArchive').createBillSourceArchive({key:Buffer.alloc(32,3),storage:nasTransfers});
+ const nasRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:async()=>({provider:'bank',templateId:'test',records:[record],errors:[],warnings:[]}),archiveSource:nasSource});
+ const beforeNasFailure=await repo.getLedger(context);
+ await assert.rejects(nasRepo.import({...input,base64:Buffer.from('source unavailable on NAS').toString('base64'),idempotencyKey:'nas-offline-source'}),/BILL_ARCHIVE_NAS_UNAVAILABLE/);
+ assert.deepEqual(await repo.getLedger(context),beforeNasFailure,'real NAS timeout rolls back the entire financial transaction');
+ assert.equal((await db.query('SELECT count(*)::int AS n FROM business.personal_finance_source_objects')).rows[0].n,0);
+ assert.equal(nasTransfers.status().reservedBytes,0);
  });
  }finally{await runtime.disposeHandle(handle);await runtime.stop();}
  console.log('personal finance real PostgreSQL exact amounts, owner boundaries, receipts, rollback, revision and audit passed');

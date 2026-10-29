@@ -57,6 +57,8 @@ const { createPersonalAssetImportRepository } = require('./src/personalAssetImpo
 const { createPersonalFinanceRepository } = require('./src/personalFinanceRepository');
 const { parseBillFile } = require('./src/billFileDecoder');
 const { createBillSourceArchive } = require('./src/billSourceArchive');
+const { createBillNasArchive } = require('./src/billNasArchive');
+const { createBillNasMetadataRepository } = require('./src/billNasMetadataRepository');
 const { createBillMailbox } = require('./src/billMailbox');
 const { createImapBillMailbox } = require('./src/billImapMailbox');
 const { BOOTSTRAP_SUPER_ADMIN_PHONE, resolveBootstrapAdminAccountId } = require('./src/bootstrapAdminIdentity');
@@ -475,7 +477,10 @@ const paperExportTasks = createPaperExportTaskRepository({
 });
 const personalAssetImports = createPersonalAssetImportRepository({ transaction: questionCommandTransaction });
 const billArchiveKey = process.env.CLOUD_BILL_ARCHIVE_KEY ? Buffer.from(process.env.CLOUD_BILL_ARCHIVE_KEY, 'base64') : null;
-const billSourceArchive = billArchiveKey ? createBillSourceArchive({ root: process.env.CLOUD_BILL_ARCHIVE_ROOT || '/var/lib/gewu/finance-sources', key: billArchiveKey }) : undefined;
+const billArchiveTransfers = billArchiveKey && storageAgent ? createBillNasArchive({
+  metadata: createBillNasMetadataRepository({ query: (text, values) => pool.query(text, values) }),
+}) : null;
+const billSourceArchive = billArchiveTransfers ? createBillSourceArchive({ key: billArchiveKey, storage: billArchiveTransfers }) : undefined;
 const fundNavService = require('./src/fundNavService').createFundNavService();
 const personalFinance = createPersonalFinanceRepository({ query: (text, values) => pool.query(text, values), transaction: questionCommandTransaction, parseBillFile, archiveSource: billSourceArchive, fundNavService });
 const billMailbox = process.env.CLOUD_BILL_MAIL_API_KEY && process.env.CLOUD_BILL_MAIL_INBOX_ID && process.env.CLOUD_BILL_MAIL_OWNER_ACCOUNT_ID
@@ -556,6 +561,7 @@ const app = createCloudBusinessApp({
   questionAssetDeliveries,
   personalAssetImports,
   personalFinance,
+  billArchiveTransfers,
   billMailbox,
   storageAgent,
   questionAuthority,

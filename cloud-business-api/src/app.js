@@ -3,6 +3,7 @@
 const express = require('express');
 const { registerPersonalFinanceRoutes } = require('./personalFinanceRoutes');
 const { registerBillMailboxRoutes } = require('./billMailboxRoutes');
+const { registerBillNasArchiveRoutes } = require('./billNasArchiveRoutes');
 const { createBusinessCommandMiddleware } = require('./businessCommandTransaction');
 const { createOperationAuditMiddleware, parseFilters: operationAuditFilters } = require('./operationAudit');
 const { STUDENT_SCHEDULE_TUITION_SQL } = require('./studentScheduleTuitionSql');
@@ -113,7 +114,7 @@ function miniappQuestionBrowseFilters(query) {
   return Object.freeze({ subject, queryTerms, source, knowledgePoint, type, difficulty, grade, semester, examType, examYear });
 }
 
-function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopAccountProfile = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null, personalFinance = null, billMailbox = null }) {
+function createCloudBusinessApp({ query, businessCommandWriter = null, operationAudits = null, operationAuditsRequired = false, businessScheduleUpdate = null, businessScheduleStudentOverride = null, businessScheduleLifecycleMutations = null, businessFoundationLifecycleMutations = null, businessSupplementalLifecycleMutations = null, businessStudentUpdate = null, businessStudentRecordUpdate = null, businessStudentLifecycleMutations = null, businessTeacherLifecycleMutations = null, businessRoomLifecycleMutations = null, businessCourseLifecycleMutations = null, desktopRegistration = null, desktopCloudIdentity = null, desktopAccountProfile = null, desktopVerifiedAccess = null, desktopTeacherSelfRegistration = null, desktopPasswordAuthentication = null, miniappCloudAccount = null, miniappRoleApplications = null, desktopPairing = null, storageAgent = null, questionAuthority = null, paperExportTasks = null, questionImportTasks = null, encryptedStorageRelay = null, storageAgentKeyFingerprint = null, storageAgentPublicKey = null, businessTenantId = null, releaseVersion = 'unknown', miniappArtifactDeliveries = null, questionAssetDeliveries = null, personalAssetImports = null, personalFinance = null, billMailbox = null, billArchiveTransfers = null }) {
   if (typeof query !== 'function') throw new TypeError('query is required');
   if (businessScheduleUpdate !== null && typeof businessScheduleUpdate !== 'function') throw new TypeError('businessScheduleUpdate is invalid');
   if (businessScheduleStudentOverride !== null && typeof businessScheduleStudentOverride !== 'function') throw new TypeError('businessScheduleStudentOverride is invalid');
@@ -2295,6 +2296,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   });
   registerPersonalFinanceRoutes({ app, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext });
   registerBillMailboxRoutes({ app, mailbox: billMailbox, finance: personalFinance, tenantId: businessTenantId, desktopContext: desktopQuestionContext });
+  registerBillNasArchiveRoutes({ app, transfers: billArchiveTransfers, storageAgent });
   return app;
 }
 

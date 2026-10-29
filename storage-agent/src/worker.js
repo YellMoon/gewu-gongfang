@@ -60,7 +60,7 @@ function parsedMediaBytes(parsed) {
   return total;
 }
 
-function createStorageWorker({ client, objectStore, agentPrivateKey, questionImportParser } = {}) {
+function createStorageWorker({ client, objectStore, agentPrivateKey, questionImportParser, financeArchiveWorker = null, onFinanceArchiveError = () => {} } = {}) {
   if (!client || typeof client.lease !== 'function' || typeof client.download !== 'function' || typeof client.complete !== 'function'
     || typeof client.reportSourceCandidates !== 'function' || !objectStore || typeof objectStore.putVerified !== 'function' || typeof objectStore.readVerified !== 'function'
     || !questionImportParser || typeof questionImportParser.parse !== 'function' || typeof agentPrivateKey !== 'string' || !agentPrivateKey) throw failure('STORAGE_WORKER_CONFIG_INVALID');
@@ -90,6 +90,15 @@ function createStorageWorker({ client, objectStore, agentPrivateKey, questionImp
 
   return Object.freeze({
     async runOnce() {
+      if (financeArchiveWorker !== null) {
+        try {
+          const finance = await financeArchiveWorker.runOnce();
+          if (finance.state !== 'idle') return finance;
+        } catch (error) {
+          // A finance NAS failure must not interrupt existing question byte storage.
+          onFinanceArchiveError(error);
+        }
+      }
       const task = await client.lease();
       if (task === null) {
         if (typeof client.leaseArtifactDelivery === 'function' && typeof client.uploadArtifactDelivery === 'function') {
