@@ -138,15 +138,17 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
    }
    return {accounts:created,unresolved:proposal.unresolved,revision};
  }
- async function readLedger(q,owner){const result=await q(`SELECT jsonb_build_object(
+ // JSON aggregation preserves one statement snapshot without retaining a second
+ // expanded binary tree for the complete source ledger in PostgreSQL memory.
+ async function readLedger(q,owner){const result=await q(`SELECT json_build_object(
    'revision',COALESCE((SELECT revision::text FROM business.personal_finance_owners WHERE tenant_id=$1 AND account_id=$2),'0'),
-   'accounts',COALESCE((SELECT jsonb_agg(data ORDER BY ledger_ordinal NULLS LAST,id) FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'observations',COALESCE((SELECT jsonb_agg(data ORDER BY ledger_ordinal NULLS LAST,data->>'occurredAt',id) FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'annotations',COALESCE((SELECT jsonb_agg(data ORDER BY ledger_ordinal NULLS LAST,revision,id) FROM business.personal_finance_annotations WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'links',COALESCE((SELECT jsonb_agg(data ORDER BY ledger_ordinal NULLS LAST,id) FROM business.personal_finance_links WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'balanceSnapshots',COALESCE((SELECT jsonb_agg(data ORDER BY ledger_ordinal NULLS LAST,data->>'asOf',id) FROM business.personal_finance_balance_snapshots WHERE tenant_id=$1 AND account_id=$2),'[]'::jsonb),
-   'imports',COALESCE((SELECT jsonb_agg(i.data||jsonb_build_object('observationIds',COALESCE((SELECT COALESCE(r.receipt->'importMemberships'->i.id,r.receipt->'observationIds') FROM business.personal_finance_receipts r WHERE r.tenant_id=i.tenant_id AND r.account_id=i.account_id AND (r.receipt->>'importId'=i.id OR r.receipt->'importMemberships' ? i.id)),'[]'::jsonb)) ORDER BY i.ledger_ordinal NULLS LAST,i.created_at,i.id) FROM business.personal_finance_imports i WHERE i.tenant_id=$1 AND i.account_id=$2),'[]'::jsonb),
-   'legacyRecords',COALESCE((SELECT jsonb_agg(t.data) FROM (SELECT to_jsonb(r)||jsonb_build_object('legacyType','imported') AS data FROM business.personal_asset_records r WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT to_jsonb(r)||jsonb_build_object('legacyType','manual') FROM business.personal_asset_manual_records r WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) t),'[]'::jsonb)) AS ledger`,owner);if(!result.rows[0])throw failure('UNAVAILABLE');return result.rows[0].ledger;}
+   'accounts',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,id) FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'observations',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,data->>'occurredAt',id) FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'annotations',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,revision,id) FROM business.personal_finance_annotations WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'links',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,id) FROM business.personal_finance_links WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'balanceSnapshots',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,data->>'asOf',id) FROM business.personal_finance_balance_snapshots WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'imports',COALESCE((SELECT json_agg(i.data||jsonb_build_object('observationIds',COALESCE((SELECT COALESCE(r.receipt->'importMemberships'->i.id,r.receipt->'observationIds') FROM business.personal_finance_receipts r WHERE r.tenant_id=i.tenant_id AND r.account_id=i.account_id AND (r.receipt->>'importId'=i.id OR r.receipt->'importMemberships' ? i.id)),'[]'::jsonb)) ORDER BY i.ledger_ordinal NULLS LAST,i.created_at,i.id) FROM business.personal_finance_imports i WHERE i.tenant_id=$1 AND i.account_id=$2),'[]'::json),
+   'legacyRecords',COALESCE((SELECT json_agg(t.data) FROM (SELECT to_jsonb(r)||jsonb_build_object('legacyType','imported') AS data FROM business.personal_asset_records r WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT to_jsonb(r)||jsonb_build_object('legacyType','manual') FROM business.personal_asset_manual_records r WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) t),'[]'::json)) AS ledger`,owner);if(!result.rows[0])throw failure('UNAVAILABLE');return result.rows[0].ledger;}
  const api={
   async getRevision(input){const owner=scope(input),row=(await query('SELECT revision::text AS revision FROM business.personal_finance_owners WHERE tenant_id=$1 AND account_id=$2',owner)).rows[0];return row?.revision||'0';},
   async discoverAccounts(input){const owner=scope(input);return transaction(async q=>discover(q,owner,await lock(q,owner,input.expectedRevision)));},

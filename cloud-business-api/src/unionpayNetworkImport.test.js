@@ -12,7 +12,7 @@ function harness({accountRows=accounts,accountRace}={}){
   if(sql.startsWith('UPDATE business.personal_finance_owners'))return {rows:[{revision:String(++revision)}]};
   if(sql.startsWith('SELECT request_hash'))return {rows:receipts.has(values[2])?[receipts.get(values[2])]:[]};
   if(sql.startsWith('SELECT id,data FROM business.personal_finance_observations'))return {rows:ledger.observations.filter(o=>o.financialAccountId===values[2]&&o.sourceIdentity===values[3]).map(data=>({id:data.id,data}))};
-  if(sql.startsWith('SELECT jsonb_build_object'))return {rows:[{ledger}]};
+  if(sql.endsWith(' AS ledger'))return {rows:[{ledger}]};
   if(sql.startsWith('INSERT INTO business.personal_finance_imports'))ledger.imports.push(JSON.parse(values[5]));
   if(sql.startsWith('INSERT INTO business.personal_finance_observations'))ledger.observations.push(JSON.parse(values[7]));
   if(sql.startsWith('INSERT INTO business.personal_finance_accounts'))accountWrites++;

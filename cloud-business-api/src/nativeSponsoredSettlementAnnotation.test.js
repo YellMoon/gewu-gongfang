@@ -6,7 +6,7 @@ function repository(l,retainAnnotations=false){let writes=0,saved;const q=async(
  if(sql.startsWith('SELECT data FROM business.personal_finance_observations')){assert.equal(values[0],'tenant');assert.equal(values[1],'alice');const o=l.observations.find(o=>o.id===values[2]);return{rows:o?[{data:JSON.parse(JSON.stringify(o))}]:[]};}
  if(sql.startsWith('SELECT data FROM business.personal_finance_annotations'))return{rows:[]};
  if(sql.startsWith('SELECT data FROM business.personal_finance_accounts')){assert.equal(values[0],'tenant');assert.equal(values[1],'alice');const a=l.accounts.find(a=>a.id===values[2]);return{rows:a?[{data:JSON.parse(JSON.stringify(a))}]:[]};}
- if(sql.startsWith('SELECT jsonb_build_object'))return{rows:[{ledger:JSON.parse(JSON.stringify({...l,annotations:retainAnnotations?l.annotations:[],revision:'0'}))}]};
+ if(sql.endsWith(' AS ledger'))return{rows:[{ledger:JSON.parse(JSON.stringify({...l,annotations:retainAnnotations?l.annotations:[],revision:'0'}))}]};
  if(sql.startsWith('INSERT INTO business.personal_finance_annotations')){writes++;saved=JSON.parse(values[5]);}return{rows:[]};
  };return{repo:createPersonalFinanceRepository({query:q,transaction:work=>work(q),parseBillFile:()=>({})}),getWrites:()=>writes,getSaved:()=>saved};}
 async function main(){

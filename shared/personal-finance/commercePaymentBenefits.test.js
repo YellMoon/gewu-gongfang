@@ -41,7 +41,7 @@ test('cloud annotation validates only the current owner ledger and supports full
   if(sql.startsWith('UPDATE business.personal_finance_owners'))return{rows:[{revision:'1'}]};
   if(sql.startsWith('SELECT data FROM business.personal_finance_observations')){assert.deepEqual(values,['test','alice','p']);return{rows:[{data:source}]};}
   if(sql.startsWith('SELECT data FROM business.personal_finance_accounts'))return{rows:[{data:l.accounts[0]}]};
-  if(sql.startsWith('SELECT jsonb_build_object')){assert.deepEqual(values,['test','alice']);return{rows:[{ledger:owned}]};}
+  if(sql.endsWith(' AS ledger')){assert.deepEqual(values,['test','alice']);return{rows:[{ledger:owned}]};}
   if(sql.startsWith('INSERT INTO business.personal_finance_annotations'))saved=JSON.parse(values[5]);
   return{rows:[]};
  };
