@@ -932,6 +932,7 @@ function buildFinanceView(ledger,options={},internalMode) {
   require('./nativeClosedOrderCash').appendNativeClosedOrderCash(ledger,all,selected,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));
   require('./nativeClosedHuabeiCash').append(ledger,all,selected,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));
   require('./nativeUnassignedGuaranteeCash').append(ledger,all,selected,unresolvedAssociations,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));
+  require('./nativeGuaranteeSettlements').append(ledger,all,selected,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));
   require('./nativeCombinedOrderCash').appendNativeCombinedOrderCash(ledger,all,selected,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));
   require('./nativeTransitStoredValue').applyNativeTransitStoredValue(ledger,all,selected,unresolvedAssociations);
   require('./nativeGroupedBankTopUps').appendNativeGroupedBankTopUps(ledger,all,selected,unresolvedAssociations,(derived,range)=>buildFinanceView(derived,range,RAW_DERIVED_TRANSACTIONS));

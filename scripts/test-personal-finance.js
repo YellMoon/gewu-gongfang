@@ -11,6 +11,7 @@ const tests = [
   'shared/personal-finance/preparedFinanceView.test.js',
   'src/services/personalFinanceAnalysisClient.test.mjs',
   'shared/personal-finance/nativeUnassignedGuaranteeCash.test.js',
+  'shared/personal-finance/nativeGuaranteeSettlements.test.js',
   'shared/personal-finance/nativeClosedHuabeiCash.test.js',
   'shared/personal-finance/nativeBankCheckoutBridges.test.js',
   'shared/personal-finance/nativeMixedHuabeiRepayments.test.js',
