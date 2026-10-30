@@ -9,9 +9,10 @@ const amountMatches=(raw,value)=>{
 
 // The owner confirms this particular order/payment difference. A small amount
 // difference alone never activates this rule or creates a cash benefit wallet.
-function commercePaymentBenefit(source,annotation,accounts,observations,{allowArchived=false}={}){
+function commercePaymentBenefit(source,annotation,accounts,observations,{allowArchived=false,links=[]}={}){
  const patch=annotation?.reset?null:annotation?.patch,p=patch?.commercePayment;
  if(p===undefined||p===null)return null;
+ if(p.schema==='native-wallet-payment-v1')return {nativeOnly:true,...require('./nativeWalletPaymentCash').nativeWalletPaymentCash(source,annotation,accounts,observations,{allowArchived,links})};
  if(p.schema==='native-credit-payment-v1'){const input=observations.map(o=>o.id===source.id?{...o,...patch}:o),annotations=new Map([[source.id,annotation]]),plan=require('./nativeBankFundedOrders').findNativeBankFundedOrders(input,accounts,{annotations,annotatedIds:new Set([source.id])}).get(source.id);if(!plan?.actualPaidMinor||plan.paymentDifferenceMinor!==p.discountMinor)invalid();return {nativeOnly:true,...plan};}
  const effective={...source,...patch},byId=new Map(observations.map(o=>[o.id,o])),map=new Map(accounts.map(a=>[a.id,a]));
  const active=a=>a&&['active',...(allowArchived?['archived']:[])].includes(a.status)&&a.currency===source.currency;
@@ -34,7 +35,7 @@ function findCommercePaymentBenefits(observations,accounts,{annotations=new Map(
  const activePairs=new Set(links.filter(l=>l.status!=='deleted').map(l=>[...l.observationIds].sort().join('|'))),vetoes=links.filter(l=>l.status!=='deleted'&&['distinct','group_distinct'].includes(l.type)||l.status==='deleted'&&l.type==='duplicate'&&!activePairs.has([...l.observationIds].sort().join('|'))),plans=[];
  for(const ann of annotations.values()){
   if(ann.reset||!ann.patch?.commercePayment)continue;
-  const source=byId.get(ann.observationId);if(!source)invalid();if(ann.patch.commercePayment.schema==='native-credit-payment-v1')continue;
+  const source=byId.get(ann.observationId);if(!source)invalid();if(['native-credit-payment-v1','native-wallet-payment-v1'].includes(ann.patch.commercePayment.schema))continue;
   const plan=commercePaymentBenefit(source,ann,accounts,observations,{allowArchived:true}),members=[source,plan.payment],keys=new Set(members.map(identity));
   if(members.some(o=>latest.get(identity(o)).id!==o.id)||[...annotations].some(([id,a])=>!a.reset&&byId.has(id)&&keys.has(identity(byId.get(id)))&&id!==source.id))continue;
   if(vetoes.some(l=>{const ks=l.observationIds.map(id=>byId.get(id)).filter(Boolean).map(identity);return l.type==='group_distinct'?ks.some(k=>keys.has(k)):ks.every(k=>keys.has(k));}))continue;
