@@ -9,4 +9,18 @@ function explicitUnfundedWalletReceipt(o,account){
  const [whole,fraction='']=amount.split('.');if(BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0'))!==BigInt(o.amountMinor))return null;
  return{method:'native_wallet_topup_receipt',confidence:'explicit_original_receiving_leg',financialAccountId:account.id,amountMinor:o.amountMinor,occurredAt:o.occurredAt,evidenceObservationIds:[o.id],sourceAccountKnown:false,sourceLegInferred:false,incomeRecognized:false};
 }
-module.exports={explicitUnfundedWalletReceipt};
+// A confirmed external top-up replaces only the missing funding identity.
+// Preserve the already established wallet receipt and post the counterparty
+// payable once; never create personal income or debit an owned bank account.
+function confirmedExternalWalletTopUp(source,annotation,accounts){
+ const patch=annotation?.reset?null:annotation?.patch;
+ if(!patch?.settlementAccountId||source?.provider!=='alipay'||source.description!=='\u5145\u503c-\u666e\u901a\u5145\u503c')return null;
+ const invalid=()=>Object.assign(new Error('EXTERNAL_WALLET_TOPUP_SETTLEMENT_INVALID'),{code:'EXTERNAL_WALLET_TOPUP_SETTLEMENT_INVALID'});
+ const wallet=accounts.find(a=>a.id===source.financialAccountId),receipt=explicitUnfundedWalletReceipt(source,wallet);
+ if(!receipt||patch.kind!=='transfer'||Object.keys(patch).some(k=>!['kind','category','settlementAccountId'].includes(k))||source.loanProof||source.balanceEvidence||source.automaticFunding||[source.principalMinor,source.interestMinor,source.feeMinor].some(v=>v!=null&&v!=='0'))throw invalid();
+ const effective={...source,...patch,direction:'credit'};
+ let target;try{target=require('./counterpartySettlements').annotatedSettlementAccount(effective,annotation,accounts);}catch{throw invalid();}
+ if(target?.status!=='active')throw invalid();
+ return {...effective,walletTopupReceipt:{...receipt,sourceAccountKnown:true,settlementAccountId:target.id,externalOwnershipConfirmed:true,externalBankCardIdentified:false,sourceLegInferred:false,reversible:true},automaticClassification:{method:'owner_confirmed_counterparty_settlement',confidence:'owner_confirmed',financialAccountId:target.id,evidenceObservationIds:[source.id],sourceDirection:source.direction,fundingOwnership:'external_counterparty'}};
+}
+module.exports={explicitUnfundedWalletReceipt,confirmedExternalWalletTopUp};

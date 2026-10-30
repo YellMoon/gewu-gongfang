@@ -205,6 +205,7 @@ function buildFinanceView(ledger,options={},internalMode) {
       if(sponsoredHelper.annotationRole(latestAnnotations.get(o.id)))return sponsoredSettlements.get(o.id)||{...o,category:latestAnnotations.get(o.id).patch.category,automaticClassification:{method:'sponsored_settlement_evidence_unresolved',evidenceObservationIds:[o.id]}};
       const couponHelper=require('./restrictedCoupons'),couponAnnotation=latestAnnotations.get(o.id);if(couponHelper.isRestrictedCouponAnnotation(couponAnnotation)){const coupon=couponHelper.ownerConfirmedRestrictedCoupon(o,couponAnnotation,accounts);return coupon||{...o,category:couponAnnotation.patch.category,automaticClassification:{method:'restricted_coupon_evidence_unresolved',evidenceObservationIds:[o.id]}};}
       const incomeReceipt=require('./confirmedPlatformReceipts').confirmedPlatformIncomeReceipt(o,latestAnnotations.get(o.id),accounts);if(incomeReceipt)return incomeReceipt;
+      const externalTopup=require('./unfundedWalletReceipts').confirmedExternalWalletTopUp(o,latestAnnotations.get(o.id),accounts);if(externalTopup)return externalTopup;
       if(o.direction==='neutral'&&latestAnnotations.get(o.id).patch?.settlementAccountId){
         try{return require('./nativeMerchantSettlements').nativeMerchantSettlement(o,latestAnnotations.get(o.id),accounts,originalObservations,proofCashPostings);}
         catch(e){if(e.code!=='COUNTERPARTY_SETTLEMENT_CASH_PROOF_REQUIRED')throw e;return {...o,...latestAnnotations.get(o.id).patch};}

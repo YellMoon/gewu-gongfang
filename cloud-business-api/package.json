@@ -1,7 +1,7 @@
 {
   "name": "gewu-cloud-business-api",
   "private": true,
-  "version": "8.32.1",
+  "version": "8.32.2",
   "scripts": {
     "test:finance-nas": "node src/billNasArchive.test.js && node sql/finance-source-nas.postgres.test.js",
     "posttest:miniapp-cloud-read": "node sql/personal-asset-import.postgres.test.js",
