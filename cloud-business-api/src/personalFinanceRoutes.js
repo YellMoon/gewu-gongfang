@@ -7,7 +7,7 @@ function ledgerForReaders(ledger){
  // source decisions separately, including resets, for a complete owner audit.
  return {...ledger,annotations:ledger.annotations.filter(a=>!cleared.has(a.observationId)&&a.reset!==true),annotationHistory:ledger.annotations};
 }
-function registerPersonalFinanceRoutes({app,finance,projectionService,tenantId,desktopContext,miniappContext}){
+function registerPersonalFinanceRoutes({app,finance,projectionService,tenantId,desktopContext,miniappContext,tuitionReview}){
  const invalid=()=>Object.assign(new Error('CLOUD_PERSONAL_FINANCE_INPUT_INVALID'),{code:'CLOUD_PERSONAL_FINANCE_INPUT_INVALID'});
  const fields=(body,allowed)=>{if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(k=>!allowed.includes(k)))throw invalid();return body;};
  const run=(context,work,{send=(_req,res,result)=>res.json({ok:true,...result}),coordinate=true}={})=>async(req,res)=>{try{if(!finance||!tenantId)return res.status(503).json({ok:false,code:'CLOUD_PERSONAL_FINANCE_UNAVAILABLE'});const actor=await context(req);if(!actor?.roles?.some(r=>r==='teacher'||r==='super_admin'))throw Object.assign(new Error('denied'),{code:'CLOUD_PERSONAL_FINANCE_ACCESS_DENIED'});const execute=async()=>send(req,res,await work(req,{tenantId,actor}));return await(coordinate&&projectionService?.exclusive?projectionService.exclusive(execute):execute());}catch(e){const code=/ACCESS_DENIED|IDENTITY_REJECTED/.test(e.code||'')?'CLOUD_PERSONAL_FINANCE_ACCESS_DENIED':typeof e.code==='string'&&e.code.startsWith('CLOUD_PERSONAL_FINANCE_')?e.code:'CLOUD_PERSONAL_FINANCE_UNAVAILABLE';const status=/ACCESS_DENIED/.test(code)?403:/NOT_FOUND/.test(code)?404:/CONFLICT|EXISTS|IMMUTABLE|INCOMPATIBLE/.test(code)?409:/UNAVAILABLE/.test(code)?503:400;return res.status(status).json({ok:false,code});}};
@@ -17,6 +17,16 @@ function registerPersonalFinanceRoutes({app,finance,projectionService,tenantId,d
   app.post(prefix+'/imports',run(context,async(req,owner)=>{const body=fields(req.body,['filename','base64','financialAccountId','fieldMapping','password','expectedFileHash','expectedFinancialAccountId','relatedFinancialAccountIds','expectedRelatedFinancialAccountIds','expectedRevision']);const idempotencyKey=req.get('x-idempotency-key');if(typeof idempotencyKey!=='string'||!idempotencyKey.trim())throw invalid();return {receipt:await finance.import({...owner,...body,idempotencyKey})};}));
  }
  const prefix='/api/business/personal-finance';
+ app.get(prefix+'/tuition-review',run(desktopContext,async(_req,owner)=>{
+  if(!tuitionReview)throw Object.assign(Error('unavailable'),{code:'CLOUD_PERSONAL_FINANCE_UNAVAILABLE'});
+  return {review:await tuitionReview.state(owner)};
+ },{coordinate:false}));
+ app.post(prefix+'/tuition-review/submit',run(desktopContext,async(req,owner)=>{
+  if(!tuitionReview)throw Object.assign(Error('unavailable'),{code:'CLOUD_PERSONAL_FINANCE_UNAVAILABLE'});
+  // This endpoint has its own atomic receipt transaction, not a nested command.
+  if(req.get('x-gewu-command-id')||req.get('x-gewu-command-hash'))throw invalid();
+  return {receipt:await tuitionReview.submit(owner,fields(req.body,['expectedRevision','confirmed','rows']),req.get('x-idempotency-key'))};
+ },{coordinate:false}));
  app.post('/api/business/miniapp-personal-finance/projection',run(miniappContext,async(req,owner)=>{const input=fields(req.body||{},['accountIds','startDate','endDate','granularity']);if(!projectionService)throw Object.assign(new Error('unavailable'),{code:'CLOUD_PERSONAL_FINANCE_UNAVAILABLE'});return{projection:await projectionService.request(owner,input)};},{coordinate:false}));
  app.post(prefix+'/accounts/discover',run(desktopContext,async(req,owner)=>finance.discoverAccounts({...owner,...fields(req.body||{},['expectedRevision'])})));
  app.post(prefix+'/accounts',run(desktopContext,async(req,owner)=>{const body=fields(req.body,['account','expectedRevision']);return finance.createAccount({...owner,...body});}));

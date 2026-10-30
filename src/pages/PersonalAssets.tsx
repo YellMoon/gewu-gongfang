@@ -130,8 +130,8 @@ const PersonalAssets: React.FC = () => {
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '资产记录');
-    XLSX.writeFile(wb, `资产统计_${dateRange[0].format('YYYYMMDD')}-${dateRange[1].format('YYYYMMDD')}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, '账单记录');
+    XLSX.writeFile(wb, `生活账单_${dateRange[0].format('YYYYMMDD')}-${dateRange[1].format('YYYYMMDD')}.xlsx`);
   };
 
   // ---- Render ----

@@ -2297,7 +2297,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   const financeProjectionService = personalFinance && typeof personalFinance.getRevision === 'function'
     ? require('./financeProjectionService').createFinanceProjectionService({ finance: personalFinance, loadInWorker: true }) : null;
   app.locals.financeProjectionService = financeProjectionService;
-  registerPersonalFinanceRoutes({ app, finance: personalFinance, projectionService: financeProjectionService, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext });
+  registerPersonalFinanceRoutes({ app, finance: personalFinance, projectionService: financeProjectionService, tenantId: businessTenantId, desktopContext: desktopQuestionContext, miniappContext: miniappBusinessContext,
+    tuitionReview: require('./tuitionBillReview').createTuitionBillReview({ writer: businessCommandWriter }) });
   registerBillMailboxRoutes({ app, mailbox: billMailbox, finance: personalFinance, projectionService: financeProjectionService, tenantId: businessTenantId, desktopContext: desktopQuestionContext });
   registerBillNasArchiveRoutes({ app, transfers: billArchiveTransfers, storageAgent });
   return app;

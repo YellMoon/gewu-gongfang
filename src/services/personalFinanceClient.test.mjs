@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonalFinanceClient } from './personalFinanceClient.mjs';
+test('tuition list is read-only and confirmed submissions retain the retry key and session binding',async()=>{
+ const calls=[],client=createPersonalFinanceClient({readSession:()=>({authorization:'Bearer owner',authContext:{userId:'owner',activeRole:'super_admin'}}),fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({ok:true})};}});
+ await client.tuitionReviewState();assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.body,undefined);assert(calls[0].url.endsWith('/tuition-review'));
+ const payload={expectedRevision:'7',confirmed:true,rows:[]};await client.submitTuitionReview(payload,'retry-key');assert(calls[1].url.endsWith('/tuition-review/submit'));assert.equal(calls[1].options.headers['x-idempotency-key'],'retry-key');assert.deepEqual(JSON.parse(calls[1].options.body),payload);
+});
 test('current readers restore complete reset history without mutating legacy transport data', async () => {
   const annotations = [{ observationId: 'x', revision: '1', patch: { kind: 'transfer' } }, { observationId: 'x', revision: '2', patch: {}, reset: true }];
   const original = { ok: true, ledger: { revision: '2', annotations: [], annotationHistory: annotations } };

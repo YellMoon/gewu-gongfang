@@ -169,7 +169,7 @@ const pageInventory = [
   },
   {
     route: 'pages/assets/index',
-    title: '财务资产',
+    title: '生活账单',
     registered: true,
     roleViews: ['super_admin', 'teacher'],
     surface: 'limited-write-finance',

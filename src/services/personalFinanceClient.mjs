@@ -39,6 +39,8 @@ export function createPersonalFinanceClient({ readSession = readDesktopAuthoriza
       return result;
     },
     discoverAccounts: input => request('/accounts/discover', 'POST', input || {}),
+    tuitionReviewState: () => request('/tuition-review'),
+    submitTuitionReview: (input,key) => request('/tuition-review/submit','POST',input,key),
     previewFile: input => request('/imports/preview', 'POST', input),
     importFile: (input, key) => request('/imports', 'POST', input, key),
     createAccount: input => request('/accounts', 'POST', input),

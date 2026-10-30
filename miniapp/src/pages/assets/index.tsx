@@ -73,7 +73,7 @@ export default function Assets() {
       });
       if (!current()) return;
       const rows = parsePersonalAssetCsv(content);
-      const confirmed = await Taro.showModal({ title: '导入个人资产', content: `将向当前账号导入 ${rows.length} 条记录。相同文件重复导入不会重复添加。`, confirmText: '导入', cancelText: '取消' });
+      const confirmed = await Taro.showModal({ title: '导入生活账单', content: `将向当前账号导入 ${rows.length} 条记录。相同文件重复导入不会重复添加。`, confirmText: '导入', cancelText: '取消' });
       if (!confirmed.confirm || !current()) return;
       assertMiniappWriteAllowed('asset-import');
       const response = await miniappCloudBusinessApi.importPersonalAssets(session.token, rows, personalAssetImportKey(rows));
@@ -117,7 +117,7 @@ export default function Assets() {
   // UTF-8: Loading and read failures are not empty financial records.
   if (resultSession.current && !authSessionRuntime.isSameSession(resultSession.current)) return <View className='assets-page'><LoadingSkeleton /></View>;
   if (loading) return <View className='assets-page'><LoadingSkeleton /></View>;
-  if (loadFailed && records.length === 0) return <View className='assets-page'><EmptyState text='暂时无法读取个人资产' actionText='重试' onAction={refresh} /></View>;
+  if (loadFailed && records.length === 0) return <View className='assets-page'><EmptyState text='暂时无法读取生活账单' actionText='重试' onAction={refresh} /></View>;
 
   return (
     <View className='assets-page'>

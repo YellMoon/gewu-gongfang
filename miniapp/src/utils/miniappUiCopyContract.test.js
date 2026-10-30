@@ -144,7 +144,7 @@ assert.ok(studentDetailPage.includes('const isStudent = isStudentScopedUser();')
 assert.strictEqual((studentDetailPage.match(/\{!isStudent && <View className='info-row'>/g) || []).length, 3, 'student detail must keep internal source, notes, and creation rows off student/guardian views');
 assert.ok(coursesPage.includes('{!isStudent && <Text className="price-teacher">'), 'student course views must not render a null or internal teacher-fee amount');
 assert.ok(studentsConfig.includes('\u5b66\u751f\u8d44\u6599') && coursesConfig.includes('\u8bfe\u7a0b\u8d44\u6599') && teachersConfig.includes('\u6559\u5e08\u8d44\u6599'), 'read-only miniapp titles must describe records instead of management');
-assert.ok(assetsConfig.includes('\u4e2a\u4eba\u8d44\u4ea7'), 'the limited-write asset page must identify personal assets');
+assert.ok(assetsConfig.includes('生活账单'), 'the limited-write asset page must identify personal assets');
 assert.ok(appSource.includes("import('./utils/miniappRouteAccess')") && appSource.includes("Taro.reLaunch({ url: '/pages/forbidden/index' })"), 'authenticated deep links must enforce the same module boundary as the role-aware home page');
 assert.ok(appConfig.includes("navigationBarTitleText: '格物工坊'"), 'the miniapp shell must use the product name rather than a generic management-system title');
 assert.ok(privacyPage.includes('微信登录凭证') && privacyPage.includes('经授权的手机号') && privacyPage.includes('身份申请资料'), 'privacy guidance must describe the actual sign-in and application data');

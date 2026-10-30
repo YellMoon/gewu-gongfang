@@ -93,7 +93,7 @@ const baseNavGroups: NavGroup[] = [
     items: [
       { key: 'payment', label: '缴费', description: '登记和查询缴费记录', icon: <DollarOutlined /> },
       { key: 'revenue-statistics', label: '费用统计', description: '查看收入统计数据', icon: <BarChartOutlined /> },
-      { key: 'personal-assets', label: '个人资产统计', description: '查看个人资产报表', icon: <DatabaseOutlined /> },
+      { key: 'personal-assets', label: '生活账单', description: '查看账户收支、余额与账单', icon: <DatabaseOutlined /> },
     ],
   },
   {
@@ -148,7 +148,7 @@ const legacyQuestionBankItems: Record<PageKey, NavItem> = {
   'question-bank-paper': { key: 'question-bank-paper', label: '组卷', icon: <FileWordOutlined /> },
   payment: { key: 'payment', label: '缴费', icon: <DollarOutlined /> },
   'revenue-statistics': { key: 'revenue-statistics', label: '费用统计', icon: <BarChartOutlined /> },
-  'personal-assets': { key: 'personal-assets', label: '个人资产统计', icon: <DatabaseOutlined /> },
+  'personal-assets': { key: 'personal-assets', label: '生活账单', icon: <DatabaseOutlined /> },
   teacher: { key: 'teacher', label: '老师', icon: <TeamOutlined /> },
   student: { key: 'student', label: '学生', icon: <UserOutlined /> },
   'system-params': { key: 'system-params', label: '系统参数', icon: <SettingOutlined /> },

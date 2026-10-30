@@ -194,7 +194,7 @@ export default function Index() {
       const cloudModuleNames: Record<string, string> = {
         scheduling: '\u8bfe\u7a0b\u5b89\u6392',
         'question-bank': '\u9898\u5e93',
-        assets: '\u8d22\u52a1\u5bfc\u5165',
+        assets: '生活账单',
       };
       const res = { success: true, data: { modules: Object.keys(MODULE_CONFIG).map(id => ({ id, name: cloudModuleNames[id] || id, description: '', icon: '' })) } };
       if (res.success && res.data) {

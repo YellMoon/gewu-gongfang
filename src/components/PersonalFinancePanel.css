@@ -49,3 +49,9 @@
 @media(max-width:1050px){.personal-finance-panel .finance-account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.personal-finance-panel .finance-account-grid{grid-template-columns:1fr}.personal-finance-panel .finance-filters>.ant-picker{max-width:100%}.personal-finance-panel .finance-toolbar>.ant-space{max-width:100%}.personal-finance-panel .finance-account-balance strong{font-size:23px}}
 @media(max-width:700px){.personal-finance-panel .finance-account-grid:not(.is-expanded)>.finance-account-card:nth-child(n+2){display:none}.personal-finance-panel .finance-chart figure{overflow-x:auto}.personal-finance-panel .finance-chart figure>svg{min-width:720px}}
+
+.tuition-editor { padding: 12px; background: #f7f9fc; line-height: 1.7; }
+.tuition-allocation { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+.tuition-allocation > .ant-select { flex: 1 1 300px; min-width: 240px; }
+.tuition-allocation > .ant-input-group-wrapper { flex: 0 1 160px; }
+.tuition-allocation > .ant-checkbox-wrapper { flex-basis: 100%; }

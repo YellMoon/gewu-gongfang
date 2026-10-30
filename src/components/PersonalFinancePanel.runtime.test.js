@@ -11,7 +11,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const name = node => typeof node?.type === 'string' ? node.type : node?.type?.displayName;
 const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof tree === 'object'
-  ? [tree,...nodes(tree.props?.children),...nodes(tree.props?.items?.map(item => item.children))] : [];
+  ? [tree,...nodes(tree.props?.children),...nodes(tree.props?.title),...nodes(tree.props?.items?.map(item => item.children))] : [];
 const text = tree => Array.isArray(tree) ? tree.map(text).join('') : tree == null || typeof tree === 'boolean' ? ''
   : typeof tree === 'object' ? text(tree.props?.children) + text(tree.props?.items?.map(item => item.children)) : String(tree);
 const preview = {provider:'synthetic',templateId:'canonical-v1',records:[{date:'2026-10-08',description:'合成账单',amountMinor:'123',status:'completed'}],errors:[],warnings:[]};
@@ -60,7 +60,7 @@ async function panel() {
   class FormDataFake {constructor(form){this.values=formValues[form.id]||{};}get(key){return this.values[key]??null;}}
   const window={addEventListener:(event,fn)=>{if(!listeners.has(event))listeners.set(event,new Set());listeners.get(event).add(fn);},removeEventListener:(event,fn)=>listeners.get(event)?.delete(fn),setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
   const jsx=(type,props)=>({type,props:props||{}});
-  const dependencies={react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,dayjs,
+  const dependencies={'./TuitionBillReview':component('TuitionBillReview'),react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,dayjs,
     '../services/personalFinanceAnalysisClient.mjs':{financeWorkerAvailable:()=>false},
     '../../shared/personal-finance/ledger.js':require('../../shared/personal-finance/ledger.js'),
     '../../shared/personal-finance/accountAnalytics.js':require('../../shared/personal-finance/accountAnalytics.js'),
@@ -101,6 +101,9 @@ async function panel() {
   render();await tick();render();return h;
 }
 async function prepare(h,filename='A.csv',base64='QQ==') {h.account('A');h.choose(filename);h.finishRead(h.readers.length-1,base64);await tick();h.render();}
+test('tuition review opens the candidate editor with current source scope and never creates payments',async()=>{
+ const h=await panel();h.click('\u8d26\u5355\u5b66\u8d39\u6838\u5bf9');const editor=h.all().find(n=>name(n)==='TuitionBillReview');assert(editor);assert.equal(editor.props.revision,'3');assert.equal(editor.props.transactions.length,1);assert.equal(h.calls.length,2,'opening the editor does not submit financial writes');editor.props.onClose();assert(!h.all().some(n=>name(n)==='TuitionBillReview'));h.unmount();
+});
 function confirmationAbsent(h) {assert.equal(h.previewEnabled(),false,'stale preview must not enable confirmation');}
 
 test('account combinations cross groups and detail/search controls preserve the chosen scope',async()=>{
