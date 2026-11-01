@@ -22,6 +22,7 @@ const formatMinor=(value:any)=>baseFormatMinor(value).replace(/^-/, '\u2212');
 const TYPES: Record<string, string> = { cash: '现金', bank: '银行账户', savings: '储蓄', debit_card: '借记卡', credit_card: '信用卡', wallet: '电子钱包', loan: '贷款', investment: '证券与基金', insurance: '保险', receivable: '应收款', property: '不动产', precious_metal: '贵金属', retirement: '养老金', other: '其他资产' };
 const KINDS: Record<string, string> = { expense: '消费', income: '收入', transfer: '转账', refund: '退款', loan_drawdown: '借款到账', debt_payment: '还款/月供', interest: '利息', fee: '手续费', unknown: '待分类' };
 const client = createPersonalFinanceClient();
+const NETWORK_FAILURE_CODES = ['FINANCE_REQUEST_FAILED', 'AUTHORIZATION_CONTEXT_REQUIRED', 'AUTHENTICATION_CONTEXT_REQUIRED', 'TypeError', 'TimeoutError', 'AbortError'];
 const empty = { accounts: [], observations: [], links: [], balanceSnapshots: [], imports: [], legacyRecords: [], revision: '0' };
 const emptyView=buildFinanceView(empty),emptyRegister=buildAssetRegister(empty);
 export function settlementAccountField(o:any,t:any,accounts:any[]){
@@ -119,6 +120,18 @@ export default function PersonalFinancePanel() {
   };
   useEffect(()=>{if(!background)return;const c=createFinanceAnalysisClient();analysisClient.current=c;return()=>{c.dispose();analysisClient.current=undefined;};},[background]);
   useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); const imported = () => void reload(); window.addEventListener('personal-finance-imported', imported); return () => { window.removeEventListener('personal-finance-imported', imported); mounted.current = false; sequence.current++; }; }, []);
+  useEffect(() => {
+    // UTF-8: 断网启动或云端失联后，联网恢复与身份会话就绪都要自动重新拉取，不等用户手动刷新。
+    const reloadAll = () => { void reload(); void loadMailbox(); };
+    window.addEventListener('desktop-authority-drafts-changed', reloadAll);
+    window.addEventListener('desktop-identity-session-ready', reloadAll);
+    window.addEventListener('online', reloadAll);
+    return () => {
+      window.removeEventListener('desktop-authority-drafts-changed', reloadAll);
+      window.removeEventListener('desktop-identity-session-ready', reloadAll);
+      window.removeEventListener('online', reloadAll);
+    };
+  }, []);
   const run = async (work: (current: () => boolean) => Promise<any>) => {
     const owner = scope(); setBusy(true);
     const current = () => mounted.current && scope() === owner;
@@ -197,9 +210,13 @@ export default function PersonalFinancePanel() {
   const showPeriodTransactions=(date:string)=>{const from=dayjs(date),to=effectiveGranularity==='month'?from.endOf('month'):effectiveGranularity==='week'?from.add(6,'day'):from;setTrendReturnPeriod(period);setPeriod([from,to.isAfter(dayjs())?dayjs():to]);openTransactions();};
   const renameAccount=(a:any)=>Modal.confirm({title:'修改账户名称',content:<Input id="asset-account-label" defaultValue={a.label} maxLength={128}/>,onOk:async()=>{const label=(document.getElementById('asset-account-label') as HTMLInputElement).value.trim();if(!label)throw new Error('请填写名称');const saved=await run(()=>client.updateAccount(a.id,{expectedRevision:ledger.revision,patch:{label}}));if(!saved)throw new Error('名称未保存');}});
   const accountEffects=(t:any)=>Object.keys(t.balanceEffects||{}).length?<div>{Object.entries(t.balanceEffects).map(([id,value]:any)=><div key={id}>{accountLabel(accountMap.get(id))} <span className="finance-number">{BigInt(value)>0n?'+':''}{formatMinor(value)}</span></div>)}</div>:<span className="finance-muted">{t.coveredEffects?.length?'账户账单已记录变动，来源未重复入账':'暂无可确认账户变动'}</span>;
-  return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><span>生活账单</span><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reload()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
+  return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reload()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
     {tuitionReviewOpen&&<TuitionBillReview key={ownerScope} open={tuitionReviewOpen} onClose={()=>setTuitionReviewOpen(false)} transactions={view.transactions} revision={ledger.revision} scopeKey={ownerScope} client={client}/>}
-    {failure&&<Alert type="warning" showIcon message="财务云端暂不可用" description={failure+'。请联网后刷新；尚未加载的数据不会按零汇总。'} />}
+    {failure&&<Alert type="warning" showIcon message="财务云端暂不可用"
+      description={(NETWORK_FAILURE_CODES.includes(failure) || /Failed to fetch|NetworkError|net::/i.test(failure)
+        ? '未连接财务云端（离线使用或云端暂时不可达）。'
+        : `云端返回 ${failure}。`)+'尚未加载的数据不会按零汇总；联网并登录后点“重新连接”即可刷新。'}
+      action={<Button size="small" onClick={()=>{ void reload(); void loadMailbox(); }}>重新连接</Button>} />}
 
 
     {loading&&!loaded&&<Alert type="info" showIcon message="正在读取资产账本…" description="读取完成后展示收入、支出和有依据的余额。"/>}

@@ -176,6 +176,7 @@ const DesktopIdentityGate: React.FC = () => {
     setGateState(next);
     setRuntimeSuspended(false);
     setError('');
+    window.dispatchEvent?.(new window.Event('desktop-identity-session-ready'));
   }, [clearPendingVerificationState, installIdentityContext]);
 
   const installSwitchedRuntime = useCallback(async (switched: any) => {
@@ -378,6 +379,16 @@ const DesktopIdentityGate: React.FC = () => {
         // UTF-8: renderer reload loses its session even when the main-process vault is unlocked.
         if (['sealed', 'unlocked'].includes(vaultStatus.state)) {
           if (!browserOnline()) {
+            try {
+              const offlineResumed = await client.resume({ baseUrl: identityBaseUrl, online: false });
+              if (cancelled) return;
+              if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+                acceptRuntime(offlineResumed);
+                return;
+              }
+            } catch (_offlineResumeError) {
+              // The offline lease is unusable; fall back to the offline password form.
+            }
             await client.lock();
             if (!cancelled) setGateState({ kind: 'offline-authentication-required' });
             return;
@@ -502,6 +513,55 @@ const DesktopIdentityGate: React.FC = () => {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [gateState.expiresAt, gateState.kind, renewSessionSilently, secureRelock]);
 
+  // UTF-8: connectivity changes must move the runtime between online and offline modes by itself.
+  useEffect(() => {
+    if (!canStartBusinessRuntime({ gateState })) return undefined;
+    let cancelled = false;
+    let retryTimer: number | undefined;
+    const switchToOnline = async () => {
+      if (gateState.kind !== 'offline-unlocked' || !browserOnline()) return;
+      const renewed = await renewSessionSilently();
+      if (!cancelled && !renewed && browserOnline()) {
+        retryTimer = window.setTimeout(() => { void switchToOnline(); }, 15000);
+      }
+    };
+    const switchToOffline = async () => {
+      if (gateState.kind !== 'online-unlocked' || browserOnline()) return;
+      const epoch = runtimeEpochRef.current;
+      try {
+        const offlineResumed = await resumeOfflineAfterNetworkFailure({ client: clientRef.current, baseUrl });
+        if (!cancelled && epoch === runtimeEpochRef.current
+          && canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+          acceptRuntime(offlineResumed);
+        }
+      } catch (_offlineResumeError) {
+        // Keep the online runtime; the expiry timer performs the secure fallback.
+      }
+    };
+    const onNetworkChange = () => {
+      if (browserOnline()) void switchToOnline(); else void switchToOffline();
+    };
+    window.addEventListener('online', onNetworkChange);
+    window.addEventListener('offline', onNetworkChange);
+    if (gateState.kind === 'offline-unlocked' && browserOnline()) void switchToOnline();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      window.removeEventListener('online', onNetworkChange);
+      window.removeEventListener('offline', onNetworkChange);
+    };
+  }, [acceptRuntime, baseUrl, gateState.kind, renewSessionSilently]);
+
+  // UTF-8: connectivity restored at the login gate must retry the managed session automatically.
+  useEffect(() => {
+    if (!['offline-authentication-required', 'locked'].includes(gateState.kind)) return undefined;
+    const onNetworkChange = () => {
+      if (browserOnline()) retryInitialization();
+    };
+    window.addEventListener('online', onNetworkChange);
+    return () => window.removeEventListener('online', onNetworkChange);
+  }, [gateState.kind, retryInitialization]);
+
   const beginRegistration = async () => {
     registrationFlowRef.current += 1;
     setBusy(true);
@@ -535,7 +595,18 @@ const DesktopIdentityGate: React.FC = () => {
       if (!browserOnline()) {
         if (roleSwitchRecoveryRef.current) throw new Error('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
         offlineAttempted = true;
-        acceptRuntime(await clientRef.current.loginOffline(credentials));
+        let offlineResult = await clientRef.current.loginOffline(credentials);
+        if (!browserOnline()) {
+          acceptRuntime(offlineResult);
+          return;
+        }
+        // UTF-8: the network may have returned while the password form was open.
+        try {
+          offlineResult = await clientRef.current.resume({ baseUrl, online: true });
+        } catch (_reconnectError) {
+          // Stay on the offline lease; the connectivity watcher upgrades the mode later.
+        }
+        acceptRuntime(offlineResult);
         return;
       }
       const randomPart = window.crypto?.randomUUID?.() || (String(Date.now()) + '-' + String(Math.random()));

@@ -41,7 +41,11 @@ assert.ok(
 );
 assert.ok(
   app.includes('await dbService.refreshAuthorityProjection()'),
-  'application startup must await authority projection before rendering data pages',
+  'application startup must await the authority projection inside its background refresh, not before the first paint',
+);
+assert.ok(
+  app.indexOf('setDbLoaded(true)') < app.indexOf('refreshInPlace()'),
+  'the workbench must render from the verified local cache while the cloud projection refreshes in the background',
 );
 assert.strictEqual(
   app.includes('/api/sync'),

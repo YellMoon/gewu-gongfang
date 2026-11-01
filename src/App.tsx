@@ -94,21 +94,28 @@ const App: React.FC = () => {
   }, [currentPage]);
 
   useEffect(() => {
-    const loadDb = async () => {
-      try {
-        if (!dbService) {
-          const dbModule = await import('./services/browserDatabase');
-          dbService = dbModule.default;
-        }
+    // UTF-8: render the workbench from the verified local cache immediately; the cloud
+    // projection refreshes in the background and pages update via the refreshed event.
+    const refreshInPlace = () => {
+      (async () => {
         try {
           await dbService.refreshAuthorityProjection({ businessOnly: true });
           await dbService.refreshAuthorityProjection();
         } catch (error) {
           console.warn('Authority projection refresh unavailable; using last verified local cache:', error);
         }
+      })();
+    };
+    const loadDb = async () => {
+      try {
+        if (!dbService) {
+          const dbModule = await import('./services/browserDatabase');
+          dbService = dbModule.default;
+        }
         (window as any).dbService = dbService;
         console.log('Database service loaded successfully');
         setDbLoaded(true);
+        refreshInPlace();
       } catch (error) {
         console.error('Failed to load database service:', error);
         setDbLoaded(true);
