@@ -469,7 +469,20 @@ export function createDesktopIdentityClient({
     };
   }
 
-  async function resume({ baseUrl, online = true } = {}) {
+  // UTF-8: the network watcher and module refresh must rotate the credential once.
+  const onlineResumes = new Map();
+  function resume({ baseUrl, online = true } = {}) {
+    if (!online) return resumeSession({ baseUrl, online });
+    const authority = normalizedBaseUrl(baseUrl);
+    if (onlineResumes.has(authority)) return onlineResumes.get(authority);
+    const pending = resumeSession({ baseUrl: authority, online }).finally(() => {
+      if (onlineResumes.get(authority) === pending) onlineResumes.delete(authority);
+    });
+    onlineResumes.set(authority, pending);
+    return pending;
+  }
+
+  async function resumeSession({ baseUrl, online }) {
     if (typeof desktopIdentity.resume !== 'function') {
       throw identityError('DESKTOP_IDENTITY_RESUME_UNAVAILABLE');
     }

@@ -306,7 +306,11 @@ async function main() {
       } }) };
     },
   });
-  const resumed = await resumeClient.resume({ baseUrl: 'https://cloud.test', online: true });
+  const [resumed, refreshed] = await Promise.all([
+    resumeClient.resume({ baseUrl: 'https://cloud.test', online: true }),
+    resumeClient.ensureOnlineSession({ baseUrl: 'https://cloud.test' }),
+  ]);
+  assert.strictEqual(refreshed, resumed, 'network recovery and a module refresh must share one session exchange');
   assert.strictEqual(resumed.gateState.kind, 'online-unlocked');
   assert.strictEqual(resumedSessionStored.token, 'session-token-resume-1');
   assert.strictEqual(resumedSessionStored.profile.teacherId, 'teacher-resume-session',
