@@ -315,6 +315,15 @@
         "miniapp"
       ],
       "rule": "Apply 20261103-finance-materializations.sql before deploying cloud readers. Cloud owns leased, revision/rules/valuation-day guarded financial computation and durable results. Desktop reads stored summaries and paged transactions; originals are read only on explicit expansion/search. Source-confirmed external WeChat receipts count as income after protecting owner decisions, self transfers, loans and refunds. Securities trades, realized gains, dividends, interest and fees are independent of living income/expenses; principal, cash, holdings value and unrealized gains remain distinct. Additive balanceGroups and securitiesPeriodSummary fields separate deposits, card debt, mortgage principal, brokerage assets and other funds without netting asset and debt classes or treating unknowns as zero. Compact miniapp responses retain only summary facts. Keep original observations, annotation revisions and NAS receipts immutable. Candidate containers disable materialization; production computations share a resource gate. Deploy verified cloud results before client rollout. NAS transport is unchanged."
+    },
+    "personalFinanceClosingValuation": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Deploy the additive public closing-price cache and cloud valuation before readers. Reuse persisted owner-scoped holdings and cash; never recompute original ledgers for quote refreshes. Fetch unadjusted completed trading-day closes on the cloud with exact security identity, quote date, source and decimal precision. Missing holdings or prices keep totals unknown; values assume no unimported trades and preserve separate holdings and quote dates. Securities valuations never enter living income or expenses. Historical scope must not claim a later valuation as an earlier balance. Existing NAS transport is unchanged."
     }
   },
   "runtimeReceipts": {

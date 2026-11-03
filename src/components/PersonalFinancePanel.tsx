@@ -275,7 +275,10 @@ export default function PersonalFinancePanel() {
     <div className="finance-filters" aria-label="生活账单筛选">
       <Select className="finance-account-select" aria-label="统计账户" mode="multiple" showSearch optionFilterProp="label" allowClear maxTagCount="responsive" placeholder="全部账户（可多选）" style={{width:330,minWidth:250}} options={accounts} value={selected} onChange={setSelected}/><Button onClick={()=>setSelected([])}>全部账户</Button>
       <Select aria-label="统计币种" value={selectedCurrency} style={{width:90}} onChange={setCurrency} options={[...new Set<string>(ledger.accounts.map((a:any)=>a.currency))].map(v=>({value:v,label:v}))}/>
-      <DatePicker.RangePicker aria-label="收支统计期间" placeholder={['开始日期','结束日期']} value={period} onChange={setPeriod} allowClear/><Button onClick={()=>setPeriod([dayjs().startOf('month'),dayjs()])}>本月至今天</Button><Button onClick={()=>setPeriod(null)}>全部日期</Button><Button disabled={busy} onClick={()=>void reconnect()}>刷新</Button>
+      <DatePicker.RangePicker aria-label="收支统计期间" placeholder={['开始日期','结束日期']} value={period} onChange={setPeriod} allowClear/>
+      <Button onClick={()=>{const year=dayjs();setPeriod([year.startOf('year'),year.endOf('year')]);}}>当年</Button>
+      <Button onClick={()=>{const year=dayjs().subtract(1,'year');setPeriod([year.startOf('year'),year.endOf('year')]);}}>去年</Button>
+      <Button onClick={()=>setPeriod([dayjs().startOf('month'),dayjs()])}>本月至今天</Button><Button onClick={()=>setPeriod(null)}>全部日期</Button><Button disabled={busy} onClick={()=>void reconnect()}>刷新</Button>
     </div>
     <p className="finance-scope">{selected.length===1?accountLabel(accountMap.get(selected[0])):selected.length?'已选 '+selected.length+' 个账户':'全部账户'} · {selectedCurrency} · 收支期间：{startDate?startDate+' 至 '+endDate:'暂无记录'}。余额截至：{endDate||'最近已记录时点'}，仅按已有余额依据和已记录变动计算。</p>
     {trendReturnPeriod!==undefined&&<Button className="finance-return-period" onClick={()=>{setPeriod(trendReturnPeriod);setTrendReturnPeriod(undefined);setActiveTab('overview');}}>返回原统计期间</Button>}
@@ -286,7 +289,7 @@ export default function PersonalFinancePanel() {
         <Card size="small"><span>期间支出（扣除退款）</span><div className="finance-value" data-testid="expense-total">{financeReady?formatMinor(totals.consumptionMinor):'—'}</div><div className="finance-muted">转账、申购与还款本金不计支出</div></Card>
         <Card size="small"><span>期间收入</span><div className="finance-value" data-testid="income-total">{financeReady?formatMinor(totals.incomeMinor):'—'}</div><div className="finance-muted">转入本金、赎回本金与借款不计收入；证券盈亏及费用单独核算。</div></Card>
       </div>
-      <FinanceBalanceGroups groups={view.balanceGroups||[]} currency={selectedCurrency} ready={financeReady} onSelect={setSelected}/>
+      <FinanceBalanceGroups accounts={assetRegister.accounts} endDate={endDate} groups={view.balanceGroups||[]} currency={selectedCurrency} ready={financeReady} onSelect={setSelected}/>
       {reviewReady&&<div className="finance-review-summary" role="status"><span><strong>全账本待核对交易 {review.pendingTransactionCount} 笔</strong> · 账户诊断 {review.pendingAccountIssueCount} 项</span><Button type="link" onClick={()=>setActiveTab('review')}>查看原因与原件</Button></div>}
       {financeReady&&<div className="finance-charts">
         <section className="finance-chart"><div className="finance-toolbar"><h3>收入与支出趋势</h3><Select aria-label="趋势粒度" value={granularity} style={{width:115}} onChange={setGranularity} options={[{value:'auto',label:'自动粒度'},{value:'day',label:'按日'},{value:'week',label:'按周'},{value:'month',label:'按月'}]}/></div><FinanceTrend rows={trend} currency={selectedCurrency} granularity={effectiveGranularity} onSelect={showPeriodTransactions}/><p className="finance-muted">{({day:'按日',week:'按周',month:'按月'} as any)[effectiveGranularity]} · 仅统计已导入记录；空白期间不代表账单已完整覆盖。</p></section>

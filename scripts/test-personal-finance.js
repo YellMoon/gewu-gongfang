@@ -5,6 +5,7 @@ const tests = [
   'shared/personal-finance/balanceGroups.test.js',
   'cloud-business-api/src/financeMaterializationRepository.test.js',
   'cloud-business-api/src/financeMaterializationService.test.js',
+  'cloud-business-api/src/securityMarketDataService.test.js',
   'cloud-business-api/src/financeMaterializationWorker.test.js',
   'shared/personal-finance/tuitionReview.test.js',
   'src/components/TuitionBillReview.browser.test.cjs',

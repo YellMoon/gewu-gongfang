@@ -12,7 +12,7 @@ function normalizeProjectionQuery(input={}){
  if(input.retry!==undefined){if(typeof input.retry!=='boolean')throw invalid();result.retry=input.retry;}
  return result;
 }
-function createFinanceMaterializationService({finance,store,rulesVersion=financeRulesVersion(),createWorker=()=>new Worker(path.join(__dirname,'financeMaterializationWorker.js'),{workerData:{rulesVersion},resourceLimits:{maxOldGenerationSizeMb:512,maxYoungGenerationSizeMb:16}}),canRun=()=>true,jobsEnabled=process.env.CLOUD_FINANCE_MATERIALIZER_ENABLED!=='0',start=true}={}){
+function createFinanceMaterializationService({finance,store,marketData=null,rulesVersion=financeRulesVersion(),createWorker=()=>new Worker(path.join(__dirname,'financeMaterializationWorker.js'),{workerData:{rulesVersion},resourceLimits:{maxOldGenerationSizeMb:512,maxYoungGenerationSizeMb:16}}),canRun=()=>true,jobsEnabled=process.env.CLOUD_FINANCE_MATERIALIZER_ENABLED!=='0',start=true}={}){
  let closed=false,pumping=false,reading=0,mutating=0,nextId=0,reader,builder,mutationQueue=Promise.resolve();const workers=new Set();
  function boot(){const worker=createWorker(),pending=new Map();workers.add(worker);worker.unref?.();
   const rejectAll=()=>{for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('CLOUD_PERSONAL_FINANCE_UNAVAILABLE'));}pending.clear();};
@@ -33,11 +33,15 @@ function createFinanceMaterializationService({finance,store,rulesVersion=finance
     if(jobsEnabled&&!pumping&&!mutating&&!reader&&canRun()){
      reader=boot();reading++;void reader.call('warm',{owner,revision,valuationDay:row.valuation_day},60000).catch(()=>{}).finally(()=>{reading--;});
     }
-    return{...row.summary.projection,completedAt:row.completed_at,rulesVersion};
+    const result={...row.summary.projection,completedAt:row.completed_at,rulesVersion};
+    const valued=marketData?await marketData.enrich(result,query):result;
+    if(marketData&&await finance.getRevision(owner)!==revision)return{status:'preparing',revision:await finance.getRevision(owner),rulesVersion,retryAfterMs:2000};
+    return valued;
    }
    if(pumping||mutating||reading>=4||!canRun())return{status:'busy',revision,rulesVersion,retryAfterMs:3000};
    if(!reader)reader=boot();let result;reading++;try{result=await reader.call('read',{owner,revision,valuationDay:row.valuation_day,input:{...query,...(options.tuitionContext?{tuitionContext:options.tuitionContext}:{})}},60000);}finally{reading--;}
    if(await finance.getRevision(owner)!==revision)return{status:'preparing',revision:await finance.getRevision(owner),rulesVersion,retryAfterMs:2000};
+   if(marketData&&!options.tuitionContext){result=await marketData.enrich(result,query);if(await finance.getRevision(owner)!==revision)return{status:'preparing',revision:await finance.getRevision(owner),rulesVersion,retryAfterMs:2000};}
    if(options.compact&&result.status==='ready'){
     const view={};for(const key of ['accountStats','currencyTotals','portfolioBalances','balanceGroups','securitiesPeriodSummary','mortgages','comparison','categoryTotals','fundingBreakdown'])view[key]=result.view[key];
     view.review=result.globalReview;view.hasStatisticsExclusions=!!result.hasStatisticsExclusions;

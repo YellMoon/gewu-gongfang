@@ -193,8 +193,8 @@ const PersonalAssets: React.FC = () => {
   return (
     <div>
       <PersonalFinancePanel />
-      <details style={{ marginTop: 24 }}>
-        <summary style={{ cursor: 'pointer', padding: '12px 0', fontSize: 16 }}>手工及历史记录</summary>
+      {records.length>0&&<details style={{ marginTop: 24 }}>
+        <summary style={{ cursor: 'pointer', padding: '12px 0', fontSize: 16 }}>旧版记录归档（不计入上方统计）</summary>
         <p style={{ color: '#595959' }}>以下保留手工及旧版记录的查询、编辑和导出，统计范围与上方资产账本分别展示。</p>
       {/* ===== Summary Cards ===== */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -377,7 +377,7 @@ const PersonalAssets: React.FC = () => {
         </Form>
       </Modal>
 
-      </details>
+      </details>}
 
       {/* ===== Category Management Modal ===== */}
       <Modal

@@ -2295,7 +2295,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     }
   });
   const financeProjectionService = financeMaterializations
-    ? require('./financeMaterializationService').createFinanceMaterializationService({ finance: personalFinance, store: financeMaterializations, canRun: financeWorkAllowed })
+    ? require('./financeMaterializationService').createFinanceMaterializationService({ finance: personalFinance, store: financeMaterializations, marketData: require('./securityMarketDataService').createSecurityMarketDataService({query}), canRun: financeWorkAllowed })
     : personalFinance && typeof personalFinance.getRevision === 'function'
       ? require('./financeProjectionService').createFinanceProjectionService({ finance: personalFinance, loadInWorker: true }) : null;
   app.locals.financeProjectionService = financeProjectionService;

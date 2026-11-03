@@ -46,3 +46,7 @@ test('candidate mode never claims background jobs and another heavy task defers 
  const service=createFinanceMaterializationService({finance:{getRevision:async()=> '7'},store,rulesVersion:'fixture',jobsEnabled:false,start:true,canRun:()=>allowed,createWorker:()=>new Worker()});
  await service.pump();assert.equal(claims,0);assert.equal((await service.request(owner,{})).status,'busy');allowed=true;assert.equal((await service.request(owner,{})).status,'ready');await service.releaseIdle();await service.dispose();
 });
+test('market valuation enriches persisted defaults without a ledger rebuild and guards concurrent corrections',async()=>{
+ let revision='7',valuations=0;const service=createFinanceMaterializationService({finance:{getRevision:async()=>revision},store:{read:async()=>({state:'ready',summary:{schema:'finance-default-query-v1',projection:{status:'ready',revision:'7',view:{securities:[]}}}})},marketData:{enrich:async p=>{valuations++;if(valuations===2)revision='8';return{...p,valued:true};}},jobsEnabled:false,start:false,rulesVersion:'fixture',createWorker:()=>{throw Error('must not rebuild');}});
+ assert.equal((await service.request(owner,{currency:'CNY',granularity:'auto'})).valued,true);assert.equal((await service.request(owner,{currency:'CNY',granularity:'auto'})).status,'preparing');await service.dispose();
+});
