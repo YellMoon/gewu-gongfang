@@ -807,8 +807,10 @@ def deploy_frozen_release(version, tag, source_root):
     ssh = deploy.connect()
     runtime_override_uploaded = False
     try:
+        check_disk_space(ssh)
         upload_source(ssh, tag, source_root)
         build_image(ssh, tag)
+        check_disk_space(ssh)
         backup = create_verified_backup()
         deploy_retirement_gateway()
         # The candidate starts with strict schema/invariant verification. Apply
@@ -838,6 +840,19 @@ def deploy_frozen_release(version, tag, source_root):
         version,
         backup,
     )
+
+
+def disk_space_guard_command():
+    return (
+        "available=$(df -Pk /root | awk 'NR==2 {print $4}'); "
+        "case \"$available\" in ''|*[!0-9]*) exit 3;; esac; "
+        "test \"$available\" -ge 5242880 || "
+        "{ printf '%s\\n' 'CLOUD_DOCKER_DISK_SPACE_LOW' >&2; exit 3; }"
+    )
+
+
+def check_disk_space(ssh):
+    deploy.run(ssh, disk_space_guard_command(), timeout=20)
 
 
 def promote_release(tag):

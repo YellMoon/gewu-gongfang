@@ -64,3 +64,14 @@ stopped at `cloud_postgres_security_fingerprint.test.cjs` because the disposable
 Docker PostgreSQL runtime is unavailable on this Windows host. The separate
 server PostgreSQL artifact/permission tests above passed. No current build has
 been published yet; release evidence will be recorded after deployment.
+
+The first release attempt stopped during its mandatory database backup, before
+migrations or candidate startup: the 40-GB server root filesystem filled up.
+PostgreSQL recovered after removing regenerable build artifacts. Existing cloud
+8.33.0 health and revision 3886 counts were verified unchanged: 73 accounts,
+61,506 observations, 872 imports, 3,386 annotations, 42 links, 139 snapshots.
+Old stopped code containers/images were reduced to the current image plus the
+latest ten rollback containers, with private metadata retained. Database backups
+and business volumes were preserved. Root free space recovered to about 16 GB.
+Deployment now checks for at least 5 GiB free before upload/build and again before
+backup; shell regression tests verify low-space rejection before mutations.

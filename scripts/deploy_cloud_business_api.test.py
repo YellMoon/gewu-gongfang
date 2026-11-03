@@ -48,6 +48,9 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             self.assertNotIn('install -d -m 700 -o 1000 -g 1000 /root/scheduling-data/finance-sources', command)
 
     def setUp(self):
+        self.disk_guard = mock.patch.object(module, 'check_disk_space')
+        self.disk_guard.start()
+        self.addCleanup(self.disk_guard.stop)
         self.source_guard = mock.patch.object(module, 'frozen_cloud_inputs', create=True,
                                              side_effect=lambda *_args: contextlib.nullcontext(module.ROOT))
         self.source_guard.start()
@@ -572,7 +575,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_deploy_applies_verified_migrations_before_starting_candidate(self):
         events = []
         ssh = mock.Mock()
-        with mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
+        with mock.patch.object(module, "check_disk_space", side_effect=lambda *_args: events.append("disk")), mock.patch.object(module, "source_version", return_value="8.5.0"), mock.patch.object(
             module, "source_revision", return_value="1165783d"
         ), mock.patch.object(module.deploy, "require_release_manifest"), mock.patch.object(
             module.deploy, "connect", return_value=ssh
@@ -588,10 +591,25 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
             module.deploy, "run", side_effect=lambda *_args, **_kwargs: events.append("candidate") or ("", "")
         ), mock.patch.object(module, "promote_validated_candidate", side_effect=lambda *_args: events.append("promote") or {"ok": True}):
             self.assertEqual(module.deploy_release(), {"ok": True})
-        self.assertEqual(events, ["upload", "build", "backup", "gateway", "migrate", "runtime", "candidate", "promote"])
+        self.assertEqual(events, ["disk", "upload", "build", "disk", "backup", "gateway", "migrate", "runtime", "candidate", "promote"])
         module.frozen_cloud_inputs.assert_called_once_with(module.ROOT, '1165783d')
         self.assertEqual(upload.call_args.args[-1], module.ROOT)
         migrate.assert_called_once_with(module.ROOT)
+
+    def test_low_disk_space_blocks_upload_build_backup_and_migrations(self):
+        ssh=mock.Mock()
+        with mock.patch.object(module.deploy, 'connect', return_value=ssh), mock.patch.object(module, 'check_disk_space', side_effect=RuntimeError('CLOUD_DOCKER_DISK_SPACE_LOW')), mock.patch.object(module, 'upload_source') as upload, mock.patch.object(module, 'build_image') as build:
+            with self.assertRaisesRegex(RuntimeError, 'CLOUD_DOCKER_DISK_SPACE_LOW'):
+                module.deploy_frozen_release('8.34.0','8.34.0-abcdef0',module.ROOT)
+        upload.assert_not_called();build.assert_not_called();self.backup_guard.target.create_verified_backup.assert_not_called();ssh.close.assert_called_once()
+
+    def test_disk_space_guard_checks_available_blocks_in_a_real_shell(self):
+        git=shutil.which('git')
+        shell=str(Path(git).resolve().parents[1]/'bin'/'bash.exe') if os.name=='nt' and git else shutil.which('bash')
+        for available,code in [('9000000',0),('1000000',3),('bad',3)]:
+            script='df() { printf "Filesystem blocks used available capacity mount\\nfixture 10000000 1000000 '+available+' 10%% /\\n"; }; '+module.disk_space_guard_command()
+            result=subprocess.run([shell,'-c',script],capture_output=True,text=True,encoding='utf-8',timeout=10)
+            self.assertEqual(result.returncode,code,result.stderr)
 
     def test_backup_failure_blocks_migrations_candidate_and_promotion(self):
         ssh = mock.Mock()
