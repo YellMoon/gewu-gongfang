@@ -1,6 +1,6 @@
 'use strict';
 
-function createPaperExportWorkerRuntime({ processor, intervalMs = 1000, setTimer = setInterval, clearTimer = clearInterval, log = () => {} } = {}) {
+function createPaperExportWorkerRuntime({ processor, intervalMs = 1000, setTimer = setInterval, clearTimer = clearInterval, log = () => {}, canRun = () => true } = {}) {
   if (!processor || typeof processor.runOnce !== 'function' || !Number.isSafeInteger(intervalMs) || intervalMs < 250 || intervalMs > 60000
     || typeof setTimer !== 'function' || typeof clearTimer !== 'function' || typeof log !== 'function') {
     throw new TypeError('CLOUD_PAPER_WORKER_RUNTIME_INVALID');
@@ -8,7 +8,7 @@ function createPaperExportWorkerRuntime({ processor, intervalMs = 1000, setTimer
   let timer = null;
   let running = false;
   async function tick() {
-    if (running) return;
+    if (running || !canRun()) return;
     running = true;
     try {
       const result = await processor.runOnce();
@@ -20,6 +20,7 @@ function createPaperExportWorkerRuntime({ processor, intervalMs = 1000, setTimer
     }
   }
   return Object.freeze({
+    isRunning: () => running,
     start() {
       if (timer !== null) return;
       timer = setTimer(() => { void tick(); }, intervalMs);

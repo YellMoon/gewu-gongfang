@@ -7,24 +7,20 @@ import { PROVIDERS, ISSUE_LABELS, accountLabel, accountGroup, evidenceLabel, tre
 import MortgageAccounts from './MortgageAccounts';
 import TuitionBillReview from './TuitionBillReview';
 import BillRelatedAccounts,{relatedAccountsReady,relatedAccountSnapshot} from './BillRelatedAccounts';
-// @ts-ignore Shared integer ledger is used by cloud and both clients.
-import { buildFinanceView } from '../../shared/personal-finance/ledger.js';
-// @ts-ignore Shared asset register uses immutable statement evidence.
-import { buildAssetRegister } from '../../shared/personal-finance/assetRegister.js';
-// @ts-ignore Shared exact-integer aggregations.
-import { buildTrend } from '../../shared/personal-finance/accountAnalytics.js';
+// @ts-ignore Static display defaults contain no financial calculations.
+import { emptyView, emptyRegister } from '../services/emptyFinanceProjection';
 // @ts-ignore Shared validation keeps counterparty choices consistent with the server.
 import { isSettlementAccount } from '../../shared/personal-finance/counterpartySettlements.js';
 import { createPersonalFinanceClient, formatMinor as baseFormatMinor, parseMoney } from '../services/personalFinanceClient.mjs';
-import { createFinanceAnalysisClient, financeWorkerAvailable } from '../services/personalFinanceAnalysisClient.mjs';
+
 import { readDesktopAuthorizationSession } from '../services/desktopAuthorizationSession.mjs';
 const formatMinor=(value:any)=>baseFormatMinor(value).replace(/^-/, '\u2212');
 const TYPES: Record<string, string> = { cash: '现金', bank: '银行账户', savings: '储蓄', debit_card: '借记卡', credit_card: '信用卡', wallet: '电子钱包', loan: '贷款', investment: '证券与基金', insurance: '保险', receivable: '应收款', property: '不动产', precious_metal: '贵金属', retirement: '养老金', other: '其他资产' };
 const KINDS: Record<string, string> = { expense: '消费', income: '收入', transfer: '转账', refund: '退款', loan_drawdown: '借款到账', debt_payment: '还款/月供', interest: '利息', fee: '手续费', unknown: '待分类' };
 const client = createPersonalFinanceClient();
-const NETWORK_FAILURE_CODES = ['FINANCE_REQUEST_FAILED', 'AUTHORIZATION_CONTEXT_REQUIRED', 'AUTHENTICATION_CONTEXT_REQUIRED', 'TypeError', 'TimeoutError', 'AbortError'];
+const NETWORK_FAILURE_CODES = ['FINANCE_REQUEST_FAILED', 'FINANCE_REQUEST_TIMEOUT', 'AUTHORIZATION_CONTEXT_REQUIRED', 'AUTHENTICATION_CONTEXT_REQUIRED', 'TypeError', 'TimeoutError', 'AbortError'];
 const empty = { accounts: [], observations: [], links: [], balanceSnapshots: [], imports: [], legacyRecords: [], revision: '0' };
-const emptyView=buildFinanceView(empty),emptyRegister=buildAssetRegister(empty);
+
 export function settlementAccountField(o:any,t:any,accounts:any[]){
   const existing=t.appliedAnnotations?.filter((a:any)=>a.observationId===o.id&&!a.reset).sort((a:any,b:any)=>BigInt(a.revision)>BigInt(b.revision)?-1:1)[0]?.patch?.settlementAccountId;
   const proof=t.cashPostingEvidence?.find((p:any)=>p.sourceObservationId===o.id&&p.financialAccountId===o.financialAccountId&&p.confidence==='explicit_original_cash_posting'&&p.preservesUnclassifiedMerchantPurpose&&p.deltaMinor===o.amountMinor);
@@ -86,9 +82,17 @@ export default function PersonalFinancePanel() {
   const [granularity, setGranularity] = useState('auto');
   const [busy, setBusy] = useState(false), [failure, setFailure] = useState('');
   const [loading,setLoading]=useState(true),[loaded,setLoaded]=useState(false),[ledgerOwner,setLedgerOwner]=useState('');
-  const [analysis,setAnalysis]=useState<any>(),[analysisPhase,setAnalysisPhase]=useState(''),[analysisFailure,setAnalysisFailure]=useState('');
-  const analysisClient=useRef<any>(),priorOwner=useRef<string>();
-  const background=financeWorkerAvailable();
+  const [analysis,setAnalysis]=useState<any>(),[analysisPhase,setAnalysisPhase]=useState('');
+  const priorOwner=useRef<string>();
+  const background=true;
+  const [transactionPage,setTransactionPage]=useState(1);
+  const [transactionDetails,setTransactionDetails]=useState<Record<string,any>>({});
+  const projectionPoll=useRef<ReturnType<typeof setTimeout>>();
+  const projectionQueryKey=useRef<string>();
+  const latestReload=useRef<(retry?:boolean)=>Promise<void>>();
+  const currentRevision=useRef('0');
+  currentRevision.current=rawLedger.revision;
+  const [searchedObservations,setSearchedObservations]=useState<any[]>([]);
   const [accountModal, setAccountModal] = useState(false), [form] = Form.useForm();
   const [importAccount, setImportAccount] = useState<string>(), [file, setFile] = useState<any>(), [preview, setPreview] = useState<any>();
   const [relatedAccountIds,setRelatedAccountIds] = useState<any>({});
@@ -106,14 +110,31 @@ export default function PersonalFinancePanel() {
   const sequence = useRef(0), fileSequence = useRef(0), mounted = useRef(true), fileRef = useRef<HTMLInputElement>(null);
   // UTF-8: reconnect before requesting finance data; coalesce repeated clicks and online events.
   const reconnecting = useRef<Promise<void> | null>(null);
-  const scope = () => { try { const s = readDesktopAuthorizationSession(); return JSON.stringify([s.authorization, s.authContext.activeRole]); } catch { return ''; } };
+  const scope = () => { try { const s = readDesktopAuthorizationSession(); return JSON.stringify([s.authContext.userId, s.authContext.activeRole]); } catch { return ''; } };
   const currentOwnerScope=scope(),ledger=ledgerOwner===currentOwnerScope?rawLedger:empty;
-  const reload = async () => {
-    const n = ++sequence.current, owner = scope(); setFailure(''); setLoading(true);
-    try { const data = await client.getLedger(); if (mounted.current && n === sequence.current && scope() === owner) {setLedger(data.ledger);setLedgerOwner(owner);setLoaded(true);} }
-    catch (e: any) { if (mounted.current && n === sequence.current && scope() === owner) setFailure(e.code || 'FINANCE_REQUEST_FAILED'); }
-    finally {if(mounted.current&&n===sequence.current&&scope()===owner)setLoading(false);}
+  const projectionInput=()=>({accountIds:selected.length?selected:undefined,startDate:period?.[0]?.format('YYYY-MM-DD'),endDate:period?.[1]?.format('YYYY-MM-DD'),currency,granularity,search,category:categoryFilter,kind:transactionFilter,reviewGroupId:reviewGroup,page:transactionPage,pageSize:50});
+  const reload = async (retry=false) => {
+    clearTimeout(projectionPoll.current);
+    const n=++sequence.current,owner=scope();setFailure('');setLoading(true);
+    try {
+      const {projection:p}=await client.queryProjection({...projectionInput(),...(retry?{retry:true}:{})});
+      if(!mounted.current||n!==sequence.current||scope()!==owner)return;
+      if(p.status!=='ready'){
+        if(p.revision!==currentRevision.current)setAnalysis(undefined);
+        setAnalysisPhase('cloud');
+        if(p.status==='failed'){setAnalysisPhase('');setFailure(p.errorCode||'FINANCE_MATERIALIZATION_FAILED');setLoading(false);return;}
+        projectionPoll.current=setTimeout(()=>void latestReload.current?.(),Math.max(1000,Math.min(p.retryAfterMs||3000,10000)));return;
+      }
+      setLedger(p.ledger);setLedgerOwner(owner);setLoaded(true);setAnalysis({ledger:p.ledger,key:filterKey,owner,result:{...p,view:{...p.view,transactions:p.transactions.items}}});setAnalysisPhase('');setLoading(false);
+    }catch(e:any){if(mounted.current&&n===sequence.current&&scope()===owner){setFailure(typeof e.code==='string'?e.code:'FINANCE_REQUEST_FAILED');setLoading(false);}}
   };
+  latestReload.current=reload;
+  const loadTransactionDetails=async(t:any)=>{
+    const owner=scope(),revision=ledger.revision;
+    try{const response=await client.transactionDetails(t.id);if(mounted.current&&scope()===owner&&currentRevision.current===revision&&(!response.projection?.revision||response.projection.revision===revision)&&response.projection?.transaction)setTransactionDetails(old=>({...old,[t.id]:response.projection.transaction}));}
+    catch(e:any){if(mounted.current&&scope()===owner)message.error(e.code||'FINANCE_REQUEST_FAILED');}
+  };
+  useEffect(()=>{setTransactionDetails({});},[rawLedger.revision]);
   const loadMailbox = async () => {
     const owner = scope(); setMailLoading(true); setMailFailure(''); setMailStatus(undefined);
     try { const value = await client.mailboxStatus(); if (mounted.current && scope() === owner) setMailStatus(value.mailbox); }
@@ -126,18 +147,18 @@ export default function PersonalFinancePanel() {
     reconnecting.current = (async () => {
       try {
         await (window as any).desktopIdentitySessionProvider?.ensureOnline?.();
-        if (mounted.current) await Promise.all([reload(), loadMailbox()]);
+        if (mounted.current) await Promise.all([latestReload.current?.(true), loadMailbox()]);
       } catch (e: any) {
         if (mounted.current) { setFailure(e.code || 'FINANCE_REQUEST_FAILED'); setLoading(false); }
       }
     })().finally(() => { reconnecting.current = null; });
     return reconnecting.current;
   };
-  useEffect(()=>{if(!background)return;const c=createFinanceAnalysisClient();analysisClient.current=c;return()=>{c.dispose();analysisClient.current=undefined;};},[background]);
-  useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); const imported = () => void reload(); window.addEventListener('personal-finance-imported', imported); return () => { window.removeEventListener('personal-finance-imported', imported); mounted.current = false; sequence.current++; }; }, []);
+  useEffect(()=>()=>clearTimeout(projectionPoll.current),[]);
+  useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); const imported = () => void latestReload.current?.(); window.addEventListener('personal-finance-imported', imported); return () => { window.removeEventListener('personal-finance-imported', imported); mounted.current = false; sequence.current++; }; }, []);
   useEffect(() => {
     // UTF-8: 断网启动或云端失联后，联网恢复与身份会话就绪都要自动重新拉取，不等用户手动刷新。
-    const reloadAll = () => { if (!reconnecting.current) { void reload(); void loadMailbox(); } };
+    const reloadAll = () => { if (!reconnecting.current) { void latestReload.current?.(); void loadMailbox(); } };
     const onOnline = () => { void reconnect(); };
     window.addEventListener('desktop-authority-drafts-changed', reloadAll);
     window.addEventListener('desktop-identity-session-ready', reloadAll);
@@ -156,15 +177,23 @@ export default function PersonalFinancePanel() {
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
   const ownerScope=currentOwnerScope,filterKey=JSON.stringify([selected.length?[...selected].sort():null,period?.[0]?.format('YYYY-MM-DD')||null,period?.[1]?.format('YYYY-MM-DD')||null]);
-  const analysisOptions=useMemo(()=>({... (selected.length?{accountIds:selected}:{}),...(period?.[0]?{startDate:period[0].format('YYYY-MM-DD')}:{}),...(period?.[1]?{endDate:period[1].format('YYYY-MM-DD')}:{})}),[filterKey]);
   useEffect(()=>{const previous=priorOwner.current;priorOwner.current=ownerScope;if(previous===undefined||previous===ownerScope)return;sequence.current++;fileSequence.current++;setLedger(empty);setLoaded(false);setAnalysis(undefined);setSelected([]);setPreview(null);setFile(null);setRelatedAccountIds({});setPasswordModal(false);setAccountDetail(undefined);setReviewGroup(undefined);void reload();void loadMailbox();},[ownerScope]);
-  useEffect(()=>{if(!background||!loaded||ledgerOwner!==ownerScope)return;let current=true;const owner=scope();setAnalysisFailure('');setAnalysisPhase('history');analysisClient.current.analyze(ledger,analysisOptions,owner,(phase:string)=>{if(current&&scope()===owner)setAnalysisPhase(phase);}).then((result:any)=>{if(current&&scope()===owner)setAnalysis({ledger,key:filterKey,owner,result});}).catch((e:any)=>{if(current&&scope()===owner&&e.code!=='FINANCE_ANALYSIS_SUPERSEDED')setAnalysisFailure('账本计算未完成，请刷新重试；尚未显示的金额不按零处理。');});return()=>{current=false;};},[ledger,filterKey,loaded,background,ownerScope,ledgerOwner]);
-  const analysisReady=analysis?.owner===ownerScope&&analysis?.ledger===ledger&&analysis?.key===filterKey,financeReady=loaded&&ledgerOwner===ownerScope&&(!background||analysisReady),reviewReady=loaded&&ledgerOwner===ownerScope&&(!background||analysis?.owner===ownerScope&&analysis?.ledger===ledger);
-  const localFullView=useMemo(()=>background?null:buildFinanceView(ledger),[ledger,background]);
-  const view=useMemo(()=>background?(analysisReady?analysis.result.view:emptyView):Object.keys(analysisOptions).length?buildFinanceView(ledger,analysisOptions):localFullView,[ledger,analysisOptions,background,analysisReady,analysis,localFullView]);
-  const review=background?(analysis?.owner===ownerScope&&analysis?.ledger===ledger?analysis.result.globalReview:emptyView.review):localFullView.review;
+  const projectionKey=JSON.stringify(projectionInput());
+  const pageScope=JSON.stringify({...projectionInput(),page:undefined});
+  useEffect(()=>{setTransactionPage(1);},[pageScope]);
+  useEffect(()=>{if(projectionQueryKey.current===projectionKey)return;const first=projectionQueryKey.current===undefined;projectionQueryKey.current=projectionKey;if(first)return;const timer=setTimeout(()=>void reload(),200);return()=>clearTimeout(timer);},[projectionKey]);
+  const analysisReady=analysis?.owner===ownerScope&&analysis?.key===filterKey,financeReady=loaded&&ledgerOwner===ownerScope&&analysisReady,reviewReady=financeReady;
+  const view=analysisReady?analysis.result.view:emptyView;
+  const review=analysis?.owner===ownerScope?analysis.result.globalReview:emptyView.review;
   const accountMap = useMemo(()=>new Map<string,any>(ledger.accounts.map((a:any)=>[a.id,a])),[ledger.accounts]);
-  const observationMap = useMemo(()=>new Map<string,any>(ledger.observations.map((o:any)=>[o.id,o])),[ledger.observations]);
+  const availableObservations=[...(analysis?.owner===ownerScope?analysis.result.sourceScopes||[]:[]),...ledger.observations,...searchedObservations,...Object.values(transactionDetails).flatMap((t:any)=>t.sources||[])];
+  const observationMap = useMemo(()=>new Map<string,any>(availableObservations.map((o:any)=>[o.id,o])),[availableObservations]);
+  useEffect(()=>{
+    setSearchedObservations([]);let live=true;const owner=scope();
+    if(!linkSearch.trim()&&!linkIds.length)return;
+    const timer=setTimeout(()=>{void client.searchObservations({search:linkSearch,ids:linkIds}).then(r=>{if(live&&mounted.current&&scope()===owner)setSearchedObservations(r.observations);}).catch(()=>{});},200);
+    return()=>{live=false;clearTimeout(timer);};
+  },[linkSearch,JSON.stringify(linkIds),ownerScope,rawLedger.revision]);
   const accounts = ledger.accounts.map((a: any) => ({ value: a.id, label: `${a.label} · ${a.currency} · ${TYPES[a.type] || a.type}` }));
   const options = () => {
     const value=mapping.trim()?JSON.parse(mapping):{};
@@ -186,7 +215,7 @@ export default function PersonalFinancePanel() {
     catch (e: any) { if (mounted.current && scope() === owner && n === fileSequence.current) message.error(`无法解析：${e.code==='BILL_BANK_SOURCE_REQUIRED'?'请在“账单来源”中选择浦发银行 Excel 明细':e.code || '请检查字段映射'}`); }
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
-  const assetRegister = useMemo(() => background?(analysis?.owner===ownerScope&&analysis?.ledger===ledger?analysis.result.assetRegister:emptyRegister):buildAssetRegister(ledger), [ledger,background,analysis,ownerScope]);
+  const assetRegister=analysis?.owner===ownerScope?analysis.result.assetRegister:emptyRegister;
   const verifyBalance = (a: any) => Modal.confirm({
     title: a.label + ' \u00b7 \u4f59\u989d\u6838\u5bf9',
     okText:'\u4fdd\u5b58\u6838\u5bf9',cancelText:'\u53d6\u6d88',
@@ -206,10 +235,10 @@ export default function PersonalFinancePanel() {
   const totals=view.currencyTotals[selectedCurrency]||{incomeMinor:'0',consumptionMinor:'0'},balances=view.portfolioBalances[selectedCurrency];
   const accountRows=useMemo(()=>assetRegister.accounts.filter((a:any)=>(!selected.length||selected.includes(a.id))&&a.currency===selectedCurrency).map((a:any)=>({...a,...view.accountStats[a.id],group:accountGroup(a)})).sort((a:any,b:any)=>a.group.localeCompare(b.group,'zh-CN')||accountLabel(a).localeCompare(accountLabel(b),'zh-CN')),[assetRegister,selected,selectedCurrency,view.accountStats]);
   const accountGroups=useMemo(()=>['储蓄账户','信用账户','理财账户','其他账户'].map(group=>({group,accounts:assetRegister.accounts.filter((a:any)=>a.currency===selectedCurrency&&accountGroup(a)===group&&(!accountSearch.trim()||[accountLabel(a),a.maskedIdentifier].some(v=>String(v||'').includes(accountSearch.trim())))).map((a:any)=>({...a,...view.accountStats[a.id]}))})).filter(g=>g.accounts.length),[assetRegister,selectedCurrency,accountSearch,view.accountStats]);
-  const dateBounds=useMemo(()=>view.transactions.reduce((b:any,t:any)=>({start:b.start&&b.start<t.date?b.start:t.date,end:b.end&&b.end>t.date?b.end:t.date}),{start:'',end:''}),[view.transactions]);
+  const dateBounds=analysis?.result.dateBounds||{start:'',end:''};
   const startDate=period?.[0]?.format('YYYY-MM-DD')||dateBounds.start,endDate=period?.[1]?.format('YYYY-MM-DD')||dateBounds.end;
   const effectiveGranularity=trendGranularity(startDate,endDate,granularity);
-  const trend=useMemo(()=>buildTrend(view.transactions,{startDate,endDate,granularity:effectiveGranularity,currencies:[selectedCurrency]}),[view.transactions,startDate,endDate,effectiveGranularity,selectedCurrency]);
+  const trend=analysis?.owner===ownerScope?analysis.result.trend||[]:[];
   const issueReasons=useMemo(()=>{const result=new Map<string,string[]>();for(const issue of view.unresolvedAssociations)for(const id of [issue.observationId,...(issue.observationIds||[])].filter(Boolean))result.set(id,[...(result.get(id)||[]),issue.reason]);return result;},[view.unresolvedAssociations]);
   const reviewDetail=review.groups.find((g:any)=>g.id===reviewGroup);
   const reasonsFor=(t:any)=>[...new Set(t.observationIds.flatMap((id:string)=>issueReasons.get(id)||[]))];
@@ -221,13 +250,13 @@ export default function PersonalFinancePanel() {
   const categories=categoryRows.filter((r:any)=>r.currency===selectedCurrency).sort((a:any,b:any)=>BigInt(a.amount)===BigInt(b.amount)?0:BigInt(a.amount)>BigInt(b.amount)?-1:1);
   const categoryMax=categories.reduce((m:bigint,r:any)=>{const v=BigInt(r.amount);return (v<0n?-v:v)>m?(v<0n?-v:v):m;},1n);
   const detailAccount=assetRegister.accounts.find((a:any)=>a.id===accountDetail);
-  const associationOptions=useMemo(()=>boundedObservationOptions(ledger.observations,linkSearch,linkIds).map((o:any)=>({value:o.id,label:observationLabel(o)})),[ledger.observations,linkSearch,linkIds,accountMap]);
+  const associationOptions=useMemo(()=>boundedObservationOptions([...observationMap.values()].filter(o=>o.amountMinor!==undefined),linkSearch,linkIds).map((o:any)=>({value:o.id,label:observationLabel(o)})),[observationMap,linkSearch,linkIds,accountMap]);
   const openTransactions=(category='',filter='all')=>{setCategoryFilter(category);setTransactionFilter(filter);setSearch('');setActiveTab('transactions');};
   const showPeriodTransactions=(date:string)=>{const from=dayjs(date),to=effectiveGranularity==='month'?from.endOf('month'):effectiveGranularity==='week'?from.add(6,'day'):from;setTrendReturnPeriod(period);setPeriod([from,to.isAfter(dayjs())?dayjs():to]);openTransactions();};
   const renameAccount=(a:any)=>Modal.confirm({title:'修改账户名称',content:<Input id="asset-account-label" defaultValue={a.label} maxLength={128}/>,onOk:async()=>{const label=(document.getElementById('asset-account-label') as HTMLInputElement).value.trim();if(!label)throw new Error('请填写名称');const saved=await run(()=>client.updateAccount(a.id,{expectedRevision:ledger.revision,patch:{label}}));if(!saved)throw new Error('名称未保存');}});
   const accountEffects=(t:any)=>Object.keys(t.balanceEffects||{}).length?<div>{Object.entries(t.balanceEffects).map(([id,value]:any)=><div key={id}>{accountLabel(accountMap.get(id))} <span className="finance-number">{BigInt(value)>0n?'+':''}{formatMinor(value)}</span></div>)}</div>:<span className="finance-muted">{t.coveredEffects?.length?'账户账单已记录变动，来源未重复入账':'暂无可确认账户变动'}</span>;
   return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reconnect()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
-    {tuitionReviewOpen&&<TuitionBillReview key={ownerScope} open={tuitionReviewOpen} onClose={()=>setTuitionReviewOpen(false)} transactions={view.transactions} revision={ledger.revision} scopeKey={ownerScope} client={client}/>}
+    {tuitionReviewOpen&&<TuitionBillReview key={ownerScope} open={tuitionReviewOpen} onClose={()=>setTuitionReviewOpen(false)} revision={ledger.revision} scopeKey={ownerScope} client={client}/>}
     {failure&&<Alert type="warning" showIcon message="财务云端暂不可用"
       description={(NETWORK_FAILURE_CODES.includes(failure) || /Failed to fetch|NetworkError|net::/i.test(failure)
         ? '未连接财务云端（离线使用或云端暂时不可达）。'
@@ -236,13 +265,14 @@ export default function PersonalFinancePanel() {
 
 
     {loading&&!loaded&&<Alert type="info" showIcon message="正在读取资产账本…" description="读取完成后展示收入、支出和有依据的余额。"/>}
-    {background&&loaded&&!analysisReady&&<Alert type={analysisFailure?'warning':'info'} showIcon message={analysisFailure||'正在后台计算资产账本'} description={analysisFailure?'原件保留，当前范围的统计尚未完成。':({history:'正在核对完整历史与来源关联，界面仍可操作。',accounts:'正在整理账户与产品依据。',scope:'正在计算所选账户及日期范围。'} as any)[analysisPhase]}/>}
+    {/* UTF-8: cloud owns preparation and persisted financial results. */}
+    {(analysisPhase==='cloud'||loaded&&!analysisReady)&&<Alert type="info" showIcon message="云端正在准备账本结果" description="导入或校正后的结果由云端计算并保存，完成后自动显示。"/>}
     <Tabs activeKey={activeTab} onChange={setActiveTab} items={[{key:'overview',label:'总览与账户',children:null},{key:'transactions',label:'全部流水',children:null},{key:'funds',label:'理财产品',children:null},{key:'review',label:'待核对'+(reviewReady?'（'+review.transactionCount+'）':''),children:null},{key:'import',label:'导入账单',children:null}]}/>
     {!['review','import'].includes(activeTab)&&<>
     <div className="finance-filters" aria-label="生活账单筛选">
       <Select className="finance-account-select" aria-label="统计账户" mode="multiple" showSearch optionFilterProp="label" allowClear maxTagCount="responsive" placeholder="全部账户（可多选）" style={{width:330,minWidth:250}} options={accounts} value={selected} onChange={setSelected}/><Button onClick={()=>setSelected([])}>全部账户</Button>
       <Select aria-label="统计币种" value={selectedCurrency} style={{width:90}} onChange={setCurrency} options={[...new Set<string>(ledger.accounts.map((a:any)=>a.currency))].map(v=>({value:v,label:v}))}/>
-      <DatePicker.RangePicker aria-label="收支统计期间" placeholder={['开始日期','结束日期']} value={period} onChange={setPeriod} allowClear/><Button onClick={()=>setPeriod([dayjs().startOf('month'),dayjs()])}>本月至今天</Button><Button onClick={()=>setPeriod(null)}>全部日期</Button><Button disabled={busy} onClick={()=>void reload()}>刷新</Button>
+      <DatePicker.RangePicker aria-label="收支统计期间" placeholder={['开始日期','结束日期']} value={period} onChange={setPeriod} allowClear/><Button onClick={()=>setPeriod([dayjs().startOf('month'),dayjs()])}>本月至今天</Button><Button onClick={()=>setPeriod(null)}>全部日期</Button><Button disabled={busy} onClick={()=>void reconnect()}>刷新</Button>
     </div>
     <p className="finance-scope">{selected.length===1?accountLabel(accountMap.get(selected[0])):selected.length?'已选 '+selected.length+' 个账户':'全部账户'} · {selectedCurrency} · 收支期间：{startDate?startDate+' 至 '+endDate:'暂无记录'}。余额截至：{endDate||'最近已记录时点'}，仅按已有余额依据和已记录变动计算。</p>
     {trendReturnPeriod!==undefined&&<Button className="finance-return-period" onClick={()=>{setPeriod(trendReturnPeriod);setTrendReturnPeriod(undefined);setActiveTab('overview');}}>返回原统计期间</Button>}
@@ -290,13 +320,13 @@ export default function PersonalFinancePanel() {
     {activeTab==='transactions'&&financeReady&&<>
       <Space wrap style={{marginBottom:16}}><Input aria-label="搜索流水" placeholder="搜索说明、对方、账户、日期或交易号" allowClear style={{width:300}} value={search} onChange={e=>setSearch(e.target.value)}/><Select aria-label="流水统计处理" value={transactionFilter} onChange={setTransactionFilter} style={{width:190}} options={[{value:'all',label:'全部记录（保留零金额）'},{value:'counted',label:'计入收入或支出'},{value:'neutral',label:'不计收支 / 确认凭证'},{value:'zero',label:'原账单零金额'},{value:'review',label:'待核对 / 待分类'},{value:'incomplete',label:'交易未完成或处理中'},{value:'outside',label:'不归入所选账户'}]}/>{categoryFilter&&<Tag closable onClose={()=>setCategoryFilter('')}>分类：{categoryFilter==='Uncategorized'?'未分类':categoryFilter}</Tag>}<span>{transactionRows.length} 条</span></Space>
       <p className="finance-muted">交易金额保留原账单数值；收入、支出是否统计与账户资金变动分别列示。展开可查看原始记录、校正分类或拆分还款。</p>
-      <Table rowKey="id" dataSource={transactionRows} pagination={{pageSize:20,showSizeChanger:false}} rowClassName={(t:any)=>statisticsState(t,reasonsFor(t)).key==='zero'?'finance-zero':''} expandable={{expandedRowRender:(t: any) => <div><AutomaticFinanceAssociations transaction={t} busy={busy} onReject={(ids,type='distinct')=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type,observationIds:ids}}))}/>{t.sources.map((o: any) => <div key={o.id}><p>{observationLabel(o)}</p><p>关联参考：{o.relatedReference || '无'} · 状态：{o.status} · 原始分类：{o.category || '无'}</p><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(o.rawFields, null, 2)}</pre><Button onClick={() => Modal.confirm({ title: '校正类别与贷款拆分', content: <Form id="finance-annotation" layout="vertical"><Input name="category" placeholder="支出类别" defaultValue={t.category} /><select name="kind" defaultValue={t.kind}>{Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{settlementAccountField(o,t,ledger.accounts)}<Input name="principal" placeholder="还款本金（元；留空表示未知）" defaultValue={t.principalMinor == null ? '' : formatMinor(t.principalMinor)} /><Input name="interest" placeholder="利息（元）" defaultValue={t.interestMinor == null ? '' : formatMinor(t.interestMinor)} /><Input name="fee" placeholder="费用（元）" defaultValue={t.feeMinor == null ? '' : formatMinor(t.feeMinor)} /></Form>, onOk: async () => {
+      <Table rowKey="id" dataSource={transactionRows} pagination={{current:transactionPage,pageSize:50,total:analysis?.result.transactions?.total||0,showSizeChanger:false,onChange:(page:number)=>setTransactionPage(page)}} rowClassName={(t:any)=>statisticsState(t,reasonsFor(t)).key==='zero'?'finance-zero':''} expandable={{onExpand:(open:boolean,t:any)=>{if(open&&!transactionDetails[t.id])void loadTransactionDetails(t);},expandedRowRender:(t:any)=>transactionDetails[t.id]? ((t: any) => <div><AutomaticFinanceAssociations transaction={t} busy={busy} onReject={(ids,type='distinct')=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type,observationIds:ids}}))}/>{t.sources.map((o: any) => <div key={o.id}><p>{observationLabel(o)}</p><p>关联参考：{o.relatedReference || '无'} · 状态：{o.status} · 原始分类：{o.category || '无'}</p><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(o.rawFields, null, 2)}</pre><Button onClick={() => Modal.confirm({ title: '校正类别与贷款拆分', content: <Form id="finance-annotation" layout="vertical"><Input name="category" placeholder="支出类别" defaultValue={t.category} /><select name="kind" defaultValue={t.kind}>{Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{settlementAccountField(o,t,ledger.accounts)}<Input name="principal" placeholder="还款本金（元；留空表示未知）" defaultValue={t.principalMinor == null ? '' : formatMinor(t.principalMinor)} /><Input name="interest" placeholder="利息（元）" defaultValue={t.interestMinor == null ? '' : formatMinor(t.interestMinor)} /><Input name="fee" placeholder="费用（元）" defaultValue={t.feeMinor == null ? '' : formatMinor(t.feeMinor)} /></Form>, onOk: async () => {
           const el = document.getElementById('finance-annotation') as HTMLFormElement, f = new FormData(el), patch: any = { category: String(f.get('category') || ''), kind: String(f.get('kind')) };
           for (const [field, name] of [['principalMinor', 'principal'], ['interestMinor', 'interest'], ['feeMinor', 'fee']]) { const value = String(f.get(name) || ''); if (value && !/^\d+(?:\.\d{1,2})?$/.test(value)) throw new Error('本金、利息与费用请填非负金额，最多两位小数'); if (value || t[field] != null) patch[field] = value ? parseMoney(value) : null; }
           const settlement = f.get('settlementAccountId');
           if (settlement !== null) { patch.settlementAccountId = String(settlement) || null; if (patch.settlementAccountId && patch.kind !== 'transfer') throw new Error('\u6307\u5b9a\u5f80\u6765\u5bf9\u8c61\u65f6\uff0c\u4ea4\u6613\u7c7b\u578b\u8bf7\u9009\u62e9\u8f6c\u8d26'); }
           const result = await run(() => client.annotateObservation(o.id, { patch, expectedRevision: ledger.revision })); if (!result) throw new Error('校正未提交成功，请重试');
-        } })}>校正统计分类/还款拆分</Button>{t.appliedAnnotations?.some((a:any)=>a.observationId===o.id)&&<Button disabled={busy} onClick={()=>void run(()=>client.annotateObservation(o.id,{patch:{},expectedRevision:ledger.revision}))}>{'\u6062\u590d\u81ea\u52a8\u5206\u7c7b'}</Button>}</div>)}</div>}} scroll={{x:1150}} columns={[
+        } })}>校正统计分类/还款拆分</Button>{t.appliedAnnotations?.some((a:any)=>a.observationId===o.id)&&<Button disabled={busy} onClick={()=>void run(()=>client.annotateObservation(o.id,{patch:{},expectedRevision:ledger.revision}))}>{'\u6062\u590d\u81ea\u52a8\u5206\u7c7b'}</Button>}</div>)}</div>)(transactionDetails[t.id]):<p>{'\u6b63\u5728\u8bfb\u53d6\u539f\u59cb\u6765\u6e90\u2026'}</p>}} scroll={{x:1150}} columns={[
         {title:'日期',dataIndex:'date',width:110},{title:'事项 / 对方',dataIndex:'description',width:240,render:(v:string,t:any)=><>{v}<div className="finance-muted">{KINDS[t.kind]||t.kind} · {t.counterparty}</div></>},
         {title:'交易金额',dataIndex:'amountMinor',align:'right',width:110,render:formatMinor},{title:'账户变动',render:(_:any,t:any)=>accountEffects(t),width:260},
         {title:'统计处理',render:(_:any,t:any)=>{const state=statisticsState(t,reasonsFor(t));return <div className="finance-stat">{t.automaticAssociations?.some((a:any)=>a.confidence==='inferred')&&<Tag color="gold">{'\u63a8\u7b97\u5339\u914d'}</Tag>}<Tag color={state.key==='review'?'gold':state.key==='counted'?'blue':undefined}>{state.label}</Tag><div className="finance-muted">{state.detail}</div>{state.key==='counted'&&<div className="finance-number">{BigInt(t.selectedIncomeMinor??t.incomeMinor)!==0n?'收入 '+formatMinor(t.selectedIncomeMinor??t.incomeMinor):'支出 '+formatMinor(t.selectedConsumptionMinor??t.consumptionMinor)}</div>}</div>;}},
@@ -306,7 +336,7 @@ export default function PersonalFinancePanel() {
     </>}
     {activeTab==='funds'&&financeReady&&<>
       <FinanceFundValuations valuations={(view.fundValuations||[]).filter((v:any)=>v.currency===selectedCurrency)} startDate={startDate} endDate={endDate}/>
-      <h3 className="finance-section-title">产品累计资料</h3>
+      {/* UTF-8: the product heading is rendered once below. */}
       <Alert type="info" showIcon message="理财产品与交易确认" description="产品累计资料使用全部已导入账单；交易确认和转换使用所选期间与账户。累计买入份额不代表当前持仓，买入金额不代表市值；缺少净值与持仓证据时不展示估值或每日收益。"/><h3 className="finance-section-title">产品累计资料</h3>
               <Table rowKey="key" dataSource={productRows} pagination={{pageSize:10,showSizeChanger:false}} scroll={{x:1150}} columns={[
           {title:'\u4ee3\u7801',dataIndex:'code'},{title:'\u57fa\u91d1\u4ea7\u54c1',dataIndex:'name'},{title:'\u4e70\u5165\u7b14\u6570',dataIndex:'count'},
@@ -325,7 +355,7 @@ export default function PersonalFinancePanel() {
 
       <details className="finance-help" open><summary>所选期间基金交易确认</summary>
         <Alert type="info" showIcon message="支付流水记录资金划转；基金确认凭证补充本笔份额与手续费，不再扣一遍买入金额。" description="下表显示所选期间的交易确认明细，不代表当前持仓或每日收益；凭证缺少的基金信息、净值和估值保持未知。" />
-        <Space wrap style={{margin:'16px 0'}}><span>确认记录 {(investmentRows).length} 条</span><span>本期确认手续费 {formatMinor((investmentRows).reduce((sum:bigint,t:any)=>sum+BigInt(t.feeMinor),0n).toString())} 元</span></Space>
+        <Space wrap style={{margin:'16px 0'}}><span>确认记录 {(investmentRows).length} 条</span><span>本期确认手续费 {formatMinor(analysis?.result.investmentFeeMinor||'0')} 元</span></Space>
         <Table rowKey="id" dataSource={investmentRows} scroll={{x:1050}} expandable={{expandedRowRender:(t:any)=><div>原始订单：{t.orderId}<br/>原始交易类型：{t.sourceTradeType}<br/>申请份额：{t.appliedUnits??'未提供'}<br/>组合基金：{t.combination??'未提供'}<br/>凭证页码：{t.sourcePages.join('–')}</div>}} columns={[
           {title:'交易日期',dataIndex:'date'},{title:'基金代码',dataIndex:'fundCode',render:(v:any)=>v??'未提供'},{title:'基金名称',dataIndex:'fundName',render:(v:any)=>v??'未提供（转换记录）'},
           {title:'交易类型',dataIndex:'tradeType',render:(v:string)=>v==='buy'?'买入确认':'转换记录'},{title:'申请金额',dataIndex:'appliedAmountMinor',render:formatMinor},{title:'确认金额',dataIndex:'confirmedAmountMinor',render:(v:any)=>v==null?'未提供':formatMinor(v)},

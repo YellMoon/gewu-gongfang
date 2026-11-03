@@ -21,8 +21,8 @@ const fixtureLedger = () => ({revision:'3',accounts:['A','B'].map(id => ({id,lab
 async function panel() {
   const actualHelpers = await helpers;
   const slots=[],pendingEffects=[],cleanups=[],readers=[],calls=[],writes=[],messages=[],modals=[],listeners=new Map(),timers=new Set();
-  let cursor=0,unmounted=false,generation=0,uuid=0;
-  const session = () => ({authorization:'Bearer synthetic-'+generation,authContext:{userId:'owner-'+generation,activeRole:'teacher',sessionId:'session-'+generation}});
+  let cursor=0,unmounted=false,generation=0,tokenGeneration=0,uuid=0;
+  const session = () => ({authorization:'Bearer synthetic-'+generation+'-'+tokenGeneration,authContext:{userId:'owner-'+generation,activeRole:'teacher',sessionId:'session-'+generation+'-'+tokenGeneration}});
   const responses = new Map();
   const defaults = {
     getLedger:()=>({ledger:fixtureLedger()}),previewFile:()=>({preview}),importFile:()=>({receipt:{importId:'synthetic-import'}}),
@@ -32,8 +32,16 @@ async function panel() {
     createBalanceSnapshot:()=>({snapshot:{id:'synthetic-snapshot'}}),annotateObservation:()=>({annotation:{id:'synthetic-annotation'}}),
     createAccount:()=>({account:{id:'synthetic-account'}}),createLink:()=>({link:{id:'synthetic-link'}}),deleteLink:()=>({link:{id:'synthetic-link',status:'deleted'}}),
   };
+  defaults.queryProjection=async options=>{
+    const data=await(responses.has('getLedger')?responses.get('getLedger')():defaults.getLedger()),ledger=data.ledger;
+    const engine=require('../../shared/personal-finance/ledger'),view=engine.buildFinanceView(ledger,options||{});
+    const assetRegister=require('../../shared/personal-finance/assetRegister').buildAssetRegister(ledger),sourceIds=new Set([...assetRegister.products.flatMap(p=>p.sourceObservationIds||[]),...assetRegister.conversions.map(c=>c.id)]);
+    return{projection:{status:'ready',ledger:{...ledger,observations:[],annotations:[],balanceSnapshots:[]},sourceScopes:ledger.observations.filter(o=>sourceIds.has(o.id)).map(({id,currency,date,financialAccountId,accountRelations})=>({id,currency,date,financialAccountId,accountRelations})),view,globalReview:engine.buildFinanceView(ledger).review,assetRegister,trend:require('../../shared/personal-finance/accountAnalytics').buildTrend(view.transactions,{granularity:options?.granularity==='auto'?'month':options?.granularity||'month'}),transactions:{items:view.transactions,total:view.transactions.length,page:1,pageSize:50}}};
+  };
+  defaults.transactionDetails=async()=>({projection:{status:'ready'}});
+  defaults.searchObservations=async({search='',ids=[]})=>{const {ledger}=await(responses.has('getLedger')?responses.get('getLedger')():defaults.getLedger());return{observations:ledger.observations.filter(o=>ids.includes(o.id)||search&&o.description.includes(search)).slice(0,40)};};
   const client=Object.fromEntries(Object.keys(defaults).map(method=>[method,async(...args)=>{
-    calls.push({method,args:structuredClone(args),generation});
+    calls.push({operation:method,method:method==='queryProjection'?'getLedger':method,args:structuredClone(args),generation});
     return responses.has(method) ? responses.get(method)(...args) : defaults[method](...args);
   }]));
   const slot=initial=>{const index=cursor++;if(!(index in slots))slots[index]=initial;return index;};
@@ -60,7 +68,7 @@ async function panel() {
   class FormDataFake {constructor(form){this.values=formValues[form.id]||{};}get(key){return this.values[key]??null;}}
   const window={addEventListener:(event,fn)=>{if(!listeners.has(event))listeners.set(event,new Set());listeners.get(event).add(fn);},removeEventListener:(event,fn)=>listeners.get(event)?.delete(fn),setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
   const jsx=(type,props)=>({type,props:props||{}});
-  const dependencies={'./TuitionBillReview':component('TuitionBillReview'),react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,dayjs,
+  const dependencies={'../services/emptyFinanceProjection':require('../services/emptyFinanceProjection'),'./TuitionBillReview':component('TuitionBillReview'),react,'react/jsx-runtime':{jsx,jsxs:jsx},antd,dayjs,
     '../services/personalFinanceAnalysisClient.mjs':{financeWorkerAvailable:()=>false},
     '../../shared/personal-finance/ledger.js':require('../../shared/personal-finance/ledger.js'),
     '../../shared/personal-finance/accountAnalytics.js':require('../../shared/personal-finance/accountAnalytics.js'),
@@ -82,6 +90,8 @@ async function panel() {
   },loaded,loaded.exports,FileReaderFake,{randomUUID:()=>`synthetic-uuid-${++uuid}`},document,FormDataFake,window,window.setInterval,window.clearInterval);
   const render=()=>{cursor=0;const tree=loaded.exports.default();pendingEffects.splice(0).forEach(fn=>fn());return tree;};
   const h={render,readers,calls,writes,messages,modals,responses,formValues,window,
+    settle:async()=>{render();await new Promise(r=>setTimeout(r,230));await tick();render();},
+    expand:async(table,row)=>{if(!table.props.expandable.onExpand)return table.props.expandable.expandedRowRender(row);responses.set('transactionDetails',()=>({projection:{status:'ready',transaction:row}}));await table.props.expandable.onExpand(true,row);await tick();return h.table(p=>p.expandable?.onExpand).props.expandable.expandedRowRender(row);},
     fire:event=>{for(const fn of listeners.get(event)||[])fn();},
     all:()=>nodes(render()),buttons:label=>nodes(render()).filter(node=>name(node)==='Button'&&text(node)===label),
     button:label=>h.buttons(label)[0],
@@ -95,6 +105,7 @@ async function panel() {
     callsFor:method=>calls.filter(call=>call.method===method),
     previewEnabled:()=>{const button=h.button('确认整批导入');return !!button&&!button.props.disabled;},
     swap:()=>{generation++;render();},
+    rotateSession:()=>{tokenGeneration++;render();},
     unmount:()=>{unmounted=true;for(const cleanup of cleanups)cleanup?.();},
     lateWrites:()=>writes.filter(write=>write.unmounted).length,
     table:predicate=>nodes(render()).find(node=>name(node)==='Table'&&predicate(node.props)),
@@ -119,8 +130,13 @@ test('a rejected reconnect performs no finance reads and ignores late recovery a
  const pending=deferred();h.window.desktopIdentitySessionProvider.ensureOnline=()=>pending.promise;
  h.click('\u91cd\u65b0\u8fde\u63a5');h.unmount();pending.resolve();await tick();assert.equal(h.calls.length,initial);assert.equal(h.lateWrites(),0);
 });
+test('restoring credentials for the same owner preserves a reviewed import and never requests the full ledger',async()=>{
+ const h=await panel();await prepare(h);h.click('\u89e3\u6790\u9884\u89c8');await tick();assert(h.previewEnabled());
+ h.rotateSession();h.fire('desktop-identity-session-ready');await tick();h.render();assert(h.previewEnabled());
+ assert(h.calls.some(c=>c.operation==='queryProjection'));assert(!h.calls.some(c=>c.operation==='getLedger'));h.unmount();
+});
 test('tuition review opens the candidate editor with current source scope and never creates payments',async()=>{
- const h=await panel();h.click('\u8d26\u5355\u5b66\u8d39\u6838\u5bf9');const editor=h.all().find(n=>name(n)==='TuitionBillReview');assert(editor);assert.equal(editor.props.revision,'3');assert.equal(editor.props.transactions.length,1);assert.equal(h.calls.length,2,'opening the editor does not submit financial writes');editor.props.onClose();assert(!h.all().some(n=>name(n)==='TuitionBillReview'));h.unmount();
+ const h=await panel();h.click('\u8d26\u5355\u5b66\u8d39\u6838\u5bf9');const editor=h.all().find(n=>name(n)==='TuitionBillReview');assert(editor);assert.equal(editor.props.revision,'3');assert.equal(editor.props.transactions,undefined);assert.equal(h.calls.length,2,'opening the editor does not submit financial writes');editor.props.onClose();assert(!h.all().some(n=>name(n)==='TuitionBillReview'));h.unmount();
 });
 function confirmationAbsent(h) {assert.equal(h.previewEnabled(),false,'stale preview must not enable confirmation');}
 
@@ -146,7 +162,7 @@ test('an explicitly selected currency with no transactions never falls back to a
 test('trend drilldown restores the original dates while retaining account and currency filters',async()=>{
  const h=await panel();h.click('\u672c\u6708\u81f3\u4eca\u5929');h.all().find(n=>name(n)==='Select'&&n.props['aria-label']==='\u7edf\u8ba1\u8d26\u6237').props.onChange(['A']);
  const dates=()=>h.all().find(n=>name(n)==='RangePicker').props.value.map(v=>v.format('YYYY-MM-DD'));
- const original=dates(),trend=h.all().find(n=>n.type?.name==='FinanceTrend');trend.props.onSelect(dayjs().format('YYYY-MM-DD'));assert.equal(dates()[0],dates()[1]);
+ await h.settle();const original=dates(),trend=h.all().find(n=>n.type?.name==='FinanceTrend');trend.props.onSelect(dayjs().format('YYYY-MM-DD'));assert.equal(dates()[0],dates()[1]);
  h.click('\u8fd4\u56de\u539f\u7edf\u8ba1\u671f\u95f4');assert.deepEqual(dates(),original);assert.deepEqual(h.all().find(n=>name(n)==='Select'&&n.props['aria-label']==='\u7edf\u8ba1\u8d26\u6237').props.value,['A']);h.unmount();
 });
 
@@ -157,12 +173,12 @@ test('review is reachable independently from import and preserves the pending fi
 
 test('full-ledger review keeps an excluded historical transaction as a transaction instead of an account issue',async()=>{
  const h=await panel(),ledger=fixtureLedger();ledger.observations[0].kind='unknown';h.responses.set('getLedger',()=>({ledger}));await h.click('\u5237\u65b0');await tick();
- h.all().find(n=>name(n)==='RangePicker').props.onChange([dayjs('2000-01-01'),dayjs('2000-01-31')]);h.tab('review');const table=h.table(p=>p.columns?.some(c=>c.dataIndex==='reason'));assert(table.props.dataSource.some(g=>g.transactionIds.includes('original')));assert(!table.props.dataSource.some(g=>g.transactionIds.includes('account:A')));assert(text(h.render()).includes('\u5168\u8d26\u672c'));h.unmount();
+ h.all().find(n=>name(n)==='RangePicker').props.onChange([dayjs('2000-01-01'),dayjs('2000-01-31')]);h.tab('review');await h.settle();const table=h.table(p=>p.columns?.some(c=>c.dataIndex==='reason'));assert(table.props.dataSource.some(g=>g.transactionIds.includes('original')));assert(!table.props.dataSource.some(g=>g.transactionIds.includes('account:A')));assert(text(h.render()).includes('\u5168\u8d26\u672c'));h.unmount();
 });
 
 test('fund valuation displays only the selected daily range and preserves incomplete cohort evidence',async()=>{
  const h=await panel();h.tab('funds');const n=h.all().find(n=>n.type?.name==='FinanceFundValuations'),v={financialAccountId:'C',fundCode:'123456',fundName:'Synthetic',currency:'CNY',complete:false,portfolioCoverageConfirmed:false,balanceMinor:null,cumulativeNetReturnMinor:null,unitsInferred:true,issues:[{reason:'official_nav_unavailable'}],daily:[{date:'2026-07-01',unitNav:'1.0000',units:'100.123400',balanceMinor:'10012',netReturnMinor:'0',feeMinor:'0'},{date:'2026-07-02',unitNav:'1.0010',units:'100.123400',balanceMinor:'10022',netReturnMinor:'10',feeMinor:'0'}]};const before=JSON.stringify(v),tree=n.type({valuations:[v],startDate:'2026-07-02',endDate:'2026-07-02'}),table=nodes(tree).find(n=>name(n)==='Table');
- assert.equal(table.props.dataSource[0],v);const daily=nodes(table.props.expandable.expandedRowRender(v)).find(n=>name(n)==='Table');assert.deepEqual(daily.props.dataSource.map(d=>d.date),['2026-07-02']);assert.equal(daily.props.dataSource[0].units,'100.123400');assert.equal(JSON.stringify(v),before);assert(!text(tree).includes('0.00'));h.unmount();
+ assert.equal(table.props.dataSource[0],v);const daily=nodes(await h.expand(table,v)).find(n=>name(n)==='Table');assert.deepEqual(daily.props.dataSource.map(d=>d.date),['2026-07-02']);assert.equal(daily.props.dataSource[0].units,'100.123400');assert.equal(JSON.stringify(v),before);assert(!text(tree).includes('0.00'));h.unmount();
 });
 
 test('actual TSX: later chosen B wins even when A FileReader finishes last',async()=>{
@@ -188,7 +204,7 @@ for(const kind of ['balance','classification'])test(`actual TSX: failed ${kind} 
   }else{
     h.tab('transactions');
     h.responses.set('annotateObservation',()=>Promise.reject(error));const table=h.table(props=>props.expandable?.expandedRowRender);assert.ok(table);
-    const row=table.props.expandable.expandedRowRender(table.props.dataSource[0]);nodes(row).find(node=>name(node)==='Button'&&text(node)==='校正统计分类/还款拆分').props.onClick();
+    const row=await h.expand(table,table.props.dataSource[0]);nodes(row).find(node=>name(node)==='Button'&&text(node)==='校正统计分类/还款拆分').props.onClick();
   }
   assert.equal(h.modals.length,1);await assert.rejects(h.modals[0].onOk());assert.equal(h.callsFor(kind==='balance'?'createBalanceSnapshot':'annotateObservation').length,1);assert.ok(h.messages.some(message=>message.type==='error'));h.unmount();
 });
@@ -200,7 +216,7 @@ for(const boundary of ['session','unmount'])for(const operation of ['reader','pr
   else if(operation==='mailboxStatus'){h.responses.set('mailboxStatus',()=>{h.responses.delete('mailboxStatus');return pending.promise;});h.tab('import');h.click('查看邮箱');}
 
 
-  else {h.responses.set('getLedger',()=>{h.responses.delete('getLedger');return pending.promise;});h.click('刷新');}
+  else {h.responses.set('getLedger',()=>{h.responses.delete('getLedger');return pending.promise;});h.click('刷新');await tick();}
   if(boundary==='unmount')h.unmount();else {h.swap();await tick();}
   const before=h.writes.length,messageCount=h.messages.length;
   if(operation==='reader')h.finishRead(0,'QQ==');else if(operation==='reload-error')pending.reject(Object.assign(new Error('old session request'),{code:'OLD_SESSION_FAILURE'}));
@@ -261,7 +277,7 @@ test('mortgage editor preserves evidence bases and treats changed references as 
 test('inferred association exposes evidence and submits an owner-scoped distinct decision',async()=>{
   const h=await panel();await tick();h.tab('transactions');
   const table=h.table(p=>p.expandable?.expandedRowRender),transaction={...table.props.dataSource[0],automaticAssociations:[{method:'unique_channel_funding',confidence:'inferred',observationIds:['platform-original','bank-original']}]};
-  const expanded=table.props.expandable.expandedRowRender(transaction),component=nodes(expanded).find(n=>n.type?.name==='AutomaticFinanceAssociations');assert.ok(component);
+  const expanded=await h.expand(table,transaction),component=nodes(expanded).find(n=>n.type?.name==='AutomaticFinanceAssociations');assert.ok(component);
   const rendered=component.type(component.props),button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='撤销推算匹配');
   assert.ok(text(rendered).includes('推算匹配'));assert.ok(text(rendered).includes('候选双方唯一'));assert.ok(button&&!button.props.disabled);assert.equal(h.callsFor('createLink').length,0);
   button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'distinct',observationIds:['platform-original','bank-original']}});
@@ -286,25 +302,25 @@ test('inferred association exposes evidence and submits an owner-scoped distinct
 test('whole-batch reversal submits every original in one scoped decision',async()=>{
  const h=await panel();await tick();h.tab('transactions');
  const table=h.table(p=>p.expandable?.expandedRowRender),ids=['p1','p2','b1','b2'],transaction={...table.props.dataSource[0],automaticAssociations:[{id:'group',method:'balanced_channel_group',confidence:'inferred',observationIds:ids,evidence:{count:2}}]};
- const component=nodes(table.props.expandable.expandedRowRender(transaction)).find(n=>n.type?.name==='AutomaticFinanceAssociations'),rendered=component.type(component.props);
+ const component=nodes(await h.expand(table,transaction)).find(n=>n.type?.name==='AutomaticFinanceAssociations'),rendered=component.type(component.props);
  assert.ok(text(rendered).includes('\u7ec4\u5185\u94f6\u884c\u5e8f\u53f7\u5bf9\u5e94\u5173\u7cfb\u672a\u786e\u5b9a'));
  const button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u6574\u7ec4\u6838\u5bf9');assert.ok(button&&!button.props.disabled);assert.equal(h.callsFor('createLink').length,0);
  button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'group_distinct',observationIds:ids}});
  assert.equal(nodes(component.type({...component.props,busy:true})).find(n=>name(n)==='Button').props.disabled,true);h.unmount();
 });
 test('restore automatic classification submits an empty patch for exactly the annotated original',async()=>{
- const h=await panel();await tick();h.tab('transactions');const table=h.table(p=>p.expandable?.expandedRowRender),t=table.props.dataSource[0],o=t.sources[0],expanded=table.props.expandable.expandedRowRender({...t,appliedAnnotations:[{id:'annotation',observationId:o.id,revision:'2',patch:{kind:'transfer'}}]});
+ const h=await panel();await tick();h.tab('transactions');const table=h.table(p=>p.expandable?.expandedRowRender),t=table.props.dataSource[0],o=t.sources[0],expanded=await h.expand(table,{...t,appliedAnnotations:[{id:'annotation',observationId:o.id,revision:'2',patch:{kind:'transfer'}}]});
  const button=nodes(expanded).find(n=>name(n)==='Button'&&text(n)==='\u6062\u590d\u81ea\u52a8\u5206\u7c7b');assert(button);button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('annotateObservation')[0].args,[o.id,{patch:{},expectedRevision:'3'}]);h.unmount();
 });
 test('counterparty field submits purpose only for an original neutral receipt and allows clearing without inventing direction',async()=>{
  const h=await panel(),ledger=fixtureLedger(),s=ledger.observations[0];Object.assign(ledger.accounts[0],{provider:'alipay',type:'wallet'});ledger.accounts.push({id:'family',label:'Family collections',provider:'manual',type:'receivable',currency:'CNY',status:'active',balanceConvention:'signed',openingBalanceMinor:null,openingDate:null,counterpartySettlement:{schema:'counterparty-settlement-v1',counterparty:'Relative'}});
  Object.assign(s,{provider:'alipay',kind:'transfer',direction:'neutral',sourceTransactionId:'shop-order',relatedReference:'T200P825758715263451',rawFields:{'\u6536/\u652f':'\u4e0d\u8ba1\u6536\u652f','\u4ea4\u6613\u72b6\u6001':'\u4ea4\u6613\u6210\u529f','\u5546\u54c1\u8bf4\u660e':s.description,'\u4ea4\u6613\u8ba2\u5355\u53f7':'shop-order','\u5546\u5bb6\u8ba2\u5355\u53f7':'T200P825758715263451','\u91d1\u989d':'1.23'}});
  const p=require('../../shared/personal-finance/alipayWalletStatement').parseAlipayWalletBalanceRows([['shop-order',s.date+' 12:00:00','\u4ea4\u6613\u4ed8\u6b3e','1.23','','1.23','\u652f\u4ed8\u5b9d','']]).records[0];ledger.observations.push({...p,id:'proof',sourceIdentity:'proof',sourceVersionOrdinal:1,financialAccountId:'A',provider:'alipay',importId:'native-wallet-source'});h.responses.set('getLedger',()=>({ledger}));await h.click('\u5237\u65b0');await tick();h.tab('transactions');
- const table=h.table(p=>p.expandable?.expandedRowRender),row=table.props.expandable.expandedRowRender(table.props.dataSource[0]);nodes(row).find(n=>name(n)==='Button'&&text(n)==='\u6821\u6b63\u7edf\u8ba1\u5206\u7c7b/\u8fd8\u6b3e\u62c6\u5206').props.onClick();const modal=h.modals[0],field=nodes(modal.content).find(n=>n.type==='select'&&n.props.name==='settlementAccountId');assert(field);assert.equal(field.props.defaultValue,'');assert(text(modal.content).includes(s.date));assert(text(modal.content).includes('Family collections'));
+ const table=h.table(p=>p.expandable?.expandedRowRender),row=await h.expand(table,table.props.dataSource[0]);nodes(row).find(n=>name(n)==='Button'&&text(n)==='\u6821\u6b63\u7edf\u8ba1\u5206\u7c7b/\u8fd8\u6b3e\u62c6\u5206').props.onClick();const modal=h.modals[0],field=nodes(modal.content).find(n=>n.type==='select'&&n.props.name==='settlementAccountId');assert(field);assert.equal(field.props.defaultValue,'');assert(text(modal.content).includes(s.date));assert(text(modal.content).includes('Family collections'));
  Object.assign(h.formValues['finance-annotation'],{kind:'transfer',category:'Family collection',settlementAccountId:'family'});await modal.onOk();const submitted=h.callsFor('annotateObservation').at(-1);assert.equal(submitted.args[0],s.id);assert.deepEqual(submitted.args[1].patch,{kind:'transfer',category:'Family collection',settlementAccountId:'family'});assert(!Object.hasOwn(submitted.args[1].patch,'direction'));assert.equal(submitted.args[1].expectedRevision,'3');
  h.formValues['finance-annotation'].settlementAccountId='';await modal.onOk();assert.equal(h.callsFor('annotateObservation').at(-1).args[1].patch.settlementAccountId,null);
  h.formValues['finance-annotation'].settlementAccountId='family';h.formValues['finance-annotation'].kind='income';const count=h.callsFor('annotateObservation').length;await assert.rejects(modal.onOk());assert.equal(h.callsFor('annotateObservation').length,count);h.unmount();
 });
 test('native evidence with multiple old originals exposes a scoped undo and states differing original dates honestly',async()=>{
- const h=await panel();h.tab('transactions');const table=h.table(p=>p.expandable?.expandedRowRender),association={method:'unionpay_native_existing_cash_evidence',confidence:'inferred',observationIds:['bank-original','platform-original','native-original'],evidence:{networkObservationIds:['native-original'],existingObservationIds:['bank-original','platform-original'],dateEvidence:[{nativeVisibleDate:'2024-09-24',bankPostingDate:'2024-09-25',originalBankTradeDate:'2024-06-26'}]}};const raw=JSON.stringify(association),expanded=table.props.expandable.expandedRowRender({...table.props.dataSource[0],automaticAssociations:[association]}),component=nodes(expanded).find(n=>n.type?.name==='AutomaticFinanceAssociations'),rendered=component.type(component.props),button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u63a8\u7b97\u5339\u914d');assert(button);assert(text(rendered).includes('2024-09-24'));assert(text(rendered).includes('2024-09-25'));assert(text(rendered).includes('2024-06-26'));assert(!text(rendered).includes('\u65e5\u671f\u3001\u91d1\u989d\u548c\u6e20\u9053\u4e00\u81f4'));button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'distinct',observationIds:['native-original','bank-original']}});assert.equal(JSON.stringify(association),raw);const container=nodes(rendered).find(n=>name(n)==='Space');assert.equal(container.props.style.display,'flex');assert.equal(container.props.style.maxWidth,'calc(100vw - 120px)');h.unmount();
+ const h=await panel();h.tab('transactions');const table=h.table(p=>p.expandable?.expandedRowRender),association={method:'unionpay_native_existing_cash_evidence',confidence:'inferred',observationIds:['bank-original','platform-original','native-original'],evidence:{networkObservationIds:['native-original'],existingObservationIds:['bank-original','platform-original'],dateEvidence:[{nativeVisibleDate:'2024-09-24',bankPostingDate:'2024-09-25',originalBankTradeDate:'2024-06-26'}]}};const raw=JSON.stringify(association),expanded=await h.expand(table,{...table.props.dataSource[0],automaticAssociations:[association]}),component=nodes(expanded).find(n=>n.type?.name==='AutomaticFinanceAssociations'),rendered=component.type(component.props),button=nodes(rendered).find(n=>name(n)==='Button'&&text(n)==='\u64a4\u9500\u63a8\u7b97\u5339\u914d');assert(button);assert(text(rendered).includes('2024-09-24'));assert(text(rendered).includes('2024-09-25'));assert(text(rendered).includes('2024-06-26'));assert(!text(rendered).includes('\u65e5\u671f\u3001\u91d1\u989d\u548c\u6e20\u9053\u4e00\u81f4'));button.props.onClick();await tick();await tick();assert.deepEqual(h.callsFor('createLink')[0].args[0],{expectedRevision:'3',link:{type:'distinct',observationIds:['native-original','bank-original']}});assert.equal(JSON.stringify(association),raw);const container=nodes(rendered).find(n=>name(n)==='Space');assert.equal(container.props.style.display,'flex');assert.equal(container.props.style.maxWidth,'calc(100vw - 120px)');h.unmount();
 });

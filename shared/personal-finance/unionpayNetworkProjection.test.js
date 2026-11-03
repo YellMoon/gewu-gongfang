@@ -1,5 +1,10 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
+test('durable network materialization restores owner evidence, selected accounts and native posting decisions',()=>{
+ const {prepareFinanceView,restoreFinanceView}=require('./ledger'),{serialize,deserialize}=require('node:v8'),l=ledger(network());
+ const restored=restoreFinanceView(deserialize(serialize(prepareFinanceView(l).materialized)));
+ for(const scope of [{},{accountIds:['bank']},{startDate:'2026-01-01',endDate:'2026-12-31'}])assert.deepEqual(restored(scope),buildFinanceView(l,scope));
+});
 const {buildFinanceView,validateRecord}=require('./ledger'),{parseUnionpayNetworkCapture,bindUnionpayNetworkAccounts}=require('./unionpayNetworkStatement'),{syntheticCapture}=require('./fixtures/unionpayNetwork.synthetic');
 const account={id:'bank',provider:'\u62db\u5546\u94f6\u884c',maskedIdentifier:'1234',label:'Synthetic card',type:'credit_card',currency:'CNY',status:'active',openingBalanceMinor:null,openingDate:null,balanceConvention:'signed'};
 function network(events=[{}]){const p=parseUnionpayNetworkCapture(syntheticCapture(events));assert.deepEqual(p.errors,[]);const b=bindUnionpayNetworkAccounts(p.records,[account]);assert.deepEqual(b.errors,[]);return b.records.map((r,i)=>({...r,id:'network-'+i,provider:'unionpay',financialAccountId:'bank',importId:'capture',sourceOrdinal:i+1}));}

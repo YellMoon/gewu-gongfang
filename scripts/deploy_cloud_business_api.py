@@ -223,12 +223,14 @@ def remove_runtime_override_file(ssh, tag, operation_id):
 def runtime_budget_guard(container, worker):
     if container not in ('"$candidate"', '"$current"') or not isinstance(worker, bool):
         raise failure("CLOUD_DOCKER_DEPLOY_CONFIG_INVALID")
-    expected = "805306368 1073741824 1500000000 192" if worker else "268435456 402653184 500000000 128"
+    expected = "1073741824 1610612736 1500000000 192" if worker else "268435456 402653184 500000000 128"
     template = "{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.NanoCpus}} {{.HostConfig.PidsLimit}}"
     worker_template = '{{range .Config.Env}}{{if eq . "CLOUD_PAPER_EXPORT_WORKER_ENABLED=' + str(int(worker)) + '"}}1{{end}}{{end}}'
+    finance_template = '{{range .Config.Env}}{{if eq . "CLOUD_FINANCE_MATERIALIZER_ENABLED=' + str(int(worker)) + '"}}1{{end}}{{end}}'
     return (
         f"test \"$(docker inspect -f '{template}' {container})\" = '{expected}' && "
-        f"test \"$(docker inspect -f '{worker_template}' {container})\" = 1"
+        f"test \"$(docker inspect -f '{worker_template}' {container})\" = 1 && "
+        f"test \"$(docker inspect -f '{finance_template}' {container})\" = 1"
     )
 
 
@@ -255,8 +257,8 @@ def candidate_command(tag, operation_id):
         "test -n \"$network\"; "
         "test -f \"$override_path\" && test ! -L \"$override_path\"; "
         "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$current\" > \"$env_path\"; "
-        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d;/^WECHAT_APPID=/d;/^WECHAT_APPSECRET=/d;/^WECHAT_MINIAPP_LOGIN_ENV_VERSION=/d' \"$env_path\"; "
-        "printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=0' >> \"$env_path\"; cat \"$override_path\" >> \"$env_path\"; "
+        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d;/^CLOUD_FINANCE_MATERIALIZER_ENABLED=/d;/^WECHAT_APPID=/d;/^WECHAT_APPSECRET=/d;/^WECHAT_MINIAPP_LOGIN_ENV_VERSION=/d' \"$env_path\"; "
+        "printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=0' 'CLOUD_FINANCE_MATERIALIZER_ENABLED=0' >> \"$env_path\"; cat \"$override_path\" >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$candidate\" >/dev/null 2>&1; then exit 2; fi; "
         f"docker run -d --name \"$candidate\" --network \"$network\" --restart no --memory 256m --memory-swap 384m --cpus 0.5 --pids-limit 128 --env-file \"$env_path\" -p 127.0.0.1:3003:3002 --label {CANDIDATE_OPERATION_LABEL}=\"{operation_id}\" '{image}'; "
@@ -369,12 +371,12 @@ def switch_command(tag, operation_id):
         # Promote the exact environment that passed candidate health checks,
         # including the securely supplied WeChat runtime identity.
         "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' \"$candidate\" > \"$env_path\"; "
-        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d' \"$env_path\"; printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' >> \"$env_path\"; "
+        "sed -i '/^CLOUD_PAPER_EXPORT_WORKER_ENABLED=/d;/^CLOUD_FINANCE_MATERIALIZER_ENABLED=/d' \"$env_path\"; printf '%s\\n' 'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1' 'CLOUD_FINANCE_MATERIALIZER_ENABLED=1' >> \"$env_path\"; "
         "chmod 600 \"$env_path\"; "
         "if docker container inspect \"$rollback\" >/dev/null 2>&1; then exit 2; fi; "
         "docker rm -f \"$candidate\"; "
         "docker rename \"$current\" \"$rollback\"; docker stop \"$rollback\"; "
-        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --memory 768m --memory-swap 1g --cpus 1.5 --pids-limit 192 --env-file \"$env_path\" -p 127.0.0.1:3002:3002 '{image}' && "
+        f"if docker run -d --name \"$current\" --network \"$network\" --restart unless-stopped --memory 1g --memory-swap 1536m --cpus 1.5 --pids-limit 192 --env-file \"$env_path\" -p 127.0.0.1:3002:3002 '{image}' && "
         + runtime_budget_guard('"$current"', True) + "; then "
         "for attempt in 1 2 3 4 5 6 7 8 9 10; do "
         "curl --fail --silent --show-error --max-time 5 http://127.0.0.1:3002/api/health && rm -f -- \"$env_path\" && exit 0; sleep 1; done; fi; "

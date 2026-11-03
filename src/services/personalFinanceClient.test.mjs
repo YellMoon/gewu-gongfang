@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPersonalFinanceClient } from './personalFinanceClient.mjs';
+test('large ledger body keeps its timeout alive while bytes arrive, without exposing a partial ledger',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let signal,reads=0,released=false;
+  const chunks=['{"ok":true,"ledger":', '{"accounts":[],"observations":[]}', '}'];
+  const client=createPersonalFinanceClient({readSession:()=>({authorization:'Bearer owner',authContext:{userId:'owner',activeRole:'teacher'}}),fetch:async(_url,options)=>{
+    signal=options.signal;
+    return{ok:true,body:{getReader:()=>({read:async()=>{t.mock.timers.tick(40000);assert.equal(signal.aborted,false);return reads<chunks.length?{value:new TextEncoder().encode(chunks[reads++]),done:false}:{done:true};},releaseLock:()=>{released=true;}})}};
+  }});
+  assert.deepEqual((await client.getLedger()).ledger,{accounts:[],observations:[]});assert(released);assert.equal(signal.aborted,false);
+});
+test('a stalled ledger body reports a stable timeout instead of DOMException numeric code 20',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});let signal,released=false;
+  const client=createPersonalFinanceClient({readSession:()=>({authorization:'Bearer owner',authContext:{userId:'owner',activeRole:'teacher'}}),fetch:async(_url,options)=>{
+    signal=options.signal;return{ok:true,body:{getReader:()=>({read:async()=>{t.mock.timers.tick(60001);assert(signal.aborted);throw new DOMException('The operation was aborted.','AbortError');},releaseLock:()=>{released=true;}})}};
+  }});
+  await assert.rejects(client.getLedger(),{code:'FINANCE_REQUEST_TIMEOUT'});assert(released);
+});
 test('tuition list is read-only and confirmed submissions retain the retry key and session binding',async()=>{
  const calls=[],client=createPersonalFinanceClient({readSession:()=>({authorization:'Bearer owner',authContext:{userId:'owner',activeRole:'super_admin'}}),fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({ok:true})};}});
  await client.tuitionReviewState();assert.equal(calls[0].options.method,'GET');assert.equal(calls[0].options.body,undefined);assert(calls[0].url.endsWith('/tuition-review'));

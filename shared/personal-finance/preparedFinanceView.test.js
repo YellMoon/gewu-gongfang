@@ -1,5 +1,10 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),{buildFinanceView,prepareFinanceView}=require('./ledger');
+test('persisted materialization restores scoped facts without the original reconciliation closure',()=>{
+ const {serialize,deserialize}=require('node:v8'),{restoreFinanceView}=require('./ledger'),l=fixture();
+ const saved=serialize(prepareFinanceView(l).materialized),restored=restoreFinanceView(deserialize(saved));
+ for(const scope of [{},{accountIds:['bank']},{accountIds:['credit','investment']},{startDate:'2026-01-01',endDate:'2026-01-31'},{endDate:'2026-01-09'}])assert.deepEqual(restored(scope),buildFinanceView(l,scope));
+});
 function fixture(){const accounts=['bank','credit','investment'].map((id,i)=>({id,label:id,provider:'synthetic',type:['debit_card','credit_card','investment'][i],currency:'CNY',maskedIdentifier:String(1000+i),openingBalanceMinor:i===0?'100000':null,openingDate:i===0?'2026-01-01':null,status:'active'}));return{accounts,observations:accounts.map((a,i)=>({id:'o'+i,financialAccountId:a.id,provider:'synthetic',sourceTransactionId:'t'+i,date:'2026-01-10',occurredAt:'2026-01-10T12:00:00+08:00',currency:'CNY',amountMinor:'123',direction:'debit',kind:'expense',status:'completed',description:'synthetic',counterparty:'merchant',category:'Food',paymentChannel:'',paymentAccountHint:'',balanceMinor:null,relatedReference:'',principalMinor:null,interestMinor:null,feeMinor:null,rawFields:{}})),balanceSnapshots:[{id:'credit-anchor',financialAccountId:'credit',currency:'CNY',balanceMinor:'50000',asOf:'2026-01-31T00:00:00+08:00',source:'manual',balanceConvention:'debt'}],imports:[],links:[],annotations:[],legacyRecords:[]};}
 test('prepared ranges match original integer accounting, unknown balances, prior comparison and liability signs',()=>{
  const l=fixture(),before=JSON.stringify(l),project=prepareFinanceView(l),scopes=[{}, {accountIds:['bank']},{accountIds:['credit','investment']},{accountIds:[]},{startDate:'2026-01-01',endDate:'2026-01-31'},{startDate:'2026-02-01',endDate:'2026-02-28'},{accountIds:['credit'],endDate:'2026-01-09'}];

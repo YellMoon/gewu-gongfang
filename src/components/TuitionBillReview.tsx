@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Input, Modal, Select, Space, Table, Tag, message } from 'antd';
 // @ts-ignore Shared suggestions never authorize a write.
-import { buildTuitionCandidates, moneyMinor, similarPayments, studentLabel } from '../../shared/personal-finance/tuitionReview';
+import { moneyMinor, similarPayments, studentLabel } from '../../shared/personal-finance/tuitionReview';
 import { formatMinor } from '../services/personalFinanceClient.mjs';
 
-type Props={open:boolean;onClose:()=>void;transactions:any[];revision:string;scopeKey:string;client:any};
+type Props={open:boolean;onClose:()=>void;revision:string;scopeKey:string;client:any};
 const minor=(v:string)=>moneyMinor(v)||'0';
-export default function TuitionBillReview({open,onClose,transactions,revision,scopeKey,client}:Props){
+export default function TuitionBillReview({open,onClose,revision,scopeKey,client}:Props){
  const [data,setData]=useState<any>(),[loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const [drafts,setDrafts]=useState<Record<string,any>>({}),[selected,setSelected]=useState<string[]>([]),[expanded,setExpanded]=useState<string[]>([]);
  const [search,setSearch]=useState(''),[includeAll,setAll]=useState(false),[status,setStatus]=useState('pending'),[confirm,setConfirm]=useState(false);
@@ -14,11 +14,11 @@ export default function TuitionBillReview({open,onClose,transactions,revision,sc
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const current=(s:string)=>mounted.current&&owner.current===s;
  useEffect(()=>{if(!open)return;let active=true;const s=scopeKey;setLoading(true);setData(undefined);setError('');setDrafts({});setSelected([]);setExpanded([]);setConfirm(false);retry.current=undefined;
-  client.tuitionReviewState().then((r:any)=>{if(active&&current(s)){if(r.review.revision!==revision)throw Error('REVISION');setData(r.review);}}).catch((e:any)=>{if(active&&current(s))setError(e.code==='CLOUD_PERSONAL_FINANCE_ACCESS_DENIED'?'缴费登记需要管理员权限，请切换管理员角色后使用。':e.message==='REVISION'?'账本已更新，请关闭列表并刷新账本后重新核对。':'无法读取学生和缴费记录，请联网后重新打开列表。');}).finally(()=>{if(active&&current(s))setLoading(false);});
+  client.tuitionReviewState().then((r:any)=>{if(active&&current(s)){if(r.review.revision!==revision||!Array.isArray(r.review.candidates)||!Array.isArray(r.review.likelyIds))throw Error('REVISION');setData(r.review);}}).catch((e:any)=>{if(active&&current(s))setError(e.code==='CLOUD_PERSONAL_FINANCE_ACCESS_DENIED'?'缴费登记需要管理员权限，请切换管理员角色后使用。':e.message==='REVISION'?'账本已更新，请关闭列表并刷新账本后重新核对。':'无法读取学生和缴费记录，请联网后重新打开列表。');}).finally(()=>{if(active&&current(s))setLoading(false);});
   return()=>{active=false;};
  },[open,revision,scopeKey,client]);
- const rows=useMemo(()=>data?buildTuitionCandidates({transactions,students:data.students,payments:data.payments,links:data.links,includeAll:true}):[],[transactions,data]);
- const likely=useMemo(()=>new Set(data?buildTuitionCandidates({transactions,students:data.students,links:data.links}).map((r:any)=>r.id):[]),[transactions,data]);
+ const rows=useMemo(()=>data?.candidates||[],[data]);
+ const likely=useMemo(()=>new Set(data?.likelyIds||[]),[data]);
  const byId=useMemo(()=>new Map(rows.map((r:any)=>[r.id,r])),[rows]);
  const initial=(r:any)=>{if(r.linked)return {ignored:false,remainderAcknowledged:false,allocations:r.linked.allocations.map((a:any)=>({studentId:a.studentId,amount:formatMinor(a.amountMinor),existingPaymentId:a.paymentId,allowSimilar:false}))};const p=r.similarPayments.length===1?r.similarPayments[0]:null;return {ignored:false,remainderAcknowledged:false,allocations:[{studentId:r.suggestedStudentId,amount:formatMinor(r.amountMinor),existingPaymentId:p?.id||'',allowSimilar:false}]};};
  const draft=(r:any)=>drafts[r.id]||initial(r);

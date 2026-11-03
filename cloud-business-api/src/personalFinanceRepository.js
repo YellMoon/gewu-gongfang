@@ -151,8 +151,19 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
    'legacyRecords',COALESCE((SELECT json_agg(t.data) FROM (SELECT to_jsonb(r)||jsonb_build_object('legacyType','imported') AS data FROM business.personal_asset_records r WHERE tenant_id=$1 AND account_id=$2 UNION ALL SELECT to_jsonb(r)||jsonb_build_object('legacyType','manual') FROM business.personal_asset_manual_records r WHERE tenant_id=$1 AND account_id=$2 AND deleted=false) t),'[]'::json)) AS ledger`,owner);if(!result.rows[0])throw failure('UNAVAILABLE');return result.rows[0].ledger;}
  const api={
   async getRevision(input){const owner=scope(input),row=(await query('SELECT revision::text AS revision FROM business.personal_finance_owners WHERE tenant_id=$1 AND account_id=$2',owner)).rows[0];return row?.revision||'0';},
+  async getMetadata(input){const owner=scope(input);const result=await query(`SELECT json_build_object(
+   'revision',COALESCE((SELECT revision::text FROM business.personal_finance_owners WHERE tenant_id=$1 AND account_id=$2),'0'),
+   'accounts',COALESCE((SELECT json_agg(data ORDER BY ledger_ordinal NULLS LAST,id) FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2),'[]'::json),
+   'imports',COALESCE((SELECT json_agg(json_build_object('id',data->'id','filename',data->'filename','financialAccountId',data->'financialAccountId','createdAt',data->'createdAt','recordCount',data->'recordCount','fileHash',data->'fileHash') ORDER BY ledger_ordinal NULLS LAST,created_at,id) FROM business.personal_finance_imports WHERE tenant_id=$1 AND account_id=$2),'[]'::json)) AS metadata`,owner);return result.rows[0].metadata;},
   async discoverAccounts(input){const owner=scope(input);return transaction(async q=>discover(q,owner,await lock(q,owner,input.expectedRevision)));},
   async getLedger(input){const ledger=await readLedger(query,scope(input));if(!fundNavService)return ledger;try{return{...ledger,investmentMarketData:await fundNavService.forLedger(ledger)};}catch{return{...ledger,investmentMarketData:{schema:'investment-market-data-v1',series:[],issues:[{reason:'FUND_NAV_UNAVAILABLE'}]}};}},
+  async searchObservations(input){
+   const owner=scope(input),search=input.search||'',ids=input.ids||[];
+   if(typeof search!=='string'||search.length>256||!Array.isArray(ids)||ids.length>40||ids.some(v=>typeof v!=='string'||!v||v.length>512))throw failure('INPUT_INVALID');
+   if(!search.trim()&&!ids.length)return[];
+   const result=await query(`SELECT data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND (id=ANY($3::text[]) OR $4<>'' AND (data->>'description' ILIKE $5 OR data->>'sourceTransactionId' ILIKE $5 OR id ILIKE $5 OR data->>'date' ILIKE $5)) ORDER BY CASE WHEN id=ANY($3::text[]) THEN 0 ELSE 1 END,data->>'date' DESC,id LIMIT 40`,[...owner,ids,search.trim(),'%'+search.trim()+'%']);
+   return result.rows.map(r=>r.data);
+  },
   async previewImport(input){const owner=scope(input),buffer=fileInput(input);return parse(input,owner,buffer);},
   async resolveImportAccount(input,preview){return resolution(input,scope(input),preview);},
   async import(input){const owner=scope(input),buffer=fileInput(input),key=text(input.idempotencyKey,256);const preview=await parse(input,owner,buffer);if(input.expectedFileHash!==undefined&&input.expectedFileHash!==preview.fileHash)throw failure('IMPORT_SOURCE_CHANGED');if(preview.errors.length||!preview.records.length)throw failure('IMPORT_INVALID');

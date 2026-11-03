@@ -18,16 +18,45 @@ export function createPersonalFinanceClient({ readSession = readDesktopAuthoriza
   async function request(path, method = 'GET', body, key) {
     const session = readSession(), scope = fingerprint(session);
     if (!['teacher', 'super_admin'].includes(session.authContext.activeRole)) throw error('FINANCE_ACCESS_DENIED');
+    const controller = new AbortController();
+    let timeout;
+    const armTimeout = () => { clearTimeout(timeout); timeout = setTimeout(() => controller.abort(), 60000); timeout.unref?.(); };
+    armTimeout();
+    try {
     const response = await fetch(baseUrl.replace(/\/+$/, '') + '/api/business/personal-finance' + path, {
       method, headers: { Authorization: session.authorization, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(key ? { 'x-idempotency-key': key } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(60000), redirect: 'error',
+      ...(body ? { body: JSON.stringify(body) } : {}), signal: controller.signal, redirect: 'error',
     });
-    const data = await response.json();
+    let data;
+    if (path === '/ledger' && response.ok && typeof response.body?.getReader === 'function') {
+      // A large verified ledger can transfer for over a minute. Bound inactivity,
+      // rather than cancelling a healthy download after its first 60 seconds.
+      armTimeout();
+      const reader = response.body.getReader(), decoder = new TextDecoder(), parts = [];
+      try {
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          armTimeout();
+          parts.push(decoder.decode(chunk.value, { stream: true }));
+        }
+        parts.push(decoder.decode());
+        data = JSON.parse(parts.join(''));
+      } finally { reader.releaseLock(); }
+    } else data = await response.json();
     if (fingerprint(readSession()) !== scope) throw error('FINANCE_SESSION_CHANGED');
     if (!response.ok || data.ok === false) throw error(data.code || 'FINANCE_REQUEST_FAILED');
     return data;
+    } catch (caught) {
+      if (controller.signal.aborted || ['AbortError', 'TimeoutError'].includes(caught?.name)) throw error('FINANCE_REQUEST_TIMEOUT');
+      throw caught;
+    } finally { clearTimeout(timeout); }
   }
   return Object.freeze({
+    getMetadata: () => request('/metadata'),
+    queryProjection: input => request('/projection', 'POST', input || {}),
+    transactionDetails: id => request('/transactions/' + encodeURIComponent(id)),
+    searchObservations: input => request('/observations/search', 'POST', input || {}),
     getLedger: async () => {
       const result = await request('/ledger');
       // The compatibility field omits reset decisions for older clients. Current

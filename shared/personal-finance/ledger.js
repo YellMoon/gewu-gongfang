@@ -88,7 +88,19 @@ function repaymentType(sources,accountMap){
 const calibrationOnly = a => ['investment','insurance','receivable','property','precious_metal','retirement'].includes(a?.type)&&!['alipay_yulibao','alipay_yuebao'].includes(a?.sourceProduct)&&!isSettlementAccount(a)&&!require('./merchantSettlementReceivables').isMerchantSettlementAccount(a);
 const money = () => ({consumptionMinor:0n,incomeMinor:0n,cashInMinor:0n,cashOutMinor:0n,netCashFlowMinor:0n});
 const dictionary = () => Object.create(null);
-const serial = value => typeof value==='bigint'?value.toString():Array.isArray(value)?value.map(serial):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,serial(v)])):value;
+const serial = value => {
+  const seen=new WeakMap();
+  const convert=value=>{
+    if(typeof value==='bigint')return value.toString();
+    if(!value||typeof value!=='object')return value;
+    if(seen.has(value))return seen.get(value);
+    const result=Array.isArray(value)?[]:{};seen.set(value,result);
+    if(Array.isArray(value))for(const item of value)result.push(convert(item));
+    else for(const [key,item]of Object.entries(value))Object.defineProperty(result,key,{value:convert(item),enumerable:true,writable:true,configurable:true});
+    return result;
+  };
+  return convert(value);
+};
 // Remove only a bank statement's known operation/channel envelope. The remaining
 // merchant must match in full; a legal-entity alias is not identity evidence.
 const statementOperation=/^(?:(?:\u6d88\u8d39|\u9000\u6b3e|\u9000\u8d27)\s+-\s*\u7f51\u8054\s+|\u6d88\u8d39\s+|\(\u6d88\u8d39\)|\u9000\u6b3e\s+|\(\u9000\u6b3e\)|\u9000\u8d27\s+|\(\u9000\u8d27\))/;
@@ -152,6 +164,17 @@ function fundingAccount(o,accounts) {
 }
 
 const RAW_DERIVED_TRANSACTIONS=Symbol('raw-derived-transactions'),PREPARED_FINANCE_VIEW=Symbol('prepared-finance-view');
+function createFundingAccountResolver(accounts) {
+  const cache=new Map();
+  return (o,candidates=accounts)=>{
+    if(candidates!==accounts)return fundingAccount(o,candidates);
+    const key=JSON.stringify([o.financialAccountId,o.currency,o.paymentChannel,o.paymentAccountHint,
+      o.automaticFunding?.financialAccountId,o.withdrawalDestination?.method,o.withdrawalDestination?.financialAccountId,
+      o.provider,o.status,o.kind,o.rawFields?.['\u4ea4\u6613\u7c7b\u578b']]);
+    if(!cache.has(key))cache.set(key,fundingAccount(o,accounts));
+    return cache.get(key);
+  };
+}
 function prepareFinanceView(ledger){
  if((ledger.observations||[]).some(o=>o.bankNetwork))return require('./unionpayNetworkProjection').prepareNetworkFinanceView(ledger,prepareFinanceView);
  return buildFinanceView(ledger,{},PREPARED_FINANCE_VIEW);
@@ -161,6 +184,7 @@ function buildFinanceView(ledger,options={},internalMode) {
   const ownerZeroFeeWithdrawals=new Map();
   const knownRepaymentCashBySource=new Map();
   const accounts=ledger.accounts||[], originalObservations=ledger.observations||[],originalById=new Map(originalObservations.map(o=>[o.id,o])),latestAnnotations=new Map();
+  const fundingAccount=createFundingAccountResolver(accounts);
   const sourceOwners=statementOwners(ledger.imports||[],originalObservations);
   const accountIdentityEvidence=statementAccountIdentityEvidence(ledger);
   const verifiedOwnerNames=new Set(sourceOwners.values());
@@ -970,7 +994,15 @@ function buildFinanceView(ledger,options={},internalMode) {
   const collectiveTiming=require('./collectiveWalletWithdrawalTiming'),balanceTimingGroups=collectiveTiming.planCollectiveWalletWithdrawalTiming(ledger,all,reconciliationGroups);
   for(const group of balanceTimingGroups)for(const id of group.platformRootIds){const t=all.find(t=>t.id===id);t.collectiveBalanceTiming={groupId:group.id,individualIdentity:'undetermined',sourceEffectTimePreserved:true,actualCashEventsRecordedOnGroup:true};}
   const preparedTransactions=all,preparedIssues=unresolvedAssociations,preparedFundValuations=fundValuations,effectiveSourceAccounts=new Map(observations.map(o=>[o.id,o.financialAccountId]));
-  const finalize=(options={})=>{
+  const materialized={kind:'core',prepared:internalMode===PREPARED_FINANCE_VIEW,accountMap,accounts,balanceTimingGroups,closedCashSettlements,creditFinancing,effectiveSourceAccounts,feeGroups,installmentLoans,investmentRegister,ledger,mortgageModels,nativeMortgages,originalObservations,preparedFundValuations,preparedIssues,preparedTransactions,reconciliationGroups,termDepositResult,wechatRefundEstimates,securities,information},finalize=(options={})=>finalizeMaterializedFinance(materialized,options);
+  finalize.materialized=materialized;
+  return internalMode===PREPARED_FINANCE_VIEW?finalize:finalize(options);
+}
+
+function finalizeMaterializedFinance(state,options={}) {
+  const {accountMap,accounts,balanceTimingGroups,closedCashSettlements,creditFinancing,effectiveSourceAccounts,feeGroups,installmentLoans,investmentRegister,ledger,mortgageModels,nativeMortgages,originalObservations,preparedFundValuations,preparedIssues,preparedTransactions,reconciliationGroups,termDepositResult,wechatRefundEstimates,securities,information}=state;
+  const collectiveTiming=require('./collectiveWalletWithdrawalTiming'),internalMode=state.prepared?PREPARED_FINANCE_VIEW:undefined;
+
   const selected=new Set(options.accountIds||accounts.map(a=>a.id));
   const all=internalMode===PREPARED_FINANCE_VIEW?require('./preparedScopeSelection').projectSelectedTransactions(preparedTransactions,accounts,selected,effectiveSourceAccounts):preparedTransactions;
   const unresolvedAssociations=[...preparedIssues];
@@ -1042,7 +1074,12 @@ function buildFinanceView(ledger,options={},internalMode) {
   unresolvedAssociations.push(...balanceChecks.balanceReviewIssues(balanceReconciliation));
   const review=buildReviewSummary(unresolvedAssociations,transactions,accounts);
   return serial({balanceReconciliation,...(wechatRefundEstimates.length?{wechatRefundEstimates}:{}),...(closedCashSettlements.length?{closedCashSettlements}:{}),...(balanceTimingGroups.length?{balanceTimingGroups}:{}),transactions,creditFinancing,...(termDepositResult.models.length?{termDeposits:termDepositResult.models.filter(m=>selected.has(m.financialAccountId)||selected.has(m.bankAccountId))}:{}),reconciliationGroups:[...reconciliationGroups,...feeGroups.map(({proof,wallets,...g})=>g)],securities,fundValuations:fundValuations.filter(v=>selected.has(v.financialAccountId)),installmentLoans:installmentLoans.filter(m=>selected.has(m.financialAccountId)||selected.has(m.sourceAccountId)),investmentTrades:transactions.flatMap(t=>t.investmentConfirmations),mortgages:mortgageModels.filter(m=>selected.has(m.financialAccountId)||selected.has(m.sourceAccountId)),accountStats,portfolioBalances:portfolioBalances(accountStats),...summary,comparison,unresolvedAssociations,information,review});
-  };
-  return internalMode===PREPARED_FINANCE_VIEW?finalize:finalize(options);
+
 }
-module.exports={buildFinanceView,prepareFinanceView,validateRecord,validDate};
+function materializeFinanceView(ledger){return prepareFinanceView(ledger).materialized;}
+function restoreFinanceView(state){
+ if(state.kind==='network')return require('./unionpayNetworkProjection').restoreNetworkFinanceView(state);
+ if(state.kind!=='core')throw Error('FINANCE_MATERIALIZATION_INVALID');
+ return options=>finalizeMaterializedFinance(state,options);
+}
+module.exports={buildFinanceView,prepareFinanceView,materializeFinanceView,restoreFinanceView,validateRecord,validDate};

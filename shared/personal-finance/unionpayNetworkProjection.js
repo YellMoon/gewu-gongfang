@@ -83,6 +83,10 @@ function prepareNetworkFinanceView(ledger,prepareCore){
  // Future scopes need only these immutable peer facts from the global view.
  const mixedBankPeers=full.transactions.filter(x=>x.status==='completed'&&x.kind==='transfer').map(({observationIds,currency,balanceEffects})=>({observationIds,currency,balanceEffects}));
  full=null;initialCore=null;initialFull=null;initialPlan=null;
+ return (()=>{const materialized={kind:'network',core:projectCore.materialized,ledger,records,postedIds,postingMap,postings,pairs,savedPlan,mixedBankPeers};const project=restoreNetworkFinanceView(materialized);project.materialized=materialized;return project;})();
+}
+
+function restoreNetworkFinanceView(state){const projectCore=require('./ledger').restoreFinanceView(state.core);const {ledger,records,postedIds,postingMap,postings,pairs,savedPlan,mixedBankPeers}=state;
  return function projectNetwork(options={}){
  const view=projectCore(options),plan=require('./preparedScopeSelection').clonePreparedValue(savedPlan);
  const sourceById=new Map(records.map(r=>[r.id,r])),transactions=view.transactions.map(t=>({...t,observationIds:[...t.observationIds],sources:[...t.sources],automaticAssociations:[...t.automaticAssociations],selectedObservationIds:[...t.selectedObservationIds]})),byId=new Map(transactions.map(t=>[t.id,t]));
@@ -125,4 +129,4 @@ function prepareNetworkFinanceView(ledger,prepareCore){
  return {...view,transactions,unresolvedAssociations:issues,review:buildReviewSummary(issues,transactions,ledger.accounts||[]),networkEvidence:{...plan,scope:'channel_only',cashPostingPolicy:postings.length?'new_verified_account_movements_posted_with_originals_preserved;remaining_unmatched_rows_are_visible_intake':'matched_rows_are_supplemental_evidence_unmatched_rows_remain_visible_intake',financialPostingApplied:postings.length>0,sourceRowsRemainImmutable:true,allIndependentPostingDatesPreserved:true},reconciliationGroups:[...view.reconciliationGroups,...plan.matches.filter(m=>m.individualIdentity==='undetermined_within_group')]};
  };
 }
-module.exports={buildNetworkFinanceView,prepareNetworkFinanceView};
+module.exports={buildNetworkFinanceView,prepareNetworkFinanceView,restoreNetworkFinanceView};

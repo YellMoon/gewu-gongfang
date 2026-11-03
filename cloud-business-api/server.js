@@ -502,11 +502,12 @@ const paperExportWorker = process.env.CLOUD_PAPER_EXPORT_WORKER_ENABLED === '1' 
   ? createPaperExportWorkerRuntime({
     processor: createPaperExportTaskProcessor({
       tasks: paperExportTasks,
-      render: renderPaperExport,
+      render: async input => { await app.locals.financeProjectionService?.releaseIdle?.(); return renderPaperExport(input); },
       mediaResolver: paperExportMediaResolver,
       archiveArtifact: input => paperExportArtifactRepository.archive(input),
     }),
     log: message => console.error(message),
+    canRun: () => !app.locals.financeProjectionService?.isBusy?.(),
   })
   : null;
 const desktopLoginCode = desktopRuntime?.registration
@@ -561,6 +562,8 @@ const app = createCloudBusinessApp({
   questionAssetDeliveries,
   personalAssetImports,
   personalFinance,
+  financeMaterializations: require('./src/financeMaterializationRepository').createFinanceMaterializationRepository({ query: (text, values) => pool.query(text, values), rulesVersion: require('./src/financeMaterializationService').financeRulesVersion() }),
+  financeWorkAllowed: () => !paperExportWorker?.isRunning(),
   billArchiveTransfers,
   billMailbox,
   storageAgent,

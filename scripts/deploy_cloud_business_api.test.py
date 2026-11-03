@@ -114,7 +114,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_promoted_worker_has_explicit_resource_budget(self):
         command = switch_command("8.1.0-8c425eab", "a" * 32)
         self.assertIn("'CLOUD_PAPER_EXPORT_WORKER_ENABLED=1'", command)
-        self.assertIn("--memory 768m --memory-swap 1g --cpus 1.5 --pids-limit 192", command)
+        self.assertIn("--memory 1g --memory-swap 1536m --cpus 1.5 --pids-limit 192", command)
         self.assertLess(command.index('docker stop "$rollback"'), command.index('docker run -d'))
 
     def test_candidate_health_waits_for_startup(self):
@@ -242,14 +242,16 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
     def test_worker_setting_is_replaced_for_each_deployment_phase(self):
         for command, enabled in ((candidate_command("8.1.0-8c425eab", "a" * 32), 0), (switch_command("8.1.0-8c425eab", "b" * 32), 1)):
             self.assertIn(f"CLOUD_PAPER_EXPORT_WORKER_ENABLED={enabled}", command)
+            self.assertIn(f"CLOUD_FINANCE_MATERIALIZER_ENABLED={enabled}", command)
             self.assertIn("sed -i", command)
 
     def test_runtime_budget_guard_checks_actual_docker_state_without_dumping_secrets(self):
-        for worker, expected in [(False, '268435456 402653184 500000000 128'), (True, '805306368 1073741824 1500000000 192')]:
+        for worker, expected in [(False, '268435456 402653184 500000000 128'), (True, '1073741824 1610612736 1500000000 192')]:
             command = module.runtime_budget_guard('"$candidate"', worker)
             self.assertIn(expected, command)
             self.assertIn('.HostConfig.Memory', command)
             self.assertIn(f'CLOUD_PAPER_EXPORT_WORKER_ENABLED={int(worker)}', command)
+            self.assertIn(f'CLOUD_FINANCE_MATERIALIZER_ENABLED={int(worker)}', command)
             self.assertNotIn('{{println .}}', command)
 
     def test_runtime_budget_guard_fails_closed_in_a_real_shell(self):
@@ -257,7 +259,7 @@ class CloudBusinessDockerDeployTests(unittest.TestCase):
         shell = str(Path(git).resolve().parents[1] / 'bin' / 'bash.exe') if os.name == 'nt' and git else shutil.which('bash')
         self.assertIsNotNone(shell, 'a shell is required to verify generated deployment commands')
         self.assertTrue(Path(shell).is_file(), 'use Git Bash on Windows, not the unrelated WSL launcher')
-        for worker, memory in [(False, '268435456 402653184 500000000 128'), (True, '805306368 1073741824 1500000000 192')]:
+        for worker, memory in [(False, '268435456 402653184 500000000 128'), (True, '1073741824 1610612736 1500000000 192')]:
             guard = module.runtime_budget_guard('"$candidate"', worker)
             for observed_memory, observed_worker, code in [(memory, '1', 0), ('0 0 0 0', '1', 23), (memory, '', 23), (memory, '11', 23)]:
                 script = ('set -eu; candidate=synthetic; docker() { case "$3" in *HostConfig*) printf "%s" "' + observed_memory

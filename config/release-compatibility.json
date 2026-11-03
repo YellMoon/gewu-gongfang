@@ -3,12 +3,19 @@
   "contracts": {
     "personalFinanceAcceptedReconciliation": {
       "version": "1",
-      "participants": ["desktop", "cloud_business", "miniapp"],
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
       "rule": "Apply the owner-scoped multi-account-source and nullable ledger-order migration before deploying readers. Accepted administrative reconciliation is hash/revision guarded, append-only for original observations, audited, transactional and read back before commit; original source JSON and evidence precedence remain intact. Unknown annotation times and unavailable archived bytes remain explicitly unknown. Closed-activity and merchant-settlement policies validate references against the authenticated owner's original sources. Deploy the additive read-only miniapp projection endpoint before its consumer; bounded background computation uses the same integer rules, keeps global review independent of scope filters, and sends compact summaries instead of original documents or the full source ledger. Existing import APIs, teaching data and NAS byte-storage protocols remain compatible."
     },
     "personalFinanceNasArchive": {
       "version": "1",
-      "participants": ["cloud_business", "storage_proxy"],
+      "participants": [
+        "cloud_business",
+        "storage_proxy"
+      ],
       "rule": "GWB1 encrypted bill originals live only on NAS. Preserve existing owner-bound archive references and cloud-authoritative structured financial data. Cloud transfer bytes are bounded request-scoped memory only; metadata receipts contain no file payload, and Nginx does not spool finance bodies to disk. A new import commits only after NAS write/read/hash acknowledgement. Missing NAS, expired leases and invalid receipts fail closed without a cloud-file fallback. Deploy the backward-compatible NAS client, import and verify legacy encrypted objects, apply the additive metadata-only migration, then switch cloud source archiving and verify live store/read before removing cloud originals. Existing desktop and miniapp import APIs and question storage protocols remain compatible."
     },
     "personalFinanceAssetRegister": {
@@ -299,6 +306,15 @@
         "miniapp"
       ],
       "rule": "Deploy bounded HTML bank-credit and SPDB/CMB/Hangzhou PDF decoders before readers. Optional bankAccount and bankStatement metadata resolve bank, card type, tail and settlement currency within the verified owner. One source with several cards or currencies creates account-bound import memberships atomically and shares one encrypted original archive; existing owner scope, immutable observation grants, source deduplication and receipt replay remain unchanged. Validate statement totals and debit balance chains before import. Retain installment principal without counting consumption twice, keep foreign settlement currencies separate and classify currency conversion funding as a transfer. Billed debt is evidence only and never a current total debt anchor. Clients show original zero values, neutral movements, pending classification and duplicate evidence explicitly; unknown balances, fund holdings and NAV remain unknown. Existing NAS storage protocol and database schema remain compatible. SPDB detail-only Excel exports require an explicit provider declaration because they omit the bank name; bank-credit-detail-v1 preserves actual trade/posting dates without inventing statement dates, totals or balances. Cross-format PDF/Excel event IDs remain stable and immutable source versions do not count twice."
+    },
+    "personalFinanceCloudMaterialization": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Apply 20261103-finance-materializations.sql before deploying cloud readers. Cloud owns leased, revision/rules/valuation-day guarded financial computation and durable results. Desktop reads the stored default summary and paged transactions; original evidence is owner-scoped and read only on explicit expansion/search. Preserve existing ledger/import APIs and miniapp compact statistics contract. Keep original observations, annotation revisions and NAS source receipts immutable. Background materialization is disabled on candidate containers; production calculations and paper exports share a memory gate. Deploy and verify cloud results before desktop/miniapp rollout. NAS storage transport is unchanged."
     }
   },
   "runtimeReceipts": {
