@@ -7,6 +7,7 @@ const ts = require('typescript');
 const ast = ts.createSourceFile('DesktopIdentityGate.tsx', fs.readFileSync(path.join(__dirname, 'DesktopIdentityGate.tsx'), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const sources = {};
 function visit(node) {
+  if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'renewSessionSilently') sources.renew = node.initializer.getText(ast);
   if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useEffect') {
     const text = node.getText(ast);
     if (text.includes('switchToOffline')) sources.mode = text;
@@ -58,6 +59,19 @@ function setup(effectKey, { kind, online, renewed = true, lease }) {
 }
 
 (async () => {
+  const { isDesktopIdentityAuthorizationRejection } = await import('../services/desktopIdentityClient.mjs');
+  for (const code of ['DESKTOP_DEVICE_NOT_ACTIVE', 'VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'CLOUD_ONLINE_IDENTITY_REJECTED', 'DESKTOP_IDENTITY_NETWORK_TIMEOUT']) {
+    const runtimeEpochRef = { current: 9 }, locked = [];
+    const renew = run('renew', {
+      useCallback: fn => fn, browserOnline: () => true, roleSwitchRecoveryRef: { current: null },
+      runtimeEpochRef, baseUrl: 'https://cloud.test', isDesktopIdentityAuthorizationRejection,
+      clientRef: { current: { resume: async () => { throw Object.assign(new Error(code), { code }); } } },
+      acceptRuntime: () => assert.fail('rejection must not accept a runtime'),
+      secureRelock: async state => { runtimeEpochRef.current++; locked.push(state.kind); },
+    });
+    assert.equal(await renew(), false);
+    assert.deepEqual(locked, code === 'DESKTOP_IDENTITY_NETWORK_TIMEOUT' ? [] : ['online-authentication-required']);
+  }
   // 断网启动后恢复联网：静默续期，不需要用户重启或手动登录。
   const restored = await setup('mode', { kind: 'offline-unlocked', online: false });
   assert.equal(restored.calls.renew, 0, 'an offline runtime without connectivity must not call the cloud');
@@ -77,6 +91,12 @@ function setup(effectKey, { kind, online, renewed = true, lease }) {
   assert(pending && pending.ms === 15000 && !pending.cleared, 'a failed silent renew must schedule one retry');
   retrying.cleanup();
   assert.equal(pending.cleared, true, 'unmounting must cancel the pending renew retry');
+  let finishRenew;
+  const inFlight = await setup('mode', { kind: 'offline-unlocked', online: true, renewed: new Promise(resolve => { finishRenew = resolve; }) });
+  await inFlight.fire('online');
+  assert.equal(inFlight.calls.renew, 1, 'repeated connectivity events must share an in-flight renewal');
+  inFlight.cleanup();finishRenew(false);await tick();
+  assert.equal(inFlight.timers.length, 0, 'an unmounted mode watcher must never restart a retry');
 
   // 联网运行中断网：改用仍然有效的离线租约，业务不中断。
   const dropped = await setup('mode', { kind: 'online-unlocked', online: true, lease: { kind: 'offline-unlocked' } });

@@ -28,6 +28,7 @@ import {
   createDesktopIdentityClient,
   desktopIdentityExpiryDelay,
   isDesktopIdentityNetworkFailure,
+  isDesktopIdentityAuthorizationRejection,
   resolveDesktopGateState,
 } from '../services/desktopIdentityClient.mjs';
 import {
@@ -225,9 +226,15 @@ const DesktopIdentityGate: React.FC = () => {
           ensureOnline: async () => {
             const epoch = runtimeEpochRef.current;
             if (roleSwitchRecoveryRef.current) throw new Error('DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED');
-            const result = await client.ensureOnlineSession({
-              baseUrl: identityBaseUrl,
-            });
+            let result;
+            try {
+              result = await client.ensureOnlineSession({ baseUrl: identityBaseUrl });
+            } catch (caught) {
+              if (!cancelled && epoch === runtimeEpochRef.current && isDesktopIdentityAuthorizationRejection(caught)) {
+                await secureRelock({ kind: 'online-authentication-required' });
+              }
+              throw caught;
+            }
             if (cancelled || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) {
               throw new Error('ONLINE_DESKTOP_SESSION_REQUIRED');
             }
@@ -427,7 +434,7 @@ const DesktopIdentityGate: React.FC = () => {
         delete (window as any).desktopIdentitySessionProvider;
       }
     };
-  }, [acceptRuntime, initializationAttempt, suspendBusinessMemory]);
+  }, [acceptRuntime, initializationAttempt, suspendBusinessMemory, secureRelock]);
 
   const pollRegistration = useCallback(async () => {
     if (!pending || pollingFlowRef.current === registrationFlowRef.current || !clientRef.current) return;
@@ -463,10 +470,13 @@ const DesktopIdentityGate: React.FC = () => {
       if (!result || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) return false;
       acceptRuntime(result);
       return true;
-    } catch (_error) {
+    } catch (caught) {
+      if (epoch === runtimeEpochRef.current && isDesktopIdentityAuthorizationRejection(caught)) {
+        await secureRelock({ kind: 'online-authentication-required' });
+      }
       return false;
     }
-  }, [acceptRuntime, baseUrl]);
+  }, [acceptRuntime, baseUrl, secureRelock]);
 
   useEffect(() => {
     const remaining = desktopIdentityExpiryDelay(gateState, new Date());
@@ -518,10 +528,15 @@ const DesktopIdentityGate: React.FC = () => {
     if (!canStartBusinessRuntime({ gateState })) return undefined;
     let cancelled = false;
     let retryTimer: number | undefined;
+    let switchingOnline = false;
     const switchToOnline = async () => {
-      if (gateState.kind !== 'offline-unlocked' || !browserOnline()) return;
-      const renewed = await renewSessionSilently();
-      if (!cancelled && !renewed && browserOnline()) {
+      if (cancelled || switchingOnline || gateState.kind !== 'offline-unlocked' || !browserOnline()) return;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      const epoch = runtimeEpochRef.current;
+      switchingOnline = true;
+      let renewed;
+      try { renewed = await renewSessionSilently(); } finally { switchingOnline = false; }
+      if (!cancelled && epoch === runtimeEpochRef.current && !renewed && browserOnline()) {
         retryTimer = window.setTimeout(() => { void switchToOnline(); }, 15000);
       }
     };

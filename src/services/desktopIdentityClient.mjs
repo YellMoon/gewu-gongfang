@@ -233,6 +233,12 @@ export function resolveDesktopGateState({ vaultStatus, online, onlineSession = n
   return unlockedState('offline-unlocked', lease);
 }
 
+export function isDesktopIdentityAuthorizationRejection(error) {
+  return ['VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'DESKTOP_DEVICE_NOT_ACTIVE',
+    'DESKTOP_SESSION_REQUIRED', 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID',
+    'CLOUD_ONLINE_IDENTITY_REJECTED'].includes(error?.code);
+}
+
 export function canStartBusinessRuntime({ gateState } = {}) {
   return gateState?.kind === 'online-unlocked'
     || gateState?.kind === 'offline-unlocked';
@@ -484,9 +490,7 @@ export function createDesktopIdentityClient({
       });
     } catch (error) {
       // Persist cloud rejection so a subsequent offline restart cannot revive it.
-      if (['VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'DESKTOP_DEVICE_NOT_ACTIVE',
-        'DESKTOP_SESSION_REQUIRED', 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID',
-        'CLOUD_ONLINE_IDENTITY_REJECTED'].includes(error?.code)) {
+      if (isDesktopIdentityAuthorizationRejection(error)) {
         await desktopIdentity.invalidateOfflineLease?.();
         await sessionStore.clear();
       }

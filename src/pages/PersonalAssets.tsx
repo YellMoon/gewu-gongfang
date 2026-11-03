@@ -52,7 +52,12 @@ const PersonalAssets: React.FC = () => {
     if (s) setStats(s);
   }, [dateRange]);
 
-  useEffect(() => { loadData(); loadStats(); }, [loadData, loadStats]);
+  useEffect(() => {
+    const refresh = () => { loadData(); loadStats(); };
+    refresh();
+    window.addEventListener('authority-projection-refreshed', refresh);
+    return () => window.removeEventListener('authority-projection-refreshed', refresh);
+  }, [loadData, loadStats]);
 
   // Filter records based on date and tab
   const filteredRecords = records.filter(r => {

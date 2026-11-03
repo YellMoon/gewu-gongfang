@@ -104,6 +104,8 @@ export default function PersonalFinancePanel() {
   const [search,setSearch]=useState(''),[transactionFilter,setTransactionFilter]=useState('all'),[categoryFilter,setCategoryFilter]=useState('');
   const [linkSearch,setLinkSearch]=useState(''),[accountDetail,setAccountDetail]=useState<string>(),[categoryDisplay,setCategoryDisplay]=useState('chart');
   const sequence = useRef(0), fileSequence = useRef(0), mounted = useRef(true), fileRef = useRef<HTMLInputElement>(null);
+  // UTF-8: reconnect before requesting finance data; coalesce repeated clicks and online events.
+  const reconnecting = useRef<Promise<void> | null>(null);
   const scope = () => { try { const s = readDesktopAuthorizationSession(); return JSON.stringify([s.authorization, s.authContext.activeRole]); } catch { return ''; } };
   const currentOwnerScope=scope(),ledger=ledgerOwner===currentOwnerScope?rawLedger:empty;
   const reload = async () => {
@@ -118,18 +120,32 @@ export default function PersonalFinancePanel() {
     catch (e: any) { if (mounted.current && scope() === owner) setMailFailure(e.code === 'BILL_MAIL_ACCESS_DENIED' ? '当前账号无权使用专用收件邮箱，可选择账单文件导入。' : e.code === 'BILL_MAIL_NOT_CONFIGURED' ? '专用收件邮箱尚未配置，请联系管理员；也可选择账单文件导入。' : '暂时无法读取收件邮箱，请联网后点击“查看邮箱”重试。'); }
     finally { if (mounted.current && scope() === owner) setMailLoading(false); }
   };
+  const reconnect = () => {
+    if (reconnecting.current) return reconnecting.current;
+    setLoading(true);
+    reconnecting.current = (async () => {
+      try {
+        await (window as any).desktopIdentitySessionProvider?.ensureOnline?.();
+        if (mounted.current) await Promise.all([reload(), loadMailbox()]);
+      } catch (e: any) {
+        if (mounted.current) { setFailure(e.code || 'FINANCE_REQUEST_FAILED'); setLoading(false); }
+      }
+    })().finally(() => { reconnecting.current = null; });
+    return reconnecting.current;
+  };
   useEffect(()=>{if(!background)return;const c=createFinanceAnalysisClient();analysisClient.current=c;return()=>{c.dispose();analysisClient.current=undefined;};},[background]);
   useEffect(() => { mounted.current = true; void reload(); void loadMailbox(); const imported = () => void reload(); window.addEventListener('personal-finance-imported', imported); return () => { window.removeEventListener('personal-finance-imported', imported); mounted.current = false; sequence.current++; }; }, []);
   useEffect(() => {
     // UTF-8: 断网启动或云端失联后，联网恢复与身份会话就绪都要自动重新拉取，不等用户手动刷新。
-    const reloadAll = () => { void reload(); void loadMailbox(); };
+    const reloadAll = () => { if (!reconnecting.current) { void reload(); void loadMailbox(); } };
+    const onOnline = () => { void reconnect(); };
     window.addEventListener('desktop-authority-drafts-changed', reloadAll);
     window.addEventListener('desktop-identity-session-ready', reloadAll);
-    window.addEventListener('online', reloadAll);
+    window.addEventListener('online', onOnline);
     return () => {
       window.removeEventListener('desktop-authority-drafts-changed', reloadAll);
       window.removeEventListener('desktop-identity-session-ready', reloadAll);
-      window.removeEventListener('online', reloadAll);
+      window.removeEventListener('online', onOnline);
     };
   }, []);
   const run = async (work: (current: () => boolean) => Promise<any>) => {
@@ -210,13 +226,13 @@ export default function PersonalFinancePanel() {
   const showPeriodTransactions=(date:string)=>{const from=dayjs(date),to=effectiveGranularity==='month'?from.endOf('month'):effectiveGranularity==='week'?from.add(6,'day'):from;setTrendReturnPeriod(period);setPeriod([from,to.isAfter(dayjs())?dayjs():to]);openTransactions();};
   const renameAccount=(a:any)=>Modal.confirm({title:'修改账户名称',content:<Input id="asset-account-label" defaultValue={a.label} maxLength={128}/>,onOk:async()=>{const label=(document.getElementById('asset-account-label') as HTMLInputElement).value.trim();if(!label)throw new Error('请填写名称');const saved=await run(()=>client.updateAccount(a.id,{expectedRevision:ledger.revision,patch:{label}}));if(!saved)throw new Error('名称未保存');}});
   const accountEffects=(t:any)=>Object.keys(t.balanceEffects||{}).length?<div>{Object.entries(t.balanceEffects).map(([id,value]:any)=><div key={id}>{accountLabel(accountMap.get(id))} <span className="finance-number">{BigInt(value)>0n?'+':''}{formatMinor(value)}</span></div>)}</div>:<span className="finance-muted">{t.coveredEffects?.length?'账户账单已记录变动，来源未重复入账':'暂无可确认账户变动'}</span>;
-  return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reload()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
+  return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reconnect()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
     {tuitionReviewOpen&&<TuitionBillReview key={ownerScope} open={tuitionReviewOpen} onClose={()=>setTuitionReviewOpen(false)} transactions={view.transactions} revision={ledger.revision} scopeKey={ownerScope} client={client}/>}
     {failure&&<Alert type="warning" showIcon message="财务云端暂不可用"
       description={(NETWORK_FAILURE_CODES.includes(failure) || /Failed to fetch|NetworkError|net::/i.test(failure)
         ? '未连接财务云端（离线使用或云端暂时不可达）。'
         : `云端返回 ${failure}。`)+'尚未加载的数据不会按零汇总；联网并登录后点“重新连接”即可刷新。'}
-      action={<Button size="small" onClick={()=>{ void reload(); void loadMailbox(); }}>重新连接</Button>} />}
+      action={<Button size="small" loading={loading} onClick={()=>void reconnect()}>重新连接</Button>} />}
 
 
     {loading&&!loaded&&<Alert type="info" showIcon message="正在读取资产账本…" description="读取完成后展示收入、支出和有依据的余额。"/>}

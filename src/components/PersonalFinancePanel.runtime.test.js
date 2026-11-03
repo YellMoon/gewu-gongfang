@@ -11,7 +11,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const name = node => typeof node?.type === 'string' ? node.type : node?.type?.displayName;
 const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof tree === 'object'
-  ? [tree,...nodes(tree.props?.children),...nodes(tree.props?.title),...nodes(tree.props?.items?.map(item => item.children))] : [];
+  ? [tree,...nodes(tree.props?.children),...nodes(tree.props?.title),...nodes(tree.props?.action),...nodes(tree.props?.items?.map(item => item.children))] : [];
 const text = tree => Array.isArray(tree) ? tree.map(text).join('') : tree == null || typeof tree === 'boolean' ? ''
   : typeof tree === 'object' ? text(tree.props?.children) + text(tree.props?.items?.map(item => item.children)) : String(tree);
 const preview = {provider:'synthetic',templateId:'canonical-v1',records:[{date:'2026-10-08',description:'合成账单',amountMinor:'123',status:'completed'}],errors:[],warnings:[]};
@@ -81,7 +81,8 @@ async function panel() {
     assert.ok(Object.hasOwn(dependencies,moduleName),'unexpected component dependency: '+moduleName);return dependencies[moduleName];
   },loaded,loaded.exports,FileReaderFake,{randomUUID:()=>`synthetic-uuid-${++uuid}`},document,FormDataFake,window,window.setInterval,window.clearInterval);
   const render=()=>{cursor=0;const tree=loaded.exports.default();pendingEffects.splice(0).forEach(fn=>fn());return tree;};
-  const h={render,readers,calls,writes,messages,modals,responses,formValues,
+  const h={render,readers,calls,writes,messages,modals,responses,formValues,window,
+    fire:event=>{for(const fn of listeners.get(event)||[])fn();},
     all:()=>nodes(render()),buttons:label=>nodes(render()).filter(node=>name(node)==='Button'&&text(node)===label),
     button:label=>h.buttons(label)[0],
     click:label=>{const button=h.button(label);assert.ok(button,'button exists: '+label);assert.ok(!button.props.disabled,'button enabled: '+label);return button.props.onClick();},
@@ -101,6 +102,23 @@ async function panel() {
   render();await tick();render();return h;
 }
 async function prepare(h,filename='A.csv',base64='QQ==') {h.account('A');h.choose(filename);h.finishRead(h.readers.length-1,base64);await tick();h.render();}
+test('refresh reconnects identity before finance reads and coalesces online/session events without dropping a pending file',async()=>{
+ const h=await panel();await prepare(h);h.click('\u89e3\u6790\u9884\u89c8');await tick();assert(h.previewEnabled());const initial=h.callsFor('getLedger').length,pending=deferred();let recovery=0;
+ h.window.desktopIdentitySessionProvider={ensureOnline:async()=>{recovery++;await pending.promise;h.fire('desktop-identity-session-ready');}};
+ h.click('\u5237\u65b0\u8d26\u672c');h.fire('online');await tick();
+ assert.equal(recovery,1);assert.equal(h.callsFor('getLedger').length,initial,'must wait for restored credentials');
+ pending.resolve();await tick();await tick();
+ assert.equal(h.callsFor('getLedger').length,initial+1,'one read after session-ready and online event');
+ assert(h.previewEnabled(),'reconnect must preserve the reviewed file');h.unmount();
+});
+test('a rejected reconnect performs no finance reads and ignores late recovery after unmount',async()=>{
+ const h=await panel(),initial=h.calls.length;
+ h.window.desktopIdentitySessionProvider={ensureOnline:async()=>{throw Object.assign(new Error('rejected'),{code:'DESKTOP_DEVICE_NOT_ACTIVE'});}};
+ h.click('\u5237\u65b0\u8d26\u672c');await tick();assert.equal(h.calls.length,initial);
+ assert(h.all().some(n=>name(n)==='Alert'&&String(n.props.description).includes('DESKTOP_DEVICE_NOT_ACTIVE')));
+ const pending=deferred();h.window.desktopIdentitySessionProvider.ensureOnline=()=>pending.promise;
+ h.click('\u91cd\u65b0\u8fde\u63a5');h.unmount();pending.resolve();await tick();assert.equal(h.calls.length,initial);assert.equal(h.lateWrites(),0);
+});
 test('tuition review opens the candidate editor with current source scope and never creates payments',async()=>{
  const h=await panel();h.click('\u8d26\u5355\u5b66\u8d39\u6838\u5bf9');const editor=h.all().find(n=>name(n)==='TuitionBillReview');assert(editor);assert.equal(editor.props.revision,'3');assert.equal(editor.props.transactions.length,1);assert.equal(h.calls.length,2,'opening the editor does not submit financial writes');editor.props.onClose();assert(!h.all().some(n=>name(n)==='TuitionBillReview'));h.unmount();
 });

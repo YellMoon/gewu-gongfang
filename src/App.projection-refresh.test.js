@@ -15,7 +15,7 @@ async function checkMountedCalendar() {
     for(const file of ['react/umd/react.production.min.js','react-dom/umd/react-dom.production.min.js'])await page.addScriptTag({path:path.join(root,'node_modules',file)});
     await page.evaluate(code=>{
       const R=window.React,element=R.createElement;
-      const resources={student:'StudentList',teacher:'TeacherList',address:'RoomManager',school:'SchoolManager',institution:'InstitutionManager',payment:'PaymentList','question-bank-preview':'QuestionBankPreview','question-bank-import':'QuestionBankImport','question-bank-tools':'QuestionBankTools'};
+      const resources={student:'StudentList',teacher:'TeacherList',address:'RoomManager',school:'SchoolManager',institution:'InstitutionManager',payment:'PaymentList','personal-assets':'PersonalAssets','question-bank-preview':'QuestionBankPreview','question-bank-import':'QuestionBankImport','question-bank-tools':'QuestionBankTools'};
       window.mounts={calendar:0,course:0};window.unmounts={calendar:0,course:0};
       Object.keys(resources).forEach(name=>{window.mounts[name]=0;window.unmounts[name]=0;});
       const stateful=name=>function Probe(){
@@ -41,7 +41,7 @@ async function checkMountedCalendar() {
         './components/question-editor/questionEditorSession':{requestEditorSpaNavigation:callback=>callback()},
         './components/AuthorityOutboxPanel':{openDesktopSync:()=>{window.syncOpened=(window.syncOpened||0)+1;}},
         './components/AuthorityRoleApplicationsPanel':{default:()=>null,__esModule:true},
-        './services/browserDatabase':{default:{refreshAuthorityProjection:async()=>{}},__esModule:true}};
+        './services/browserDatabase':{default:{refreshAuthorityProjection:()=>new Promise(resolve=>{window.finishStartupRefresh=resolve;})},__esModule:true}};
       const exported={};
       Object.entries(resources).forEach(([name,file])=>{modules['./pages/'+file]={default:stateful(name),__esModule:true};});
       new Function('require','exports',code)(name=>{
@@ -54,6 +54,7 @@ async function checkMountedCalendar() {
       window.changeAppPartition=()=>appRoot.render(element(exported.default,{key:2}));
     },compile(source));
     await page.locator('#calendar-nav').click();await page.locator('#calendar').waitFor();
+    assert.equal(await page.evaluate(()=>typeof window.finishStartupRefresh),'function','workbench navigation must render while startup cloud projection is still pending');
     await page.locator('#calendar').click();assert.equal(await page.locator('#calendar').innerText(),'1');
     for(let n=0;n<3;n++) {
       await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
@@ -64,7 +65,7 @@ async function checkMountedCalendar() {
     await page.locator('#manual-refresh').click();assert.equal(await page.locator('#calendar').innerText(),'0');
     await page.waitForFunction(()=>mounts.calendar===2&&unmounts.calendar===1);
     // UTF-8: cloud acknowledgement must not discard another unfinished resource editor.
-    for(const name of ['student','teacher','address','school','institution','payment','question-bank-preview','question-bank-import','question-bank-tools']) {
+    for(const name of ['student','teacher','address','school','institution','payment','personal-assets','question-bank-preview','question-bank-import','question-bank-tools']) {
       await page.locator('#'+name+'-nav').click();await page.locator('#'+name).click();
       for(let n=0;n<3;n++) {
         await page.evaluate(()=>window.dispatchEvent(new Event('authority-projection-refreshed')));
