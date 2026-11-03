@@ -280,7 +280,7 @@ export default function PersonalFinancePanel() {
       <Button onClick={()=>{const year=dayjs().subtract(1,'year');setPeriod([year.startOf('year'),year.endOf('year')]);}}>去年</Button>
       <Button onClick={()=>setPeriod([dayjs().startOf('month'),dayjs()])}>本月至今天</Button><Button onClick={()=>setPeriod(null)}>全部日期</Button><Button disabled={busy} onClick={()=>void reconnect()}>刷新</Button>
     </div>
-    <p className="finance-scope">{selected.length===1?accountLabel(accountMap.get(selected[0])):selected.length?'已选 '+selected.length+' 个账户':'全部账户'} · {selectedCurrency} · 收支期间：{startDate?startDate+' 至 '+endDate:'暂无记录'}。余额截至：{endDate||'最近已记录时点'}，仅按已有余额依据和已记录变动计算。</p>
+    <p className="finance-scope">{selected.length===1?accountLabel(accountMap.get(selected[0])):selected.length?'已选 '+selected.length+' 个账户':'全部账户'} · {selectedCurrency} · 收支期间：{startDate?startDate+' 至 '+endDate:'暂无记录'}。账户余额与证券估值分别以各项标注的日期和依据为准。</p>
     {trendReturnPeriod!==undefined&&<Button className="finance-return-period" onClick={()=>{setPeriod(trendReturnPeriod);setTrendReturnPeriod(undefined);setActiveTab('overview');}}>返回原统计期间</Button>}
     </>}
     <section role="tabpanel" aria-label={({overview:'总览与账户',transactions:'全部流水',funds:'理财产品',securities:'证券账户',review:'待核对',import:'导入账单'} as any)[activeTab]} aria-busy={loading||background&&!analysisReady}>

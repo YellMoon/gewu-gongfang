@@ -43,8 +43,10 @@ assert.ok(!personalAssetsSource.includes("'builtin-other-income'"),
   'asset imports must not target a locally seeded income category');
 assert.ok(!personalAssetsSource.includes("'builtin-other-expense'"),
   'asset imports must not target a locally seeded expense category');
-assert.ok(personalAssetsSource.includes('createAssetCategory'),
-  'asset imports must create an ordinary confirmation draft category when required');
+assert.ok(personalAssetsSource.includes('PersonalFinancePanel'),
+  'the finance page must retain the cloud ledger entry');
+assert.ok(!/\b(?:create|update|delete)Asset(?:Record|Category)\b/.test(personalAssetsSource),
+  'the removed manual bookkeeping module must not expose legacy record or category writes');
 
 for (const table of [
   'students',
