@@ -130,9 +130,9 @@ test('a rejected reconnect performs no finance reads and ignores late recovery a
  const h=await panel(),initial=h.calls.length;
  h.window.desktopIdentitySessionProvider={ensureOnline:async()=>{throw Object.assign(new Error('rejected'),{code:'DESKTOP_DEVICE_NOT_ACTIVE'});}};
  h.click('\u5237\u65b0\u8d26\u672c');await tick();assert.equal(h.calls.length,initial);
- assert(h.all().some(n=>name(n)==='Alert'&&String(n.props.description).includes('DESKTOP_DEVICE_NOT_ACTIVE')));
+ assert(h.all().some(n=>name(n)==='Alert'&&n.props.description==='请重新登录。'));
  const pending=deferred();h.window.desktopIdentitySessionProvider.ensureOnline=()=>pending.promise;
- h.click('\u91cd\u65b0\u8fde\u63a5');h.unmount();pending.resolve();await tick();assert.equal(h.calls.length,initial);assert.equal(h.lateWrites(),0);
+ h.click('\u91cd\u8bd5');h.unmount();pending.resolve();await tick();assert.equal(h.calls.length,initial);assert.equal(h.lateWrites(),0);
 });
 test('restoring credentials for the same owner preserves a reviewed import and never requests the full ledger',async()=>{
  const h=await panel();await prepare(h);h.click('\u89e3\u6790\u9884\u89c8');await tick();assert(h.previewEnabled());
@@ -172,12 +172,12 @@ test('trend drilldown restores the original dates while retaining account and cu
 
 test('review is reachable independently from import and preserves the pending file preview',async()=>{
  const h=await panel();await prepare(h);h.click('\u89e3\u6790\u9884\u89c8');await tick();assert.equal(h.previewEnabled(),true);h.tab('review');
- assert(text(h.render()).includes('\u8d26\u6237\u8bca\u65ad'));assert(!h.button('\u9009\u62e9\u8d26\u5355\u6587\u4ef6'));h.tab('import');assert.equal(h.previewEnabled(),true);h.unmount();
+ assert(text(h.render()).includes('账户异常'));assert(!h.button('\u9009\u62e9\u8d26\u5355\u6587\u4ef6'));h.tab('import');assert.equal(h.previewEnabled(),true);h.unmount();
 });
 
 test('full-ledger review keeps an excluded historical transaction as a transaction instead of an account issue',async()=>{
  const h=await panel(),ledger=fixtureLedger();ledger.observations[0].kind='unknown';h.responses.set('getLedger',()=>({ledger}));await h.click('\u5237\u65b0');await tick();
- h.all().find(n=>name(n)==='RangePicker').props.onChange([dayjs('2000-01-01'),dayjs('2000-01-31')]);h.tab('review');await h.settle();const table=h.table(p=>p.columns?.some(c=>c.dataIndex==='reason'));assert(table.props.dataSource.some(g=>g.transactionIds.includes('original')));assert(!table.props.dataSource.some(g=>g.transactionIds.includes('account:A')));assert(text(h.render()).includes('\u5168\u8d26\u672c'));h.unmount();
+ h.all().find(n=>name(n)==='RangePicker').props.onChange([dayjs('2000-01-01'),dayjs('2000-01-31')]);h.tab('review');await h.settle();const table=h.table(p=>p.columns?.some(c=>c.dataIndex==='reason'));assert(table.props.dataSource.some(g=>g.transactionIds.includes('original')));assert(!table.props.dataSource.some(g=>g.transactionIds.includes('account:A')));assert(text(h.render()).includes('待核对'));h.unmount();
 });
 
 test('fund valuation displays only the selected daily range and preserves incomplete cohort evidence',async()=>{
