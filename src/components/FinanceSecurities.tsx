@@ -1,4 +1,4 @@
-// UTF-8: render cloud-owned securities facts separately from living income and expenses.
+// UTF-8: securities cash withdrawals may include profit; display them as cash flows.
 import React from 'react';
 import { Alert, Card, Table } from 'antd';
 import { formatMinor } from '../services/personalFinanceClient.mjs';
@@ -10,8 +10,8 @@ export default function FinanceSecurities({registers,periods,accounts,startDate,
   {registers.map(register=>{const period=periods.find(p=>p.financialAccountId===register.financialAccountId),account=accounts.find(a=>a.id===register.financialAccountId);return <Card key={register.financialAccountId} title={account?.label||'证券账户'} style={{marginTop:16}}>
    <p className="finance-muted">所选期间：{startDate||'全部已导入日期'} 至 {endDate||'最近已导入日期'}。以下期间收支由云端按证券账本统计。</p>
    <div className="finance-summary">
-    <Card size="small"><span>期间转入本金</span><div className="finance-value">{money(period?.depositMinor??'0')}</div></Card>
-    <Card size="small"><span>期间转出本金</span><div className="finance-value">{money(period?.withdrawalMinor??'0')}</div></Card>
+    <Card size="small"><span>期间入金（银证转入）</span><div className="finance-value">{money(period?.depositMinor??'0')}</div></Card>
+    <Card size="small"><span>期间出金（银证转出）</span><div className="finance-value">{money(period?.withdrawalMinor??'0')}</div></Card>
     <Card size="small"><span>期间已实现净收益</span><div className="finance-value">{money(period?.netRealizedMinor??'0')}</div><div className="finance-muted">含已确认交易盈亏、分红及利息，扣除交易费用；不含浮盈浮亏。</div></Card>
    </div>
    <p>期间已实现收益（费用前）：{money(period?.incomeMinor??'0')}；期间费用：{money(period?.expenseMinor??'0')}。</p>
