@@ -3,6 +3,7 @@ const {nonCashAuthorization,legacyRefundPending}=require('./bankClassification')
 const {ISSUE_LABELS}=require('./issueLabels');
 function statisticsState(t,issues=[]){
  if(t.statisticsPresentation)return t.statisticsPresentation;
+ if(t.securitiesAccounting)return {key:'neutral',label:'\u8bc1\u5238\u72ec\u7acb\u6838\u7b97',detail:'\u8bc1\u5238\u672c\u91d1\u3001\u4ea4\u6613\u76c8\u4e8f\u3001\u5206\u7ea2\u3001\u5229\u606f\u548c\u8d39\u7528\u4e0d\u5e76\u5165\u751f\u6d3b\u6536\u652f\uff0c\u8bf7\u5728\u8bc1\u5238\u8d26\u6237\u67e5\u770b'};
  if(issues.includes('credit_repayment_received_amount_unknown'))return {key:'review',label:"\u8fd8\u6b3e\u5230\u8d26\u989d\u4e0e\u4f18\u60e0\u5dee\u989d\u5f85\u6838\u5bf9",detail:"\u5b9e\u4ed8\u5df2\u8bb0\u5f55\uff0c\u6536\u6b3e\u5361\u5df2\u786e\u8ba4\uff1b\u5c1a\u7f3a\u4fe1\u7528\u5361\u5b9e\u9645\u5165\u8d26\u989d\u548c\u4f18\u60e0\u91d1\u989d\uff0c\u672a\u5c06\u5b9e\u4ed8\u5047\u5b9a\u4e3a\u5168\u90e8\u8fd8\u6b3e"};
  if(t.status==='pending'&&legacyRefundPending(t)||issues.includes('legacy_refund_settlement_unknown'))return {key:'review',label:'\u5386\u53f2\u9000\u6b3e\u5f85\u6838\u5b9e',detail:'\u539f\u4ef6\u663e\u793a\u9000\u6b3e\u72b6\u6001\uff0c\u5c1a\u7f3a\u9000\u6b3e\u5230\u8d26\u51ed\u8bc1\uff1b\u4fdd\u7559\u5df2\u77e5\u6263\u6b3e\uff0c\u4e0d\u5047\u5b9a\u9000\u6b3e\u5230\u8d26\u65e5\u671f'};
  if(t.status!=='completed')return {key:'incomplete',label:t.status==='failed'?'\u4ea4\u6613\u672a\u5b8c\u6210':'\u4ea4\u6613\u5904\u7406\u4e2d',detail:'\u4e0d\u8ba1\u5165\u5df2\u5b8c\u6210\u6536\u652f'};

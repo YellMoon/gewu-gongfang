@@ -5,6 +5,8 @@
 .personal-finance-panel .finance-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;margin-bottom:12px}
 .personal-finance-panel .finance-scope{margin:8px 0 16px;color:#595959;line-height:1.7}
 .personal-finance-panel .finance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.personal-finance-panel [aria-label="账户收支与余额总览"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.personal-finance-panel .finance-balance-groups{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
 .personal-finance-panel .finance-value{font-size:26px;font-weight:600;line-height:1.5;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .personal-finance-panel .finance-muted{color:#595959;font-size:13px;line-height:1.6}
 .personal-finance-panel .finance-charts{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;margin-bottom:20px}

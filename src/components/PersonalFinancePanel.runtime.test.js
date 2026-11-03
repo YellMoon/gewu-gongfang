@@ -83,6 +83,10 @@ async function panel() {
   dependencies['./personalFinancePresentation']=require('./personalFinancePresentation');
   const mortgageCompiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'MortgageAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const mortgageModule={exports:{}};new Function('require','module','exports',mortgageCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},mortgageModule,mortgageModule.exports);dependencies['./MortgageAccounts']=mortgageModule.exports;
+  for(const filename of ['FinanceSecurities','FinanceBalanceGroups']){
+    const source=ts.transpileModule(fs.readFileSync(path.join(__dirname,filename+'.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+    const loadedComponent={exports:{}};new Function('require','module','exports',source)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},loadedComponent,loadedComponent.exports);dependencies['./'+filename]=loadedComponent.exports;
+  }
   const compiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'PersonalFinancePanel.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const loaded={exports:{}};
   new Function('require','module','exports','FileReader','crypto','document','FormData','window','setInterval','clearInterval',compiled)(moduleName=>{

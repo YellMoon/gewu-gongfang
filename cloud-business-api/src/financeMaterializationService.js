@@ -39,7 +39,7 @@ function createFinanceMaterializationService({finance,store,rulesVersion=finance
    if(!reader)reader=boot();let result;reading++;try{result=await reader.call('read',{owner,revision,valuationDay:row.valuation_day,input:{...query,...(options.tuitionContext?{tuitionContext:options.tuitionContext}:{})}},60000);}finally{reading--;}
    if(await finance.getRevision(owner)!==revision)return{status:'preparing',revision:await finance.getRevision(owner),rulesVersion,retryAfterMs:2000};
    if(options.compact&&result.status==='ready'){
-    const view={};for(const key of ['accountStats','currencyTotals','portfolioBalances','mortgages','comparison','categoryTotals','fundingBreakdown'])view[key]=result.view[key];
+    const view={};for(const key of ['accountStats','currencyTotals','portfolioBalances','balanceGroups','securitiesPeriodSummary','mortgages','comparison','categoryTotals','fundingBreakdown'])view[key]=result.view[key];
     view.review=result.globalReview;view.hasStatisticsExclusions=!!result.hasStatisticsExclusions;
     return{status:'ready',revision,rulesVersion,completedAt:result.completedAt,accounts:result.accounts.map(({id,label,provider,type,currency,maskedIdentifier,status})=>({id,label,provider,type,currency,maskedIdentifier,status})),view,trend:result.trend};
    }

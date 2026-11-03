@@ -257,6 +257,7 @@ function buildFinanceView(ledger,options={},internalMode) {
     if(!settlementPolicyOverrides.has(settlementSourceKey(o)))value=require('./zeroValueRewards').refreshZeroValueReward(value);
     value=require('./platformCashRewards').refreshPlatformCashReward(value,{accounts,excludedCounterparties:protectedPurchaseCounterparties,blockedSourceKeys:rewardBlockedSourceKeys});
     value=refreshHistoricalInvestmentRoute(personalCashflowPolicy(value),accounts);
+    value=require('./externalWechatReceipts').externalWechatReceipt(value,{excludedCounterparties:protectedPurchaseCounterparties});
     if(value.kind==='transfer'&&restoredPurchasePurposes.has(o.id))value=restoredPurchasePurposes.get(o.id);
     if(value.automaticClassification?.method==='explicit_telecom_service_purchase'&&nativeTelecomWalletFunding.has(o.id)){const evidence=nativeTelecomWalletFunding.get(o.id);value={...value,automaticClassification:{...value.automaticClassification,evidenceObservationIds:[o.id,evidence.proofObservationId],nativeWalletFundingEvidence:evidence}};}
     if(value.provider==='alipay'&&value.kind==='loan_drawdown'&&value.automaticClassification?.method==='explicit_historical_loan_drawdown'&&!value.accountRelations?.length){const matches=accounts.filter(a=>a.status==='active'&&a.sourceProduct==='alipay_jiebei'&&a.currency===value.currency);if(matches.length===1)value={...value,accountRelations:[{product:'alipay_jiebei',activity:'loan_drawdown',role:'target',financialAccountId:matches[0].id}]};}
@@ -989,6 +990,7 @@ function buildFinanceView(ledger,options={},internalMode) {
     if(t.kind==='refund') { const original=manual?[...new Set(manual.observationIds.map(id=>transactionsByObservation.get(id)).filter(x=>x&&x.id!==t.id&&x.kind==='expense'&&x.currency===t.currency))].sort((a,b)=>all.indexOf(a)-all.indexOf(b)):ref?expenseReferences.get(JSON.stringify([t.currency,ref]))||[]:[]; if(original.length===1){t.relatedTransactionId=original[0].id;t.category=original[0].category;}else (original.length>1||manual?unresolvedAssociations:information).push({reason:original.length>1||manual?'unresolved_refund':'refund_original_unavailable',observationId:t.observationIds[0],candidateTransactionIds:original.map(o=>o.id)}); }
   }
   require('./nativeRentDisbursementTiming').applyNativeRentDisbursementTiming(ledger,all);
+  require('./securitiesAccounting').separateSecuritiesAccounting(all);
   if(internalMode===RAW_DERIVED_TRANSACTIONS)return all;
   const closedCashSettlements=require('./closedCashSettlements').applyClosedCashSettlements(ledger,all,selected,unresolvedAssociations);
   const collectiveTiming=require('./collectiveWalletWithdrawalTiming'),balanceTimingGroups=collectiveTiming.planCollectiveWalletWithdrawalTiming(ledger,all,reconciliationGroups);
@@ -1027,6 +1029,7 @@ function finalizeMaterializedFinance(state,options={}) {
   const transactions=transactionsInRange(all,selected,options);
   const unallocatedTaskSources=new Map(unresolvedAssociations.filter(i=>i.reason==='unsplit_task_settlement').map(i=>[i.observationId,i.financialAccountId]));
   const summary=summarize(transactions),accountStats=dictionary(),provisionalRetirements=require('./provisionalAccountRetirement').verifiedProvisionalRetirements(ledger,all);
+  summary.securitiesPeriodSummary=require('./securitiesAccounting').securitiesPeriodSummary(transactions,selected,options);
   const statementAnchors=[...statementBalances(originalObservations,accounts),...nativeMortgages.anchors.filter(a=>!options.endDate||a.asOf.slice(0,10)<=options.endDate)];
   for(const a of accounts.filter(a=>selected.has(a.id))) {
     const current=transactions.filter(t=>t.financialAccountIds.includes(a.id));const stats={financialAccountId:a.id,currency:a.currency,...money(),balanceMinor:null,balanceAnchor:null,balanceStatus:'uncalibrated'};

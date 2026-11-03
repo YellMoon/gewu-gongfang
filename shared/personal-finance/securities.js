@@ -81,6 +81,7 @@ function buildSecuritiesRegister(observations,{accounts:accountData=[],imports=[
   }
   if(openingKnown)for(const [date,cash]of dayCash)if(cash<0n)issues.push({reason:'brokerage_negative_cash_day',date,cashMinor:String(cash)});
   const derived=openingKnown&&Boolean(coverage),complete=!issues.some(i=>['brokerage_cash_gap','brokerage_negative_cash_day'].includes(i.reason))&&(derived||rows.every(r=>r.brokerage.cashBalanceMinor!==null));
+  const closedPortfolio=derived&&complete&&[...positions.values()].every(p=>p.unitsKnown&&p.quantity===0n&&!p.pendingAllocation);
   return {
    financialAccountId,recordCount:rows.length,currency:'CNY',cashBalanceMinor:complete&&cash!==null?String(cash):null,
    projectedCashMinor:cash===null?null:String(cash),lastReportedCashMinor:lastReportedCash===null?null:String(lastReportedCash),
@@ -89,7 +90,7 @@ function buildSecuritiesRegister(observations,{accounts:accountData=[],imports=[
    cashBalanceComplete:complete,feeMinor:String(fee),interestMinor:String(interest),dividendMinor:String(dividend),
    realizedGainMinor:String(realized),realizedPriceGainBeforeFeesMinor:String(grossRealized),realizations,closedFundCashRealizations,undatedRealizedGainMinor:String(undatedRealized),
    realizedGainComplete:!issues.some(i=>i.reason!=='brokerage_cash_gap')&&[...positions.values()].every(p=>p.unitsKnown),
-   marketValueMinor:null,portfolioValueMinor:null,securityIdentities:[...positions.values()].flatMap(p=>(p.aliases||[]).map(a=>({...a,securityCode:p.code,securityName:p.name}))),
+   marketValueMinor:closedPortfolio?'0':null,portfolioValueMinor:closedPortfolio&&cash!==null?String(cash):null,unrealizedGainMinor:closedPortfolio?'0':null,portfolioValueBasis:closedPortfolio?'complete_history_no_remaining_positions':null,securityIdentities:[...positions.values()].flatMap(p=>(p.aliases||[]).map(a=>({...a,securityCode:p.code,securityName:p.name}))),
    positions:[...positions.values()].filter(p=>p.quantity!==0n||!p.unitsKnown).map(p=>({securityCode:p.code,securityName:p.name,units:p.unitsKnown?displayUnits(p.quantity):null,netRecordedUnits:displayUnits(p.quantity),costMinor:p.cost===null?null:String(p.cost),realizedGainMinor:String(p.realized),pendingAllocation:p.pendingAllocation,...(p.fundSubscriptions!==undefined?{subscriptionCashMinor:String(p.fundSubscriptions),redemptionCashMinor:String(p.fundRedemptions),unitsPrecision:'source_display_only'}:{})})),issues
   };
  });

@@ -12,7 +12,7 @@ const query=(s,v)=>pool.query(s,v),store=createFinanceMaterializationRepository(
 let loaded,project,cachedScope,cachedView;
 function ownerFor(job){return{tenantId:job.tenant_id,actor:{accountId:job.account_id,roles:['teacher']}};}
 function summary(bundle,view){
- const scoped={};for(const key of ['accountStats','portfolioBalances','currencyTotals','categoryTotals','fundingBreakdown','comparison','mortgages','fundValuations','investmentTrades','unresolvedAssociations','information'])scoped[key]=view[key];
+ const scoped={};for(const key of ['accountStats','portfolioBalances','currencyTotals','categoryTotals','fundingBreakdown','comparison','mortgages','fundValuations','investmentTrades','securities','securitiesPeriodSummary','unresolvedAssociations','information'])scoped[key]=view[key];
  return{revision:bundle.revision,accounts:bundle.accounts,assetRegister:bundle.assetRegister,view:{...scoped,transactions:[]},globalReview:bundle.globalReview,hasStatisticsExclusions:view.transactions.some(t=>t.statisticsExclusions?.length),completedAt:new Date().toISOString()};
 }
 async function build(job){
@@ -68,6 +68,7 @@ async function read(owner,revision,input,valuationDay){
 }
 function projectionResult(bundle,cachedView,input,completedAt){
  const page=transactionPage(cachedView,input,bundle),base=summary(bundle,cachedView);
+ base.view.balanceGroups=require('../../shared/personal-finance/balanceGroups').balanceGroups(bundle.assetRegister.accounts,cachedView,input);
  const dateBounds=cachedView.transactions.reduce((b,t)=>({start:!b.start||t.date<b.start?t.date:b.start,end:!b.end||t.date>b.end?t.date:b.end}),{start:'',end:''});
  const sourceIds=new Set([...bundle.assetRegister.products.flatMap(p=>p.sourceObservationIds||[]),...bundle.assetRegister.conversions.map(c=>c.id)]);
  const sourceScopes=[...sourceIds].map(id=>bundle.observationScopes[id]).filter(Boolean);

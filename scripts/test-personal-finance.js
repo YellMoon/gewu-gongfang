@@ -1,6 +1,8 @@
 'use strict';
 const { spawnSync } = require('node:child_process');
 const tests = [
+  'shared/personal-finance/externalWechatReceipts.test.js',
+  'shared/personal-finance/balanceGroups.test.js',
   'cloud-business-api/src/financeMaterializationRepository.test.js',
   'cloud-business-api/src/financeMaterializationService.test.js',
   'cloud-business-api/src/financeMaterializationWorker.test.js',

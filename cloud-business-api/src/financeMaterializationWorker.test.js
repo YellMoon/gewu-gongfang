@@ -21,6 +21,7 @@ test('the real cloud worker restores persisted facts, pages them, isolates owner
   const first=await read('alice',{page:1,pageSize:50}),second=await read('alice',{page:2,pageSize:50});
   assert.equal(first.transactions.total,57);assert.equal(first.transactions.items.length,50);assert.equal(second.transactions.items.length,7);assert.equal(new Set([...first.transactions.items,...second.transactions.items].map(t=>t.id)).size,57);
   assert.deepEqual(first.ledger.observations,[]);assert(!JSON.stringify(first).includes('privateOriginal'));assert.equal(first.view.currencyTotals.CNY.incomeMinor,'7296');
+  assert.deepEqual(first.view.securities,[]);assert.deepEqual(first.view.securitiesPeriodSummary,[]);assert.equal(first.view.balanceGroups[0].key,'other');assert.doesNotThrow(()=>JSON.stringify(first));
   const row=first.transactions.items[0],detail=await read('alice',{transactionId:row.id});assert.equal(detail.transaction.sources[0].rawFields.privateOriginal,'preserved');assert.equal(detail.revision,'7');
   const [a,b,a2]=await Promise.all([read('alice'),read('bob'),read('alice',{search:'tuition 56'})]);assert(a.transactions.items.every(t=>t.financialAccountIds.includes('alice')));assert(b.transactions.items.every(t=>t.financialAccountIds.includes('bob')));assert.equal(a2.transactions.total,1);
   const tuition=await read('alice',{tuitionContext:{students:[],payments:[],links:[]}});assert.equal(tuition.candidates.length,57);

@@ -94,7 +94,10 @@ export default function PersonalFinanceSummary() {
       {view && <>
       {Object.entries(view.currencyTotals).map(([currency, v]: any) => <View key={currency} className='finance-row'><Text>{currency} 消费 {money(v.consumptionMinor)}　收入 {money(v.incomeMinor)}　现金流 {money(v.netCashFlowMinor)}</Text></View>)}
       {view.hasStatisticsExclusions&&<View><Text>{'部分平台记录可能与信用卡账单重叠，暂按银行账单计入收支。软件识别待完善仍有证据缺口，可在桌面端按分组查看；原始记录全部保留。'}</Text></View>}
-      {Object.entries(view.portfolioBalances).map(([currency,b]:any)=><View key={currency}><Text>{currency} {b.complete?'组合余额':'已知余额小计'} {money(b.knownCount?b.knownBalanceMinor:null)}；{b.unknownCount} 个账户余额未知，{b.derivedCount} 个余额由已记录流水推算。</Text></View>)}
+      {/* UTF-8: use cloud-provided balance classes instead of netting assets and debts. */}
+      {(view.balanceGroups||[]).map((b:any)=><View key={b.key+b.currency} className='finance-row'><Text>{b.currency} {({savings:'储蓄卡余额',credit:'信用卡总欠款',mortgage:'房贷剩余本金',securities:'证券账户总资产',other:'其他资金账户余额'} as any)[b.key]} {money(b.knownCount?b.knownBalanceMinor:null)}；{b.unknownCount} 个未知。{b.estimatedCount?'另有估算本金 '+money(b.estimatedBalanceMinor)+'，未并入已确认值。':''}{b.billedDebtCount?'仅已出账应还款 '+money(b.billedDebtMinor)+'，不代表总欠款。':''}{b.knownCashCount?'已知证券现金 '+money(b.knownCashMinor)+'，不代表含持仓的总资产。':''}</Text></View>)}
+      <Text>证券交易盈亏、分红、利息和费用独立核算，不并入生活收支；已实现盈亏不代表含浮盈浮亏的账户收益。</Text>
+      {(view.securitiesPeriodSummary||[]).map((s:any)=><View key={s.financialAccountId}><Text>{ledger.accounts.find((a:any)=>a.id===s.financialAccountId)?.label||'证券账户'}：期间转入 {money(s.depositMinor)}；转出 {money(s.withdrawalMinor)}；已实现净收益 {money(s.netRealizedMinor)}（已扣交易费用，不含浮盈浮亏）。</Text></View>)}
       {(view.mortgages||[]).map((m:any)=><View key={m.financialAccountId}><Text>{m.label} 原贷款 {money(m.originalPrincipalMinor)}；{m.status==='actual_bank_statement'&&m.confidence==='actual_bank_statement'?'银行记录剩余本金':'剩余本金估算'} {money(m.balanceMinor)}；最后已导入扣款 {m.asOf||'未知'}。完整本息依据可在桌面端查看。</Text></View>)}
       <Text>收入与支出趋势</Text><View>{[['day','按日'],['week','按周'],['month','按月']].map(([key,label])=><Button key={key} size="mini" type={granularity===key?'primary':'default'} onClick={()=>changeScope({granularity:key})}>{label}</Button>)}</View>
       {Object.keys(view.currencyTotals).map(currency=>{
