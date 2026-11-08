@@ -5,11 +5,15 @@ const invalid=()=>Object.assign(Error('CLOUD_PERSONAL_FINANCE_INPUT_INVALID'),{c
 function financeRulesVersion(){const dir=path.resolve(__dirname,'../../shared/personal-finance'),hash=crypto.createHash('sha256');for(const file of fs.readdirSync(dir).filter(n=>n.endsWith('.js')&&!n.endsWith('.test.js')).sort()){hash.update(file);hash.update(fs.readFileSync(path.join(dir,file)));}hash.update(fs.readFileSync(path.join(__dirname,'financeMaterializationWorker.js')));hash.update(String(v8.cachedDataVersionTag()));return hash.digest('hex');}
 function normalizeProjectionQuery(input={}){
  if(!input||typeof input!=='object'||Array.isArray(input))throw invalid();
- const allowed=['accountIds','startDate','endDate','granularity','currency','search','kind','category','reviewGroupId','page','pageSize','transactionId','retry'];if(Object.keys(input).some(k=>!allowed.includes(k)))throw invalid();
+ const allowed=['accountIds','startDate','endDate','granularity','currency','search','kind','category','reviewGroupId','page','pageSize','transactionId','retry','billCategories','sortField','sortOrder'];if(Object.keys(input).some(k=>!allowed.includes(k)))throw invalid();
+ if(input.billCategories!==undefined){const {BILL_CATEGORIES}=require('../../shared/personal-finance/billPresentation');if(!Array.isArray(input.billCategories)||input.billCategories.length>BILL_CATEGORIES.length||input.billCategories.some(c=>!BILL_CATEGORIES.includes(c)))throw invalid();}
+ if(input.sortField!==undefined&&!['time','amount'].includes(input.sortField))throw invalid();
+ if(input.sortOrder!==undefined&&!['ascend','descend'].includes(input.sortOrder))throw invalid();
  const base={};for(const k of['accountIds','startDate','endDate','granularity'])if(input[k]!==undefined)base[k]=input[k];const auto=input.granularity==='auto';if(auto)base.granularity='month';const result=normalizeScope(base);if(auto)result.granularity='auto';
  for(const k of['currency','search','kind','category','reviewGroupId','transactionId'])if(input[k]!==undefined){if(typeof input[k]!=='string'||input[k].length>(k==='reviewGroupId'?2048:256))throw invalid();result[k]=input[k];}
  for(const[k,max]of[['page',1000000],['pageSize',100]])if(input[k]!==undefined){if(!Number.isSafeInteger(input[k])||input[k]<1||input[k]>max)throw invalid();result[k]=input[k];}
  if(input.retry!==undefined){if(typeof input.retry!=='boolean')throw invalid();result.retry=input.retry;}
+ for(const key of ['billCategories','sortField','sortOrder'])if(input[key]!==undefined)result[key]=input[key];
  return result;
 }
 function createFinanceMaterializationService({finance,store,marketData=null,rulesVersion=financeRulesVersion(),createWorker=()=>new Worker(path.join(__dirname,'financeMaterializationWorker.js'),{workerData:{rulesVersion},resourceLimits:{maxOldGenerationSizeMb:512,maxYoungGenerationSizeMb:16}}),canRun=()=>true,jobsEnabled=process.env.CLOUD_FINANCE_MATERIALIZER_ENABLED!=='0',start=true}={}){
@@ -26,7 +30,7 @@ function createFinanceMaterializationService({finance,store,marketData=null,rule
   isBusy:()=>pumping||reading>0||mutating>0,
   async releaseIdle(){if(!pumping&&!reading&&reader){await reader.worker.terminate();reader=null;}},
   async request(owner,input={},options={}){const query=normalizeProjectionQuery(input),revision=await finance.getRevision(owner);if(query.retry&&store.retry)await store.retry(owner,revision);
-   const defaultQuery=!options.compact&&!options.tuitionContext&&query.currency==='CNY'&&query.granularity==='auto'&&!query.accountIds?.length&&!query.startDate&&!query.endDate&&!query.search&&!query.category&&(!query.kind||query.kind==='all')&&!query.reviewGroupId&&!query.transactionId&&(!query.page||query.page===1)&&(!query.pageSize||query.pageSize===50);
+   const defaultQuery=!options.compact&&!options.tuitionContext&&query.currency==='CNY'&&query.granularity==='auto'&&!query.accountIds?.length&&!query.startDate&&!query.endDate&&!query.search&&!query.category&&!query.billCategories?.length&&(!query.sortField||query.sortField==='time')&&(!query.sortOrder||query.sortOrder==='descend')&&(!query.kind||query.kind==='all')&&!query.reviewGroupId&&!query.transactionId&&(!query.page||query.page===1)&&(!query.pageSize||query.pageSize===50);
    const row=await store.read(owner,revision,{summary:defaultQuery});if(row?.state!=='ready'){await store.enqueue(owner,revision);void pump();return{status:row?.state==='failed'?'failed':'preparing',revision,rulesVersion,retryAfterMs:3000,errorCode:row?.error_code||null};}
    if(defaultQuery&&row.summary?.schema==='finance-default-query-v1'&&row.summary.projection?.revision===revision){
     if(await finance.getRevision(owner)!==revision)return{status:'preparing',revision:await finance.getRevision(owner),rulesVersion,retryAfterMs:2000};

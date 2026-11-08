@@ -57,3 +57,5 @@
 .tuition-allocation > .ant-select { flex: 1 1 300px; min-width: 240px; }
 .tuition-allocation > .ant-input-group-wrapper { flex: 0 1 160px; }
 .tuition-allocation > .ant-checkbox-wrapper { flex-basis: 100%; }
+
+.personal-finance-panel .finance-large-amount{background:#fff2e8;color:#ad2102;font-weight:600;padding:8px;border-left:4px solid #d4380d;border-radius:4px;font-style:normal}

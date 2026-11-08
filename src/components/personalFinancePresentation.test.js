@@ -85,4 +85,35 @@ test('a completed fully refunded transfer uses ledger review evidence rather tha
 
 test('known repayment card with an unknown gross receipt explains the remaining uncertainty while keeping cash statistics',()=>{
  const state=statisticsState(tx({kind:'debt_payment'}),['credit_repayment_received_amount_unknown']);assert.equal(state.key,'review');assert.equal(state.label,'\u8fd8\u6b3e\u5230\u8d26\u989d\u4e0e\u4f18\u60e0\u5dee\u989d\u5f85\u6838\u5bf9');assert(state.detail.includes('\u5b9e\u4ed8\u5df2\u8bb0\u5f55'));assert(state.detail.includes('\u6536\u6b3e\u5361\u5df2\u786e\u8ba4'));
+
+});
+const {billCategory,compareBillAmount,compareBillTime,largeBillThresholds,isLargeBill}=require('./personalFinancePresentation');
+test('bill categories recognize purposes and preserve evidence',()=>{
+ for(const [description,category] of [['住房贷款还款','房贷'],['汽车金融还款','车贷'],['物业费','物业费'],['房租','房租'],['停车缴费','停车费'],['支付红包抵扣','支付红包与减免'],['商店购物','日常消费']]){
+  const original=tx({description,category:'Food'});
+  assert.equal(billCategory(original),category);
+  assert.equal(original.category,'Food');
+ }
+ assert.equal(billCategory(tx({kind:'income'})),'工资与其他收入');
+ assert.equal(billCategory(tx({kind:'unknown'})),'其他待分类');
+ assert.equal(billCategory(tx({category:'房租',description:'停车费'})),'房租');
+});
+test('bill comparators retain exact money and order times within a day',()=>{
+ assert.equal(compareBillAmount({amountMinor:'9007199254740992'},{amountMinor:'9007199254740993'}),-1);
+ assert.equal(compareBillAmount({amountMinor:'-25'},{amountMinor:'24'}),1);
+ assert.ok(compareBillTime({id:'a',sources:[{occurredAt:'2026-11-08T09:00:00+08:00'}]},{id:'b',sources:[{occurredAt:'2026-11-08T10:00:00+08:00'}]})<0);
+});
+test('relative large bills isolate categories and currencies and exclude failed entries',()=>{
+ const rows=['100','100','100','100','1000'].map((value,index)=>tx({id:String(index),currency:'CNY',amountMinor:value,consumptionMinor:value}));
+ const failed=tx({currency:'CNY',amountMinor:'99999',consumptionMinor:'99999',status:'failed'});
+ const thresholds=largeBillThresholds([...rows,failed]);
+ assert.equal(isLargeBill(rows[4],thresholds),true);
+ assert.equal(isLargeBill(rows[0],thresholds),false);
+ assert.equal(isLargeBill(failed,thresholds),false);
+ assert.equal(isLargeBill({...rows[4],currency:'USD'},thresholds),false);
+ assert.equal(isLargeBill({...rows[4],description:'房租'},thresholds),false);
+ assert.equal(isLargeBill({...rows[4],kind:'refund',consumptionMinor:'-1000'},thresholds),false);
+ assert.equal(isLargeBill(rows[4],largeBillThresholds(rows.slice(1))),false);
+ assert.equal(isLargeBill({...rows[4],selectedConsumptionMinor:'0'},thresholds),false);
+ assert.equal(isLargeBill(rows[0],largeBillThresholds(rows.map(r=>({...r,consumptionMinor:'100'})))),false);
 });

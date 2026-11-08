@@ -7,6 +7,8 @@ const {materializeFinanceView,restoreFinanceView}=require('../../shared/personal
 const {buildAssetRegister}=require('../../shared/personal-finance/assetRegister');
 const {buildTrend}=require('../../shared/personal-finance/accountAnalytics');
 const {importMetadata}=require('./financeReadMetadata');
+const {billCategory,compareBillAmount,compareBillTime,largeBillThresholds,isLargeBill}=require('../../shared/personal-finance/billPresentation');
+const thresholdCache=new WeakMap();
 const pool=new Pool({host:process.env.POSTGRES_HOST||'gewu-postgres17',port:Number(process.env.POSTGRES_PORT||5432),database:process.env.POSTGRES_DB||'gewu_cloud',user:resolveRuntimeDatabaseUser(process.env.POSTGRES_USER),password:process.env.POSTGRES_PASSWORD,max:1,connectionTimeoutMillis:10000});
 const query=(s,v)=>pool.query(s,v),store=createFinanceMaterializationRepository({query,rulesVersion:workerData.rulesVersion});
 let loaded,project,cachedScope,cachedView;
@@ -37,6 +39,8 @@ async function load(owner,revision,valuationDay){
  loaded={key,bundle,completedAt:row.completed_at};project=restoreFinanceView(bundle.state);cachedScope=cachedView=undefined;
 }
 function transactionPage(view,input,bundle=loaded.bundle){
+ if(!thresholdCache.has(view))thresholdCache.set(view,largeBillThresholds(view.transactions));
+ const thresholds=thresholdCache.get(view);
  const {statisticsState}=require('../../shared/personal-finance/transactionStatisticsState'),issues=new Map();
  for(const issue of view.unresolvedAssociations)for(const id of [issue.observationId,...(issue.observationIds||[])].filter(Boolean))issues.set(id,[...(issues.get(id)||[]),issue.reason]);
  const presentation=t=>statisticsState(t,t.observationIds.flatMap(id=>issues.get(id)||[]));
@@ -46,13 +50,16 @@ function transactionPage(view,input,bundle=loaded.bundle){
   rows=rows.filter(t=>presentation(t).key===input.kind);
  }
  if(input.category)rows=rows.filter(t=>t.category===input.category);
+ if(input.billCategories?.length)rows=rows.filter(t=>input.billCategories.includes(billCategory(t)));
  if(ids)rows=rows.filter(t=>ids.has(t.id));
  if(text)rows=rows.filter(t=>[t.date,t.description,t.counterparty,t.sourceTransactionId,...t.financialAccountIds.map(id=>bundle.accounts.find(a=>a.id===id)?.label)].some(s=>String(s||'').toLowerCase().includes(text)));
- rows=[...rows].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+ const compare=input.sortField==='amount'?compareBillAmount:compareBillTime;
+ const direction=input.sortOrder==='ascend'?1:-1;
+ rows=[...rows].sort((a,b)=>direction*(compare(a,b)||compareBillTime(a,b)));
  const page=input.page||1,pageSize=input.pageSize||50;
  const items=rows.slice((page-1)*pageSize,page*pageSize).map(t=>{
   const {rawFields,...item}=t;
-  return{...item,statisticsPresentation:presentation(t),sources:(t.sources||[]).map(({id,provider,financialAccountId,date,occurredAt,description,counterparty,sourceTransactionId,kind,status,amountMinor,currency,direction})=>({id,provider,financialAccountId,date,occurredAt,description,counterparty,sourceTransactionId,kind,status,amountMinor,currency,direction}))};
+  return{...item,billCategory:billCategory(t),isLargeBill:isLargeBill(t,thresholds),statisticsPresentation:presentation(t),sources:(t.sources||[]).map(({id,provider,financialAccountId,date,occurredAt,description,counterparty,sourceTransactionId,kind,status,amountMinor,currency,direction})=>({id,provider,financialAccountId,date,occurredAt,description,counterparty,sourceTransactionId,kind,status,amountMinor,currency,direction}))};
  });return{page,pageSize,total:rows.length,items};
 }
 async function read(owner,revision,input,valuationDay){

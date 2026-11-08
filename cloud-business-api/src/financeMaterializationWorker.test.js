@@ -20,6 +20,14 @@ test('the real cloud worker restores persisted facts, pages them, isolates owner
   const warmed=await new Promise((resolve,reject)=>{const id=++next;pending.set(id,{resolve,reject});worker.postMessage({id,type:'warm',owner:{tenantId:'fixture',actor:{accountId:'alice',roles:['teacher']}},revision:'7'});});assert.equal(warmed.ready,true);
   const first=await read('alice',{page:1,pageSize:50}),second=await read('alice',{page:2,pageSize:50});
   assert.equal(first.transactions.total,57);assert.equal(first.transactions.items.length,50);assert.equal(second.transactions.items.length,7);assert.equal(new Set([...first.transactions.items,...second.transactions.items].map(t=>t.id)).size,57);
+  const ascending=await read('alice',{sortField:'amount',sortOrder:'ascend',pageSize:5});
+  const descending=await read('alice',{sortField:'amount',sortOrder:'descend',pageSize:5});
+  assert.equal(ascending.transactions.items[0].amountMinor,'100');
+  assert.equal(descending.transactions.items[0].amountMinor,'156');
+  const category=descending.transactions.items[0].billCategory;
+  assert.equal((await read('alice',{billCategories:[category]})).transactions.total,57);
+  assert.equal((await read('alice',{billCategories:[]})).transactions.total,57);
+  assert.equal(descending.transactions.items[0].isLargeBill,false);
   assert.deepEqual(first.ledger.observations,[]);assert(!JSON.stringify(first).includes('privateOriginal'));assert.equal(first.view.currencyTotals.CNY.incomeMinor,'7296');
   assert.deepEqual(first.view.securities,[]);assert.deepEqual(first.view.securitiesPeriodSummary,[]);assert.equal(first.view.balanceGroups[0].key,'other');assert.doesNotThrow(()=>JSON.stringify(first));
   const row=first.transactions.items[0],detail=await read('alice',{transactionId:row.id});assert.equal(detail.transaction.sources[0].rawFields.privateOriginal,'preserved');assert.equal(detail.revision,'7');

@@ -324,6 +324,14 @@
         "miniapp"
       ],
       "rule": "Deploy the additive public closing-price cache and cloud valuation before readers. Reuse persisted owner-scoped holdings and cash; never recompute original ledgers for quote refreshes. Fetch unadjusted completed trading-day closes on the cloud with exact security identity, quote date, source and decimal precision. Missing holdings or prices keep totals unknown; values assume no unimported trades and preserve separate holdings and quote dates. Securities valuations never enter living income or expenses. Historical scope must not claim a later valuation as an earlier balance. Existing NAS transport is unchanged."
+    },
+    "personalFinanceBillListing": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
+      "rule": "Optional billCategories, sortField and sortOrder query fields filter and sort the full owner-scoped materialized transaction set before pagination. The cloud returns derived billCategory and isLargeBill fields. Relative spending thresholds use same-currency and same-category completed positive consumption over the account/date scope. Existing readers may omit the new fields. No original records or accounting classifications are rewritten. Deploy cloud support before the desktop consumer."
     }
   },
   "runtimeReceipts": {

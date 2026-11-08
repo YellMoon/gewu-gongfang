@@ -19,7 +19,7 @@ test('a cloud revision change cannot publish a stale read as current',async()=>{
  assert.equal((await service.request(owner,{})).status,'preparing');await service.dispose();
 });
 test('projection paging and query inputs are bounded',()=>{
- for(const input of [{page:0},{pageSize:101},{pageSize:1.5},{search:'x'.repeat(257)},{transactionId:42},{other:1},{retry:'yes'}])assert.throws(()=>normalizeProjectionQuery(input));
+ for(const input of [{page:0},{pageSize:101},{pageSize:1.5},{search:'x'.repeat(257)},{transactionId:42},{other:1},{retry:'yes'},{billCategories:'invalid'},{billCategories:['invalid']},{sortField:'invalid'},{sortOrder:'invalid'}])assert.throws(()=>normalizeProjectionQuery(input));
  assert.equal(normalizeProjectionQuery({page:2,pageSize:50,search:'merchant'}).page,2);
  assert.equal(normalizeProjectionQuery({granularity:'auto'}).granularity,'auto');
 });
