@@ -42,7 +42,7 @@ function load(sourcePath, customRequire) {
   role = 'teacher';
   assert.equal(await boundary.refreshMiniappPageAccess('/pages/payments/index'), true);
   assert.equal(refreshes, 1, 'cold page entry must wait for real permission refresh');
-  assert.equal(await boundary.refreshMiniappPageAccess('/pages/assets/index'), true);
+  assert.equal(await boundary.refreshMiniappPageAccess('/pages/assets/index'), false);
   assert.equal(refreshes, 1, 'verified permission must not add a request on every navigation');
   verified = false; failRefresh = true;
   assert.equal(await boundary.refreshMiniappPageAccess('/pages/payments/index'), false);
@@ -50,7 +50,7 @@ function load(sourcePath, customRequire) {
   assert.equal(await boundary.refreshMiniappPageAccess('/pages/payments/index'), false, 'recheck current identity after async permission response');
 
   // Execute actual page components and their lifecycle callbacks.
-  for (const scenario of ['denied', 'allowed', 'changed-during-load']) for (const page of ['payments', 'stats', 'assets', 'students', 'teachers']) {
+  for (const scenario of ['denied', 'allowed', 'changed-during-load']) for (const page of ['payments', 'stats', 'students', 'teachers']) {
     const permitted = scenario !== 'denied';
     let currentAccess = permitted;
     const callbacks = [];

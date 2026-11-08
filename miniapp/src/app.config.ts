@@ -15,7 +15,6 @@ export default defineAppConfig({
     'pages/stats/index',
     'pages/question-bank/index',
     'pages/question-paper/index',
-    'pages/assets/index',
     'pages/settings/index',
     'pages/account-application/index',
   ],

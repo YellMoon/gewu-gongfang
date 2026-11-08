@@ -332,6 +332,14 @@
         "cloud_business"
       ],
       "rule": "Optional billCategories, sortField and sortOrder query fields filter and sort the full owner-scoped materialized transaction set before pagination. The cloud returns derived billCategory and isLargeBill fields. Relative spending thresholds use same-currency and same-category completed positive consumption over the account/date scope. Existing readers may omit the new fields. No original records or accounting classifications are rewritten. Deploy cloud support before the desktop consumer."
+    },
+    "miniappBillRetirement": {
+      "version": "1",
+      "participants": [
+        "cloud_business",
+        "miniapp"
+      ],
+      "rule": "Retire the personal bills UI and every miniapp finance read or import entry for all roles. Old miniapp-personal-finance and miniapp-personal-assets/import endpoints return 403 without loading financial data or mutating records. The miniapp general projection contains empty assetRecords and assetCategories. Desktop personal finance and desktop authority retain their existing behavior."
     }
   },
   "runtimeReceipts": {

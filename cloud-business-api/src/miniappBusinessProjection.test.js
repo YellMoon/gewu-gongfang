@@ -69,15 +69,16 @@ async function request(app, path, { headers = {} } = {}) {
   assert.ok(queries[0][0].includes('business.courses'));
   assert.ok(queries[0][0].includes('business.schedules'));
   assert.ok(queries[0][0].includes('business.schedule_student_overrides'));
-  assert.ok(queries[0][0].includes('business.personal_asset_records'), 'personal assets must be read from the cloud authority');
-  assert.ok(queries[0][0].includes('account_id=$4'), 'personal assets must be scoped to the active account');
-  assert.ok(queries[0][0].includes('business.personal_asset_manual_records'), 'manual desktop asset records must join the same cloud projection');
   assert.ok(queries[0][0].includes('JOIN scoped_students s ON s.id=d.student_id'), 'contacts inherit tenant scope from the selected student');
   assert.ok(!queries[0][0].includes('d.tenant_id'), 'the contact directory has no tenant_id column');
   assert.ok(queries[0][0].includes('business.payments') && queries[0][0].includes('business.consumptions')
     && queries[0][0].includes('business.grades'), 'student balances and visible record tabs must read the cloud ledger');
   assert.ok(!Object.hasOwn(response.body.projection, 'consumptions'), 'raw consumption records are not part of the miniapp response');
 
+  assert.ok(!queries[0][0].includes('business.personal_asset_records'));
+  assert.ok(!queries[0][0].includes('business.personal_asset_manual_records'));
+  assert.deepStrictEqual(response.body.projection.assetRecords,[]);
+  assert.deepStrictEqual(response.body.projection.assetCategories,[]);
   const teacherResponse = await request(app, '/api/business/miniapp-projection', {
     headers: { authorization: 'Bearer teacher-ticket.signature' },
   });

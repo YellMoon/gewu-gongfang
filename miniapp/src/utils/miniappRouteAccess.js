@@ -24,6 +24,7 @@ function moduleForMiniappRoute(path) {
 }
 
 function canOpenMiniappRoute(path, access = {}) {
+  if (normalizeRoute(path) === 'pages/assets/index') return false;
   const moduleId = moduleForMiniappRoute(path);
   if (!moduleId) return true;
   const role = String(access.role || 'visitor');

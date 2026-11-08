@@ -66,8 +66,6 @@ const scenarioTemplates = [
   scenario('question-visitor-rich-answer', 'pages/question-bank/index', 'visitor', 'visitor', 'visitor-preview', '收起答案与解析', ['visitor'], 'question-rich', 'expand-first-answer'),
   scenario('question-paper-super-admin-empty', 'pages/question-paper/index', 'super_admin', 'super_admin', 'paper-editor-empty', '\u8bd5\u9898\u7bee\u4e2d\u6682\u65e0\u9898\u76ee', ['super-admin-path', 'empty'], 'question-paper-empty'),
   scenario('question-paper-teacher-empty', 'pages/question-paper/index', 'teacher', 'teacher', 'paper-editor-empty', '\u8bd5\u9898\u7bee\u4e2d\u6682\u65e0\u9898\u76ee', ['teacher-path', 'empty'], 'question-paper-empty'),
-  scenario('assets-super-admin-import', 'pages/assets/index', 'super_admin', 'super_admin', 'import-task', '导入财务数据', ['super-admin-path', 'limited-write']),
-  scenario('assets-teacher-import', 'pages/assets/index', 'teacher', 'teacher', 'import-task', '导入财务数据', ['teacher-path', 'limited-write']),
   scenario('settings-super-admin-online', 'pages/settings/index', 'super_admin', 'super_admin', 'online', '网络已连接', ['super-admin-path']),
   scenario('settings-teacher-online', 'pages/settings/index', 'teacher', 'teacher', 'online', '网络已连接', ['teacher-path']),
   scenario('settings-student-online', 'pages/settings/index', 'student', 'student', 'online', '网络已连接', ['student-path']),

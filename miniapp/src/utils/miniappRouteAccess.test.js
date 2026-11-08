@@ -9,6 +9,7 @@ const student = { role: 'student', modules: ['scheduling', 'question-bank'], cap
 const visitor = { role: 'visitor', modules: ['scheduling', 'question-bank', 'settings'], capabilities: ['question-preview:read'] };
 
 assert.strictEqual(moduleForMiniappRoute('/pages/assets/index?from=shortcut'), 'assets');
+for(const role of ['super_admin','teacher','student','family_member','visitor'])assert.equal(canOpenMiniappRoute('/pages/assets/index?from=shortcut',{role,modules:['assets'],capabilities:['business:all']}),false);
 assert.strictEqual(canOpenMiniappRoute('/pages/assets/index', student), false, 'students must not deep-link into personal-asset imports');
 assert.strictEqual(canOpenMiniappRoute('/pages/stats/index', visitor), false, 'visitors must not deep-link into staff analytics');
 assert.strictEqual(canOpenMiniappRoute('/pages/student-detail/index?id=student-1', student), true, 'students may open their own scoped detail page');

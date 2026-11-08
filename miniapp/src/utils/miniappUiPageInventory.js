@@ -168,18 +168,6 @@ const pageInventory = [
     files: ['src/pages/question-paper/index.tsx', 'src/pages/question-paper/index.scss'],
   },
   {
-    route: 'pages/assets/index',
-    title: '生活账单',
-    registered: true,
-    roleViews: ['super_admin', 'teacher'],
-    surface: 'limited-write-finance',
-    visualStatus: 'optimized',
-    verificationStates: ['import-task', 'overview', 'category-stats', 'empty'],
-    realFeatureBasis: ['createMiniappTask(asset-import)', 'identity-scoped derived asset cache', 'identity-scoped derived asset category cache'],
-    screenshotRequired: true,
-    files: ['src/pages/assets/index.tsx', 'src/pages/assets/index.scss'],
-  },
-  {
     route: 'pages/settings/index',
     title: '我的与同步设置',
     registered: true,

@@ -55,7 +55,6 @@ interface DashboardData {
 const MODULE_CONFIG: Record<string, { mark: string; tone: string; pages: string; action: string }> = {
   scheduling: { mark: '课', tone: 'teal', pages: '/pages/schedule/index', action: '查看课程安排' },
   'question-bank': { mark: '题', tone: 'indigo', pages: '/pages/question-bank/index', action: '查看题库' },
-  assets: { mark: '账', tone: 'amber', pages: '/pages/assets/index', action: '财务导入与统计' },
 };
 
 const STAFF_SHORTCUTS = [
@@ -194,7 +193,6 @@ export default function Index() {
       const cloudModuleNames: Record<string, string> = {
         scheduling: '\u8bfe\u7a0b\u5b89\u6392',
         'question-bank': '\u9898\u5e93',
-        assets: '生活账单',
       };
       const res = { success: true, data: { modules: Object.keys(MODULE_CONFIG).map(id => ({ id, name: cloudModuleNames[id] || id, description: '', icon: '' })) } };
       if (res.success && res.data) {

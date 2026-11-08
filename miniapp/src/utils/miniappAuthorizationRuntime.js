@@ -3,7 +3,7 @@ const {
   isVisitorIdentity,
 } = require('./accountExperience');
 
-const STAFF_MODULES = ['scheduling', 'question-bank', 'assets', 'students', 'courses', 'teachers', 'payments', 'stats'];
+const STAFF_MODULES = ['scheduling', 'question-bank', 'students', 'courses', 'teachers', 'payments', 'stats'];
 const TEACHER_MODULES = STAFF_MODULES.slice();
 const STUDENT_MODULES = ['scheduling', 'question-bank'];
 const VISITOR_MODULES = ['scheduling', 'question-bank', 'settings'];
@@ -209,7 +209,7 @@ function canUserSubmitMiniappWrite(user, target, allowedTargets) {
   const role = roleOf(user);
   if (isRetiredIdentity(user) || role === 'visitor' || isVisitorIdentity(user)) return false;
   if (!Array.isArray(allowedTargets) || !allowedTargets.includes(target)) return false;
-  if (target === 'asset-import') return role === 'super_admin' || role === 'teacher';
+  if (target === 'asset-import') return false;
   return ['question-paper', 'paper-export-word', 'paper-export-pdf'].includes(target)
     && (role === 'super_admin' || role === 'teacher');
 }

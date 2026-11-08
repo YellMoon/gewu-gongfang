@@ -13,6 +13,7 @@ module.exports = {
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/bankClassification.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/issueLabels.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/transactionStatisticsState.js'));
+      scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/billPresentation.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/personal-finance/counterpartySettlements.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/courseColors.js'));
       scope?.allowedFiles.add(path.resolve(__dirname, 'shared/calendarHolidays.js'));

@@ -31,7 +31,6 @@ export const readonlyModules = [
 ];
 
 export const allowedWriteTasks = [
-  'asset-import',
   'question-paper',
   'paper-export-word',
   'paper-export-pdf',
@@ -40,7 +39,6 @@ export const allowedWriteTasks = [
 export const staffModules = [
   'scheduling',
   'question-bank',
-  'assets',
   'students',
   'courses',
   'teachers',

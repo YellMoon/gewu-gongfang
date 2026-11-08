@@ -591,7 +591,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
   const managedTeacherScopeSql = "managed_teachers AS (SELECT t.id FROM business.teachers t JOIN business.teachers owner ON owner.tenant_id=t.tenant_id AND owner.id=t.created_by_teacher_id AND owner.legacy_deleted=false WHERE t.tenant_id=$1 AND t.created_by_teacher_id=$3 AND t.account_claimed=false)";
   const miniappProjectionSql = [
     // UTF-8: creator-managed profiles are visible before any course, but never after an account claim.
-    `WITH ${managedTeacherScopeSql}, scoped_schedules AS (`,
+    `WITH request_identity AS (SELECT $4::text AS account_id), ${managedTeacherScopeSql}, scoped_schedules AS (`,
     'SELECT s.* FROM business.schedules s JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND (',
     "$2='manager' OR ($2='teacher' AND (c.teacher_id=$3 OR c.teacher_id IN (SELECT id FROM managed_teachers))) OR ($2='student' AND (EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.student_id=$3) OR (NOT EXISTS (SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id) AND EXISTS (SELECT 1 FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id AND p.student_id=$3))))",
     ')),',
@@ -613,8 +613,8 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     "'institutions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',i.id,'tenant_id',i.tenant_id,'name',i.name,'billing_student_id',(SELECT b.student_id FROM business.institution_billing_students b WHERE b.tenant_id=i.tenant_id AND b.institution_id=i.id),'contact_person',i.contact_person_legacy,'contact_phone',i.contact_phone_legacy,'revenue_share',i.revenue_share,'notes',i.notes,'deleted',false,'created_at',i.created_at,'updated_at',i.updated_at) ORDER BY i.id) FROM business.institutions i WHERE i.tenant_id=$1 AND i.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND i.created_by_teacher_id=$3 AND EXISTS (SELECT 1 FROM business.teachers actor WHERE actor.tenant_id=$1 AND actor.id=$3 AND actor.legacy_deleted=false)) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.institution_id=i.id))),'[]'::jsonb),",
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'kind',COALESCE(to_jsonb(s)->>'kind','school'),'member_school_ids',COALESCE(to_jsonb(s)->'member_school_ids','[]'::jsonb),'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND (r.created_by_teacher_id=$3 OR EXISTS (SELECT 1 FROM business.teacher_room_history h WHERE h.tenant_id=r.tenant_id AND (h.teacher_id=$3 OR h.teacher_id IN (SELECT id FROM managed_teachers)) AND h.room_id=r.id) OR EXISTS (SELECT 1 FROM business.courses hc WHERE hc.tenant_id=r.tenant_id AND (hc.teacher_id=$3 OR hc.teacher_id IN (SELECT id FROM managed_teachers)) AND (hc.legacy_room_id=r.id OR (NOT EXISTS (SELECT 1 FROM business.rooms duplicate WHERE duplicate.tenant_id=r.tenant_id AND duplicate.name=r.name AND duplicate.id<>r.id AND duplicate.legacy_deleted=false) AND ((hc.legacy_room_id=r.name AND NOT EXISTS (SELECT 1 FROM business.rooms exact_room WHERE exact_room.tenant_id=hc.tenant_id AND exact_room.id=hc.legacy_room_id)) OR EXISTS (SELECT 1 FROM business.schedules hs WHERE hs.tenant_id=hc.tenant_id AND hs.course_id=hc.id AND hs.room_display_snapshot=r.name))))))) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
-    "'assetRecords',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',asset.id,'category_id',asset.category_id,'category_name',asset.category_name,'amount',asset.amount,'type',asset.record_type,'date',asset.record_date,'student_id',asset.student_id,'student_name',asset.student_name,'note',asset.note,'created_at',asset.created_at,'updated_at',asset.updated_at) ORDER BY asset.record_date DESC,asset.id) FROM (SELECT record_id AS id,category_id,category_name,amount,record_type,record_date,NULL::text AS student_id,NULL::text AS student_name,note,created_at,updated_at FROM business.personal_asset_records WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT record_id,category_id,category_name,amount,record_type,record_date,student_id,student_name,note,created_at,updated_at FROM business.personal_asset_manual_records WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) asset),'[]'::jsonb),",
-    "'assetCategories',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',category.id,'name',category.name,'type',category.category_type,'color',category.color,'created_at',category.created_at,'updated_at',category.updated_at) ORDER BY category.category_type,category.name) FROM (SELECT category_id AS id,name,category_type,'#999'::text AS color,created_at,updated_at FROM business.personal_asset_categories WHERE tenant_id=$1 AND account_id=$4 UNION ALL SELECT category_id,name,category_type,COALESCE(color,'#999'),created_at,updated_at FROM business.personal_asset_manual_categories WHERE tenant_id=$1 AND account_id=$4 AND deleted=false) category),'[]'::jsonb)",
+    "'assetRecords','[]'::jsonb,",
+    "'assetCategories','[]'::jsonb)",
     ') AS projection',
   ].join(' ');
   function isMiniappProjection(value) {
@@ -1425,20 +1425,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       businessUnavailable(response);
     }
   });
-  app.post('/api/business/miniapp-personal-assets/import', async (request, response) => {
-    if (!personalAssetImports || businessTenantId === null) return businessUnavailable(response);
-    const body = exactBody(request.body, ['records']);
-    const idempotencyKey = String(request.get('x-idempotency-key') || '');
-    if (!body || !Array.isArray(body.records) || !idempotencyKey || idempotencyKey.length > 256) return businessInputInvalid(response);
-    try {
-      const receipt = await personalAssetImports.import({ tenantId: businessTenantId, actor: await miniappBusinessContext(request), idempotencyKey, records: body.records });
-      response.status(receipt.replayed ? 200 : 202).json({ ok: true, receipt });
-    } catch (error) {
-      if (error && error.code === 'CLOUD_PERSONAL_ASSET_ACCESS_DENIED') return response.status(403).json({ ok: false, code: 'CLOUD_BUSINESS_ACCESS_DENIED' });
-      if (error && ['CLOUD_PERSONAL_ASSET_INPUT_INVALID', 'CLOUD_PERSONAL_ASSET_IDEMPOTENCY_CONFLICT'].includes(error.code)) return businessInputInvalid(response);
-      businessUnavailable(response);
-    }
-  });
+  app.post('/api/business/miniapp-personal-assets/import', (_request,response) => response.status(403).json({ok:false,code:'CLOUD_BUSINESS_ACCESS_DENIED'}));
   app.post('/api/business/miniapp-paper-export-tasks', async (request, response) => {
     if (!paperExportTasks || businessTenantId === null) return businessUnavailable(response);
     const body = exactBody(request.body, ['taskType', 'request']);
