@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { randomBytes, createHash } = require('crypto');
 const { types } = require('util');
 const { Client, Pool } = require('pg');
+const { ensureLocalDockerReady } = require('./localDocker');
 
 const IMAGE_REFERENCE = 'postgres@sha256:a65e6a841f6c4dbc4abda3d67fa3bc21824e9611064fcd82e87ea67aad60a0c3';
 const LOCAL_DOCKER_HOST = process.platform === 'win32'
@@ -275,6 +276,7 @@ async function startRuntime(runtime) {
   if (state.cleaned) throw unavailable();
   if (state.started) return;
   if (dockerOverridesPresent()) throw unavailable();
+  await ensureLocalDockerReady();
   const label = `vnext-pg17-${randomToken(12)}`;
   const adminUser = `vnextpg17_${randomToken(8)}`;
   const adminPassword = randomToken(24);

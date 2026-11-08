@@ -1,6 +1,7 @@
 'use strict';
 const { spawnSync } = require('node:child_process');
 const tests = [
+  'shared/vnext-pg17/localDocker.test.js',
   'src/components/PersonalFinancePanel.browser.test.cjs',
   'shared/personal-finance/externalWechatReceipts.test.js',
   'shared/personal-finance/balanceGroups.test.js',
