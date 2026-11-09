@@ -25,9 +25,18 @@ function createTuitionBillReview({writer}){
   const revision=(await query('SELECT revision::text FROM business.personal_finance_owners WHERE tenant_id=$1 AND account_id=$2',[tenant,actor])).rows[0]?.revision||'0';
   const students=(await query('SELECT id,name,grade_current,school_legacy AS school,parent_name_legacy AS parent_name FROM business.students WHERE tenant_id=$1 AND legacy_deleted=false ORDER BY name,id',[tenant])).rows;
   const payments=(await query('SELECT id,student_id,amount::text,payment_date::text,payment_method,notes,updated_at::text FROM business.payments WHERE tenant_id=$1 AND deleted=false ORDER BY payment_date DESC,id',[tenant])).rows;
+  const schedules=(await query(`SELECT (s.start_at AT TIME ZONE 'Asia/Shanghai')::date::text AS date,
+   COALESCE((SELECT jsonb_agg(roster.student_id) FROM (
+    SELECT o.student_id FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id AND o.attendance_status=1
+    UNION ALL
+    SELECT p.student_id FROM business.course_student_pricings p WHERE p.tenant_id=s.tenant_id AND p.course_id=s.course_id
+     AND NOT EXISTS(SELECT 1 FROM business.schedule_student_overrides o WHERE o.tenant_id=s.tenant_id AND o.schedule_id=s.id)
+   ) roster),'[]'::jsonb) AS "studentIds"
+   FROM business.schedules s JOIN business.courses c ON c.tenant_id=s.tenant_id AND c.id=s.course_id
+   WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND c.legacy_deleted=false`,[tenant])).rows;
   const links=(await query("SELECT receipt FROM business.personal_finance_receipts WHERE tenant_id=$1 AND account_id=$2 AND receipt->>'schema'='tuition-source-v1'",[tenant,actor])).rows.map(r=>r.receipt);
   const paymentMap=new Map(payments.map(p=>[p.id,p]));
-  return {revision,students,payments,links:links.map(link=>({...link,needsReview:link.allocations.some(a=>{const p=paymentMap.get(a.paymentId);return !p||p.student_id!==a.studentId||moneyMinor(p.amount)!==a.amountMinor;})}))};
+  return {revision,students,payments,schedules,links:links.map(link=>({...link,needsReview:link.allocations.some(a=>{const p=paymentMap.get(a.paymentId);return !p||p.student_id!==a.studentId||moneyMinor(p.amount)!==a.amountMinor;})}))};
  }
  async function submit(owner,input,idempotencyKey){const [tenant,actor]=scope(owner);validate(input);if(!writer)throw fail('UNAVAILABLE');
   if(typeof idempotencyKey!=='string'||!/^[A-Za-z0-9_-]{8,100}$/.test(idempotencyKey))throw fail('INPUT_INVALID');
@@ -58,7 +67,7 @@ function createTuitionBillReview({writer}){
       if(similar.length&&a.allowSimilar!==true)throw fail('TUITION_SIMILAR_PAYMENT_CONFLICT');
       paymentId='bill-payment-'+randomUUID();
       const notes='\u8d26\u5355\u8ba4\u9886\uff1a'+r.source.provider+'\uff1b\u539f\u4ea4\u6613\u53f7\uff1a'+(r.source.sourceTransactionId||r.source.observationId)+'\uff1b\u4ed8\u6b3e\u4eba\uff1a'+(sourceRow.counterparty||'')+'\uff1b\u539f\u5907\u6ce8\uff1a'+(sourceRow.description||'');
-      await query('INSERT INTO business.payments(id,tenant_id,student_id,amount,payment_type,payment_date,payment_method,notes) VALUES($1,$2,$3,$4::numeric,1,$5::date,$6,$7)',[paymentId,tenant,a.studentId,amount,r.source.date,r.source.provider==='wechat'?'\u5fae\u4fe1':'\u652f\u4ed8\u5b9d',notes.slice(0,2000)]);
+      await query('INSERT INTO business.payments(id,tenant_id,student_id,amount,payment_type,payment_date,payment_method,notes) VALUES($1,$2,$3,$4::numeric,1,$5::date,$6,$7)',[paymentId,tenant,a.studentId,amount,r.source.date,r.source.provider==='wechat'?'\u5fae\u4fe1':r.source.provider==='alipay'?'\u652f\u4ed8\u5b9d':'银行卡',notes.slice(0,2000)]);
      }
      paymentIds.add(paymentId);allocations.push({studentId:a.studentId,amountMinor:a.amountMinor,paymentId,action:a.existingPaymentId?'linked':'created'});
     }

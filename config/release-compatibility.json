@@ -340,6 +340,14 @@
         "miniapp"
       ],
       "rule": "Retire the personal bills UI and every miniapp finance read or import entry for all roles. Old miniapp-personal-finance and miniapp-personal-assets/import endpoints return 403 without loading financial data or mutating records. The miniapp general projection contains empty assetRecords and assetCategories. Desktop personal finance and desktop authority retain their existing behavior."
+    },
+    "tuitionBillCourseWindow": {
+      "version": "1",
+      "participants": [
+        "desktop",
+        "cloud_business"
+      ],
+      "rule": "Tuition candidates analyze deduplicated completed external credits from WeChat, Alipay and bank statements. Suggestions require an undeleted scheduled class within two calendar months before or after the receipt, inclusive and clamped at month end. Known student-name matches require that student in the effective class roster, respecting schedule overrides. Class lookup spans the full teaching history independently of the bill date scope. Additive courseEligible disables confirmation outside that window in the desktop review. CMB zero-activity periods with an unchanged balance and all flow summary values zero produce a disclosure and no fabricated card, transaction or balance anchor. Deploy cloud support before desktop."
     }
   },
   "runtimeReceipts": {

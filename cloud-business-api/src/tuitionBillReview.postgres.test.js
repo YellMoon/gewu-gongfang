@@ -10,6 +10,13 @@ test('real PostgreSQL: confirmed tuition batches are atomic, scoped, replay-safe
   await db.query(`CREATE SCHEMA IF NOT EXISTS business;
    CREATE TABLE business.personal_finance_owners(tenant_id text,account_id text,revision bigint,PRIMARY KEY(tenant_id,account_id));
    CREATE TABLE business.students(id text PRIMARY KEY,tenant_id text,name text,grade_current text,school_legacy text,parent_name_legacy text,legacy_deleted boolean DEFAULT false);
+   CREATE TABLE business.courses(id text,tenant_id text,legacy_deleted boolean DEFAULT false);
+   CREATE TABLE business.schedules(id text,tenant_id text,course_id text,start_at timestamptz,legacy_deleted boolean DEFAULT false);
+   CREATE TABLE business.schedule_student_overrides(tenant_id text,schedule_id text,student_id text,attendance_status int);
+   CREATE TABLE business.course_student_pricings(tenant_id text,course_id text,student_id text);
+   INSERT INTO business.courses VALUES('course','own',false);
+   INSERT INTO business.schedules VALUES('class','own','course','2026-10-01T08:00:00+08:00',false);
+   INSERT INTO business.course_student_pricings VALUES('own','course','s1');
    CREATE TABLE business.payments(id text PRIMARY KEY,tenant_id text,student_id text,amount numeric(14,2) CHECK(amount>0 AND amount<=100000000),payment_type smallint,payment_date date,payment_method text,notes text,deleted boolean DEFAULT false,updated_at timestamptz DEFAULT now());
    CREATE TABLE business.personal_finance_observations(tenant_id text,account_id text,id text,data jsonb,PRIMARY KEY(tenant_id,account_id,id));
    CREATE TABLE business.personal_finance_receipts(tenant_id text,account_id text,idempotency_key text,request_hash text,receipt jsonb,PRIMARY KEY(tenant_id,account_id,idempotency_key));
@@ -18,13 +25,14 @@ test('real PostgreSQL: confirmed tuition batches are atomic, scoped, replay-safe
    INSERT INTO business.payments(id,tenant_id,student_id,amount,payment_type,payment_date) VALUES('existing','own','s1',1000,1,'2026-10-01');`);
   const source=(id,amountMinor='300000')=>({id,financialAccountId:'wallet',sourceTransactionId:id,provider:'wechat',date:'2026-10-01',amountMinor,currency:'CNY',direction:'credit',kind:'income',status:'completed',description:'Tuition',counterparty:'Parent'});
   const originals=['a','b','c','d','e'].map(id=>source(id,id==='a'?'300000':'100000'));
+  originals[3].provider='cmb';
   for(const o of originals)await db.query('INSERT INTO business.personal_finance_observations VALUES($1,$2,$3,$4::jsonb)',['own','alice',o.id,JSON.stringify(o)]);
   await db.query('INSERT INTO business.personal_finance_observations VALUES($1,$2,$3,$4::jsonb)',['own','bob','private',JSON.stringify(source('private'))]);
   const writer=createBusinessCommandWriter({query:(...a)=>db.query(...a),connect:async()=>({query:(...a)=>db.query(...a),release(){}})}),service=createTuitionBillReview({writer}),owner={tenantId:'own',actor:{accountId:'alice',roles:['super_admin']}};
   const input=(o,allocations=[{studentId:'s1',amountMinor:o.amountMinor,allowSimilar:true}])=>({expectedRevision:'7',confirmed:true,rows:[{source:sourceOf(o),allocations}]});
   const count=async()=>Number((await db.query('SELECT count(*) AS n FROM business.payments')).rows[0].n);
   await assert.rejects(service.state({...owner,actor:{...owner.actor,roles:['teacher']}}),e=>e.code==='CLOUD_PERSONAL_FINANCE_ACCESS_DENIED');
-  const preview=await service.state(owner);assert.equal(preview.students.length,2);assert.equal(await count(),1);
+  const preview=await service.state(owner);assert.equal(preview.students.length,2);assert.deepEqual(preview.schedules,[{date:'2026-10-01',studentIds:['s1']}]);assert.equal(await count(),1);
   const bad=input(originals[0],[{studentId:'s1',amountMinor:'200000'},{studentId:'foreign',amountMinor:'100000'}]);
   await assert.rejects(service.submit(owner,bad,'rollback-key'),e=>e.code==='CLOUD_PERSONAL_FINANCE_TUITION_STUDENT_CONFLICT');assert.equal(await count(),1);assert.equal((await service.state(owner)).links.length,0);
   const split=input(originals[0],[{studentId:'s1',amountMinor:'200000'},{studentId:'s2',amountMinor:'100000'}]);
@@ -49,5 +57,7 @@ test('real PostgreSQL: confirmed tuition batches are atomic, scoped, replay-safe
   await assert.rejects(service.submit(owner,{...input(originals[4]),expectedRevision:7},'revision-invalid'),e=>/INPUT_INVALID$/.test(e.code));
   await db.query("UPDATE business.payments SET deleted=true WHERE id='existing'");
   assert((await service.state(owner)).links.find(r=>r.source.observationId==='b').needsReview,'deleted or changed linked payments are disclosed rather than imported again');
+  const bankPayment=await db.query('SELECT payment_method FROM business.payments WHERE id=$1',[remaining.rows[0].allocations[0].paymentId]);
+  assert.equal(bankPayment.rows[0].payment_method,'\u94f6\u884c\u5361');
  });}finally{if(handle)await pg.disposeHandle(handle);await pg.stop();}
 });

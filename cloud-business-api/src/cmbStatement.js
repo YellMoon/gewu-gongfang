@@ -18,6 +18,10 @@ function parseCmbPdfRows(rows){
    const amount=money(r[two?3:2]);transactions.push({trade:full(r[0]),posted:full(two?r[1]:r[0]),tail:r[two?4:3],description:r[two?2:1],amount,credit:amount<0n});
   }
   const tails=[...new Set(transactions.map(t=>t.tail))];
+  if(!transactions.length&&summary&&summary[0]===summary[1]&&summary.slice(2).every(n=>n===0n)){
+   result.warnings.push({line:1,code:'BILL_CREDIT_NO_ACTIVITY',message:'本期无交易，汇总校验通过。原件保留账单金额，本期未披露卡号，未生成交易或账户余额。'});
+   return result;
+  }
   if(tails.length!==1||!summary)throw Object.assign(Error(),{code:'BILL_BANK_TOTAL_INVALID'});
   return assemble({provider:'cmb',statementDate,transactions,balances:[{tail:tails[0],amount:summary[0]}],check(){
    const debit=transactions.filter(t=>!t.credit).reduce((s,t)=>s+t.amount,0n),credit=transactions.filter(t=>t.credit).reduce((s,t)=>s-t.amount,0n),n=summary;

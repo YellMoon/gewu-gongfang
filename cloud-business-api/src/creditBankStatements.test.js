@@ -122,3 +122,9 @@ test('legacy CGB summaries retain billed debt evidence without inventing individ
  ['','6225********9755','\u4eba\u6c11\u5e01','100.00','50.00','80.00','30.00']]));
  assert.deepEqual(r.errors,[]);assert.equal(r.records.length,1);r.records.forEach(validateRecord);assert.equal(r.records[0].amountMinor,'0');assert.equal(r.records[0].balanceMinor,'-10000');assert.equal(r.records[0].date,'2016-10-21');assert.equal(r.records[0].balanceEvidence.balanceKind,'billed_debt');assert.ok(r.warnings.some(w=>w.code==='BILL_BANK_SUMMARY_ONLY'));
 });
+
+test('CMB zero-activity periods reconcile without a fabricated card or cash record',()=>{
+ const rows=[['招商银行信用卡对账单','Transaction Details'],['2023年04月06日'],['本期应还金额','上期账单金额'],['¥ -39.54','¥ -39.54','¥ 0.00','¥ 0.00','¥ 0.00','¥ 0.00']];
+ const result=parseCmbPdfRows(rows);assert.deepEqual(result.errors,[]);assert.deepEqual(result.records,[]);assert.equal(result.warnings[0].code,'BILL_CREDIT_NO_ACTIVITY');
+ const inconsistent=structuredClone(rows);inconsistent[3][3]='¥ 10.00';assert.ok(parseCmbPdfRows(inconsistent).errors.length);
+});
