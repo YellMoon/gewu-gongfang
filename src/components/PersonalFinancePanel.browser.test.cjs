@@ -34,6 +34,7 @@ async function main() {
   const errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto('http://127.0.0.1:'+server.address().port);
+  await page.addStyleTag({content:'*,*::before,*::after{animation-duration:0s!important;transition-duration:0s!important;}'});
   await page.getByRole('tab',{name:'\u5168\u90e8\u6d41\u6c34',exact:true}).click();
   const select=page.getByRole('combobox',{name:'\u751f\u6d3b\u8d26\u5355\u5206\u7c7b',exact:true});
   await select.click();
@@ -68,7 +69,8 @@ async function main() {
   await page.getByRole('button',{name:'\u6821\u6b63\u7edf\u8ba1\u5206\u7c7b/\u8fd8\u6b3e\u62c6\u5206',exact:true}).click();
   await page.locator('#finance-annotation select[name=kind]').selectOption('expense');
   await page.locator('#finance-annotation input[name=category]').fill('Reviewed expense');
-  await page.locator('.ant-modal').filter({has:page.locator('#finance-annotation')}).screenshot({path:path.join(output,'review-edit.png'),animations:'disabled'});
+  await page.waitForFunction(()=>document.querySelector('.ant-modal')?.getBoundingClientRect().height>300);
+  await page.screenshot({path:path.join(output,'review-edit.png'),fullPage:true});
   await page.getByRole('button',{name:'\u4fdd\u5b58\u6838\u5bf9',exact:true}).click();
   await page.waitForFunction(()=>window.savedAnnotation?.patch.kind==='expense'&&document.body.textContent.includes('\u5f85\u6838\u5bf9 0 \u7b14'));
   assert.equal(await page.evaluate(()=>window.savedAnnotation.id),'bill-64');
