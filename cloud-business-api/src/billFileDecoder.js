@@ -201,6 +201,7 @@ async function pdfTable(buffer,filename,fieldMapping,password) {
       page.cleanup();
     }
     if (!textCount) fail('BILL_PDF_SCAN_REQUIRES_REVIEW','PDF 无可提取文字，可能是扫描件；请人工核验或导出 CSV/Excel，不能自动入账');
+    const assetStatement=require('./assetMonthlyStatement').parseAssetMonthlyRows(table);if(assetStatement)return assetStatement;
     const mortgageStatement=require('./huaxiaMortgageStatement').parseHuaxiaMortgageRows(table);if(mortgageStatement)return mortgageStatement;
     if(brokerageCandidate)return require('../../shared/personal-finance/brokerageStatement').parseGuotaiPdf(brokeragePages);
     if(debitBankCandidate)return require('./spdbDebitStatement').parseSpdbDebitPdf(fundPages)||require('./webankStatement').parseWebankPdf(fundPages)||require('./debitBankPdf').parseDebitBankPdf(fundPages);

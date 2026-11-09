@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceAssetMonthlyProof": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "Deploy the additive financial-asset-proof-v1 reader and strict monthly PDF parsers together. WeBank no-activity Huoqijia assets use a separate investment account, never the debit-card cash balance. Futu HKD management fees are cash expenses; full portfolio net value is a neutral balance proof and price changes are not expenses. Unknown activity, mixed currencies, incomplete pages, mismatched cash, holdings or totals block the whole import. Original encrypted documents use the unchanged NAS archive API and passwords remain transient. Miniapp bills remain inaccessible; NAS byte storage is unchanged."
+    },
     "personalFinanceAcceptedReconciliation": {
       "version": "1",
       "participants": [

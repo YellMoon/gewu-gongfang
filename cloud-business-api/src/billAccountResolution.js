@@ -18,6 +18,15 @@ function resolveBillAccount({ preview, accounts, owner, selectedAccountId } = {}
     return { status: 'matched', account, explicit: true };
   }
   if (preview.errors?.length || !preview.records?.length) return { status: 'pending', candidates: [] };
+  if(['webank-asset-v1','futu-monthly-v1'].includes(preview.templateId)){
+    const identity=preview.accountIdentity,provider=preview.templateId==='webank-asset-v1'?'\u5fae\u4f17\u94f6\u884c':'\u5bcc\u9014\u8bc1\u5238';
+    const currency=preview.templateId==='webank-asset-v1'?'CNY':'HKD';
+    if(!identity||identity.provider!==provider||identity.type!=='investment'||identity.currency!==currency||!/^\d{4}$/.test(identity.maskedIdentifier))return{status:'manual',candidates:[]};
+    const matches=accounts.filter(a=>a.provider===provider&&a.type==='investment'&&a.currency===currency&&a.maskedIdentifier===identity.maskedIdentifier),active=matches.filter(a=>a.status==='active');
+    if(active.length===1)return{status:'matched',account:active[0]};if(active.length>1)return{status:'ambiguous',candidates:active};if(matches.length)return{status:'archived',candidates:matches};
+    const digest=crypto.createHash('sha256').update(JSON.stringify([...owner,preview.templateId,identity])).digest('hex').slice(0,32);
+    return{status:'create',account:{...identity,id:'finance_investment_'+digest,label:provider+(preview.templateId==='webank-asset-v1'?' \u6d3b\u671f+':'')+' ('+identity.maskedIdentifier+')',status:'active',openingBalanceMinor:null,openingDate:null,balanceConvention:'signed'}};
+  }
   if(preview.provider==='unionpay'&&preview.templateId==='unionpay-network-capture-v1'){
     const identity=preview.accountIdentity;
     if(!identity)return {status:'manual',candidates:[]};
