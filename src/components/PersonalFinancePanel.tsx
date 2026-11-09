@@ -105,6 +105,7 @@ export default function PersonalFinancePanel() {
   const [linkIds, setLinkIds] = useState<string[]>([]), [linkType, setLinkType] = useState('duplicate');
   const [reviewGroup,setReviewGroup]=useState<string>();
   const [reviewTransactionId,setReviewTransactionId]=useState<string>();
+  const [reviewCandidateIds,setReviewCandidateIds]=useState<string[]>([]);
   const [activeTab,setActiveTab]=useState('overview'),[currency,setCurrency]=useState('CNY');
   const [accountSearch,setAccountSearch]=useState(''),[expandedGroups,setExpandedGroups]=useState<string[]>([]);
   const [trendReturnPeriod,setTrendReturnPeriod]=useState<any>(undefined);
@@ -140,7 +141,7 @@ export default function PersonalFinancePanel() {
     catch(e:any){if(mounted.current&&scope()===owner)message.error(e.code||'FINANCE_REQUEST_FAILED');}
   };
   useEffect(()=>{setTransactionDetails({});},[rawLedger.revision]);
-  useEffect(()=>{if(reviewTransactionId)void loadTransactionDetails({id:reviewTransactionId});},[reviewTransactionId,rawLedger.revision]);
+  useEffect(()=>{if(reviewTransactionId)void loadTransactionDetails({id:reviewTransactionId});else setReviewCandidateIds([]);},[reviewTransactionId,rawLedger.revision]);
   const loadMailbox = async () => {
     const owner = scope(); setMailLoading(true); setMailFailure(''); setMailStatus(undefined);
     try { const value = await client.mailboxStatus(); if (mounted.current && scope() === owner) setMailStatus(value.mailbox); }
@@ -196,10 +197,10 @@ export default function PersonalFinancePanel() {
   const observationMap = useMemo(()=>new Map<string,any>(availableObservations.map((o:any)=>[o.id,o])),[availableObservations]);
   useEffect(()=>{
     setSearchedObservations([]);let live=true;const owner=scope();
-    if(!linkSearch.trim()&&!linkIds.length)return;
-    const timer=setTimeout(()=>{void client.searchObservations({search:linkSearch,ids:linkIds}).then(r=>{if(live&&mounted.current&&scope()===owner)setSearchedObservations(r.observations);}).catch(()=>{});},200);
+    if(!linkSearch.trim()&&!linkIds.length&&!reviewCandidateIds.length)return;
+    const timer=setTimeout(()=>{void client.searchObservations({search:linkSearch,ids:[...new Set([...linkIds,...reviewCandidateIds])]}).then(r=>{if(live&&mounted.current&&scope()===owner)setSearchedObservations(r.observations);}).catch(()=>{});},200);
     return()=>{live=false;clearTimeout(timer);};
-  },[linkSearch,JSON.stringify(linkIds),ownerScope,rawLedger.revision]);
+  },[linkSearch,JSON.stringify(linkIds),JSON.stringify(reviewCandidateIds),ownerScope,rawLedger.revision]);
   const accounts = ledger.accounts.map((a: any) => ({ value: a.id, label: `${a.label} · ${a.currency} · ${TYPES[a.type] || a.type}` }));
   const options = () => {
     const value=mapping.trim()?JSON.parse(mapping):{};
@@ -269,6 +270,15 @@ export default function PersonalFinancePanel() {
     setBillCategoryFilter([]); setTransactionFilter('all'); setTransactionPage(1);
     setCurrency(accountMap.get(group.financialAccountId)?.currency || 'CNY');
     setReviewGroup(group.id);
+  };
+  const reviewCandidates = (transaction:any) => [...new Set<string>((reviewDetail?.issues||[])
+    .filter((issue:any)=>transaction.observationIds.includes(issue.observationId))
+    .flatMap((issue:any)=>issue.candidateObservationIds||[]))];
+  const openReviewTransaction = (transaction:any) => {
+    const candidates=reviewCandidates(transaction);
+    setReviewTransactionId(transaction.id); setReviewCandidateIds(candidates);
+    setLinkType('duplicate'); setLinkSearch('');
+    setLinkIds(candidates.length===1?[transaction.observationIds[0],candidates[0]]:transaction.observationIds.slice(0,1));
   };
   const renderTransactionEvidence = (t:any) => <div><AutomaticFinanceAssociations transaction={t} busy={busy} onReject={(ids,type='distinct')=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type,observationIds:ids}}))}/>{t.sources.map((o: any) => <div key={o.id}><p>{observationLabel(o)}</p><p>关联参考：{o.relatedReference || '无'} · 状态：{o.status} · 原始分类：{o.category || '无'}</p><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(o.rawFields, null, 2)}</pre><Button onClick={() => Modal.confirm({ zIndex:2000, title: '校正类别与贷款拆分', okText:'保存核对', cancelText:'取消', content: <Form id="finance-annotation" layout="vertical"><Form.Item label="分类名称"><Input name="category" aria-label="分类名称" defaultValue={t.category}/></Form.Item><Form.Item label="统计类型"><select name="kind" aria-label="统计类型" style={{width:'100%',padding:8}} defaultValue={t.kind}>{Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Form.Item>{settlementAccountField(o,t,ledger.accounts)}<Input name="principal" placeholder="还款本金（元；留空表示未知）" defaultValue={t.principalMinor == null ? '' : formatMinor(t.principalMinor)} /><Input name="interest" placeholder="利息（元）" defaultValue={t.interestMinor == null ? '' : formatMinor(t.interestMinor)} /><Input name="fee" placeholder="费用（元）" defaultValue={t.feeMinor == null ? '' : formatMinor(t.feeMinor)} /></Form>, onOk: async () => {
           const el = document.getElementById('finance-annotation') as HTMLFormElement, f = new FormData(el), patch: any = { category: String(f.get('category') || ''), kind: String(f.get('kind')) };
@@ -430,7 +440,7 @@ export default function PersonalFinancePanel() {
           <Table rowKey="id" loading={analysis?.query?.reviewGroupId!==reviewGroup||loading} dataSource={analysis?.query?.reviewGroupId===reviewGroup?transactionRows:[]} pagination={{current:transactionPage,pageSize:50,total:analysis?.query?.reviewGroupId===reviewGroup?analysis.result.transactions.total:0,onChange:setTransactionPage,showSizeChanger:false}} columns={[
             {title:'日期',dataIndex:'date'}, {title:'事项',dataIndex:'description'},
             {title:'金额',dataIndex:'amountMinor',render:(v:string,t:any)=>formatMinor(v)+' '+t.currency},
-            {title:'操作',render:(_:any,t:any)=><Button type="primary" disabled={busy} onClick={()=>{setReviewTransactionId(t.id);setLinkIds(t.observationIds?.slice(0,1)||[]);}}>处理这笔</Button>}
+            {title:'操作',render:(_:any,t:any)=><Button type="primary" disabled={busy} onClick={()=>void openReviewTransaction(t)}>处理这笔</Button>}
           ]}/>}
       </>}
     </Drawer>
@@ -438,6 +448,7 @@ export default function PersonalFinancePanel() {
       {reviewTransactionId&&analysis?.owner===ownerScope&&(transactionDetails[reviewTransactionId]?<>
         {renderTransactionEvidence(transactionDetails[reviewTransactionId])}
         <h3>确认原始记录关联</h3>
+        {reviewCandidates(transactionDetails[reviewTransactionId]).map(id=><p key={id}>{'候选原件 '+(observationMap.has(id)?observationLabel(observationMap.get(id)):'读取中…')}</p>)}
         <Space wrap>
           <Select aria-label="核对关联记录" mode="multiple" maxCount={2} showSearch filterOption={false} onSearch={setLinkSearch} style={{width:380,maxWidth:'100%'}} placeholder="搜索并选择两条原始记录" value={linkIds} onChange={setLinkIds} options={associationOptions}/>
           <Select aria-label="核对关联方式" value={linkType} onChange={setLinkType} options={[{value:'duplicate',label:'同一笔交易'},{value:'transfer',label:'转账双腿'},{value:'refund',label:'退款与原消费'},{value:'distinct',label:'明确不同交易'}]}/>
