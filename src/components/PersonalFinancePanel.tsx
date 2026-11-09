@@ -198,7 +198,13 @@ export default function PersonalFinancePanel() {
   useEffect(()=>{
     setSearchedObservations([]);let live=true;const owner=scope();
     if(!linkSearch.trim()&&!linkIds.length&&!reviewCandidateIds.length)return;
-    const timer=setTimeout(()=>{void client.searchObservations({search:linkSearch,ids:[...new Set([...linkIds,...reviewCandidateIds])]}).then(r=>{if(live&&mounted.current&&scope()===owner)setSearchedObservations(r.observations);}).catch(()=>{});},200);
+    const timer=setTimeout(()=>{
+      const ids=[...new Set([...linkIds,...reviewCandidateIds])];
+      const batches=Array.from({length:Math.max(1,Math.ceil(ids.length/40))},(_,index)=>ids.slice(index*40,(index+1)*40));
+      void Promise.all(batches.map(batch=>client.searchObservations({search:linkSearch,ids:batch}))).then(results=>{
+        if(live&&mounted.current&&scope()===owner)setSearchedObservations([...new Map(results.flatMap(r=>r.observations).map(o=>[o.id,o])).values()]);
+      }).catch(()=>{});
+    },200);
     return()=>{live=false;clearTimeout(timer);};
   },[linkSearch,JSON.stringify(linkIds),JSON.stringify(reviewCandidateIds),ownerScope,rawLedger.revision]);
   const accounts = ledger.accounts.map((a: any) => ({ value: a.id, label: `${a.label} · ${a.currency} · ${TYPES[a.type] || a.type}` }));
