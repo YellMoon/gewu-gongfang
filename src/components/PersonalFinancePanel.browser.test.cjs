@@ -69,7 +69,7 @@ async function main() {
   await page.getByRole('button',{name:'\u6821\u6b63\u7edf\u8ba1\u5206\u7c7b/\u8fd8\u6b3e\u62c6\u5206',exact:true}).click();
   await page.locator('#finance-annotation select[name=kind]').selectOption('expense');
   await page.locator('#finance-annotation input[name=category]').fill('Reviewed expense');
-  await page.waitForFunction(()=>document.querySelector('.ant-modal')?.getBoundingClientRect().height>300);
+  await page.waitForFunction(()=>{const input=document.querySelector('#finance-annotation input[name=category]'),modal=document.querySelector('.ant-modal');if(!input||!modal||getComputedStyle(modal).opacity!=='1'||modal.getBoundingClientRect().width<415)return false;const r=input.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===input;});
   await page.screenshot({path:path.join(output,'review-edit.png'),fullPage:true});
   await page.getByRole('button',{name:'\u4fdd\u5b58\u6838\u5bf9',exact:true}).click();
   await page.waitForFunction(()=>window.savedAnnotation?.patch.kind==='expense'&&document.body.textContent.includes('\u5f85\u6838\u5bf9 0 \u7b14'));
