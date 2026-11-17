@@ -74,20 +74,22 @@ function applyBatchScheduleDrag({
   slotDelta,
   isCopy,
   generateId = undefined,
+  sourceSchedules = schedules,
+  sourceWeekDates = weekDates,
 }) {
   const selectedSet = new Set(selectedIds || []);
   const nextSchedules = (schedules || []).map(schedule => ({ ...schedule }));
   const changedIds = [];
 
   for (const selectedId of selectedSet) {
-    const schedule = (schedules || []).find(item => item && item.id === selectedId);
+    const schedule = (sourceSchedules || []).find(item => item && item.id === selectedId);
     if (!schedule) continue;
 
     const { date: oldDate, time: oldStart } = splitScheduleTime(schedule.start_time);
     const { time: oldEnd } = splitScheduleTime(schedule.end_time, oldDate);
     if (!oldDate || !oldStart || !oldEnd) continue;
 
-    const oldDayIndex = (weekDates || []).findIndex(date => date === oldDate);
+    const oldDayIndex = (sourceWeekDates || []).findIndex(date => date === oldDate);
     const newDayIndex = oldDayIndex + dayDelta;
     if (oldDayIndex < 0 || newDayIndex < 0 || newDayIndex >= (weekDates || []).length) continue;
 
@@ -141,6 +143,42 @@ function applyBatchScheduleDrag({
   };
 }
 
+// Keep the entire copied rectangle together, searching upward before moving left.
+function pasteBatchSchedules({ schedules, clipboard, weekDates, targetDay, targetSlot }) {
+  const { bounds, schedules: sourceSchedules, weekDates: sourceWeekDates } = clipboard;
+  const width = bounds.de - bounds.ds + 1;
+  const height = bounds.se - bounds.ss;
+  const minSlot = timeToSlot(0, 0);
+  const maxSlot = timeToSlot(24, 0);
+  const failure = { success: false, nextSchedules: schedules, changedIds: [], conflictName: null };
+  if (width > weekDates.length || height > maxSlot - minSlot || !sourceSchedules.length) return failure;
+  const occupied = schedules.filter(schedule => !isInactiveSchedule(schedule)).map(schedule => ({
+    start: dayjs(schedule.start_time).valueOf(), end: dayjs(schedule.end_time).valueOf(),
+  }));
+  const sourceOrigin = dayjs(sourceWeekDates[bounds.ds]).startOf('day').valueOf();
+  const sourceIntervals = sourceSchedules.map(schedule => ({
+    start: dayjs(schedule.start_time).valueOf() - sourceOrigin,
+    end: dayjs(schedule.end_time).valueOf() - sourceOrigin,
+  }));
+  const lastDay = Math.min(targetDay, weekDates.length - width);
+  const lastSlot = Math.min(targetSlot, maxSlot - height);
+  for (let day = lastDay; day >= 0; day--) {
+    const targetOrigin = dayjs(weekDates[day]).startOf('day').valueOf();
+    for (let startSlot = lastSlot; startSlot >= minSlot; startSlot--) {
+      const offset = targetOrigin + (startSlot - bounds.ss) * SLOT_DURATION_MINUTES * 60000;
+      if (sourceIntervals.some(source => occupied.some(other =>
+        source.start + offset < other.end && source.end + offset > other.start))) continue;
+      const result = applyBatchScheduleDrag({
+        schedules, sourceSchedules, sourceWeekDates, weekDates,
+        selectedIds: sourceSchedules.map(schedule => schedule.id),
+        dayDelta: day - bounds.ds, slotDelta: startSlot - bounds.ss, isCopy: true,
+      });
+      if (result.success && result.changedIds.length === sourceSchedules.length) return result;
+    }
+  }
+  return failure;
+}
+
 export {
   MIN_START_HOUR,
   SLOT_DURATION_MINUTES,
@@ -154,4 +192,5 @@ export {
   splitScheduleTime,
   applyBatchScheduleDrag,
   formatBatchConflictMessage,
+  pasteBatchSchedules,
 };

@@ -13,6 +13,7 @@ import {
   splitScheduleTime,
   applyBatchScheduleDrag,
   formatBatchConflictMessage,
+  pasteBatchSchedules,
 } from '../utils/batchSelectionGeometry.mjs';
 import { resolveScheduleRoomDisplay } from '../utils/scheduleRoomDisplay.mjs';
 
@@ -103,6 +104,64 @@ export default function useBatchSelection(
   const roomsRef = useRef<any[]>([]);
   const twoWeeksRef = useRef<Dayjs[]>([]);
   const onUpdateRef = useRef(onSchedulesUpdated);
+  // UTF-8: retain a snapshot so copying survives selection and calendar changes.
+  const clipboardRef = useRef<any>(null);
+  const pointerRef = useRef<{ day: number; slot: number } | null>(null);
+  const [pasteMenu, setPasteMenu] = useState<{ x: number; y: number; day: number; slot: number } | null>(null);
+
+  const copySelection = useCallback(() => {
+    const selection = selRef.current;
+    if (phaseRef.current !== 'selected' || !selection?.ids.length) return;
+    const schedules = schedRef.current.filter(s => selection.ids.includes(s.id)).map(s => structuredClone(s));
+    const bounds = { ...selection };
+    for (const schedule of schedules) {
+      const start = splitScheduleTime(schedule.start_time);
+      const end = splitScheduleTime(schedule.end_time, start.date);
+      const [sh, sm] = start.time.split(':').map(Number);
+      const [eh, em] = end.time.split(':').map(Number);
+      bounds.ss = Math.min(bounds.ss, slot(sh, sm));
+      bounds.se = Math.max(bounds.se, slot(eh, em));
+    }
+    clipboardRef.current = { schedules, bounds, weekDates: twoWeeksRef.current.map(d => d.format('YYYY-MM-DD')) };
+    setPasteMenu(null);
+    message.success(`已复制 ${schedules.length} 节课程，请在目标空白位置右键粘贴或按 Ctrl+V`);
+  }, []);
+
+  const pasteSelection = useCallback((target: { day: number; slot: number }) => {
+    setPasteMenu(null);
+    if (!clipboardRef.current) return;
+    const result = pasteBatchSchedules({ schedules: schedRef.current, clipboard: clipboardRef.current,
+      weekDates: twoWeeksRef.current.map(d => d.format('YYYY-MM-DD')), targetDay: target.day, targetSlot: target.slot });
+    if (!result.success) {
+      message.warning('无法放下复制的课程，向左上方调整后仍没有足够空间，请选择其他位置');
+      return;
+    }
+    onUpdateRef.current(result.nextSchedules);
+    schedRef.current = result.nextSchedules;
+    setPhase('idle');
+    setSel(null);
+    setDrawRect(null);
+    message.success(`已粘贴 ${result.changedIds.length} 节课程`);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (event.defaultPrevented || event.repeat || event.altKey || !(event.ctrlKey || event.metaKey)
+        || target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')
+        || document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return;
+      if (event.key.toLowerCase() === 'c' && phaseRef.current === 'selected' && selRef.current?.ids.length) {
+        event.preventDefault();
+        copySelection();
+      }
+      if (event.key.toLowerCase() === 'v' && clipboardRef.current && pointerRef.current) {
+        event.preventDefault();
+        pasteSelection(pointerRef.current);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [copySelection, pasteSelection]);
 
   // 鍚屾 refs
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -343,6 +402,8 @@ export default function useBatchSelection(
     if (!el) return;
 
     const onDown = (e: MouseEvent) => {
+      pointerRef.current = getDaySlotFromEvent(e, el);
+      setPasteMenu(null);
       if (e.button === 2) {
         if (phaseRef.current === 'selected' && rbRef.current) {
           const anchor = el.querySelector('[data-anchor="true"]') as HTMLElement;
@@ -411,6 +472,7 @@ export default function useBatchSelection(
 
     const onMove = (e: MouseEvent) => {
       const pos = getDaySlotFromEvent(e, el);
+      pointerRef.current = pos;
       if (!pos) return;
 
       const currentPhase = phaseRef.current;
@@ -630,6 +692,20 @@ export default function useBatchSelection(
       }
     };
 
+    const onPasteContext = (e: MouseEvent) => {
+      const pos = getDaySlotFromEvent(e, el);
+      if (!pos || !clipboardRef.current || isOnCard(e)) return;
+      const selection = selRef.current;
+      if (phaseRef.current === 'selected' && selection && pos.day >= selection.ds && pos.day <= selection.de
+        && pos.slot >= selection.ss && pos.slot < selection.se) return;
+      e.preventDefault();
+      e.stopPropagation();
+      pointerRef.current = pos;
+      setPasteMenu({ x: e.clientX, y: e.clientY, ...pos });
+    };
+    const onLeave = () => { pointerRef.current = null; };
+    el.addEventListener('contextmenu', onPasteContext);
+    el.addEventListener('mouseleave', onLeave);
     el.addEventListener('mousedown', onDown);
     el.addEventListener('mousemove', onMove);
     el.addEventListener('mouseup', onUp);
@@ -637,6 +713,8 @@ export default function useBatchSelection(
 
     return () => {
       el.removeEventListener('mousedown', onDown);
+      el.removeEventListener('contextmenu', onPasteContext);
+      el.removeEventListener('mouseleave', onLeave);
       el.removeEventListener('mousemove', onMove);
       el.removeEventListener('mouseup', onUp);
       el.removeEventListener('contextmenu', onCtx);
@@ -647,8 +725,14 @@ export default function useBatchSelection(
     phase,
     selectedCourseIds: sel?.ids || [],
     isCopy,
-    batchVisuals: phase === 'idle' ? null : (
+    batchVisuals: (
       <>
+        {pasteMenu && (
+          <Dropdown open trigger={[]} onOpenChange={open => { if (!open) setPasteMenu(null); }}
+            menu={{ items: [{ key: 'batch-paste', label: '粘贴课程（Ctrl+V）', onClick: () => pasteSelection(pasteMenu) }] }}>
+            <span style={{ position: 'fixed', left: pasteMenu.x, top: pasteMenu.y, width: 1, height: 1, pointerEvents: 'none' }} />
+          </Dropdown>
+        )}
         {/* 缁樺埗涓細鍍忕礌绮剧‘鐭╁舰璺熼殢榧犳爣锛堝鍣ㄧ浉瀵瑰潗鏍囷紝position:absolute锛?*/}
         {phase === 'drawing' && drawRect && (
           <div style={{ position: 'absolute', left: drawRect.l, top: drawRect.t, width: drawRect.w, height: Math.max(20, drawRect.h), border: '2px dashed #1890ff', background: 'rgba(24,144,255,0.06)', borderRadius: 4, zIndex: 101, pointerEvents: 'none' }} />
@@ -659,6 +743,7 @@ export default function useBatchSelection(
             trigger={['contextMenu']}
             menu={{
               items: [
+                { key: 'batch-copy', label: '复制课程（Ctrl+C）', onClick: copySelection },
                 {
                   key: 'batch-refresh',
                   label: '刷新课程信息',

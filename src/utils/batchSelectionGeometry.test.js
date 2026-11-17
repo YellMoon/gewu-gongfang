@@ -10,10 +10,41 @@ const assert = require('assert');
     moveTimeBySlots,
     applyBatchScheduleDrag,
     formatBatchConflictMessage,
+    pasteBatchSchedules,
   } = await import('./batchSelectionGeometry.mjs');
 
 // UTF-8: UTC projections must be selected and copied by their local calendar day.
 process.env.TZ = 'Asia/Shanghai';
+const dayjs = require('dayjs');
+const sourceDates = Array.from({ length: 14 }, (_, index) => dayjs('2026-11-02').add(index, 'day').format('YYYY-MM-DD'));
+const targetDates = sourceDates.map(date => dayjs(date).add(14, 'day').format('YYYY-MM-DD'));
+const clipboard = {
+  schedules: [
+    { id: 'a', status: 1, course_id: 'course', start_time: sourceDates[0] + ' 10:00', end_time: sourceDates[0] + ' 11:00', notes: 'snapshot' },
+    { id: 'b', status: 1, course_id: 'course', start_time: sourceDates[1] + ' 11:00', end_time: sourceDates[1] + ' 12:00' },
+  ],
+  weekDates: sourceDates,
+  bounds: { ds: 0, de: 1, ss: timeToSlot(10, 0), se: timeToSlot(12, 0) },
+};
+const paste = options => pasteBatchSchedules({ schedules: [], clipboard, weekDates: targetDates, targetDay: 3, targetSlot: timeToSlot(14, 0), ...options });
+const snapshot = JSON.stringify(clipboard);
+const placed = paste({});
+assert.equal(placed.success, true);
+assert.deepEqual(placed.nextSchedules.map(s => dayjs(s.start_time).format('YYYY-MM-DD HH:mm')), [targetDates[3] + ' 14:00', targetDates[4] + ' 15:00']);
+const edge = paste({ targetDay: 13, targetSlot: timeToSlot(23, 0) });
+assert.deepEqual(edge.nextSchedules.map(s => dayjs(s.start_time).format('YYYY-MM-DD HH:mm')), [targetDates[12] + ' 22:00', targetDates[13] + ' 23:00']);
+const occupied = { id: 'occupied', status: 1, start_time: targetDates[3] + ' 14:00', end_time: targetDates[3] + ' 15:00' };
+const shifted = paste({ schedules: [occupied] });
+assert.equal(dayjs(shifted.nextSchedules[1].start_time).format('HH:mm'), '13:00');
+const fullDay = { ...occupied, start_time: targetDates[3] + ' 00:00', end_time: targetDates[4] + ' 00:00' };
+assert.equal(dayjs(paste({ schedules: [fullDay] }).nextSchedules[1].start_time).format('YYYY-MM-DD HH:mm'), targetDates[1] + ' 14:00');
+const blocked = paste({ targetDay: 0, targetSlot: timeToSlot(0, 0), schedules: [{ ...fullDay, start_time: targetDates[0] + ' 00:00', end_time: targetDates[1] + ' 00:00' }] });
+assert.equal(blocked.success, false);
+assert.equal(blocked.nextSchedules.length, 1);
+const repeated = paste({ schedules: placed.nextSchedules });
+assert.equal(repeated.success, true);
+assert.equal(new Set(repeated.nextSchedules.map(s => s.id)).size, 4);
+assert.equal(JSON.stringify(clipboard), snapshot);
 const cloudLesson={id:'cloud',course_name:'物理',start_time:'2026-09-07T16:30:00Z',end_time:'2026-09-07T17:30:00Z',status:1,
   calculated_tuition:180,calculated_teacher_fee:120,billing_unit:1,teacher_fee_mode:1,student_pricings:[{student_id:'student',tuition:180,teacher_fee:120}]};
 const cloudBefore=JSON.stringify(cloudLesson);
