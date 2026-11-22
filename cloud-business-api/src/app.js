@@ -614,7 +614,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
     "'schools',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'tenant_id',s.tenant_id,'name',s.name,'kind',COALESCE(to_jsonb(s)->>'kind','school'),'member_school_ids',COALESCE(to_jsonb(s)->'member_school_ids','[]'::jsonb),'count',s.legacy_count,'deleted',false,'created_at',s.created_at,'updated_at',s.updated_at) ORDER BY s.id) FROM business.schools s WHERE s.tenant_id=$1 AND s.legacy_deleted=false AND ($2='manager' OR EXISTS (SELECT 1 FROM scoped_students x WHERE x.school_legacy=s.name))),'[]'::jsonb),",
     "'rooms',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'tenant_id',r.tenant_id,'name',r.name,'address',r.address_legacy,'count',r.legacy_count,'deleted',false,'created_at',r.created_at,'updated_at',r.updated_at) ORDER BY r.id) FROM business.rooms r WHERE r.tenant_id=$1 AND r.legacy_deleted=false AND ($2='manager' OR ($2='teacher' AND (r.created_by_teacher_id=$3 OR EXISTS (SELECT 1 FROM business.teacher_room_history h WHERE h.tenant_id=r.tenant_id AND (h.teacher_id=$3 OR h.teacher_id IN (SELECT id FROM managed_teachers)) AND h.room_id=r.id) OR EXISTS (SELECT 1 FROM business.courses hc WHERE hc.tenant_id=r.tenant_id AND (hc.teacher_id=$3 OR hc.teacher_id IN (SELECT id FROM managed_teachers)) AND (hc.legacy_room_id=r.id OR (NOT EXISTS (SELECT 1 FROM business.rooms duplicate WHERE duplicate.tenant_id=r.tenant_id AND duplicate.name=r.name AND duplicate.id<>r.id AND duplicate.legacy_deleted=false) AND ((hc.legacy_room_id=r.name AND NOT EXISTS (SELECT 1 FROM business.rooms exact_room WHERE exact_room.tenant_id=hc.tenant_id AND exact_room.id=hc.legacy_room_id)) OR EXISTS (SELECT 1 FROM business.schedules hs WHERE hs.tenant_id=hc.tenant_id AND hs.course_id=hc.id AND hs.room_display_snapshot=r.name))))))) OR EXISTS (SELECT 1 FROM scoped_courses c WHERE c.legacy_room_id=r.id))),'[]'::jsonb),",
     "'assetRecords','[]'::jsonb,",
-    "'assetCategories','[]'::jsonb)",
+    "'assetCategories','[]'::jsonb",
     ') AS projection',
   ].join(' ');
   function isMiniappProjection(value) {
@@ -1553,7 +1553,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
         const scope = miniappProjectionScope(context);
         if (scope.role !== 'teacher') throw businessAccessDenied();
         const sql = module ? scopeProjectionSql(miniappProjectionSql, module) : withDesktopStudentLedgerProjection(miniappProjectionSql);
-        result = await query(withScheduleCourseContextSql(sql), module ? [businessTenantId, scope.role, scope.profileId] : [businessTenantId, scope.role, scope.profileId, scope.accountId]);
+        result = await query(withScheduleCourseContextSql(sql), [businessTenantId, scope.role, scope.profileId, scope.accountId]);
         const raw = applyScheduleCourseContext(result?.rows?.[0]?.projection);
         projection = scopedDesktopProjection(module && raw ? { ...raw, payments: [], consumptions: [] } : raw);
       }

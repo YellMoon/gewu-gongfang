@@ -14,6 +14,12 @@ const keys = ['students','student_contacts','studentContacts','teachers','course
     const server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
     try {
+      if (role === 'teacher') {
+        const response = await fetch(`http://127.0.0.1:${server.address().port}/api/business/desktop-projection`, { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
+        assert.equal(response.status, 200, 'full teacher projection');
+        assert.match(queries.at(-1).sql, /'assetCategories'\s*,\s*'\[\]'::jsonb\s*\)\s*AS projection/,
+          'one closing parenthesis must terminate the projection before its alias');
+      }
       for (const module of ['courses', 'schedules', 'invalid']) {
         const response = await fetch(`http://127.0.0.1:${server.address().port}/api/business/desktop-projection?module=${module}`, { headers: { authorization: 'Bearer eyJ2IjoxfQ.signature' } });
         assert.equal(response.status, module === 'invalid' ? 400 : role === 'student' ? 403 : 200, role + '/' + module);
