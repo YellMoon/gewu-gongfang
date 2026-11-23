@@ -95,13 +95,13 @@
 .schedule-editor__field-groups {
   --schedule-control-width: 128px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .schedule-editor__time-fields {
   border-inline-start: 1px solid var(--schedule-line);
-  padding-inline-start: 16px;
+  padding-inline-start: 12px;
 }
 
 .schedule-editor__field-groups .ant-form-item {
@@ -116,7 +116,7 @@
 
 .schedule-editor__field-groups .ant-form-item-row {
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
+  grid-template-columns: 62px minmax(0, 1fr);
   align-items: center;
   gap: 5px;
 }
@@ -125,7 +125,7 @@
   width: 100%;
   max-width: var(--schedule-control-width);
   min-width: 0;
-  justify-self: end;
+  justify-self: start;
 }
 
 .schedule-editor__field-groups .ant-form-item .ant-form-item-label {
@@ -327,14 +327,13 @@
 
 .schedule-editor__table th,
 .schedule-editor__table td {
-  padding: 6px 11px;
-  text-align: start !important;
+  padding: 6px 8px;
+  text-align: center;
   overflow-wrap: anywhere;
 }
 
 .schedule-editor__table thead th {
   padding-block: 9px;
-  text-align: center !important;
   font-weight: 600;
 }
 
@@ -359,15 +358,17 @@
   background: #f5f7fa;
 }
 
-.schedule-editor__table tbody .schedule-editor__money,
-.schedule-editor__money .ant-input-number-input {
-  text-align: end !important;
+.schedule-editor__money {
   font-variant-numeric: tabular-nums;
+}
+
+.schedule-editor__money .ant-input-number-input {
+  text-align: end;
 }
 
 .schedule-editor__money .ant-input-number {
   width: 100%;
-  max-width: 104px;
+  max-width: 96px;
 }
 
 .schedule-editor__unit {
@@ -380,13 +381,26 @@
   max-width: 104px;
 }
 
+.schedule-editor__table .ant-select .ant-select-selector {
+  padding-inline: 16px;
+}
+
+.schedule-editor__table .ant-select .ant-select-selection-item {
+  padding-inline: 0;
+  text-align: center;
+}
+
+.schedule-editor__table .ant-select .ant-select-arrow {
+  inset-inline-end: 7px;
+}
+
 .schedule-editor__empty {
   padding: 18px 12px;
   color: var(--schedule-muted);
   text-align: center;
 }
 
-@media (max-width: 590px) {
+@media (max-width: 540px) {
   .schedule-editor .ant-modal-header,
   .schedule-editor .ant-modal-body,
   .schedule-editor .ant-modal-footer {
@@ -420,10 +434,6 @@
     gap: 1px;
   }
 
-  .schedule-editor__field-groups .ant-form-item-control {
-    justify-self: start;
-  }
-
   .schedule-editor__table th,
   .schedule-editor__table td {
     padding-inline: 5px;
@@ -431,10 +441,6 @@
 
   .schedule-editor__table th:nth-child(2) {
     width: 31%;
-  }
-
-  .schedule-editor__table .ant-select .ant-select-selector {
-    padding-inline-start: 8px;
   }
 
   .schedule-editor__unit {

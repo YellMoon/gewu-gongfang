@@ -39,7 +39,7 @@ function collect(id) {
 }
 
 const course = {
-  id: 'course', name: '初二物理', display_name: '初二物理', teacher_id: 'teacher',
+  id: 'course', name: '初二物理提高', display_name: '初二物理提高', teacher_id: 'teacher',
   teacher_name: '刘老师', type: 1, active: true, default_duration_minutes: 90,
   room_id: 'room', room_name: '和睦', billing_unit: 2,
   student_pricings: [
@@ -137,11 +137,14 @@ async function expectValue(locator, value) {
     await page.getByRole('button', { name: /^排\s*课$/ }).click();
     const create = page.getByRole('dialog', { name: '新建排课' });
     await select(create, '老师', '刘老师');
-    await select(create, '课程', '初二物理');
-    await create.getByRole('table', { name: '默认学生出勤和费用' }).waitFor();
+    await select(create, '课程', course.display_name);
+    await create.getByRole('table', { name: '学生出勤和费用' }).waitFor();
     assert.equal(await create.locator('#room').locator('..').locator('..').locator('.ant-select-selection-item').innerText(), '和睦');
-    assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤\s+220\s+110/);
-    assert.equal(await create.getByRole('spinbutton', { name: '张同学 学费' }).count(), 0);
+    assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤/);
+    await expectValue(create.getByLabel('张同学 学费'), '220');
+    await expectValue(create.getByLabel('张同学 课时费'), '110');
+    assert(!(await create.getByLabel('张同学 学费').isEditable()));
+    await select(create, '张同学 出勤', '取消');
     await create.getByLabel('开始时间').click();
     const timePopup = page.locator('.ant-picker-dropdown:not(.ant-picker-dropdown-hidden)');
     await timePopup.locator('.ant-picker-time-panel-column').nth(0).getByText('14', { exact: true }).click();
@@ -169,6 +172,9 @@ async function expectValue(locator, value) {
     assert(desktopDates.every(date => date.y === desktopDates[0].y), 'three additional dates fit across the desktop row');
     assert(desktopDates[0].x < desktopDates[1].x && desktopDates[1].x < desktopDates[2].x);
     await waitForDialogMotion();
+    const getTableWidths = dialog => dialog.getByRole('columnheader')
+      .evaluateAll(headers => headers.map(header => header.getBoundingClientRect().width));
+    const createTableWidths = await getTableWidths(create);
     await create.screenshot({ path: path.join(output, 'new-batch.png') });
     await create.getByRole('button', { name: '删除第 4 个日期' }).click();
     await create.getByRole('button', { name: '删除第 3 个日期' }).click();
@@ -178,7 +184,12 @@ async function expectValue(locator, value) {
     const created = await readSaved();
     assert.equal(created.length, 2);
     assert.deepEqual(created.map(item => new Date(item.start_time).getUTCDate()), [24, 26]);
-    assert.deepEqual(created[0].student_pricings, course.student_pricings);
+    const newPricings = [{ ...course.student_pricings[0], status: 3 }, course.student_pricings[1]];
+    for (const lesson of created) {
+      assert.deepEqual(lesson.student_pricings, newPricings);
+      assert.equal(lesson.calculated_tuition, 200);
+      assert.equal(lesson.calculated_teacher_fee, 100);
+    }
     await page.evaluate(() => window.dbService.replaceSchedules(window.dbService.getAllSchedules().map((row, i) => i === 0 ? { ...row, notes: '历史备注' } : row)));
     await load();
 
@@ -186,10 +197,18 @@ async function expectValue(locator, value) {
     await card.dblclick();
     const detail = page.getByRole('dialog', { name: '排课明细' });
     await detail.waitFor();
+    await waitForDialogMotion();
     await expectValue(detail.getByLabel('张同学 学费'), '220');
+    assert.match(await detail.getByRole('row', { name: /张同学/ }).innerText(), /取消/);
     await select(detail, '张同学 出勤', '请假');
-    await detail.getByLabel('张同学 学费').fill('241.25');
-    await detail.getByLabel('李同学 课时费').fill('85.5');
+    const tuition = detail.getByLabel('张同学 学费');
+    const teacherFee = detail.getByLabel('李同学 课时费');
+    await tuition.fill('241.25');
+    await tuition.press('Tab');
+    await expectValue(tuition, '241.25');
+    await teacherFee.fill('85.5');
+    await teacherFee.press('Tab');
+    await expectValue(teacherFee, '85.5');
     assert.equal(await detail.getByLabel('备注').count(), 0);
     await detail.getByRole('button', { name: '保存修改' }).click();
     await detail.waitFor({ state: 'hidden' });
@@ -212,12 +231,22 @@ async function expectValue(locator, value) {
     await expectValue(detail.getByLabel('李同学 课时费'), '85.5');
     assert.match(await detail.getByRole('row', { name: /张同学/ }).innerText(), /请假/);
     await waitForDialogMotion();
+    assert.equal((await detail.boundingBox()).width, 560);
+    assert.deepEqual(await getTableWidths(detail), createTableWidths);
     const widths = await detail.locator('.schedule-editor__field-groups .ant-select, .schedule-editor__field-groups .ant-picker')
       .evaluateAll(controls => controls.map(control => control.getBoundingClientRect().width));
     assert.equal(widths.length, 8);
     assert(widths.every(width => width === 128), 'desktop detail controls share a compact column width');
     assert(await detail.getByRole('columnheader').evaluateAll(headers =>
       headers.length === 4 && headers.every(header => getComputedStyle(header).textAlign === 'center')));
+    assert(await detail.locator('tbody th, tbody td:nth-child(2), tbody td:nth-child(2) .ant-select-selection-item')
+      .evaluateAll(cells => cells.length > 0 && cells.every(cell => getComputedStyle(cell).textAlign === 'center')));
+    assert(await detail.locator('.schedule-editor__money input').evaluateAll(inputs => inputs.length > 0 &&
+      inputs.every(input => getComputedStyle(input).textAlign === 'end' && input.scrollWidth <= input.clientWidth)));
+    const courseValue = detail.locator('.schedule-editor__course-fields .ant-select-selection-item').nth(1);
+    assert.equal(await courseValue.innerText(), course.display_name);
+    assert(await courseValue.evaluate(label => label.scrollWidth <= label.clientWidth));
+    assert(await detail.locator('#schedule-first-date').evaluate(input => input.scrollWidth <= input.clientWidth));
     assert(await detail.locator('.schedule-editor__field-groups label').evaluateAll(labels =>
       labels.every(label => {
         const line = document.createRange();
@@ -235,9 +264,11 @@ async function expectValue(locator, value) {
     await detail.getByRole('button', { name: /^取\s*消$/ }).click();
     await page.getByRole('button', { name: /^排\s*课$/ }).click();
     await select(create, '老师', '刘老师');
-    await select(create, '课程', '初二物理');
+    await select(create, '课程', course.display_name);
     assert.equal(await create.locator('#room').locator('..').locator('..').locator('.ant-select-selection-item').innerText(), '和睦');
-    assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤\s+220\s+110/);
+    assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤/);
+    await expectValue(create.getByLabel('张同学 学费'), '220');
+    await expectValue(create.getByLabel('张同学 课时费'), '110');
     await addDate.click();
     await addDate.click();
     await addDate.click();

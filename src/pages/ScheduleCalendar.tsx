@@ -1776,6 +1776,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       
       const datesToSave = batchDates.length > 0 ? batchDates : [values.date];
       const newSchedules: ScheduleEvent[] = [];
+      const newLessonPricings = editingSchedule ? undefined : course?.student_pricings?.map(pricing => ({
+        ...pricing,
+        status: values.studentPricings?.[pricing.student_id]?.status ?? pricing.status,
+      }));
       let editLesson: ((schedule: ScheduleEvent) => ScheduleEvent) | undefined;
       const room = rooms.find(r => r.id === values.room)?.name || values.room;
       pendingSaveNoticeRef.current = '\u6392\u8bfe\u5df2\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u786e\u8ba4\u540e\u63d0\u4ea4\u3002';
@@ -1845,7 +1849,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           };
           const newSchedule: ScheduleEvent = {
             ...baseSchedule,
-            ...buildFinancialFieldsForSchedule(baseSchedule, course),
+            ...buildFinancialFieldsForSchedule(baseSchedule, course, newLessonPricings),
           };
           newSchedules.push(newSchedule);
         }
@@ -2079,7 +2083,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         onOk={handleSave}
         okText={editingSchedule ? '保存修改' : '保存排课'}
         cancelText="取消"
-        width={620}
+        width={560}
         centered
         forceRender
         className="schedule-editor"
@@ -2244,7 +2248,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
             students={allStudents}
             billingUnit={editorBillingUnit}
             hasCourse={!!editorCourseId}
-            editable={!!editingSchedule}
+            feesEditable={!!editingSchedule}
           />
         </Form>
       </Modal>

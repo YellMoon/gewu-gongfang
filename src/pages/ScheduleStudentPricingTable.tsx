@@ -15,17 +15,17 @@ interface Props {
   students: Student[];
   billingUnit: BillingUnit;
   hasCourse: boolean;
-  editable: boolean;
+  feesEditable: boolean;
 }
 
-export default function ScheduleStudentPricingTable({ pricings, students, billingUnit, hasCourse, editable }: Props) {
+export default function ScheduleStudentPricingTable({ pricings, students, billingUnit, hasCourse, feesEditable }: Props) {
   const unit = Number(billingUnit) === BillingUnit.PER_SESSION ? '元/次' : '元/小时';
   const names = new Map(students.map(student => [student.id, student.name]));
 
   return (
     <section className="schedule-editor__students" aria-labelledby="schedule-editor-students">
       <div className="schedule-editor__section-heading">
-        <h3 id="schedule-editor-students">{editable ? '学生出勤和费用' : '默认学生出勤和费用'}</h3>
+        <h3 id="schedule-editor-students">学生出勤和费用</h3>
         {pricings.length > 0 && <span className="schedule-editor__count">{pricings.length} 条明细</span>}
       </div>
       {pricings.length === 0 ? (
@@ -54,30 +54,32 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
                   <tr key={pricing.student_id}>
                     <th scope="row">{student}</th>
                     <td>
-                      {editable ? (
-                        <Form.Item
-                          name={field('status')}
-                          noStyle
-                          getValueProps={value => ({
-                            value: value ?? status,
-                            'data-attendance': value ?? status,
-                          })}
-                        >
-                          <AutoCloseSelect aria-label={`${student} 出勤`} options={attendanceOptions} />
-                        </Form.Item>
-                      ) : attendanceOptions.find(option => option.value === Number(status))?.label ?? '正常出勤'}
+                      <Form.Item
+                        name={field('status')}
+                        noStyle
+                        getValueProps={value => ({
+                          value: value ?? status,
+                          'data-attendance': value ?? status,
+                        })}
+                      >
+                        <AutoCloseSelect aria-label={`${student} 出勤`} options={attendanceOptions} />
+                      </Form.Item>
                     </td>
                     {(['tuition', 'teacher_fee'] as const).map(key => (
                       <td className="schedule-editor__money" key={key}>
-                        {editable ? (
-                          <Form.Item
-                            name={field(key)}
-                            noStyle
-                            getValueProps={value => ({ value: value === undefined ? pricing[key] ?? 0 : value })}
-                          >
-                            <InputNumber min={0} controls={false} aria-label={`${student} ${key === 'tuition' ? '学费' : '课时费'}`} />
-                          </Form.Item>
-                        ) : pricing[key] ?? 0}
+                        <Form.Item
+                          name={field(key)}
+                          noStyle
+                          getValueProps={value => ({ value: value === undefined ? pricing[key] ?? 0 : value })}
+                        >
+                          <InputNumber
+                            min={0}
+                            controls={false}
+                            readOnly={!feesEditable}
+                            title={feesEditable ? undefined : '课程默认费用'}
+                            aria-label={`${student} ${key === 'tuition' ? '学费' : '课时费'}`}
+                          />
+                        </Form.Item>
                       </td>
                     ))}
                   </tr>
