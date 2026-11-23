@@ -26,7 +26,11 @@
 
 部署：`python scripts/deploy_oss_download_audit.py --apply`。代码位于 `/opt/gewu-download-audit/collector.py`，配置位于 `/etc/gewu-download-audit.json`（0600），数据库位于 `/var/lib/gewu-download-audit/audit.sqlite3`。systemd timer 为 `gewu-download-audit.timer`，对应服务使用动态用户运行，不重启业务服务。
 
-若 OSS 授权尚未完成，可执行 `python scripts/deploy_oss_download_audit.py --apply --stage-only` 先上传并回读验证采集器、凭据权限和 systemd 单元，不启用 timer。2026-11-24 已完成此准备步骤，尚待阿里云安全验证后创建日志策略、绑定读取权限并开启日志转存；此准备状态不能宣称真实下载记录已经开始采集。
+若 OSS 授权尚未完成，可执行 `python scripts/deploy_oss_download_audit.py --apply --stage-only` 先上传并回读验证采集器、凭据权限和 systemd 单元，不启用 timer。
+
+2026-11-24 已完成阿里云安全验证后的策略绑定、私有桶创建、90 天生命周期和源桶日志转存配置，并正式启用每小时 timer。初始化策略已收敛为 `oss-download-audit-reader` v2，只保留日志读取、列举及源桶转存配置读取权限。验证匿名访问日志桶返回 403，初始化阶段的 `GetBucketInfo` 权限已移除；服务器 timer 为 active，采集服务 Result 为 success，凭据文件权限为 0600。
+
+已发出带 `x-gewu-source=audit-probe` 的真实探测请求：更新索引 GET 200（372 字节）、安装包 HEAD 200、安装包分段 GET 206（1024 字节）。请求 ID 记录在 `output/oss-download-audit/probe-requests.json`。首次核验时尚未收到 OSS 的首批日志，月度统计为空且 `last_import_at` 为 null；不能把这一状态解释成实际没有下载，也未将模拟日志插入正式数据库。
 
 服务器查询示例：
 
@@ -39,6 +43,8 @@ sudo journalctl -u gewu-download-audit.service -n 20 --no-pager
 ```
 
 首次运行没有日志时，`last_import_at` 为 null。此时空记录表示尚未收到日志，不表示没有发生下载。部署与 OSS 配置回执存放在 `output/oss-download-audit/`。
+
+完整运行核验：`python scripts/verify_oss_download_audit.py`。该命令重新检查云端转存目标、匿名访问隔离、权限收敛和服务器服务，并保存当前月统计到 `output/oss-download-audit/latest-monthly-report.json`。
 
 测试：`python scripts/oss_download_audit.test.py`、`python scripts/configure_oss_download_audit.test.py`。测试覆盖完整/分段/HEAD/错误请求、北京时间月界、来源标记、去重、压缩日志、尾部扩展字段、隐私裁剪、失败重试、私有桶检查、拒绝覆盖既有转存目标及先配置保留再开启转存。
 
