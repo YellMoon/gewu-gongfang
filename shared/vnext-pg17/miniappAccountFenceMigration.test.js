@@ -1,7 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { MIGRATIONS, sha256 } = require('./migrationManifest');
-const migration = MIGRATIONS.at(-1);
+const migration = MIGRATIONS.find(item => item.migrationId === 'vnext-pg17-miniapp-account-fence-30');
+assert.ok(migration, 'the miniapp fence migration must remain in the manifest');
 assert.equal(migration.semanticVersion, 30, 'M30 must add the controlled miniapp fence reader');
 assert.equal(migration.migrationId, 'vnext-pg17-miniapp-account-fence-30');
 assert.equal(migration.manifestSha256, sha256(migration.sql));
