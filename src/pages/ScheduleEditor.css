@@ -116,7 +116,7 @@
 
 .schedule-editor__field-groups .ant-form-item-row {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr);
   align-items: center;
   gap: 5px;
 }
@@ -315,7 +315,7 @@
 
 .schedule-editor__table {
   width: 100%;
-  min-width: 320px;
+  min-width: 364px;
   table-layout: fixed;
   border-collapse: collapse;
 }
@@ -354,7 +354,8 @@
   background: #f5f8fd;
 }
 
-.schedule-editor__table .ant-input-number:not(.ant-input-number-focused) {
+.schedule-editor__money .ant-input-number-affix-wrapper:not(.ant-input-number-affix-wrapper-focused) {
+  border-color: transparent;
   background: #f5f7fa;
 }
 
@@ -366,14 +367,27 @@
   text-align: end;
 }
 
-.schedule-editor__money .ant-input-number {
+.schedule-editor__money .ant-input-number-affix-wrapper {
   width: 100%;
-  max-width: 96px;
+  max-width: 114px;
+  min-height: 34px;
+  padding-inline-start: 4px;
+  border-radius: 9px;
+}
+
+.schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number {
+  min-width: 0;
+  background: transparent;
+}
+
+.schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number-suffix {
+  margin-inline: 4px;
 }
 
 .schedule-editor__unit {
   white-space: nowrap;
   color: var(--schedule-muted);
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -400,7 +414,7 @@
   text-align: center;
 }
 
-@media (max-width: 540px) {
+@media (max-width: 560px) {
   .schedule-editor .ant-modal-header,
   .schedule-editor .ant-modal-body,
   .schedule-editor .ant-modal-footer {
@@ -439,11 +453,23 @@
     padding-inline: 5px;
   }
 
-  .schedule-editor__table th:nth-child(2) {
-    width: 31%;
+  .schedule-editor__table th:first-child {
+    width: 16%;
   }
 
-  .schedule-editor__unit {
-    display: block;
+  .schedule-editor__table th:nth-child(2) {
+    width: 28%;
+  }
+
+  .schedule-editor__table td.schedule-editor__money {
+    padding-inline: 2px;
+  }
+
+  .schedule-editor__money .ant-input-number-affix-wrapper {
+    padding-inline-start: 2px;
+  }
+
+  .schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number-suffix {
+    margin-inline-end: 2px;
   }
 }

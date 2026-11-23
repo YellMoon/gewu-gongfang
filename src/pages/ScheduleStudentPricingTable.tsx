@@ -39,8 +39,8 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
               <tr>
                 <th scope="col">学生</th>
                 <th scope="col">出勤</th>
-                <th scope="col" className="schedule-editor__money">学费<span className="schedule-editor__unit">（{unit}）</span></th>
-                <th scope="col" className="schedule-editor__money">课时费<span className="schedule-editor__unit">（{unit}）</span></th>
+                <th scope="col">学费</th>
+                <th scope="col">课时费</th>
               </tr>
             </thead>
             <tbody>
@@ -76,8 +76,9 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
                             min={0}
                             controls={false}
                             readOnly={!feesEditable}
+                            suffix={<span className="schedule-editor__unit" aria-hidden="true">{unit}</span>}
                             title={feesEditable ? undefined : '课程默认费用'}
-                            aria-label={`${student} ${key === 'tuition' ? '学费' : '课时费'}`}
+                            aria-label={`${student} ${key === 'tuition' ? '学费' : '课时费'}（${unit}）`}
                           />
                         </Form.Item>
                       </td>

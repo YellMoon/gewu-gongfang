@@ -68,7 +68,7 @@ async function expectValue(locator, value) {
       body: '<!doctype html><html lang="zh-CN"><meta charset="UTF-8"><title>课程表</title><div id="root"></div></html>',
     }));
 
-    async function load() {
+    async function load(activeCourse = course) {
       await page.goto('http://localhost:9876/');
       for (const script of [
         'react/umd/react.production.min.js', 'react-dom/umd/react-dom.production.min.js',
@@ -113,7 +113,7 @@ async function expectValue(locator, value) {
         };
         const Calendar = loadModule(entry).default;
         window.ReactDOM.createRoot(document.getElementById('root')).render(window.React.createElement(Calendar));
-      }, { modules, dependencies, entry, course });
+      }, { modules, dependencies, entry, course: activeCourse });
       await page.getByRole('button', { name: /^排\s*课$/ }).waitFor();
     }
 
@@ -130,6 +130,26 @@ async function expectValue(locator, value) {
         const style = getComputedStyle(dialog);
         return style.opacity === '1' && style.transform === 'none';
       });
+    }
+
+    async function assertMoneyUnits(dialog, unit) {
+      const cells = dialog.locator('.schedule-editor__money');
+      const amounts = await cells.evaluateAll(entries => entries.map(cell => {
+        const input = cell.querySelector('input');
+        const unitLabel = cell.querySelector('.schedule-editor__unit');
+        return {
+          value: input.value,
+          width: input.clientWidth,
+          textWidth: input.scrollWidth,
+          unit: unitLabel.textContent,
+          gap: unitLabel.getBoundingClientRect().left - input.getBoundingClientRect().right,
+        };
+      }));
+      assert.equal(amounts.length, 4);
+      for (const amount of amounts) {
+        assert.equal(amount.unit, unit);
+        assert(amount.gap > 0 && amount.textWidth <= amount.width, JSON.stringify(amount));
+      }
     }
 
     const readSaved = () => page.evaluate(() => window.dbService.getAllSchedules());
@@ -175,6 +195,7 @@ async function expectValue(locator, value) {
     const getTableWidths = dialog => dialog.getByRole('columnheader')
       .evaluateAll(headers => headers.map(header => header.getBoundingClientRect().width));
     const createTableWidths = await getTableWidths(create);
+    await assertMoneyUnits(create, '元/次');
     await create.screenshot({ path: path.join(output, 'new-batch.png') });
     await create.getByRole('button', { name: '删除第 4 个日期' }).click();
     await create.getByRole('button', { name: '删除第 3 个日期' }).click();
@@ -233,6 +254,14 @@ async function expectValue(locator, value) {
     await waitForDialogMotion();
     assert.equal((await detail.boundingBox()).width, 560);
     assert.deepEqual(await getTableWidths(detail), createTableWidths);
+    await assertMoneyUnits(detail, '元/次');
+    assert.deepEqual(await detail.getByRole('columnheader').allTextContents(), ['学生', '出勤', '学费', '课时费']);
+    assert(await detail.locator('.schedule-editor__field-groups .ant-form-item-row').evaluateAll(rows =>
+      rows.every(row => {
+        const label = row.querySelector('.ant-form-item-label');
+        const control = row.querySelector('.ant-form-item-control');
+        return Math.round(control.getBoundingClientRect().left - label.getBoundingClientRect().left) === 79;
+      })));
     const widths = await detail.locator('.schedule-editor__field-groups .ant-select, .schedule-editor__field-groups .ant-picker')
       .evaluateAll(controls => controls.map(control => control.getBoundingClientRect().width));
     assert.equal(widths.length, 8);
@@ -260,6 +289,7 @@ async function expectValue(locator, value) {
     assert(saveBox.y >= 0 && saveBox.y + saveBox.height <= 700);
     const attendance = detail.locator('.schedule-editor__table tbody tr:last-child .ant-select-selection-item');
     assert(await attendance.evaluate(el => el.scrollWidth <= el.clientWidth), 'attendance text fits at 420px');
+    await assertMoneyUnits(detail, '元/次');
     await page.screenshot({ path: path.join(output, 'narrow.png') });
     await detail.getByRole('button', { name: /^取\s*消$/ }).click();
     await page.getByRole('button', { name: /^排\s*课$/ }).click();
@@ -279,6 +309,17 @@ async function expectValue(locator, value) {
     const nextDate = await dateEntries.first().locator('input').inputValue();
     await create.getByRole('button', { name: '删除首个日期' }).click();
     await expectValue(create.getByLabel('上课日期', { exact: true }), nextDate);
+    await load({
+      ...course,
+      billing_unit: 1,
+      student_pricings: [{ ...course.student_pricings[0], tuition: 241.25 }, course.student_pricings[1]],
+    });
+    await page.getByRole('button', { name: /^排\s*课$/ }).click();
+    await select(create, '老师', '刘老师');
+    await select(create, '课程', course.display_name);
+    await waitForDialogMotion();
+    await expectValue(create.getByLabel('张同学 学费'), '241.25');
+    await assertMoneyUnits(create, '元/小时');
     assert.deepEqual(errors, []);
     console.log('Schedule editor: batch dates, default preview, per-lesson edit, reload and narrow layout passed.');
   } finally {
