@@ -25,7 +25,7 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
   return (
     <section className="schedule-editor__students" aria-labelledby="schedule-editor-students">
       <div className="schedule-editor__section-heading">
-        <h3 id="schedule-editor-students">学生出勤和费用</h3>
+        <h3 id="schedule-editor-students">学生</h3>
         {pricings.length > 0 && <span className="schedule-editor__count">{pricings.length} 条明细</span>}
       </div>
       {pricings.length === 0 ? (

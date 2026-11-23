@@ -158,7 +158,7 @@ async function expectValue(locator, value) {
     const create = page.getByRole('dialog', { name: '新建排课' });
     await select(create, '老师', '刘老师');
     await select(create, '课程', course.display_name);
-    await create.getByRole('table', { name: '学生出勤和费用' }).waitFor();
+    await create.getByRole('table', { name: '学生', exact: true }).waitFor();
     assert.equal(await create.locator('#room').locator('..').locator('..').locator('.ant-select-selection-item').innerText(), '和睦');
     assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤/);
     await expectValue(create.getByLabel('张同学 学费'), '220');
@@ -254,6 +254,7 @@ async function expectValue(locator, value) {
     await waitForDialogMotion();
     assert.equal((await detail.boundingBox()).width, 560);
     assert.deepEqual(await getTableWidths(detail), createTableWidths);
+    assert.equal(await detail.getByRole('table', { name: '学生', exact: true }).count(), 1);
     await assertMoneyUnits(detail, '元/次');
     assert.deepEqual(await detail.getByRole('columnheader').allTextContents(), ['学生', '出勤', '学费', '课时费']);
     assert(await detail.locator('.schedule-editor__field-groups .ant-form-item-row').evaluateAll(rows =>
