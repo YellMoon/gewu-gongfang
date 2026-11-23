@@ -6,6 +6,8 @@ const root=path.resolve(__dirname,'..');
 const source=fs.readFileSync(path.join(__dirname,'App.tsx'),'utf8');
 assert.match(fs.readFileSync(path.join(__dirname,'components/DesktopIdentityGate.tsx'),'utf8'),/<BusinessApp key=\{gateState\.partitionKey\}/,'account/role partitions must keep their existing application boundary');
 const compile=text=>ts.transpileModule(text,{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true,target:ts.ScriptTarget.ES2020}}).outputText;
+const listOrder = {};
+new Function('exports', compile(fs.readFileSync(path.join(__dirname,'utils/listOrder.ts'),'utf8')))(listOrder);
 
 async function checkMountedCalendar() {
   const browser=await chromium.launch({channel:'chrome',headless:true});
@@ -142,7 +144,7 @@ function checkCourseReadEffect() {
   const window=new EventTarget(),state={},reads={count:0};let records=[{id:'course',active:true}];
   const dbService={getAllCourses:()=>{reads.count++;return records;},getAllInstitutions:()=>[],getAllTeachers:()=>[],getAllStudents:()=>[],getAllRooms:()=>[]};
   const setter=key=>value=>{state[key]=value;};
-  const context={window,dbService,console,setCourses:setter('courses'),setInstitutions:setter('institutions'),setTeachers:setter('teachers'),setStudents:setter('students'),setRooms:setter('rooms')};
+  const context={window,dbService,console,newestFirst:listOrder.newestFirst,setCourses:setter('courses'),setInstitutions:setter('institutions'),setTeachers:setter('teachers'),setStudents:setter('students'),setRooms:setter('rooms')};
   const code=compile('const loadData='+reader.getText(tree)+';const effect='+effects[0].getText(tree)+';');
   const cleanup=new Function(...Object.keys(context),code+'return effect();')(...Object.values(context));
   assert.equal(reads.count,1);assert.notEqual(state.courses,records);
@@ -168,7 +170,7 @@ function checkResourceReadEffects() {
       return()=>{calls.push(key);return [{id:'one',name:'school-'+revision,count:revision,revision}];};
     }});
     const setters=[...new Set(reader.getText(tree).match(/\bset[A-Z]\w*/g))];
-    const context={window,dbService,console,buildSchoolOptions:rows=>rows.map(row=>({value:row.name})),...Object.fromEntries(setters.map(key=>[key,value=>{state[key]=value;}]))};
+    const context={window,dbService,console,newestFirst:listOrder.newestFirst,buildSchoolOptions:rows=>rows.map(row=>({value:row.name})),...Object.fromEntries(setters.map(key=>[key,value=>{state[key]=value;}]))};
     const code=compile('const '+readerName+'='+reader.getText(tree)+';const effect='+effects[0].getText(tree)+';');
     const cleanup=new Function(...Object.keys(context),code+'return effect();')(...Object.values(context));
     const baseline=JSON.stringify(state),initialReads=calls.length;assert(initialReads>0);
