@@ -3,6 +3,7 @@ import {
   Button, DatePicker, Tag, Space, message
 } from 'antd';
 import Table from '../components/NumberedTable';
+import { newestFirst } from '../utils/listOrder';
 import { SearchOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -58,8 +59,9 @@ const ScheduleList: React.FC = () => {
     if (typeof cloudRuntime?.listCloudBusinessProjection === 'function') {
       try {
         const projection = await cloudRuntime.listCloudBusinessProjection();
-        const cloudSchedules: Array<Schedule & { course_name: string }> = projectCloudScheduleRecords(projection);
-        cloudSchedules.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
+        const cloudSchedules = newestFirst<Schedule & { course_name: string }>(
+          projectCloudScheduleRecords(projection), schedule => schedule.start_time,
+        );
         const projectedStudents = projection.students || [];
         const projectedTeachers = projection.teachers || [];
         const projectedCourses = projection.courses || [];
@@ -83,14 +85,8 @@ const ScheduleList: React.FC = () => {
       console.warn('dbService not available yet');
       return;
     }
-    let scheduleData: any[] = readSchedulesFromPrimaryStore(dbService, localStorage);
-
-    // 杩囨护鎺夊凡鍒犻櫎鐨勬帓璇?    scheduleData = scheduleData.filter((s: any) => s.status !== 'DELETED');
-
-    // 鎸夋椂闂存帓搴忥紙鏈€鏂板湪鍓嶏級
-    scheduleData.sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime());
-
-    setSchedules(scheduleData);
+    const scheduleData = readSchedulesFromPrimaryStore(dbService, localStorage);
+    setSchedules(newestFirst<Schedule>(scheduleData, schedule => schedule.start_time));
     
     try {
       setStudents(dbService.getAllStudents?.() || []);
@@ -312,7 +308,6 @@ const ScheduleList: React.FC = () => {
   };
 
   const columns: ColumnsType<any> = [
-    { title: '序号', key: 'index', width: 60, render: (_, __, index) => index + 1 },
     { title: '日期', key: 'date', width: 100, render: (_, record) => dayjs(record.start_time).format('YYYY-MM-DD') },
     { title: '时间', key: 'time', width: 120, render: (_, record) => {
       const s = dayjs(record.start_time);

@@ -126,11 +126,11 @@ const DesktopIdentityGate: React.FC = () => {
     (window as any).dbService?.prepareIdentityPartitionChange?.();
   }, []);
 
-  const secureRelock = useCallback(async (nextState: GateState) => {
+  const secureRelock = useCallback(async (nextState: GateState, requireLogin = false) => {
     runtimeEpochRef.current += 1;
     setRuntimeSuspended(true);
     try {
-      await clientRef.current?.lock();
+      await clientRef.current?.lock(requireLogin);
     } finally {
       clearPendingVerificationState();
       (window as any).dbService?.prepareIdentityPartitionChange?.();
@@ -389,7 +389,8 @@ const DesktopIdentityGate: React.FC = () => {
             try {
               const offlineResumed = await client.resume({ baseUrl: identityBaseUrl, online: false });
               if (cancelled) return;
-              if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+              if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })
+                || offlineResumed.gateState.kind === 'locked') {
                 acceptRuntime(offlineResumed);
                 return;
               }
@@ -405,9 +406,21 @@ const DesktopIdentityGate: React.FC = () => {
             if (!cancelled) acceptRuntime(resumed);
           } catch (caught) {
             if (!cancelled) {
-              if (isDesktopIdentityNetworkFailure(caught)) {
+              if (isDesktopIdentityNetworkFailure(caught) || (caught as any)?.code === 'DESKTOP_ONLINE_SESSION_EXPIRED') {
+                try {
+                  const offlineResumed = await client.resume({ baseUrl: identityBaseUrl, online: false });
+                  if (cancelled) return;
+                  if (canStartBusinessRuntime({ gateState: offlineResumed.gateState })) {
+                    acceptRuntime(offlineResumed);
+                    return;
+                  }
+                } catch (_offlineResumeError) {
+                  // No usable signed lease for local work.
+                }
                 await client.lock();
-                if (!cancelled) setGateState({ kind: 'offline-authentication-required' });
+                if (!cancelled) setGateState({
+                  kind: isDesktopIdentityNetworkFailure(caught) ? 'offline-authentication-required' : 'online-authentication-required',
+                });
                 return;
               }
               const next = resolveDesktopGateState({ vaultStatus, online: browserOnline(), now: new Date() });
@@ -467,7 +480,8 @@ const DesktopIdentityGate: React.FC = () => {
     const epoch = runtimeEpochRef.current;
     try {
       const result = await clientRef.current?.resume({ baseUrl, online: true });
-      if (!result || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) return false;
+      if (!canStartBusinessRuntime({ gateState: result?.gateState })
+        || epoch !== runtimeEpochRef.current || roleSwitchRecoveryRef.current) return false;
       acceptRuntime(result);
       return true;
     } catch (caught) {
@@ -513,13 +527,7 @@ const DesktopIdentityGate: React.FC = () => {
       return () => { cancelled = true; };
     }
     const delay = onlineRuntime && remaining > renewMarginMs ? remaining - renewMarginMs : remaining;
-    const timer = window.setTimeout(() => {
-      if (onlineRuntime && remaining > renewMarginMs) {
-        void renewSessionSilently().then(renewed => { if (!renewed) lockOut(); });
-      } else {
-        void expire();
-      }
-    }, Math.min(delay, 2_147_000_000));
+    const timer = window.setTimeout(() => { void expire(); }, Math.min(delay, 2_147_000_000));
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [gateState.expiresAt, gateState.kind, renewSessionSilently, secureRelock]);
 
@@ -739,7 +747,7 @@ const DesktopIdentityGate: React.FC = () => {
   const lock = async () => {
     setBusy(true);
     try {
-      await secureRelock({ kind: 'locked' });
+      await secureRelock({ kind: 'locked' }, true);
       setError('');
     } catch (caught) {
       setError(messageForError(caught));
@@ -829,7 +837,7 @@ const DesktopIdentityGate: React.FC = () => {
               <Button type="primary" htmlType="submit" loading={busy} block>{'\u5bc6\u7801\u767b\u5f55'}</Button>
             </Space>
           </form>
-          <Divider plain>{'\u5176\u4ed6\u767b\u5f55\u65b9\u5f0f'}</Divider>
+          <Divider />
           <Button icon={<WechatOutlined />} loading={busy} disabled={!browserOnline()} onClick={beginRegistration} block>{'\u5fae\u4fe1\u626b\u7801\u767b\u5f55'}</Button>
         </>
       );
@@ -965,9 +973,6 @@ const DesktopIdentityGate: React.FC = () => {
             <Alert type="warning" showIcon message={'\u8bf7\u91cd\u65b0\u767b\u5f55'} description={'\u6b64\u7535\u8111\u4f7f\u7528\u7684\u662f\u65e7\u7248\u767b\u5f55\u4fe1\u606f\uff0c\u8bf7\u8054\u7f51\u540e\u4f7f\u7528\u5fae\u4fe1\u6216\u5bc6\u7801\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}
           {showLoginMethods && renderRegistration()}
-          {gateState.kind === 'offline-authentication-required' && (
-            <Alert type="info" showIcon message={'\u5f53\u524d\u79bb\u7ebf\uff0c\u8bf7\u4f7f\u7528\u5728\u6b64\u7535\u8111\u8054\u7f51\u767b\u5f55\u8fc7\u7684\u8d26\u53f7\u548c\u5bc6\u7801\u3002'} />
-          )}
           {gateState.kind === 'offline-blocked' && (
             <Alert type="error" showIcon message={'\u79bb\u7ebf\u767b\u5f55\u5df2\u8fc7\u671f'} description={'\u8bf7\u8fde\u63a5\u7f51\u7edc\u540e\u91cd\u65b0\u767b\u5f55\u3002'} />
           )}

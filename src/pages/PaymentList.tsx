@@ -88,7 +88,6 @@ const PaymentList: React.FC = () => {
   };
 
   const columns: ColumnsType<Payment> = [
-    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { 
       title: '学生', 
       dataIndex: 'student_id', 

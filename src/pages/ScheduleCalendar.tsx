@@ -158,7 +158,7 @@ interface DailyViewProps {
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
-  onRefreshSchedules?: (ids: string[]) => void;
+  onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
 }
 
 const DailyView: React.FC<DailyViewProps> = ({
@@ -514,6 +514,11 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
     key: 'refresh-course-info',
     label: '刷新课程信息',
     onClick: () => onRefreshSchedules?.([schedule.id])
+  },
+  {
+    key: 'refresh-course-info-from-here',
+    label: '刷新此课程从本节起的排课',
+    onClick: () => onRefreshSchedules?.([schedule.id], true)
   },
   {
     key: 'student-edit',
@@ -887,7 +892,7 @@ interface TwoWeeksViewProps {
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
-  onRefreshSchedules?: (ids: string[]) => void;
+  onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
   courseColorMap?: Record<string, string>;
 }
 
@@ -911,7 +916,7 @@ const OneWeekRow: React.FC<{
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
   onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
-  onRefreshSchedules?: (ids: string[]) => void;
+  onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
   courseColorMap?: Record<string, string>;
 }> = ({
   startMonday,
@@ -1248,8 +1253,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   useEffect(() => { futureRef.current = history.future; }, [history.future]);
 
   // 鈶?甯﹀巻鍙茶褰曠殑 setSchedules 鍖呰
-  const setSchedulesWithHistory = useCallback((newSchedulesOrUpdater: ScheduleEvent[] | ((prev: ScheduleEvent[]) => ScheduleEvent[])) => {
-    schedulesDirtyRef.current = true;
+  const setSchedulesWithHistory = useCallback((
+    newSchedulesOrUpdater: ScheduleEvent[] | ((prev: ScheduleEvent[]) => ScheduleEvent[]), persist = true,
+  ) => {
+    if (persist) schedulesDirtyRef.current = true;
     setSchedules(prev => {
       const newSchedules = typeof newSchedulesOrUpdater === 'function'
         ? newSchedulesOrUpdater(prev)
@@ -1996,23 +2003,55 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     message.success(`已更新 ${count} 条课程信息`);
   }
 
-  function handleRefreshSelectedSchedules(ids: string[]) {
-    const targetIds = Array.from(new Set((ids || []).map(String).filter(Boolean)));
+  function handleRefreshSelectedSchedules(ids: string[], includeFollowing = false) {
+    let targetIds = Array.from(new Set((ids || []).map(String).filter(Boolean)));
     if (targetIds.length === 0) {
       message.warning('请先选择要刷新的课程');
       return;
     }
+    const db = (window as any).dbService;
+    const source: ScheduleEvent[] = includeFollowing ? db?.getAllSchedules?.() : schedules;
+    let scope = '';
+    if (includeFollowing) {
+      if (!Array.isArray(source) || typeof db?.replaceSchedules !== 'function') {
+        message.error('暂时无法读取排课，请稍后重试');
+        return;
+      }
+      const anchor = source.find(schedule => schedule.id === targetIds[0]);
+      const start = dayjs(anchor?.start_time);
+      if (!anchor?.start_time || !start.isValid()) {
+        message.warning('无法读取这节排课的上课时间');
+        return;
+      }
+      targetIds = source
+        .filter(schedule => schedule.course_id === anchor.course_id && schedule.start_time
+          && dayjs(schedule.start_time).valueOf() >= start.valueOf())
+        .map(schedule => schedule.id);
+      scope = `「${anchor.course_name}」从 ${start.format('YYYY-MM-DD HH:mm')} 起（含本节），`;
+    }
     const ok = window.confirm(
-      `刷新课程信息可能覆盖所选 ${targetIds.length} 节排课的学生学费、老师课时费、出勤状态和课程明细。\n\n费用和出勤属于敏感信息，请确认所选课程无误后再继续。`
+      `${scope}刷新课程信息可能覆盖所选 ${targetIds.length} 节排课的学生学费、老师课时费、出勤状态和课程明细。\n\n费用和出勤属于敏感信息，请确认所选课程无误后再继续。`
     );
     if (!ok) return;
-    const db = (window as any).dbService;
-    const { next, count } = applyCourseRefresh(schedules, targetIds, (courseId: string) => db?.getAllCourses?.()?.find((c: any) => c.id === courseId));
+    const { next, count } = applyCourseRefresh(source, targetIds, (courseId: string) => db?.getAllCourses?.()?.find((c: any) => c.id === courseId));
     if (count === 0) {
       message.warning('所选课程未找到可刷新的课程信息');
       return;
     }
-    setSchedulesWithHistory(next);
+    if (includeFollowing) {
+      try {
+        // Preserve untouched rows from the primary store, including rows outside the calendar view.
+        const targets = new Set(targetIds);
+        const saved: ScheduleEvent[] = db.replaceSchedules(next);
+        const refreshed = new Map(saved.filter(row => targets.has(row.id)).map(row => [row.id, normalizeScheduleEvent(row)]));
+        setSchedulesWithHistory(prev => prev.map(row => refreshed.get(row.id) || row), false);
+      } catch (_error) {
+        message.error('未能保存排课刷新结果，请重试');
+        return;
+      }
+    } else {
+      setSchedulesWithHistory(next);
+    }
     message.success(`已更新 ${count} 条课程信息`);
   }
 

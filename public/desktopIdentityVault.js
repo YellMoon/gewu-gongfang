@@ -730,6 +730,7 @@ function createDesktopIdentityVault({
       offlineLease,
       authorityContext,
       offlineLoginVerifier: normalizeOfflineLoginVerifier(value.offlineLoginVerifier, profile.userId),
+      manualLoginRequired: value.manualLoginRequired === true,
       sealedAt: isoTimestamp(value.sealedAt, 'DESKTOP_IDENTITY_VAULT_UNLOCK_FAILED'),
     });
     privateKeyForSecret(secret);
@@ -744,6 +745,7 @@ function createDesktopIdentityVault({
     offlineLease,
     authorityContext,
     offlineLoginVerifier = null,
+    manualLoginRequired = false,
   }) {
     const sealedAt = currentDate(now).toISOString();
     const payload = {
@@ -755,6 +757,7 @@ function createDesktopIdentityVault({
       offlineLease,
       authorityContext,
       offlineLoginVerifier,
+      manualLoginRequired,
       sealedAt,
     };
     const envelope = Object.freeze({
@@ -898,8 +901,13 @@ function createDesktopIdentityVault({
   async function resume() {
     const envelope = readEnvelope();
     if (envelope.legacyPasswordVault) throw vaultError('DESKTOP_IDENTITY_LEGACY_MIGRATION_REQUIRED');
-    offlineLoginAuthenticated = offlineLoginAuthenticated && unlockedSecret?.profile.userId === envelope.secret.profile.userId
-      && unlockedSecret?.offlineLoginVerifier?.digest === envelope.secret.offlineLoginVerifier?.digest;
+    if (envelope.secret.manualLoginRequired) return status();
+    const nowMs = currentDate(now).getTime();
+    const lease = envelope.secret.offlineLease;
+    offlineLoginAuthenticated = Boolean(lease?.v === 2
+      && nowMs >= Date.parse(lease.issuedAt) - 60_000 && nowMs < Date.parse(lease.expiresAt))
+      || offlineLoginAuthenticated && unlockedSecret?.profile.userId === envelope.secret.profile.userId
+        && unlockedSecret?.offlineLoginVerifier?.digest === envelope.secret.offlineLoginVerifier?.digest;
     unlockedSecret = envelope.secret;
     pendingRegistration = null;
     unlockFailures = 0;
@@ -912,7 +920,7 @@ function createDesktopIdentityVault({
     lastUnlockedAt = null;
     if (!fsImpl.existsSync(filePath)) throw vaultError('DESKTOP_OFFLINE_LOGIN_SETUP_REQUIRED');
     const envelope = readEnvelope();
-    const secret = envelope.secret;
+    let secret = envelope.secret;
     const verifier = secret?.offlineLoginVerifier;
     if (!verifier) throw vaultError('DESKTOP_OFFLINE_LOGIN_SETUP_REQUIRED');
     const credentials = normalizeOfflineLoginCredentials(input);
@@ -930,6 +938,11 @@ function createDesktopIdentityVault({
     }
     if (current < Date.parse(secret.offlineLease.issuedAt) - 60000) {
       throw vaultError('DESKTOP_IDENTITY_CLOCK_INVALID');
+    }
+    if (secret.manualLoginRequired) {
+      const built = buildEnvelope({ ...secret, manualLoginRequired: false });
+      writeEnvelope(built.envelope);
+      secret = built.secret;
     }
     unlockedSecret = secret;
     pendingRegistration = null;
@@ -1047,15 +1060,18 @@ function createDesktopIdentityVault({
     offlineLoginAuthenticated = offlineLoginAuthenticated || nextLeaseIssuedAt > previousLeaseIssuedAt;
     pendingRegistration = null;
     unlockFailures = 0;
-    lastUnlockedAt = currentDate(now).getTime();
     return presentUnlocked();
   }
 
-  function lock() {
+  function lock(requireLogin = false) {
+    const previouslyUnlocked = unlockedSecret;
     pendingRegistration = null;
     unlockedSecret = null;
     offlineLoginAuthenticated = false;
     lastUnlockedAt = null;
+    if (requireLogin === true && previouslyUnlocked) {
+      writeEnvelope(buildEnvelope({ ...previouslyUnlocked, manualLoginRequired: true }).envelope);
+    }
     return status();
   }
 

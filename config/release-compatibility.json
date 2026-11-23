@@ -58,19 +58,19 @@
       "rule": "deploy optional desktop-projection module=courses|schedules before the desktop consumer; legacy full projections remain unchanged; scoped queries retain tenant/role/tombstone fences and skip unrelated aggregates; clients merge only the requested module collections and retain unrelated caches; existing NAS and miniapp requests remain compatible"
     },
     "desktopOfflinePassword": {
-      "version": "1",
+      "version": "2",
       "participants": [
         "desktop"
       ],
-      "rule": "desktop-only optional encrypted vault verifier and unlock-offline IPC; cache salted scrypt verifier only when cloud password verification completes signed desktop registration; offline cold start and relock require the same login form, matching cached account/password and an unexpired signed v2 lease; missing verifiers require one successful online password login; local password verification never issues cloud tokens or extends a lease; account changes discard unrelated verifiers, known revocation blocks access, and offline drafts still require one batch confirmation; cloud, NAS and miniapp protocols and binaries are unchanged"
+      "rule": "The existing encrypted scrypt verifier unlocks a manually locked desktop offline with its matching password and unexpired signed lease. A manual lock is recorded in the encrypted vault across restart; older vault envelopes retain compatibility. Verified current device leases allow ordinary offline restarts, and silent rotation cannot establish recent user presence for privileged role elevation. Local verification never issues a cloud token or extends a lease. Offline drafts still require one batch confirmation."
     },
     "desktopOfflineLease": {
-      "version": "2",
+      "version": "3",
       "participants": [
         "desktop",
         "cloud_business"
       ],
-      "rule": "deploy optional offlineLeaseVersion=2 negotiation before the desktop; cloud signs v2 leases for 14 days independently of unchanged one-hour online tokens; callers omitting the flag retain v1 session-bound leases; desktop validates signature, account/device/role bindings and the 14-day bound, never extends a lease locally; offline access only resumes a previously verified local account and creates drafts requiring batch confirmation after online revalidation; existing miniapp and NAS contracts are unchanged"
+      "rule": "Apply control-plane M31 before desktop rollout. One-hour bearer tokens retain their lifetime. A registered device may obtain a new token through its signed installation challenge for 14 days after the last server-issued session. Start and exchange recheck source revocation, parent authorization versions and device binding. Existing challenge requests and signed v2 lease representations remain compatible. Current v2 leases allow local resume without network and only the cloud may extend them. Miniapp and NAS contracts remain compatible."
     },
     "questionDifficultyCoefficient": {
       "version": "1",

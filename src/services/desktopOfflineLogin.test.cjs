@@ -69,9 +69,10 @@ async function main() {
       fetchImpl: async () => { networkCalls += 1; throw new Error('net::ERR_INTERNET_DISCONNECTED'); },
       sessionStore: { clear: async () => { clearedSessions += 1; }, save: async () => { throw new Error('offline must not save an online token'); } },
     });
-    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'cold start cannot bypass password verification');
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-unlocked', 'a cold start with a current signed device lease resumes automatically');
     await restarted.acceptIssuedSession(issued);
-    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'replaying a stored signed lease cannot bypass password verification');
+    assert.strictEqual((await client.resume({ online: false })).gateState.expiresAt, issued.offlineLease.expiresAt, 'replaying a stored lease cannot extend it');
+    assert.strictEqual(restarted.status().recentUnlockEligible, false, 'automatic resume cannot authorize role elevation');
     const beforeFailure = fs.readFileSync(filePath);
     assert(!beforeFailure.toString().includes(credentials.password), 'plaintext passwords must never be persisted');
     const oldPayload = JSON.parse(beforeFailure.toString());
@@ -95,8 +96,11 @@ async function main() {
     assert.strictEqual(resumed.token, undefined);
     assert.strictEqual(networkCalls, 0);
     assert.strictEqual(clearedSessions, 3);
-    await client.lock();
-    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'offline-authentication-required', 'locking must revoke in-memory offline authentication');
+    await client.lock(true);
+    assert.strictEqual((await makeVault().resume()).state, 'sealed', 'manual lock survives a full desktop restart');
+    assert.strictEqual((await client.resume({ online: false })).gateState.kind, 'locked');
+    assert.strictEqual((await client.resume({ baseUrl: 'https://cloud.test', online: true })).gateState.kind, 'locked');
+    assert.strictEqual(networkCalls, 0, 'an explicitly locked desktop does not attempt automatic cloud login');
     await client.loginOffline(credentials);
     const timeoutClient = createDesktopIdentityClient({
       desktopIdentity: restarted, now: () => new Date(clock), sessionRecoveryTimeoutMs: 10,
@@ -138,7 +142,7 @@ async function main() {
       assert.strictEqual(isDesktopIdentityNetworkFailure(error), true);
     }
     assert.strictEqual(isDesktopIdentityNetworkFailure({ code: 'DESKTOP_DEVICE_NOT_ACTIVE' }), false);
-    console.log('desktop offline next-day cold-start, signed lease, expiry and old-client compatibility passed');
+    console.log('desktop automatic cold-start, persistent manual lock, signed lease, expiry and old-client compatibility passed');
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }

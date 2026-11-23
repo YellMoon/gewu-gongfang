@@ -65,6 +65,7 @@ function setup(effectKey, { kind, online, renewed = true, lease }) {
     const renew = run('renew', {
       useCallback: fn => fn, browserOnline: () => true, roleSwitchRecoveryRef: { current: null },
       runtimeEpochRef, baseUrl: 'https://cloud.test', isDesktopIdentityAuthorizationRejection,
+      canStartBusinessRuntime: ({ gateState }) => gateState?.kind === 'online-unlocked',
       clientRef: { current: { resume: async () => { throw Object.assign(new Error(code), { code }); } } },
       acceptRuntime: () => assert.fail('rejection must not accept a runtime'),
       secureRelock: async state => { runtimeEpochRef.current++; locked.push(state.kind); },

@@ -12,6 +12,7 @@ import { calculateGrade } from '../utils/helpers';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import DataPageLayout from '../layout/DataPageLayout';
 import { studentContactFormValues } from '../services/studentContactDraftProjection.mjs';
+import { newestFirst } from '../utils/listOrder';
 
 const Select = AutoCloseSelect as typeof AntSelect;
 const { Option } = Select;
@@ -93,7 +94,7 @@ const StudentList: React.FC = () => {
       console.warn('dbService not available yet');
       return;
     }
-    const studentsData = dbService.getAllStudents();
+    const studentsData = newestFirst<Student>(dbService.getAllStudents(), student => student.created_at);
     const studentContactsData = dbService.getAllStudentContacts ? dbService.getAllStudentContacts() : [];
     const institutionsData = dbService.getAllInstitutions();
     const paymentsData = dbService.getAllPayments();
@@ -360,7 +361,6 @@ const StudentList: React.FC = () => {
   });
 
   const columns: ColumnsType<Student> = [
-    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { title: '姓名', dataIndex: 'name', key: 'name', width: 100 },
     { title: '联系电话', dataIndex: 'phone', key: 'phone', width: 130 },
     { title: '学校', dataIndex: 'school', key: 'school', width: 150 },

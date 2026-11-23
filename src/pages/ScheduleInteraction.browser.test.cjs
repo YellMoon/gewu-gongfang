@@ -38,7 +38,7 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
       const original = [{ id: 'original', course_id: 'course', course_name: 'Physics', status: 1,
         start_time: '2026-10-15T02:00:00Z', end_time: '2026-10-15T03:00:00Z', calculated_tuition: 180 },
       { id: 'occupied', course_id: 'course', course_name: 'Math', status: 1, start_time: '2026-10-15T04:00:00Z', end_time: '2026-10-15T05:00:00Z' }];
-      window.writes = []; window.rows = original; window.warnings = []; window.opens = [];
+      window.writes = []; window.rows = original; window.warnings = []; window.opens = []; window.refreshes = [];
       function App() {
         const [rows, setRows] = React.useState(original);
         const [open, setOpen] = React.useState(false);
@@ -56,7 +56,8 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
         const actions = new Function(...Object.keys(dependencies), handlers + '\nreturn {handleDragSchedule,handleResizeSchedule,handleDoubleClickDate,handleDoubleClickSchedule};')(...Object.values(dependencies));
         return React.createElement(React.Fragment, null, React.createElement(Week, { startMonday: dayjs('2026-10-12'), schedules: rows, courses: [], rooms: [],
           onDragSchedule: actions.handleDragSchedule, onResizeSchedule: actions.handleResizeSchedule,
-          onDoubleClickDate: actions.handleDoubleClickDate, onDoubleClickSchedule: actions.handleDoubleClickSchedule, onScheduleStatusChange() {}, onDropCourse() {} }),
+          onDoubleClickDate: actions.handleDoubleClickDate, onDoubleClickSchedule: actions.handleDoubleClickSchedule, onScheduleStatusChange() {}, onDropCourse() {},
+          onRefreshSchedules: (ids, includeFollowing) => window.refreshes.push({ ids, includeFollowing: includeFollowing === true }) }),
           React.createElement(window.antd.Modal, { title: 'Schedule editor', open, onCancel: window.closeSchedule, footer: null },
             React.createElement(window.antd.Form, { form },
               new Function('React', 'Form', 'TimePicker', 'form', 'DEFAULT_DURATION_HOURS', startField)(React, window.antd.Form, window.antd.TimePicker, form, 2),
@@ -69,6 +70,11 @@ const schedule = declarations('src/pages/ScheduleCalendar.tsx'), course = declar
     const card = page.locator('[data-schedule-id="original"]');
     await card.waitFor();
     assert.equal(await page.title(), 'Schedule interaction regression');
+    await card.click({ button: 'right' });
+    const forwardRefresh = page.getByRole('menuitem', { name: '\u5237\u65b0\u6b64\u8bfe\u7a0b\u4ece\u672c\u8282\u8d77\u7684\u6392\u8bfe' });
+    await forwardRefresh.waitFor();
+    await forwardRefresh.click();
+    assert.deepEqual(await page.evaluate(() => window.refreshes), [{ ids: ['original'], includeFollowing: true }]);
     const initialBox = await card.boundingBox();
     // Press away from the center: the former eager drag state moved the card immediately.
     await page.mouse.move(initialBox.x + 40, initialBox.y + 9);

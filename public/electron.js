@@ -275,7 +275,8 @@ ipcMain.handle('desktop-identity:begin-unified-online-registration', (_event, in
 ipcMain.handle('desktop-identity:complete-registration', (_event, input) => getDesktopIdentityVault().completeRegistration(input));
 ipcMain.handle('desktop-identity:resume', () => getDesktopIdentityVault().resume());
 ipcMain.handle('desktop-identity:unlock-offline', (_event, input) => getDesktopIdentityVault().unlockOffline(input));
-ipcMain.handle('desktop-identity:lock', () => getDesktopIdentityVault().lock());
+ipcMain.handle('desktop-identity:lock', (_event, requireLogin) =>
+  getDesktopIdentityVault().lock(requireLogin === true));
 ipcMain.handle('desktop-identity:accept-issued-session', (_event, input) => getDesktopIdentityVault().acceptIssuedSession(input));
 ipcMain.handle('desktop-identity:invalidate-offline-lease', () => getDesktopIdentityVault().invalidateOfflineLease());
 ipcMain.handle('desktop-identity:sign-challenge', (_event, input) => getDesktopIdentityVault().signChallenge(input));

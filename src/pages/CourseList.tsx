@@ -4,6 +4,7 @@ import {
   Space, message, Popconfirm, Tag, Row, Col, Divider
 } from 'antd';
 import Table from '../components/NumberedTable';
+import { newestFirst } from '../utils/listOrder';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlusCircleOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Course, CourseType, CourseSourceType, Institution, BillingUnit, TeacherFeeMode, ServiceType, Teacher, StudentCoursePricing, Student } from '../types';
@@ -83,7 +84,7 @@ const CourseList: React.FC = () => {
     const studentsData = dbService.getAllStudents();
     // 获取已保存的上课地址
     const roomsData = dbService.getAllRooms ? dbService.getAllRooms() : [];
-    setCourses([...coursesData]);
+    setCourses(newestFirst<Course>(coursesData, course => course.created_at));
     setStudents([...studentsData]);
     setRooms([...roomsData]);
     setInstitutions([...institutionsData]);
@@ -400,7 +401,6 @@ const CourseList: React.FC = () => {
   };
 
   const columns: ColumnsType<Course> = [
-    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { title: '年份', dataIndex: 'year', key: 'year', width: 80 },
     { title: '学期', dataIndex: 'semester', key: 'semester', width: 80 },
     { title: '课程名称', dataIndex: 'name', key: 'name', width: 180 },

@@ -67,7 +67,7 @@ interface Window {
       offlineLease?: Record<string, any> | null;
     }): Promise<any>;
     resume(): Promise<any>;
-    lock(): Promise<any>;
+    lock(requireLogin?: boolean): Promise<any>;
     acceptIssuedSession(input: {
       session: Record<string, any>;
       profile: Record<string, any>;

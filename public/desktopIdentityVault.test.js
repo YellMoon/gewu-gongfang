@@ -5,7 +5,6 @@ const os = require('os');
 const path = require('path');
 const vm = require('vm');
 const {
-  desktopRoleElevationSigningPayload,
 } = require('../backend/src/services/desktopSessionService');
 const {
   desktopDeviceSessionSigningPayload,
@@ -801,24 +800,16 @@ async function main() {
     error => error.code === 'DESKTOP_IDENTITY_OFFLINE_LEASE_INVALID'
   );
 
-  const elevation = vault.signChallenge({
-    purpose: 'role-elevation',
-    sessionId: 'desktop-session-teacher',
-    activeRole: 'super_admin',
-    sessionVersion: 1,
-  });
-  assert.strictEqual(elevation.elevationIssuedAt, clock.toISOString());
-  assert.ok(verifySignature(
-    publicIdentity.publicKey,
-    desktopRoleElevationSigningPayload({
+  assert.throws(
+    () => vault.signChallenge({
+      purpose: 'role-elevation',
       sessionId: 'desktop-session-teacher',
-      deviceId: publicIdentity.deviceId,
       activeRole: 'super_admin',
       sessionVersion: 1,
-      elevationIssuedAt: elevation.elevationIssuedAt,
     }),
-    elevation.signature
-  ));
+    /DESKTOP_IDENTITY_RECENT_UNLOCK_REQUIRED/,
+    'automatically accepting an issued session must not establish recent interactive authentication'
+  );
   clock = new Date('2026-07-17T10:03:01.000Z');
   assert.throws(
     () => vault.signChallenge({

@@ -78,6 +78,11 @@ async function runCloudDesktopSessionControlCases(runtime) {
         linkId: 'link-actor', issuedAt, expiresAt: new Date(now - 1_000).toISOString(),
       });
       await insertSession(facade, {
+        sessionId: 'session-inactive', deviceId: 'device-actor', installationId: 'installation-actor',
+        linkId: 'link-actor', issuedAt: new Date(now - 14 * 86400_000).toISOString(),
+        expiresAt: new Date(now - 14 * 86400_000 + 3600_000).toISOString(),
+      });
+      await insertSession(facade, {
         sessionId: 'session-revoked', deviceId: 'device-actor', installationId: 'installation-actor',
         linkId: 'link-actor', issuedAt, expiresAt: sessionExpiresAt,
       });
@@ -87,7 +92,7 @@ async function runCloudDesktopSessionControlCases(runtime) {
     await withVNextPg17SyntheticQuery(handle, 'writer', async facade => {
       const repository = createCloudDesktopIdentityPgRepository({ writerPool: facade });
       for (const [authorizationId, expectedCode] of [
-        ['session-expired', 'DESKTOP_ONLINE_SESSION_EXPIRED'],
+        ['session-inactive', 'DESKTOP_ONLINE_SESSION_EXPIRED'],
         ['session-revoked', 'P0001'],
       ]) {
         await assert.rejects(() => repository.createChallenge({
@@ -96,7 +101,7 @@ async function runCloudDesktopSessionControlCases(runtime) {
         }), error => error.code === expectedCode, 'classify expiry separately without admitting an expired or revoked online session');
       }
       for (const [challengeId, authorizationId] of [
-        ['challenge-expired', 'session-expired'],
+        ['challenge-inactive', 'session-inactive'],
         ['challenge-revoked', 'session-revoked'],
       ]) {
         await assert.rejects(
@@ -105,12 +110,12 @@ async function runCloudDesktopSessionControlCases(runtime) {
             [challengeId, authorizationId, 'device-actor', hash(challengeId), challengeIssuedAt, challengeExpiresAt],
           ),
           error => error?.code === 'P0001' && /AUTHORIZATION_INVALID/.test(error.message),
-          'an expired or revoked source session must not create a challenge',
+          'an inactive or revoked source session must not create a challenge',
         );
       }
       const challenge = await facade.query(
         'SELECT * FROM vnext_control_plane.vnext_start_desktop_session_challenge($1,$2,$3,$4,$5,$6)',
-        ['challenge-1', 'session-actor', 'device-actor', hash('challenge-nonce'), challengeIssuedAt, challengeExpiresAt],
+        ['challenge-1', 'session-expired', 'device-actor', hash('challenge-nonce'), challengeIssuedAt, challengeExpiresAt],
       );
       assert.deepStrictEqual(challenge.rows.map(row => ({
         challengeId: row.challengeId,
@@ -122,7 +127,7 @@ async function runCloudDesktopSessionControlCases(runtime) {
         status: row.status,
         rowVersion: Number(row.rowVersion),
       })), [{
-        challengeId: 'challenge-1', authorizationId: 'session-actor', deviceId: 'device-actor',
+        challengeId: 'challenge-1', authorizationId: 'session-expired', deviceId: 'device-actor',
         installationId: 'installation-actor', credentialVersion: 1,
         installationPublicKey: 'public-key-actor', status: 'pending', rowVersion: 1,
       }]);

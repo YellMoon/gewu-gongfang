@@ -15,11 +15,12 @@ assert(recovery, 'test must execute the real initialization recovery branch');
 const code = ts.transpileModule(`return async () => { ${recovery.getText(ast)} };`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 (async () => {
   for (const state of ['sealed', 'unlocked']) {
-    for (const scenario of ['online', 'rejected', 'outage', 'offline', 'offline-lease', 'offline-lease-expired']) {
+    for (const scenario of ['online', 'rejected', 'outage', 'outage-with-lease', 'offline', 'offline-lease', 'offline-lease-expired']) {
       const events = [];
       const result = { gateState: { kind: 'online-unlocked' } };
       const offlineResult = {
         'offline-lease': { gateState: { kind: 'offline-unlocked' } },
+        'outage-with-lease': { gateState: { kind: 'offline-unlocked' } },
         'offline-lease-expired': { gateState: { kind: 'offline-blocked' } },
       }[scenario] || { gateState: { kind: 'offline-authentication-required' } };
       const offlineResume = scenario.startsWith('offline');
@@ -28,8 +29,8 @@ const code = ts.transpileModule(`return async () => { ${recovery.getText(ast)} }
         browserOnline: () => !offlineResume,
         client: {
           resume: async input => {
-            events.push([offlineResume ? 'offline-resume' : 'cloud-recovery', input]);
-            if (offlineResume) {
+            events.push([input.online ? 'cloud-recovery' : 'offline-resume', input]);
+            if (!input.online) {
               if (scenario === 'offline') throw new Error('NO_LEASE');
               return offlineResult;
             }
@@ -38,9 +39,9 @@ const code = ts.transpileModule(`return async () => { ${recovery.getText(ast)} }
           },
           lock: async () => events.push(['locked']),
         },
-        acceptRuntime: value => { assert.equal(value, offlineResume ? offlineResult : result); events.push(['accepted']); },
+        acceptRuntime: value => { assert.equal(value, scenario === 'online' ? result : offlineResult); events.push(['accepted']); },
         canStartBusinessRuntime: ({ gateState }) => gateState?.kind === 'online-unlocked' || gateState?.kind === 'offline-unlocked',
-        isDesktopIdentityNetworkFailure: () => scenario === 'outage',
+        isDesktopIdentityNetworkFailure: () => scenario.startsWith('outage'),
         resolveDesktopGateState: () => ({ kind: 'online-authentication-required' }),
         setGateState: value => events.push(['gate', value.kind]), setError: value => events.push(['error', value]),
         messageForError: e => e.message,
@@ -58,7 +59,8 @@ const code = ts.transpileModule(`return async () => { ${recovery.getText(ast)} }
       } else {
         assert.deepEqual(events[0], ['cloud-recovery', { baseUrl: 'https://cloud.test', online: true }]);
         assert.deepEqual(events.slice(1), scenario === 'online' ? [['accepted']]
-          : scenario === 'outage' ? [['locked'], ['gate', 'offline-authentication-required']]
+          : scenario === 'outage' ? [['offline-resume', { baseUrl: 'https://cloud.test', online: false }], ['locked'], ['gate', 'offline-authentication-required']]
+            : scenario === 'outage-with-lease' ? [['offline-resume', { baseUrl: 'https://cloud.test', online: false }], ['accepted']]
             : [['gate', 'online-authentication-required'], ['error', 'DENIED']]);
       }
     }

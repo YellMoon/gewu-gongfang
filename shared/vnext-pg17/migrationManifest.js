@@ -1876,6 +1876,17 @@ const MINIAPP_ACCOUNT_FENCE_MIGRATION = Object.freeze({
   sql: MINIAPP_ACCOUNT_FENCE_SQL, manifestSha256: sha256(MINIAPP_ACCOUNT_FENCE_SQL),
 });
 
+// Only the signed installation challenge can recover an expired bearer session.
+// Keep the original lock order and all parent state/version checks in both phases.
+const DESKTOP_SESSION_RESUME_WINDOW_SQL = DESKTOP_SESSION_SOURCE_LOCK_SQL
+  .replace('s.expires_at>now_at', "(s.expires_at>now_at OR s.issued_at>now_at-interval '14 days')")
+  .replace('source_session.expires_at<=now_at',
+    "(source_session.expires_at<=now_at AND source_session.issued_at<=now_at-interval '14 days')");
+const DESKTOP_SESSION_RESUME_WINDOW_MIGRATION = Object.freeze({
+  migrationId: 'vnext-pg17-desktop-session-resume-window-31', semanticVersion: 31,
+  sql: DESKTOP_SESSION_RESUME_WINDOW_SQL, manifestSha256: sha256(DESKTOP_SESSION_RESUME_WINDOW_SQL),
+});
+
 const MIGRATIONS = Object.freeze([
   FIRST_MIGRATION,
   FOUNDATION_IDENTITY_DEVICE_MIGRATION,
@@ -1907,6 +1918,7 @@ const MIGRATIONS = Object.freeze([
   DESKTOP_PASSWORD_CONFLICT_TARGET_FIX_MIGRATION,
   DESKTOP_DEVICE_NAMES_MIGRATION,
   MINIAPP_ACCOUNT_FENCE_MIGRATION,
+  DESKTOP_SESSION_RESUME_WINDOW_MIGRATION,
 ]);
 
 const FUNCTION_DEFINITION_SHA256 = Object.freeze({
@@ -2044,7 +2056,7 @@ $function$
   vnext_set_desktop_password_credential: '29fe7193b178f3e564daa81422612484fe6a6ee79aa2462d20ab89c3fb204331',
   vnext_bind_canonical_wechat_identity: '1c4eb7ed548e1a5b3547edf1001630507763bc85a923fee4a9d4ec8d9df17db4',
   vnext_read_canonical_account_by_verified_contact: '19936f7f3f7bb08798ef064b51a321d07e132287a5c254cb2c09b5136b69f872',
-  vnext_exchange_desktop_session_challenge: 'ea2c2d275682e8e24510f9c994bd90dbae0ffb08dbcb281e00b2ef0c2d707554',
+  vnext_exchange_desktop_session_challenge: '776add3bc45b827d0792fab07fa5df30e5ff8f8975454582a64aad8e088c047b',
   vnext_list_desktop_account_devices: 'a771a2026fa361bbbcfe5af338a33ace7d51f27c254fcad11367bbcfad364de6',
   vnext_list_named_desktop_account_devices: '3a38fe2384722008f984570e618808815fb93c9bec5e3056425c9e8124d371a8',
   vnext_read_miniapp_account_fence: 'c8508ae95d0c631e20759b1b7e2d2ec7e6c9a98450259c65ac2035391a3a3799',
@@ -2052,7 +2064,7 @@ $function$
   vnext_read_desktop_session_installation: 'f53001ea28551e5ab6c8bf68c80876eeb0a1ac4b8c311fbcdc6547bd5e492356',
   vnext_revoke_desktop_device: '47d293c38deef43393a1e2a2ebe2f1d9367bf54b71a9ec82251c5ef427862469',
   vnext_rotate_desktop_role_session: '53fd3597b1da4d1342226c746dee7efcd15d5e4ac42104f4f304f6d8172c2f8a',
-  vnext_start_desktop_session_challenge: 'e72d5fb3f940abac5a09cf6261adaf77668c7befe5c8d4cd258e8343d6ab2871',
+  vnext_start_desktop_session_challenge: '5531caa5b1952e830755c209094c10ac3ede1de9d7942e56a7a2b4cfecda7dc4',
 });
 
 const expectedCatalog = Object.freeze({

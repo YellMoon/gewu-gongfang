@@ -234,7 +234,7 @@ export function resolveDesktopGateState({ vaultStatus, online, onlineSession = n
 }
 
 export function isDesktopIdentityAuthorizationRejection(error) {
-  return ['VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'DESKTOP_DEVICE_NOT_ACTIVE',
+  return ['VNEXT_DESKTOP_AUTHORIZATION_INVALID', 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED', 'DESKTOP_DEVICE_NOT_ACTIVE',
     'DESKTOP_SESSION_REQUIRED', 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID',
     'CLOUD_ONLINE_IDENTITY_REJECTED'].includes(error?.code);
 }
@@ -487,6 +487,10 @@ export function createDesktopIdentityClient({
       throw identityError('DESKTOP_IDENTITY_RESUME_UNAVAILABLE');
     }
     const vaultStatus = await desktopIdentity.resume();
+    if (vaultStatus.unlocked === false) {
+      await sessionStore.clear();
+      return { vaultStatus, gateState: resolveDesktopGateState({ vaultStatus, online, now: currentDate() }) };
+    }
     activePassword = 'managed-session';
     if (!online) {
       await sessionStore.clear();
@@ -881,11 +885,11 @@ export function createDesktopIdentityClient({
     }
   }
 
-  async function lock() {
+  async function lock(requireLogin = false) {
     activePassword = null;
     offlineLoginCredentials.clear();
     await sessionStore.clear();
-    return desktopIdentity.lock();
+    return desktopIdentity.lock(requireLogin);
   }
 
   async function loginOffline({ loginType, login, password } = {}) {

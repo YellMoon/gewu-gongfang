@@ -41,6 +41,7 @@ function loadCore(code, env) {
   const contextMenu = contextMenuMatch[0];
   assert.ok(contextMenu.includes('刷新课程信息'), 'per-course context menu must offer 刷新课程信息');
   assert.ok(contextMenu.includes('onRefreshSchedules?.([schedule.id])'), 'per-course refresh must target the right-clicked schedule id');
+  assert.ok(contextMenu.includes('onRefreshSchedules?.([schedule.id], true)'), 'the second item uses the right-clicked lesson as its inclusive cutoff');
   assert.ok(/key:\s*'batch-refresh'[\s\S]*?刷新课程信息[\s\S]*?onBatchRefresh\(sel\.ids\)/u.test(batch),
     'batch context menu must offer 刷新课程信息 for the selected ids');
   assert.ok(/onBatchRefresh/u.test(batch) && /useBatchSelection\([\s\S]*?onBatchDelete/u.test(batch),
@@ -69,19 +70,32 @@ function loadCore(code, env) {
     { id: 'missing-course', course_id: 'missing', course_name: 'Old name', room: 'Old address', start_time: '2026-09-09 09:00', end_time: '2026-09-09 10:00', status: 1, notes: 'Preserve note', billing_unit: 1, teacher_fee_mode: 1, student_pricings: [], calculated_tuition: 0, calculated_teacher_fee: 0 },
   ];
 
-  function run(ids, accept = true) {
-    const state = { rows, writes: 0, warnings: [], notices: [], prompts: [] };
+  function run(ids, accept = true, includeFollowing = false, input = rows, visible = input, saveError = false) {
+    const state = { rows: visible, persisted: input, writes: 0, warnings: [], errors: [], notices: [], prompts: [] };
     const env = {
-      schedules: rows,
+      schedules: visible,
       dayjs,
       normalizeRefreshDateRange,
-      window: { confirm: text => { state.prompts.push(text); return accept; }, dbService: { getAllCourses: () => courses } },
+      window: { confirm: text => { state.prompts.push(text); return accept; }, dbService: {
+        getAllCourses: () => courses,
+        getAllSchedules: () => input,
+        replaceSchedules: next => {
+          if (saveError) throw new Error('outbox unavailable');
+          state.writes++;
+          state.persisted = next;
+          return next;
+        },
+      } },
       buildCourseRefreshFinancialSnapshot: financialModule.buildCourseRefreshFinancialSnapshot,
-      setSchedulesWithHistory: next => { state.rows = next; state.writes++; },
-      message: { warning: text => state.warnings.push(text), success: text => state.notices.push(text) },
+      normalizeScheduleEvent: row => row,
+      setSchedulesWithHistory: (next, persist = true) => {
+        state.rows = typeof next === 'function' ? next(state.rows) : next;
+        if (persist) state.writes++;
+      },
+      message: { warning: text => state.warnings.push(text), error: text => state.errors.push(text), success: text => state.notices.push(text) },
     };
     const handler = loadCore(calendar, env);
-    handler(ids);
+    handler(ids, includeFollowing);
     return { state, handler };
   }
 
@@ -121,6 +135,27 @@ function loadCore(code, env) {
   const unmatched = run(['missing-course']);
   assert.equal(unmatched.state.writes, 0, 'unmatched selection must not write');
   assert.equal(unmatched.state.warnings.length, 1, 'unmatched selection warns');
+
+  const later = { ...rows[1], id: 'far-future', start_time: '2027-02-08 11:00', end_time: '2027-02-08 12:00' };
+  const earlierThatDay = { ...rows[1], id: 'same-day-earlier', start_time: '2026-09-08 08:00', end_time: '2026-09-08 09:00' };
+  const anotherCourse = { ...later, id: 'other-course', course_id: 'other' };
+  const fromHere = [rows[0], earlierThatDay, rows[1], later, anotherCourse, rows[2]];
+  const forward = run(['lesson-1'], true, true, fromHere).state;
+  assert.equal(forward.writes, 1);
+  assert.match(forward.prompts[0], /2026-09-08 09:00/);
+  assert.match(forward.notices[0], /2/);
+  assert.deepEqual(forward.rows.map(row => row.room), ['Old address', 'Old address', 'New address', 'New address', 'Old address', 'Old address']);
+  assert.deepEqual(forward.rows.map(row => row.start_time), fromHere.map(row => row.start_time));
+  const outsideViewport = run(['lesson-1'], true, true, fromHere, [rows[1]]).state;
+  assert.equal(outsideViewport.persisted[3].room, 'New address', 'off-screen lessons are included from the primary store');
+  assert.equal(outsideViewport.persisted[0], rows[0], 'prior lessons keep their original stored fields');
+  assert.equal(outsideViewport.persisted[4], anotherCourse);
+  const failed = run(['lesson-1'], true, true, fromHere, [rows[1]], true).state;
+  assert.equal(failed.errors.length, 1);
+  assert.equal(failed.notices.length, 0);
+  assert.equal(failed.rows[0], rows[1]);
+  assert.equal(run(['lesson-1'], false, true, fromHere).state.writes, 0);
+  assert.equal(run(['absent-anchor'], true, true, fromHere).state.writes, 0);
 
   console.log('targeted refresh context-menu checks passed');
 })().catch(error => { console.error(error); process.exit(1); });

@@ -139,8 +139,8 @@ assert.ok(!decodedGateSource.includes(String.fromCharCode(23457, 26680, 35774, 2
   'desktop offline copy must not expose retired device-approval or host-internal terminology');
 assert.ok(gateSource.includes(String.raw`\u79bb\u7ebf\u65f6\u53ef\u7ee7\u7eed\u7f16\u8f91\u672c\u5730\u8349\u7a3f`) && gateSource.includes(String.raw`\u8fde\u63a5\u7f51\u7edc\u540e\u7531\u4f60\u786e\u8ba4\u63d0\u4ea4`),
   'desktop offline copy must state the actual draft and user-confirmed submission boundary');
-assert.ok(gateSource.includes("gateState.kind === 'offline-authentication-required'"),
-  'offline login must retain the normal password form and concise connectivity guidance');
+assert.ok(!gateSource.includes(String.raw`\u4f7f\u7528\u5728\u6b64\u7535\u8111\u8054\u7f51\u767b\u5f55\u8fc7\u7684\u8d26\u53f7`),
+  'the optional footer guidance is removed from the offline login form');
 assert.ok(gateStyle.includes('.desktop-identity-runtime > .app-shell'));
 assert.ok(!gateStyle.includes('padding-right: 350px') && !gateStyle.includes('padding-right: 540px'),
   'account controls must share normal header layout instead of reserving guessed overlay widths');

@@ -179,7 +179,6 @@ const TeacherList: React.FC = () => {
   };
 
   const columns: ColumnsType<Teacher> = [
-    { title: '序号', key: 'index', width: 70, render: (_, __, index) => index + 1 },
     { title: '姓名', dataIndex: 'name', key: 'name', width: 120 },
     { title: '联系电话', dataIndex: 'phone', key: 'phone', width: 140 },
     { title: '科目', dataIndex: 'subject', key: 'subject', width: 120 },

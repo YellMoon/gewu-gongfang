@@ -215,7 +215,7 @@ function createCloudBusinessApp({ query, businessCommandWriter = null, operation
       return response.status(404).json({ success: false, code });
     }
     if (code === 'DESKTOP_SESSION_REQUIRED' || code === 'DESKTOP_SESSION_CHALLENGE_SIGNATURE_INVALID' || code === 'DESKTOP_ONLINE_SESSION_EXPIRED'
-      || code === 'VNEXT_DESKTOP_AUTHORIZATION_INVALID') {
+      || code === 'VNEXT_DESKTOP_AUTHORIZATION_INVALID' || code === 'VNEXT_DESKTOP_SESSION_PARENT_REVOKED') {
       return response.status(401).json({ success: false, code });
     }
     if (code === 'ACTIVE_ROLE_NOT_GRANTED' || code === 'DESKTOP_SUPER_ADMIN_ROLE_REQUIRED'
