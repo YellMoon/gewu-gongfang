@@ -1,10 +1,10 @@
 ﻿import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-  Modal, Form, Input, InputNumber, Select, DatePicker, TimePicker, Divider, Card, Row, Col, Button, message, Space, Dropdown, Alert
+  Modal, Form, InputNumber, Select, DatePicker, TimePicker, Divider, Card, Button, message, Space, Dropdown
 } from 'antd';
 import type { MenuProps } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
-import { CourseType, CourseSourceType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing, StudentAttendanceStatus } from '../types';
+import { CourseType, ScheduleStatus, Course, Teacher, Student, BillingUnit, TeacherFeeMode, StudentCoursePricing, StudentAttendanceStatus } from '../types';
 import useBatchSelection from './useBatchSelection';
 import AutoCloseSelect from '../components/AutoCloseSelect';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,7 +12,9 @@ import weekOfYear from 'dayjs/plugin/weekOfYear';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { holidays2026, getUpcomingHolidays } from '../utils/helpers';
 import { buildCourseColorMap, getTextColorForBackground, DEFAULT_COURSE_COLOR } from '../utils/courseColors';
-import { INSTITUTION_UNBOUND_STUDENT_ID, buildScheduleFinancialSnapshot, buildCourseRefreshFinancialSnapshot } from '../utils/financialDetails';
+import { buildScheduleFinancialSnapshot, buildCourseRefreshFinancialSnapshot } from '../utils/financialDetails';
+import ScheduleStudentPricingTable from './ScheduleStudentPricingTable';
+import './ScheduleEditor.css';
 import WorkbenchLayout from '../layout/WorkbenchLayout';
 import type { CourseCalendarContext } from '../navigation/navigationContext';
 import { readSchedulesFromPrimaryStore, persistScheduleCalendarState } from '../utils/scheduleStorage.mjs';
@@ -23,8 +25,6 @@ import { normalizeRefreshDateRange, updateRefreshDateRangeBoundary } from '../ut
 dayjs.extend(weekOfYear);
 dayjs.extend(isoWeek);
 
-
-const { Option } = Select;
 
 const MIN_START_HOUR = 8;
 const MAX_END_HOUR = 23;
@@ -86,10 +86,15 @@ function normalizeScheduleEvent(schedule: ScheduleEvent): ScheduleEvent {
   return {
     ...schedule,
     status: Number(schedule.status) === LEGACY_COMPLETED_STATUS ? ScheduleStatus.PLANNED : schedule.status,
-    student_pricings: schedule.student_pricings?.map(pricing => ({
-      ...pricing,
-      status: Number(pricing.status) === LEGACY_COMPLETED_STATUS ? StudentAttendanceStatus.NORMAL : pricing.status,
-    })),
+    student_pricings: schedule.student_pricings?.map(pricing => {
+      const status = Number(pricing.status ?? (pricing as { attendance_status?: number }).attendance_status);
+      return {
+        ...pricing,
+        status: status === StudentAttendanceStatus.LEAVE || status === StudentAttendanceStatus.CANCELLED
+          ? status
+          : StudentAttendanceStatus.NORMAL,
+      };
+    }),
   };
 }
 
@@ -157,7 +162,6 @@ interface DailyViewProps {
   onDragSchedule?: (schedule: ScheduleEvent, newDay: Dayjs, newSlot: number, ctrlKey: boolean) => void;
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
-  onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
   onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
 }
 
@@ -183,7 +187,6 @@ const DailyView: React.FC<DailyViewProps> = ({
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit,
   onRefreshSchedules
 }) => {
   const dateStr = day.format('YYYY-MM-DD');
@@ -521,9 +524,9 @@ const getContextMenuItems = (schedule: ScheduleEvent): MenuProps['items'] => [
     onClick: () => onRefreshSchedules?.([schedule.id], true)
   },
   {
-    key: 'student-edit',
-    label: '学生出勤和费用',
-    onClick: () => onOpenStudentEdit?.(schedule)
+    key: 'open-schedule',
+    label: '查看排课明细',
+    onClick: () => onDoubleClickSchedule(schedule)
   }
 ];
 
@@ -891,7 +894,6 @@ interface TwoWeeksViewProps {
   onDragSchedule?: (schedule: ScheduleEvent, newDay: Dayjs, newSlot: number, ctrlKey: boolean) => void;
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
-  onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
   onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
   courseColorMap?: Record<string, string>;
 }
@@ -915,7 +917,6 @@ const OneWeekRow: React.FC<{
   onDragSchedule?: (schedule: ScheduleEvent, newDay: Dayjs, newSlot: number, ctrlKey: boolean) => void;
   onResizeSchedule?: (schedule: ScheduleEvent, newStartSlot: number | null, newEndSlot: number | null) => void;
   onDeleteSchedule?: (id: string) => void;
-  onOpenStudentEdit?: (schedule: ScheduleEvent) => void;
   onRefreshSchedules?: (ids: string[], includeFollowing?: boolean) => void;
   courseColorMap?: Record<string, string>;
 }> = ({
@@ -938,7 +939,6 @@ const OneWeekRow: React.FC<{
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit,
   onRefreshSchedules
 }) => {
   const weekDays: Dayjs[] = [];
@@ -993,7 +993,6 @@ const OneWeekRow: React.FC<{
             onDragSchedule={onDragSchedule}
             onResizeSchedule={onResizeSchedule}
             onDeleteSchedule={onDeleteSchedule}
-            onOpenStudentEdit={onOpenStudentEdit}
             onRefreshSchedules={onRefreshSchedules}
             courseColorMap={courseColorMap}
           />
@@ -1023,7 +1022,6 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
   onDragSchedule,
   onResizeSchedule,
   onDeleteSchedule,
-  onOpenStudentEdit,
   onRefreshSchedules
 }) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -1056,7 +1054,6 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         onDragSchedule={onDragSchedule}
         onResizeSchedule={onResizeSchedule}
         onDeleteSchedule={onDeleteSchedule}
-        onOpenStudentEdit={onOpenStudentEdit}
         onRefreshSchedules={onRefreshSchedules}
       />
       <OneWeekRow
@@ -1079,7 +1076,6 @@ const TwoWeeksView: React.FC<TwoWeeksViewProps> = ({
         onDragSchedule={onDragSchedule}
         onResizeSchedule={onResizeSchedule}
         onDeleteSchedule={onDeleteSchedule}
-        onOpenStudentEdit={onOpenStudentEdit}
         onRefreshSchedules={onRefreshSchedules}
       />
     </div>
@@ -1230,11 +1226,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     return buildCourseColorMap(courses, rooms);
   }, [courses, rooms]);
 
-  const [studentEditModal, setStudentEditModal] = useState({
-    open: false,
-    schedule: null as ScheduleEvent | null
-  });
-  const [studentEditForm] = Form.useForm();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | undefined>(undefined);
@@ -1244,6 +1235,32 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
   const [batchDateStepDays, setBatchDateStepDays] = useState(1);
   const [refreshDateRange, setRefreshDateRange] = useState<[Dayjs, Dayjs] | null>([initialMonday, initialMonday.add(13, 'day')]);
   const [modalTeacherId, setModalTeacherId] = useState<string | undefined>(undefined);
+  const editorCourseId: string | undefined = Form.useWatch('courseId', form);
+  const editorDuration: number | undefined = Form.useWatch('duration', form);
+  const editorDurationOptions = [30, 40, 60, 80, 90, 120, 150, 180].map(minutes => ({
+    value: minutes / 60, label: `${minutes} 分钟`,
+  }));
+  if (editorDuration && !editorDurationOptions.some(option => option.value === editorDuration)) {
+    editorDurationOptions.push({ value: editorDuration, label: `${Math.round(editorDuration * 60)} 分钟` });
+  }
+  const editorCourse = courses.find(course => course.id === editorCourseId);
+  const editorLesson = editingSchedule?.course_id === editorCourseId ? editingSchedule : null;
+  const editorPricings = editorLesson?.student_pricings ?? editorCourse?.student_pricings ?? [];
+  const editorBillingUnit = editorLesson?.billing_unit || editorCourse?.billing_unit || BillingUnit.PER_HOUR;
+  const editorTeacherOptions = teachers.map(teacher => ({ label: teacher.name, value: teacher.id }));
+  if (modalTeacherId && !editorTeacherOptions.some(option => option.value === modalTeacherId)) {
+    editorTeacherOptions.push({ label: editingSchedule?.teacher_name || '原任课老师', value: modalTeacherId });
+  }
+  const editorCourseOptions = courses
+    .filter(course => (course.active || course.id === editingSchedule?.course_id) && !!modalTeacherId && String(course.teacher_id) === String(modalTeacherId))
+    .map(course => ({ label: getCourseDisplayName(course), value: course.id }));
+  if (editingSchedule && !editorCourseOptions.some(option => option.value === editingSchedule.course_id)) {
+    editorCourseOptions.push({ label: getCourseDisplayName(undefined, editingSchedule.course_name), value: editingSchedule.course_id });
+  }
+  const editorRoomOptions = rooms.map(room => ({ label: room.address ? `${room.name} (${room.address})` : room.name, value: room.id }));
+  if (editingSchedule?.room && !rooms.some(room => room.id === editingSchedule.room || room.name === editingSchedule.room)) {
+    editorRoomOptions.push({ label: editingSchedule.room, value: editingSchedule.room });
+  }
 
   const MAX_HISTORY = 10;
   const [history, setHistory] = useState<{ past: ScheduleEvent[][]; future: ScheduleEvent[][] }>({ past: [], future: [] });
@@ -1520,91 +1537,25 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const scheduleEnd = dayjs(schedule.end_time);
     const startTimeDayjs = dayjs().hour(scheduleStart.hour()).minute(scheduleStart.minute()).second(0).millisecond(0);
     const endTimeDayjs = dayjs().hour(scheduleEnd.hour()).minute(scheduleEnd.minute()).second(0).millisecond(0);
-    const diffMinutes = endTimeDayjs.diff(startTimeDayjs, 'minute');
+    const diffMinutes = scheduleEnd.diff(scheduleStart, 'minute');
     const durationHours = diffMinutes / 60;
     const course = courses.find(c => c.id === schedule.course_id);
     
     form.resetFields();
-    setModalTeacherId(course?.teacher_id);
+    const teacherId = schedule.teacher_id || course?.teacher_id;
+    setModalTeacherId(teacherId);
     form.setFieldsValue({
       date: scheduleStart.startOf('day'),
       startTime: startTimeDayjs,
       endTime: endTimeDayjs,
       duration: durationHours,
       courseId: schedule.course_id,
-      courseName: getCourseDisplayName(course, schedule.course_name),
-      teacherId: course?.teacher_id,
+      teacherId,
       status: schedule.status,
-      room: (course?.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === schedule.room)?.id) || schedule.room,
-      notes: schedule.notes,
+      room: rooms.find(r => r.name === schedule.room)?.id || schedule.room,
     });
     setBatchDates([scheduleStart.startOf('day')]);
     setModalVisible(true);
-  }
-
-  function handleOpenStudentEdit(schedule: ScheduleEvent) {
-    const course = courses.find(c => c.id === schedule.course_id);
-    if (course) {
-      if (isPureInstitutionSchedule(schedule, course)) {
-        const pricing = getInstitutionSchedulePricing(schedule, course);
-        studentEditForm.setFieldsValue({
-          institutionTuition: pricing.tuition,
-          institutionTeacherFee: pricing.teacher_fee ?? 0,
-        });
-        setStudentEditModal({ open: true, schedule });
-        return;
-      }
-      const editablePricings = getSchedulePricingsForEdit(schedule);
-      const initialValues = {
-        students: editablePricings.map(sp => ({
-          student_id: sp.student_id,
-          tuition: sp.tuition,
-          teacher_fee: sp.teacher_fee ?? 0,
-          status: sp.status || StudentAttendanceStatus.NORMAL
-        }))
-      };
-      studentEditForm.setFieldsValue(initialValues);
-      setStudentEditModal({ open: true, schedule });
-    }
-  }
-
-  function isPureInstitutionSchedule(schedule: ScheduleEvent, course?: Course | null): boolean {
-    return false;
-  }
-
-  function getInstitutionSchedulePricing(schedule: ScheduleEvent, course?: Course | null): StudentCoursePricing {
-    return {
-      student_id: '',
-      tuition: 0,
-      teacher_fee: 0,
-      status: StudentAttendanceStatus.NORMAL,
-    };
-  }
-
-  const courseStudentPricings = (() => {
-    if (!studentEditModal.schedule) return [];
-    return getSchedulePricingsForEdit(studentEditModal.schedule as ScheduleEvent);
-  })();
-
-  // 当前课程的计费单位
-  const billingCourse = studentEditModal.schedule
-    ? courses.find(c => c.id === (studentEditModal.schedule as any).course_id)
-    : null;
-  const billingUnitLabel = (() => {
-    const schedule = studentEditModal.schedule as ScheduleEvent | null;
-    const buRaw = schedule?.billing_unit || (billingCourse as any)?.billing_unit;
-    const bu = buRaw !== undefined && buRaw !== null ? Number(buRaw) : null;
-    if (bu === BillingUnit.PER_HOUR) return '/小时';
-    if (bu === BillingUnit.PER_SESSION) return '/次';
-    return '/次';
-  })();
-
-  function getSchedulePricingsForEdit(schedule: ScheduleEvent): StudentCoursePricing[] {
-    if (schedule.student_pricings && schedule.student_pricings.length > 0) {
-      return schedule.student_pricings;
-    }
-    const course = courses.find(c => c.id === schedule.course_id);
-    return course?.student_pricings || [];
   }
 
   function buildFinancialFieldsForSchedule(
@@ -1619,49 +1570,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       teacher_id: teacherId,
       teacher_name: schedule.teacher_name || teacher?.name || course?.teacher_name,
     }, course, overridePricings);
-  }
-
-  function handleSaveStudentEdit() {
-    const values = studentEditForm.getFieldsValue();
-    if (studentEditModal.schedule) {
-      const schedule = studentEditModal.schedule as ScheduleEvent;
-      const course = courses.find(c => c.id === schedule.course_id);
-      if (course && isPureInstitutionSchedule(schedule, course)) {
-        const values = studentEditForm.getFieldsValue();
-        const updatedPricings: StudentCoursePricing[] = [{
-          student_id: INSTITUTION_UNBOUND_STUDENT_ID,
-          tuition: Number(values.institutionTuition || 0),
-          teacher_fee: Number(values.institutionTeacherFee || 0),
-          status: StudentAttendanceStatus.NORMAL,
-        }];
-        const financialFields = buildFinancialFieldsForSchedule(schedule, course, updatedPricings);
-        setSchedulesWithHistory(prev => prev.map(item =>
-          item.id === schedule.id
-            ? { ...item, ...financialFields }
-            : item
-        ));
-        message.success('本节机构排课费用已保存');
-        setStudentEditModal({ open: false, schedule: null });
-        return;
-      }
-      const basePricings = getSchedulePricingsForEdit(schedule);
-      if (course && basePricings.length > 0) {
-        const updatedPricings = basePricings.map((sp, idx) => ({
-          ...sp,
-          ...values.students[idx],
-          teacher_fee: values.students[idx]?.teacher_fee ?? 0,
-          tuition: values.students[idx]?.tuition ?? 0,
-        }));
-        const financialFields = buildFinancialFieldsForSchedule(schedule, course, updatedPricings);
-        setSchedulesWithHistory(prev => prev.map(item =>
-          item.id === schedule.id
-            ? { ...item, ...financialFields }
-            : item
-        ));
-        message.success('本节课学生出勤和费用已保存');
-        setStudentEditModal({ open: false, schedule: null });
-      }
-    }
   }
 
   function handleScheduleStatusChange(id: string, status: ScheduleStatus) {
@@ -1724,7 +1632,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       startTime: startTime,
       endTime: endTime,
       courseId: course.id,
-      courseName: displayCourseName,
       teacherId: course.teacher_id,
       room: course.room_id || course.room_name,
       status: ScheduleStatus.PLANNED,
@@ -1858,18 +1765,19 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
     const values = form.getFieldsValue();
     if (!values.startTime) { message.warning('请选择开始时间'); return; }
     if (!values.duration) { message.warning('请选择课程时长'); return; }
-    if (!values.teacherId) { message.warning('请选择老师'); return; }
+    if (!values.teacherId && !(editingSchedule && editingSchedule.course_id === values.courseId)) { message.warning('请选择老师'); return; }
     if (!values.courseId) { message.warning('请选择课程'); return; }
     form.validateFields().then(values => {
       const startDayjs = values.startTime;
       const durationHours = values.duration || DEFAULT_DURATION_HOURS;
       
       const course = courses.find(c => c.id === values.courseId);
-      const courseName = getCourseDisplayName(course, values.courseName);
+      const courseName = getCourseDisplayName(course, editingSchedule?.course_name);
       
       const datesToSave = batchDates.length > 0 ? batchDates : [values.date];
       const newSchedules: ScheduleEvent[] = [];
-      let scheduleChanged = false;
+      let editLesson: ((schedule: ScheduleEvent) => ScheduleEvent) | undefined;
+      const room = rooms.find(r => r.id === values.room)?.name || values.room;
       pendingSaveNoticeRef.current = '\u6392\u8bfe\u5df2\u4fdd\u5b58\u4e3a\u8349\u7a3f\uff0c\u786e\u8ba4\u540e\u63d0\u4ea4\u3002';
       
       datesToSave.forEach((dateDayjs, index) => {
@@ -1888,34 +1796,41 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         }
         
         if (editingSchedule && index === 0) {
-          scheduleChanged = true;
-          setSchedulesWithHistory(prev => prev.map(s =>
-            s.id === editingSchedule.id
-              ? (() => {
-                  const sameCourse = s.course_id === values.courseId;
-                  const updated: ScheduleEvent = {
-                    ...s,
-                    start_time: startTimeStr,
-                    end_time: endTimeStr,
-                    course_id: values.courseId,
-                    course_name: courseName,
-                    course_type: course?.type || s.course_type,
-                    status: values.status || ScheduleStatus.PLANNED,
-                    room: rooms.find(r => r.id === values.room)?.name || courses.find(c => c.id === values.courseId)?.room_name || values.room,
-                    notes: values.notes,
-                    course_year: course?.year !== undefined ? String(course?.year) : undefined,
-                    course_semester: course?.semester || undefined,
-                  };
-                  return {
-                    ...updated,
-                    ...buildFinancialFieldsForSchedule(updated, course, sameCourse ? s.student_pricings : undefined),
-                  };
-                })()
-              : s
-          ));
+          editLesson = schedule => {
+            const sameCourse = schedule.course_id === values.courseId;
+            const basePricings = (sameCourse ? schedule.student_pricings : undefined) ?? course?.student_pricings ?? [];
+            const updatedPricings = basePricings.map(pricing => {
+              const changes = values.studentPricings?.[pricing.student_id];
+              return {
+                ...pricing,
+                status: changes?.status ?? pricing.status,
+                tuition: changes?.tuition === null ? 0 : changes?.tuition ?? pricing.tuition,
+                teacher_fee: changes?.teacher_fee === null ? 0 : changes?.teacher_fee ?? pricing.teacher_fee,
+              };
+            });
+            const updated: ScheduleEvent = {
+              ...schedule,
+              start_time: startTimeStr,
+              end_time: endTimeStr,
+              course_id: values.courseId,
+              course_name: courseName,
+              course_type: course?.type || schedule.course_type,
+              status: values.status || ScheduleStatus.PLANNED,
+              room,
+              course_year: sameCourse ? schedule.course_year : course?.year !== undefined ? String(course.year) : undefined,
+              course_semester: sameCourse ? schedule.course_semester : course?.semester,
+              teacher_id: sameCourse ? schedule.teacher_id : course?.teacher_id,
+              teacher_name: sameCourse ? schedule.teacher_name : course?.teacher_name,
+              billing_unit: sameCourse ? schedule.billing_unit : course?.billing_unit,
+              teacher_fee_mode: sameCourse ? schedule.teacher_fee_mode : course?.teacher_fee_mode,
+            };
+            return {
+              ...updated,
+              ...buildFinancialFieldsForSchedule(updated, course, updatedPricings),
+            };
+          };
           (window as any).operateLogger?.log('修改', `修改排课「${courseName}」时间 ${dayjs(startTimeStr).format('HH:mm')}-${dayjs(endTimeStr).format('HH:mm')}`, '课程表');
         } else {
-          const courseObj = courses.find(c => c.id === values.courseId);
           const baseSchedule: ScheduleEvent = {
             id: uuidv4(),
             course_id: values.courseId,
@@ -1924,31 +1839,31 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
             start_time: startTimeStr,
             end_time: endTimeStr,
             status: values.status || ScheduleStatus.PLANNED,
-            room: rooms.find(r => r.id === values.room)?.name || courseObj?.room_name || values.room,
-            notes: values.notes,
-            course_year: courseObj && courseObj.year !== undefined ? String(courseObj.year) : undefined,
-            course_semester: courseObj?.semester || undefined,
+            room,
+            course_year: course?.year !== undefined ? String(course.year) : undefined,
+            course_semester: course?.semester || undefined,
           };
           const newSchedule: ScheduleEvent = {
             ...baseSchedule,
-            ...buildFinancialFieldsForSchedule(baseSchedule, courseObj),
+            ...buildFinancialFieldsForSchedule(baseSchedule, course),
           };
           newSchedules.push(newSchedule);
         }
       });
       
       if (newSchedules.length > 0) {
-        scheduleChanged = true;
-        setSchedulesWithHistory(prev => [...prev, ...newSchedules]);
         const logDetail = `批量创建排课：${datesToSave.length} 节 - ${newSchedules.map(s => s.course_name.split(' ')[0]).filter(Boolean).join(', ')}`;
         (window as any).operateLogger?.log('创建', logDetail, '课程表');
       }
       
-      const msg = datesToSave.length > 1 ? `已添加 ${datesToSave.length} 节课程` : '课程已保存';
-      if (!scheduleChanged) {
+      if (!editLesson && newSchedules.length === 0) {
         pendingSaveNoticeRef.current = null;
         return;
       }
+      setSchedulesWithHistory(prev => [
+        ...prev.map(schedule => editLesson && editingSchedule?.id === schedule.id ? editLesson(schedule) : schedule),
+        ...newSchedules,
+      ]);
       setModalVisible(false);
     }).catch(err => {
       console.error(err);
@@ -2148,7 +2063,6 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   onDragSchedule={handleDragSchedule}
                   onResizeSchedule={handleResizeSchedule}
                   onDeleteSchedule={handleDeleteSchedule}
-                  onOpenStudentEdit={handleOpenStudentEdit}
                   onRefreshSchedules={handleRefreshSelectedSchedules}
                 />
                 {batchVisuals}
@@ -2159,280 +2073,155 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
       />
 
       <Modal
-        title="排课窗口"
+        title={editingSchedule ? '排课明细' : '新建排课'}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setModalVisible(false)}>取消</Button>,
-          <Button key="save" type="primary" onClick={handleSave}>保存</Button>,
-        ]}
-        width={600}
+        onOk={handleSave}
+        okText={editingSchedule ? '保存修改' : '保存排课'}
+        cancelText="取消"
+        width={580}
+        centered
+        forceRender
+        className="schedule-editor"
       >
-        <Form form={form} layout="vertical">
-          <Form.Item label="日期">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {batchDates.map((d, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 4, width: 'calc(33.33% - 8px)' }}>
-                  <DatePicker
-                    style={{ flex: 1 }}
-                    value={d}
-                    onChange={(date) => {
-                      if (date) {
-                        const newDates = [...batchDates];
-                        newDates[idx] = date;
-                        setBatchDates(newDates);
-                      }
-                    }}
-                  />
-                  {batchDates.length > 1 && (
-                    <Button type="text" danger size="small"
-                      onClick={() => {
-                        const newDates = [...batchDates];
-                        newDates.splice(idx, 1);
-                        setBatchDates(newDates);
-                      }}
-                    >删除</Button>
-                  )}
-                </div>
-              ))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', flexWrap: 'wrap' }}>
-                <Button
-                  type="dashed"
-                  style={{ flex: '1 1 240px' }}
-                  onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}
-                >
-                  添加日期
-                </Button>
-                <Space size={4} style={{ flex: '0 0 auto' }}>
-                  <span style={{ fontSize: 12, color: '#666' }}>间隔天数</span>
-                  <InputNumber
-                    min={1}
-                    precision={0}
-                    value={batchDateStepDays}
-                    onChange={(value) => setBatchDateStepDays(normalizeDateStepDays(value))}
-                    style={{ width: 80 }}
-                  />
-                </Space>
-              </div>
-              <div style={{ fontSize: 12, color: '#666', width: '100%' }}>
-                共 {batchDates.length} 节课程
-              </div>
-            </div>
-          </Form.Item>
-           
-          <Row gutter={12}>
-            <Col span={8}>
-              <Form.Item name="startTime" label="开始时间">
-                <TimePicker
-                  format="HH:mm"
-                  minuteStep={5}
-                  style={{ width: '100%' }}
-                  onChange={(time) => {
-                    if (time) {
-                      const duration = form.getFieldValue('duration') || DEFAULT_DURATION_HOURS;
-                      form.setFieldValue('endTime', time.add(duration, 'hour'));
-                    }
-                  }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="duration" label="课程时长">
-                <AutoCloseSelect
-                  style={{ width: '100%' }}
-                  onChange={(val: number) => {
-                    const startTime = form.getFieldValue('startTime');
-                    if (startTime) {
-                      form.setFieldValue('endTime', startTime.add(val, 'hour'));
-                    }
-                  }}
-                  options={[
-                    { value: 0.5, label: '30分钟' },
-                    { value: 40 / 60, label: '40分钟' },
-                    { value: 1, label: '1小时' },
-                    { value: 80 / 60, label: '80分钟' },
-                    { value: 1.5, label: '1.5小时' },
-                    { value: 2, label: '2小时' },
-                    { value: 2.5, label: '2.5小时' },
-                    { value: 3, label: '3小时' },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="endTime" label="结束时间">
-                <TimePicker format="HH:mm" style={{ width: '100%' }} disabled />
-              </Form.Item>
-            </Col>
-          </Row>
-           
-          <Row gutter={12}>
-            <Col span={8}>
+        <Form form={form} layout="vertical" className="schedule-editor__form">
+          <section aria-label="排课信息">
+            <div className="schedule-editor__course-fields">
               <Form.Item name="teacherId" label="老师">
                 <AutoCloseSelect
                   placeholder="选择老师"
                   showSearch
                   allowClear
-                  options={teachers.map(t => ({ label: t.name, value: t.id }))}
-                  filterOption={(input: string, option: any) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
-                  onChange={(val: string | undefined) => {
-                    setModalTeacherId(val);
-                    form.setFieldValue('courseId', undefined);
-                    form.setFieldValue('courseName', undefined);
-                    form.setFieldValue('room', undefined);
+                  optionFilterProp="label"
+                  options={editorTeacherOptions}
+                  onChange={(teacherId: string | undefined) => {
+                    setModalTeacherId(teacherId);
+                    form.setFieldsValue({ courseId: undefined, room: undefined, studentPricings: undefined });
                   }}
                 />
               </Form.Item>
-            </Col>
-            <Col span={8}>
               <Form.Item name="courseId" label="课程">
                 <AutoCloseSelect
                   placeholder={modalTeacherId ? '选择课程' : '请先选择老师'}
-                  disabled={!modalTeacherId}
+                  disabled={!modalTeacherId && !editingSchedule}
                   showSearch
-                  options={courses
-                    .filter(c => (c.active || c.id === editingSchedule?.course_id) && !!modalTeacherId && String(c.teacher_id) === String(modalTeacherId))
-                    .map(c => ({ label: getCourseDisplayName(c), value: c.id }))
-                  }
-                  filterOption={(input: string, option: any) =>
-                    String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                  }
+                  optionFilterProp="label"
+                  options={editorCourseOptions}
+                  popupMatchSelectWidth={false}
                   onChange={(courseId: string) => {
+                    form.setFieldValue('studentPricings', undefined);
                     const course = courses.find(c => c.id === courseId);
                     if (course) {
-                      const displayCName = getCourseDisplayName(course);
-                      form.setFieldValue('courseName', displayCName);
-                      const roomId = (course.room_id && course.room_id.split(',')[0].trim()) || (rooms.find(r => r.name === course.room_name)?.id) || course.room_name || ''; form.setFieldValue('room', roomId);
+                      const roomId = course.room_id?.split(',')[0].trim() || rooms.find(r => r.name === course.room_name)?.id || course.room_name;
+                      form.setFieldValue('room', roomId);
                       if (course.default_duration_minutes) {
-                        const durHours = course.default_duration_minutes / 60;
-                        const durOptions = [0.5, 40 / 60, 1, 80 / 60, 1.5, 2, 2.5, 3];
-                        const closest = durOptions.reduce((prev, curr) => Math.abs(curr - durHours) < Math.abs(prev - durHours) ? curr : prev);
-                        form.setFieldValue('duration', closest);
-                        const sTime = form.getFieldValue('startTime');
-                        if (sTime) { form.setFieldValue('endTime', dayjs(sTime).add(course.default_duration_minutes, 'minute')); }
+                        form.setFieldValue('duration', course.default_duration_minutes / 60);
+                        const startTime = form.getFieldValue('startTime');
+                        if (startTime) form.setFieldValue('endTime', startTime.add(course.default_duration_minutes, 'minute'));
                       }
                     }
                   }}
                 />
               </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
+              <Form.Item name="room" label="上课地址">
                 <AutoCloseSelect
-                  options={[
-                    { value: ScheduleStatus.PLANNED, label: '正常' },
-                    { value: ScheduleStatus.LEAVE, label: '请假' },
-                    { value: ScheduleStatus.CANCELLED, label: '取消' },
-                  ]}
+                  placeholder="选择地点"
+                  showSearch
+                  allowClear
+                  optionFilterProp="label"
+                  options={editorRoomOptions}
+                  popupMatchSelectWidth={false}
                 />
               </Form.Item>
-            </Col>
-          </Row>
-           
-          <Form.Item name="courseName" rules={[{ required: true }]} style={{ display: 'none' }}>
-            <Input />
-          </Form.Item>
-           
-          <Form.Item name="room" label="上课地址">
-            <AutoCloseSelect
-              placeholder="选择上课地址"
-              showSearch
-              allowClear
-              options={rooms.map(r => ({ label: r.address ? `${r.name} (${r.address})` : r.name, value: r.id }))}
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title={`${studentEditModal.schedule && isPureInstitutionSchedule(studentEditModal.schedule) ? '机构排课费用' : '学生出勤和费用'} - ${studentEditModal.schedule?.course_name || ''}`}
-        open={studentEditModal.open}
-        onCancel={() => setStudentEditModal({ open: false, schedule: null })}
-        onOk={() => handleSaveStudentEdit()}
-        width={700}
-      >
-        {studentEditModal.schedule && (
-          <Form form={studentEditForm} layout="vertical">
-            {isPureInstitutionSchedule(studentEditModal.schedule) ? (
-              <Card size="small" title="本节机构排课费用" style={{ marginBottom: 12 }}>
-                <Row gutter={16}>
-                  <Col span={12}>
-                    <Form.Item
-                      name="institutionTuition"
-                      label={`学费${billingUnitLabel}`}
-                    >
-                      <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                  <Col span={12}>
-                    <Form.Item
-                      name="institutionTeacherFee"
-                      label={`课时费${billingUnitLabel}`}
-                    >
-                      <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
-                    </Form.Item>
-                  </Col>
-                </Row>
-                <Alert
-                  type="info"
-                  showIcon
-                  message="这里的修改只保存到当前这一节排课明细，不会修改课程管理中的课程默认费用。"
+              <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
+                <AutoCloseSelect options={[
+                  { value: ScheduleStatus.PLANNED, label: '正常' },
+                  { value: ScheduleStatus.LEAVE, label: '请假' },
+                  { value: ScheduleStatus.CANCELLED, label: '取消' },
+                ]} />
+              </Form.Item>
+            </div>
+            <div className="schedule-editor__time-fields">
+              <Form.Item label="上课日期" htmlFor="schedule-first-date">
+                <DatePicker
+                  id="schedule-first-date"
+                  allowClear={false}
+                  value={batchDates[0]}
+                  onChange={date => date && setBatchDates(previous => [date, ...previous.slice(1)])}
                 />
-              </Card>
-            ) : (courseStudentPricings || []).map((sp, idx) => {
-              const student = allStudents.find(s => s.id === sp.student_id);
-              return (
-                <Card
-                  size="small"
-                  key={sp.student_id}
-                  title={`${idx + 1}. ${student?.name || '未知学生'}`}
-                  style={{ marginBottom: 12 }}
-                >
-                  <Row gutter={16}>
-                    <Col span={8}>
-                      <Form.Item
-                        name={['students', idx, 'status']}
-                        label="出勤状态"
-                        initialValue={sp.status || StudentAttendanceStatus.NORMAL}
-                      >
-                        <Select>
-                          <Option value={StudentAttendanceStatus.NORMAL}>正常出勤</Option>
-                          <Option value={StudentAttendanceStatus.LEAVE}>请假</Option>
-                          <Option value={StudentAttendanceStatus.CANCELLED}>取消</Option>
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item
-                        name={['students', idx, 'tuition']}
-                        label={`学费${billingUnitLabel}`}
-                        initialValue={sp.tuition}
-                      >
-                        <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item
-                        name={['students', idx, 'teacher_fee']}
-                        label={`课时费${billingUnitLabel}`}
-                        initialValue={sp.teacher_fee ?? 0}
-                      >
-                        <InputNumber min={0} prefix="¥" style={{ width: '100%' }} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </Card>
-              );
-            })}
-            {!isPureInstitutionSchedule(studentEditModal.schedule) && (!courseStudentPricings || courseStudentPricings.length === 0) && (
-              <div style={{ textAlign: 'center', color: '#999', padding: 20 }}>
-                该课程未绑定学生信息
+              </Form.Item>
+              <Form.Item name="startTime" label="开始时间">
+                <TimePicker
+                  format="HH:mm"
+                  minuteStep={5}
+                  onChange={(time) => {
+                    const duration = form.getFieldValue('duration') || DEFAULT_DURATION_HOURS;
+                    form.setFieldValue('endTime', time?.add(duration * 60, 'minute'));
+                  }}
+                />
+              </Form.Item>
+              <Form.Item name="duration" label="课程时长">
+                <AutoCloseSelect
+                  onChange={(hours: number) => {
+                    const startTime = form.getFieldValue('startTime');
+                    if (startTime) form.setFieldValue('endTime', startTime.add(hours * 60, 'minute'));
+                  }}
+                  options={editorDurationOptions}
+                />
+              </Form.Item>
+              <Form.Item name="endTime" label="结束时间">
+                <TimePicker format="HH:mm" disabled />
+              </Form.Item>
+            </div>
+            <div className="schedule-editor__batch">
+              <div className="schedule-editor__batch-actions">
+                <Button onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}>
+                  添加日期
+                </Button>
+                <label htmlFor="schedule-date-step">间隔天数</label>
+                <InputNumber
+                  id="schedule-date-step"
+                  min={1}
+                  precision={0}
+                  value={batchDateStepDays}
+                  onChange={value => setBatchDateStepDays(normalizeDateStepDays(value))}
+                />
+                <span className="schedule-editor__count" aria-live="polite">共 {batchDates.length} 节课程</span>
+                {batchDates.length > 1 && (
+                  <Button type="link" danger onClick={() => setBatchDates(previous => previous.slice(1))}>删除首个日期</Button>
+                )}
               </div>
-            )}
-          </Form>
-        )}
+              {batchDates.length > 1 && (
+                <div className="schedule-editor__date-list">
+                  {batchDates.slice(1).map((date, index) => (
+                    <div className="schedule-editor__date-entry" key={index}>
+                      <DatePicker
+                        aria-label={`第 ${index + 2} 个上课日期`}
+                        allowClear={false}
+                        value={date}
+                        onChange={value => value && setBatchDates(previous =>
+                          previous.map((entry, entryIndex) => entryIndex === index + 1 ? value : entry)
+                        )}
+                      />
+                      <Button type="text" danger aria-label={`删除第 ${index + 2} 个日期`}
+                        onClick={() => setBatchDates(previous => previous.filter((_, entryIndex) => entryIndex !== index + 1))}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+          <ScheduleStudentPricingTable
+            pricings={editorPricings}
+            students={allStudents}
+            billingUnit={editorBillingUnit}
+            hasCourse={!!editorCourseId}
+            editable={!!editingSchedule}
+          />
+        </Form>
       </Modal>
 
     </div>

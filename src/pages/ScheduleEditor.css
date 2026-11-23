@@ -1,0 +1,261 @@
+.schedule-editor.ant-modal {
+  max-width: calc(100vw - 24px);
+  padding-bottom: 0;
+}
+
+.schedule-editor .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.schedule-editor .ant-modal-header {
+  margin: 0;
+  padding: 15px 22px;
+  border-bottom: 1px solid #e4e9f1;
+}
+
+.schedule-editor .ant-modal-title {
+  color: #18253b;
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 28px;
+}
+
+.schedule-editor .ant-modal-close {
+  top: 12px;
+  inset-inline-end: 18px;
+}
+
+.schedule-editor .ant-modal-body {
+  max-height: calc(100dvh - 160px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px 22px 20px;
+}
+
+.schedule-editor .ant-modal-footer {
+  margin: 0;
+  padding: 12px 22px;
+  border-top: 1px solid #e4e9f1;
+}
+
+.schedule-editor .ant-modal-footer .ant-btn {
+  min-height: 36px;
+  min-width: 86px;
+}
+
+.schedule-editor h3 {
+  margin: 0 0 12px;
+  color: #18253b;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.schedule-editor__course-fields,
+.schedule-editor__time-fields {
+  display: grid;
+  gap: 10px 14px;
+  align-items: start;
+}
+
+.schedule-editor__course-fields {
+  grid-template-columns: 104px 144px 104px 94px;
+}
+
+.schedule-editor__time-fields {
+  grid-template-columns: 138px 92px 104px 92px;
+}
+
+.schedule-editor__form .ant-form-item {
+  min-width: 0;
+  margin-bottom: 10px;
+}
+
+.schedule-editor__form .ant-form-item .ant-form-item-label {
+  padding-bottom: 4px;
+}
+
+.schedule-editor__form .ant-form-item-label label {
+  color: #35445b;
+  font-weight: 500;
+}
+
+.schedule-editor__form .ant-picker,
+.schedule-editor__form .ant-select {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-editor__form .ant-picker,
+.schedule-editor__form .ant-input,
+.schedule-editor__form .ant-input-number,
+.schedule-editor__form .ant-btn {
+  min-height: 34px;
+}
+
+.schedule-editor__form .ant-select:not(.ant-select-sm) {
+  height: 34px;
+}
+
+.schedule-editor__time-fields .ant-picker,
+.schedule-editor__time-fields .ant-select {
+  max-width: 138px;
+}
+
+.schedule-editor__batch {
+  margin: 0 0 16px;
+}
+
+.schedule-editor__batch-actions,
+.schedule-editor__date-list,
+.schedule-editor__date-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.schedule-editor__batch-actions,
+.schedule-editor__date-list {
+  flex-wrap: wrap;
+}
+
+.schedule-editor__batch-actions .ant-input-number {
+  width: 64px;
+}
+
+.schedule-editor__batch-actions label {
+  margin-inline-start: 4px;
+}
+
+.schedule-editor__batch-actions .ant-btn-default {
+  color: #1559c8;
+}
+
+.schedule-editor__date-list {
+  margin-top: 8px;
+}
+
+.schedule-editor__date-entry .ant-picker {
+  width: 138px;
+}
+
+.schedule-editor__section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.schedule-editor__count {
+  color: #526278;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-editor__students {
+  padding-top: 14px;
+  border-top: 1px solid #e4e9f1;
+}
+
+.schedule-editor__table-wrap {
+  overflow: auto;
+  border: 1px solid #dde5ef;
+  border-radius: 9px;
+}
+
+.schedule-editor__table {
+  width: 100%;
+  min-width: 340px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.schedule-editor__table thead {
+  background: #edf2fa;
+  color: #263a56;
+}
+
+.schedule-editor__table th,
+.schedule-editor__table td {
+  padding: 6px 12px;
+  text-align: start !important;
+  overflow-wrap: anywhere;
+}
+
+.schedule-editor__table thead th {
+  padding-block: 10px;
+  font-weight: 600;
+}
+
+.schedule-editor__table tbody th,
+.schedule-editor__table tbody td {
+  border-top: 1px solid #e4e9f1;
+}
+
+.schedule-editor__table tbody th {
+  font-weight: 500;
+}
+
+.schedule-editor__table tbody tr:focus-within {
+  background: #f6f8fc;
+}
+
+.schedule-editor__table .schedule-editor__money,
+.schedule-editor__money .ant-input-number-input {
+  text-align: end !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-editor__money .ant-input-number {
+  width: 100%;
+  max-width: 104px;
+}
+
+.schedule-editor__unit {
+  white-space: nowrap;
+}
+
+.schedule-editor__table .ant-select {
+  max-width: 114px;
+}
+
+.schedule-editor__empty {
+  padding: 18px 12px;
+  border: 1px solid #e4e9f1;
+  border-radius: 9px;
+  color: #526278;
+  text-align: center;
+}
+
+@media (max-width: 555px) {
+  .schedule-editor .ant-modal-header,
+  .schedule-editor .ant-modal-body,
+  .schedule-editor .ant-modal-footer {
+    padding-inline: 14px;
+  }
+
+  .schedule-editor .ant-modal-body {
+    max-height: calc(100dvh - 136px);
+  }
+
+  .schedule-editor__course-fields {
+    grid-template-columns: 104px minmax(0, 144px);
+  }
+
+  .schedule-editor__time-fields {
+    grid-template-columns: 138px minmax(0, 104px);
+  }
+
+  .schedule-editor__table th,
+  .schedule-editor__table td {
+    padding-inline: 5px;
+  }
+
+  .schedule-editor__unit {
+    display: block;
+    font-weight: 400;
+    color: #526278;
+  }
+}

@@ -135,8 +135,8 @@ const selectSnapshotPricings = (
   course?: Course,
   overridePricings?: StudentCoursePricing[]
 ): StudentCoursePricing[] => {
-  if (overridePricings !== undefined && overridePricings.length > 0) return overridePricings;
-  if (schedule.student_pricings !== undefined && schedule.student_pricings.length > 0) return schedule.student_pricings;
+  if (Array.isArray(overridePricings)) return overridePricings;
+  if (Array.isArray(schedule.student_pricings)) return schedule.student_pricings;
   if (course?.student_pricings && course.student_pricings.length > 0) return course.student_pricings;
   return [];
 };

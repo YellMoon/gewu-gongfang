@@ -19,8 +19,12 @@ function execute(action,schedule,old,confirm=true,overlap=false,options={}){
     setSchedulesWithHistory:fn=>{state.rows=fn(state.rows);state.writes++;},
     studentEditForm:{setFieldsValue:()=>{throw Error('deleted course must not open original editor');}},setStudentEditModal:()=>{state.editorOpened=true;},
     buildScheduleFinancialSnapshot:v.financial.buildScheduleFinancialSnapshot,...v.types};
-  const calls={move:'handleDragSchedule(schedule,newDay,newSlot,false)',copy:'handleDragSchedule(schedule,newDay,newSlot,true)',resize:'handleResizeSchedule(schedule,null,132)',delete:'handleDeleteSchedule(schedule.id)',attendance:'handleOpenStudentEdit(schedule)'};
-  const handler={move:'handleDragSchedule',copy:'handleDragSchedule',resize:'handleResizeSchedule',delete:'handleDeleteSchedule',attendance:'handleOpenStudentEdit'}[action];
+  Object.assign(env, {
+    form: { resetFields() {}, setFieldsValue() {} }, setEditingSchedule() {}, setModalTeacherId() {},
+    setBatchDates() {}, setModalVisible: value => { state.editorOpened = value; },
+  });
+  const calls={move:'handleDragSchedule(schedule,newDay,newSlot,false)',copy:'handleDragSchedule(schedule,newDay,newSlot,true)',resize:'handleResizeSchedule(schedule,null,132)',delete:'handleDeleteSchedule(schedule.id)',attendance:old?'handleOpenStudentEdit(schedule)':'handleDoubleClickSchedule(schedule)'};
+  const handler={move:'handleDragSchedule',copy:'handleDragSchedule',resize:'handleResizeSchedule',delete:'handleDeleteSchedule',attendance:old?'handleOpenStudentEdit':'handleDoubleClickSchedule'}[action];
   if(!v.compiled.has(action)){
     const code=named(v.calendar,'buildFinancialFieldsForSchedule')+'\n'+named(v.calendar,handler)+'\n'+calls[action];
     v.compiled.set(action,new Function(...Object.keys(env),ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText));
@@ -54,8 +58,16 @@ function verify(options={}){
           row.calculated_tuition=Math.round(row.calculated_tuition*factor*100)/100;
           row.calculated_teacher_fee=Math.round(row.calculated_teacher_fee*factor*100)/100;
         }
-        assert.deepEqual(current,original,action+' with deleted course and duration-based session billing');assert.equal(JSON.stringify(schedule),before);
-        if(action==='attendance'){assert.equal(current.editorOpened,false);assert.equal(current.writes,0);}else assert.equal(current.writes,1);
+        if(action==='attendance'){
+          assert.equal(original.editorOpened,false);
+          assert.equal(current.editorOpened,true);
+          assert.equal(current.writes,0);
+          assert.deepEqual(current.rows,original.rows);
+        }else{
+          assert.deepEqual(current,original,action+' with deleted course and duration-based session billing');
+          assert.equal(current.writes,1);
+        }
+        assert.equal(JSON.stringify(schedule),before);
         cases.push({action,schedule,result:current.rows.find(s=>s.id===(action==='copy'?'copy':'lesson'))});
       }
       for(const old of [true,false]){
@@ -67,25 +79,39 @@ function verify(options={}){
   }finally{if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous;}
   return cases;
 }
-function verifyAttendance(){
+async function verifyAttendance(){
   // UTF-8: execute original open/save handlers with no live student profile.
   let count=0;
   for(const billing_unit of [1,2])for(const teacher_fee_mode of [1,2])for(const status of [1,3,4]){
     const schedule={id:'lesson',course_id:'course-1',start_time:'2026-09-14 09:00',end_time:'2026-09-14 10:30',status:1,billing_unit,teacher_fee_mode,teacher_id:'teacher-1',teacher_name:'Original teacher',student_pricings:[{student_id:'deleted-student',tuition:180,teacher_fee:120,status:1}]};
-    const outcomes=versions.map(v=>{
+    const outcomes=await Promise.all(versions.map(async (v,index)=>{
       const course={id:'course-1',default_duration_minutes:90,course_type:1,student_pricings:schedule.student_pricings},modal={open:false,schedule:null};let fields,writes=0,rows=[schedule];
-      const env={schedule,courses:[course],allStudents:[],students:[],teachers:[],studentEditModal:modal,
+      let validation;
+      const values = {
+        courseId: course.id, startTime: dayjs(schedule.start_time), duration: 1.5, status: schedule.status,
+        studentPricings: { 'deleted-student': { status } },
+      };
+      const env={schedule,
+        form:{getFieldsValue:()=>values,validateFields:()=>({then:callback=>validation=Promise.resolve().then(()=>callback(values))})},
+        editingSchedule:schedule,batchDates:[dayjs(schedule.start_time)],rooms:[],getCourseDisplayName:()=>undefined,
+        dayjs,checkOverlap:()=>null,pendingSaveNoticeRef:{current:null},window:{},console:{error(error){throw error;}},
+        setModalVisible:value=>{modal.open=value;},courses:[course],allStudents:[],students:[],teachers:[],studentEditModal:modal,
         studentEditForm:{setFieldsValue:value=>{fields=value;},getFieldsValue:()=>({students:fields.students.map(p=>({...p,status}))})},
         setStudentEditModal:value=>Object.assign(modal,value),setSchedulesWithHistory:fn=>{rows=fn(rows);writes++;},message:{success(){}},
         buildScheduleFinancialSnapshot:v.financial.buildScheduleFinancialSnapshot,...v.types};
-      const code=['getSchedulePricingsForEdit','buildFinancialFieldsForSchedule','isPureInstitutionSchedule','getInstitutionSchedulePricing','handleOpenStudentEdit','handleSaveStudentEdit'].map(name=>named(v.calendar,name)).join('\n')+'\nhandleOpenStudentEdit(schedule);handleSaveStudentEdit();';
+      const handlers = index === 0
+        ? ['getSchedulePricingsForEdit','buildFinancialFieldsForSchedule','isPureInstitutionSchedule','getInstitutionSchedulePricing','handleOpenStudentEdit','handleSaveStudentEdit']
+        : ['buildFinancialFieldsForSchedule','handleSave'];
+      const code = handlers.map(name=>named(v.calendar,name)).join('\n') +
+        (index === 0 ? '\nhandleOpenStudentEdit(schedule);handleSaveStudentEdit();' : '\nhandleSave();');
       new Function(...Object.keys(env),ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText)(...Object.values(env));
+      await validation;
       assert.equal(writes,1);assert.equal(modal.open,false);assert.equal(rows[0].student_pricings[0].student_id,'deleted-student');
       assert.equal(rows[0].student_pricings[0].status,status);assert.equal(rows[0].student_pricings[0].tuition,180);assert.equal(rows[0].student_pricings[0].teacher_fee,120);
       assert.equal(rows[0].calculated_tuition,status===1?180*(billing_unit===1?1.5:1):0);
       assert.equal(rows[0].calculated_teacher_fee,status===1?120*(billing_unit===1?1.5:1):0);
-      return rows;
-    });
+      return rows.map(row => ({ ...row, start_time: dayjs(row.start_time).toISOString(), end_time: dayjs(row.end_time).toISOString(), room: row.room, notes: row.notes, course_name: row.course_name, course_type: row.course_type, course_year: row.course_year, course_semester: row.course_semester }));
+    }));
     assert.deepEqual(outcomes[0],outcomes[1]);count++;
   }
   return count;
