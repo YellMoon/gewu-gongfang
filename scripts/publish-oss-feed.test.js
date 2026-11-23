@@ -20,6 +20,11 @@ const retryTest = spawnSync(process.execPath, ['scripts/oss-upload-retry.test.js
   cwd: path.join(__dirname, '..'),
   encoding: 'utf8',
 });
+const retentionTest = spawnSync(process.execPath, ['scripts/oss-release-retention.test.js'], {
+  cwd: path.join(__dirname, '..'),
+  encoding: 'utf8',
+});
+assert.strictEqual(retentionTest.status, 0, `OSS retention checks should pass:\n${retentionTest.stdout}\n${retentionTest.stderr}`);
 assert.strictEqual(
   retryTest.status,
   0,
@@ -108,14 +113,13 @@ try {
   );
   assert.strictEqual(
     publish.release_archive.installer.oss_key,
-    `desktop/releases/${packageJson.version}/${installerName}`,
-    'publish should archive each installer beside its release feed'
+    `desktop/${installerName}`,
+    'archived feeds should reference the single canonical installer'
   );
   assert.deepStrictEqual(
     publish.planned_upload.map(item => item.key),
     [
       `desktop/${installerName}`,
-      `desktop/releases/${packageJson.version}/${installerName}`,
       `desktop/releases/${packageJson.version}/latest.yml`,
       'desktop/latest.yml',
     ],

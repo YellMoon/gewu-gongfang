@@ -5,6 +5,7 @@ const path = require('path');
 const { URL } = require('url');
 const { retryTransientNetwork } = require('./oss-upload-retry');
 const releaseMatrix = require('./release-matrix');
+const { cleanupReleases } = require('./oss-release-retention');
 
 try {
   const dotenv = require('dotenv');
@@ -198,6 +199,34 @@ function putOssObject(objectKey, body, contentType) {
   });
 }
 
+function requestOss(method, key, query = '') {
+  const config = getOssConfig();
+  const date = new Date().toUTCString();
+  const authorization = signOssPut({ method, contentMd5: '', contentType: '', date,
+    objectKey: key, ...config });
+  return new Promise((resolve, reject) => {
+    const request = https.request({ method, hostname: new URL(config.endpoint).hostname,
+      path: `/${encodeObjectPath(key)}${query ? `?${query}` : ''}`,
+      headers: { Authorization: authorization, Date: date } }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve({ body: Buffer.concat(chunks), headers: response.headers });
+        } else reject(new Error(`OSS ${method} ${key} failed: ${response.statusCode}`));
+      });
+    });
+    request.setTimeout(30000, () => request.destroy(new Error('OSS request timed out')));
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+function runRetention(apply) {
+  return cleanupReleases({ request: requestOss, prefix: objectPrefix, apply,
+    auditDir: path.resolve(__dirname, '..', 'output', 'oss-retention') });
+}
+
 function createUploadPlan(items) {
   return items.map(item => ({
     key: item.key,
@@ -251,7 +280,7 @@ async function publishRelease() {
 
   const installerObjectKey = objectKey(objectPrefix, installer.name);
   const feedObjectKey = objectKey(objectPrefix, 'latest.yml');
-  const archiveInstallerObjectKey = objectKey(releasePrefix, packageJson.version, installer.name);
+  const archiveInstallerObjectKey = installerObjectKey;
   const archiveFeedObjectKey = objectKey(releasePrefix, packageJson.version, 'latest.yml');
   const sha512 = process.env.INSTALLER_SHA512 || sha512File(installer.path);
   const size = fs.statSync(installer.path).size;
@@ -274,11 +303,6 @@ async function publishRelease() {
       contentType: 'application/vnd.microsoft.portable-executable',
     },
     {
-      key: archiveInstallerObjectKey,
-      body: installerBody,
-      contentType: 'application/vnd.microsoft.portable-executable',
-    },
-    {
       key: archiveFeedObjectKey,
       body: latestBody,
       contentType: 'text/yaml; charset=utf-8',
@@ -290,6 +314,10 @@ async function publishRelease() {
     },
   ];
   const upload = await runUploadPlan(uploadItems);
+  const retention = skipUpload ? null : await runRetention(true).catch(error => {
+    console.error(`OSS retention incomplete: ${error.message}`);
+    return { status: 'blocked', error: error.message };
+  });
   if (release && !skipUpload && recordReleaseReceipt) {
     releaseMatrix.recordReceipt(release.manifest, {
       target: releaseTarget,
@@ -334,6 +362,7 @@ async function publishRelease() {
       content: latest,
     },
     upload,
+    retention,
   }, null, 2));
 }
 
@@ -366,6 +395,18 @@ async function rollbackRelease(version) {
     body: Buffer.from(latest, 'utf8'),
     contentType: 'text/yaml; charset=utf-8',
   }];
+  if (!skipUpload) {
+    const rollbackFeed = require('js-yaml').load(latest);
+    if (!Array.isArray(rollbackFeed.files) || !rollbackFeed.files.length) throw new Error('Invalid rollback feed');
+    for (const file of rollbackFeed.files) {
+      const reference = new URL(file.url, `${baseUrl}/`);
+      const root = new URL(`${baseUrl}/`);
+      if (reference.origin !== root.origin || !reference.pathname.startsWith(root.pathname)) throw new Error('Invalid rollback installer reference');
+      const key = objectKey(objectPrefix, decodeURIComponent(reference.pathname.slice(root.pathname.length)));
+      const artifact = await requestOss('HEAD', key);
+      if (Number(artifact.headers['content-length']) !== Number(file.size)) throw new Error(`Rollback installer size mismatch: ${key}`);
+    }
+  }
   const upload = await runUploadPlan(uploadItems);
 
   console.log(JSON.stringify({
@@ -396,6 +437,11 @@ async function rollbackRelease(version) {
 }
 
 async function main() {
+  if (process.argv.includes('--cleanup-only')) {
+    const report = await runRetention(process.argv.includes('--apply'));
+    console.log(JSON.stringify({ ...report, candidates: report.candidates.length, deleted: report.deleted.length }, null, 2));
+    return;
+  }
   const rollbackArgPresent = process.argv.slice(2).some(arg => (
     arg === '--rollback'
     || arg.startsWith('--rollback=')
