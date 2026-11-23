@@ -55,12 +55,12 @@ function harness(role) {
     const h=harness(role);h.mount();h.show();await tick();await tick();const tree=h.render();
     const cards=byClass(tree,'home-action-card'),shortcuts=byClass(tree,'home-shortcut-card');
     const staff=['teacher','super_admin'].includes(role),visitor=role==='visitor';
-    assert.equal(cards.length,staff||visitor?3:2);assert.equal(shortcuts.length,staff?4:visitor?0:2);
+    assert.equal(cards.length,visitor?3:2);assert.equal(shortcuts.length,staff?4:visitor?0:2);
     assert.equal(h.projections,visitor?0:1,'visitor does not fetch teaching records');
     if(!staff)for(const label of ['今日收入','本月收入','学生总数','财务导入','缴费记录'])assert.ok(!text(tree).includes(label));
     for(const card of [...cards,...shortcuts])card.props.onClick();
     assert.deepEqual(h.routes.slice(0,2).map(r=>r.url),['/pages/schedule/index','/pages/question-bank/index']);
-    if(staff)assert.deepEqual(h.routes.slice(2).map(r=>r.url),['/pages/assets/index','/pages/students/index','/pages/courses/index','/pages/payments/index','/pages/stats/index']);
+    if(staff)assert.deepEqual(h.routes.slice(2).map(r=>r.url),['/pages/students/index','/pages/courses/index','/pages/payments/index','/pages/stats/index']);
     if(visitor)assert.equal(h.routes.at(-1).url,'/pages/account-application/index');
     if(!staff&&!visitor)assert.deepEqual(h.routes.slice(2).map(r=>r.url),['/pages/schedule/index','/pages/question-bank/index']);
   }
