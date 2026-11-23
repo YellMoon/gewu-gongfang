@@ -93,6 +93,7 @@
 }
 
 .schedule-editor__field-groups {
+  --schedule-control-width: 128px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
@@ -104,7 +105,6 @@
 }
 
 .schedule-editor__field-groups .ant-form-item {
-  --schedule-control-width: 104px;
   min-width: 0;
   margin: 0;
   padding-block: 4px;
@@ -112,18 +112,6 @@
 
 .schedule-editor__field-groups .ant-form-item + .ant-form-item {
   border-top: 1px solid var(--schedule-line);
-}
-
-.schedule-editor__course-fields .ant-form-item:nth-child(2) {
-  --schedule-control-width: 144px;
-}
-
-.schedule-editor__time-fields .ant-form-item:first-child {
-  --schedule-control-width: 138px;
-}
-
-.schedule-editor__time-fields .ant-form-item:nth-child(even) {
-  --schedule-control-width: 92px;
 }
 
 .schedule-editor__field-groups .ant-form-item-row {
@@ -212,8 +200,7 @@
 }
 
 .schedule-editor__batch-actions,
-.schedule-editor__date-list,
-.schedule-editor__date-entry {
+.schedule-editor__date-list {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -224,11 +211,32 @@
   flex-wrap: wrap;
 }
 
-.schedule-editor__batch-actions .ant-input-number {
-  width: 62px;
+.schedule-editor__stepper {
+  flex: none;
+  border-radius: 9px;
+  background: var(--schedule-fill);
 }
 
-.schedule-editor__batch-actions .ant-btn-default {
+.schedule-editor__stepper .ant-input-number {
+  width: 42px;
+}
+
+.schedule-editor__stepper .ant-input-number-input {
+  padding-inline: 3px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-editor__stepper .ant-btn {
+  width: 30px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  font-size: 17px;
+}
+
+.schedule-editor__batch-actions > .ant-btn-default {
   border: 0;
   border-radius: 9px;
   background: #e5efff;
@@ -237,16 +245,42 @@
   font-weight: 600;
 }
 
-.schedule-editor__batch-actions .ant-btn-default:hover {
+.schedule-editor__batch-actions > .ant-btn-default:hover {
   background: #d6e6ff;
 }
 
 .schedule-editor__date-list {
   margin-top: 8px;
+  padding: 4px 6px 0 0;
+  gap: 10px 15px;
 }
 
-.schedule-editor__date-entry .ant-picker {
-  width: 138px;
+.schedule-editor__date-entry {
+  position: relative;
+}
+
+.schedule-editor__date-list .ant-picker {
+  width: 128px;
+}
+
+.schedule-editor__date-entry .ant-btn {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-end: -6px;
+  z-index: 1;
+  width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  background: #fce9eb;
+  color: #af2937;
+  font-size: 15px;
+}
+
+.schedule-editor__date-entry .ant-btn:hover {
+  background: #f8d5da;
 }
 
 .schedule-editor__section-heading {
@@ -300,6 +334,7 @@
 
 .schedule-editor__table thead th {
   padding-block: 9px;
+  text-align: center !important;
   font-weight: 600;
 }
 
@@ -324,7 +359,7 @@
   background: #f5f7fa;
 }
 
-.schedule-editor__table .schedule-editor__money,
+.schedule-editor__table tbody .schedule-editor__money,
 .schedule-editor__money .ant-input-number-input {
   text-align: end !important;
   font-variant-numeric: tabular-nums;
@@ -342,7 +377,7 @@
 }
 
 .schedule-editor__table .ant-select {
-  max-width: 114px;
+  max-width: 104px;
 }
 
 .schedule-editor__empty {

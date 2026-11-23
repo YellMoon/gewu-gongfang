@@ -148,15 +148,31 @@ async function expectValue(locator, value) {
     await timePopup.locator('.ant-picker-time-panel-column').nth(1).getByText('00', { exact: true }).click();
     await timePopup.getByRole('button', { name: 'OK', exact: true }).click();
     await expectValue(create.getByLabel('开始时间'), '14:00');
-    await create.getByLabel('间隔天数').fill('2');
-    await create.getByLabel('间隔天数').press('Tab');
+    const dateStep = create.getByLabel('间隔天数', { exact: true });
+    const decrease = create.getByRole('button', { name: '减少间隔天数' });
+    const increase = create.getByRole('button', { name: '增加间隔天数' });
+    assert(await decrease.isDisabled());
+    await increase.click();
+    await expectValue(dateStep, '2');
+    await decrease.click();
+    await expectValue(dateStep, '1');
+    await dateStep.fill('2');
+    await dateStep.press('Tab');
     const addDate = create.getByRole('button', { name: '添加日期' });
     await addDate.click();
     await addDate.click();
-    await create.getByRole('button', { name: '删除第 3 个日期' }).click();
-    assert.match(await create.innerText(), /共 2 节课程/);
+    await addDate.click();
+    const dateEntries = create.locator('.schedule-editor__date-list .schedule-editor__date-entry');
+    const desktopDates = await dateEntries.evaluateAll(entries =>
+      entries.map(entry => ({ x: entry.offsetLeft, y: entry.offsetTop })));
+    assert.equal(desktopDates.length, 3);
+    assert(desktopDates.every(date => date.y === desktopDates[0].y), 'three additional dates fit across the desktop row');
+    assert(desktopDates[0].x < desktopDates[1].x && desktopDates[1].x < desktopDates[2].x);
     await waitForDialogMotion();
     await create.screenshot({ path: path.join(output, 'new-batch.png') });
+    await create.getByRole('button', { name: '删除第 4 个日期' }).click();
+    await create.getByRole('button', { name: '删除第 3 个日期' }).click();
+    assert.match(await create.innerText(), /共 2 节课程/);
     await create.getByRole('button', { name: '保存排课' }).click();
     await create.waitFor({ state: 'hidden' });
     const created = await readSaved();
@@ -195,12 +211,13 @@ async function expectValue(locator, value) {
     await expectValue(detail.getByLabel('张同学 学费'), '241.25');
     await expectValue(detail.getByLabel('李同学 课时费'), '85.5');
     assert.match(await detail.getByRole('row', { name: /张同学/ }).innerText(), /请假/);
-    for (const [label, max] of [['老师', 104], ['课程', 144], ['上课地址', 104], ['开始时间', 92]]) {
-      const box = await detail.getByLabel(label, { exact: true }).evaluate(el =>
-        el.closest('.ant-select, .ant-picker').getBoundingClientRect().width);
-      assert(box <= max, label + ' width: ' + box);
-    }
     await waitForDialogMotion();
+    const widths = await detail.locator('.schedule-editor__field-groups .ant-select, .schedule-editor__field-groups .ant-picker')
+      .evaluateAll(controls => controls.map(control => control.getBoundingClientRect().width));
+    assert.equal(widths.length, 8);
+    assert(widths.every(width => width === 128), 'desktop detail controls share a compact column width');
+    assert(await detail.getByRole('columnheader').evaluateAll(headers =>
+      headers.length === 4 && headers.every(header => getComputedStyle(header).textAlign === 'center')));
     assert(await detail.locator('.schedule-editor__field-groups label').evaluateAll(labels =>
       labels.every(label => {
         const line = document.createRange();
@@ -221,6 +238,16 @@ async function expectValue(locator, value) {
     await select(create, '课程', '初二物理');
     assert.equal(await create.locator('#room').locator('..').locator('..').locator('.ant-select-selection-item').innerText(), '和睦');
     assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤\s+220\s+110/);
+    await addDate.click();
+    await addDate.click();
+    await addDate.click();
+    const narrowDates = await dateEntries.evaluateAll(entries => entries.map(entry => entry.offsetTop));
+    assert.equal(narrowDates.length, 3);
+    assert.equal(narrowDates[0], narrowDates[1]);
+    assert(narrowDates[1] < narrowDates[2], 'the third additional date wraps at 420px');
+    const nextDate = await dateEntries.first().locator('input').inputValue();
+    await create.getByRole('button', { name: '删除首个日期' }).click();
+    await expectValue(create.getByLabel('上课日期', { exact: true }), nextDate);
     assert.deepEqual(errors, []);
     console.log('Schedule editor: batch dates, default preview, per-lesson edit, reload and narrow layout passed.');
   } finally {

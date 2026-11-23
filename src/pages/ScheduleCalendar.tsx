@@ -2144,12 +2144,21 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
               </div>
               <div className="schedule-editor__time-fields">
                 <Form.Item label="上课日期" htmlFor="schedule-first-date">
-                  <DatePicker
-                    id="schedule-first-date"
-                    allowClear={false}
-                    value={batchDates[0]}
-                    onChange={date => date && setBatchDates(previous => [date, ...previous.slice(1)])}
-                  />
+                  <div className="schedule-editor__date-entry">
+                    <DatePicker
+                      id="schedule-first-date"
+                      allowClear={false}
+                      value={batchDates[0]}
+                      onChange={date => date && setBatchDates(previous => [date, ...previous.slice(1)])}
+                    />
+                    {batchDates.length > 1 && (
+                      <Button type="text" danger title="删除日期" aria-label="删除首个日期"
+                        onClick={() => setBatchDates(previous => previous.slice(1))}
+                      >
+                        ×
+                      </Button>
+                    )}
+                  </div>
                 </Form.Item>
                 <Form.Item name="startTime" label="开始时间">
                   <TimePicker
@@ -2179,20 +2188,33 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
             <div className="schedule-editor__batch">
               <div className="schedule-editor__batch-actions">
                 <label htmlFor="schedule-date-step">间隔天数</label>
-                <InputNumber
-                  id="schedule-date-step"
-                  min={1}
-                  precision={0}
-                  value={batchDateStepDays}
-                  onChange={value => setBatchDateStepDays(normalizeDateStepDays(value))}
-                />
+                <Space.Compact className="schedule-editor__stepper">
+                  <Button
+                    aria-label="减少间隔天数"
+                    disabled={batchDateStepDays <= 1}
+                    onClick={() => setBatchDateStepDays(days => normalizeDateStepDays(days - 1))}
+                  >
+                    −
+                  </Button>
+                  <InputNumber
+                    id="schedule-date-step"
+                    min={1}
+                    precision={0}
+                    controls={false}
+                    value={batchDateStepDays}
+                    onChange={value => setBatchDateStepDays(normalizeDateStepDays(value))}
+                  />
+                  <Button
+                    aria-label="增加间隔天数"
+                    onClick={() => setBatchDateStepDays(days => normalizeDateStepDays(days + 1))}
+                  >
+                    +
+                  </Button>
+                </Space.Compact>
                 <Button onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}>
                   添加日期
                 </Button>
                 <span className="schedule-editor__count" aria-live="polite">共 {batchDates.length} 节课程</span>
-                {batchDates.length > 1 && (
-                  <Button type="link" danger onClick={() => setBatchDates(previous => previous.slice(1))}>删除首个日期</Button>
-                )}
               </div>
               {batchDates.length > 1 && (
                 <div className="schedule-editor__date-list">
@@ -2206,10 +2228,10 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                           previous.map((entry, entryIndex) => entryIndex === index + 1 ? value : entry)
                         )}
                       />
-                      <Button type="text" danger aria-label={`删除第 ${index + 2} 个日期`}
+                      <Button type="text" danger title="删除日期" aria-label={`删除第 ${index + 2} 个日期`}
                         onClick={() => setBatchDates(previous => previous.filter((_, entryIndex) => entryIndex !== index + 1))}
                       >
-                        删除
+                        ×
                       </Button>
                     </div>
                   ))}
