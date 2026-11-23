@@ -41,10 +41,10 @@ const migration=path.join(__dirname,'20260912-managed-teacher-profile.sql');
    assert.equal((await fetch(url+'/api/business/schedules',{headers})).status,200);listSql=source;
    assert.equal((await fetch(url+'/api/business/desktop-projection',{headers})).status,200);
   }finally{await new Promise(resolve=>server.close(resolve));}
-  const start=source.indexOf('WITH managed_teachers AS ('),end=source.indexOf('SELECT jsonb_build_object(',start);
+  const start=source.indexOf('managed_teachers AS ('),end=source.indexOf('SELECT jsonb_build_object(',start);
   assert(start>=0&&end>start);
   const field=key=>{const a=source.indexOf(`'${key}',`,end),b=source.indexOf(", '",a+key.length+3);assert(a>end&&b>a);return source.slice(a,b);};
-  const projectionSql=source.slice(start,end)+'SELECT jsonb_build_object('+['teachers','courses','schedules'].map(field).join(', ')+') AS projection';
+  const projectionSql='WITH '+source.slice(start,end)+'SELECT jsonb_build_object('+['teachers','courses','schedules'].map(field).join(', ')+') AS projection';
   const asReader=action=>withQuery(handle,'fixture-provisioner',async db=>{await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');try{return await action(db);}finally{await db.query('ROLLBACK');}});
   const read=actor=>asReader(async db=>(await db.query(projectionSql,['one','teacher',actor])).rows[0].projection);
   const checkLists=async(actor,ids)=>{

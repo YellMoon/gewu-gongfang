@@ -18,10 +18,10 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
   await new Promise(resolve => server.once('listening', resolve));
   try { assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/business/desktop-projection`, { headers: { authorization: 'Bearer desktop.ticket' } })).status, 200); }
   finally { await new Promise(resolve => server.close(resolve)); }
-  const start = actualSql.indexOf('WITH managed_teachers AS (');
+  const start = actualSql.indexOf('managed_teachers AS (');
   const end = actualSql.indexOf('SELECT jsonb_build_object(', start);
   assert(start > 0 && end > start);
-  const scopeSql = actualSql.slice(start, end) + "SELECT jsonb_build_object('students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id) ORDER BY id) FROM scoped_students),'[]'::jsonb)) AS projection";
+  const scopeSql = 'WITH ' + actualSql.slice(start, end) + "SELECT jsonb_build_object('students',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id) ORDER BY id) FROM scoped_students),'[]'::jsonb)) AS projection";
   const sql = withDesktopStudentLedgerProjection(scopeSql);
   const pg = createDisposablePg17Runtime(); await pg.start();
   const handle = await pg.createIsolatedHandle();

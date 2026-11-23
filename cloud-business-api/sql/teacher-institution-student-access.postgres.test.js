@@ -75,10 +75,10 @@ const { createBusinessFoundationCatalogBoundary } = require('../../shared/vnext-
     await new Promise(resolve => server.once('listening', resolve));
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
     assert.equal((await fetch(baseUrl + '/api/business/desktop-projection', { headers: { authorization: 'Bearer desktop.test' } })).status, 200);
-    const start = projectionSql.indexOf('WITH managed_teachers AS (');
+    const start = projectionSql.indexOf('managed_teachers AS (');
     const end = projectionSql.indexOf('SELECT jsonb_build_object(', start);
     assert(start >= 0 && end > start);
-    const readSql = projectionSql.slice(start, end) + 'SELECT id FROM scoped_students ORDER BY id';
+    const readSql = 'WITH ' + projectionSql.slice(start, end) + 'SELECT id FROM scoped_students ORDER BY id';
     const read = (role = 'teacher', actor = 'owner', tenant = 'one') => admin(async db => {
       await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');
       try { return (await db.query(readSql, [tenant, role, actor])).rows.map(row => row.id); }

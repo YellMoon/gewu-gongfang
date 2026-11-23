@@ -42,9 +42,9 @@ function originalDelete(){
   const session={baseUrl:`http://127.0.0.1:${server.address().port}`,currentSession:{token:'desktop.test'}},headers={authorization:'Bearer desktop.test'};
   await fetch(session.baseUrl+'/api/business/schedules',{headers});const listSql=source;
   await fetch(session.baseUrl+'/api/business/desktop-projection',{headers});
-  const start=source.indexOf('WITH managed_teachers AS ('),end=source.indexOf('SELECT jsonb_build_object(',start);assert(start>=0&&end>start);
+  const start=source.indexOf('managed_teachers AS ('),end=source.indexOf('SELECT jsonb_build_object(',start);assert(start>=0&&end>start);
   const field=key=>{const a=source.indexOf(`'${key}',`,end),b=source.indexOf(", '",a+key.length+3);assert(a>end&&b>a);return source.slice(a,b);};
-  const projectionSql=source.slice(start,end)+'SELECT jsonb_build_object('+['students','teachers','courses','schedules'].map(field).join(', ')+') AS projection';
+  const projectionSql='WITH '+source.slice(start,end)+'SELECT jsonb_build_object('+['students','teachers','courses','schedules'].map(field).join(', ')+') AS projection';
   const read=actor=>admin(async db=>{await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');try{
    const projection=(await db.query(projectionSql,['one','teacher',actor])).rows[0].projection;
    assert.deepEqual((await db.query(listSql,['one','teacher',actor])).rows.map(r=>r.id),projection.schedules.map(r=>r.id));return projection;

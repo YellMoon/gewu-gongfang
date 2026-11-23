@@ -29,9 +29,9 @@ const removeSql='SELECT * FROM business.vnext_delete_scoped_course($1,$2,$3::tim
   }
   finally{await new Promise(resolve=>server.close(resolve));}
   // Exact runtime authorization CTEs. Unrelated assets/directory fields are outside this SQL test.
-  const start=actualSql.indexOf('WITH managed_teachers AS ('),end=actualSql.indexOf('SELECT jsonb_build_object(',start);
+  const start=actualSql.indexOf('managed_teachers AS ('),end=actualSql.indexOf('SELECT jsonb_build_object(',start);
   assert(start>=0&&end>start);
-  const readSql=actualSql.slice(start,end)+"SELECT jsonb_build_object('courses',COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM scoped_courses c),'[]'::jsonb),'schedules',COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM scoped_schedules s),'[]'::jsonb)) AS projection";
+  const readSql='WITH '+actualSql.slice(start,end)+"SELECT jsonb_build_object('courses',COALESCE((SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM scoped_courses c),'[]'::jsonb),'schedules',COALESCE((SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM scoped_schedules s),'[]'::jsonb)) AS projection";
   const runtime=createDisposablePg17Runtime();await runtime.start();const handle=await runtime.createIsolatedHandle();
   try{
     const receipt={appliedAt:'2026-09-09T00:00:00.000Z',appliedBy:'course-delete-parity'};

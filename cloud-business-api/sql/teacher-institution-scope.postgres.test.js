@@ -67,9 +67,9 @@ function assertOriginalDeleteRetainsRelatedRows(rows){
   const currentInstitution=()=>admin(async db=>{const row=(await db.query("SELECT id,updated_at FROM business.institutions WHERE id='created'")).rows[0];return {id:row.id,updatedAt:row.updated_at.toISOString()};});
   let created=await currentInstitution();assert.equal(created.id,'created');
   assert.equal((await fetch(session.baseUrl+'/api/business/desktop-projection',{headers:{authorization:'Bearer desktop.test'}})).status,200);
-  const a=source.indexOf('WITH managed_teachers AS ('),b=source.indexOf('SELECT jsonb_build_object(',a),c=source.indexOf("'institutions',",b),d=source.indexOf(", 'schools',",c);
+  const a=source.indexOf('managed_teachers AS ('),b=source.indexOf('SELECT jsonb_build_object(',a),c=source.indexOf("'institutions',",b),d=source.indexOf(", 'schools',",c);
   assert(a>=0&&b>a&&c>b&&d>c);
-  const readSql=source.slice(a,b)+"SELECT jsonb_build_object("+source.slice(c,d)+",'students',COALESCE((SELECT jsonb_agg(id ORDER BY id) FROM scoped_students),'[]'::jsonb)) AS projection";
+  const readSql='WITH '+source.slice(a,b)+"SELECT jsonb_build_object("+source.slice(c,d)+",'students',COALESCE((SELECT jsonb_agg(id ORDER BY id) FROM scoped_students),'[]'::jsonb)) AS projection";
   const read=actor=>admin(async db=>{await db.query('BEGIN; SET LOCAL ROLE gewu_cloud_schedule_reader');try{return(await db.query(readSql,['one','teacher',actor])).rows[0].projection;}finally{await db.query('ROLLBACK');}});
   let projection=await read('owner');assert.equal(projection.institutions[0]?.id,'created');assert.deepEqual(projection.students,['institution-student-created']);
   assert.equal(projection.institutions[0].contact_person,input.contactPerson);assert.equal(projection.institutions[0].contact_phone,input.contactPhone);
