@@ -1,0 +1,20 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["oss:ListObjects"],
+      "Resource": ["acs:oss:*:*:gewu-download-audit-1079575960473975"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetObject"],
+      "Resource": ["acs:oss:*:*:gewu-download-audit-1079575960473975/access/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["oss:GetBucketLogging"],
+      "Resource": ["acs:oss:*:*:gewu-staging-edu"]
+    }
+  ]
+}
