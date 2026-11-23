@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Modal, Form, InputNumber, Select, DatePicker, TimePicker, Divider, Card, Button, message, Space, Dropdown
 } from 'antd';
@@ -2079,105 +2079,105 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
         onOk={handleSave}
         okText={editingSchedule ? '保存修改' : '保存排课'}
         cancelText="取消"
-        width={580}
+        width={620}
         centered
         forceRender
         className="schedule-editor"
       >
         <Form form={form} layout="vertical" className="schedule-editor__form">
-          <section aria-label="排课信息">
-            <div className="schedule-editor__course-fields">
-              <Form.Item name="teacherId" label="老师">
-                <AutoCloseSelect
-                  placeholder="选择老师"
-                  showSearch
-                  allowClear
-                  optionFilterProp="label"
-                  options={editorTeacherOptions}
-                  onChange={(teacherId: string | undefined) => {
-                    setModalTeacherId(teacherId);
-                    form.setFieldsValue({ courseId: undefined, room: undefined, studentPricings: undefined });
-                  }}
-                />
-              </Form.Item>
-              <Form.Item name="courseId" label="课程">
-                <AutoCloseSelect
-                  placeholder={modalTeacherId ? '选择课程' : '请先选择老师'}
-                  disabled={!modalTeacherId && !editingSchedule}
-                  showSearch
-                  optionFilterProp="label"
-                  options={editorCourseOptions}
-                  popupMatchSelectWidth={false}
-                  onChange={(courseId: string) => {
-                    form.setFieldValue('studentPricings', undefined);
-                    const course = courses.find(c => c.id === courseId);
-                    if (course) {
-                      const roomId = course.room_id?.split(',')[0].trim() || rooms.find(r => r.name === course.room_name)?.id || course.room_name;
-                      form.setFieldValue('room', roomId);
-                      if (course.default_duration_minutes) {
-                        form.setFieldValue('duration', course.default_duration_minutes / 60);
-                        const startTime = form.getFieldValue('startTime');
-                        if (startTime) form.setFieldValue('endTime', startTime.add(course.default_duration_minutes, 'minute'));
+          <section className="schedule-editor__details" aria-label="排课信息">
+            <div className="schedule-editor__field-groups">
+              <div className="schedule-editor__course-fields">
+                <Form.Item name="teacherId" label="老师">
+                  <AutoCloseSelect
+                    placeholder="选择老师"
+                    showSearch
+                    allowClear
+                    optionFilterProp="label"
+                    options={editorTeacherOptions}
+                    onChange={(teacherId: string | undefined) => {
+                      setModalTeacherId(teacherId);
+                      form.setFieldsValue({ courseId: undefined, room: undefined, studentPricings: undefined });
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="courseId" label="课程">
+                  <AutoCloseSelect
+                    placeholder={modalTeacherId ? '选择课程' : '请先选择老师'}
+                    disabled={!modalTeacherId && !editingSchedule}
+                    showSearch
+                    optionFilterProp="label"
+                    options={editorCourseOptions}
+                    popupMatchSelectWidth={false}
+                    onChange={(courseId: string) => {
+                      form.setFieldValue('studentPricings', undefined);
+                      const course = courses.find(c => c.id === courseId);
+                      if (course) {
+                        const roomId = course.room_id?.split(',')[0].trim() || rooms.find(r => r.name === course.room_name)?.id || course.room_name;
+                        form.setFieldValue('room', roomId);
+                        if (course.default_duration_minutes) {
+                          form.setFieldValue('duration', course.default_duration_minutes / 60);
+                          const startTime = form.getFieldValue('startTime');
+                          if (startTime) form.setFieldValue('endTime', startTime.add(course.default_duration_minutes, 'minute'));
+                        }
                       }
-                    }
-                  }}
-                />
-              </Form.Item>
-              <Form.Item name="room" label="上课地址">
-                <AutoCloseSelect
-                  placeholder="选择地点"
-                  showSearch
-                  allowClear
-                  optionFilterProp="label"
-                  options={editorRoomOptions}
-                  popupMatchSelectWidth={false}
-                />
-              </Form.Item>
-              <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
-                <AutoCloseSelect options={[
-                  { value: ScheduleStatus.PLANNED, label: '正常' },
-                  { value: ScheduleStatus.LEAVE, label: '请假' },
-                  { value: ScheduleStatus.CANCELLED, label: '取消' },
-                ]} />
-              </Form.Item>
-            </div>
-            <div className="schedule-editor__time-fields">
-              <Form.Item label="上课日期" htmlFor="schedule-first-date">
-                <DatePicker
-                  id="schedule-first-date"
-                  allowClear={false}
-                  value={batchDates[0]}
-                  onChange={date => date && setBatchDates(previous => [date, ...previous.slice(1)])}
-                />
-              </Form.Item>
-              <Form.Item name="startTime" label="开始时间">
-                <TimePicker
-                  format="HH:mm"
-                  minuteStep={5}
-                  onChange={(time) => {
-                    const duration = form.getFieldValue('duration') || DEFAULT_DURATION_HOURS;
-                    form.setFieldValue('endTime', time?.add(duration * 60, 'minute'));
-                  }}
-                />
-              </Form.Item>
-              <Form.Item name="duration" label="课程时长">
-                <AutoCloseSelect
-                  onChange={(hours: number) => {
-                    const startTime = form.getFieldValue('startTime');
-                    if (startTime) form.setFieldValue('endTime', startTime.add(hours * 60, 'minute'));
-                  }}
-                  options={editorDurationOptions}
-                />
-              </Form.Item>
-              <Form.Item name="endTime" label="结束时间">
-                <TimePicker format="HH:mm" disabled />
-              </Form.Item>
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="room" label="上课地址">
+                  <AutoCloseSelect
+                    placeholder="选择地点"
+                    showSearch
+                    allowClear
+                    optionFilterProp="label"
+                    options={editorRoomOptions}
+                    popupMatchSelectWidth={false}
+                  />
+                </Form.Item>
+                <Form.Item name="status" label="课程状态" initialValue={ScheduleStatus.PLANNED}>
+                  <AutoCloseSelect options={[
+                    { value: ScheduleStatus.PLANNED, label: '正常' },
+                    { value: ScheduleStatus.LEAVE, label: '请假' },
+                    { value: ScheduleStatus.CANCELLED, label: '取消' },
+                  ]} />
+                </Form.Item>
+              </div>
+              <div className="schedule-editor__time-fields">
+                <Form.Item label="上课日期" htmlFor="schedule-first-date">
+                  <DatePicker
+                    id="schedule-first-date"
+                    allowClear={false}
+                    value={batchDates[0]}
+                    onChange={date => date && setBatchDates(previous => [date, ...previous.slice(1)])}
+                  />
+                </Form.Item>
+                <Form.Item name="startTime" label="开始时间">
+                  <TimePicker
+                    format="HH:mm"
+                    placeholder="选择时间"
+                    minuteStep={5}
+                    onChange={(time) => {
+                      const duration = form.getFieldValue('duration') || DEFAULT_DURATION_HOURS;
+                      form.setFieldValue('endTime', time?.add(duration * 60, 'minute'));
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item name="duration" label="课程时长">
+                  <AutoCloseSelect
+                    onChange={(hours: number) => {
+                      const startTime = form.getFieldValue('startTime');
+                      if (startTime) form.setFieldValue('endTime', startTime.add(hours * 60, 'minute'));
+                    }}
+                    options={editorDurationOptions}
+                  />
+                </Form.Item>
+                <Form.Item name="endTime" label="结束时间">
+                  <TimePicker format="HH:mm" placeholder="—" disabled />
+                </Form.Item>
+              </div>
             </div>
             <div className="schedule-editor__batch">
               <div className="schedule-editor__batch-actions">
-                <Button onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}>
-                  添加日期
-                </Button>
                 <label htmlFor="schedule-date-step">间隔天数</label>
                 <InputNumber
                   id="schedule-date-step"
@@ -2186,6 +2186,9 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                   value={batchDateStepDays}
                   onChange={value => setBatchDateStepDays(normalizeDateStepDays(value))}
                 />
+                <Button onClick={() => setBatchDates(appendSteppedBatchDate(batchDates, batchDateStepDays, dayjs()))}>
+                  添加日期
+                </Button>
                 <span className="schedule-editor__count" aria-live="polite">共 {batchDates.length} 节课程</span>
                 {batchDates.length > 1 && (
                   <Button type="link" danger onClick={() => setBatchDates(previous => previous.slice(1))}>删除首个日期</Button>

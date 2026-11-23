@@ -123,6 +123,15 @@ async function expectValue(locator, value) {
       await options.filter({ hasText: new RegExp('^' + option + '$') }).click();
     }
 
+    async function waitForDialogMotion() {
+      await page.waitForFunction(() => {
+        const dialog = document.querySelector('.schedule-editor[role="dialog"]');
+        if (!dialog || /-(appear|enter|leave)( |-|$)/.test(dialog.className)) return false;
+        const style = getComputedStyle(dialog);
+        return style.opacity === '1' && style.transform === 'none';
+      });
+    }
+
     const readSaved = () => page.evaluate(() => window.dbService.getAllSchedules());
     await load();
     await page.getByRole('button', { name: /^排\s*课$/ }).click();
@@ -133,8 +142,12 @@ async function expectValue(locator, value) {
     assert.equal(await create.locator('#room').locator('..').locator('..').locator('.ant-select-selection-item').innerText(), '和睦');
     assert.match(await create.getByRole('row', { name: /张同学/ }).innerText(), /正常出勤\s+220\s+110/);
     assert.equal(await create.getByRole('spinbutton', { name: '张同学 学费' }).count(), 0);
-    await create.getByLabel('开始时间').fill('14:00');
-    await create.getByLabel('开始时间').press('Enter');
+    await create.getByLabel('开始时间').click();
+    const timePopup = page.locator('.ant-picker-dropdown:not(.ant-picker-dropdown-hidden)');
+    await timePopup.locator('.ant-picker-time-panel-column').nth(0).getByText('14', { exact: true }).click();
+    await timePopup.locator('.ant-picker-time-panel-column').nth(1).getByText('00', { exact: true }).click();
+    await timePopup.getByRole('button', { name: 'OK', exact: true }).click();
+    await expectValue(create.getByLabel('开始时间'), '14:00');
     await create.getByLabel('间隔天数').fill('2');
     await create.getByLabel('间隔天数').press('Tab');
     const addDate = create.getByRole('button', { name: '添加日期' });
@@ -142,6 +155,7 @@ async function expectValue(locator, value) {
     await addDate.click();
     await create.getByRole('button', { name: '删除第 3 个日期' }).click();
     assert.match(await create.innerText(), /共 2 节课程/);
+    await waitForDialogMotion();
     await create.screenshot({ path: path.join(output, 'new-batch.png') });
     await create.getByRole('button', { name: '保存排课' }).click();
     await create.waitFor({ state: 'hidden' });
@@ -186,11 +200,20 @@ async function expectValue(locator, value) {
         el.closest('.ant-select, .ant-picker').getBoundingClientRect().width);
       assert(box <= max, label + ' width: ' + box);
     }
+    await waitForDialogMotion();
+    assert(await detail.locator('.schedule-editor__field-groups label').evaluateAll(labels =>
+      labels.every(label => {
+        const line = document.createRange();
+        line.selectNodeContents(label);
+        return line.getClientRects().length === 1;
+      })), 'desktop labels stay on one line');
     await detail.screenshot({ path: path.join(output, 'saved-detail.png') });
     await page.setViewportSize({ width: 420, height: 700 });
     assert((await detail.boundingBox()).width <= 420);
     const saveBox = await detail.getByRole('button', { name: '保存修改' }).boundingBox();
     assert(saveBox.y >= 0 && saveBox.y + saveBox.height <= 700);
+    const attendance = detail.locator('.schedule-editor__table tbody tr:last-child .ant-select-selection-item');
+    assert(await attendance.evaluate(el => el.scrollWidth <= el.clientWidth), 'attendance text fits at 420px');
     await page.screenshot({ path: path.join(output, 'narrow.png') });
     await detail.getByRole('button', { name: /^取\s*消$/ }).click();
     await page.getByRole('button', { name: /^排\s*课$/ }).click();

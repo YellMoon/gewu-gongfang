@@ -58,7 +58,10 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
                         <Form.Item
                           name={field('status')}
                           noStyle
-                          getValueProps={value => ({ value: value ?? status })}
+                          getValueProps={value => ({
+                            value: value ?? status,
+                            'data-attendance': value ?? status,
+                          })}
                         >
                           <AutoCloseSelect aria-label={`${student} 出勤`} options={attendanceOptions} />
                         </Form.Item>
