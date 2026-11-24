@@ -23,18 +23,14 @@ export default function ScheduleStudentPricingTable({ pricings, students, billin
   const names = new Map(students.map(student => [student.id, student.name]));
 
   return (
-    <section className="schedule-editor__students" aria-labelledby="schedule-editor-students">
-      <div className="schedule-editor__section-heading">
-        <h3 id="schedule-editor-students">学生</h3>
-        {pricings.length > 0 && <span className="schedule-editor__count">{pricings.length} 条明细</span>}
-      </div>
+    <section className="schedule-editor__students">
       {pricings.length === 0 ? (
         <div className="schedule-editor__empty">
           {hasCourse ? '该课程未绑定学生信息' : '选择课程后显示学生出勤和费用'}
         </div>
       ) : (
         <div className="schedule-editor__table-wrap">
-          <table className="schedule-editor__table" aria-labelledby="schedule-editor-students">
+          <table className="schedule-editor__table" aria-label="学生">
             <thead>
               <tr>
                 <th scope="col">学生</th>

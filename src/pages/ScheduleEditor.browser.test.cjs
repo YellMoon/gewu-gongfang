@@ -137,7 +137,11 @@ async function expectValue(locator, value) {
       const amounts = await cells.evaluateAll(entries => entries.map(cell => {
         const input = cell.querySelector('input');
         const unitLabel = cell.querySelector('.schedule-editor__unit');
+        const centerY = el => { const rect = el.getBoundingClientRect(); return rect.top + rect.height / 2; };
+        const rowCenter = centerY(cell.parentElement);
         return {
+          inputOffset: centerY(input) - rowCenter,
+          unitOffset: centerY(unitLabel) - rowCenter,
           value: input.value,
           width: input.clientWidth,
           textWidth: input.scrollWidth,
@@ -149,6 +153,7 @@ async function expectValue(locator, value) {
       for (const amount of amounts) {
         assert.equal(amount.unit, unit);
         assert(amount.gap > 0 && amount.textWidth <= amount.width, JSON.stringify(amount));
+        assert(Math.abs(amount.inputOffset) < 1 && Math.abs(amount.unitOffset) < 1, JSON.stringify(amount));
       }
     }
 
@@ -267,6 +272,24 @@ async function expectValue(locator, value) {
     assert.deepEqual(await getTableWidths(detail), createTableWidths);
     assert.equal(await detail.getByRole('table', { name: '学生', exact: true }).count(), 1);
     await assertMoneyUnits(detail, '元/次');
+    assert.equal(await detail.getByRole('heading', { name: '学生', exact: true }).count(), 0);
+    assert.equal(await detail.locator('caption').count(), 0);
+    const title = await detail.locator('.ant-modal-title').evaluate(el => {
+      const style = getComputedStyle(el);
+      return [style.fontSize, style.fontWeight, style.textAlign];
+    });
+    assert.deepEqual(title, ['18px', '600', 'center']);
+    const leave = detail.getByRole('combobox', { name: '张同学 出勤', exact: true });
+    await leave.focus();
+    assert.equal(await leave.evaluate(el =>
+      getComputedStyle(el.closest('.ant-select').querySelector('.ant-select-selector')).backgroundColor), 'rgb(251, 239, 222)');
+    await leave.blur();
+    assert(await detail.locator('.schedule-editor__label-end .ant-form-item-label').evaluateAll(labels =>
+      labels.length === 2 && labels.every(label => {
+        const text = document.createRange();
+        text.selectNodeContents(label.querySelector('label'));
+        return Math.abs(label.getBoundingClientRect().right - text.getBoundingClientRect().right) < 1;
+      })));
     assert.deepEqual(await detail.getByRole('columnheader').allTextContents(), ['学生', '出勤', '学费', '课时费']);
     assert(await detail.locator('.schedule-editor__field-groups .ant-form-item-row').evaluateAll(rows =>
       rows.every(row => {
@@ -302,7 +325,7 @@ async function expectValue(locator, value) {
         line.selectNodeContents(label);
         return line.getClientRects().length === 1;
       })), 'desktop labels stay on one line');
-    await detail.screenshot({ path: path.join(output, 'saved-detail.png') });
+    await detail.screenshot({ path: path.join(output, 'saved-detail.png'), animations: 'disabled' });
     await page.setViewportSize({ width: 420, height: 700 });
     assert((await detail.boundingBox()).width <= 420);
     const saveBox = await detail.getByRole('button', { name: '保存修改' }).boundingBox();

@@ -18,19 +18,20 @@
 
 .schedule-editor .ant-modal-header {
   margin: 0;
-  padding: 20px 22px 14px;
+  padding: 16px 48px 12px;
   background: transparent;
 }
 
 .schedule-editor .ant-modal-title {
   color: var(--schedule-ink);
-  font-size: 24px;
-  font-weight: 650;
-  line-height: 30px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
 }
 
 .schedule-editor .ant-modal-close {
-  top: 19px;
+  top: 10px;
   inset-inline-end: 19px;
   border-radius: 50%;
   background: #e6ebf3;
@@ -137,6 +138,17 @@
   overflow: visible;
 }
 
+@media (min-width: 561px) {
+  .schedule-editor__field-groups .schedule-editor__label-end .ant-form-item-label {
+    width: 4em;
+    text-align: end;
+  }
+
+  .schedule-editor__label-end .ant-form-item-label > label::after {
+    display: none;
+  }
+}
+
 .schedule-editor__form .ant-form-item-label label,
 .schedule-editor__batch-actions label {
   color: var(--schedule-muted);
@@ -195,6 +207,10 @@
 .schedule-editor__form .ant-select[data-attendance="4"] {
   --schedule-fill: #fbefde;
   color: #845116;
+}
+
+.schedule-editor__form .ant-select[data-attendance] .ant-select-selector {
+  background: var(--schedule-fill);
 }
 
 .schedule-editor__batch {
@@ -285,22 +301,6 @@
   background: #f8d5da;
 }
 
-.schedule-editor__section-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin: 0 3px 9px;
-  gap: 8px;
-}
-
-.schedule-editor__section-heading h3 {
-  margin: 0;
-  color: var(--schedule-ink);
-  font-size: 17px;
-  font-weight: 650;
-  line-height: 24px;
-}
-
 .schedule-editor__count {
   color: var(--schedule-muted);
   white-space: nowrap;
@@ -331,6 +331,7 @@
 .schedule-editor__table td {
   padding: 6px 8px;
   text-align: center;
+  vertical-align: middle;
   overflow-wrap: anywhere;
 }
 
@@ -379,7 +380,13 @@
 
 .schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number {
   min-width: 0;
+  min-height: 0;
   background: transparent;
+}
+
+.schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number-input {
+  height: 32px;
+  padding-block: 0;
 }
 
 .schedule-editor__money .ant-input-number-affix-wrapper .ant-input-number-suffix {

@@ -2092,7 +2092,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
           <section className="schedule-editor__details" aria-label="排课信息">
             <div className="schedule-editor__field-groups">
               <div className="schedule-editor__course-fields">
-                <Form.Item name="teacherId" label="老师">
+                <Form.Item name="teacherId" label="老师" className="schedule-editor__label-end">
                   <AutoCloseSelect
                     placeholder="选择老师"
                     showSearch
@@ -2105,7 +2105,7 @@ const ScheduleCalendar: React.FC<ScheduleCalendarProps> = ({ context }) => {
                     }}
                   />
                 </Form.Item>
-                <Form.Item name="courseId" label="课程">
+                <Form.Item name="courseId" label="课程" className="schedule-editor__label-end">
                   <AutoCloseSelect
                     placeholder={modalTeacherId ? '选择课程' : '请先选择老师'}
                     disabled={!modalTeacherId && !editingSchedule}
