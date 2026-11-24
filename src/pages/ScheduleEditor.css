@@ -94,14 +94,18 @@
 
 .schedule-editor__field-groups {
   --schedule-control-width: 128px;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: 28px;
 }
 
-.schedule-editor__time-fields {
+.schedule-editor__field-groups::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
   border-inline-start: 1px solid var(--schedule-line);
-  padding-inline-start: 12px;
 }
 
 .schedule-editor__field-groups .ant-form-item {
@@ -199,16 +203,11 @@
   border-top: 1px solid var(--schedule-line);
 }
 
-.schedule-editor__batch-actions,
-.schedule-editor__date-list {
+.schedule-editor__batch-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.schedule-editor__batch-actions,
-.schedule-editor__date-list {
-  flex-wrap: wrap;
 }
 
 .schedule-editor__stepper {
@@ -250,9 +249,12 @@
 }
 
 .schedule-editor__date-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(144px, 1fr));
+  justify-items: center;
+  row-gap: 10px;
   margin-top: 8px;
-  padding: 4px 6px 0 0;
-  gap: 10px 15px;
+  padding-block-start: 4px;
 }
 
 .schedule-editor__date-entry {
@@ -430,13 +432,15 @@
     gap: 0;
   }
 
+  .schedule-editor__field-groups::before {
+    display: none;
+  }
+
   .schedule-editor__course-fields,
   .schedule-editor__time-fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px 12px;
-    padding: 0;
-    border: 0;
   }
 
   .schedule-editor__field-groups .ant-form-item + .ant-form-item {

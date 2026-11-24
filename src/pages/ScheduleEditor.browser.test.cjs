@@ -186,12 +186,21 @@ async function expectValue(locator, value) {
     await addDate.click();
     await addDate.click();
     const dateEntries = create.locator('.schedule-editor__date-list .schedule-editor__date-entry');
-    const desktopDates = await dateEntries.evaluateAll(entries =>
-      entries.map(entry => ({ x: entry.offsetLeft, y: entry.offsetTop })));
-    assert.equal(desktopDates.length, 3);
-    assert(desktopDates.every(date => date.y === desktopDates[0].y), 'three additional dates fit across the desktop row');
-    assert(desktopDates[0].x < desktopDates[1].x && desktopDates[1].x < desktopDates[2].x);
     await waitForDialogMotion();
+    const desktopDates = await dateEntries.evaluateAll(entries => {
+      const row = entries[0].parentElement.getBoundingClientRect();
+      return entries.map(entry => {
+        const date = entry.getBoundingClientRect();
+        return { left: date.left - row.left, right: row.right - date.right, top: date.top, width: date.width };
+      });
+    });
+    assert.equal(desktopDates.length, 3);
+    const [firstDate, secondDate, thirdDate] = desktopDates;
+    assert(desktopDates.every(date => date.top === firstDate.top && date.width === 128), 'three date controls retain their width in one row');
+    assert(Math.abs(firstDate.left - thirdDate.right) < 1, 'the first and last dates have balanced margins');
+    const firstGap = secondDate.left - firstDate.left;
+    const secondGap = thirdDate.left - secondDate.left;
+    assert(firstGap > firstDate.width && Math.abs(firstGap - secondGap) < 1, 'dates are spaced evenly across the row');
     const getTableWidths = dialog => dialog.getByRole('columnheader')
       .evaluateAll(headers => headers.map(header => header.getBoundingClientRect().width));
     const createTableWidths = await getTableWidths(create);
@@ -263,6 +272,14 @@ async function expectValue(locator, value) {
         const control = row.querySelector('.ant-form-item-control');
         return Math.round(control.getBoundingClientRect().left - label.getBoundingClientRect().left) === 79;
       })));
+    const [courseColumn, timeColumn] = await detail.locator('.schedule-editor__field-groups > div').evaluateAll(columns =>
+      columns.map(column => {
+        const bounds = column.getBoundingClientRect();
+        const control = column.querySelector('.ant-form-item-control').getBoundingClientRect();
+        return { width: bounds.width, trailingSpace: bounds.right - control.right };
+      }));
+    assert(Math.abs(courseColumn.width - timeColumn.width) < 1, 'course and time columns have equal width');
+    assert(Math.abs(courseColumn.trailingSpace - timeColumn.trailingSpace) < 1, 'both columns leave the same space after controls');
     const widths = await detail.locator('.schedule-editor__field-groups .ant-select, .schedule-editor__field-groups .ant-picker')
       .evaluateAll(controls => controls.map(control => control.getBoundingClientRect().width));
     assert.equal(widths.length, 8);
