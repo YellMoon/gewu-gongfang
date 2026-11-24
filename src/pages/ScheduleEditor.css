@@ -250,8 +250,8 @@
 
 .schedule-editor__date-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(144px, 1fr));
-  justify-items: center;
+  grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
+  justify-items: start;
   row-gap: 10px;
   margin-top: 8px;
   padding-block-start: 4px;

@@ -184,20 +184,22 @@ async function expectValue(locator, value) {
     const addDate = create.getByRole('button', { name: '添加日期' });
     await addDate.click();
     await addDate.click();
-    await addDate.click();
     const dateEntries = create.locator('.schedule-editor__date-list .schedule-editor__date-entry');
+    const firstTwoOffsets = await dateEntries.evaluateAll(entries => entries.map(entry => entry.offsetLeft));
+    await addDate.click();
+    assert.deepEqual(await dateEntries.evaluateAll(entries => entries.slice(0, 2).map(entry => entry.offsetLeft)), firstTwoOffsets);
     await waitForDialogMotion();
     const desktopDates = await dateEntries.evaluateAll(entries => {
       const row = entries[0].parentElement.getBoundingClientRect();
       return entries.map(entry => {
         const date = entry.getBoundingClientRect();
-        return { left: date.left - row.left, right: row.right - date.right, top: date.top, width: date.width };
+        return { left: date.left - row.left, top: date.top, width: date.width };
       });
     });
     assert.equal(desktopDates.length, 3);
     const [firstDate, secondDate, thirdDate] = desktopDates;
     assert(desktopDates.every(date => date.top === firstDate.top && date.width === 128), 'three date controls retain their width in one row');
-    assert(Math.abs(firstDate.left - thirdDate.right) < 1, 'the first and last dates have balanced margins');
+    assert(Math.abs(firstDate.left) < 1, 'the first date starts at the left edge of the row');
     const firstGap = secondDate.left - firstDate.left;
     const secondGap = thirdDate.left - secondDate.left;
     assert(firstGap > firstDate.width && Math.abs(firstGap - secondGap) < 1, 'dates are spaced evenly across the row');
