@@ -430,7 +430,7 @@ function buildFinanceView(ledger,options={},internalMode) {
   const bankStatementRoots=new Set(observations.filter(o=>o.bankStatement||o.statementFlow).map(o=>root(o.id)));
   const occupiedStatementRoots=new Set(observations.filter(o=>['alipay','wechat','jd'].includes(o.provider)&&bankStatementRoots.has(root(o.id))).map(o=>root(o.id)));
   const channelBlocked=new Set((ledger.links||[]).filter(l=>blocked.has(pair(l))&&l.observationIds.every(id=>parents.has(id))).map(l=>JSON.stringify(l.observationIds.map(root).sort())));
-  const settlementReceiptInputs=new Map(observations.filter(o=>confirmedSettlementIds.has(o.id)&&!o.paymentChannel&&!o.paymentAccountHint).map(o=>[o.id,o]));
+  const settlementReceiptInputs=new Map(observations.filter(o=>confirmedSettlementIds.has(o.id)&&(!o.paymentChannel&&!o.paymentAccountHint||fundingIdentity(o.paymentChannel)?.type==='credit_card')).map(o=>[o.id,o]));
   const settlementReceipts=settlementReceiptInputs.size?require('./nativeBankCheckoutBridges').findSettlementCheckoutBankReceipts(originalObservations,accounts,settlementReceiptInputs,fundingOptions):new Map();
   const channelAnnotatedRoots=new Set([...latestAnnotations.keys()].filter(id=>{const p=latestAnnotations.get(id)?.patch,provisional=p&&Object.keys(p).every(k=>['kind','category'].includes(k))&&(p.kind==='expense'&&p.category==='暂按个人支出（用户授权、可修改）'||p.kind==='income'&&p.category==='暂按个人收入（用户授权、可修改）');const confirmedFamily=p&&Object.keys(p).every(k=>['kind','category'].includes(k))&&p.kind==='transfer'&&p.category==='\u5bb6\u5ead\u5185\u90e8\u5212\u8f6c\uff08\u90ed\u96c5\u840d\uff0c\u7528\u6237\u786e\u8ba4\uff09';return parents.has(id)&&!confirmedSettlementIds.has(id)&&!provisional&&!confirmedFamily;}).map(root));
   for(const s of observations){
@@ -441,6 +441,7 @@ function buildFinanceView(ledger,options={},internalMode) {
     const direction=projectedBankDirection(s);
     for(const b of moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,direction,fund.id]))||[]){
       const br=root(b.id);
+      if(settlementReceipt?.excludedBankObservationIds?.includes(b.id)&&!occupiedStatementRoots.has(br))continue;
       if(!compatibleBankTradeTime(s,b))continue;
       if(legacyJdPaymentEnvelope(b)&&(ledger.links||[]).some(l=>l.type==='group_distinct'&&l.status!=='deleted'&&l.observationIds.some(id=>parents.has(id)&&[sr,br].includes(root(id)))))continue;
       const receivingCard=accountMap.get(b.automaticRepaymentTarget?.financialAccountId),issuerName=v=>String(v||'').normalize('NFKC').replace(/\s/g,'').replace(/\u4fe1\u7528\u5361\u8fd8\u6b3e$/,'').replace(/^\u4e2d\u56fd(?=\u5efa\u8bbe|\u5de5\u5546|\u519c\u4e1a)/,'');
@@ -461,13 +462,14 @@ function buildFinanceView(ledger,options={},internalMode) {
       if(!channelMatches.has(sr))channelMatches.set(sr,new Set());if(!channelReverse.has(br))channelReverse.set(br,new Set());
       channelMatches.get(sr).add(br);channelReverse.get(br).add(sr);
       const key=JSON.stringify([sr,br]),previous=channelEvidence.get(key);
-      if(!previous||(s.sourceVersionOrdinal||0)>(previous.s.sourceVersionOrdinal||0)||(b.sourceVersionOrdinal||0)>(previous.b.sourceVersionOrdinal||0))channelEvidence.set(key,{s,b,fund,ownedRepaymentPayer});
+      if(!previous||(s.sourceVersionOrdinal||0)>(previous.s.sourceVersionOrdinal||0)||(b.sourceVersionOrdinal||0)>(previous.b.sourceVersionOrdinal||0))channelEvidence.set(key,{s,b,fund,ownedRepaymentPayer,settlementReceipt:settlementReceipt?.bank.id===b.id?settlementReceipt:null});
     }
   }
   for(const [sr,bankRoots] of channelMatches)if(bankRoots.size===1){
     const br=[...bankRoots][0];if(channelReverse.get(br).size!==1)continue;
-    const {s,b,fund,ownedRepaymentPayer}=channelEvidence.get(JSON.stringify([sr,br]));
+    const {s,b,fund,ownedRepaymentPayer,settlementReceipt}=channelEvidence.get(JSON.stringify([sr,br]));
     const association={method:bankPaymentProvider(b)===s.provider?'unique_channel_funding':'unique_card_funding',confidence:'inferred',observationIds:[s.id,b.id],evidence:{financialAccountId:fund.id,date:s.date,amountMinor:s.amountMinor,currency:s.currency,direction:projectedBankDirection(s),platform:s.provider,bankPlatformDisclosed:bankPaymentProvider(b)===s.provider,reciprocalUnique:true,...(ownedRepaymentPayer?{receivingAccountId:b.automaticRepaymentTarget.financialAccountId,identityBasis:'verified_owner_counter_card_and_platform_payer'}:{})}};
+    if(settlementReceipt)Object.assign(association.evidence,{identityBasis:'original_wallet_checkout_and_bank_channel',nativeProofObservationIds:settlementReceipt.proofObservationIds,excludedBankObservationIds:settlementReceipt.excludedBankObservationIds||[],preservesOtherBankCharges:true});
     automaticByObservation.set(s.id,[association]);automaticByObservation.set(b.id,[association]);union(sr,br);
   }
   // A repayment receipt may say neutral (not income/expense), while its bank

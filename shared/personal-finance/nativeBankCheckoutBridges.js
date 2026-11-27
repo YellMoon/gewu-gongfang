@@ -91,8 +91,19 @@ function settlementCheckoutProofs(context,s){
  return {wallet,positive,negative};
 }
 
+function walletFundedTransfer(context,s){
+ if(s.kind!=='transfer'||!ordinaryOriginal(s)||s.paymentAccountHint||!/^(?:\u4f59\u989d|\u8d26\u6237\u4f59\u989d|\u652f\u4ed8\u5b9d\u4f59\u989d)$/.test(s.paymentChannel))return false;
+ const matches=context.refs.get(refkey(s.financialAccountId,s.sourceTransactionId))||[];
+ if(matches.length!==1)return false;
+ const {observation:o,bank,outgoing}=matches[0],previous=context.seq.get(JSON.stringify([o.financialAccountId,o.importId,o.balanceEvidence.sequence-1]));
+ const delay=Date.parse(o.occurredAt)-Date.parse(s.occurredAt);
+ return bank==='\u652f\u4ed8\u5b9d'&&o.date===s.date&&o.description==='\u8f6c\u8d26\u8f6c\u8d26'&&outgoing===-BigInt(s.amountMinor)&&delay>=0&&delay<=60000&&
+  previous?.delta<0n&&previous.balance>=-outgoing&&context.clean(o)&&context.clean(previous.observation)&&!context.veto([s,o,previous.observation]);
+}
+
 function findSettlementCheckoutBankReceipts(observations,accounts,settlements,{annotatedIds,links=[]}){
  const context=nativeContext(observations,accounts,annotatedIds,links),key=o=>JSON.stringify([o.date,o.currency,o.amountMinor]);
+ const {fundingIdentity,sameBankAccount}=require('./assetRegister');
  const banks=new Map(),rivals=new Map(),proposals=[];
  for(const o of context.rows){
   if(o.status!=='completed'||o.direction!=='debit'||o.balanceEvidence)continue;
@@ -104,10 +115,28 @@ function findSettlementCheckoutBankReceipts(observations,accounts,settlements,{a
  const {matchesSettlementCardPurchase}=require('./counterpartySettlements');
  for(const [id,effective] of settlements){
   const s=context.byId.get(id);
-  if(!s||s.paymentChannel||s.paymentAccountHint||rivals.get(key(s))?.length!==1)continue;
+  if(!s)continue;
+  const payer=fundingIdentity(s.paymentChannel);
+  if(s.paymentChannel&&!payer||!s.paymentChannel&&s.paymentAccountHint)continue;
   const proof=settlementCheckoutProofs(context,s);
   if(!proof)continue;
-  const matches=(banks.get(key(s))||[]).filter(b=>matchesSettlementCardPurchase(effective,b,context.am.get(b.financialAccountId),{statementFundingBank:proof.positive.bank}));
+  const candidates=banks.get(key(s))||[],competingOrders=rivals.get(key(s))||[];
+  if(payer){
+   const cards=accounts.filter(a=>a.status==='active'&&a.type==='credit_card'&&sameBankAccount(a,payer,s.currency));
+   if(cards.length!==1||payer.type!=='credit_card'||s.paymentAccountHint&&s.paymentAccountHint!==payer.tail)continue;
+   const card=cards[0],sameCard=candidates.filter(b=>b.financialAccountId===card.id);
+   if(sameCard.length!==2||sameCard.some(b=>b.provider!=='cmb'||!matchesSettlementCardPurchase(effective,b,card)||!context.clean(b)))continue;
+   const checkout=sameCard.find(b=>norm(b.description)==='\u652f\u4ed8\u5b9d-\u7f51\u8d2d');
+   const other=sameCard.find(b=>norm(b.description)===norm(s.counterparty));
+   if(!checkout||!other||context.veto([s,checkout,other]))continue;
+   // One exact wallet order and adjacent bank top-up identify the checkout
+   // channel. Preserve the other bank charge with its independent identity.
+   if(competingOrders.some(o=>{if(o.id===s.id||walletFundedTransfer(context,o))return false;const f=fundingIdentity(o.paymentChannel);return !f||sameBankAccount(card,f,o.currency);}))continue;
+   proposals.push([id,{bank:checkout,excludedBankObservationIds:[other.id],proofObservationIds:[proof.positive.observation.id,proof.negative.observation.id]}]);
+   continue;
+  }
+  if(competingOrders.length!==1)continue;
+  const matches=candidates.filter(b=>matchesSettlementCardPurchase(effective,b,context.am.get(b.financialAccountId),{statementFundingBank:proof.positive.bank}));
   if(matches.length!==1||!context.clean(matches[0])||context.veto([s,matches[0]]))continue;
   proposals.push([id,{bank:matches[0],institution:proof.positive.bank,proofObservationIds:[proof.positive.observation.id,proof.negative.observation.id]}]);
  }

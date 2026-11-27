@@ -51,3 +51,28 @@ test('historical confirmed card plus reciprocal Alipay billing resolves a generi
  l.observations.push({...b,id:'rival',sourceIdentity:'rival',sourceTransactionId:'rival',description:s.counterparty,counterparty:s.counterparty});
  assert(!result().observationIds.includes(b.id));
 });
+test('a full wallet checkout identifies the bank row that explicitly names Alipay and leaves an equal merchant charge independent',()=>{
+ const l=linkedFixture(),[order,checkout]=l.observations;
+ l.links=[];
+ const issuer='\u62db\u5546\u94f6\u884c',method=issuer+'\u4fe1\u7528\u5361(4321)';
+ l.accounts[1].provider=issuer;
+ checkout.provider=checkout.bankStatement.provider='cmb';checkout.bankAccount.provider=issuer;
+ checkout.description=checkout.counterparty='\u652f\u4ed8\u5b9d-\u7f51\u8d2d';
+ order.paymentChannel=method;order.paymentAccountHint='4321';order.rawFields['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']=method;
+ const credit=l.observations.find(o=>o.balanceEvidence?.incomeMinor==='1300');
+ credit.rawFields['\u8d44\u91d1\u6e20\u9053']=issuer;
+ const independent={...checkout,id:'independent',sourceIdentity:'independent',sourceTransactionId:'other-credit-card-charge',description:order.counterparty,counterparty:order.counterparty};
+ l.observations.push(independent);
+ l.accounts.push({id:'task',type:'receivable',status:'active',currency:'CNY',balanceConvention:'signed',
+  counterpartySettlement:{schema:'counterparty-settlement-v1',counterparty:'Task',scope:'annotation_only'}});
+ l.annotations=[{id:'owner',observationId:order.id,revision:'1',patch:{kind:'transfer',category:'Owner advance',settlementAccountId:'task'}}];
+ const result=buildFinanceView(l),paired=result.transactions.find(t=>t.observationIds.includes(order.id)),unrelated=result.transactions.find(t=>t.id===independent.id);
+ assert.deepEqual(paired.observationIds.sort(),[checkout.id,order.id].sort());
+ assert.deepEqual(paired.automaticAssociations[0].evidence.excludedBankObservationIds,[independent.id]);
+ assert.deepEqual(unrelated.observationIds,[independent.id]);assert.equal(unrelated.consumptionMinor,'1300');
+ assert.equal(result.review.transactionCount,0);
+ l.observations=l.observations.filter(o=>o.id!==credit.id);
+ const ambiguous=buildFinanceView(l);
+ assert.deepEqual(ambiguous.transactions.find(t=>t.id===order.id).observationIds,[order.id]);
+ assert(ambiguous.unresolvedAssociations.some(i=>i.observationId===order.id&&i.reason==='insufficient_reference'));
+});
