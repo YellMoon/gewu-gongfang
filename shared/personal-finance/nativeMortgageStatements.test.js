@@ -34,3 +34,78 @@ test('revoking one inferred receipt association cannot erase a separate actual p
 test('a native balance after the first known repayment is never back-projected into an unobserved pre-loan date',()=>{
  const l=fixture(),v=buildFinanceView(l,{endDate:'2025-12-31'});assert.equal(v.accountStats.loan.balanceMinor,null);assert.equal(v.accountStats.loan.estimatedBalanceMinor,null);assert.equal(v.currencyTotals.CNY?.cashOutMinor||'0','0');
 });
+test('a first native import creates a loan and books bank balances before loan parameters are entered',()=>{
+ const l=fixture();l.accounts.pop();
+ const {mortgageAccountDiscovery:discover}=require('./mortgageAccountDiscovery');
+ const initial={...l,observations:l.observations.filter(o=>o.rawFields.schema)};
+ const plan=discover(initial);
+ assert.equal(plan.accounts.length,1);
+ const {key,...spec}=plan.accounts[0];
+ assert.match(key,/^mortgage:contract:/);
+ assert.equal(spec.mortgageEvidence.originalPrincipalMinor,'100000');
+ assert.equal(spec.mortgageEvidence.reportedTermMonths,359);
+ assert.equal(spec.mortgageEvidence.statementReference,undefined);
+ assert.equal(spec.mortgage,undefined);
+ const account={...spec,id:'auto-loan',status:'active'};
+ const initialView=buildFinanceView({...initial,accounts:[...l.accounts,account]});
+ assert.equal(initialView.mortgages[0].status,'actual_bank_statement');
+ assert.equal(initialView.mortgages[0].bankStatementTermMonths,359);
+ assert.equal(initialView.mortgages[0].contractTermMonths,null);
+ assert.equal(initialView.accountStats['auto-loan'].balanceMinor,'-83900');
+
+ l.accounts.push(account);
+ const combined=discover(l);
+ assert.equal(combined.accounts.length,0);
+ assert.equal(combined.updates.length,1);
+ assert.equal(combined.updates[0].after.id,'auto-loan');
+ assert.equal(combined.updates[0].after.mortgageEvidence.statementReference,'1234');
+ l.accounts[1]=combined.updates[0].after;
+ const view=buildFinanceView(l);
+ assert.equal(view.currencyTotals.CNY.cashOutMinor,'20000');
+ assert.equal(view.transactions.length,2);
+ assert.deepEqual(discover(l),{accounts:[],updates:[]});
+});
+test('an earlier card-only account can receive later contract evidence without changing its ID',()=>{
+ const l=fixture();l.accounts.pop();
+ const {mortgageAccountDiscovery:discover}=require('./mortgageAccountDiscovery');
+ const cash=l.observations.filter(o=>!o.rawFields.schema);
+ const plan=discover({...l,observations:cash});
+ assert.equal(plan.accounts.length,1);
+ const {key,...spec}=plan.accounts[0];
+ assert.match(key,/^mortgage:payment:/);
+ assert.equal(spec.mortgageEvidence.originalPrincipalMinor,undefined);
+ l.accounts.push({...spec,id:'pending-loan',status:'active'});
+ const combined=discover(l);
+ assert.equal(combined.accounts.length,0);
+ assert.equal(combined.updates[0].after.id,'pending-loan');
+ assert.equal(combined.updates[0].after.mortgageEvidence.originalPrincipalMinor,'100000');
+});
+test('different bank contract identities on the same card and principal get separate accounts',()=>{
+ const l=fixture();l.accounts.pop();
+ const proofs=l.observations.filter(o=>o.rawFields.schema),secondHash='9'.repeat(64);
+ const second=proofs.map(o=>({...o,id:o.id+'-second',sourceIdentity:o.sourceIdentity+'-second',
+  sourceTransactionId:o.sourceTransactionId.replace(o.rawFields.contractHash,secondHash),rawFields:{...o.rawFields,contractHash:secondHash}}));
+ l.observations=[...proofs,...second];
+ const {mortgageAccountDiscovery:discover}=require('./mortgageAccountDiscovery');
+ const plan=discover(l);
+ assert.equal(plan.accounts.length,2);
+ l.accounts.push(...plan.accounts.map((spec,i)=>({...spec,id:'loan-'+i,status:'active'})));
+ assert.equal(plans(l).models.length,2);
+ assert.deepEqual(discover(l),{accounts:[],updates:[]});
+});
+test('a payment that overlaps different contracts cannot bind their loan references or duplicate the booked card payment',()=>{
+ const l=fixture();l.accounts.pop();
+ const proofs=l.observations.filter(o=>o.rawFields.schema),secondHash='1'.repeat(64);
+ const second=proofs.map(o=>({...o,id:o.id+'-second',sourceIdentity:o.sourceIdentity+'-second',
+  sourceTransactionId:o.sourceTransactionId.replace(o.rawFields.contractHash,secondHash),rawFields:{...o.rawFields,contractHash:secondHash}}));
+ l.observations.push(...second);
+ const {mortgageAccountDiscovery:discover}=require('./mortgageAccountDiscovery');
+ const plan=discover(l);
+ assert.equal(plan.accounts.length,2);
+ assert.ok(plan.accounts.every(spec=>!spec.mortgageEvidence.statementReference));
+ l.accounts.push(...plan.accounts.map((spec,i)=>({...spec,id:'loan-'+i,status:'active'})));
+ const view=buildFinanceView(l);
+ assert.equal(view.mortgages.length,0);
+ assert.equal(view.transactions.length,2);
+ assert.equal(view.currencyTotals.CNY.cashOutMinor,'20000');
+});

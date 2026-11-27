@@ -152,10 +152,14 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  const mortgageContext={...context,actor:{accountId:'mortgage-owner',roles:['teacher']}},mortgageSource=await repo.createAccount({...mortgageContext,account:{...account,label:'Mortgage funding'}});
  const mortgageRecord={...record,sourceTransactionId:'mortgage-monthly',amountMinor:'350000',kind:'debt_payment',description:'\u67dc\u53f0\u6263\u6536\u8d37\u6b3e\u672c\u606f',counterparty:'\u534e\u590f\u94f6\u884c\u4e2a\u4eba\u8d37\u6b3e\u6237',rawFields:{'\u5bf9\u65b9\u5361/\u8d26\u53f7':'****1234 '}};
  const mortgageRepo=createPersonalFinanceRepository({query:(s,v)=>db.query(s,v),transaction,parseBillFile:async()=>({provider:'bank',templateId:'test',records:[mortgageRecord],errors:[],warnings:[]}),archiveSource:async({fileHash})=>({id:'mortgage_archive_'+fileHash,fileHash,storage:'controlled-private',encrypted:true})});
- await mortgageRepo.import({...mortgageContext,financialAccountId:mortgageSource.account.id,filename:'mortgage.csv',base64:Buffer.from('mortgage-vector').toString('base64'),idempotencyKey:'mortgage-monthly'});
+ const firstMortgageImport=await mortgageRepo.import({...mortgageContext,financialAccountId:mortgageSource.account.id,filename:'mortgage.csv',base64:Buffer.from('mortgage-vector').toString('base64'),idempotencyKey:'mortgage-monthly'});
+ assert.equal(firstMortgageImport.mortgageAccountsCreated,1);
  const mortgage={schema:'mortgage-v1',loanType:'commercial',termMonths:360,firstPaymentDate:'2022-09-20',sourceAccountId:mortgageSource.account.id,statementReference:'1234',originalPrincipalMinor:'200000000',annualRatePpm:'30000',recentSplit:{principalMinor:'100000',interestMinor:'250000',month:null},prepayments:[]};
  const mortgageAccount={label:'Mortgage',provider:'bank',type:'loan',maskedIdentifier:'1234',currency:'CNY',openingBalanceMinor:null,openingDate:null,status:'active',balanceConvention:'signed',mortgage};
- const mortgageBefore=await repo.getLedger(mortgageContext),loanCreated=await repo.createAccount({...mortgageContext,account:mortgageAccount});assert.equal(loanCreated.account.mortgage.recentSplit.month,'2026-10');assert.equal(loanCreated.account.mortgage.termMonths,360);assert.equal(loanCreated.account.mortgage.firstPaymentDate,'2022-09-20');
+ const mortgageBefore=await repo.getLedger(mortgageContext),pendingMortgage=mortgageBefore.accounts.find(a=>a.mortgageEvidence);
+ assert.equal(pendingMortgage.mortgage,undefined);
+ const loanCreated=await repo.updateAccount({...mortgageContext,id:pendingMortgage.id,patch:{label:mortgageAccount.label,mortgage},expectedRevision:mortgageBefore.revision});
+ assert.equal(loanCreated.account.mortgage.recentSplit.month,'2026-10');assert.equal(loanCreated.account.mortgage.termMonths,360);assert.equal(loanCreated.account.mortgage.firstPaymentDate,'2022-09-20');
  await assert.rejects(repo.createAccount({...mortgageContext,account:mortgageAccount}),/MORTGAGE_ACCOUNT_EXISTS/);
  await assert.rejects(repo.createAccount({...context,account:mortgageAccount}),/ACCOUNT_NOT_FOUND/,'another owner cannot attach this funding account');
  await assert.rejects(repo.updateAccount({...mortgageContext,id:loanCreated.account.id,patch:{mortgage:null}}),/INPUT_INVALID/);
@@ -224,6 +228,31 @@ const {createBusinessFoundationCatalogBoundary}=require('../../shared/vnext-pg17
  const malformed={...record,id:'malformed',financialAccountId:saved.account.id,importId:receipt.importId,amountMinor:'1.2'};
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['malformed','finance-test','alice',saved.account.id,receipt.importId,'a'.repeat(64),JSON.stringify(malformed)]),/check constraint/,'database rejects fractional minor units even without repository validation');
  await assert.rejects(db.query('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$6,$7)', ['wrong-owner','finance-test','mallory',saved.account.id,receipt.importId,'b'.repeat(64),JSON.stringify({...malformed,id:'wrong-owner',amountMinor:'1'})]),/foreign key/);
+ const providentContext={...context,actor:{accountId:'provident-owner',roles:['teacher']}};
+ const providentFunding=(await repo.createAccount({...providentContext,account})).account;
+ const provident={...record,sourceTransactionId:'provident-1',amountMinor:'100000',kind:'debt_payment',
+  description:'\u516c\u79ef\u91d1\u6263\u6b3e',counterparty:'\u4f4f\u623f\u516c\u79ef\u91d1\u7ba1\u7406\u4e2d\u5fc3',
+  rawFields:{'\u9644\u8a00':'****4321'}};
+ const mortgageInput={...input,...providentContext,financialAccountId:providentFunding.id,idempotencyKey:'mortgage-first'};
+ parsedRecords=[provident];
+ const mortgageReceipt=await repo.import(mortgageInput);
+ assert.equal(mortgageReceipt.mortgageAccountsCreated,1);
+ assert.equal((await repo.import(mortgageInput)).replayed,true);
+ assert.equal((await repo.import({...mortgageInput,idempotencyKey:'mortgage-again'})).mortgageAccountsCreated,undefined);
+ let mortgageLedger=await repo.getLedger(providentContext);
+ const discoveredLoans=mortgageLedger.accounts.filter(a=>a.type==='loan');
+ assert.equal(discoveredLoans.length,1);
+ const [discoveredLoan]=discoveredLoans;
+ assert.equal(discoveredLoan.mortgage,undefined);
+ assert.equal(discoveredLoan.openingBalanceMinor,null);
+ assert.equal(discoveredLoan.mortgageEvidence.statementReference,'4321');
+ await assert.rejects(repo.updateAccount({...providentContext,id:discoveredLoan.id,patch:{mortgageEvidence:{}}}),/INPUT_INVALID/);
+ const providentMortgage={schema:'mortgage-v1',loanType:'provident',sourceAccountId:providentFunding.id,statementReference:'4321',
+  originalPrincipalMinor:'10000000',termMonths:120,firstPaymentDate:'2026-10-08',annualRatePpm:null,recentSplit:null,prepayments:[]};
+ await repo.updateAccount({...providentContext,id:discoveredLoan.id,patch:{label:'Confirmed loan',mortgage:providentMortgage},expectedRevision:mortgageLedger.revision});
+ mortgageLedger=await repo.getLedger(providentContext);
+ assert.deepEqual(mortgageLedger.accounts.find(a=>a.id===discoveredLoan.id),{...discoveredLoan,label:'Confirmed loan',mortgage:providentMortgage});
+ assert.equal((await repo.discoverAccounts({...providentContext,expectedRevision:mortgageLedger.revision})).accounts.length,0);
  await db.query(fs.readFileSync(path.join(__dirname,'20261027-finance-source-nas.sql'),'utf8'));
  const nasMetadata=require('../src/billNasMetadataRepository').createBillNasMetadataRepository({query:(s,v)=>db.query(s,v)});
  const nasTransfers=require('../src/billNasArchive').createBillNasArchive({metadata:nasMetadata,waitMs:25});

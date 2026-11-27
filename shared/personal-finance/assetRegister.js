@@ -15,7 +15,7 @@ function sameBankAccount(a,f,currency){
  const tail=norm(a.maskedIdentifier).match(/(\d{4})\)?$/)?.[1],bank=fundingIdentity(a.label)?.bank||bankName(a.provider);
  return a.currency===currency&&(!f.type||a.type===f.type)&&tail===f.tail&&bank===f.bank;
 }
-function accountProposals(ledger){
+function accountProposals(ledger,{includeMortgageUpdates=false}={}){
  const accounts=ledger.accounts||[],candidates=new Map(),issues=new Map(),types=new Map();
  const transit=require('./nativeTransitStoredValue').transitAccountProposal(ledger.observations||[],accounts);if(transit)candidates.set(transit.key,transit);
  const sources=(ledger.observations||[]).filter(o=>o.status==='completed'&&!o.balanceEvidence);
@@ -44,7 +44,9 @@ function accountProposals(ledger){
    candidates.set(key,{key,label:p.label,provider:p.provider,type:p.type,sourceProduct:relation.product,maskedIdentifier:'',currency:o.currency,balanceConvention:'signed',openingBalanceMinor:null,openingDate:null,status:'active'});
   }
  }
- return {accounts:[...candidates.values()],unresolved:[...issues.values()]};
+ const mortgages=require('./mortgageAccountDiscovery').mortgageAccountDiscovery({accounts,observations:sources});
+ return {accounts:[...candidates.values(),...mortgages.accounts],unresolved:[...issues.values()],
+  ...(includeMortgageUpdates?{mortgageUpdates:mortgages.updates}:{})};
 }
 const unitsMinor=v=>{const[a,b='']=String(v).split('.');return BigInt(a)*1000000000000n+BigInt(b.padEnd(12,'0'));};
 const unitsText=v=>{const a=v<0n?-v:v;return(v<0n?'-':'')+String(a/1000000000000n)+'.'+String(a%1000000000000n).padStart(12,'0').replace(/0+$/,'').padEnd(2,'0');};
@@ -110,7 +112,7 @@ function buildAssetRegister(ledger){
  const counterAccountFor=o=>{if(!counterAccountCache.has(o))counterAccountCache.set(o,annotatedCounterAccount(o,annotations.get(o.id),accounts));return counterAccountCache.get(o);};
  const fundingMatches=(o,a)=>{let currencies=fundingMatchCache.get(o.paymentChannel);if(!currencies){currencies=new Map();fundingMatchCache.set(o.paymentChannel,currencies);}if(!currencies.has(o.currency)){const f=fundingIdentity(o.paymentChannel);currencies.set(o.currency,new Set(f?accounts.filter(candidate=>sameBankAccount(candidate,f,o.currency)).map(candidate=>candidate.id):[]));}return currencies.get(o.currency).has(a.id);};
  const accountRows=accounts.map(a=>{
-  const evidence=records.filter(o=>o.financialAccountId===a.id||historicalFunding.get(o.id)?.financialAccountId===a.id||a.mortgage&&matchesMortgage(o,a.mortgage)||o.accountRelations?.some(r=>r.financialAccountId===a.id)||counterAccountFor(o)?.id===a.id||(()=>{const effective=recalledRoutes.get(o.id);return effective&&(effective.recalledAccountRouteEvidence.sourceAccountId===a.id||effective.recalledAccountRouteEvidence.activity==='investment_withdrawal_receipt'&&effective.accountRelations?.some(r=>r.financialAccountId===a.id));})()||fundingMatches(o,a));
+  const evidence=records.filter(o=>o.financialAccountId===a.id||historicalFunding.get(o.id)?.financialAccountId===a.id||matchesMortgage(o,a.mortgage||a.mortgageEvidence)||o.accountRelations?.some(r=>r.financialAccountId===a.id)||counterAccountFor(o)?.id===a.id||(()=>{const effective=recalledRoutes.get(o.id);return effective&&(effective.recalledAccountRouteEvidence.sourceAccountId===a.id||effective.recalledAccountRouteEvidence.activity==='investment_withdrawal_receipt'&&effective.accountRelations?.some(r=>r.financialAccountId===a.id));})()||fundingMatches(o,a));
   if(merchantClaimEvidence.has(a.id))for(const o of records)if(merchantClaimEvidence.get(a.id).has(o.id)&&!evidence.includes(o))evidence.push(o);
   const nativeMortgageModel=nativeMortgage.models.find(m=>m.financialAccountId===a.id);if(nativeMortgageModel)for(const o of records)if(nativeMortgageModel.proofObservationIds.includes(o.id)&&!evidence.includes(o))evidence.push(o);
   if(isSettlementAccount(a))for(const o of records)if((o.direction==='neutral'?neutralSettlements.get(o.id):(annotatedSettlementAccount(o,annotations.get(o.id),accounts)||(!settlementPolicyOverrides.has(settlementSourceKey(o))?inferredSettlementAccount(o,accounts):null))?.id)===a.id&&!evidence.includes(o))evidence.push(o);

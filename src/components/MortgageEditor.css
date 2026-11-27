@@ -1,0 +1,61 @@
+.mortgage-editor__prepayments {
+  margin-top: 16px;
+}
+
+.mortgage-editor__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0 2px 8px;
+  color: var(--editor-muted);
+  font-size: 12px;
+}
+
+.mortgage-editor__heading h3 {
+  margin: 0;
+  color: var(--editor-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mortgage-editor__prepayments-table {
+  min-width: 360px;
+}
+
+.mortgage-editor__prepayments-table th:first-child {
+  width: 31%;
+}
+
+.mortgage-editor__prepayments-table th:last-child {
+  width: 12%;
+}
+
+.mortgage-editor__prepayments-table :is(.ant-input, .ant-input-affix-wrapper) {
+  min-height: 34px;
+  border-radius: 9px;
+}
+
+.mortgage-editor__prepayments-table .ant-input:not(:focus),
+.mortgage-editor__prepayments-table .ant-input-affix-wrapper:not(.ant-input-affix-wrapper-focused) {
+  border-color: transparent;
+  background: var(--editor-fill);
+}
+
+.mortgage-editor__prepayments-table .ant-input-affix-wrapper .ant-input {
+  min-height: 0;
+  background: transparent;
+}
+
+.mortgage-editor__prepayments-table input[type='date'] {
+  padding-inline: 8px;
+}
+
+.mortgage-editor__add-row {
+  height: 46px;
+}
+
+.mortgage-editor__add-row .editor-form__row-action {
+  font-size: 16px;
+  line-height: 1;
+}

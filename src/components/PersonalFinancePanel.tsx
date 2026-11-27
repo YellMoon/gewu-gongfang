@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Card, DatePicker, Drawer, Form, Input, Modal, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import dayjs from 'dayjs';
 import './PersonalFinancePanel.css';
+import '../layout/EditorModal.css';
+import '../layout/EditorDrawer.css';
+import '../layout/EditorForm.css';
 // @ts-ignore Presentation helpers do not change ledger decisions.
 import { PROVIDERS, ISSUE_LABELS, accountLabel, accountGroup, evidenceLabel, trendGranularity, statisticsState, boundedObservationOptions, BILL_CATEGORIES, billCategory, billTimestamp } from './personalFinancePresentation';
-import MortgageAccounts from './MortgageAccounts';
+import MortgageAccounts, {missingMortgageFields} from './MortgageAccounts';
 import FinanceSecurities from './FinanceSecurities';
 import FinanceBalanceGroups from './FinanceBalanceGroups';
 import TuitionBillReview from './TuitionBillReview';
@@ -21,6 +24,19 @@ const TYPES: Record<string, string> = { cash: '现金', bank: '银行账户', sa
 const KINDS: Record<string, string> = { expense: '消费', income: '收入', transfer: '转账', refund: '退款', loan_drawdown: '借款到账', debt_payment: '还款/月供', interest: '利息', fee: '手续费', unknown: '待分类' };
 const client = createPersonalFinanceClient();
 const empty = { accounts: [], observations: [], links: [], balanceSnapshots: [], imports: [], legacyRecords: [], revision: '0' };
+
+type AccountFormValues = { label: string };
+
+type BalanceFormValues = { balance: string; asOf: string; note?: string };
+type BalanceEditor = {
+  id: string;
+  label: string;
+  currency: string;
+  owner: string;
+  revision: string;
+  open: boolean;
+};
+const BALANCE_PATTERN = /^-?\d+(?:\.\d{1,2})?$/;
 
 export function settlementAccountField(o:any,t:any,accounts:any[]){
   const existing=t.appliedAnnotations?.filter((a:any)=>a.observationId===o.id&&!a.reset).sort((a:any,b:any)=>BigInt(a.revision)>BigInt(b.revision)?-1:1)[0]?.patch?.settlementAccountId;
@@ -93,9 +109,14 @@ export default function PersonalFinancePanel() {
   const projectionQueryKey=useRef<string>();
   const latestReload=useRef<(retry?:boolean)=>Promise<void>>();
   const currentRevision=useRef('0');
+  const attemptedAccountDiscovery=useRef<string>();
+  const [accountDiscoveryFailure,setAccountDiscoveryFailure]=useState('');
   currentRevision.current=rawLedger.revision;
   const [searchedObservations,setSearchedObservations]=useState<any[]>([]);
-  const [accountModal, setAccountModal] = useState(false), [form] = Form.useForm();
+  const [accountEditor, setAccountEditor] = useState<{ owner: string; open: boolean; id: string; revision: string }>();
+  const [form] = Form.useForm<AccountFormValues>();
+  const [balanceEditor, setBalanceEditor] = useState<BalanceEditor>();
+  const [balanceForm] = Form.useForm<BalanceFormValues>();
   const [importAccount, setImportAccount] = useState<string>(), [file, setFile] = useState<any>(), [preview, setPreview] = useState<any>();
   const [relatedAccountIds,setRelatedAccountIds] = useState<any>({});
   const [bankSource,setBankSource]=useState('auto');
@@ -150,6 +171,7 @@ export default function PersonalFinancePanel() {
   };
   const reconnect = () => {
     if (reconnecting.current) return reconnecting.current;
+    attemptedAccountDiscovery.current=undefined;
     setLoading(true);
     reconnecting.current = (async () => {
       try {
@@ -179,12 +201,14 @@ export default function PersonalFinancePanel() {
   const run = async (work: (current: () => boolean) => Promise<any>) => {
     const owner = scope(); setBusy(true);
     const current = () => mounted.current && scope() === owner;
-    try { const value = await work(current); if (!current()) return; await reload(); if (!current()) return; message.success('云端已处理'); return value; }
+    try { const value = await work(current); if (!current()) return; await reload(); if (!current()) return; message.success(value?.receipt?.mortgageAccountsCreated&&!value.receipt.replayed
+        ? '已自动建立房贷账户，可在「总览与账户」补充资料'
+        : '云端已处理'); return value; }
     catch (e: any) { if (mounted.current && scope() === owner) message.error(e.code === 'CLOUD_PERSONAL_FINANCE_REVISION_CONFLICT' ? '云端已更新，请刷新后重试。' : `处理失败：${e.code || 'FINANCE_REQUEST_FAILED'}`); }
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
   const ownerScope=currentOwnerScope,filterKey=JSON.stringify([selected.length?[...selected].sort():null,period?.[0]?.format('YYYY-MM-DD')||null,period?.[1]?.format('YYYY-MM-DD')||null]);
-  useEffect(()=>{const previous=priorOwner.current;priorOwner.current=ownerScope;if(previous===undefined||previous===ownerScope)return;sequence.current++;fileSequence.current++;setLedger(empty);setLoaded(false);setAnalysis(undefined);setSelected([]);setPreview(null);setFile(null);setRelatedAccountIds({});setPasswordModal(false);setAccountDetail(undefined);setReviewGroup(undefined);setReviewTransactionId(undefined);void reload();void loadMailbox();},[ownerScope]);
+  useEffect(()=>{const previous=priorOwner.current;priorOwner.current=ownerScope;if(previous===undefined||previous===ownerScope)return;sequence.current++;fileSequence.current++;setLedger(empty);setLoaded(false);setAnalysis(undefined);setSelected([]);setPreview(null);setFile(null);setRelatedAccountIds({});setPasswordModal(false);setAccountDetail(undefined);setAccountEditor(undefined);form.resetFields();setBalanceEditor(undefined);balanceForm.resetFields();setReviewGroup(undefined);setReviewTransactionId(undefined);void reload();void loadMailbox();},[ownerScope]);
   const projectionKey=JSON.stringify(projectionInput());
   const pageScope=JSON.stringify({...projectionInput(),page:undefined});
   useEffect(()=>{setTransactionPage(1);},[pageScope]);
@@ -229,19 +253,56 @@ export default function PersonalFinancePanel() {
     finally { if (mounted.current && scope() === owner) setBusy(false); }
   };
   const assetRegister=analysis?.owner===ownerScope?analysis.result.assetRegister:emptyRegister;
-  const verifyBalance = (a: any) => Modal.confirm({
-    zIndex:2000,
-    title: a.label + ' \u00b7 \u4f59\u989d\u6838\u5bf9',
-    okText:'\u4fdd\u5b58\u6838\u5bf9',cancelText:'\u53d6\u6d88',
-    content:<Form id="asset-balance-form" layout="vertical"><Form.Item label={'\u4f59\u989d\uff08\u5143\uff09'}><Input name="balance" aria-label={'\u6838\u5bf9\u4f59\u989d'} placeholder={'\u6b20\u6b3e\u586b\u8d1f\u6570\uff1b0 \u8868\u793a\u5df2\u786e\u8ba4\u4e3a\u96f6'}/></Form.Item><Form.Item label={'\u4f59\u989d\u5bf9\u5e94\u65f6\u95f4'}><Input name="asOf" aria-label={'\u4f59\u989d\u5bf9\u5e94\u65f6\u95f4'} type="datetime-local" defaultValue={dayjs().format('YYYY-MM-DDTHH:mm')}/></Form.Item><Form.Item label={'\u6838\u5bf9\u4f9d\u636e\u6216\u5907\u6ce8'}><Input name="note" aria-label={'\u6838\u5bf9\u4f9d\u636e\u6216\u5907\u6ce8'}/></Form.Item></Form>,
-    onOk: async () => {
-      const data = new FormData(document.getElementById('asset-balance-form') as HTMLFormElement);
-      const amount = String(data.get('balance') || ''), asOf = new Date(String(data.get('asOf') || ''));
-      if (!/^-?\d+(?:\.\d{1,2})?$/.test(amount) || Number.isNaN(asOf.getTime())) throw new Error('\u8bf7\u586b\u5199\u6709\u6548\u4f59\u989d\u548c\u5bf9\u5e94\u65f6\u95f4');
-      const result = await run(() => client.createBalanceSnapshot({expectedRevision:ledger.revision,snapshot:{financialAccountId:a.id,currency:a.currency,balanceMinor:parseMoney(amount),asOf:asOf.toISOString(),source:'manual',balanceConvention:'signed',note:String(data.get('note')||'')}}));
-      if (!result) throw new Error('\u4f59\u989d\u6838\u5bf9\u672a\u4fdd\u5b58');
-    },
-  });
+  const hasAccountProposals=assetRegister.proposals.accounts.length>0;
+  const accountDiscoveryKey=financeReady&&ownerScope&&hasAccountProposals?JSON.stringify([ownerScope,ledger.revision]):'';
+  useEffect(()=>{
+    if(!accountDiscoveryKey||loading||busy||attemptedAccountDiscovery.current===accountDiscoveryKey)return;
+    attemptedAccountDiscovery.current=accountDiscoveryKey;
+    setAccountDiscoveryFailure('');
+    const current=()=>mounted.current&&scope()===ownerScope;
+    void (async()=>{
+      try{
+        await client.discoverAccounts({expectedRevision:ledger.revision});
+        if(current())await latestReload.current?.();
+      }catch(e:any){
+        if(!current())return;
+        if(e.code==='CLOUD_PERSONAL_FINANCE_REVISION_CONFLICT')await latestReload.current?.();
+        else setAccountDiscoveryFailure(accountDiscoveryKey);
+      }
+    })();
+  },[accountDiscoveryKey,ownerScope,ledger.revision,loading,busy]);
+  const mortgageNeedsDetails=ledger.accounts.map((account:any)=>({account,missing:missingMortgageFields(account)})).filter(({missing}:any)=>missing.length);
+  const activeBalance = balanceEditor?.owner === ownerScope ? balanceEditor : undefined;
+  const verifyBalance = (account?: { id: string; label: string; currency: string }) => {
+    if (!account) return;
+    balanceForm.resetFields();
+    balanceForm.setFieldsValue({ asOf: dayjs().format('YYYY-MM-DDTHH:mm') });
+    setBalanceEditor({
+      id: account.id, label: account.label, currency: account.currency,
+      owner: ownerScope, open: true, revision: ledger.revision,
+    });
+  };
+  const closeBalanceEditor = () => setBalanceEditor(editor => editor && { ...editor, open: false });
+  const saveBalance = (values: BalanceFormValues) => {
+    if (!activeBalance?.open || busy || scope() !== activeBalance.owner) return;
+    return run(async current => {
+      if (!current()) return;
+      const saved = await client.createBalanceSnapshot({
+        expectedRevision: activeBalance.revision,
+        snapshot: {
+          financialAccountId: activeBalance.id,
+          currency: activeBalance.currency,
+          balanceMinor: parseMoney(values.balance),
+          asOf: new Date(values.asOf).toISOString(),
+          source: 'manual',
+          balanceConvention: 'signed',
+          note: values.note || '',
+        },
+      });
+      if (saved && current()) closeBalanceEditor();
+      return saved;
+    });
+  };
   const previousCategories = view.comparison?.previous.categoryTotals || {};
   const categoryRows = [...new Set([...Object.keys(view.categoryTotals), ...Object.keys(previousCategories)])].flatMap(currency => [...new Set([...Object.keys(view.categoryTotals[currency] || {}), ...Object.keys(previousCategories[currency] || {})])].map(category => ({ id: currency + category, currency, category: category || '未分类', amount: view.categoryTotals[currency]?.[category] || '0', previous: previousCategories[currency]?.[category] || '0' })));
   const observationLabel = (o: any) => `${o.date} ${accountLabel(accountMap.get(o.financialAccountId)) || o.financialAccountId} ${o.provider} ${o.currency || ''} ${formatMinor(o.amountMinor)} ${o.description} · 交易号 ${o.sourceTransactionId || '无'} · 资金尾号 ${o.paymentAccountHint || '无'}`;
@@ -269,7 +330,24 @@ export default function PersonalFinancePanel() {
   const associationOptions=useMemo(()=>boundedObservationOptions([...observationMap.values()].filter(o=>o.amountMinor!==undefined),linkSearch,linkIds).map((o:any)=>({value:o.id,label:observationLabel(o)})),[observationMap,linkSearch,linkIds,accountMap]);
   const openTransactions=(category='',filter='all')=>{setCategoryFilter(category);setBillCategoryFilter([]);setTransactionFilter(filter);setSearch('');setActiveTab('transactions');};
   const showPeriodTransactions=(date:string)=>{const from=dayjs(date),to=effectiveGranularity==='month'?from.endOf('month'):effectiveGranularity==='week'?from.add(6,'day'):from;setTrendReturnPeriod(period);setPeriod([from,to.isAfter(dayjs())?dayjs():to]);openTransactions();};
-  const renameAccount=(a:any)=>Modal.confirm({title:'修改账户名称',content:<Input id="asset-account-label" defaultValue={a.label} maxLength={128}/>,onOk:async()=>{const label=(document.getElementById('asset-account-label') as HTMLInputElement).value.trim();if(!label)throw new Error('请填写名称');const saved=await run(()=>client.updateAccount(a.id,{expectedRevision:ledger.revision,patch:{label}}));if(!saved)throw new Error('名称未保存');}});
+  const activeAccountEditor = accountEditor?.owner === ownerScope ? accountEditor : undefined;
+  const openAccountEditor = (account: { id: string; label: string }) => {
+    form.resetFields();
+    form.setFieldsValue({ label: account.label });
+    setAccountEditor({ owner: ownerScope, open: true, id: account.id, revision: ledger.revision });
+  };
+  const closeAccountEditor = () => setAccountEditor(editor => editor && { ...editor, open: false });
+  const saveAccount = (values: AccountFormValues) => {
+    if (!activeAccountEditor?.open || busy || scope() !== activeAccountEditor.owner) return;
+    void run(async current => {
+      if (!current()) return;
+      await client.updateAccount(activeAccountEditor.id, {
+        expectedRevision: activeAccountEditor.revision,
+        patch: { label: values.label.trim() },
+      });
+      if (current()) closeAccountEditor();
+    });
+  };
   const accountEffects=(t:any)=>Object.keys(t.balanceEffects||{}).length?<div>{Object.entries(t.balanceEffects).map(([id,value]:any)=><div key={id}>{accountLabel(accountMap.get(id))} <span className="finance-number">{BigInt(value)>0n?'+':''}{formatMinor(value)}</span></div>)}</div>:<span className="finance-muted">{t.coveredEffects?.length?'账户账单已记录变动，来源未重复入账':'暂无可确认账户变动'}</span>;
   const openReviewGroup = (group:any) => {
     setSelected([]); setPeriod(null); setSearch(''); setCategoryFilter('');
@@ -286,13 +364,85 @@ export default function PersonalFinancePanel() {
     setLinkType('duplicate'); setLinkSearch('');
     setLinkIds(candidates.length===1?[transaction.observationIds[0],candidates[0]]:transaction.observationIds.slice(0,1));
   };
-  const renderTransactionEvidence = (t:any) => <div><AutomaticFinanceAssociations transaction={t} busy={busy} onReject={(ids,type='distinct')=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type,observationIds:ids}}))}/>{t.sources.map((o: any) => <div key={o.id}><p>{observationLabel(o)}</p><p>关联参考：{o.relatedReference || '无'} · 状态：{o.status} · 原始分类：{o.category || '无'}</p><pre style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(o.rawFields, null, 2)}</pre><Button onClick={() => Modal.confirm({ zIndex:2000, title: '校正类别与贷款拆分', okText:'保存核对', cancelText:'取消', content: <Form id="finance-annotation" layout="vertical"><Form.Item label="分类名称"><Input name="category" aria-label="分类名称" defaultValue={t.category}/></Form.Item><Form.Item label="统计类型"><select name="kind" aria-label="统计类型" style={{width:'100%',padding:8}} defaultValue={t.kind}>{Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Form.Item>{settlementAccountField(o,t,ledger.accounts)}<Input name="principal" placeholder="还款本金（元；留空表示未知）" defaultValue={t.principalMinor == null ? '' : formatMinor(t.principalMinor)} /><Input name="interest" placeholder="利息（元）" defaultValue={t.interestMinor == null ? '' : formatMinor(t.interestMinor)} /><Input name="fee" placeholder="费用（元）" defaultValue={t.feeMinor == null ? '' : formatMinor(t.feeMinor)} /></Form>, onOk: async () => {
-          const el = document.getElementById('finance-annotation') as HTMLFormElement, f = new FormData(el), patch: any = { category: String(f.get('category') || ''), kind: String(f.get('kind')) };
-          for (const [field, name] of [['principalMinor', 'principal'], ['interestMinor', 'interest'], ['feeMinor', 'fee']]) { const value = String(f.get(name) || ''); if (value && !/^\d+(?:\.\d{1,2})?$/.test(value)) throw new Error('本金、利息与费用请填非负金额，最多两位小数'); if (value || t[field] != null) patch[field] = value ? parseMoney(value) : null; }
-          const settlement = f.get('settlementAccountId');
-          if (settlement !== null) { patch.settlementAccountId = String(settlement) || null; if (patch.settlementAccountId && patch.kind !== 'transfer') throw new Error('\u6307\u5b9a\u5f80\u6765\u5bf9\u8c61\u65f6\uff0c\u4ea4\u6613\u7c7b\u578b\u8bf7\u9009\u62e9\u8f6c\u8d26'); }
-          const result = await run(() => client.annotateObservation(o.id, { patch, expectedRevision: ledger.revision })); if (result) setReviewTransactionId(undefined); if (!result) throw new Error('校正未提交成功，请重试');
-        } })}>校正统计分类/还款拆分</Button>{t.appliedAnnotations?.some((a:any)=>a.observationId===o.id)&&<Button disabled={busy} onClick={()=>void run(()=>client.annotateObservation(o.id,{patch:{},expectedRevision:ledger.revision}))}>{'\u6062\u590d\u81ea\u52a8\u5206\u7c7b'}</Button>}</div>)}</div>;
+  const openTransactionCorrection = (t: any, observation: any) => {
+    Modal.confirm({
+      zIndex: 2000,
+      title: '校正类别与贷款拆分',
+      className: 'editor-modal finance-correction',
+      centered: true,
+      width: 480,
+      icon: null,
+      okText: '保存核对',
+      cancelText: '取消',
+      content: (
+        <Form id="finance-annotation" layout="vertical" className="editor-form finance-correction__form">
+          <section className="editor-form__details" aria-label="交易分类">
+            <Form.Item label="分类名称" htmlFor="finance-correction-category" className="editor-form__details-row">
+              <Input id="finance-correction-category" name="category" aria-label="分类名称" defaultValue={t.category}/>
+            </Form.Item>
+            <Form.Item label="统计类型" htmlFor="finance-correction-kind" className="editor-form__details-row">
+              <select id="finance-correction-kind" className="ant-input finance-correction__select" name="kind" aria-label="统计类型" defaultValue={t.kind}>
+                {Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            </Form.Item>
+            {settlementAccountField(observation, t, ledger.accounts)}
+          </section>
+          <fieldset className="finance-correction__split">
+            <legend>还款拆分</legend>
+            <div className="finance-correction__amounts">
+              {([
+                ['principal', '本金', t.principalMinor],
+                ['interest', '利息', t.interestMinor],
+                ['fee', '费用', t.feeMinor],
+              ] as const).map(([name, label, amount]) => (
+                <label key={name} className="finance-correction__amount">
+                  <span>{label}</span>
+                  <Input name={name} aria-label={label} inputMode="decimal" suffix={t.currency==='CNY'?'元':t.currency}
+                    placeholder="未知" defaultValue={amount == null ? '' : formatMinor(amount)}/>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </Form>
+      ),
+      onOk: async () => {
+        const el = document.getElementById('finance-annotation') as HTMLFormElement;
+        const f = new FormData(el), patch: any = { category: String(f.get('category') || ''), kind: String(f.get('kind')) };
+        for (const [field, name] of [['principalMinor', 'principal'], ['interestMinor', 'interest'], ['feeMinor', 'fee']]) {
+          const value = String(f.get(name) || '');
+          if (value && !/^\d+(?:\.\d{1,2})?$/.test(value)) throw new Error('本金、利息与费用请填非负金额，最多两位小数');
+          if (value || t[field] != null) patch[field] = value ? parseMoney(value) : null;
+        }
+        const settlement = f.get('settlementAccountId');
+        if (settlement !== null) {
+          patch.settlementAccountId = String(settlement) || null;
+          if (patch.settlementAccountId && patch.kind !== 'transfer') throw new Error('指定往来对象时，交易类型请选择转账');
+        }
+        const result = await run(() => client.annotateObservation(observation.id, { patch, expectedRevision: ledger.revision }));
+        if (!result) throw new Error('校正未提交成功，请重试');
+        setReviewTransactionId(undefined);
+      },
+    });
+  };
+  const renderTransactionEvidence = (t: any) => (
+    <div>
+      <AutomaticFinanceAssociations transaction={t} busy={busy}
+        onReject={(ids,type='distinct')=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type,observationIds:ids}}))}/>
+      {t.sources.map((o: any) => (
+        <div className="finance-source-record" key={o.id}>
+          <p className="finance-source-record__name">{observationLabel(o)}</p>
+          <p>关联参考：{o.relatedReference || '无'} · 状态：{o.status} · 原始分类：{o.category || '无'}</p>
+          <details className="finance-source-record__data">
+            <summary>查看原始字段</summary>
+            <pre>{JSON.stringify(o.rawFields,null,2)}</pre>
+          </details>
+          <Button onClick={()=>openTransactionCorrection(t,o)}>校正统计分类/还款拆分</Button>
+          {t.appliedAnnotations?.some((a:any)=>a.observationId===o.id)&&
+            <Button disabled={busy} onClick={()=>void run(()=>client.annotateObservation(o.id,{patch:{},expectedRevision:ledger.revision}))}>恢复自动分类</Button>}
+        </div>
+      ))}
+    </div>
+  );
   return <Card className="personal-finance-panel" title={<div className="finance-toolbar"><Space wrap><Button disabled={!financeReady||busy} onClick={()=>setTuitionReviewOpen(true)}>账单学费核对</Button><Button loading={loading} onClick={()=>void reconnect()}>刷新账本</Button><Button type="primary" onClick={()=>setActiveTab('import')}>导入账单</Button></Space></div>}>
     {tuitionReviewOpen&&<TuitionBillReview key={ownerScope} open={tuitionReviewOpen} onClose={()=>setTuitionReviewOpen(false)} revision={ledger.revision} scopeKey={ownerScope} client={client}/>}
     {failure&&<Alert type="warning" showIcon message="账单加载失败" description={/DEVICE_NOT_ACTIVE|IDENTITY|SESSION|AUTH/.test(failure)?'请重新登录。':'请检查网络后重试。'} action={<Button size="small" loading={loading} onClick={()=>void reconnect()}>重试</Button>} />}
@@ -315,7 +465,9 @@ export default function PersonalFinancePanel() {
     {trendReturnPeriod!==undefined&&<Button className="finance-return-period" onClick={()=>{setPeriod(trendReturnPeriod);setTrendReturnPeriod(undefined);setActiveTab('overview');}}>返回原统计期间</Button>}
     </>}
     <section role="tabpanel" aria-label={({overview:'总览与账户',transactions:'全部流水',funds:'理财产品',securities:'证券账户',review:'待核对',import:'导入账单'} as any)[activeTab]} aria-busy={loading||background&&!analysisReady}>
+    {accountDiscoveryKey&&accountDiscoveryFailure===accountDiscoveryKey&&<Alert type="warning" showIcon message="账户自动识别暂未完成" action={<Button size="small" onClick={()=>void reconnect()}>重试</Button>}/>}
     {activeTab==='overview'&&<>
+      {financeReady&&mortgageNeedsDetails.length>0&&<Alert className="finance-account-notice" type="info" showIcon message="房贷账户已建立，请补充资料" description={<ul>{mortgageNeedsDetails.map(({account,missing}:any)=><li key={account.id}>{account.label} · {missing.join('、')}</li>)}</ul>} action={<Button size="small" onClick={()=>document.getElementById('finance-mortgage-accounts')?.focus()}>查看房贷账户</Button>}/>}
       <div role="region" className="finance-summary" aria-label="账户收支与余额总览">
         <Card size="small"><span>期间支出（扣除退款）</span><div className="finance-value" data-testid="expense-total">{financeReady?formatMinor(totals.consumptionMinor):'—'}</div></Card>
         <Card size="small"><span>期间收入</span><div className="finance-value" data-testid="income-total">{financeReady?formatMinor(totals.incomeMinor):'—'}</div></Card>
@@ -327,7 +479,7 @@ export default function PersonalFinancePanel() {
         <section className="finance-chart"><div className="finance-toolbar"><h3>支出分类</h3><Button size="small" onClick={()=>setCategoryDisplay(categoryDisplay==='chart'?'table':'chart')}>{categoryDisplay==='chart'?'查看分类表':'查看分类图'}</Button></div>{categoryDisplay==='chart'?<>{categories.slice(0,7).map((r:any)=><button type="button" key={r.id} className="finance-category-row" onClick={()=>openTransactions(r.category)} aria-label={'查看分类 '+r.category+' 流水'}><span className="finance-category-label"><span>{r.category==='Uncategorized'?'未分类':r.category}</span><span className="finance-number">{formatMinor(r.amount)}</span></span><span className="finance-category-track"><span className="finance-category-fill" style={{width:Number((BigInt(r.amount)<0n?-BigInt(r.amount):BigInt(r.amount))*10000n/categoryMax)/100+'%',background:BigInt(r.amount)<0n?'#1677ff':undefined}}/></span></button>)}{!categories.length&&<p>所选期间暂无支出分类。</p>}<Button type="link" size="small" onClick={()=>setCategoryDisplay('table')}>全部分类及上期对比</Button></>:<Table size="small" rowKey="id" dataSource={categories} pagination={{pageSize:5,showSizeChanger:false}} columns={[{title:'类别',dataIndex:'category',render:(v:string)=><Button type="link" size="small" onClick={()=>openTransactions(v)}>{v==='Uncategorized'?'未分类':v}</Button>},{title:'本期',dataIndex:'amount',align:'right',render:formatMinor},{title:'上期同长度',dataIndex:'previous',align:'right',render:formatMinor}]}/>}</section>
       </div>
       }
-      <div className="finance-toolbar"><div><h3 className="finance-section-title">实际资金账户</h3></div><Space wrap><Input aria-label="查找账户" placeholder="账户名称或卡尾号" allowClear value={accountSearch} onChange={e=>setAccountSearch(e.target.value)}/><Button size="small" onClick={()=>setAccountModal(true)}>新增账户</Button></Space></div>
+      <div className="finance-toolbar"><div><h3 className="finance-section-title">实际资金账户</h3></div><Space wrap><Input aria-label="查找账户" placeholder="账户名称或卡尾号" allowClear value={accountSearch} onChange={e=>setAccountSearch(e.target.value)}/></Space></div>
 
       <div className="finance-account-groups">{accountGroups.map(({group,accounts:items})=><section key={group} className="finance-account-group" aria-label={group}>
         <div className="finance-toolbar"><h4>{group} <span className="finance-muted">{items.length} 个</span></h4></div>
@@ -351,7 +503,7 @@ export default function PersonalFinancePanel() {
         {title:'操作',render:(_:any,a:any)=><Space direction="vertical" size={0}><Button type="link" size="small" onClick={()=>{setSelected([a.id]);setAccountDetail(undefined);}}>仅看此账户</Button><Button type="link" size="small" onClick={()=>setAccountDetail(a.id)}>详情 / 核对余额</Button></Space>},
       ]}/>
       </details>
-      {financeReady&&<MortgageAccounts key={scope()} models={view.mortgages} accounts={ledger.accounts} busy={busy} onSave={(account:any,existing:any)=>run(()=>existing?client.updateAccount(existing.id,{patch:{label:account.label,mortgage:account.mortgage},expectedRevision:ledger.revision}):client.createAccount({account,expectedRevision:ledger.revision}))}/>}
+      {financeReady&&<section id="finance-mortgage-accounts" tabIndex={-1} aria-label="房贷账户"><MortgageAccounts key={scope()} models={view.mortgages} accounts={ledger.accounts} busy={busy} onSave={(account:any)=>run(()=>client.updateAccount(account.id,{patch:{label:account.label,mortgage:account.mortgage},expectedRevision:ledger.revision}))}/></section>}
       <details className="finance-help"><summary>消费资金与还款构成</summary><Table rowKey="currency" size="small" dataSource={Object.entries(view.fundingBreakdown||{}).filter(([c])=>c===selectedCurrency).map(([c,v]:any)=>({currency:c,...v}))} scroll={{x:780}} pagination={false} columns={[{title:'币种',dataIndex:'currency'},{title:'现金类消费',dataIndex:'cashFundedConsumptionMinor',render:formatMinor},{title:'信用类消费',dataIndex:'creditFundedConsumptionMinor',render:formatMinor},{title:'还款本金',dataIndex:'loanPrincipalPaidMinor',render:formatMinor},{title:'利息',dataIndex:'interestPaidMinor',render:formatMinor},{title:'费用',dataIndex:'feesPaidMinor',render:formatMinor},{title:'待拆分还款',dataIndex:'unsplitDebtPaymentMinor',render:formatMinor}]}/></details>
     </>}
     {activeTab==='transactions'&&financeReady&&<>
@@ -412,14 +564,14 @@ export default function PersonalFinancePanel() {
         <BillRelatedAccounts items={preview?.relatedAccountResolutions} selected={relatedAccountIds} disabled={busy} onChange={(ids:any)=>{fileSequence.current++;setRelatedAccountIds(ids);setPreview(null);}}/>
         {preview && <><Alert type={preview.errors?.length ? 'error' : 'info'} message={`${preview.provider} · ${preview.records?.length || 0} 条；错误 ${preview.errors?.length || 0}，提示 ${preview.warnings?.length || 0}`} description={[...(preview.errors || []), ...(preview.warnings || [])].slice(0, 10).map((e: any) => `第${e.line || '?'}行：${e.message || e.code}`).join('；')} />
           <Table rowKey={(_: any, i?: number) => String(i)} dataSource={preview.records?.slice(0, 100)} columns={[{ title: '日期', dataIndex: 'date' }, { title: '类型', dataIndex: 'kind', render: (v: string) => KINDS[v] }, { title: '币种', dataIndex: 'currency' }, { title: '金额', dataIndex: 'amountMinor', render: formatMinor }, { title: '说明', dataIndex: 'description' }]} />
-          <Button type="primary" disabled={busy || !relatedAccountsReady(preview.relatedAccountResolutions) || !!preview.errors?.length || !preview.records?.length || !!preview.accountResolution&&!['matched','create'].includes(preview.accountResolution.status)} onClick={() => void run(async current => { await client.importFile(preview.reviewedInput, preview.reviewedKey); if (!current()) return; fileSequence.current++; setFile(null); setPreview(null); })}>确认整批导入</Button></>}
+          <Button type="primary" disabled={busy || !relatedAccountsReady(preview.relatedAccountResolutions) || !!preview.errors?.length || !preview.records?.length || !!preview.accountResolution&&!['matched','create'].includes(preview.accountResolution.status)} onClick={() => void run(async current => { const result=await client.importFile(preview.reviewedInput, preview.reviewedKey); if (!current()) return; fileSequence.current++; setFile(null); setPreview(null); return result; })}>确认整批导入</Button></>}
         <Card title="账单收集邮箱" style={{ marginTop: 16 }}><Space wrap><Button loading={mailLoading} disabled={mailLoading} onClick={() => { void loadMailbox(); window.dispatchEvent?.(new Event('bill-mailbox-open')); }}>查看邮箱</Button><span style={{ overflowWrap:'anywhere' }}>{mailStatus?.address}</span><Button onClick={() => window.dispatchEvent?.(new Event('bill-mailbox-open'))}>检查账单附件</Button></Space>{mailFailure && <Alert type="warning" showIcon message={mailFailure} />}</Card>
 
       <details className="finance-help"><summary>已导入账单记录（全部日期）</summary><Table rowKey="id" dataSource={ledger.imports} pagination={{pageSize:10,showSizeChanger:false}} scroll={{x:650}} columns={[{title:'文件',dataIndex:'filename'},{title:'所属账户',dataIndex:'financialAccountId',render:(id:string)=>accountLabel(accountMap.get(id))},{title:'导入时间',dataIndex:'createdAt',render:(v:string)=>v?dayjs(v).format('YYYY-MM-DD HH:mm'):'未提供'},{title:'原始记录数',dataIndex:'recordCount'}]}/></details>
     </>}
     {activeTab==='review'&&reviewReady&&<>
       <p>待核对 {review.pendingTransactionCount} 笔 · 账户异常 {review.pendingAccountIssueCount} 项</p>
-      <h3 className="finance-section-title">账户与余额核对</h3><Space wrap><Button disabled={busy||!assetRegister.proposals.accounts.length} onClick={()=>void run(()=>client.discoverAccounts({expectedRevision:ledger.revision}))}>根据账单补建账户{assetRegister.proposals.accounts.length?'（'+assetRegister.proposals.accounts.length+'）':''}</Button><Button onClick={()=>setActiveTab('overview')}>从账户表核对余额</Button><Button onClick={()=>setAccountModal(true)}>新增账户</Button></Space>
+      <h3 className="finance-section-title">账户与余额核对</h3><Button onClick={()=>setActiveTab('overview')}>从账户表核对余额</Button>
       {assetRegister.proposals.unresolved.length>0&&<Alert type="warning" style={{marginTop:12}} message={'有 '+assetRegister.proposals.unresolved.length+' 项银行卡身份待核对'} description={assetRegister.proposals.unresolved.map((v:any)=>(v.bank||'账户')+' '+(v.tail||'')+'：'+(v.reason==='bank_type_unknown'?'账单未说明储蓄卡或信用卡':'已有账户存在歧义')).join('；')}/>}
       <h3 className="finance-section-title">账单识别与关联状态</h3>
 
@@ -435,38 +587,124 @@ export default function PersonalFinancePanel() {
 
     </>}
     </section>
-    <Drawer title={detailAccount?accountLabel(detailAccount)+' · 账户详情':'账户详情'} open={!!detailAccount} onClose={()=>setAccountDetail(undefined)} width={560}>
-      {detailAccount&&<div className="finance-account-detail"><Tag>{accountGroup(detailAccount)}</Tag><p>{detailAccount.currency} · {TYPES[detailAccount.type]||detailAccount.type} · 尾号 {detailAccount.maskedIdentifier||'未提供'}</p><dl><dt>所选期间期末余额</dt><dd>{!view.accountStats[detailAccount.id]?'该账户未加入当前统计组合':view.accountStats[detailAccount.id]?.balanceMinor==null?'待核对':formatMinor(view.accountStats[detailAccount.id].balanceMinor)}</dd><dt>最近余额证据（保留原时点与口径）</dt><dd>{detailAccount.verifiedBalance?<><strong>{evidenceLabel(detailAccount.verifiedBalance)}：{formatMinor(detailAccount.verifiedBalance.balanceMinor)}</strong><br/>{dayjs(detailAccount.verifiedBalance.asOf).format('YYYY-MM-DD HH:mm')}{detailAccount.verifiedBalance.balanceKind==='billed_debt'&&<p>仅为该账期已出账应还款，不是当前全部欠款，不计入总余额。</p>}</>:'尚无可用余额证据'}</dd><dt>已导入来源与记录时间</dt><dd>{detailAccount.channels.map((v:string)=>PROVIDERS[v]||v).join(' / ')||'暂无来源'}<br/>{detailAccount.firstDate?detailAccount.firstDate+' 至 '+detailAccount.lastDate:'暂无记录'} · {detailAccount.evidenceCount} 条关联原始记录</dd>{detailAccount.type==='credit_card'&&!detailAccount.sourceProduct&&<><dt>{'\u94f6\u884c\u539f\u59cb\u660e\u7ec6\u8986\u76d6'}</dt><dd>{detailAccount.bankStatementCoverage?.recordCount?<>{detailAccount.bankStatementCoverage.firstTransactionDate}{' \u81f3 '}{detailAccount.bankStatementCoverage.lastTransactionDate}{' \u00b7 '}{detailAccount.bankStatementCoverage.recordCount}{' \u6761\u539f\u59cb\u660e\u7ec6'}<p>{'\u8d77\u6b62\u65e5\u671f\u4e0d\u4ee3\u8868\u4e2d\u95f4\u6708\u4efd\u7684\u8d26\u5355\u5df2\u5168\u90e8\u9f50\u5168\u3002'}</p></>:<>{'\u5c1a\u672a\u5bfc\u5165\u94f6\u884c\u539f\u59cb\u4ea4\u6613\u660e\u7ec6\uff1b\u76ee\u524d\u4ec5\u7531\u652f\u4ed8\u5e73\u53f0\u8bb0\u5f55\u8bc6\u522b\u8d26\u6237\u3002'}</>}</dd></>}</dl><Space wrap><Button onClick={()=>{setSelected([detailAccount.id]);setAccountDetail(undefined);openTransactions();}}>查看此账户流水</Button><Button type="primary" disabled={busy} onClick={()=>verifyBalance(detailAccount)}>核对余额</Button><Button disabled={busy} onClick={()=>renameAccount(detailAccount)}>改名</Button></Space></div>}
+    <Drawer rootClassName="editor-drawer finance-detail-drawer" title={detailAccount?accountLabel(detailAccount)+' · 账户详情':'账户详情'} open={!!detailAccount} onClose={()=>setAccountDetail(undefined)} width={560}>
+      {detailAccount&&<div className="finance-account-detail editor-drawer__section"><Tag>{accountGroup(detailAccount)}</Tag><p>{detailAccount.currency} · {TYPES[detailAccount.type]||detailAccount.type} · 尾号 {detailAccount.maskedIdentifier||'未提供'}</p><dl><dt>所选期间期末余额</dt><dd>{!view.accountStats[detailAccount.id]?'该账户未加入当前统计组合':view.accountStats[detailAccount.id]?.balanceMinor==null?'待核对':formatMinor(view.accountStats[detailAccount.id].balanceMinor)}</dd><dt>最近余额证据（保留原时点与口径）</dt><dd>{detailAccount.verifiedBalance?<><strong>{evidenceLabel(detailAccount.verifiedBalance)}：{formatMinor(detailAccount.verifiedBalance.balanceMinor)}</strong><br/>{dayjs(detailAccount.verifiedBalance.asOf).format('YYYY-MM-DD HH:mm')}{detailAccount.verifiedBalance.balanceKind==='billed_debt'&&<p>仅为该账期已出账应还款，不是当前全部欠款，不计入总余额。</p>}</>:'尚无可用余额证据'}</dd><dt>已导入来源与记录时间</dt><dd>{detailAccount.channels.map((v:string)=>PROVIDERS[v]||v).join(' / ')||'暂无来源'}<br/>{detailAccount.firstDate?detailAccount.firstDate+' 至 '+detailAccount.lastDate:'暂无记录'} · {detailAccount.evidenceCount} 条关联原始记录</dd>{detailAccount.type==='credit_card'&&!detailAccount.sourceProduct&&<><dt>{'\u94f6\u884c\u539f\u59cb\u660e\u7ec6\u8986\u76d6'}</dt><dd>{detailAccount.bankStatementCoverage?.recordCount?<>{detailAccount.bankStatementCoverage.firstTransactionDate}{' \u81f3 '}{detailAccount.bankStatementCoverage.lastTransactionDate}{' \u00b7 '}{detailAccount.bankStatementCoverage.recordCount}{' \u6761\u539f\u59cb\u660e\u7ec6'}<p>{'\u8d77\u6b62\u65e5\u671f\u4e0d\u4ee3\u8868\u4e2d\u95f4\u6708\u4efd\u7684\u8d26\u5355\u5df2\u5168\u90e8\u9f50\u5168\u3002'}</p></>:<>{'\u5c1a\u672a\u5bfc\u5165\u94f6\u884c\u539f\u59cb\u4ea4\u6613\u660e\u7ec6\uff1b\u76ee\u524d\u4ec5\u7531\u652f\u4ed8\u5e73\u53f0\u8bb0\u5f55\u8bc6\u522b\u8d26\u6237\u3002'}</>}</dd></>}</dl><Space wrap><Button onClick={()=>{setSelected([detailAccount.id]);setAccountDetail(undefined);openTransactions();}}>查看此账户流水</Button><Button type="primary" disabled={busy} onClick={()=>verifyBalance(detailAccount)}>核对余额</Button><Button disabled={busy} onClick={() => openAccountEditor(detailAccount)}>改名</Button></Space></div>}
     </Drawer>
-    <Drawer title="待核对记录处理" open={!!reviewDetail} onClose={()=>setReviewGroup(undefined)} width={900}>
+    <Drawer rootClassName="editor-drawer" title="待核对记录处理" open={!!reviewDetail} onClose={()=>setReviewGroup(undefined)} width={900}>
       {reviewDetail&&<>
-        <p>{accountLabel(accountMap.get(reviewDetail.financialAccountId))} · {ISSUE_LABELS[reviewDetail.reason]||reviewDetail.reason}</p>
-        <p>{reviewDetail.reason.startsWith('account_balance_')?'请根据对账单填写余额和对应时间，保存后重新计算差额。':'点击“处理这笔”查看原件并修改统计类型、分类或还款拆分；有关联候选时可选择原始记录确认关系。'}</p>
-        {reviewDetail.reason.startsWith('account_balance_')?<Button type="primary" disabled={busy} onClick={()=>verifyBalance(accountMap.get(reviewDetail.financialAccountId))}>核对余额</Button>:
-          <Table rowKey="id" loading={analysis?.query?.reviewGroupId!==reviewGroup||loading} dataSource={analysis?.query?.reviewGroupId===reviewGroup?transactionRows:[]} pagination={{current:transactionPage,pageSize:50,total:analysis?.query?.reviewGroupId===reviewGroup?analysis.result.transactions.total:0,onChange:setTransactionPage,showSizeChanger:false}} columns={[
+        <section className="editor-drawer__section" aria-label="核对事项">
+        <h3>{accountLabel(accountMap.get(reviewDetail.financialAccountId))} · {ISSUE_LABELS[reviewDetail.reason]||reviewDetail.reason}</h3>
+        <p className="editor-drawer__muted">{reviewDetail.reason.startsWith('account_balance_')?'请根据对账单填写余额和对应时间，保存后重新计算差额。':'点击“处理这笔”查看原件并修改统计类型、分类或还款拆分；有关联候选时可选择原始记录确认关系。'}</p>
+        {reviewDetail.reason.startsWith('account_balance_')?<Button type="primary" disabled={busy} onClick={()=>verifyBalance(accountMap.get(reviewDetail.financialAccountId))} className="editor-drawer__actions">核对余额</Button>:null}
+        </section>
+        {!reviewDetail.reason.startsWith('account_balance_')&&
+          <Table className="editor-drawer__table" rowKey="id" loading={analysis?.query?.reviewGroupId!==reviewGroup||loading} dataSource={analysis?.query?.reviewGroupId===reviewGroup?transactionRows:[]} pagination={{current:transactionPage,pageSize:50,total:analysis?.query?.reviewGroupId===reviewGroup?analysis.result.transactions.total:0,onChange:setTransactionPage,showSizeChanger:false}} columns={[
             {title:'日期',dataIndex:'date'}, {title:'事项',dataIndex:'description'},
-            {title:'金额',dataIndex:'amountMinor',render:(v:string,t:any)=>formatMinor(v)+' '+t.currency},
+            {title:'金额',dataIndex:'amountMinor',align:'right',render:(v:string,t:any)=><span className="editor-drawer__number">{formatMinor(v)}&nbsp;{t.currency}</span>},
             {title:'操作',render:(_:any,t:any)=><Button type="primary" disabled={busy} onClick={()=>void openReviewTransaction(t)}>处理这笔</Button>}
           ]}/>}
       </>}
     </Drawer>
-    <Drawer title="处理待核对流水" open={!!reviewTransactionId&&analysis?.owner===ownerScope} onClose={()=>setReviewTransactionId(undefined)} width={850}>
+    <Drawer rootClassName="editor-drawer finance-detail-drawer" title="处理待核对流水" open={!!reviewTransactionId&&analysis?.owner===ownerScope} onClose={()=>setReviewTransactionId(undefined)} width={850}>
       {reviewTransactionId&&analysis?.owner===ownerScope&&(transactionDetails[reviewTransactionId]?<>
         {renderTransactionEvidence(transactionDetails[reviewTransactionId])}
+        <section className="editor-drawer__section">
         <h3>确认原始记录关联</h3>
         {reviewCandidates(transactionDetails[reviewTransactionId]).map(id=><p key={id}>{'候选原件 '+(observationMap.has(id)?observationLabel(observationMap.get(id)):'读取中…')}</p>)}
-        <Space wrap>
-          <Select aria-label="核对关联记录" mode="multiple" maxCount={2} showSearch filterOption={false} onSearch={setLinkSearch} style={{width:380,maxWidth:'100%'}} placeholder="搜索并选择两条原始记录" value={linkIds} onChange={setLinkIds} options={associationOptions}/>
+        <div className="editor-drawer__actions finance-association-controls">
+          <Select aria-label="核对关联记录" mode="multiple" maxCount={2} showSearch filterOption={false} onSearch={setLinkSearch} className="finance-association-records" placeholder="搜索并选择两条原始记录" value={linkIds} onChange={setLinkIds} options={associationOptions}/>
           <Select aria-label="核对关联方式" value={linkType} onChange={setLinkType} options={[{value:'duplicate',label:'同一笔交易'},{value:'transfer',label:'转账双腿'},{value:'refund',label:'退款与原消费'},{value:'distinct',label:'明确不同交易'}]}/>
           <Button disabled={busy||linkIds.length!==2} onClick={()=>void run(()=>client.createLink({expectedRevision:ledger.revision,link:{type:linkType,observationIds:linkIds}})).then(saved=>{if(saved)setReviewTransactionId(undefined);})}>保存关联</Button>
-        </Space>
+        </div>
+        </section>
       </>:<><p>正在读取原始来源…</p><Button onClick={()=>void loadTransactionDetails({id:reviewTransactionId})}>重试读取</Button></>)}
     </Drawer>
-    <Modal title="账单解压密码" open={passwordModal} onCancel={() => setPasswordModal(false)} onOk={() => setPasswordModal(false)}>
-      <p style={{overflowWrap:'anywhere'}}>文件：{file?.filename}</p><Input.Password aria-label="本地账单解压密码" autoComplete="new-password" maxLength={256} value={file?.password||''} onChange={e => { fileSequence.current++; setPreview(null); setFile((old:any) => old ? {...old,password:e.target.value} : old); }} />
+    <Modal
+      title={activeBalance ? `${activeBalance.label} · 余额核对` : '余额核对'}
+      open={activeBalance?.open === true}
+      className="editor-modal editor-modal--form"
+      width={460}
+      zIndex={2000}
+      centered
+      forceRender
+      confirmLoading={busy}
+      closable={!busy}
+      maskClosable={!busy}
+      keyboard={!busy}
+      cancelButtonProps={{ disabled: busy }}
+      okButtonProps={{ 'aria-label': '保存核对' }}
+      cancelText="取消"
+      okText="保存核对"
+      onCancel={closeBalanceEditor}
+      onOk={() => balanceForm.submit()}
+    >
+      <Form form={balanceForm} layout="vertical" className="editor-form editor-form--compact" onFinish={saveBalance}>
+        <section className="editor-form__details" aria-label="余额核对资料">
+          <Form.Item name="balance" label="余额" rules={[
+            { required: true, message: '请输入余额' },
+            { pattern: BALANCE_PATTERN, message: '请输入有效金额，最多两位小数' },
+          ]}>
+            <Input
+              inputMode="decimal"
+              placeholder="欠款填负数"
+              title="输入 0 表示确认余额为零"
+              suffix={activeBalance?.currency === 'CNY' ? '元' : activeBalance?.currency}
+            />
+          </Form.Item>
+          <Form.Item name="asOf" label="对应时间" className="editor-form__details-row" rules={[
+            { required: true, message: '请选择余额对应时间' },
+            { validator: (_, value) => !value || Number.isFinite(new Date(value).getTime())
+              ? Promise.resolve() : Promise.reject(new Error('请选择有效时间')) },
+          ]}>
+            <Input type="datetime-local" style={{ maxWidth: 232 }} />
+          </Form.Item>
+          <Form.Item name="note" label="核对依据" className="editor-form__details-row">
+            <Input placeholder="选填" />
+          </Form.Item>
+        </section>
+      </Form>
     </Modal>
-    <Modal title="新增金融账户" open={accountModal} confirmLoading={busy} onCancel={() => setAccountModal(false)} onOk={() => void run(async current => { const a = await form.validateFields(); if (!current()) return; await client.createAccount({ account: { ...a, balanceConvention:'signed', openingBalanceMinor: null, openingDate: null, status: 'active' }, expectedRevision: ledger.revision }); if (!current()) return; setAccountModal(false); form.resetFields(); })}>
-      <Form form={form} layout="vertical" initialValues={{ type: 'bank', currency: 'CNY' }}><Form.Item name="label" label="名称" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="type" label="类别"><Select options={Object.entries(TYPES).map(([value, label]) => ({ value, label }))} /></Form.Item><Form.Item name="provider" label="银行/平台" rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="maskedIdentifier" label="标识（只填尾号或脱敏值）"><Input /></Form.Item><Form.Item name="currency" label="币种" rules={[{ pattern: /^[A-Z]{3}$/, message: '请填 CNY、USD 等三字母代码' }]}><Input /></Form.Item></Form>
+    <Modal title="账单解压密码" open={passwordModal} className="editor-modal editor-modal--form"
+      centered width={420} cancelText="取消" okText="确定"
+      onCancel={() => setPasswordModal(false)} onOk={() => setPasswordModal(false)}>
+      <p className="finance-file-password__filename">{file?.filename}</p>
+      <Form layout="vertical" className="editor-form editor-form--compact">
+        <section className="editor-form__details" aria-label="账单解压密码">
+          <Form.Item label="文件密码" htmlFor="finance-file-password" className="editor-form__details-row">
+            <Input.Password id="finance-file-password" aria-label="本地账单解压密码" autoComplete="new-password" maxLength={256}
+              value={file?.password||''} onChange={e => { fileSequence.current++; setPreview(null); setFile((old:any) => old ? {...old,password:e.target.value} : old); }} />
+          </Form.Item>
+        </section>
+      </Form>
+    </Modal>
+    <Modal
+      title="修改账户名称"
+      open={activeAccountEditor?.open === true}
+      className="editor-modal editor-modal--form"
+      width={420}
+      zIndex={1200}
+      centered
+      forceRender
+      confirmLoading={busy}
+      closable={!busy}
+      maskClosable={!busy}
+      keyboard={!busy}
+      cancelButtonProps={{ disabled: busy }}
+      okButtonProps={{ 'aria-label': '保存' }}
+      cancelText="取消"
+      okText="保存"
+      onCancel={closeAccountEditor}
+      onOk={() => form.submit()}
+    >
+      <Form form={form} layout="vertical" className="editor-form editor-form--compact" onFinish={saveAccount}>
+        <section className="editor-form__details" aria-label="金融账户资料">
+          <Form.Item name="label" label="账户名称" className="editor-form__details-row"
+            rules={[{ required: true, whitespace: true, message: '请输入账户名称' }]}
+          >
+            <Input placeholder="输入账户名称" maxLength={128} />
+          </Form.Item>
+        </section>
+      </Form>
     </Modal>
   </Card>;
 }

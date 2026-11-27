@@ -1,0 +1,178 @@
+.editor-modal.ant-modal {
+  --editor-ink: #182439;
+  --editor-muted: #4e5b6e;
+  --editor-line: #e0e6ef;
+  --editor-fill: #edf1f7;
+  --editor-accent: #165bd4;
+  max-width: calc(100vw - 24px);
+  padding-bottom: 0;
+}
+
+.editor-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #f6f8fc;
+  box-shadow: 0 20px 64px rgb(16 35 65 / 23%);
+}
+
+.editor-modal .ant-modal-header {
+  margin: 0;
+  padding: 16px 48px 12px;
+  background: transparent;
+}
+
+.editor-modal .ant-modal-title {
+  color: var(--editor-ink);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+
+.editor-modal .ant-modal-close {
+  top: 10px;
+  inset-inline-end: 19px;
+  border-radius: 50%;
+  background: #e6ebf3;
+  color: #43516a;
+}
+
+.editor-modal .ant-modal-close:hover {
+  background: #d9e2ef;
+  color: var(--editor-ink);
+}
+
+.editor-modal .ant-modal-body {
+  max-height: calc(100dvh - 158px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 18px 20px;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  margin: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--editor-line);
+  background: #fff;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn {
+  min-height: 38px;
+  min-width: 100px;
+  padding-inline: 16px;
+  border-radius: 10px;
+  box-shadow: none;
+  font-weight: 600;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) > .ant-btn + .ant-btn {
+  margin-inline-start: 0;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn-default {
+  border-color: transparent;
+  background: var(--editor-fill);
+  color: #34435a;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn-primary {
+  background: var(--editor-accent);
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn-primary:hover {
+  background: #104bb8;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn-dangerous.ant-btn-primary:not(:disabled) {
+  background: #b9343c;
+}
+
+.editor-modal :is(.ant-modal-footer, .ant-modal-confirm-btns) .ant-btn-dangerous.ant-btn-primary:not(:disabled):hover {
+  background: #a82a32;
+}
+
+.editor-modal--confirm .ant-modal-body {
+  padding: 0;
+}
+
+.editor-modal--confirm .ant-modal-confirm-body {
+  padding: 16px 18px;
+}
+
+.editor-modal--confirm .ant-modal-confirm-paragraph {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.editor-modal table[data-billing-unit="session"] {
+  --editor-money-width: 96px;
+}
+
+.editor-modal__amount.ant-input-number-affix-wrapper:not(.ant-input-number-affix-wrapper-focused) {
+  border-color: transparent;
+  background: #f5f7fa;
+}
+
+.editor-modal__amount {
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-modal__amount .ant-input-number-input {
+  text-align: center;
+}
+
+.editor-modal__amount.ant-input-number-affix-wrapper {
+  justify-content: center;
+  width: 100%;
+  max-width: var(--editor-money-width, 106px);
+  min-height: 34px;
+  padding-inline: 2px;
+  border-radius: 9px;
+}
+
+.editor-modal__amount.ant-input-number-affix-wrapper .ant-input-number {
+  flex: 0 1 auto;
+  width: var(--editor-amount-width, 4ch);
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
+  transition-property: background-color, border-color, box-shadow;
+}
+
+.editor-modal__amount.ant-input-number-affix-wrapper .ant-input-number-input {
+  height: 32px;
+  padding-block: 0;
+}
+
+.editor-modal__amount.ant-input-number-affix-wrapper .ant-input-number-suffix {
+  margin-inline: 4px 0;
+}
+
+.editor-modal__amount-unit {
+  white-space: nowrap;
+  color: var(--editor-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.editor-modal__amount-unit-button {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  pointer-events: auto;
+}
+
+.editor-modal__amount-unit-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

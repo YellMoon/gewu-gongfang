@@ -23,9 +23,20 @@ function validateMortgage(m){
  return m;
 }
 function matchesMortgage(o,m){
- if(o.financialAccountId!==m.sourceAccountId||o.currency!=='CNY'||o.status!=='completed'||o.direction!=='debit'||!['debt_payment','unknown'].includes(o.kind))return false;
+ if(!m?.statementReference||o.financialAccountId!==m.sourceAccountId||o.currency!=='CNY'||o.status!=='completed'||o.direction!=='debit'||!['debt_payment','unknown'].includes(o.kind))return false;
  if(m.loanType==='commercial')return /\u8d37\u6b3e\u672c\u606f|\u8d37\u6b3e\u8fd8\u6b3e/.test(o.description)&&/\u4e2a\u4eba\u8d37\u6b3e\u6237/.test(o.counterparty)&&String(o.rawFields?.['\u5bf9\u65b9\u5361/\u8d26\u53f7']||'').trim().endsWith(m.statementReference);
  return /\u516c\u79ef\u91d1\u6263\u6b3e/.test(o.description)&&/\u4f4f\u623f\u516c\u79ef\u91d1\u7ba1\u7406\u4e2d\u5fc3/.test(o.counterparty)&&String(o.rawFields?.['\u9644\u8a00']||'').trim().endsWith(m.statementReference);
+}
+function cashMortgageEvidence(o){
+ const raw=o.rawFields||{};
+ for(const [loanType,reference] of [
+  ['commercial',raw['\u5bf9\u65b9\u5361/\u8d26\u53f7']],
+  ['provident',raw['\u9644\u8a00']],
+ ]){
+  const statementReference=String(reference||'').trim().match(/\d{4}$/)?.[0];
+  const evidence={loanType,sourceAccountId:o.financialAccountId,statementReference};
+  if(statementReference&&matchesMortgage(o,evidence))return evidence;
+ }
 }
 function uniqueSources(observations){
  const versions=new Map();for(const o of observations){const key=JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.sourceTransactionId||o.id]);if(!versions.has(key)||(o.sourceVersionOrdinal||0)>(versions.get(key).sourceVersionOrdinal||0))versions.set(key,o);}return [...versions.values()];
@@ -124,7 +135,13 @@ function providentModel(m,rows,observations){
 function buildMortgageModels(accounts,observations,{annotatedIds=new Set(),links=[],nativeModels=[]}={}){
  const result=[];
  const key=o=>JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.sourceTransactionId||o.id]),blockedIds=new Set([...annotatedIds,...links.filter(l=>l.status!=='deleted'&&['distinct','group_distinct'].includes(l.type)||l.status==='deleted'&&l.type==='duplicate').flatMap(l=>l.observationIds)]),blockedKeys=new Set(observations.filter(o=>blockedIds.has(o.id)).map(key)),protectedIds=new Set(observations.filter(o=>blockedKeys.has(key(o))).map(o=>o.id));
- for(const a of accounts.filter(a=>a.type==='loan'&&a.mortgage)){
+ for(const a of accounts.filter(a=>a.type==='loan'&&(a.mortgage||a.mortgageEvidence?.contractHash))){
+  if(!a.mortgage){
+   const actual=nativeModels.find(model=>model.financialAccountId===a.id);
+   if(actual)result.push(serial({...actual,label:a.label,loanType:'commercial',contractTermMonths:null,
+    firstPaymentDate:null,contractComparison:null,repaymentMethod:'equal_payment',paymentCount:actual.periods.length,estimatedBalanceMinor:null}));
+   continue;
+  }
   const m=a.mortgage;validateMortgage(m);const {monthly,prepayments}=paymentRows(observations,m),actual=nativeModels.find(model=>model.financialAccountId===a.id),model=actual||(m.loanType==='commercial'?(require('./commercialMortgageHistory').commercialHistoryModel(m,monthly,prepayments,{protectedIds})||commercialModel(m,monthly,prepayments)):providentModel(m,monthly,observations));
   let contractComparison=null;
   if(!actual&&m.loanType==='commercial'&&m.termMonths&&m.firstPaymentDate&&model.asOf&&model.balanceMinor!==null){
@@ -135,8 +152,8 @@ function buildMortgageModels(accounts,observations,{annotatedIds=new Set(),links
    }
   }
   if(model.historyVerification)contractComparison={status:'statement_reconciled',basis:'all_repricing_and_prepayment_statement_amounts',contractTermMonths:m.termMonths,inferredFullAnnuityPeriods:model.fullAnnuityPeriods,verifiedPaymentChanges:model.historyVerification.checks.length,maximumDifferenceMinor:String(model.historyVerification.checks.reduce((n,c)=>{const d=BigInt(c.differenceMinor),a=d<0n?-d:d;return a>n?a:n;},0n))};
-  result.push(serial({...model,financialAccountId:a.id,label:a.label,loanType:m.loanType,sourceAccountId:m.sourceAccountId,originalPrincipalMinor:m.originalPrincipalMinor,contractTermMonths:m.termMonths??null,firstPaymentDate:m.firstPaymentDate??null,contractComparison,repaymentMethod:'equal_payment',prepayments:model.prepayments||prepayments,paymentCount:actual?actual.periods.length:monthly.length,sourceObservationIds:actual?actual.sourceObservationIds:[...monthly.flatMap(r=>r.sources.map(o=>o.id)),...prepayments.flatMap(r=>r.observationIds)],estimatedBalanceMinor:actual||model.balanceMinor===null?null:-BigInt(model.balanceMinor)}));
+  result.push(serial({...model,financialAccountId:a.id,label:a.label,loanType:m.loanType,sourceAccountId:actual?.sourceAccountId??m.sourceAccountId,originalPrincipalMinor:actual?.originalPrincipalMinor??m.originalPrincipalMinor,contractTermMonths:m.termMonths??null,firstPaymentDate:m.firstPaymentDate??null,contractComparison,repaymentMethod:'equal_payment',prepayments:model.prepayments||prepayments,paymentCount:actual?actual.periods.length:monthly.length,sourceObservationIds:actual?actual.sourceObservationIds:[...monthly.flatMap(r=>r.sources.map(o=>o.id)),...prepayments.flatMap(r=>r.observationIds)],estimatedBalanceMinor:actual||model.balanceMinor===null?null:-BigInt(model.balanceMinor)}));
  }
  return result;
 }
-module.exports={validateMortgage,bindMortgageCalibration,matchesMortgage,buildMortgageModels,monthlyPayment,monthlyInterest,PROVIDENT_RATES};
+module.exports={validateMortgage,bindMortgageCalibration,matchesMortgage,cashMortgageEvidence,buildMortgageModels,monthlyPayment,monthlyInterest,PROVIDENT_RATES};

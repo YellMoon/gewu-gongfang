@@ -30,7 +30,7 @@ async function panel() {
     checkMailbox:()=>({mailbox:{messageCount:1,attachments:[{messageId:'message',attachmentId:'one',filename:'one.csv'},{messageId:'message',attachmentId:'two',filename:'two.pdf'}]}}),
     previewMailbox:()=>({preview}),importMailbox:()=>({receipt:{importId:'synthetic-mail-import'}}),
     createBalanceSnapshot:()=>({snapshot:{id:'synthetic-snapshot'}}),annotateObservation:()=>({annotation:{id:'synthetic-annotation'}}),
-    createAccount:()=>({account:{id:'synthetic-account'}}),createLink:()=>({link:{id:'synthetic-link'}}),deleteLink:()=>({link:{id:'synthetic-link',status:'deleted'}}),
+    createAccount:()=>({account:{id:'synthetic-account'}}),updateAccount:id=>({account:{id}}),createLink:()=>({link:{id:'synthetic-link'}}),deleteLink:()=>({link:{id:'synthetic-link',status:'deleted'}}),
   };
   defaults.queryProjection=async options=>{
     const data=await(responses.has('getLedger')?responses.get('getLedger')():defaults.getLedger()),ledger=data.ledger;
@@ -55,7 +55,7 @@ async function panel() {
   const component=displayName=>Object.assign(function component(){},{displayName});
   const antd=Object.fromEntries(['Alert','Button','Card','DatePicker','Drawer','Form','Input','Modal','Select','Space','Table','Tabs','Tag'].map(key=>[key,component(key)]));
   antd.Input.Password=component('Password');antd.Input.TextArea=component('TextArea');antd.DatePicker.RangePicker=component('RangePicker');antd.Form.Item=component('Form.Item');
-  antd.Form.useForm=()=>[{validateFields:async()=>({label:'合成账户',provider:'synthetic',type:'bank',currency:'CNY',maskedIdentifier:'1234'}),resetFields:()=>{}}];
+  antd.Form.useForm=()=>[{validateFields:async()=>({label:'合成账户',provider:'synthetic',type:'bank',currency:'CNY',maskedIdentifier:'1234'}),resetFields:()=>{},setFieldsValue:()=>{}}];
   antd.Modal.confirm=options=>{modals.push(options);return {destroy:()=>{}};};
   antd.message={success:value=>messages.push({type:'success',value,generation}),error:value=>messages.push({type:'error',value,generation}),warning:value=>messages.push({type:'warning',value,generation})};
   class FileReaderFake {
@@ -63,7 +63,7 @@ async function panel() {
     readAsDataURL(file){this.file=file;}
     abort(){this.aborted=true;}
   }
-  const formValues={'asset-balance-form':{balance:'12.30',asOf:'2026-10-08T12:00',note:'fixture'},'finance-balance':{balance:'12.30',asOf:'2026-10-08T12:00'},'finance-annotation':{category:'Food',kind:'expense',principal:'',interest:'',fee:''}};
+  const formValues={'finance-balance':{balance:'12.30',asOf:'2026-10-08T12:00'},'finance-annotation':{category:'Food',kind:'expense',principal:'',interest:'',fee:''}};
   const document={getElementById:id=>({id})};
   class FormDataFake {constructor(form){this.values=formValues[form.id]||{};}get(key){return this.values[key]??null;}}
   const window={addEventListener:(event,fn)=>{if(!listeners.has(event))listeners.set(event,new Set());listeners.get(event).add(fn);},removeEventListener:(event,fn)=>listeners.get(event)?.delete(fn),setInterval:fn=>{timers.add(fn);return fn;},clearInterval:fn=>timers.delete(fn)};
@@ -80,6 +80,10 @@ async function panel() {
   const relatedModule={exports:{}};new Function('require','module','exports',relatedCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},relatedModule,relatedModule.exports);dependencies['./BillRelatedAccounts']=relatedModule.exports;
   dependencies['../../shared/personal-finance/assetRegister.js']=require('../../shared/personal-finance/assetRegister');
   dependencies['./PersonalFinancePanel.css']={};
+  dependencies['../layout/EditorModal.css']={};
+  dependencies['../layout/EditorDrawer.css']={};
+  dependencies['../layout/EditorForm.css']={};
+  dependencies['./MortgageEditor.css']={};
   dependencies['./personalFinancePresentation']=require('./personalFinancePresentation');
   const mortgageCompiled=ts.transpileModule(fs.readFileSync(path.join(__dirname,'MortgageAccounts.tsx'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const mortgageModule={exports:{}};new Function('require','module','exports',mortgageCompiled)(n=>{assert.ok(Object.hasOwn(dependencies,n));return dependencies[n];},mortgageModule,mortgageModule.exports);dependencies['./MortgageAccounts']=mortgageModule.exports;
@@ -156,6 +160,32 @@ test('account combinations cross groups and detail/search controls preserve the 
  h.click('\u5168\u90e8\u8d26\u6237');assert.deepEqual(scope(),[]);assert.equal(h.callsFor('createBalanceSnapshot').length,0);h.unmount();
 });
 
+test('ordinary accounts have no manual creation form and existing accounts can be renamed', async () => {
+  const h = await panel();
+  const rename = () => h.all().find(node => name(node) === 'Modal' && node.props.title === '\u4fee\u6539\u8d26\u6237\u540d\u79f0');
+  const assertNoManualAdd = () => {
+    assert.equal(h.buttons('\u65b0\u589e\u8d26\u6237').length, 0);
+    assert(!h.all().some(node => name(node) === 'Modal' && node.props.title === '\u65b0\u589e\u91d1\u878d\u8d26\u6237'));
+  };
+  assertNoManualAdd();
+  h.tab('review');
+  assertNoManualAdd();
+  assert(!h.all().some(node => name(node) === 'Button' && text(node).startsWith('\u6839\u636e\u8d26\u5355\u8865\u5efa\u8d26\u6237')));
+  h.tab('overview');
+  h.click('\u8d26\u6237A');
+  h.click('\u6539\u540d');
+  assert.equal(rename().props.open, true);
+  const form = nodes(rename()).find(node => name(node) === 'Form');
+  form.props.onFinish({ label: '  Renamed account  ' });
+  await tick();
+  assert.deepEqual(h.callsFor('updateAccount').map(call => call.args), [
+    ['A', { expectedRevision: '3', patch: { label: 'Renamed account' } }],
+  ]);
+  assert.equal(h.callsFor('createAccount').length, 0);
+  assert.equal(rename().props.open, false);
+  h.unmount();
+});
+
 test('an explicitly selected currency with no transactions never falls back to another currency',async()=>{
  const h=await panel(),ledger=fixtureLedger();ledger.accounts.push({...ledger.accounts[0],id:'USD',label:'USD account',currency:'USD'});h.responses.set('getLedger',()=>({ledger}));await h.click('\u5237\u65b0');await tick();
  const currency=()=>h.all().find(n=>name(n)==='Select'&&n.props['aria-label']==='\u7edf\u8ba1\u5e01\u79cd');currency().props.onChange('USD');assert.equal(currency().props.value,'USD');
@@ -199,18 +229,48 @@ test('actual TSX: confirmed import uses precisely the reviewed file/account/mapp
   const reviewed=structuredClone(h.callsFor('previewFile')[0].args[0]);h.click('确认整批导入');await tick();const submitted=h.callsFor('importFile')[0];assert.ok(submitted);
   for(const key of ['filename','base64','financialAccountId','fieldMapping'])assert.deepEqual(submitted.args[0][key],reviewed[key],key+' matches preview');assert.ok(submitted.args[1],'whole-batch import retains a stable idempotency key');h.unmount();
 });
-for(const kind of ['balance','classification'])test(`actual TSX: failed ${kind} Modal onOk rejects so the dialog remains retryable`,async()=>{
-  const h=await panel();const error=Object.assign(new Error('synthetic cloud rejection'),{code:'FINANCE_REQUEST_FAILED'});
-  if(kind==='balance'){
-    h.responses.set('createBalanceSnapshot',()=>Promise.reject(error));const table=h.table(props=>props['aria-label']==='账户收支与余额');assert.ok(table);
-    const cell=table.props.columns.find(column=>column.title==='操作').render(null,table.props.dataSource[0]);nodes(cell).find(node=>name(node)==='Button'&&text(node)==='详情 / 核对余额').props.onClick();
-    await h.click('核对余额');
-  }else{
-    h.tab('transactions');
-    h.responses.set('annotateObservation',()=>Promise.reject(error));const table=h.table(props=>props.expandable?.expandedRowRender);assert.ok(table);
-    const row=await h.expand(table,table.props.dataSource[0]);nodes(row).find(node=>name(node)==='Button'&&text(node)==='校正统计分类/还款拆分').props.onClick();
-  }
-  assert.equal(h.modals.length,1);await assert.rejects(h.modals[0].onOk());assert.equal(h.callsFor(kind==='balance'?'createBalanceSnapshot':'annotateObservation').length,1);assert.ok(h.messages.some(message=>message.type==='error'));h.unmount();
+test('actual TSX: failed balance save keeps the editor open and can retry', async () => {
+  const h = await panel();
+  h.responses.set('createBalanceSnapshot', () => Promise.reject(new Error('synthetic cloud rejection')));
+  const table = h.table(props => props['aria-label'] === '账户收支与余额');
+  assert.ok(table);
+  const actions = table.props.columns.find(column => column.title === '操作').render(null, table.props.dataSource[0]);
+  nodes(actions).find(node => name(node) === 'Button' && text(node) === '详情 / 核对余额').props.onClick();
+  await h.click('核对余额');
+  const editor = () => h.all().find(node => name(node) === 'Modal' && node.props.title.endsWith('余额核对'));
+  const values = { balance: '-12.30', asOf: '2026-10-08T12:00', note: 'fixture' };
+  const submit = () => nodes(editor()).find(node => name(node) === 'Form').props.onFinish(values);
+  assert.equal(editor().props.open, true);
+  await submit();
+  assert.equal(editor().props.open, true);
+  const [failedWrite] = h.callsFor('createBalanceSnapshot');
+  assert.deepEqual(failedWrite.args[0], {
+    expectedRevision: '3',
+    snapshot: { financialAccountId: 'A', currency: 'CNY', balanceMinor: '-1230',
+      asOf: new Date(values.asOf).toISOString(), source: 'manual', balanceConvention: 'signed', note: 'fixture' },
+  });
+  assert.ok(h.messages.some(message => message.type === 'error'));
+  h.responses.delete('createBalanceSnapshot');
+  await submit();
+  assert.equal(editor().props.open, false);
+  assert.equal(h.callsFor('createBalanceSnapshot').length, 2);
+  h.unmount();
+});
+
+test('actual TSX: failed classification Modal onOk rejects so the dialog remains retryable', async () => {
+  const h = await panel();
+  const error = Object.assign(new Error('synthetic cloud rejection'), { code: 'FINANCE_REQUEST_FAILED' });
+  h.tab('transactions');
+  h.responses.set('annotateObservation', () => Promise.reject(error));
+  const table = h.table(props => props.expandable?.expandedRowRender);
+  assert.ok(table);
+  const row = await h.expand(table, table.props.dataSource[0]);
+  nodes(row).find(node => name(node) === 'Button' && text(node) === '校正统计分类/还款拆分').props.onClick();
+  assert.equal(h.modals.length, 1);
+  await assert.rejects(h.modals[0].onOk());
+  assert.equal(h.callsFor('annotateObservation').length, 1);
+  assert.ok(h.messages.some(message => message.type === 'error'));
+  h.unmount();
 });
 for(const boundary of ['session','unmount'])for(const operation of ['reader','preview','import','mailboxStatus','reload-error'])test(`actual TSX: ${operation} late callback cannot setState after ${boundary}`,async()=>{
   const h=await panel();const pending=deferred();
@@ -265,17 +325,29 @@ test('mortgage editor preserves evidence bases and treats changed references as 
    assert.equal(loaded.exports.mortgageActual({status:'estimated',confidence:'actual_bank_statement'}),false);
  const mortgage={schema:'mortgage-v1',loanType:'commercial',sourceAccountId:'funding',statementReference:'1234',originalPrincipalMinor:'296000000',annualRatePpm:'33000',minimumAnnualRatePpm:'33000',repricingTerms:{schema:'mortgage-repricing-terms-v1',basis:'owner_confirmed_natural_year',initialMonths:[1],cycleChanges:[{effectiveDate:'2024-12-11',months:[1,4,7,10]}],spreadChanges:[{effectiveDate:'2024-10-25',spreadBasisPoints:-30}],confirmedAt:'2026-10-29T00:00:00+08:00'},termMonths:360,firstPaymentDate:'2022-09-20',recentSplit:{month:'2026-09',principalMinor:'364699',interestMinor:'464473',monthBasis:'latest_matching_statement'},prepayments:[{date:'2025-12-03',amountMinor:'100000000',amountBasis:'total_payment',mode:'reduce_payment_keep_term'}]};
  const account={id:'mortgage',label:'Mortgage',type:'loan',mortgage},models=[{financialAccountId:'mortgage',label:'Mortgage',prepayments:[]}];
- const render=()=>{cursor=0;return loaded.exports.default({models,accounts:[account],busy:false,onSave:async(a,e)=>{saved.push({a:structuredClone(a),existing:e});return a;}});};
+ let accounts=[account];
+ const render=()=>{cursor=0;return loaded.exports.default({models,accounts,busy:false,onSave:async a=>{saved.push(structuredClone(a));return a;}});};
  const modal=()=>nodes(render()).find(n=>name(n)==='Modal');
- const edit=()=>{const tree=render(),card=nodes(tree).find(n=>name(n)==='Card'&&n.props.size==='small');nodes(card.props.extra).filter(n=>name(n)==='Button')[1].props.onClick();render();};
+ const edit=()=>{const tree=render(),card=nodes(tree).find(n=>name(n)==='Card'&&n.props.size==='small');nodes(card.props.extra).filter(n=>name(n)==='Button').at(-1).props.onClick();render();};
  edit();assert.equal(values.prepayments[0].amountBasis,'total_payment');modal().props.onOk();await tick();assert.deepEqual(errors,[]);
- assert.deepEqual(saved[0].a.mortgage,mortgage,'editing unrelated fields preserves total-payment and automatic-period evidence');assert.equal(saved[0].existing,account);
+ assert.deepEqual(saved[0].mortgage,mortgage,'editing unrelated fields preserves total-payment and automatic-period evidence');assert.equal(saved[0].id,account.id);
  edit();values.recentPrincipal='3647.00';modal().props.onOk();await tick();
- assert.deepEqual(saved[1].a.mortgage.recentSplit,{month:null,monthBasis:'latest_matching_statement',principalMinor:'364700',interestMinor:'464473'});
- assert.equal(saved[1].a.mortgage.prepayments[0].amountBasis,'total_payment');assert.equal(saved[1].a.mortgage.minimumAnnualRatePpm,'33000');assert.deepEqual(saved[1].a.mortgage.repricingTerms,mortgage.repricingTerms);assert.notEqual(saved[1].a.mortgage.repricingTerms,mortgage.repricingTerms);assert.deepEqual(account.mortgage,mortgage);assert.deepEqual(errors,[]);
- const {validateMortgage}=require('../../shared/personal-finance/mortgages');assert.doesNotThrow(()=>validateMortgage(saved[0].a.mortgage));
- edit();values.annualRate='3.2';modal().props.onOk();await tick();assert.equal(saved[2].a.mortgage.minimumAnnualRatePpm,'33000');assert.throws(()=>validateMortgage(saved[2].a.mortgage));
- edit();values.loanType='provident';modal().props.onOk();await tick();assert.equal(saved[3].a.mortgage.minimumAnnualRatePpm,undefined);assert.equal(saved[3].a.mortgage.repricingTerms,undefined);assert.deepEqual(account.mortgage,mortgage);
+ assert.deepEqual(saved[1].mortgage.recentSplit,{month:null,monthBasis:'latest_matching_statement',principalMinor:'364700',interestMinor:'464473'});
+ assert.equal(saved[1].mortgage.prepayments[0].amountBasis,'total_payment');assert.equal(saved[1].mortgage.minimumAnnualRatePpm,'33000');assert.deepEqual(saved[1].mortgage.repricingTerms,mortgage.repricingTerms);assert.notEqual(saved[1].mortgage.repricingTerms,mortgage.repricingTerms);assert.deepEqual(account.mortgage,mortgage);assert.deepEqual(errors,[]);
+ const {validateMortgage}=require('../../shared/personal-finance/mortgages');assert.doesNotThrow(()=>validateMortgage(saved[0].mortgage));
+ edit();values.annualRate='3.2';modal().props.onOk();await tick();assert.equal(saved[2].mortgage.minimumAnnualRatePpm,'33000');assert.throws(()=>validateMortgage(saved[2].mortgage));
+ edit();values.loanType='provident';modal().props.onOk();await tick();assert.equal(saved[3].mortgage.minimumAnnualRatePpm,undefined);assert.equal(saved[3].mortgage.repricingTerms,undefined);assert.deepEqual(account.mortgage,mortgage);
+ accounts=[{id:'pending',label:'Auto-discovered',type:'loan',mortgageEvidence:{loanType:'provident',sourceAccountId:'funding',statementReference:'4321'}}];
+ assert.ok(text(render()).includes('\u8d44\u6599\u5f85\u8865\u5145'));
+ edit();
+ assert.equal(values.originalPrincipal,'');
+ assert.equal(values.statementReference,'4321');
+ values.originalPrincipal='1200000.00';
+ modal().props.onOk();await tick();
+ assert.equal(saved[4].id,'pending');
+ assert.equal(saved[4].mortgage.originalPrincipalMinor,'120000000');
+ assert.equal(saved[4].mortgage.statementReference,'4321');
+ assert.deepEqual(errors,[]);
 });
 
 test('inferred association exposes evidence and submits an owner-scoped distinct decision',async()=>{

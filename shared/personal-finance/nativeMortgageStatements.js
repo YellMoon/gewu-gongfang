@@ -1,4 +1,5 @@
 'use strict';
+const {matchesMortgage,cashMortgageEvidence}=require('./mortgages');
 const SCHEMA='huaxia-mortgage-repayments-v1',money=v=>typeof v==='string'&&/^(0|[1-9]\d*)$/.test(v),date=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v;
 const isNativeMortgageStatement=o=>o?.provider==='huaxia'&&o.rawFields?.schema===SCHEMA;
 const identity=o=>JSON.stringify([o.financialAccountId,o.provider,o.sourceIdentity||o.sourceTransactionId||o.id]);
@@ -12,14 +13,19 @@ function buildNativeMortgageStatements(accounts,observations,proofs,{annotatedId
  for(const o of rows.filter(isNativeMortgageStatement)){const r=o.rawFields,key=JSON.stringify([o.financialAccountId,r.contractHash,r.printedDate,o.importId||'']);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(o);}
  const selected=new Map(),conflicted=new Set();
  for(const group of groups.values()){
-  const first=group[0],r=first.rawFields,loans=accounts.filter(a=>a.status==='active'&&a.type==='loan'&&a.currency==='CNY'&&a.mortgage?.loanType==='commercial'&&a.mortgage.sourceAccountId===first.financialAccountId&&a.mortgage.originalPrincipalMinor===r.originalPrincipalMinor),source=accounts.find(a=>a.id===first.financialAccountId);
+  const first=group[0],r=first.rawFields,source=accounts.find(a=>a.id===first.financialAccountId);
+  const bound=accounts.filter(a=>a.type==='loan'&&a.currency==='CNY'&&a.mortgageEvidence?.contractHash===r.contractHash);
+  const loans=(bound.length?bound:accounts.filter(a=>a.type==='loan'&&a.currency==='CNY'&&!a.mortgageEvidence?.contractHash&&
+    a.mortgage?.loanType==='commercial'&&a.mortgage.sourceAccountId===first.financialAccountId&&a.mortgage.originalPrincipalMinor===r.originalPrincipalMinor)).filter(a=>a.status==='active');
   if(loans.length!==1||source?.status!=='active'||source.type!=='debit_card'||source.currency!=='CNY'||source.provider!=='\u534e\u590f\u94f6\u884c'||!/^\d{4}$/.test(r.paymentCardTail||'')||source.maskedIdentifier!==r.paymentCardTail){out.issues.push({reason:'mortgage_native_statement_account_unresolved',financialAccountId:first.financialAccountId,proofObservationIds:group.map(o=>o.id)});continue;}
   const loan=loans[0],old=selected.get(loan.id);if(conflicted.has(loan.id))continue;
   const semantic=rows=>JSON.stringify(rows.slice().sort((a,b)=>Number(a.rawFields.sequence)-Number(b.rawFields.sequence)).map(o=>[o.sourceTransactionId,o.date,o.amountMinor,o.principalMinor,o.interestMinor,o.rawFields]));
   if(old&&old[0].rawFields.printedDate===r.printedDate&&semantic(old)!==semantic(group)){out.issues.push({reason:'mortgage_native_statement_conflict',financialAccountId:loan.id});selected.delete(loan.id);conflicted.add(loan.id);continue;}if(!old||old[0].rawFields.printedDate<r.printedDate)selected.set(loan.id,group);
  }
  for(const [loanId,group]of selected){
-  const loan=accounts.find(a=>a.id===loanId),m=loan.mortgage,r=group[0].rawFields,source=accounts.find(a=>a.id===m.sourceAccountId),ps=group.slice().sort((a,b)=>Number(a.rawFields.sequence)-Number(b.rawFields.sequence));
+  const loan=accounts.find(a=>a.id===loanId),r=group[0].rawFields,source=accounts.find(a=>a.id===group[0].financialAccountId),ps=group.slice().sort((a,b)=>Number(a.rawFields.sequence)-Number(b.rawFields.sequence));
+  const m=loan.mortgage||loan.mortgageEvidence;
+  const matching={...m,sourceAccountId:source.id,statementReference:m.sourceAccountId===source.id?m.statementReference:undefined};
   let valid=/^[a-f0-9]{64}$/.test(r.contractHash||'')&&date(r.printedDate)&&date(r.periodStart)&&date(r.periodEnd)&&r.periodStart<=r.periodEnd&&r.periodEnd<=r.printedDate&&money(r.originalPrincipalMinor)&&money(r.reportedRemainingPrincipalMinor)&&money(r.reportedCurrentAnnualRatePpm)&&BigInt(r.reportedCurrentAnnualRatePpm)>0n&&BigInt(r.reportedCurrentAnnualRatePpm)<=1000000n&&Number.isInteger(Number(r.reportedTermMonths))&&Number(r.reportedTermMonths)>0&&Number(r.reportedTermMonths)<=600&&r.historyComplete==='true'&&ps.length===Number(r.recordCount)&&new Set(ps.map(o=>o.sourceTransactionId)).size===ps.length;
   const headerKeys=['contractHash','originalPrincipalMinor','reportedCurrentAnnualRatePpm','reportedTermMonths','reportedRemainingPrincipalMinor','periodStart','periodEnd','printedDate','historyComplete','recordCount','paymentCardTail'];
   for(const [i,o]of ps.entries()){
@@ -28,11 +34,14 @@ function buildNativeMortgageStatements(accounts,observations,proofs,{annotatedId
   let balance=valid?BigInt(r.originalPrincipalMinor):0n;
   if(valid)for(const o of ps.slice().reverse()){balance-=BigInt(o.principalMinor);if(balance!==BigInt(o.rawFields.principalBalanceMinor))valid=false;}
   valid=valid&&balance===BigInt(r.reportedRemainingPrincipalMinor||'0');
-  const structurallyValid=valid,bank=rows.filter(o=>!isNativeMortgageStatement(o)&&require('./mortgages').matchesMortgage(o,m)),postings=[],claimed=new Set(),additions=[];
+  const structurallyValid=valid,postings=[],claimed=new Set(),additions=[];
+  const paymentKey=o=>o.date+':'+o.amountMinor,proofPayments=new Set(ps.map(paymentKey));
+  const bank=rows.filter(o=>!isNativeMortgageStatement(o)&&(matching.statementReference?matchesMortgage(o,matching):
+    o.financialAccountId===source.id&&proofPayments.has(paymentKey(o))&&cashMortgageEvidence(o)?.loanType==='commercial'));
   if(valid)for(const proof of ps){
    const candidates=bank.filter(b=>b.date===proof.date&&b.amountMinor===proof.amountMinor&&b.currency===proof.currency);if(candidates.length>1){valid=false;break;}
-   const original=candidates[0]||proof;if(blocked.has(identity(proof))||blocked.has(identity(original))||ties.has(identity(original))||claimed.has(original.id)||candidates[0]&&[original.principalMinor,original.interestMinor,original.feeMinor].some(v=>v!==null&&v!==undefined)){valid=false;break;}
-   claimed.add(original.id);const prepayment=m.prepayments.some(p=>p.date===proof.date&&p.amountMinor===proof.amountMinor);
+   const original=candidates[0]||proof;if(blocked.has(identity(proof))||blocked.has(identity(original))||ties.has(identity(original))||claimed.has(original.id)||candidates[0]&&(!matching.statementReference||[original.principalMinor,original.interestMinor,original.feeMinor].some(v=>v!==null&&v!==undefined))){valid=false;break;}
+   claimed.add(original.id);const prepayment=m.prepayments?.some(p=>p.date===proof.date&&p.amountMinor===proof.amountMinor)||false;
    postings.push({month:proof.date.slice(0,7),date:proof.date,amountMinor:proof.amountMinor,principalMinor:proof.principalMinor,interestMinor:proof.interestMinor,feeMinor:'0',extraMinor:'0',balanceMinor:proof.rawFields.principalBalanceMinor,confidence:'actual_bank_statement',observationIds:[original.id],proofObservationIds:[proof.id],prepayment,sourceAccountId:source.id,financialAccountId:loan.id,reversible:true,associationMethod:candidates.length?'exact_bank_mortgage_statement_detail':'actual_mortgage_statement_cash_payment'});if(!candidates.length)additions.push(proof);
   }
   if(valid&&bank.some(b=>b.date>=ps.at(-1).date&&b.date<=ps[0].date&&!claimed.has(b.id)))valid=false;

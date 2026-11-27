@@ -5,7 +5,7 @@ const money=(value:any)=>formatMinor(value).replace(/^-/, '−');
 const labels:Record<string,string>={savings:'储蓄卡账户余额',credit:'信用卡总欠款',securities:'证券账户总资产',other:'其他资金账户余额'};
 export function MortgageBalanceCards({accounts,models,stats,ids,ready,onSelect}:{accounts:any[];models:any[];stats:Record<string,any>;ids:string[];ready:boolean;onSelect:(ids:string[])=>void}){
  const rows=ids.map(id=>({id,account:accounts.find(a=>a.id===id),model:models.find(m=>m.financialAccountId===id),stats:stats[id]||{}}));
- const type=(row:any)=>row.account?.mortgage?.loanType||row.model?.loanType;
+ const type=(row:any)=>row.account?.mortgage?.loanType||row.account?.mortgageEvidence?.loanType||row.model?.loanType;
  const types=['commercial','provident',...(rows.some(row=>!['commercial','provident'].includes(type(row)))?['other']:[])];
  const titles:Record<string,string>={commercial:'商业贷款剩余本金',provident:'公积金贷款剩余本金',other:'其他房贷剩余本金'};
  return <>{types.map(kind=>{const loans=rows.filter(row=>kind==='other'?!['commercial','provident'].includes(type(row)):type(row)===kind);return <Card size="small" key={kind}><span>{titles[kind]}</span>{loans.length?loans.map(row=>{const known=row.stats.balanceMinor!=null,amount=known?row.stats.balanceMinor:row.stats.estimatedBalanceMinor,date=known?row.stats.balanceAnchor?.asOf?.slice(0,10)||row.stats.balanceAsOf:row.stats.estimateAsOf;return <div key={row.id}>

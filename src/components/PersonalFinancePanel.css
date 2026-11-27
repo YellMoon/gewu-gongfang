@@ -4,6 +4,8 @@
 .personal-finance-panel .finance-help summary{cursor:pointer;color:#1677ff}
 .personal-finance-panel .finance-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;margin-bottom:12px}
 .personal-finance-panel .finance-scope{margin:8px 0 16px;color:#595959;line-height:1.7}
+.personal-finance-panel .finance-account-notice{margin-bottom:12px}
+.personal-finance-panel .finance-account-notice ul{margin:4px 0 0;padding-inline-start:20px}
 .personal-finance-panel .finance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
 .personal-finance-panel [aria-label="账户收支与余额总览"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .personal-finance-panel .finance-balance-groups{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
@@ -27,7 +29,9 @@
 .finance-account-detail dd{margin-left:0}
 .finance-account-detail pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;background:#fafafa;padding:12px}
 @media(max-width:1100px){.personal-finance-panel .finance-charts{grid-template-columns:1fr}.personal-finance-panel .finance-chart figure>svg{height:240px}}
-@media(max-width:700px){.personal-finance-panel .finance-summary{grid-template-columns:1fr}.personal-finance-panel .finance-value{font-size:24px}.personal-finance-panel .ant-card-body{padding:16px}.personal-finance-panel .finance-account-select{width:100%!important;min-width:0!important}}
+@media(max-width:700px){.personal-finance-panel .finance-account-notice{margin-bottom:12px}
+.personal-finance-panel .finance-account-notice ul{margin:4px 0 0;padding-inline-start:20px}
+.personal-finance-panel .finance-summary{grid-template-columns:1fr}.personal-finance-panel .finance-value{font-size:24px}.personal-finance-panel .ant-card-body{padding:16px}.personal-finance-panel .finance-account-select{width:100%!important;min-width:0!important}}
 
 .personal-finance-panel .finance-group-evidence{width:min(100%,calc(100vw - 120px));white-space:normal;text-align:left;line-height:1.8;overflow-wrap:anywhere;margin-bottom:12px}
 .personal-finance-panel .finance-group-evidence>button{display:block;margin-top:8px}
@@ -52,10 +56,165 @@
 @media(max-width:700px){.personal-finance-panel .finance-account-grid{grid-template-columns:1fr}.personal-finance-panel .finance-filters>.ant-picker{max-width:100%}.personal-finance-panel .finance-toolbar>.ant-space{max-width:100%}.personal-finance-panel .finance-account-balance strong{font-size:23px}}
 @media(max-width:700px){.personal-finance-panel .finance-account-grid:not(.is-expanded)>.finance-account-card:nth-child(n+2){display:none}.personal-finance-panel .finance-chart figure{overflow-x:auto}.personal-finance-panel .finance-chart figure>svg{min-width:720px}}
 
-.tuition-editor { padding: 12px; background: #f7f9fc; line-height: 1.7; }
-.tuition-allocation { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-.tuition-allocation > .ant-select { flex: 1 1 300px; min-width: 240px; }
-.tuition-allocation > .ant-input-group-wrapper { flex: 0 1 160px; }
-.tuition-allocation > .ant-checkbox-wrapper { flex-basis: 100%; }
-
 .personal-finance-panel .finance-large-amount{background:#fff2e8;color:#ad2102;font-weight:600;padding:8px;border-left:4px solid #d4380d;border-radius:4px;font-style:normal}
+
+.finance-correction .ant-modal-body {
+  padding: 0;
+}
+
+.finance-correction .ant-modal-confirm-paragraph {
+  width: 100%;
+  max-width: none;
+  row-gap: 12px;
+}
+
+.finance-correction .ant-modal-confirm-title {
+  padding-top: 16px;
+  text-align: center;
+  color: var(--editor-ink);
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.finance-correction__form {
+  --editor-control-width: 248px;
+  padding: 0 18px 16px;
+}
+
+.finance-correction__form .editor-form__details .editor-form__details-row .ant-form-item-row {
+  grid-template-columns: 84px minmax(0, var(--editor-control-width));
+}
+
+.finance-correction__select {
+  width: 100%;
+}
+
+.finance-correction select[name="settlementAccountId"] {
+  max-width: 100%;
+}
+
+.finance-correction__split {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 4px 12px 12px;
+  border: 1px solid var(--editor-line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.finance-correction__split legend {
+  width: auto;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  color: var(--editor-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.finance-correction__amounts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.finance-correction__amount {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--editor-muted);
+  font-size: 13px;
+}
+
+.finance-correction__amount .ant-input-affix-wrapper {
+  min-height: 34px;
+  border-radius: 9px;
+}
+
+.finance-correction__amount .ant-input-affix-wrapper:not(.ant-input-affix-wrapper-focused) {
+  border-color: transparent;
+  background: var(--editor-fill);
+}
+
+.finance-correction__amount .ant-input {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.finance-correction__amount .ant-input-suffix,
+.finance-file-password__filename {
+  color: var(--editor-muted);
+}
+
+.finance-file-password__filename {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.finance-detail-drawer .finance-account-detail dl {
+  display: grid;
+  grid-template-columns: minmax(135px, 0.9fr) minmax(0, 1.4fr);
+  align-items: start;
+  margin: 12px 0;
+}
+
+.finance-detail-drawer .finance-account-detail :is(dt, dd) {
+  margin: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--editor-line);
+}
+
+.finance-detail-drawer .finance-account-detail dt {
+  padding-right: 8px;
+  color: var(--editor-muted);
+}
+
+.finance-source-record {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--editor-line, #e0e6ef);
+  border-radius: 12px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.finance-source-record p {
+  margin: 0 0 6px;
+}
+
+.finance-source-record__name {
+  font-weight: 600;
+}
+
+.finance-source-record__data {
+  margin: 0 0 8px;
+  color: var(--editor-muted, #4e5b6e);
+}
+
+.finance-source-record__data summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.finance-source-record__data pre {
+  max-height: 200px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--editor-fill, #edf1f7);
+  white-space: pre-wrap;
+}
+
+.finance-association-records {
+  width: min(365px, 100%);
+}
+
+.finance-association-controls .ant-select-single {
+  width: 156px;
+}
+
+@media (max-width: 365px) {
+  .finance-correction__amounts {
+    grid-template-columns: 1fr;
+  }
+}

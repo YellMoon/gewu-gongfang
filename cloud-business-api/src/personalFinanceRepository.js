@@ -85,7 +85,7 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
   if(!data.mortgage)return;
   const funding=await account(q,owner,data.mortgage.sourceAccountId);
   if(!['bank','savings','debit_card'].includes(funding.type)||funding.currency!==data.currency||funding.status!=='active')throw failure('MORTGAGE_FUNDING_ACCOUNT_INVALID');
-  const others=await q("SELECT id FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2 AND id<>$3 AND data->>'status'='active' AND data->'mortgage'->>'sourceAccountId'=$4 AND data->'mortgage'->>'loanType'=$5 AND data->'mortgage'->>'statementReference'=$6",[...owner,data.id,data.mortgage.sourceAccountId,data.mortgage.loanType,data.mortgage.statementReference]);
+  const others=await q("SELECT id FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2 AND id<>$3 AND data->>'status'='active' AND (data->'mortgage'->>'sourceAccountId'=$4 AND data->'mortgage'->>'loanType'=$5 AND data->'mortgage'->>'statementReference'=$6 OR data->'mortgageEvidence'->>'sourceAccountId'=$4 AND data->'mortgageEvidence'->>'loanType'=$5 AND data->'mortgageEvidence'->>'statementReference'=$6)",[...owner,data.id,data.mortgage.sourceAccountId,data.mortgage.loanType,data.mortgage.statementReference]);
   if(others.rows.length)throw failure('MORTGAGE_ACCOUNT_EXISTS');
   if(data.mortgage.recentSplit?.month===null){const sources=await q('SELECT data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND financial_account_id=$3',[...owner,funding.id]);data.mortgage=bindMortgageCalibration(data.mortgage,sources.rows.map(r=>r.data));}
  }
@@ -130,11 +130,17 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
  async function discover(q,owner,revision){
    const accounts=(await q('SELECT data FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2',owner)).rows.map(r=>r.data);
    const observations=(await q('SELECT data FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2',owner)).rows.map(r=>r.data);
-   const proposal=accountProposals({accounts,observations}),created=[];
+   const proposal=accountProposals({accounts,observations},{includeMortgageUpdates:true}),created=[];
    for(const {key,...spec} of proposal.accounts){
-    const data=accountData({...spec,id:'finance_account_'+hash({owner,key}).slice(0,32)});
+    const {mortgageEvidence,...fields}=spec;
+    const data=accountData({...fields,id:'finance_account_'+hash({owner,key}).slice(0,32)});
+    if(mortgageEvidence)data.mortgageEvidence=mortgageEvidence;
     await q('INSERT INTO business.personal_finance_accounts(id,tenant_id,account_id,data) VALUES($1,$2,$3,$4::jsonb)',[data.id,...owner,JSON.stringify(data)]);
     revision=await changed(q,owner,'account_discovered_from_statements',{account:data,evidenceKey:key});created.push(data);
+   }
+   for(const {before,after,key} of proposal.mortgageUpdates){
+    await q('UPDATE business.personal_finance_accounts SET data=$4::jsonb WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,after.id,JSON.stringify(after)]);
+    revision=await changed(q,owner,'mortgage_evidence_discovered',{before,after,evidenceKey:key});
    }
    return {accounts:created,unresolved:proposal.unresolved,revision};
  }
@@ -205,15 +211,25 @@ function createPersonalFinanceRepository({query,transaction,parseBillFile,archiv
      const observation={...r,id:id('finance_observation'),financialAccountId:financialAccountId,provider:preview.provider,importId:accountImportId,sourceOrdinal:ordinal+1,recordFingerprint,sourceIdentity,sourceVersionOrdinal:priorVersions.length+1};
      await q('INSERT INTO business.personal_finance_observations(id,tenant_id,account_id,financial_account_id,import_id,source_key,transaction_key,data) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb)',[observation.id,...owner,financialAccountId,accountImportId,sourceKey,sourceIdentity,JSON.stringify(observation)]);observationIds.push(observation.id);insertedCount++;
     }
-    await discover(q,owner,currentRevision);
+    const discovered=await discover(q,owner,currentRevision);
     // Import memberships remain in the receipt; source observations are immutable, including their first import.
     const importMemberships=Object.fromEntries([...importByAccount.values()].map(id=>[id,[]]));
     for(let i=0;i<preview.records.length;i++){const r=preview.records[i],target=r.bankAccount?bankAccountIds[bankAccountKey(r.bankAccount)]:financialAccountId;importMemberships[importByAccount.get(target)].push(observationIds[i]);}
-    const revision=await changed(q,owner,'import',{importId,observationIds,archiveReference});const receipt={...(bankResolutions.length?{importMemberships}:{}),importId,financialAccountId:financialAccountId,relatedFinancialAccountIds,recordCount:preview.records.length,insertedCount,observationIds,fileHash:preview.fileHash,revision,createdAt:importData.createdAt,replayed:false};
+    const mortgageAccountsCreated=discovered.accounts.filter(a=>a.mortgageEvidence).length;
+    const revision=await changed(q,owner,'import',{importId,observationIds,archiveReference});const receipt={...(bankResolutions.length?{importMemberships}:{}),...(mortgageAccountsCreated?{mortgageAccountsCreated}:{}),importId,financialAccountId:financialAccountId,relatedFinancialAccountIds,recordCount:preview.records.length,insertedCount,observationIds,fileHash:preview.fileHash,revision,createdAt:importData.createdAt,replayed:false};
     await q('INSERT INTO business.personal_finance_receipts(tenant_id,account_id,idempotency_key,request_hash,receipt) VALUES($1,$2,$3,$4,$5::jsonb)',[...owner,key,requestHash,JSON.stringify(receipt)]);return receipt;
    });},
   async createAccount(input){const owner=scope(input),data=accountData(input.account);return transaction(async q=>{await lock(q,owner,input.expectedRevision);const exists=await q('SELECT id FROM business.personal_finance_accounts WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,data.id]);if(exists.rows.length)throw failure('ACCOUNT_EXISTS');await bindMortgage(q,owner,data);await q('INSERT INTO business.personal_finance_accounts(id,tenant_id,account_id,data) VALUES($1,$2,$3,$4::jsonb)',[data.id,...owner,JSON.stringify(data)]);return {account:data,revision:await changed(q,owner,'account_create',data)};});},
-  async updateAccount(input){const owner=scope(input);if(!object(input.patch)||Object.keys(input.patch).some(k=>!ACCOUNT_KEYS.includes(k)||k==='id'))throw failure('INPUT_INVALID');return transaction(async q=>{await lock(q,owner,input.expectedRevision);const prior=await account(q,owner,input.id),data=accountData({...prior,...input.patch},input.id);if(data.balanceConvention!==prior.balanceConvention)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');if(data.currency!==prior.currency||data.type!==prior.type||data.provider!==prior.provider||data.maskedIdentifier!==prior.maskedIdentifier||data.sourceProduct!==prior.sourceProduct||data.balanceConvention!==prior.balanceConvention) {const existing=await q("SELECT id FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND (financial_account_id=$3 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(data->'accountRelations','[]'::jsonb)) relation WHERE relation->>'financialAccountId'=$3)) LIMIT 1",[...owner,input.id]);if(existing.rows.length)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');}await bindMortgage(q,owner,data,prior);await q('UPDATE business.personal_finance_accounts SET data=$4::jsonb WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,input.id,JSON.stringify(data)]);return {account:data,revision:await changed(q,owner,'account_update',{before:prior,after:data})};});},
+  async updateAccount(input){const owner=scope(input);if(!object(input.patch)||Object.keys(input.patch).some(k=>!ACCOUNT_KEYS.includes(k)||k==='id'))throw failure('INPUT_INVALID');return transaction(async q=>{await lock(q,owner,input.expectedRevision);
+   const prior=await account(q,owner,input.id),{mortgageEvidence,...fields}=prior,data=accountData({...fields,...input.patch},input.id);
+   if(mortgageEvidence){
+    if(data.type!==prior.type||data.provider!==prior.provider||data.currency!==prior.currency||data.sourceProduct!==prior.sourceProduct||
+     data.installmentLoan||data.settledLoanEpisodes||data.mortgage&&data.mortgage.loanType!==mortgageEvidence.loanType)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');
+    data.mortgageEvidence=mortgageEvidence;
+   }
+   if(data.balanceConvention!==prior.balanceConvention)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');
+   if(data.currency!==prior.currency||data.type!==prior.type||data.provider!==prior.provider||data.maskedIdentifier!==prior.maskedIdentifier||data.sourceProduct!==prior.sourceProduct) {const existing=await q("SELECT id FROM business.personal_finance_observations WHERE tenant_id=$1 AND account_id=$2 AND (financial_account_id=$3 OR EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(data->'accountRelations','[]'::jsonb)) relation WHERE relation->>'financialAccountId'=$3)) LIMIT 1",[...owner,input.id]);if(existing.rows.length)throw failure('ACCOUNT_IDENTITY_IMMUTABLE');}
+   await bindMortgage(q,owner,data,prior);await q('UPDATE business.personal_finance_accounts SET data=$4::jsonb WHERE tenant_id=$1 AND account_id=$2 AND id=$3',[...owner,input.id,JSON.stringify(data)]);return {account:data,revision:await changed(q,owner,'account_update',{before:prior,after:data})};});},
   async annotateObservation(input){
    const owner=scope(input),allowed=['category','kind','principalMinor','interestMinor','feeMinor','settlementAccountId','assetAllocation','paymentAllocation','commercePayment','recalledAccountRoute','medicalSettlement','conversionTargetEstimate'];text(input.observationId);
    if(!object(input.patch)||Object.keys(input.patch).some(k=>!allowed.includes(k)))throw failure('INPUT_INVALID');

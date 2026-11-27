@@ -1,0 +1,199 @@
+.editor-form__details,
+.editor-form__table-wrap {
+  border: 1px solid var(--editor-line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.editor-form__details {
+  padding: 5px 13px 8px;
+}
+
+.editor-form--compact {
+  --editor-label-width: 74px;
+  --editor-control-width: 134px;
+}
+
+.editor-form__details-row:not(:first-child) {
+  border-top: 1px solid var(--editor-line);
+}
+
+@media (min-width: 616px) {
+  .editor-form__details .editor-form__details-row .ant-form-item-row {
+    grid-template-columns: var(--editor-label-width, 98px) minmax(0, 1fr);
+  }
+}
+
+.editor-form__fields {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 28px;
+}
+
+.editor-form__fields::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  border-inline-start: 1px solid var(--editor-line);
+}
+
+.editor-form .ant-form-item {
+  min-width: 0;
+  margin: 0;
+}
+
+.editor-form__details .ant-form-item {
+  padding-block: 4px;
+}
+
+.editor-form__fields .ant-form-item + .ant-form-item {
+  border-top: 1px solid var(--editor-line);
+}
+
+.editor-form__details .ant-form-item-row {
+  display: grid;
+  grid-template-columns: var(--editor-label-width, 98px) minmax(0, var(--editor-control-width, 168px));
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-form__details .ant-form-item .ant-form-item-label {
+  padding: 0;
+  overflow: visible;
+}
+
+.editor-form__details .ant-form-item-label > label {
+  color: var(--editor-muted);
+  font-weight: 500;
+}
+
+.editor-form__details .ant-form-item-label > label::after {
+  display: none;
+}
+
+.editor-form__details .ant-input,
+.editor-form__details .ant-input-affix-wrapper,
+.editor-form__details .ant-input-number,
+.editor-form__details .ant-input-number-affix-wrapper,
+.editor-form__details .ant-picker,
+.editor-form .ant-select .ant-select-selector {
+  min-height: 34px;
+  border-radius: 9px;
+}
+
+.editor-form__details .ant-input-number,
+.editor-form__details .ant-input-number-affix-wrapper,
+.editor-form__details .ant-picker,
+.editor-form .ant-select {
+  width: 100%;
+}
+
+.editor-form .ant-select-single {
+  height: 34px;
+}
+
+.editor-form__details .ant-input:not(:focus),
+.editor-form__details .ant-input-affix-wrapper:not(.ant-input-affix-wrapper-focused),
+.editor-form__details .ant-input-number:not(.ant-input-number-focused),
+.editor-form__details .ant-input-number-affix-wrapper:not(.ant-input-number-affix-wrapper-focused),
+.editor-form__details .ant-picker:not(.ant-picker-focused),
+.editor-form .ant-select:not(.ant-select-focused) .ant-select-selector {
+  border-color: transparent;
+  background: var(--editor-fill);
+}
+
+.editor-form__details .ant-input-number-affix-wrapper .ant-input-number,
+.editor-form__details .ant-input-affix-wrapper .ant-input {
+  min-height: 0;
+  background: transparent;
+}
+
+.editor-form__details .ant-input-number-suffix {
+  white-space: nowrap;
+}
+
+.editor-form__table-wrap {
+  overflow: auto;
+}
+
+.editor-form__table {
+  width: 100%;
+  min-width: 320px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.editor-form__table th,
+.editor-form__table td {
+  padding: 6px 8px;
+  text-align: center;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+
+.editor-form__table thead th {
+  padding-block: 9px;
+  background: var(--editor-fill);
+  color: #35445b;
+  font-weight: 600;
+}
+
+.editor-form__table tbody td,
+.editor-form__table tfoot :is(th, td) {
+  border-top: 1px solid var(--editor-line);
+}
+
+.editor-form__table .editor-form__row-action {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.editor-form__table .editor-form__row-action--add {
+  background: #e5efff;
+  color: #174faf;
+}
+
+.editor-form__table .editor-form__row-action--add:hover,
+.editor-form__table .editor-form__row-action--add:focus-visible {
+  background: #d6e6ff;
+}
+
+.editor-form__table .editor-form__row-action--remove {
+  background: #fce9eb;
+  color: #af2937;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.editor-form__table .editor-form__row-action--remove:hover,
+.editor-form__table .editor-form__row-action--remove:focus-visible {
+  background: #f8d5da;
+}
+
+@media (max-width: 615px) {
+  .editor-modal--form .ant-modal-body {
+    padding-inline: 12px;
+  }
+
+  .editor-form__fields {
+    gap: 12px;
+  }
+
+  .editor-form__fields::before {
+    display: none;
+  }
+
+  .editor-form__details .ant-form-item-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+  }
+
+  .editor-form__table th,
+  .editor-form__table td {
+    padding-inline: 2px;
+  }
+}

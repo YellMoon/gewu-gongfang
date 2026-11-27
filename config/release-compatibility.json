@@ -1,6 +1,11 @@
 {
   "schema": "gewu.protocol-data-compatibility.v1",
   "contracts": {
+    "personalFinanceMortgageAccountDiscovery": {
+      "version": "1",
+      "participants": ["desktop", "cloud_business"],
+      "rule": "Cloud account discovery persists evidence-backed mortgage accounts before optional owner-supplied parameters. Mortgage evidence and the import receipt creation count are additive. Discovery runs under the owner revision lock, preserves existing loan IDs and immutable bank observations, and does not merge ambiguous contracts. Desktop shows missing mortgage parameters only after the account exists. Deploy cloud support before desktop. NAS archives and miniapp permissions are unchanged."
+    },
     "personalFinanceAssetMonthlyProof": {
       "version": "1",
       "participants": ["desktop", "cloud_business"],
