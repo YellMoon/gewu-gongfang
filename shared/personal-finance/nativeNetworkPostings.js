@@ -122,10 +122,26 @@ function materializeNativeNetworkPosting(record,proof){
  const {bankNetwork,bankAccount,...economic}=record;
  return {...economic,kind:proof.kind,...(!economic.category&&proof.suggestedCategory?{category:proof.suggestedCategory}:{}),nativeNetworkPosting:proof,automaticClassification:{method:'verified_new_native_network_posting',confidence:proof.confidence,evidenceObservationIds:[record.id,...proof.historicalEvidenceObservationIds]}};
 }
-function findNativeRepaymentPostingPairs(records,postings,accounts,links=[],economicTransactions=[]){
+function findNativeRepaymentPostingPairs(records,postings,accounts,links=[],economicTransactions=[],networkMatches=[]){
  links=links.filter(l=>!(['distinct','group_distinct'].includes(l.type)&&(l.status==='deleted'||l.deletedAt||l.deleted===true)));
  const byId=new Map(records.map(r=>[r.id,r])),accountMap=new Map(accounts.map(a=>[a.id,a])),buckets=new Map(),out=[];
  for(const p of postings){const r=byId.get(p.sourceObservationId),a=accountMap.get(p.financialAccountId);if(p.kind!=='debt_payment'||r.kind!=='debt_payment'||r.bankNetwork.nativeStatus!=='settled')continue;const k=JSON.stringify([p.date,p.currency,p.amountMinor]);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push({p,r,a});}
+ const economicById=new Map(economicTransactions.map(t=>[t.id,t]));
+ for(const match of networkMatches){
+  if(match.method!=='unionpay_native_existing_cash_evidence'||match.individualIdentity!=='reciprocal_unique'||match.networkObservationIds.length!==1||match.transactionIds.length!==1)continue;
+  const r=byId.get(match.networkObservationIds[0]),a=accountMap.get(r?.financialAccountId);
+  if(!r||r.kind!=='debt_payment'||r.direction!=='credit'||r.bankNetwork.nativeStatus!=='settled'||a?.type!=='credit_card')continue;
+  const k=JSON.stringify([r.date,r.currency,r.amountMinor]),rows=buckets.get(k);
+  if(!rows)continue;
+  const t=economicById.get(match.transactionIds[0]);
+  if(t?.kind!=='debt_payment'||t.sources.length!==1||Object.keys(t.balanceEffects).length!==1||t.balanceEffects[a.id]!==r.amountMinor)continue;
+  const bank=t.sources[0],raw=bank.rawFields||{};
+  if(bank.financialAccountId!==a.id||bank.kind!=='debt_payment'||bank.direction!=='credit'||bank.date!==r.date||bank.currency!==r.currency||bank.amountMinor!==r.amountMinor||
+   bank.bankStatement?.nonCash!==false||bank.bankStatement.cardTail!==r.bankNetwork.cardTail||raw.cardTail!==r.bankNetwork.cardTail||
+   raw.dateBasis!=='transaction_date'||raw.tradeDate!==r.date||raw.statementCredit!==true||raw.statementAmountMinor!=='-'+r.amountMinor||
+   !/^\u94f6\u8054(?:\u8f6c\u8d26)?\u8fd8\u6b3e$/.test(normalized(bank.description)))continue;
+  rows.push({r,a,bank});
+ }
  for(const rows of buckets.values()){
   const payers=rows.filter(x=>x.r.direction==='debit'&&x.a?.type==='debit_card'),receivers=rows.filter(x=>x.r.direction==='credit'&&x.a?.type==='credit_card');
   if(payers.length!==1||receivers.length!==1||rows.length!==2)continue;const payer=payers[0],receiver=receivers[0],ids=[payer.r.id,receiver.r.id];
@@ -133,14 +149,15 @@ function findNativeRepaymentPostingPairs(records,postings,accounts,links=[],econ
   // evidence or were declined for another reason; a partial capture stays an
   // inference and never becomes a claim of complete banking coverage.
   const peers=records.filter(r=>r.status==='completed'&&r.bankNetwork.nativeStatus!=='refund'&&(r.kind==='debt_payment'||r.kind==='unknown'&&/^(?:\u94f6\u8054\u8f6c\u8d26\(\u4e91\u95ea\u4ed8\)|\u652f\u4ed8\u5b9d.*\u6709\u9650\u516c\u53f8|\u8d22\u4ed8\u901a\u652f\u4ed8\u79d1\u6280\u6709\u9650\u516c\u53f8)$/.test(normalized(r.description)))&&r.date===payer.p.date&&r.currency===payer.p.currency&&r.amountMinor===payer.p.amountMinor);
-  if(peers.length!==2||links.some(l=>(l.observationIds||[]).some(id=>ids.includes(id))))continue;
+  const pairedIds=receiver.bank?[payer.r.id,receiver.bank.id]:ids;
+  if(peers.length!==2||links.some(l=>(l.observationIds||[]).some(id=>ids.includes(id)||pairedIds.includes(id))))continue;
   const otherEconomicCounterpart=economicTransactions.some(t=>t.status==='completed'&&t.currency===payer.p.currency&&t.kind==='debt_payment'&&Object.entries(t.balanceEffects).some(([id,value])=>{
    const a=accountMap.get(id),delta=BigInt(value);if(!a||delta===0n||String(delta<0n?-delta:delta)!==payer.p.amountMinor)return false;
    const otherReceiver=a.type==='credit_card'&&delta>0n&&id!==receiver.a.id,otherPayer=['debit_card','wallet','bank','savings','cash','investment'].includes(a.type)&&delta<0n&&id!==payer.a.id;
    if(!otherReceiver&&!otherPayer)return false;return [t.date,day(t.balanceEffectTimes?.[id]||t.occurredAt)].includes(payer.p.date);
   }));
   if(otherEconomicCounterpart)continue;
-  out.push({method:'inferred_native_credit_repayment_pair',confidence:'inferred',observationIds:ids,evidence:{payerAccountId:payer.a.id,receivingCreditAccountId:receiver.a.id,date:payer.p.date,currency:payer.p.currency,amountMinor:payer.p.amountMinor,matchingBasis:'unique_completed_native_repayment_outflow_and_credit_inflow_in_current_source_set',sourceScope:'channel_only',completeBankCoverageClaimed:false,counterpartAccountPrinted:false,timeUsedForMatching:false,reversible:true}});
+  out.push({method:'inferred_native_credit_repayment_pair',confidence:'inferred',observationIds:pairedIds,evidence:{payerAccountId:payer.a.id,receivingCreditAccountId:receiver.a.id,date:payer.p.date,currency:payer.p.currency,amountMinor:payer.p.amountMinor,matchingBasis:'unique_completed_native_repayment_outflow_and_credit_inflow_in_current_source_set',sourceScope:'channel_only',completeBankCoverageClaimed:false,counterpartAccountPrinted:false,timeUsedForMatching:false,reversible:true,...(receiver.bank?{receivingNetworkObservationId:receiver.r.id,receivingBankObservationId:receiver.bank.id}: {})}});
  }
  return out;
 }

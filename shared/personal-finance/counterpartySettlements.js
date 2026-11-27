@@ -36,4 +36,23 @@ function settlementMerchantFundingMissing(record){
   &&raw['\u4ea4\u6613\u8ba2\u5355\u53f7']===record.sourceTransactionId
   &&raw['\u4ea4\u6613\u5bf9\u65b9']===record.counterparty&&raw['\u5546\u54c1\u8bf4\u660e']===record.description;
 }
-module.exports={validateCounterpartySettlement,isSettlementAccount,annotatedSettlementAccount,inferredSettlementAccount,settlementMerchantFundingMissing};
+function matchesSettlementCardPurchase(platform,bank,card,{statementFundingBank,historicalBinding}={}){
+ const p=platform.rawFields||{},b=bank.rawFields||{},statement=bank.bankStatement;
+ const norm=v=>String(v||'').normalize('NFKC').replace(/\s/g,'');
+ if(platform.provider!=='alipay'||platform.kind!=='transfer'||platform.direction!=='debit'||platform.currency!=='CNY'||
+  platform.automaticClassification?.method!=='owner_confirmed_counterparty_settlement'||platform.accountRelations?.length||
+  p['\u4ea4\u6613\u8ba2\u5355\u53f7']!==platform.sourceTransactionId||p['\u4ea4\u6613\u5bf9\u65b9']!==platform.counterparty||
+  p['\u4ea4\u6613\u72b6\u6001']!=='\u4ea4\u6613\u6210\u529f'||p['\u6536/\u652f']!=='\u652f\u51fa'||p['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']!==platform.paymentChannel||
+  !/^\d+\.\d{2}$/.test(p['\u91d1\u989d']||'')||String(BigInt(p['\u91d1\u989d'].replace('.','')))!==platform.amountMinor||
+  bank.kind!=='expense'||bank.direction!=='debit'||bank.financialAccountId!==card.id||card.type!=='credit_card'||card.currency!==platform.currency||
+  statement?.schema!=='bank-credit-v1'||statement.nonCash!==false||statement.cardTail!==card.maskedIdentifier||
+  b.cardTail!==card.maskedIdentifier||b.dateBasis!=='transaction_date'||b.tradeDate!==platform.date||b.statementCredit!==false||b.statementAmountMinor!==platform.amountMinor)return false;
+ const channel=norm(platform.paymentChannel),issuer=norm(card.provider),description=norm(bank.description),prefix='\u652f\u4ed8\u5b9d-';
+ const named=description.startsWith(prefix)&&description.slice(prefix.length)===norm(platform.counterparty);
+ if(statementFundingBank&&channel===''&&!platform.paymentAccountHint)return issuer===statementFundingBank&&named;
+ const generic=description===prefix+'\u7f51\u8d2d';
+ if(channel===issuer)return named||generic&&historicalBinding?.method==='owner_historical_card_binding'&&historicalBinding.confidence==='owner_confirmed'&&historicalBinding.financialAccountId===card.id&&historicalBinding.maskedIdentifier===card.maskedIdentifier;
+ const explicitCard=[issuer,issuer+'\u4fe1\u7528\u5361'].some(label=>channel===label+'('+card.maskedIdentifier+')');
+ return explicitCard&&(named||generic||description===norm(platform.counterparty));
+}
+module.exports={validateCounterpartySettlement,isSettlementAccount,annotatedSettlementAccount,inferredSettlementAccount,settlementMerchantFundingMissing,matchesSettlementCardPurchase};

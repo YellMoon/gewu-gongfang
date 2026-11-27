@@ -17,3 +17,37 @@ test('edits to any original or native leg, an undone link and conflicting source
 function linkedFixture(){const l=fixture(),s=order('single','2015071421001001250241749223','50','Cotton shirt','Seller A');Object.assign(s,{kind:'transfer',amountMinor:'1300',paymentChannel:'',paymentAccountHint:'',recordFingerprint:'a'.repeat(64)});s.rawFields['\u91d1\u989d']='13.00';s.rawFields['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']='';const b=bankDebit('1300');b.recordFingerprint='b'.repeat(64);const parsed=parseAlipayWalletBalanceRows([[s.sourceTransactionId,'2015-07-14 12:00:14','\u5728\u7ebf\u652f\u4ed8','','-13.00','1000.00','\u652f\u4ed8\u5b9d',''],['201507144832827***05','2015-07-14 12:00:13','\u5145\u503c','13.00','','1013.00',bankName,'']]);assert.deepEqual(parsed.errors,[]);l.observations=[s,b,...parsed.records.map((o,i)=>({...o,id:'proof'+i,sourceIdentity:'proof'+i,sourceVersionOrdinal:1,financialAccountId:'wallet',provider:'alipay',importId:'native'}))];l.links=[{id:'accepted-owner-link',type:'duplicate',status:'active',observationIds:['single','bank'],sourceFingerprints:{single:s.recordFingerprint,bank:b.recordFingerprint},evidence:{date:'2015-07-14',amountMinor:'1300',bankCardTail:'4321',channel:'alipay',bankDateBasis:'transaction_date',reciprocalUnique:true}}];return l;}
 test('an accepted fingerprinted original bank link supplies a blank-channel cash bridge without another card or expense posting',()=>{const l=linkedFixture(),before=JSON.stringify(l),v=buildFinanceView(l),t=v.transactions.find(t=>t.observationIds.includes('single')),p=t.walletIntermediaryPostings?.find(p=>p.path==='owner_linked_bank_top_up_and_blank_channel_order');assert(p);assert.equal(p.ownerLinkId,'accepted-owner-link');assert.equal(p.originalBlankPlatformChannelPreserved,true);assert.equal(p.originalBankTradeDate,'2015-07-14');assert.equal(p.originalBankPostedDate,'2015-07-15');assert.equal(t.consumptionMinor,'1300');assert.equal(t.balanceEffects.card,'-1300');assert.equal(t.balanceEffects.wallet,'0');assert.equal(v.currencyTotals.CNY.consumptionMinor,'1300');assert.equal(v.balanceReconciliation.summary.differenceIntervalCount,0);assert.equal(JSON.stringify(l),before);});
 test('revocation, fingerprint changes and a source edit cannot be replaced by a blank-channel cash inference',()=>{for(const change of [l=>l.links[0].status='deleted',l=>l.links[0].sourceFingerprints.single='c'.repeat(64),l=>l.links[0].evidence.reciprocalUnique=false,l=>l.annotations.push({observationId:'single',revision:'1',patch:{category:'Owner change'}}),l=>l.links.push({type:'group_distinct',observationIds:['proof0','single']})]){const l=linkedFixture();change(l);const v=buildFinanceView(l);assert(!v.transactions.some(t=>t.walletIntermediaryPostings?.some(p=>p.path==='owner_linked_bank_top_up_and_blank_channel_order')),change.toString());}});
+test('wallet recharge and named bank original reconcile a blank-channel confirmed advance without changing its purpose',()=>{
+ const l=linkedFixture(),[s,b]=l.observations;
+ b.description=b.counterparty='\u652f\u4ed8\u5b9d-'+s.counterparty;
+ l.links=[];
+ l.accounts.push({id:'task',type:'receivable',status:'active',currency:'CNY',balanceConvention:'signed',
+  counterpartySettlement:{schema:'counterparty-settlement-v1',counterparty:'Task',scope:'annotation_only'}});
+ l.annotations=[{id:'owner',observationId:s.id,revision:'1',patch:{kind:'transfer',category:'Owner advance',settlementAccountId:'task'}}];
+ const original=JSON.stringify(l),v=buildFinanceView(l),t=v.transactions.find(x=>x.observationIds.includes(s.id));
+ assert(t.observationIds.includes(b.id));assert.equal(t.category,'Owner advance');assert.equal(t.balanceEffects.card,'-1300');
+ assert.equal(t.balanceEffects.task,'1300');assert.equal(t.consumptionMinor,'0');
+ assert.deepEqual(t.balanceEffectEvents.wallet.map(event=>event.deltaMinor),['1300','-1300']);
+ assert.equal(v.balanceReconciliation.summary.differenceIntervalCount,0);
+ assert.equal(JSON.stringify(l),original);
+ l.observations.push({...b,id:'competing-bank',sourceIdentity:'competing-bank',sourceTransactionId:'competing-bank'});
+ assert(!buildFinanceView(l).transactions.find(x=>x.observationIds.includes(s.id)).observationIds.includes(b.id));
+});
+test('historical confirmed card plus reciprocal Alipay billing resolves a generic advance debit but preserves rivals',()=>{
+ const l=linkedFixture(),[s,b]=l.observations,date=s.date;
+ l.links=[];l.observations=[s,b];s.paymentChannel=bankName;s.rawFields['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']=bankName;
+ b.description=b.counterparty='\u652f\u4ed8\u5b9d-\u7f51\u8d2d';
+ l.accounts.push({id:'task',type:'receivable',status:'active',currency:'CNY',balanceConvention:'signed',
+  counterpartySettlement:{schema:'counterparty-settlement-v1',counterparty:'Task',scope:'annotation_only'}});
+ l.annotations=[{id:'owner',observationId:s.id,revision:'1',patch:{kind:'transfer',category:'Owner advance',settlementAccountId:'task'}}];
+ l.accounts[0].historicalCardBindings={schema:'historical-card-bindings-v1',rules:[{type:'credit_card',financialAccountId:'card',channel:bankName,
+  institution:bankName,maskedIdentifier:'4321',periodStart:date,periodEnd:date,confidence:'owner_confirmed',confirmedAt:'2026-11-01T00:00:00Z'}]};
+ const result=()=>buildFinanceView(l).transactions.find(t=>t.observationIds.includes(s.id));
+ assert(result().observationIds.includes(b.id));
+ delete l.accounts[0].historicalCardBindings;
+ assert(!result().observationIds.includes(b.id));
+ s.paymentChannel=channel;s.paymentAccountHint='4321';s.rawFields['\u6536/\u4ed8\u6b3e\u65b9\u5f0f']=channel;
+ assert(result().observationIds.includes(b.id));
+ l.observations.push({...b,id:'rival',sourceIdentity:'rival',sourceTransactionId:'rival',description:s.counterparty,counterparty:s.counterparty});
+ assert(!result().observationIds.includes(b.id));
+});

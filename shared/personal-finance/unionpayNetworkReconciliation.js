@@ -15,6 +15,16 @@ function nativeMerchantNames(record){
  if(parts.length===2&&/^(?:\(\u7279\u7ea6\).+|.+\u5e73\u53f0\u5546\u6237|\u8d22\u4ed8\u901a\(\u94f6\u8054\u4e91\u95ea\u4ed8\))$/.test(tail)){names.add(normal(parts[0]));names.add(normal(tail));if(/\u5e73\u53f0\u5546\u6237$/.test(tail))names.add(normal(tail+parts[0]));}
  return names;
 }
+function cmbTransitMerchant(record,printed){
+ const merchant=normal(printed.replace(/^(?:\u626b\u7801)-/u,'').replace(/(?:-Huawei Pay:\d{4}|\s*\(Huawei Pay:\d{4}\))$/iu,''));
+ const target=normal(record.description);
+ const operator=/^\p{Script=Han}{2,14}(?:\u8f68\u9053\u4ea4\u901a|\u516c\u5171\u4ea4\u901a)(?:\u96c6\u56e2)?(?:\u6709\u9650(?:\u516c(?:\u53f8(?:\u8fd0\u8425\u5206\u516c\u53f8)?)?)?)?$/u;
+ if(!operator.test(merchant)||!operator.test(target))return null;
+ if(merchant===target)return target;
+ // The statement may show a fixed merchant truncation or only the legal parent.
+ const shortened=target.replace(/(?:\u6709\u9650\u516c\u53f8)(?:\u8fd0\u8425\u5206\u516c\u53f8)?$/u,'');
+ return shortened!==target&&(merchant===shortened||target.endsWith('\u6709\u9650\u516c\u53f8')&&[target.slice(0,-1),target.slice(0,-2)].includes(merchant))?target:null;
+}
 function bankMerchantNames(record,source,accountId,nameEvidence=[]){
  const names=[source.description,source.counterparty].map(normal);
  if(!nativeBankLeg(record,source,accountId))return names;
@@ -31,6 +41,13 @@ function bankMerchantNames(record,source,accountId,nameEvidence=[]){
  }
  if(source.provider==='cmb'&&record.bankNetwork.bank==='\u62db\u5546\u94f6\u884c'){
   const m=printed.match(/^(.+?)-Huawei Pay:\d{4}$/i);if(m){names.push(normal(m[1]));if(/\u6709\u9650\u516c$/.test(normal(m[1])))completeLegalSuffix(m[1],'\u53f8');}
+  if(record.kind==='unknown'&&record.bankNetwork.nativeStatus==='settled'&&source.direction==='debit'&&source.kind==='expense'&&source.bankStatement.nonCash===false&&raw.excludedFromBilledTotal===false&&raw.postedDate===source.bankStatement.postedDate&&raw.statementDate===source.bankStatement.statementDate){
+   const merchant=cmbTransitMerchant(record,printed);
+   if(merchant&&!names.includes(merchant)){
+    names.push(merchant);
+    nameEvidence.push({method:'cmb_transit_printed_merchant',nativeObservationId:record.id||record.bankNetwork.recordId,bankObservationId:source.id,originalBankMerchant:printed,nativeMerchant:record.description,originalBankTextPreserved:true,confidence:'inferred',edgeIsCompatibilityOnly:true});
+   }
+  }
  }
  if(source.provider==='cgb'&&record.bankNetwork.bank==='\u5e7f\u53d1\u94f6\u884c'&&source.direction==='debit'){
   const text=normal(printed);if(/^[^()]+\([^()]+$/.test(text))names.push(text+')');

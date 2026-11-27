@@ -7,6 +7,21 @@ const account={id:'card',provider:bank,maskedIdentifier:'1234',currency:'CNY',ty
 function record(n=1){const id='UI-2026-'+String(n).padStart(5,'0');return {sourceTransactionId:'',date:'2026-10-01',occurredAt:'2026-10-01T23:59:59+08:00',amountMinor:'1234',currency:'CNY',direction:'debit',kind:'unknown',status:'completed',description:'Synthetic merchant',counterparty:'Synthetic merchant',paymentChannel:channel,paymentAccountHint:bank+'(1234)',balanceMinor:null,relatedReference:'',rawFields:{captureRecordId:id,sourceSha256:'a'.repeat(64),displayedTime:'12:34',timeAccuracyVerified:false,dateBasis:'visible_date_label',nativeRowText:['Synthetic merchant','-\u00a512.34',bank+'[1234] \u00b7 12:34']},bankNetwork:{schema:'unionpay-network-capture-v1',recordId:id,bank,cardTail:'1234',scope:'channel_only',dateBasis:'visible_date_label',timePrecision:'day',displayedTime:'12:34',timeAccuracyVerified:false,nativeStatus:'settled',nativeAmountText:'-\u00a512.34',sourceSha256:'a'.repeat(64),bankTransactionIdPrinted:false,bankPostingDatePrinted:false}};}
 function transaction(id='old',extra={}){return {id,date:'2026-10-01',occurredAt:'2026-10-01T23:59:59+08:00',currency:'CNY',status:'completed',kind:'expense',observationIds:[id],cashEffects:{},balanceEffects:{card:'-1234'},sources:[{id,financialAccountId:'card',provider:'synthetic-bank',kind:'expense',direction:'debit',status:'completed',description:'Synthetic merchant',counterparty:'',paymentChannel:'',statementFlow:{schema:'synthetic-not-bank-evidence'},rawFields:{}}],...extra};}
 const run=(records,transactions,extra={})=>plan({records,transactions,accounts:[account],...extra});
+test('CMB transit merchant formatting links an unchanged debit within the original card envelope',()=>{
+ const r=record();
+ const description='\u65b0\u57ce\u5e02\u8f68\u9053\u4ea4\u901a\u96c6\u56e2\u6709\u9650\u516c\u53f8\u8fd0\u8425\u5206\u516c\u53f8';
+ r.description=r.counterparty=r.rawFields.nativeRowText[0]=description;
+ const t=transaction('transit'),printed='\u65b0\u57ce\u5e02\u8f68\u9053\u4ea4\u901a\u96c6\u56e2 (HUAWEI PAY:5678)';
+ t.sources=[{...t.sources[0],provider:'cmb',description:printed,counterparty:printed,date:r.date,currency:'CNY',amountMinor:r.amountMinor,
+  bankStatement:{schema:'bank-credit-v1',provider:'cmb',nonCash:false,cardTail:'1234',postedDate:r.date,statementDate:'2026-10-25'},
+  rawFields:{cardTail:'1234',dateBasis:'transaction_date',tradeDate:r.date,postedDate:r.date,statementDate:'2026-10-25',statementCredit:false,statementAmountMinor:r.amountMinor,excludedFromBilledTotal:false}}];
+ const p=run([r],[t]);
+ assert.equal(p.matches[0].merchantNameEvidence[0].originalBankMerchant,printed);
+ assert.equal(p.matches[0].noNewCash,true);
+ const other=structuredClone(t);other.sources[0].description='\u522b\u57ce\u5e02\u8f68\u9053\u4ea4\u901a\u96c6\u56e2 (HUAWEI PAY:5678)';other.sources[0].counterparty=other.sources[0].description;
+ assert.equal(run([r],[other]).matches.length,0);
+ assert.equal(run([r],[t,{...t,id:'rival'}]).matches.length,0);
+});
 function minuteCase(){
  const name='\u5174\u4e1a\u94f6\u884c',r=record();r.bankNetwork.bank=name;r.paymentAccountHint=name+'(1234)';r.rawFields.nativeRowText[2]=name+'[1234] \u00b7 12:34';
  const mkBank=(id,description,time)=>({id,financialAccountId:'card',provider:'cib',kind:'expense',direction:'debit',status:'completed',description,counterparty:description,date:r.date,currency:'CNY',amountMinor:'1234',bankStatement:{schema:'bank-credit-v1',provider:'cib',nonCash:false,cardTail:'1234',postedDate:r.date,statementDate:'2026-10-25'},rawFields:{cardTail:'1234',dateBasis:'transaction_date',tradeDate:r.date,postedDate:r.date,statementDate:'2026-10-25',statementAmountMinor:'1234',statementCredit:false,...(time?{sourceTradeDateTime:r.date+' '+time}:{})}});

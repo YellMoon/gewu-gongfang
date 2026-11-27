@@ -430,11 +430,14 @@ function buildFinanceView(ledger,options={},internalMode) {
   const bankStatementRoots=new Set(observations.filter(o=>o.bankStatement||o.statementFlow).map(o=>root(o.id)));
   const occupiedStatementRoots=new Set(observations.filter(o=>['alipay','wechat','jd'].includes(o.provider)&&bankStatementRoots.has(root(o.id))).map(o=>root(o.id)));
   const channelBlocked=new Set((ledger.links||[]).filter(l=>blocked.has(pair(l))&&l.observationIds.every(id=>parents.has(id))).map(l=>JSON.stringify(l.observationIds.map(root).sort())));
+  const settlementReceiptInputs=new Map(observations.filter(o=>confirmedSettlementIds.has(o.id)&&!o.paymentChannel&&!o.paymentAccountHint).map(o=>[o.id,o]));
+  const settlementReceipts=settlementReceiptInputs.size?require('./nativeBankCheckoutBridges').findSettlementCheckoutBankReceipts(originalObservations,accounts,settlementReceiptInputs,fundingOptions):new Map();
   const channelAnnotatedRoots=new Set([...latestAnnotations.keys()].filter(id=>{const p=latestAnnotations.get(id)?.patch,provisional=p&&Object.keys(p).every(k=>['kind','category'].includes(k))&&(p.kind==='expense'&&p.category==='暂按个人支出（用户授权、可修改）'||p.kind==='income'&&p.category==='暂按个人收入（用户授权、可修改）');const confirmedFamily=p&&Object.keys(p).every(k=>['kind','category'].includes(k))&&p.kind==='transfer'&&p.category==='\u5bb6\u5ead\u5185\u90e8\u5212\u8f6c\uff08\u90ed\u96c5\u840d\uff0c\u7528\u6237\u786e\u8ba4\uff09';return parents.has(id)&&!confirmedSettlementIds.has(id)&&!provisional&&!confirmedFamily;}).map(root));
   for(const s of observations){
     const sr=root(s.id);
     if(!['alipay','wechat','jd'].includes(s.provider)||s.status!=='completed'||bankStatementRoots.has(sr)||channelAnnotatedRoots.has(sr))continue;
-    const fund=fundingAccount(s,accounts);if(!fund)continue;
+    const settlementReceipt=settlementReceipts.get(s.id);
+    const fund=fundingAccount(s,accounts)||accountMap.get(settlementReceipt?.bank.financialAccountId);if(!fund)continue;
     const direction=projectedBankDirection(s);
     for(const b of moneySourceBuckets.get(JSON.stringify([s.date,s.amountMinor,s.currency,direction,fund.id]))||[]){
       const br=root(b.id);
@@ -451,7 +454,8 @@ function buildFinanceView(ledger,options={},internalMode) {
       const genericRefundReceipt=s.kind==='refund'&&direction==='credit'&&b.direction==='credit'&&b.bankStatement&&!b.bankStatement.nonCash&&(b.kind==='unknown'&&ambiguousCardCredit(b.description)||genericBocomRemittance||genericCmbRemittance)&&fund.type==='credit_card';
       if(genericRefundReceipt&&observations.some(x=>x.status==='completed'&&x.kind==='debt_payment'&&['alipay','wechat'].includes(x.provider)&&['neutral','debit'].includes(x.direction)&&x.date===s.date&&x.amountMinor===s.amountMinor&&x.currency===s.currency&&String(x.counterparty||'').normalize('NFKC').replace(/\s/g,'').replace(/\u4fe1\u7528\u5361\u8fd8\u6b3e$/,'')===String(fund.provider).normalize('NFKC').replace(/\s/g,'')))continue;
       const platformServiceFee=s.provider==='alipay'&&s.kind==='fee'&&s.direction==='debit'&&b.kind==='expense'&&b.direction==='debit'&&b.bankStatement&&!b.bankStatement.nonCash;
-      const compatibleKind=b.kind===s.kind||wechatTeachingBankReceipt(s,b)||platformServiceFee||explicitPaymentPurpose||jdRepayment||jdProductDeposit||genericRefundReceipt||b.statementFlow&&b.kind==='unknown'&&!latestAnnotations.has(b.id)&&['expense','income','refund','transfer','debt_payment'].includes(s.kind);
+      const settlementBankPayment=confirmedSettlementIds.has(s.id)&&(settlementReceipt?.bank.id===b.id||require('./counterpartySettlements').matchesSettlementCardPurchase(s,b,fund,{historicalBinding:historicalFunding.get(s.id)}));
+      const compatibleKind=b.kind===s.kind||wechatTeachingBankReceipt(s,b)||platformServiceFee||explicitPaymentPurpose||settlementBankPayment||jdRepayment||jdProductDeposit||genericRefundReceipt||b.statementFlow&&b.kind==='unknown'&&!latestAnnotations.has(b.id)&&['expense','income','refund','transfer','debt_payment'].includes(s.kind);
       const bankChannel=bankPaymentProvider(b),explicitDebitPayment=b.statementFlow&&b.kind==='unknown'&&/^(?:\u5feb\u6377\u652f\u4ed8|\u94f6\u8054\u5feb\u6377)$/.test(String(b.description||'').trim()),undisclosedCardChannel=bankChannel===null&&(b.bankStatement&&['expense','refund','income','interest','fee'].includes(b.kind)||explicitDebitPayment||genericRefundReceipt||ownedRepaymentPayer);
       if(!(b.bankStatement||b.statementFlow)||!compatibleKind||occupiedStatementRoots.has(br)||channelAnnotatedRoots.has(br)||bankChannel!==s.provider&&!undisclosedCardChannel||channelBlocked.has(JSON.stringify([sr,br].sort())))continue;
       if(!channelMatches.has(sr))channelMatches.set(sr,new Set());if(!channelReverse.has(br))channelReverse.set(br,new Set());
@@ -948,6 +952,7 @@ function buildFinanceView(ledger,options={},internalMode) {
   require('./nativeBankFundedOrders').addNativeBankFundedOrderBridges(all,nativeBankOrderFunding,originalObservations,walletIntermediaryPlans);
   require('./knownBankWalletBridges').addKnownBankWalletBridges(all,originalObservations,accounts,walletIntermediaryPlans,{annotations:latestAnnotations,annotationHistory:ledger.annotations||[],annotatedIds:new Set((ledger.annotations||[]).map(a=>a.observationId)),links:ledger.links||[]});
   require('./nativeBankCheckoutBridges').addNativeBankCheckoutBridges(ledger,all,walletIntermediaryPlans);
+  require('./nativeBankCheckoutBridges').addSettlementWalletCheckoutBridges(ledger,all,walletIntermediaryPlans);
   require('./combinedBankWalletBridges').addCombinedBankWalletBridges(ledger,all,walletIntermediaryPlans);
   require('./combinedCreditWalletBridges').addCombinedCreditWalletBridges(ledger,all,walletIntermediaryPlans);
   require('./nativePersonalPacketBridges').addNativePersonalPacketBridges(ledger,all,walletIntermediaryPlans);

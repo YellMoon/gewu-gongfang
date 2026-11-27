@@ -6,6 +6,13 @@ function externalWechatReceipt(record,{excludedCounterparties=[]}={}){
  if(raw['\u4ea4\u6613\u7c7b\u578b']!=='\u8f6c\u8d26'||raw['\u6536/\u652f']!=='\u6536\u5165'||raw['\u4ea4\u6613\u5bf9\u65b9']!==record.counterparty||!['\u5df2\u5b58\u5165\u96f6\u94b1','\u5df2\u6536\u94b1','\u5df2\u6536\u6b3e','\u6536\u6b3e\u6210\u529f','\u6536\u6b3e\u5230\u8d26'].includes(raw['\u5f53\u524d\u72b6\u6001']))return record;
  const protectedNames=[...excludedCounterparties].map(norm);
  if(protectedNames.some(n=>n&&(name===n||name.split(/[()]/).map(norm).includes(n)))||/\u672c\u4eba|\u81ea\u5df1|\u81ea\u5df1\u8d26\u6237/.test(name+' '+record.description))return record;
+ const memo=norm(record.description),amount=norm(raw['\u91d1\u989d(\u5143)']).match(/^(\d+)(?:\.(\d{1,2}))?$/);
+ const depositReturn=/^(?:\u8f6c\u8d26\u5907\u6ce8:)?(?:\u9000\u8fd8?[^,\u3002;\u62bc]{0,30}\u62bc\u91d1|[^,\u3002;\u62bc]{0,30}\u62bc\u91d1(?:\u9000\u8fd8|\u9000\u56de))(?:[,;\u3002].*)?$/u;
+ if(record.currency==='CNY'&&raw['\u5f53\u524d\u72b6\u6001']==='\u5df2\u5b58\u5165\u96f6\u94b1'&&raw['\u5546\u54c1']===record.description&&raw['\u4ea4\u6613\u5355\u53f7']===record.sourceTransactionId&&
+  /^\d{16,40}$/.test(record.sourceTransactionId||'')&&amount&&String(BigInt(amount[1])*100n+BigInt((amount[2]||'').padEnd(2,'0')))===record.amountMinor&&
+  depositReturn.test(memo)&&/\u79df|\u623f\u4ea7|[0-9]+-[0-9]+/.test(memo+' '+name)){
+  return {...record,category:'\u79df\u8d41\u62bc\u91d1\u9000\u56de',automaticClassification:{method:'explicit_wechat_rental_deposit_return',confidence:'explicit_source_receipt',evidenceObservationIds:[record.id]}};
+ }
  const text=[record.description,record.category,name].join(' ');
  if(/\u501f\u6b3e|\u501f\u94b1|\u8d37\u6b3e|\u8fd8\u6b3e|\u8fd8\u94b1|\u672c\u91d1|\u9000\u6b3e|\u9000\u8d39|\u9000\u8fd8|\u8fd4\u8fd8|\u62a5\u9500|\u4ee3\u6536|\u4ee3\u4ed8|\u62bc\u91d1|\u4fdd\u8bc1\u91d1|\u5145\u503c|\u63d0\u73b0|\u94f6\u884c|\u8bc1\u5238|\u7406\u8d22|\u57fa\u91d1/.test(text))return {...record,kind:'unknown',automaticClassification:{method:'external_wechat_receipt_purpose_unresolved',confidence:'explicit_source_receipt',evidenceObservationIds:[record.id]}};
  const teaching=/\u5b66\u8d39|\u8bfe\u65f6\u8d39|\u8865\u8bfe\u8d39|\u52a0\u8bfe/.test(record.description||'');

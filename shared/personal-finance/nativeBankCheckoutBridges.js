@@ -74,4 +74,73 @@ function addNativeBankCheckoutBridges(ledger,transactions,plans){
  }
  return plans;
 }
-module.exports={findNativeCombinedBankPaymentGroups,addNativeBankCheckoutBridges};
+function settlementCheckoutProofs(context,s){
+ const wallet=context.am.get(s.financialAccountId),amount=BigInt(s.amountMinor);
+ if(!wallet||!ordinaryOriginal(s)||!context.clean(s))return null;
+ const matches=context.refs.get(refkey(wallet.id,s.sourceTransactionId))||[];
+ if(matches.length!==1||!nativePayment(matches[0])||matches[0].outgoing!==-amount)return null;
+ const negative=matches[0],debit=negative.observation;
+ const positive=context.seq.get(JSON.stringify([wallet.id,debit.importId,debit.balanceEvidence.sequence-1])),credit=positive?.observation;
+ const delay=Date.parse(debit.occurredAt)-Date.parse(s.occurredAt),gap=credit?Date.parse(debit.occurredAt)-Date.parse(credit.occurredAt):NaN;
+ if(!positive||positive.incoming!==amount||positive.outgoing!==0n||credit.description!=='\u5145\u503c'||!positive.bank.endsWith('\u94f6\u884c')||
+  credit.date!==s.date||debit.date!==s.date||delay<0||delay>60000||gap<0||gap>2000||
+  !/^\d{6,}\*{2,}\d{2,}$/.test(credit.relatedReference)||credit.relatedReference===s.sourceTransactionId||
+  [credit,debit].some(o=>!context.clean(o))||context.veto([s,credit,debit]))return null;
+ const paymentBank=norm(s.paymentChannel).match(/^(.+?\u94f6\u884c)/)?.[1];
+ if(s.paymentChannel&&paymentBank!==positive.bank)return null;
+ return {wallet,positive,negative};
+}
+
+function findSettlementCheckoutBankReceipts(observations,accounts,settlements,{annotatedIds,links=[]}){
+ const context=nativeContext(observations,accounts,annotatedIds,links),key=o=>JSON.stringify([o.date,o.currency,o.amountMinor]);
+ const banks=new Map(),rivals=new Map(),proposals=[];
+ for(const o of context.rows){
+  if(o.status!=='completed'||o.direction!=='debit'||o.balanceEvidence)continue;
+  const map=o.provider==='alipay'?rivals:context.am.get(o.financialAccountId)?.type==='credit_card'?banks:null;
+  if(!map)continue;
+  const token=key(o);if(!map.has(token))map.set(token,[]);
+  map.get(token).push(o);
+ }
+ const {matchesSettlementCardPurchase}=require('./counterpartySettlements');
+ for(const [id,effective] of settlements){
+  const s=context.byId.get(id);
+  if(!s||s.paymentChannel||s.paymentAccountHint||rivals.get(key(s))?.length!==1)continue;
+  const proof=settlementCheckoutProofs(context,s);
+  if(!proof)continue;
+  const matches=(banks.get(key(s))||[]).filter(b=>matchesSettlementCardPurchase(effective,b,context.am.get(b.financialAccountId),{statementFundingBank:proof.positive.bank}));
+  if(matches.length!==1||!context.clean(matches[0])||context.veto([s,matches[0]]))continue;
+  proposals.push([id,{bank:matches[0],institution:proof.positive.bank,proofObservationIds:[proof.positive.observation.id,proof.negative.observation.id]}]);
+ }
+ return new Map(proposals);
+}
+
+function addSettlementWalletCheckoutBridges(ledger,transactions,plans){
+ if(!ledger.observations?.some(o=>o.balanceEvidence?.schema==='alipay-balance-proof-v1'))return plans;
+ const accounts=ledger.accounts||[],annotations=ledger.annotations||[];
+ const timingOnly=require('./balanceCashPostings').purposeOnlyCashTimingAnnotationIds(ledger.observations,annotations,accounts);
+ const context=nativeContext(ledger.observations,accounts,new Set(annotations.map(a=>a.observationId).filter(id=>!timingOnly.has(id))),ledger.links||[]);
+ const used=claimSet(transactions,plans),candidates=[];
+ for(const t of transactions){
+  if(plans.has(t.id)||t.kind!=='transfer'||t.status!=='completed'||t.automaticClassification?.method!=='owner_confirmed_counterparty_settlement')continue;
+  const sources=t.sources.filter(s=>s.provider==='alipay'&&s.direction==='debit');
+  if(sources.length!==1)continue;
+  const s=sources[0],proof=settlementCheckoutProofs(context,s);
+  if(!proof)continue;
+  const {wallet,positive,negative}=proof;
+  if(BigInt(t.balanceEffects[wallet.id]||0)!==0n||BigInt(t.cashEffects[wallet.id]||0)!==0n||[positive,negative].some(p=>used.has(p.observation.id)))continue;
+  candidates.push({t,s,wallet,positive,negative});
+ }
+ const counts=new Map();
+ for(const {positive,negative} of candidates)for(const p of [positive,negative])counts.set(p.observation.id,(counts.get(p.observation.id)||0)+1);
+ for(const {t,s,wallet,positive,negative} of candidates){
+  const proofs=[positive,negative];
+  if(proofs.some(p=>counts.get(p.observation.id)!==1))continue;
+  plans.set(t.id,[{method:'native_wallet_intermediary_postings',path:'bank_checkout_for_confirmed_settlement',financialAccountId:wallet.id,sourceObservationId:s.id,
+   amountMinor:s.amountMinor,netDeltaMinor:'0',fundingInstitution:positive.bank,confidence:'original_wallet_continuity_and_full_order_reference',
+   cashEvidenceConfidence:'explicit_original_cash_postings',proofObservationIds:proofs.map(p=>p.observation.id),sourceOrderReferencesMatched:true,
+   nativeStatementCardTailPrinted:false,noNewConsumptionOrIncome:true,reversible:true,
+   events:proofs.map(p=>({observationId:p.observation.id,date:p.observation.date,occurredAt:p.observation.occurredAt,deltaMinor:p.delta}))}]);
+ }
+ return plans;
+}
+module.exports={findNativeCombinedBankPaymentGroups,addNativeBankCheckoutBridges,addSettlementWalletCheckoutBridges,findSettlementCheckoutBankReceipts};

@@ -74,6 +74,21 @@ test('derived balances state the last included movement day and preserve the ind
 test('a later original bank receipt replaces its native financial leg without duplicating debt or dropping the payer cash',()=>{
  const l=fixture();l.imports.push({id:'later-bank',provider:'synthetic',createdAt:'2026-10-07T00:00:00Z'});l.observations.push({...l.observations[0],id:'actual-repayment',importId:'later-bank',sourceTransactionId:'bank-receipt',date:'2026-10-04',occurredAt:'2026-10-04T23:59:59+08:00',amountMinor:'10030',direction:'credit',kind:'debt_payment',description:repay,counterparty:repay});const v=buildFinanceView(l);assert.equal(v.networkEvidence.summary.postedRows,2);assert.equal(v.currencyTotals.CNY.cashOutMinor,'10030');assert.equal(v.accountStats.cash.balanceMinor,'9970');assert.equal(v.accountStats.credit.balanceMinor,'-2942');assert(v.networkEvidence.matches.some(m=>m.networkObservationIds.includes('network-3')));assert(!v.networkEvidence.postings.some(p=>p.sourceObservationId==='network-3'));
 });
+test('a literal bank network repayment receipt joins the proven payer and both credit sources exactly once',()=>{
+ const l=fixture(),date='2026-10-04',description='\u94f6\u8054\u8f6c\u8d26\u8fd8\u6b3e';
+ l.imports.push({id:'later-bank',provider:'cmb',createdAt:'2026-10-07T00:00:00Z'});
+ l.observations.push({...l.observations[0],id:'confirmed-credit',importId:'later-bank',sourceTransactionId:'bank-receipt',provider:'cmb',
+  date,occurredAt:date+'T23:59:59+08:00',amountMinor:'10030',direction:'credit',kind:'debt_payment',description,counterparty:description,
+  bankStatement:{schema:'bank-credit-v1',provider:'cmb',nonCash:false,cardTail:'1234',postedDate:date,statementDate:'2026-10-25'},
+  rawFields:{cardTail:'1234',dateBasis:'transaction_date',tradeDate:date,postedDate:date,statementDate:'2026-10-25',statementAmountMinor:'-10030',statementCredit:true,excludedFromBilledTotal:false}});
+ const result=buildFinanceView(l),transaction=result.transactions.find(t=>t.observationIds.includes('confirmed-credit'));
+ assert.deepEqual([...transaction.observationIds].sort(),['confirmed-credit','network-2','network-3']);
+ assert.deepEqual(transaction.balanceEffects,{credit:'10030',cash:'-10030'});
+ assert.equal(result.currencyTotals.CNY.cashOutMinor,'10030');
+ assert(!result.unresolvedAssociations.some(x=>x.observationId==='network-2'));
+ l.links.push({id:'do-not-pair',type:'distinct',status:'active',observationIds:['network-2','confirmed-credit']});
+ assert(!buildFinanceView(l).networkEvidence.postingAssociations.length);
+});
 test('a generic competing credit entry prevents an inferred native repayment pairing',()=>{
  const l=fixture(),r=structuredClone(l.observations.find(o=>o.id==='network-3'));r.id='another-credit';r.sourceIdentity='another-credit';r.description=r.counterparty='\u94f6\u8054\u8f6c\u8d26\uff08\u4e91\u95ea\u4ed8\uff09';r.rawFields.nativeRowText[0]=r.description;r.kind='unknown';r.bankNetwork.recordId='UI-2026-00005';r.rawFields.captureRecordId=r.bankNetwork.recordId;l.observations.push(r);const v=buildFinanceView(l);assert.equal(v.networkEvidence.postingAssociations.length,0);assert(v.networkEvidence.held.some(h=>h.observationId==='network-3'));assert.equal(v.currencyTotals.CNY.cashOutMinor,'10030');
 });
